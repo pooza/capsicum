@@ -33,7 +33,8 @@ module Capsicum
         next unless link.host == @uri.host
         next unless link.path =~ %r{^/wiki/}
         next if link.path.include?(':')
-        yield ({word: node.inner_text, link: link})
+        v = {word: node.inner_text, link: link}
+        yield v
       rescue
         next
       end
@@ -49,7 +50,7 @@ module Capsicum
         crawler.words do |word|
           next if result[word[:word]]
           uri = Addressable::URI.parse(word[:link])
-          next unless HTTParty.get(uri.normalize).to_s.include?('プリキュア')
+          next unless HTTParty.get(uri.normalize).to_s.include?(config['/require_word'])
           result[word[:word]] = word
         end
       end
