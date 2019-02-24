@@ -16,6 +16,10 @@ module Capsicum
       return 'Capsicum::Logger'
     end
 
+    def database_class
+      return 'Capsicum::Postgres'
+    end
+
     def self.name
       return 'capsicum'
     end

@@ -1,0 +1,12 @@
+INSERT INTO words (
+  word,
+  updated_at,
+  is_noise,
+  dictionary_id
+)
+VALUES (
+  '<%= params[:word] %>',
+  '<%= params[:updated_at] %>',
+  '<%= params[:is_noise] %>',
+  '<%= params[:dictionary_id] %>'
+)
