@@ -1,0 +1,5 @@
+SELECT
+  id
+FROM words
+WHERE (word='<%= params[:word] %>')
+  AND (dictionary_id='<%= params[:dictionary_id] %>')

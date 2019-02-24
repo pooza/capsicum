@@ -15,15 +15,21 @@ module Capsicum
       @config["/dictionaries/#{@name}/entries"].each do |entry|
         parse(fetch(entry).to_s).xpath('id("mw-content-text")//a').each do |node|
           next unless node.inner_text.present?
-          next if registered?(node.inner_text)
-          link = create_uri(node.attribute('href').value)
+          #next if registered?(node.inner_text) && outdated?(node.inner_text)
+pp node.inner_text
+          next if registered?({word: node.inner_text, dictionary_id: 1})
+pp 11
+          next unless href = node.attribute('href')
+          link = create_uri(href.value)
           next unless link != 'https'
           next unless link.absolute?
           next unless link.host == root_url.host
           next unless link.path =~ %r{^/wiki/}
           next if link.path.include?(':')
           register({word: node.inner_text, link: link})
-        rescue
+        rescue => e
+          Ginseng::Error.create(e)
+          pp e
           next
         end
       end
@@ -42,10 +48,19 @@ module Capsicum
       return Nokogiri::HTML.parse(body.force_encoding('utf-8'), nil, 'utf-8')
     end
 
-    def registered?(word)
-      rows = db.execute('lookup_word', {
+    def registered?(values)
+      rows = db.execute('registered_word?', {
         word: values[:word],
         dictionary_id: 1,
+      })
+      return rows.present?
+    end
+
+    def outdated?(values)
+      rows = db.execute('outdated_word?', {
+        word: values[:word],
+        dictionary_id: 1,
+        updated_at: (Time.now - 1.week).strftime('%Y%m%d'),
       })
       return rows.present?
     end
