@@ -9,6 +9,7 @@ module Capsicum
 
   autoload :Config
   autoload :Crawler
+  autoload :Dictionary
   autoload :Environment
   autoload :Logger
   autoload :Package

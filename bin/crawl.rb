@@ -10,4 +10,8 @@ ENV['SSL_CERT_FILE'] ||= File.join(dir, 'cert/cacert.pem')
 require 'bundler/setup'
 require 'capsicum'
 
-Capsicum::Crawler.new('precure').crawl
+Capsicum::Crawler.all do |crawler|
+  crawler.words do |word|
+    puts word
+  end
+end
