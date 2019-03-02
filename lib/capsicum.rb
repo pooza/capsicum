@@ -8,7 +8,6 @@ module Capsicum
   extend ActiveSupport::Autoload
 
   autoload :Config
-  autoload :Crawler
   autoload :Dictionary
   autoload :Environment
   autoload :Logger
