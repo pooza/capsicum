@@ -5,14 +5,6 @@ module Capsicum
   class Dictionary
     attr_reader :name
 
-    def initialize(name)
-      @config = Config.instance
-      @name = name
-      records = db.execute('lookup_dictionary', {name: name})
-      @params = records.first if records.present?
-      @words = []
-    end
-
     def exist?
       return !@params.nil?
     end
@@ -22,46 +14,14 @@ module Capsicum
       return nil
     end
 
-    def root_uri
-      @root_uri ||= Addressable::URI.parse(@config["/dictionaries/#{@name}/url"])
-      return @root_uri
-    end
-
-    def entries
-      return @config["/dictionaries/#{@name}/entries"]
-    rescue Ginseng::ConfigError
-      return []
-    end
-
-    def required_words
-      return @config["/dictionaries/#{@name}/required_words"]
-    rescue Ginseng::ConfigError
-      return []
+    def type
+      return @config["/dictionaries/#{@name}/type"]
     end
 
     def words
-      return enum_for(__method__) unless block_given?
-      entries.each do |entry|
-        parse(fetch_entry(entry).to_s).xpath('id("mw-content-text")//a').each do |node|
-          next unless node.inner_text.present?
-          next unless href = node.attribute('href')
-          uri = root_uri.clone
-
-          uri.path = href.value
-          next if uri.path =~ %r{/index.php$}
-          next if uri.path.include?(':')
-          next if uri.fragment.present?
-          word = node.inner_text
-          next if @words.include?(word)
-          @words.push(word)
-          yield word
-        end
-      end
+      raise Ginseng::ImplementError, "'#{__method__}' not implemented"
     end
 
-
-
-    #
     def registered?(values)
       return db.execute('registered_word?', {
         word: values[:word],
@@ -69,7 +29,6 @@ module Capsicum
       }).present?
     end
 
-    #
     def outdated?(values)
       return db.execute('outdated_word?', {
         word: values[:word],
@@ -78,7 +37,6 @@ module Capsicum
       }).present?
     end
 
-    #
     def register(values)
       uri = Addressable::URI.parse(values[:link])
       r = HTTParty.get(uri.normalize)
@@ -91,19 +49,26 @@ module Capsicum
       })
     end
 
+    def self.create(name)
+      type = Config.instance["/dictionaries/#{name}/type"]
+      return "Capsicum::#{type.camelize}Dictionary".constantize.new(name)
+    end
+
     def self.all
       return enum_for(__method__) unless block_given?
       Config.instance['/dictionary_names'].each do |name|
-        yield Dictionary.new(name)
+        yield Dictionary.create(name)
       end
     end
 
     private
 
-    def fetch_entry(entry)
-      uri = root_uri.clone
-      uri.path = "/wiki/#{entry}"
-      return HTTParty.get(uri.normalize)
+    def initialize(name)
+      @config = Config.instance
+      @name = name
+      records = db.execute('lookup_dictionary', {name: name})
+      @params = records.first if records.present?
+      @words = []
     end
 
     def parse(body)
