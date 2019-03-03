@@ -30,6 +30,7 @@ module Capsicum
 
   autoload_under 'worker' do
     autoload :DictionaryCrawlWorker
+    autoload :WordRegistrationWorker
   end
 end
 

@@ -6,7 +6,10 @@ module Capsicum
     def perform
       Dictionary.all do |dic|
         dic.words do |word|
-          puts word
+          WordRegistrationWorker.perform_async({
+            dictionary: dic.name,
+            word: word,
+          })
         end
       end
     end
