@@ -15,10 +15,12 @@ module Capsicum
   autoload :Logger
   autoload :Package
   autoload :Postgres
+  autoload :Server
   autoload :Slack
 
   autoload_under 'daemon' do
     autoload :SidekiqDaemon
+    autoload :ThinDaemon
   end
 
   autoload_under 'dictionary' do

@@ -17,7 +17,7 @@ end
 
 [:start, :stop, :restart].each do |action|
   desc "#{action} all"
-  task action => ["capsicum:sidekiq:#{action}"]
+  task action => ["capsicum:sidekiq:#{action}", "capsicum:thin:#{action}"]
 end
 
 ['Ginseng', ENV['RAKE_MODULE']].each do |prefix|

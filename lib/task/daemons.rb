@@ -1,5 +1,5 @@
 namespace :capsicum do
-  [:sidekiq].each do |ns|
+  [:sidekiq, :thin].each do |ns|
     namespace ns do
       [:start, :stop].each do |action|
         desc "#{action} #{ns}"
