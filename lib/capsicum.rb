@@ -27,6 +27,10 @@ module Capsicum
     autoload :MediawikiDictionary
     autoload :ScrapingDictionary
   end
+
+  autoload_under 'worker' do
+    autoload :DictionaryCrawlWorker
+  end
 end
 
 Sidekiq.configure_client do |config|
