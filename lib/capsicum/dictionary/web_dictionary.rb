@@ -1,5 +1,5 @@
 module Capsicum
-  class MediawikiDictionary < Dictionary
+  class WebDictionary < Dictionary
     def uri
       @root_uri ||= Addressable::URI.parse(@config["/dictionaries/#{@name}/url"])
       return @root_uri

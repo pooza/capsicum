@@ -15,6 +15,7 @@ module Capsicum
   autoload :Logger
   autoload :Package
   autoload :Postgres
+  autoload :QueryTemplate
   autoload :Server
   autoload :Slack
 
@@ -25,7 +26,7 @@ module Capsicum
 
   autoload_under 'dictionary' do
     autoload :MediawikiDictionary
-    autoload :ScrapingDictionary
+    autoload :WebDictionary
   end
 
   autoload_under 'worker' do

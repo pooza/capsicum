@@ -16,6 +16,8 @@ module Capsicum
 
     def type
       return @config["/dictionaries/#{@name}/type"]
+    rescue Ginseng::ConfigError
+      return 'web'
     end
 
     def words

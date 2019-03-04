@@ -20,6 +20,10 @@ module Capsicum
       return 'Capsicum::Postgres'
     end
 
+    def query_template_class
+      return 'Capsicum::QueryTemplate'
+    end
+
     def self.name
       return 'capsicum'
     end
