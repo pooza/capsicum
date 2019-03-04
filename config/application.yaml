@@ -7,9 +7,14 @@ package:
     - tkoishi@b-shock.co.jp
 cert:
   url: https://curl.haxx.se/ca/cacert.pem
+wikipedia:
+  url: https://ja.wikipedia.org/
+  pllimit: 500
 postgres:
   dsn: postgres://postgres@localhost:5432/capsicum
-crawler:
-  patterns:
-    - プリキュア
-entries: []
+sidekiq:
+  redis:
+    dsn: redis://localhost:6379/3
+  auth:
+    user: admin
+    password: ''

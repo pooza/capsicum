@@ -1,0 +1,7 @@
+<%# encoding: UTF-8 -%>
+SELECT
+  words.*
+FROM words
+  INNER JOIN dictionaries ON words.dictionary_id=dictionaries.id
+WHERE (words.word='<%= params[:word] %>')
+  AND (dictionaries.name='<%= params[:dictionary_name] %>')

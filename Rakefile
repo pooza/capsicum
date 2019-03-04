@@ -8,11 +8,11 @@ require 'bundler/setup'
 require 'capsicum'
 
 desc 'test all'
-task test: ['tomato:test']
+task test: ['capsicum:test']
 
-[:crawl].each do |action|
-  desc "alias of capsicum:#{action}"
-  task action => "capsicum:#{action}"
+[:start, :stop, :restart].each do |action|
+  desc "#{action} all"
+  task action => ["capsicum:sidekiq:#{action}", "capsicum:thin:#{action}"]
 end
 
 ['Ginseng', ENV['RAKE_MODULE']].each do |prefix|

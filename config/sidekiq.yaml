@@ -1,0 +1,6 @@
+:pidfile: tmp/pids/sidekiq.pid
+:concurrency: 2
+:schedule:
+  dictionary_crawl:
+    every: '5m'
+    class: Capsicum::DictionaryCrawlWorker
