@@ -6,7 +6,6 @@ module Capsicum
       @logger = Logger.new
     end
 
-    def perform(params)
-    end
+    def perform(params); end
   end
 end

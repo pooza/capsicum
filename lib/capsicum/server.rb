@@ -2,7 +2,6 @@ module Capsicum
   class Server < Ginseng::Sinatra
     include Package
 
-
     not_found do
       @renderer.status = 404
       @renderer.message = Ginseng::NotFoundError.new("Resource #{request.path} not found.").to_h
