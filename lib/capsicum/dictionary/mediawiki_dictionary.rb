@@ -8,46 +8,41 @@ module Capsicum
       retry
     end
 
-    alias url uri
-
-    def entries
-      return @config["/dictionaries/#{@name}/entries"]
+    def pllimit
+      @pllimit ||= @config["/dictionaries/#{@name}/pllimit"]
+      return @pllimit
     rescue Ginseng::ConfigError
-      return []
-    end
-
-    def required_words
-      return @config["/dictionaries/#{@name}/required_words"]
-    rescue Ginseng::ConfigError
-      return []
+      @pllimit ||= @config['/wikipedia/pllimit']
+      retry
     end
 
     def words
       return enum_for(__method__) unless block_given?
       entries.each do |entry|
-        parse(fetch_entry(entry).to_s).xpath('id("mw-content-text")//a').each do |node|
-          next unless node.inner_text.present?
-          next unless href = node.attribute('href')
-          uri = self.uri.clone
-
-          uri.path = href.value
-          next if uri.path =~ %r{/index.php$}
-          next if uri.path.include?(':')
-          next if uri.fragment.present?
-          word = node.inner_text
-          next if @words.include?(word)
-          @words.push(word)
-          yield word
+        query = {prop: 'links', titles: entry, pllimit: pllimit}
+        loop do
+          response = fetch(query).parsed_response
+          response['query']['pages'].each do |k, page|
+            page['links'].each do |link|
+              next if link['title'].include?(':')
+              yield link['title']
+            end
+          end
+          break if response['continue'].nil?
+          query[:plcontinue] = response['continue']['plcontinue']
         end
       end
     end
 
-    private
-
-    def fetch_entry(entry)
+    def fetch(query)
+      query[:format] ||= 'json'
+      query[:action] ||= 'query'
       uri = self.uri.clone
-      uri.path = "/wiki/#{entry}"
-      return HTTParty.get(uri.normalize)
+      uri.path = '/w/api.php'
+      uri.query_values = query
+      return HTTParty.get(uri.normalize, {
+        headers: {'User-Agent' => Package.user_agent},
+      })
     end
   end
 end

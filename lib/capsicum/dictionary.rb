@@ -16,8 +16,24 @@ module Capsicum
 
     def type
       return @config["/dictionaries/#{@name}/type"]
+    end
+
+    def uri
+      return Addressable::URI.parse(@config["/dictionaries/#{@name}/url"])
+    end
+
+    alias url uri
+
+    def entries
+      return @config["/dictionaries/#{@name}/entries"]
     rescue Ginseng::ConfigError
-      return 'web'
+      return []
+    end
+
+    def required_words
+      return @config["/dictionaries/#{@name}/required_words"]
+    rescue Ginseng::ConfigError
+      return []
     end
 
     def words

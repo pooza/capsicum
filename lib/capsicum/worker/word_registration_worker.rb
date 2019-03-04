@@ -1,10 +1,9 @@
 module Capsicum
   class WordRegistrationWorker
     include Sidekiq::Worker
-    sidekiq_options retry: false
 
     def perform(params)
-
+      pp params
     end
   end
 end

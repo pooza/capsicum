@@ -1,24 +1,5 @@
 module Capsicum
   class WebDictionary < Dictionary
-    def uri
-      @root_uri ||= Addressable::URI.parse(@config["/dictionaries/#{@name}/url"])
-      return @root_uri
-    end
-
-    alias url uri
-
-    def entries
-      return @config["/dictionaries/#{@name}/entries"]
-    rescue Ginseng::ConfigError
-      return []
-    end
-
-    def required_words
-      return @config["/dictionaries/#{@name}/required_words"]
-    rescue Ginseng::ConfigError
-      return []
-    end
-
     def words
       return enum_for(__method__) unless block_given?
       entries.each do |entry|
