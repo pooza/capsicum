@@ -2,5 +2,5 @@
 :concurrency: 2
 :schedule:
   dictionary_crawl:
-    every: '5m'
+    every: '60m'
     class: Capsicum::DictionaryCrawlWorker
