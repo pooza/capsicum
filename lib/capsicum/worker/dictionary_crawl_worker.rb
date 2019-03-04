@@ -1,7 +1,7 @@
 module Capsicum
   class DictionaryCrawlWorker
     include Sidekiq::Worker
-    #sidekiq_options retry: false
+    sidekiq_options retry: false
 
     def perform
       words = []
