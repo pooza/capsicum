@@ -6,6 +6,8 @@ module Capsicum
       @logger = Logger.new
     end
 
-    def perform(params); end
+    def perform(params)
+      puts params.to_json
+    end
   end
 end
