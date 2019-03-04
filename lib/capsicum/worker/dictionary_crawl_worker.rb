@@ -1,21 +1,21 @@
 module Capsicum
   class DictionaryCrawlWorker
     include Sidekiq::Worker
-    sidekiq_options retry: false
-
-    def inilialize
-      @logger = Logger.new
-    end
+    #sidekiq_options retry: false
 
     def perform
+      words = []
       Dictionary.all do |dic|
         dic.words do |word|
+          next if words.include?(word)
+          dic.register(word) unless dic.registered?(word)
           WordRegistrationWorker.perform_async({
             dictionary: dic.name,
             word: word,
           })
+          words.push(word)
         rescue => e
-          @logger.error(Ginseng::Error.create(e).to_h)
+          puts Ginseng::Error.create(e).to_h.to_json
         end
       end
     end

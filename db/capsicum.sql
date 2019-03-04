@@ -75,8 +75,8 @@ CREATE TABLE public.words (
     id integer NOT NULL,
     word character varying(128) NOT NULL,
     updated_at timestamp without time zone,
-    is_noise boolean,
-    dictionary_id integer
+    dictionary_id integer,
+    count integer
 );
 
 

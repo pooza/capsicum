@@ -40,29 +40,25 @@ module Capsicum
       raise Ginseng::ImplementError, "'#{__method__}' not implemented"
     end
 
-    def registered?(values)
-      return db.execute('registered_word?', {
-        word: values[:word],
-        dictionary_id: id,
+    def registered?(word)
+      return db.execute('lookup_word', {
+        word: word,
+        dictionary_name: name,
       }).present?
     end
 
-    def outdated?(values)
-      return db.execute('outdated_word?', {
-        word: values[:word],
-        dictionary_id: id,
-        updated_at: (Time.now - 1.week).strftime('%F %T'),
-      }).present?
+    def outdated?(word)
+      rows = db.execute('lookup_word', {
+        word: word,
+        dictionary_name: name,
+      })
+      return false unless rows.present?
+      return (Time.now - 1.week) < Time.parse(rows.first['updated_at'])
     end
 
-    def register(values)
-      uri = Addressable::URI.parse(values[:link])
-      r = HTTParty.get(uri.normalize)
-      return unless r.code == 200
+    def register(word)
       db.execute('insert_word', {
-        word: values[:word],
-        updated_at: Time.now.strftime('%F %T'),
-        is_noise: !r.to_s.include?(require_word),
+        word: word,
         dictionary_id: id,
       })
     end
@@ -85,7 +81,8 @@ module Capsicum
       @config = Config.instance
       @name = name
       records = db.execute('lookup_dictionary', {name: name})
-      @params = records.first if records.present?
+      raise Ginseng::DatabaseError, "invalid dictionary '#{name}'" unless records.present?
+      @params = records.first
       @words = []
     end
 

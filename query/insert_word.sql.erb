@@ -1,12 +1,8 @@
+<%# encoding: UTF-8 -%>
 INSERT INTO words (
   word,
-  updated_at,
-  is_noise,
   dictionary_id
-)
-VALUES (
+) VALUES (
   '<%= params[:word] %>',
-  '<%= params[:updated_at] %>',
-  '<%= params[:is_noise] %>',
   '<%= params[:dictionary_id] %>'
 )

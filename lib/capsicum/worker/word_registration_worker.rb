@@ -2,8 +2,11 @@ module Capsicum
   class WordRegistrationWorker
     include Sidekiq::Worker
 
+    def initialize
+      @logger = Logger.new
+    end
+
     def perform(params)
-      pp params
     end
   end
 end
