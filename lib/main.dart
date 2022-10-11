@@ -12,56 +12,58 @@ void main() async {
 class Capsicum extends StatelessWidget {
   const Capsicum({super.key});
 
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'capsicum',
+      //title: 'capsicum',
       theme: ThemeData(primarySwatch: Colors.green),
-      home: const MyHomePage(title: 'Capsicum'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  String _title = 'untitled';
   String _yaml = 'Load YAML Data';
+  var _pubspec = {};
 
-  void _updateYAML() {
+  void _loadPubspec() {
     setState(() {
-      loadYAML();
+      _updateTitle();
     });
   }
 
-  Future<void> loadYAML() async {
+  Future<void> _updateTitle() async {
     _yaml = await rootBundle.loadString('config/pubspec.yaml');
+    _pubspec = loadYaml(_yaml);
+    _title = _pubspec['name'];
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+    Widget root = Scaffold(
+      appBar: AppBar(title: Text(_title)),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             const Text('You have pushed the button this many times:'),
-            Text(_yaml),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _updateYAML,
+        onPressed: _loadPubspec,
         tooltip: 'Increment',
         child: const Icon(Icons.add),
       ),
     );
+    return root;
   }
 }
