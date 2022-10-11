@@ -9,6 +9,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.2
   yaml:
+  flutter_launcher_icons:
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -17,3 +18,7 @@ flutter:
   uses-material-design: true
   assets:
     - config/
+flutter_icons:
+  android: true
+  ios: true
+  image_path: lib/assets/icon.png
