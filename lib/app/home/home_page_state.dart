@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:yaml/yaml.dart';
-import 'package:capsicum/home/home_page.dart';
+import 'package:capsicum/app/home/home_page.dart';
 
 class HomePageState extends State<HomePage> {
   String _title = 'untitled';

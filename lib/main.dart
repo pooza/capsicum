@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:capsicum/home/home_page.dart';
+import 'package:capsicum/app/home/home_page.dart';
 
 void main() async {
   runApp(const Capsicum());
