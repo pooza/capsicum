@@ -1,4 +1,4 @@
-package com.example.capsicum
+package org.b-shock.capsicum
 
 import io.flutter.embedding.android.FlutterActivity
 
