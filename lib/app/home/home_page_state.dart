@@ -5,11 +5,13 @@ import 'package:capsicum/utils/pubspec.dart';
 class HomePageState extends State<HomePage> {
   Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
+  String _version = '';
 
   void loadPubspec() async {
     await _pubspec.load();
     setState(() {
       _title = _pubspec.title;
+      _version = _pubspec.version;
     });
   }
 
@@ -23,6 +25,7 @@ class HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             const Text('instance domain'),
+            Text(_version),
           ],
         ),
       ),

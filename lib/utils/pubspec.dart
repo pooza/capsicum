@@ -13,7 +13,11 @@ class Pubspec {
 
   String get yaml => _yaml;
 
+  Map<dynamic, dynamic> get data => _data;
+
   String get title => _data['name'];
 
-  Map<dynamic, dynamic> get data => _data;
+  String get version => _data['version'];
+
+  String get description => _data['description'];
 }
