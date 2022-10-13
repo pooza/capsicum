@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:capsicum/app/home/home_page.dart';
 
-void main() async {
-  runApp(const Capsicum());
-}
+void main() => runApp(const Capsicum());
 
 class Capsicum extends StatelessWidget {
   const Capsicum({super.key});

@@ -1,44 +1,31 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:yaml/yaml.dart';
 import 'package:capsicum/app/home/home_page.dart';
+import 'package:capsicum/utils/pubspec.dart';
 
 class HomePageState extends State<HomePage> {
+  Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
-  String _yaml = 'Load YAML Data';
-  var _pubspec = {};
 
-  void _loadPubspec() {
+  void loadPubspec() async {
+    await _pubspec.load();
     setState(() {
-      _updateTitle();
+      _title = _pubspec.title;
     });
-  }
-
-  Future<void> _updateTitle() async {
-    _yaml = await rootBundle.loadString('config/pubspec.yaml');
-    _pubspec = loadYaml(_yaml);
-    _title = _pubspec['name'];
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget root = Scaffold(
-      appBar: AppBar(title: Text('capsicum')),
+    loadPubspec();
+    return Scaffold(
+      appBar: AppBar(title: Text(_title)),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text('You have pushed the button this many times:'),
+            const Text('instance domain'),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _loadPubspec,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
     );
-    return root;
   }
 }
