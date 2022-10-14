@@ -38,13 +38,24 @@ class HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(title: Text(_title)),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('instance domain'),
-            Text(_version),
-          ],
-        ),
+        child: createInstanceSelectorForm(),
+      ),
+    );
+  }
+
+  Widget createInstanceSelectorForm() {
+    return Form(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          const TextField(
+            decoration: InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'インスタンスのドメイン名',
+            ),
+          ),
+          Text("$_title Ver.$_version"),
+        ],
       ),
     );
   }
