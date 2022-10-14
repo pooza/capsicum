@@ -8,8 +8,9 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  yaml:
-  flutter_launcher_icons:
+  yaml: ^3.1.1
+  flutter_launcher_icons: ^0.10.0
+  shared_preferences: ^2.0.5
 dev_dependencies:
   flutter_test:
     sdk: flutter
