@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:capsicum/app/home/home_page.dart';
+import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 
 class HomePageState extends State<HomePage> {
@@ -40,8 +41,7 @@ class HomePageState extends State<HomePage> {
       body: Column(
         children: <Widget>[
           createInstanceSelectorForm(),
-          SizedBox(height: 12),
-          Text("$_title Ver.$_version"),
+          FooterContainer("$_title Ver.$_version"),
         ],
       ),
     );
