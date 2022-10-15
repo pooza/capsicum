@@ -37,25 +37,30 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_title)),
-      body: Center(
-        child: createInstanceSelectorForm(),
+      body: Column(
+        children: [
+          createInstanceSelectorForm(),
+          SizedBox(height: 12),
+          Text("$_title Ver.$_version"),
+        ],
       ),
     );
   }
 
   Widget createInstanceSelectorForm() {
     return Form(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          const TextField(
-            decoration: InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'インスタンスのドメイン名',
+      child: Container(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          children: <Widget>[
+            const TextField(
+              decoration: InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'インスタンスのドメイン名',
+              ),
             ),
-          ),
-          Text("$_title Ver.$_version"),
-        ],
+          ],
+        ),
       ),
     );
   }
