@@ -38,7 +38,7 @@ class HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(title: Text(_title)),
       body: Column(
-        children: [
+        children: <Widget>[
           createInstanceSelectorForm(),
           SizedBox(height: 12),
           Text("$_title Ver.$_version"),
