@@ -10,7 +10,7 @@ class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
-  String _domainName = '';
+  String _instanceDomain = '';
   List<dynamic> _accounts = <Account>[];
 
   void loadPubspec() async {
@@ -62,7 +62,7 @@ class HomePageState extends State<HomePage> {
                 border: OutlineInputBorder(),
                 labelText: 'インスタンスのドメイン名',
               ),
-              onChanged: handleDomainName,
+              onChanged: handleInstanceDomain,
             ),
           ],
         ),
@@ -70,7 +70,7 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  void handleDomainName(String e) {
-    _domainName = e;
+  void handleInstanceDomain(String e) async {
+    _instanceDomain = e;
   }
 }
