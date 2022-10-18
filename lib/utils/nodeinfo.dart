@@ -1,36 +1,85 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class Nodeinfo {
-  String _json = '';
-  Map<dynamic, dynamic> _data = {};
+  String _domain = '';
+  Map<dynamic, dynamic> _coreData = {};
+  Map<dynamic, dynamic> _mulukhiyaData = {};
 
-  Future load(String json) async {
-    _json = json;
-    _data = await jsonDecode(_json);
-    return _data;
+  Nodeinfo(String domain) {
+    _domain = domain;
   }
 
-  String get json => _json;
+  Future load() async {
+    await loadCoreData();
+    await loadMulukhiyaData();
+  }
 
-  Map<dynamic, dynamic> get data => _data;
-
-  String get title => _data['title'];
-
-  String get version => _data['version'];
-
-  Uri get uri {
+  Future loadCoreData() async {
     try {
-      return Uri.https(_data['uri']);
+      var response = await http.get(Uri.https(domain, '/api/v1/instance'));
+      _coreData = await jsonDecode(response.body);
     } catch (e) {
-      return Uri.parse(_data['uri']);
+      print(e);
     }
   }
 
-  Uri? get thumbnailUri => Uri.parse(_data['thumbnail']);
+  Future loadMulukhiyaData() async {
+    try {
+      var response = await http.get(Uri.https(domain, '/mulukhiya/api/about'));
+      _mulukhiyaData = await jsonDecode(response.body);
+    } catch (e) {
+      print(e);
+    }
+  }
 
-  String? get description => _data['description'];
+  String get domain => _domain;
 
-  String? get shortDescription => _data['short_description'] ?? _data['description'];
+  String get title => _coreData['title'];
 
-  bool get registerable => _data['registrations'] ?? true;
+  String get version => _coreData['version'];
+
+  Uri get uri {
+    try {
+      return Uri.https(_coreData['uri']);
+    } catch (e) {
+      return Uri.parse(_coreData['uri']);
+    }
+  }
+
+  Uri? get thumbnailUri => Uri.parse(_coreData['thumbnail']);
+
+  String? get description => _coreData['description'];
+
+  String? get shortDescription => _coreData['short_description'] ?? _coreData['description'];
+
+  bool get registerable => _coreData['registrations'] ?? true;
+
+  bool get mulukhiya => (_mulukhiyaData['config'] != null);
+
+  int? get statusesMaxCharacters {
+    try {
+      return _coreData['configuration']['statuses']['max_characters'];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String? get spoilerText {
+    if (mulukhiya) {
+      return _mulukhiyaData['config']['status']['spoiler']['text'];
+    }
+  }
+
+  String? get spoilerEmoji {
+    if (mulukhiya) {
+      return _mulukhiyaData['config']['status']['spoiler']['shortcode'];
+    }
+  }
+
+  String? get defaultHashtag {
+    if (mulukhiya) {
+      return _mulukhiyaData['config']['status']['default_hashtag'];
+    }
+  }
 }

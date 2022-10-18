@@ -6,7 +6,6 @@ import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/nodeinfo.dart';
 import 'package:capsicum/model/account.dart';
-import 'package:http/http.dart' as http;
 
 class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
@@ -86,21 +85,19 @@ class HomePageState extends State<HomePage> {
   }
 
   void handleInstanceDomain(String _instanceDomain) async {
-    try {
-      final response = await http.get(Uri.https(_instanceDomain, '/api/v1/instance'));
-      Nodeinfo nodeinfo = Nodeinfo();
-      await nodeinfo.load(response.body);
+    Nodeinfo nodeinfo = Nodeinfo(_instanceDomain);
+    await nodeinfo.load();
 
-      print(nodeinfo.title);
-      print(nodeinfo.version);
-      print(nodeinfo.uri.toString());
-      print(nodeinfo.thumbnailUri.toString());
-      print(nodeinfo.description);
-      print(nodeinfo.shortDescription);
-      print(nodeinfo.registerable.toString());
-
-    } catch (e) {
-      print(e.toString());
-    }
+    print('title: ' + nodeinfo.title);
+    print('version: ' + nodeinfo.version);
+    print('uri: ' + nodeinfo.uri.toString());
+    print('thumbnailUri: ' + nodeinfo.thumbnailUri.toString());
+    print('shortDescription: ' + (nodeinfo.shortDescription ?? ''));
+    print('registerable: ' + nodeinfo.registerable.toString());
+    print('mulukhiya: ' + nodeinfo.mulukhiya.toString());
+    print('statusesMaxCharacters: ' + nodeinfo.statusesMaxCharacters.toString());
+    print('spoiler text: ' + (nodeinfo.spoilerText ?? ''));
+    print('spoiler emoji: ' + (nodeinfo.spoilerEmoji ?? ''));
+    print('default hashtag: ' + (nodeinfo.defaultHashtag ?? ''));
   }
 }
