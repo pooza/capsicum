@@ -35,19 +35,25 @@ class Nodeinfo {
 
   String get domain => _domain;
 
-  String get title => _coreData['title'];
+  String? get title => _coreData['title'];
 
-  String get version => _coreData['version'];
+  String? get version => _coreData['version'];
 
-  Uri get uri {
-    try {
-      return Uri.https(_coreData['uri']);
-    } catch (e) {
-      return Uri.parse(_coreData['uri']);
+  Uri? get uri {
+    if (_coreData['uri'] != null) {
+      try {
+        return Uri.https(_coreData['uri']);
+      } catch (e) {
+        return Uri.parse(_coreData['uri']);
+      }
     }
   }
 
-  Uri? get thumbnailUri => Uri.parse(_coreData['thumbnail']);
+  Uri? get thumbnailUri {
+    if (_coreData['thumbnail'] != null) {
+      return Uri.parse(_coreData['thumbnail']);
+    }
+  }
 
   String? get description => _coreData['description'];
 
