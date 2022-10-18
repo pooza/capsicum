@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:capsicum/app/home/home_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
+import 'package:capsicum/utils/nodeinfo.dart';
 import 'package:capsicum/model/account.dart';
+import 'package:http/http.dart' as http;
 
 class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
@@ -83,7 +85,22 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  void handleInstanceDomain(String e) async {
-    _instanceDomain = e;
+  void handleInstanceDomain(String _instanceDomain) async {
+    try {
+      final response = await http.get(Uri.https(_instanceDomain, '/api/v1/instance'));
+      Nodeinfo nodeinfo = Nodeinfo();
+      await nodeinfo.load(response.body);
+
+      print(nodeinfo.title);
+      print(nodeinfo.version);
+      print(nodeinfo.uri.toString());
+      print(nodeinfo.thumbnailUri.toString());
+      print(nodeinfo.description);
+      print(nodeinfo.shortDescription);
+      print(nodeinfo.registerable.toString());
+
+    } catch (e) {
+      print(e.toString());
+    }
   }
 }
