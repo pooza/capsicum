@@ -4,12 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:capsicum/app/home/home_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
+import 'package:capsicum/model/account.dart';
 
 class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
-  List<dynamic> _accounts = [];
+  List<dynamic> _accounts = <Account>[];
 
   void loadPubspec() async {
     await _pubspec.load();
@@ -24,7 +25,9 @@ class HomePageState extends State<HomePage> {
     if (prefs.getString('accounts') == null) {
       prefs.setString('accounts', '[]');
     }
-    _accounts = await jsonDecode(prefs.getString('accounts') ?? '[]');
+    _accounts = await jsonDecode(prefs.getString('accounts') ?? '[]')
+      .map((v) => Account(v))
+      .toList();
   }
 
   @override
