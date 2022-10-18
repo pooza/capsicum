@@ -44,9 +44,22 @@ class HomePageState extends State<HomePage> {
       appBar: AppBar(title: Text(_title)),
       body: Column(
         children: <Widget>[
+          createLogoContainer(),
           createInstanceSelectorForm(),
           FooterContainer("$_title Ver.$_version"),
         ],
+      ),
+    );
+  }
+
+  Widget createLogoContainer() {
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          fit: BoxFit.fitWidth,
+          image: AssetImage('lib/assets/logo.png'),
+        ),
       ),
     );
   }
