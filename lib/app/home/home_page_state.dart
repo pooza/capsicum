@@ -10,6 +10,7 @@ class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
+  String _domainName = '';
   List<dynamic> _accounts = <Account>[];
 
   void loadPubspec() async {
@@ -56,15 +57,20 @@ class HomePageState extends State<HomePage> {
         padding: EdgeInsets.all(12),
         child: Column(
           children: <Widget>[
-            const TextField(
+            TextField(
               decoration: InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'インスタンスのドメイン名',
               ),
+              onChanged: handleDomainName,
             ),
           ],
         ),
       ),
     );
+  }
+
+  void handleDomainName(String e) {
+    _domainName = e;
   }
 }
