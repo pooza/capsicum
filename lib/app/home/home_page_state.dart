@@ -13,6 +13,7 @@ class HomePageState extends State<HomePage> {
   String _version = '';
   String _instanceDomain = '';
   List<dynamic> _accounts = <Account>[];
+  Widget? _instanceThumbnail;
   Map<String, dynamic> _nodeinfo = <String, dynamic>{};
 
   void loadPubspec() async {
@@ -37,6 +38,7 @@ class HomePageState extends State<HomePage> {
   void initState() {
     loadPubspec();
     loadAccounts();
+    _instanceThumbnail = buildInstanceThumbnail(null);
     super.initState();
   }
 
@@ -46,15 +48,18 @@ class HomePageState extends State<HomePage> {
       appBar: AppBar(title: Text(_title)),
       body: Column(
         children: <Widget>[
-          createLogoContainer(),
-          createInstanceSelectorForm(),
+          buildLogoContainer(),
+          SizedBox(height: 6),
+          buildForm(),
+          SizedBox(height: 6),
+          buildInstanceInfo(),
           FooterContainer("$_title Ver.$_version"),
         ],
       ),
     );
   }
 
-  Widget createLogoContainer() {
+  Widget buildLogoContainer() {
     return Container(
       height: 200,
       decoration: BoxDecoration(
@@ -66,11 +71,10 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget createInstanceSelectorForm() {
+  Widget buildForm() {
     return Container(
       padding: EdgeInsets.all(12),
       child: Column(
-        mainAxisSize: MainAxisSize.max,
         children: <Widget>[
           TextField(
             decoration: InputDecoration(
@@ -79,75 +83,57 @@ class HomePageState extends State<HomePage> {
             ),
             onChanged: handleInstanceDomain,
           ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Title: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['title'] ?? ''),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Short Description: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['short_description'] ?? '', overflow: TextOverflow.ellipsis),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Mulukhiya? ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['mulukhiya'] ?? ''),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Statuses Max Characters: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['status_max_chars'] ?? ''),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Spoiler Text: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['spoiler_text'] ?? ''),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Spoiler Emoji: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['spoiler_emoji'] ?? ''),
-            ],
-          ),
-          SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Text('Default Hashtag: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(_nodeinfo['default_hashtag'] ?? ''),
-            ],
-          ),
         ],
       ),
     );
+  }
+
+  Widget buildInstanceThumbnail(Uri? uri) {
+    if (uri == null) {
+      return Image(image: AssetImage('lib/assets/icon.png'));
+    } else {
+      return Image(image: NetworkImage(uri.toString()));
+    }
   }
 
   void handleInstanceDomain(String _instanceDomain) async {
     Nodeinfo nodeinfo = Nodeinfo(_instanceDomain);
     await nodeinfo.load();
     setState(() {
+      _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
-      _nodeinfo['version'] = (nodeinfo.version ?? '');
-      _nodeinfo['uri'] = nodeinfo.uri.toString();
-      _nodeinfo['thumbnail_uri'] = nodeinfo.thumbnailUri.toString();
       _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '');
-      _nodeinfo['registerable'] = nodeinfo.registerable.toString();
-      _nodeinfo['mulukhiya'] = nodeinfo.mulukhiya.toString();
-      _nodeinfo['status_max_chars'] = nodeinfo.statusesMaxCharacters.toString();
-      _nodeinfo['spoiler_text'] = (nodeinfo.spoilerText ?? '');
-      _nodeinfo['spoiler_emoji'] = (nodeinfo.spoilerEmoji ?? '');
-      _nodeinfo['default_hashtag'] = (nodeinfo.defaultHashtag ?? '');
+      //_nodeinfo['registerable'] = nodeinfo.registerable.toString();
+      //_nodeinfo['mulukhiya'] = nodeinfo.mulukhiya.toString();
+      //_nodeinfo['status_max_chars'] = nodeinfo.statusesMaxCharacters.toString();
+      //_nodeinfo['spoiler_text'] = (nodeinfo.spoilerText ?? '');
+      //_nodeinfo['spoiler_emoji'] = (nodeinfo.spoilerEmoji ?? '');
+      //_nodeinfo['default_hashtag'] = (nodeinfo.defaultHashtag ?? '');
     });
+  }
+
+  Widget buildInstanceInfo() {
+    return Container(
+      padding: EdgeInsets.all(12),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            flex: 2,
+            child: Container(
+              child: Column(
+                children: <Widget>[
+                  Text(_nodeinfo['title'] ?? ''),
+                  Text(_nodeinfo['short_description'] ?? ''),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Container(child: _instanceThumbnail),
+          ),
+        ],
+      ),
+    );
   }
 }
