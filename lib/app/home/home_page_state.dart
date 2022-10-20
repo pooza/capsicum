@@ -90,7 +90,7 @@ class HomePageState extends State<HomePage> {
 
   Image buildInstanceThumbnail(Uri? uri) {
     if (uri == null) {
-      return Image(image: AssetImage('lib/assets/icon.png'));
+      return Image(image: AssetImage('lib/assets/spacer.gif'));
     } else {
       return Image(image: NetworkImage(uri.toString()));
     }
