@@ -9,31 +9,12 @@ import 'package:capsicum/model/account.dart';
 
 class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
-  Nodeinfo? _nodeinfo;
   String _title = 'untitled';
   String _version = '';
   String _instanceDomain = '';
   List<dynamic> _accounts = <Account>[];
   Widget? _instanceThumbnail;
   Map<String, dynamic> _nodeinfo = <String, dynamic>{};
-
-  void loadPubspec() async {
-    await _pubspec.load();
-    setState(() {
-      _title = _pubspec.title;
-      _version = _pubspec.version;
-    });
-  }
-
-  void loadAccounts() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    if (prefs.getString('accounts') == null) {
-      prefs.setString('accounts', '[]');
-    }
-    _accounts = await jsonDecode(prefs.getString('accounts') ?? '[]')
-      .map((v) => Account(v))
-      .toList();
-  }
 
   @override
   void initState() {
@@ -58,6 +39,24 @@ class HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  void loadPubspec() async {
+    await _pubspec.load();
+    setState(() {
+      _title = _pubspec.title;
+      _version = _pubspec.version;
+    });
+  }
+
+  void loadAccounts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('accounts') == null) {
+      prefs.setString('accounts', '[]');
+    }
+    _accounts = await jsonDecode(prefs.getString('accounts') ?? '[]')
+      .map((v) => Account(v))
+      .toList();
   }
 
   Widget buildLogoContainer() {
@@ -89,9 +88,9 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget buildInstanceThumbnail(Uri? uri) {
+  Image buildInstanceThumbnail(Uri? uri) {
     if (uri == null) {
-      return Image(image: AssetImage('lib/assets/spacer.gif'));
+      return Image(image: AssetImage('lib/assets/icon.png'));
     } else {
       return Image(image: NetworkImage(uri.toString()));
     }
@@ -99,28 +98,21 @@ class HomePageState extends State<HomePage> {
 
   void handleInstanceDomain(String _instanceDomain) async {
     Nodeinfo nodeinfo = Nodeinfo(_instanceDomain);
+    await nodeinfo.load();
     setState(() {
-      await nodeinfo.load();
-    });
-  }
-
-  Widget buildInstanceInfo() {
-    List<Widget> widgets = <Widget>[];
-
-    _instanceThumbnail = buildInstanceThumbnail(_nodeinfo.thumbnailUri);
-    widgets.push(_nodeinfo.title ?? '');
-    widgets.push(_nodeinfo.shortDescription ?? '');
-
-      //_nodeinfo['title'] = (nodeinfo.title ?? '');
-      //_nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '');
+      _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
+      _nodeinfo['title'] = (nodeinfo.title ?? '');
+      _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '');
       //_nodeinfo['registerable'] = nodeinfo.registerable.toString();
       //_nodeinfo['mulukhiya'] = nodeinfo.mulukhiya.toString();
       //_nodeinfo['status_max_chars'] = nodeinfo.statusesMaxCharacters.toString();
       //_nodeinfo['spoiler_text'] = (nodeinfo.spoilerText ?? '');
       //_nodeinfo['spoiler_emoji'] = (nodeinfo.spoilerEmoji ?? '');
       //_nodeinfo['default_hashtag'] = (nodeinfo.defaultHashtag ?? '');
+    });
+  }
 
-
+  Widget buildInstanceInfo() {
     return Container(
       padding: EdgeInsets.all(12),
       child: Row(
@@ -129,7 +121,10 @@ class HomePageState extends State<HomePage> {
             flex: 2,
             child: Container(
               child: Column(
-                children: widgets,
+                children: <Widget>[
+                  Text(_nodeinfo['title'] ?? ''),
+                  Text(_nodeinfo['short_description'] ?? ''),
+                ],
               ),
             ),
           ),
