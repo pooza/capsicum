@@ -6,8 +6,10 @@ import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/nodeinfo.dart';
 import 'package:capsicum/model/account.dart';
+import 'package:logger/logger.dart';
 
 class HomePageState extends State<HomePage> {
+  final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
   final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
@@ -53,9 +55,9 @@ class HomePageState extends State<HomePage> {
     if (prefs.getString('accounts') == null) {
       prefs.setString('accounts', '[]');
     }
-    _accounts = await jsonDecode(prefs.getString('accounts') ?? '[]')
-      .map((v) => Account(v))
-      .toList();
+    String json = prefs.getString('accounts') ?? '[]';
+    _accounts = await jsonDecode(json).map((v) => Account(v)).toList();
+    _logger.i(_accounts);
   }
 
   Widget buildLogoContainer() {

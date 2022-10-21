@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 
 class Nodeinfo {
   String _domain = '';
   Map<dynamic, dynamic> _coreData = {};
   Map<dynamic, dynamic> _mastodonInstanceData = {};
   Map<dynamic, dynamic> _mulukhiyaAboutData = {};
+  final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
 
   Nodeinfo(String domain) {
     _domain = domain;
@@ -22,7 +24,7 @@ class Nodeinfo {
       var response = await http.get(Uri.https(domain, '/nodeinfo/2.0'));
       _coreData = await jsonDecode(response.body);
     } catch (e) {
-      print(e);
+      _logger.w(e);
     }
   }
 
@@ -31,7 +33,7 @@ class Nodeinfo {
       var response = await http.get(Uri.https(domain, '/api/v1/instance'));
       _mastodonInstanceData = await jsonDecode(response.body);
     } catch (e) {
-      print(e);
+      _logger.w(e);
     }
   }
 
@@ -40,7 +42,7 @@ class Nodeinfo {
       var response = await http.get(Uri.https(domain, '/mulukhiya/api/about'));
       _mulukhiyaAboutData = await jsonDecode(response.body);
     } catch (e) {
-      print(e);
+      _logger.w(e);
     }
   }
 
@@ -72,7 +74,8 @@ class Nodeinfo {
 
   String? get description => _mastodonInstanceData['description'];
 
-  String? get shortDescription => _mastodonInstanceData['short_description'] ?? _mastodonInstanceData['description'];
+  String? get shortDescription =>
+      _mastodonInstanceData['short_description'] ?? _mastodonInstanceData['description'];
 
   bool get registerable => _mastodonInstanceData['registrations'] ?? true;
 
@@ -80,8 +83,9 @@ class Nodeinfo {
 
   int? get statusesMaxCharacters {
     try {
-      return _mastodonInstanceData['configuration']['statuses']['max_characters'];
+      return _mastodonInstanceData['configuration']['statuses']['max_characters'].toInt();
     } catch (e) {
+      _logger.w(e);
       return null;
     }
   }
