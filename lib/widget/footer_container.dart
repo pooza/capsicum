@@ -12,7 +12,7 @@ class FooterContainer extends StatelessWidget {
     return Container(
       child: Column(
         children: <Widget>[
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Text(_title),
         ],
       ),

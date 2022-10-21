@@ -86,17 +86,20 @@ class Nodeinfo {
     if (mulukhiya) {
       return _mulukhiyaAboutData['config']['status']['spoiler']['text'];
     }
+    return null;
   }
 
   String? get spoilerEmoji {
     if (mulukhiya) {
       return _mulukhiyaAboutData['config']['status']['spoiler']['shortcode'];
     }
+    return null;
   }
 
   String? get defaultHashtag {
     if (mulukhiya) {
       return _mulukhiyaAboutData['config']['status']['default_hashtag'];
     }
+    return null;
   }
 }

@@ -11,10 +11,9 @@ class HomePageState extends State<HomePage> {
   final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
-  String _instanceDomain = '';
   List<dynamic> _accounts = <Account>[];
   Widget? _instanceThumbnail;
-  Map<String, dynamic> _nodeinfo = <String, dynamic>{};
+  final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
 
   @override
   void initState() {
@@ -31,9 +30,9 @@ class HomePageState extends State<HomePage> {
       body: Column(
         children: <Widget>[
           buildLogoContainer(),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           buildForm(),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           buildInstanceInfo(),
           FooterContainer("$_title Ver.$_version"),
         ],
@@ -62,10 +61,10 @@ class HomePageState extends State<HomePage> {
   Widget buildLogoContainer() {
     return Container(
       height: 200,
-      decoration: BoxDecoration(
-        image: DecorationImage(
+      decoration: const BoxDecoration(
+        image: const DecorationImage(
           fit: BoxFit.fitWidth,
-          image: AssetImage('lib/assets/logo.png'),
+          image: const AssetImage('lib/assets/logo.png'),
         ),
       ),
     );
@@ -73,12 +72,12 @@ class HomePageState extends State<HomePage> {
 
   Widget buildForm() {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: <Widget>[
           TextField(
-            decoration: InputDecoration(
-              border: OutlineInputBorder(),
+            decoration: const InputDecoration(
+              border: const OutlineInputBorder(),
               labelText: 'インスタンスのドメイン名',
             ),
             onChanged: handleInstanceDomain,
@@ -90,14 +89,14 @@ class HomePageState extends State<HomePage> {
 
   Image buildInstanceThumbnail(Uri? uri) {
     if (uri == null) {
-      return Image(image: AssetImage('lib/assets/spacer.gif'));
+      return const Image(image: AssetImage('lib/assets/spacer.gif'));
     } else {
       return Image(image: NetworkImage(uri.toString()));
     }
   }
 
-  void handleInstanceDomain(String _instanceDomain) async {
-    Nodeinfo nodeinfo = Nodeinfo(_instanceDomain);
+  void handleInstanceDomain(String domain) async {
+    Nodeinfo nodeinfo = Nodeinfo(domain);
     await nodeinfo.load();
     setState(() {
       _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
@@ -114,18 +113,16 @@ class HomePageState extends State<HomePage> {
 
   Widget buildInstanceInfo() {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       child: Row(
         children: <Widget>[
           Expanded(
             flex: 2,
-            child: Container(
-              child: Column(
-                children: <Widget>[
-                  Text(_nodeinfo['title'] ?? ''),
-                  Text(_nodeinfo['short_description'] ?? ''),
-                ],
-              ),
+            child: Column(
+              children: <Widget>[
+                Text(_nodeinfo['title'] ?? ''),
+                Text(_nodeinfo['short_description'] ?? ''),
+              ],
             ),
           ),
           Expanded(
