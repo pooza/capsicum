@@ -104,12 +104,9 @@ class HomePageState extends State<HomePage> {
       _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
       _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '');
-      //_nodeinfo['registerable'] = nodeinfo.registerable.toString();
-      //_nodeinfo['mulukhiya'] = nodeinfo.mulukhiya.toString();
-      //_nodeinfo['status_max_chars'] = nodeinfo.statusesMaxCharacters.toString();
-      //_nodeinfo['spoiler_text'] = (nodeinfo.spoilerText ?? '');
-      //_nodeinfo['spoiler_emoji'] = (nodeinfo.spoilerEmoji ?? '');
-      //_nodeinfo['default_hashtag'] = (nodeinfo.defaultHashtag ?? '');
+      _nodeinfo['sns_type'] = 'ソフトウェア: ${nodeinfo.softwareName ?? ''} ${nodeinfo.softwareVersion}';
+      _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? ''}';
+      _nodeinfo['enable_mulukhiya'] = 'モロヘイヤ: ${nodeinfo.enableMulukhiya ? '有効' : '無効'}';
     });
   }
 
@@ -122,8 +119,30 @@ class HomePageState extends State<HomePage> {
             flex: 2,
             child: Column(
               children: <Widget>[
-                Text(_nodeinfo['title'] ?? ''),
-                Text(_nodeinfo['short_description'] ?? ''),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    _nodeinfo['title'] ?? '',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.left,
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(_nodeinfo['sns_type'] ?? '', textAlign: TextAlign.left),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(_nodeinfo['short_description'] ?? '', textAlign: TextAlign.left),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(_nodeinfo['default_hashtag'] ?? '', textAlign: TextAlign.left),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(_nodeinfo['enable_mulukhiya'] ?? '', textAlign: TextAlign.left),
+                ),
               ],
             ),
           ),

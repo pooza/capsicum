@@ -24,7 +24,7 @@ class Nodeinfo {
       var response = await http.get(Uri.https(domain, '/nodeinfo/2.0'));
       _coreData = await jsonDecode(response.body);
     } catch (e) {
-      _logger.w(e);
+      _logger.v(e);
     }
   }
 
@@ -48,7 +48,9 @@ class Nodeinfo {
 
   String get domain => _domain;
 
-  String? get snsType => _coreData['software']['name'];
+  String? get softwareName => _coreData['software']['name'];
+
+  String? get softwareVersion => _coreData['software']['version'];
 
   String? get title => _mastodonInstanceData['title'];
 
@@ -79,7 +81,7 @@ class Nodeinfo {
 
   bool get registerable => _mastodonInstanceData['registrations'] ?? true;
 
-  bool get mulukhiya => (_mulukhiyaAboutData['config'] != null);
+  bool get enableMulukhiya => (_mulukhiyaAboutData['config'] != null);
 
   int? get statusesMaxCharacters {
     try {
@@ -91,21 +93,21 @@ class Nodeinfo {
   }
 
   String? get spoilerText {
-    if (mulukhiya) {
+    if (enableMulukhiya) {
       return _mulukhiyaAboutData['config']['status']['spoiler']['text'];
     }
     return null;
   }
 
   String? get spoilerEmoji {
-    if (mulukhiya) {
+    if (enableMulukhiya) {
       return _mulukhiyaAboutData['config']['status']['spoiler']['shortcode'];
     }
     return null;
   }
 
   String? get defaultHashtag {
-    if (mulukhiya) {
+    if (enableMulukhiya) {
       return _mulukhiyaAboutData['config']['status']['default_hashtag'];
     }
     return null;
