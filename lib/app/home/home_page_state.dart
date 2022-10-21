@@ -66,7 +66,7 @@ class HomePageState extends State<HomePage> {
       decoration: const BoxDecoration(
         image: DecorationImage(
           fit: BoxFit.fitWidth,
-          image: AssetImage('lib/assets/logo.png'),
+          image: AssetImage('assets/logo.png'),
         ),
       ),
     );
@@ -91,7 +91,7 @@ class HomePageState extends State<HomePage> {
 
   Image buildInstanceThumbnail(Uri? uri) {
     if (uri == null) {
-      return const Image(image: AssetImage('lib/assets/spacer.gif'));
+      return const Image(image: AssetImage('assets/spacer.gif'));
     } else {
       return Image(image: NetworkImage(uri.toString()));
     }
