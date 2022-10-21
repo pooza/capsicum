@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:logger/logger.dart';
 import 'package:capsicum/app/home/home_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/nodeinfo.dart';
-import 'package:capsicum/model/account.dart';
-import 'package:logger/logger.dart';
+import 'package:capsicum/utils/account.dart';
 
 class HomePageState extends State<HomePage> {
   final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
