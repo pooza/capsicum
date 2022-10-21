@@ -21,8 +21,8 @@ class Nodeinfo {
 
   Future loadCoreData() async {
     try {
-      var response = await http.get(Uri.https(domain, '/nodeinfo/2.0'));
-      _coreData = await jsonDecode(response.body);
+      var response = await http.get(Uri.https(domain, '/nodeinfo/2.0.json'));
+      _coreData = await jsonDecode(utf8.decoder.convert(response.bodyBytes));
     } catch (e) {
       _logger.v(e);
     }
@@ -31,7 +31,7 @@ class Nodeinfo {
   Future loadMastodonInstanceData() async {
     try {
       var response = await http.get(Uri.https(domain, '/api/v1/instance'));
-      _mastodonInstanceData = await jsonDecode(response.body);
+      _mastodonInstanceData = await jsonDecode(utf8.decoder.convert(response.bodyBytes));
     } catch (e) {
       _logger.w(e);
     }
@@ -40,7 +40,7 @@ class Nodeinfo {
   Future loadMulukhiyaAboutData() async {
     try {
       var response = await http.get(Uri.https(domain, '/mulukhiya/api/about'));
-      _mulukhiyaAboutData = await jsonDecode(response.body);
+      _mulukhiyaAboutData = await jsonDecode(utf8.decoder.convert(response.bodyBytes));
     } catch (e) {
       _logger.w(e);
     }
