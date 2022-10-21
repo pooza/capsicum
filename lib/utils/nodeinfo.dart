@@ -46,6 +46,8 @@ class Nodeinfo {
 
   String get domain => _domain;
 
+  String? get snsType => _coreData['software']['name'];
+
   String? get title => _mastodonInstanceData['title'];
 
   String? get version => _mastodonInstanceData['version'];
@@ -58,12 +60,14 @@ class Nodeinfo {
         return Uri.parse(_mastodonInstanceData['uri']);
       }
     }
+    return null;
   }
 
   Uri? get thumbnailUri {
     if (_mastodonInstanceData['thumbnail'] != null) {
       return Uri.parse(_mastodonInstanceData['thumbnail']);
     }
+    return null;
   }
 
   String? get description => _mastodonInstanceData['description'];

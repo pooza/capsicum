@@ -62,9 +62,9 @@ class HomePageState extends State<HomePage> {
     return Container(
       height: 200,
       decoration: const BoxDecoration(
-        image: const DecorationImage(
+        image: DecorationImage(
           fit: BoxFit.fitWidth,
-          image: const AssetImage('lib/assets/logo.png'),
+          image: AssetImage('lib/assets/logo.png'),
         ),
       ),
     );
@@ -77,7 +77,7 @@ class HomePageState extends State<HomePage> {
         children: <Widget>[
           TextField(
             decoration: const InputDecoration(
-              border: const OutlineInputBorder(),
+              border: OutlineInputBorder(),
               labelText: 'インスタンスのドメイン名',
             ),
             onChanged: handleInstanceDomain,

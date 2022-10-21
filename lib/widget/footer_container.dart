@@ -9,13 +9,11 @@ class FooterContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 12),
-          Text(_title),
-        ],
-      ),
+    return Column(
+      children: <Widget>[
+        const SizedBox(height: 12),
+        Text(_title),
+      ],
     );
   }
 }
