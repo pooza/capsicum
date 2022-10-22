@@ -11,8 +11,10 @@ import 'package:capsicum/utils/account.dart';
 class HomePageState extends State<HomePage> {
   final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
   final Pubspec _pubspec = Pubspec();
+  final TextEditingController _instanceDomainTextController = TextEditingController();
   String _title = 'untitled';
   String _version = '';
+  String instanceDomain = '';
   List<dynamic> _accounts = <Account>[];
   Widget? _instanceThumbnail;
   final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
@@ -78,11 +80,30 @@ class HomePageState extends State<HomePage> {
       child: Column(
         children: <Widget>[
           TextField(
+            controller: _instanceDomainTextController,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'インスタンスのドメイン名',
             ),
-            onChanged: handleInstanceDomain,
+            onChanged: handleInstanceDomainText,
+          ),
+          DropdownButton(
+            isDense: true,
+            items: const <DropdownMenuItem>[
+              DropdownMenuItem(
+                value: 'precure.ml',
+                child: Text('キュアスタ！'),
+              ),
+              DropdownMenuItem(
+                value: 'mstdn.delmulin.com',
+                child: Text('デルムリン丼'),
+              ),
+              DropdownMenuItem(
+                value: 'mstdn.b-shock.org',
+                child: Text('美食丼'),
+              ),
+            ],
+            onChanged: handleInstanceDomainMenu,
           ),
         ],
       ),
@@ -97,7 +118,7 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  void handleInstanceDomain(String domain) async {
+  void handleInstanceDomainText(String domain) async {
     Nodeinfo nodeinfo = Nodeinfo(domain);
     await nodeinfo.load();
     setState(() {
@@ -108,6 +129,11 @@ class HomePageState extends State<HomePage> {
       _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? ''}';
       _nodeinfo['enable_mulukhiya'] = 'モロヘイヤ: ${nodeinfo.enableMulukhiya ? '有効' : '無効'}';
     });
+  }
+
+  void handleInstanceDomainMenu(dynamic domain) async {
+    _instanceDomainTextController.text = domain.toString();
+    handleInstanceDomainText(_instanceDomainTextController.text);
   }
 
   Widget buildInstanceInfo() {
