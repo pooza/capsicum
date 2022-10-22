@@ -20,4 +20,8 @@ class Pubspec {
   String get version => _data['version'];
 
   String get description => _data['description'];
+
+  List<dynamic> get instances {
+    return _data['capsicum']['instances'];
+  }
 }

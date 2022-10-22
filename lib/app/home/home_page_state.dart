@@ -89,25 +89,24 @@ class HomePageState extends State<HomePage> {
           ),
           DropdownButton(
             isDense: true,
-            items: const <DropdownMenuItem>[
-              DropdownMenuItem(
-                value: 'precure.ml',
-                child: Text('キュアスタ！'),
-              ),
-              DropdownMenuItem(
-                value: 'mstdn.delmulin.com',
-                child: Text('デルムリン丼'),
-              ),
-              DropdownMenuItem(
-                value: 'mstdn.b-shock.org',
-                child: Text('美食丼'),
-              ),
-            ],
+            items: buildDomainItems(),
             onChanged: handleInstanceDomainMenu,
           ),
         ],
       ),
     );
+  }
+
+  List<DropdownMenuItem<dynamic>>? buildDomainItems() {
+    List<DropdownMenuItem<dynamic>> items = <DropdownMenuItem>[];
+
+    for (var instance in _pubspec.instances) {
+      items.add(DropdownMenuItem(
+        value: instance['domain'],
+        child: Text(instance['name'] ?? ''),
+      ));
+    }
+    return items;
   }
 
   Image buildInstanceThumbnail(Uri? uri) {
@@ -124,9 +123,9 @@ class HomePageState extends State<HomePage> {
     setState(() {
       _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
-      _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '');
-      _nodeinfo['sns_type'] = 'ソフトウェア: ${nodeinfo.softwareName ?? ''} ${nodeinfo.softwareVersion}';
-      _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? ''}';
+      _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
+      _nodeinfo['sns_type'] = 'ソフトウェア: ${nodeinfo.softwareName} ${nodeinfo.softwareVersion}';
+      _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? '不明'}';
       _nodeinfo['enable_mulukhiya'] = 'モロヘイヤ: ${nodeinfo.enableMulukhiya ? '有効' : '無効'}';
     });
   }

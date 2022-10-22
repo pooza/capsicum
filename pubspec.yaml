@@ -26,3 +26,11 @@ flutter_icons:
   android: true
   ios: true
   image_path: assets/icon.png
+capsicum:
+  instances:
+    - name: キュアスタ！
+      domain: precure.ml
+    - name: デルムリン丼
+      domain: mstdn.delmulin.com
+    - name: 美食丼
+      domain: mstdn.b-shock.org
