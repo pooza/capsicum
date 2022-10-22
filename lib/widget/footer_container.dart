@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class FooterContainer extends StatelessWidget {
-  String _title = '';
+  late final String _title;
 
-  FooterContainer(String title) {
+  FooterContainer(String title, {super.key}) {
     _title = title;
   }
 
