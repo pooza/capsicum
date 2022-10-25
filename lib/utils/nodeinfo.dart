@@ -54,8 +54,6 @@ class Nodeinfo {
 
   String? get title => _mastodonInstanceData['title'];
 
-  String? get version => _mastodonInstanceData['version'];
-
   Uri? get uri {
     if (_mastodonInstanceData['uri'] != null) {
       try {
@@ -90,6 +88,13 @@ class Nodeinfo {
       _logger.w(e);
       return null;
     }
+  }
+
+  String? get mulukhiyaVersion {
+    if (enableMulukhiya) {
+      return _mulukhiyaAboutData['package']['version'];
+    }
+    return null;
   }
 
   String? get spoilerText {

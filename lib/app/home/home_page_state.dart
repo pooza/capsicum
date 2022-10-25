@@ -124,9 +124,9 @@ class HomePageState extends State<HomePage> {
       _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
       _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
-      _nodeinfo['sns_type'] = 'ソフトウェア: ${nodeinfo.softwareName} ${nodeinfo.softwareVersion}';
+      _nodeinfo['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
       _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? '不明'}';
-      _nodeinfo['enable_mulukhiya'] = 'モロヘイヤ: ${nodeinfo.enableMulukhiya ? '有効' : '無効'}';
+      _nodeinfo['mulukhiya_version'] = 'モロヘイヤ: ${nodeinfo.mulukhiyaVersion ?? '無効'}';
     });
   }
 
@@ -158,22 +158,25 @@ class HomePageState extends State<HomePage> {
                 ),
                 SizedBox(
                   width: double.infinity,
-                  child: Text(_nodeinfo['short_description'] ?? '', textAlign: TextAlign.left),
-                ),
-                SizedBox(
-                  width: double.infinity,
                   child: Text(_nodeinfo['default_hashtag'] ?? '', textAlign: TextAlign.left),
                 ),
                 SizedBox(
                   width: double.infinity,
-                  child: Text(_nodeinfo['enable_mulukhiya'] ?? '', textAlign: TextAlign.left),
+                  child: Text(_nodeinfo['mulukhiya_version'] ?? '', textAlign: TextAlign.left),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(_nodeinfo['short_description'] ?? '', textAlign: TextAlign.left),
                 ),
               ],
             ),
           ),
           Expanded(
             flex: 1,
-            child: Container(child: _instanceThumbnail),
+            child: Container(
+              alignment: Alignment.topCenter,
+              child: _instanceThumbnail,
+            ),
           ),
         ],
       ),
