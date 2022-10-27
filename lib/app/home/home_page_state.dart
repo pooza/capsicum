@@ -14,7 +14,7 @@ class HomePageState extends State<HomePage> {
   final TextEditingController _instanceDomainTextController = TextEditingController();
   String _title = 'untitled';
   String _version = '';
-  String instanceDomain = '';
+  Function()? onPressed;
   List<dynamic> _accounts = <Account>[];
   Widget? _instanceThumbnail;
   final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
@@ -87,10 +87,30 @@ class HomePageState extends State<HomePage> {
             ),
             onChanged: handleInstanceDomainText,
           ),
-          DropdownButton(
-            isDense: true,
-            items: buildDomainItems(),
-            onChanged: handleInstanceDomainMenu,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              DropdownButton(
+                isDense: true,
+                items: buildDomainItems(),
+                onChanged: handleInstanceDomainMenu,
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: onPressed,
+                child: const Text(
+                  'インスタンスにログイン',
+                  style: TextStyle(fontSize: 14),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -127,7 +147,12 @@ class HomePageState extends State<HomePage> {
       _nodeinfo['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
       _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? '不明'}';
       _nodeinfo['mulukhiya_version'] = 'モロヘイヤ: ${nodeinfo.mulukhiyaVersion ?? '無効'}';
+      onPressed = (nodeinfo.softwareName == null) ? null : handleLoginButton;
     });
+  }
+
+  void handleLoginButton() async {
+    _logger.i('pushed');
   }
 
   void handleInstanceDomainMenu(dynamic domain) async {
