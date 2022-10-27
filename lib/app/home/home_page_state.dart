@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
 import 'package:capsicum/app/home/home_page.dart';
+import 'package:capsicum/app/login/login_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/nodeinfo.dart';
@@ -152,7 +153,11 @@ class HomePageState extends State<HomePage> {
   }
 
   void handleLoginButton() async {
-    _logger.i('pushed');
+    _logger.i(_instanceDomainTextController.text);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+    );
   }
 
   void handleInstanceDomainMenu(dynamic domain) async {
