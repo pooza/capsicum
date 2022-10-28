@@ -65,7 +65,7 @@ class HomePageState extends State<HomePage> {
 
   Widget buildLogoContainer() {
     return Container(
-      height: 200,
+      height: 100,
       decoration: const BoxDecoration(
         image: DecorationImage(
           fit: BoxFit.fitWidth,
@@ -85,7 +85,7 @@ class HomePageState extends State<HomePage> {
             decoration: const InputDecoration(
               contentPadding: EdgeInsets.all(6),
               border: OutlineInputBorder(),
-              labelText: 'インスタンスのドメイン名',
+              labelText: 'インスタンスのドメイン',
             ),
             onChanged: handleInstanceDomainText,
           ),
