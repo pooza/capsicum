@@ -83,6 +83,7 @@ class HomePageState extends State<HomePage> {
           TextField(
             controller: _instanceDomainTextController,
             decoration: const InputDecoration(
+              contentPadding: EdgeInsets.all(6),
               border: OutlineInputBorder(),
               labelText: 'インスタンスのドメイン名',
             ),
@@ -106,7 +107,7 @@ class HomePageState extends State<HomePage> {
                 ),
                 onPressed: onPressed,
                 child: const Text(
-                  'インスタンスにログイン',
+                  'ログイン',
                   style: TextStyle(fontSize: 14),
                   textAlign: TextAlign.right,
                 ),
