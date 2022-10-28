@@ -28,10 +28,13 @@ class LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_title)),
-      body: Column(
-        children: <Widget>[
-          FooterContainer("$_title Ver.$_version"),
-        ],
+      body: SizedBox(
+        width: double.infinity,
+        child: Column(
+          children: <Widget>[
+            FooterContainer("$_title Ver.$_version"),
+          ],
+        ),
       ),
     );
   }
