@@ -11,6 +11,7 @@ class FooterContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
+        const Divider(color: Colors.green),
         const SizedBox(height: 12),
         Text(_title),
       ],
