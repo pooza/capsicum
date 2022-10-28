@@ -6,9 +6,12 @@ import 'package:capsicum/utils/pubspec.dart';
 
 class LoginPageState extends State<LoginPage> {
   final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   String _title = 'untitled';
   String _version = '';
   final Pubspec _pubspec = Pubspec();
+  bool _isObscurePassword = true;
 
   @override
   void initState() {
@@ -32,10 +35,49 @@ class LoginPageState extends State<LoginPage> {
         width: double.infinity,
         child: Column(
           children: <Widget>[
+            buildForm(),
             FooterContainer("$_title Ver.$_version"),
           ],
         ),
       ),
     );
+  }
+
+  Widget buildForm() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: <Widget>[
+          TextField(
+            controller: _usernameController,
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.all(6),
+              border: OutlineInputBorder(),
+              labelText: 'ユーザー名',
+            ),
+            onChanged: handleUsernameText,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.all(6),
+              border: OutlineInputBorder(),
+              labelText: 'パスワード',
+            ),
+            obscureText: _isObscurePassword,
+            onChanged: handleUsernamePassword,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void handleUsernameText(String username) async {
+    _logger.i(username);
+  }
+
+  void handleUsernamePassword(String password) async {
+    _logger.i(password);
   }
 }
