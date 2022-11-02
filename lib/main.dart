@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:capsicum/app/home/home_page.dart';
+import 'package:capsicum/app/instance/instance_page.dart';
 import 'package:capsicum/app/login/login_page.dart';
 import 'package:flutter/services.dart';
 
@@ -17,9 +17,9 @@ class CapsicumApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData(primarySwatch: Colors.green),
-      initialRoute: '/home',
+      initialRoute: '/instance',
       routes: {
-        '/home': (BuildContext context) => const HomePage(),
+        '/instance': (BuildContext context) => const InstancePage(),
         '/login': (BuildContext context) => const LoginPage(),
       },
     );
