@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
 import 'package:capsicum/app/home/home_page.dart';
-import 'package:capsicum/app/login/login_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/nodeinfo.dart';
