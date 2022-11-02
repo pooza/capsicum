@@ -155,10 +155,7 @@ class HomePageState extends State<HomePage> {
 
   void handleLoginButton() async {
     _logger.i(_instanceDomainTextController.text);
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-    );
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   void handleInstanceDomainMenu(dynamic domain) async {

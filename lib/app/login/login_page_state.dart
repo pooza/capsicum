@@ -8,10 +8,10 @@ class LoginPageState extends State<LoginPage> {
   final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final Pubspec _pubspec = Pubspec();
   String _title = 'untitled';
   String _version = '';
-  final Pubspec _pubspec = Pubspec();
-  bool _isObscurePassword = true;
+  final bool _isObscurePassword = true;
 
   @override
   void initState() {
@@ -66,7 +66,7 @@ class LoginPageState extends State<LoginPage> {
               labelText: 'パスワード',
             ),
             obscureText: _isObscurePassword,
-            onChanged: handleUsernamePassword,
+            onChanged: handlePasswordText,
           ),
         ],
       ),
@@ -77,7 +77,7 @@ class LoginPageState extends State<LoginPage> {
     _logger.i(username);
   }
 
-  void handleUsernamePassword(String password) async {
+  void handlePasswordText(String password) async {
     _logger.i(password);
   }
 }
