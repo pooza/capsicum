@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:capsicum/widget/logo_block.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
@@ -33,7 +34,7 @@ class InstancePageState extends State<InstancePage> {
       appBar: AppBar(title: Text(_title)),
       body: Column(
         children: <Widget>[
-          buildLogoContainer(),
+          LogoBlock(),
           const SizedBox(height: 6),
           buildForm(),
           const SizedBox(height: 6),
@@ -60,18 +61,6 @@ class InstancePageState extends State<InstancePage> {
     String json = prefs.getString('accounts') ?? '[]';
     _accounts = await jsonDecode(json).map((v) => Account(v)).toList();
     _logger.i(_accounts);
-  }
-
-  Widget buildLogoContainer() {
-    return Container(
-      height: 100,
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          fit: BoxFit.fitWidth,
-          image: AssetImage('assets/logo.png'),
-        ),
-      ),
-    );
   }
 
   Widget buildForm() {
