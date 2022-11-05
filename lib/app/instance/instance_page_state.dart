@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:capsicum/widget/logo_block.dart';
+import 'package:capsicum/widget/logo_container.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
@@ -34,7 +34,7 @@ class InstancePageState extends State<InstancePage> {
       appBar: AppBar(title: Text(_title)),
       body: Column(
         children: <Widget>[
-          LogoBlock(),
+          LogoContainer(),
           const SizedBox(height: 6),
           buildForm(),
           const SizedBox(height: 6),
