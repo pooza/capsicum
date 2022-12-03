@@ -18,15 +18,14 @@ class InstancePageState extends State<InstancePage> {
   String _version = '';
   Function()? onPressed;
   List<dynamic> _accounts = <Account>[];
-  InstanceContainer? _instanceContainer;
-  Widget? _instanceThumbnail;
+  InstanceContainer _instanceContainer = InstanceContainer(domain: '');
+  Image _thumbnail = const Image(image: AssetImage('assets/spacer.gif'));
   final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
 
   @override
   void initState() {
     loadPubspec();
     loadAccounts();
-    _instanceThumbnail = buildInstanceThumbnail(null);
     super.initState();
   }
 
@@ -36,7 +35,7 @@ class InstancePageState extends State<InstancePage> {
       appBar: AppBar(title: Text(_title)),
       body: Column(
         children: <Widget>[
-          LogoContainer(),
+          const LogoContainer(),
           const SizedBox(height: 6),
           buildForm(),
           const SizedBox(height: 6),
@@ -121,20 +120,12 @@ class InstancePageState extends State<InstancePage> {
     return items;
   }
 
-  Image buildInstanceThumbnail(Uri? uri) {
-    if (uri == null) {
-      return const Image(image: AssetImage('assets/spacer.gif'));
-    } else {
-      return Image(image: NetworkImage(uri.toString()));
-    }
-  }
-
   void handleInstanceDomainText(String domain) async {
     Nodeinfo nodeinfo = Nodeinfo(domain);
     await nodeinfo.load();
+    _instanceContainer = InstanceContainer(domain: domain);
+    _thumbnail = await _instanceContainer.getThumbnail();
     setState(() {
-      _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
-      _instanceContainer = InstanceContainer(domain);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
       _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
       _nodeinfo['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
@@ -194,7 +185,7 @@ class InstancePageState extends State<InstancePage> {
             flex: 1,
             child: Container(
               alignment: Alignment.topCenter,
-              child: _instanceThumbnail,
+              child: _thumbnail,
             ),
           ),
         ],
