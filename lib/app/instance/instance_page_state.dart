@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:capsicum/widget/instance_container.dart';
 import 'package:capsicum/widget/logo_container.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +18,7 @@ class InstancePageState extends State<InstancePage> {
   String _version = '';
   Function()? onPressed;
   List<dynamic> _accounts = <Account>[];
+  InstanceContainer? _instanceContainer;
   Widget? _instanceThumbnail;
   final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
 
@@ -132,6 +134,7 @@ class InstancePageState extends State<InstancePage> {
     await nodeinfo.load();
     setState(() {
       _instanceThumbnail = buildInstanceThumbnail(nodeinfo.thumbnailUri);
+      _instanceContainer = InstanceContainer(domain);
       _nodeinfo['title'] = (nodeinfo.title ?? '');
       _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
       _nodeinfo['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
