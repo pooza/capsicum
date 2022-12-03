@@ -59,6 +59,7 @@ class Nodeinfo {
       try {
         return Uri.https(_mastodonInstanceData['uri']);
       } catch (e) {
+        _logger.w(e);
         return Uri.parse(_mastodonInstanceData['uri']);
       }
     }

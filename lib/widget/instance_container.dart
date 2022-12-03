@@ -30,7 +30,12 @@ class InstanceContainer extends StatelessWidget {
     Nodeinfo? nodeinfo = await createNodeinfo();
     Uri? uri = nodeinfo?.thumbnailUri;
     if (uri != null) {
-      thumbnail = Image(image: NetworkImage(uri.toString()));
+      try {
+        thumbnail = Image(image: NetworkImage(uri.toString()));
+      } catch (e) {
+        _logger.w(e);
+        thumbnail = const Image(image: AssetImage('assets/spacer.gif'));
+      }
     }
     return thumbnail ?? (const Image(image: AssetImage('assets/spacer.gif')));
   }
