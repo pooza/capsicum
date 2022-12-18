@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
+import 'package:capsicum/widgets/instance_container.dart';
 
-class InstanceForm extends StatelessWidget {
+import 'instance_form.dart';
+
+class InstanceFormState extends State<InstanceForm> {
   final Logger logger = Logger(printer: PrettyPrinter(colors: false));
   final TextEditingController domainTextController = TextEditingController();
-
-  InstanceForm({super.key});
+  InstanceContainer instanceContainer = InstanceContainer(domain: null);
 
   Future onChangeDomainText(String domain) async {
-    logger.i(domain);
+    logger.i('InstanceForm: $domain');
+    setState(() {
+      instanceContainer = InstanceContainer(domain: domain);
+    });
   }
 
   @override
@@ -27,7 +32,7 @@ class InstanceForm extends StatelessWidget {
               ),
               onChanged: onChangeDomainText,
             ),
-            Container(),
+            instanceContainer,
             Container(),
             Container(),
           ],

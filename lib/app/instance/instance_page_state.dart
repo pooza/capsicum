@@ -8,8 +8,7 @@ import 'package:capsicum/widgets/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/account.dart';
 
-import 'instance_container.dart';
-import 'instance_form.dart';
+import 'form/instance_form.dart';
 import 'instance_page.dart';
 
 class InstancePageState extends State<InstancePage> {
@@ -17,7 +16,6 @@ class InstancePageState extends State<InstancePage> {
   final Pubspec pubspec = Pubspec();
   Widget footer = Container();
   AppBar appbar = AppBar(title: const Text(''));
-  InstanceContainer instanceContainer = InstanceContainer(domain: null);
   List<Account> accounts = <Account>[];
 
   @override
@@ -53,9 +51,8 @@ class InstancePageState extends State<InstancePage> {
         children: <Widget>[
           const LogoContainer(),
           const SizedBox(height: 6),
-          InstanceForm(),
+          const InstanceForm(),
           const SizedBox(height: 6),
-          instanceContainer,
           footer,
         ],
       ),
