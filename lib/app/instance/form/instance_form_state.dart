@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'package:capsicum/widgets/instance_container.dart';
+import 'package:capsicum/widgets/instance_container/instance_container.dart';
 
 import 'instance_form.dart';
 
 class InstanceFormState extends State<InstanceForm> {
   final Logger logger = Logger(printer: PrettyPrinter(colors: false));
   final TextEditingController domainTextController = TextEditingController();
-  InstanceContainer instanceContainer = InstanceContainer(domain: null);
+  final InstanceContainer instanceContainer = InstanceContainer();
 
   Future onChangeDomainText(String domain) async {
     logger.i('InstanceForm: $domain');
     setState(() {
-      instanceContainer = InstanceContainer(domain: domain);
+      instanceContainer.domain = domain;
     });
   }
 
