@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 class FooterContainer extends StatelessWidget {
-  late final String _title;
+  final String title;
 
-  FooterContainer(String title, {super.key}) {
-    _title = title;
-  }
+  const FooterContainer({
+    super.key,
+    required this.title,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +14,7 @@ class FooterContainer extends StatelessWidget {
       children: <Widget>[
         const Divider(color: Colors.green),
         const SizedBox(height: 12),
-        Text(_title),
+        Text(title),
       ],
     );
   }

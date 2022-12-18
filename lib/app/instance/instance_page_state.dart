@@ -1,187 +1,62 @@
 import 'dart:convert';
-import 'package:capsicum/widget/instance_container.dart';
-import 'package:capsicum/widget/logo_container.dart';
+
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
-import 'package:capsicum/app/instance/instance_page.dart';
-import 'package:capsicum/widget/footer_container.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:capsicum/widgets/logo_container.dart';
+import 'package:capsicum/widgets/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
 import 'package:capsicum/utils/account.dart';
 
+import 'instance_container.dart';
+import 'instance_form.dart';
+import 'instance_page.dart';
+
 class InstancePageState extends State<InstancePage> {
-  final Logger _logger = Logger(printer: PrettyPrinter(colors: false));
-  final Pubspec _pubspec = Pubspec();
-  final TextEditingController _instanceDomainTextController = TextEditingController();
-  String _title = 'untitled';
-  String _version = '';
-  Function()? onPressed;
-  List<dynamic> _accounts = <Account>[];
-  InstanceContainer _instanceContainer = InstanceContainer(domain: '');
-  Image _thumbnail = const Image(image: AssetImage('assets/spacer.gif'));
-  Map<String, dynamic> _nodeinfo = <String, dynamic>{};
+  final Logger logger = Logger(printer: PrettyPrinter(colors: false));
+  final Pubspec pubspec = Pubspec();
+  Widget footer = Container();
+  AppBar appbar = AppBar(title: const Text(''));
+  InstanceContainer instanceContainer = InstanceContainer(domain: null);
+  List<Account> accounts = <Account>[];
 
   @override
   void initState() {
-    loadPubspec();
     loadAccounts();
+    loadPubspec();
     super.initState();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(_title)),
-      body: Column(
-        children: <Widget>[
-          const LogoContainer(),
-          const SizedBox(height: 6),
-          buildForm(),
-          const SizedBox(height: 6),
-          buildInstanceInfo(),
-          FooterContainer("$_title Ver.$_version"),
-        ],
-      ),
-    );
-  }
-
-  void loadPubspec() async {
-    await _pubspec.load();
+  Future loadPubspec() async {
+    await pubspec.load();
     setState(() {
-      _title = _pubspec.title;
-      _version = _pubspec.version;
+      footer = FooterContainer(title: "${pubspec.title} Ver.${pubspec.version}");
+      appbar = AppBar(title: Text(pubspec.title));
     });
   }
 
-  void loadAccounts() async {
+  Future loadAccounts() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     if (prefs.getString('accounts') == null) {
       prefs.setString('accounts', '[]');
     }
     String json = prefs.getString('accounts') ?? '[]';
-    _accounts = await jsonDecode(json).map((v) => Account(v)).toList();
-    _logger.i(_accounts);
+    accounts = await jsonDecode(json).map((v) => Account(params: v)).toList();
+    logger.i(accounts);
   }
 
-  Widget buildForm() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      child: Column(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: appbar,
+      body: Column(
         children: <Widget>[
-          TextField(
-            controller: _instanceDomainTextController,
-            decoration: const InputDecoration(
-              contentPadding: EdgeInsets.all(6),
-              border: OutlineInputBorder(),
-              labelText: 'インスタンスのドメイン',
-            ),
-            onChanged: handleInstanceDomainText,
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[
-              DropdownButton(
-                isDense: true,
-                items: buildDomainItems(),
-                onChanged: handleInstanceDomainMenu,
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.green,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: onPressed,
-                child: const Text(
-                  'ログイン',
-                  style: TextStyle(fontSize: 14),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<DropdownMenuItem<dynamic>>? buildDomainItems() {
-    List<DropdownMenuItem<dynamic>> items = <DropdownMenuItem>[];
-
-    for (var instance in _pubspec.instances) {
-      items.add(DropdownMenuItem(
-        value: instance['domain'],
-        child: Text(instance['name'] ?? ''),
-      ));
-    }
-    return items;
-  }
-
-  Future handleInstanceDomainText(String domain) async {
-    _instanceContainer = InstanceContainer(domain: domain);
-    _thumbnail = await _instanceContainer.getThumbnail();
-    Map<String, dynamic> info = await _instanceContainer.getInformations();
-    setState(() {
-      _nodeinfo = info;
-      onPressed = (info['software_name'] != '') ? null : handleLoginButton;
-    });
-  }
-
-  void handleLoginButton() async {
-    _logger.i(_instanceDomainTextController.text);
-    Navigator.pushReplacementNamed(context, '/login');
-  }
-
-  void handleInstanceDomainMenu(dynamic domain) async {
-    _instanceDomainTextController.text = domain.toString();
-    handleInstanceDomainText(_instanceDomainTextController.text);
-  }
-
-  Widget buildInstanceInfo() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            flex: 2,
-            child: Column(
-              children: <Widget>[
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(
-                    _nodeinfo['title'] ?? '',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.left,
-                  ),
-                ),
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(_nodeinfo['sns_type'] ?? '', textAlign: TextAlign.left),
-                ),
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(_nodeinfo['default_hashtag'] ?? '', textAlign: TextAlign.left),
-                ),
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(_nodeinfo['mulukhiya_version'] ?? '', textAlign: TextAlign.left),
-                ),
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(_nodeinfo['short_description'] ?? '', textAlign: TextAlign.left),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Container(
-              alignment: Alignment.topCenter,
-              child: _thumbnail,
-            ),
-          ),
+          const LogoContainer(),
+          const SizedBox(height: 6),
+          InstanceForm(),
+          const SizedBox(height: 6),
+          instanceContainer,
+          footer,
         ],
       ),
     );

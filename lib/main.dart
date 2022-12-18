@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:capsicum/app/instance/instance_page.dart';
-import 'package:capsicum/app/login/login_page.dart';
 import 'package:flutter/services.dart';
 
 void main() {
@@ -20,7 +19,6 @@ class CapsicumApp extends StatelessWidget {
       initialRoute: '/instance',
       routes: {
         '/instance': (BuildContext context) => const InstancePage(),
-        '/login': (BuildContext context) => const LoginPage(),
       },
     );
   }

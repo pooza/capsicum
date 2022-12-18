@@ -2,26 +2,20 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:yaml/yaml.dart';
 
 class Pubspec {
-  String _yaml = '';
-  Map<dynamic, dynamic> _data = {};
+  String yaml = '';
+  Map<dynamic, dynamic> data = {};
 
   Future load() async {
-    _yaml = await rootBundle.loadString('config/pubspec.yaml');
-    _data = await loadYaml(_yaml);
-    return _data;
+    yaml = await rootBundle.loadString('config/pubspec.yaml');
+    data = await loadYaml(yaml);
+    return data;
   }
 
-  String get yaml => _yaml;
+  String get title => data['name'];
 
-  Map<dynamic, dynamic> get data => _data;
-
-  String get title => _data['name'];
-
-  String get version => _data['version'];
-
-  String get description => _data['description'];
+  String get version => data['version'];
 
   List<dynamic> get instances {
-    return _data['capsicum']['instances'];
+    return data['capsicum']['instances'];
   }
 }

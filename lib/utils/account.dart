@@ -1,9 +1,9 @@
 class Account {
-  Map<String, dynamic> _params = {};
+  Map<String, dynamic> params = {};
 
-  Account(Map<String, dynamic> params) {
-    _params = params;
-  }
+  Account({
+    required this.params,
+  });
 
-  String get name => _params['name'];
+  String get name => params['name'] ?? '';
 }
