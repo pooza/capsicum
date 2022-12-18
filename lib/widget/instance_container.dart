@@ -40,6 +40,22 @@ class InstanceContainer extends StatelessWidget {
     return thumbnail ?? (const Image(image: AssetImage('assets/spacer.gif')));
   }
 
+  Future<Map<String, dynamic>> getInformations() async {
+    Nodeinfo? nodeinfo = await createNodeinfo();
+    Map<String, dynamic> values = <String, dynamic>{};
+    if (nodeinfo != null) {
+      await nodeinfo.load();
+      values['title'] = (nodeinfo.title ?? '');
+      values['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
+      values['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
+      values['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? '不明'}';
+      values['mulukhiya_version'] = 'モロヘイヤ: ${nodeinfo.mulukhiyaVersion ?? '無効'}';
+      values['software_name'] = (nodeinfo.softwareName ?? '');
+      values['software_version'] = (nodeinfo.softwareVersion ?? '');
+    }
+    return values;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container();

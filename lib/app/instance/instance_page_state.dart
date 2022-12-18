@@ -7,7 +7,6 @@ import 'package:logger/logger.dart';
 import 'package:capsicum/app/instance/instance_page.dart';
 import 'package:capsicum/widget/footer_container.dart';
 import 'package:capsicum/utils/pubspec.dart';
-import 'package:capsicum/utils/nodeinfo.dart';
 import 'package:capsicum/utils/account.dart';
 
 class InstancePageState extends State<InstancePage> {
@@ -20,7 +19,7 @@ class InstancePageState extends State<InstancePage> {
   List<dynamic> _accounts = <Account>[];
   InstanceContainer _instanceContainer = InstanceContainer(domain: '');
   Image _thumbnail = const Image(image: AssetImage('assets/spacer.gif'));
-  final Map<String, dynamic> _nodeinfo = <String, dynamic>{};
+  Map<String, dynamic> _nodeinfo = <String, dynamic>{};
 
   @override
   void initState() {
@@ -120,18 +119,13 @@ class InstancePageState extends State<InstancePage> {
     return items;
   }
 
-  void handleInstanceDomainText(String domain) async {
-    Nodeinfo nodeinfo = Nodeinfo(domain);
-    await nodeinfo.load();
+  Future handleInstanceDomainText(String domain) async {
     _instanceContainer = InstanceContainer(domain: domain);
     _thumbnail = await _instanceContainer.getThumbnail();
+    Map<String, dynamic> info = await _instanceContainer.getInformations();
     setState(() {
-      _nodeinfo['title'] = (nodeinfo.title ?? '');
-      _nodeinfo['short_description'] = (nodeinfo.shortDescription ?? '(空欄)');
-      _nodeinfo['sns_type'] = '${nodeinfo.softwareName}: ${nodeinfo.softwareVersion}';
-      _nodeinfo['default_hashtag'] = 'デフォルトタグ: ${nodeinfo.defaultHashtag ?? '不明'}';
-      _nodeinfo['mulukhiya_version'] = 'モロヘイヤ: ${nodeinfo.mulukhiyaVersion ?? '無効'}';
-      onPressed = (nodeinfo.softwareName == null) ? null : handleLoginButton;
+      _nodeinfo = info;
+      onPressed = (info['software_name'] != '') ? null : handleLoginButton;
     });
   }
 
