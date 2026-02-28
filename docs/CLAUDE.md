@@ -43,7 +43,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 ### 検出
 
 サーバー接続時に `/api/v1/mulukhiya/diag`（Mastodon）または `/api/mulukhiya/diag`（Misskey）を叩き、モロヘイヤの有無を判定する。
-詳細な検出プロトコルはモロヘイヤ側で文書化予定（[capsicum-requirements.md](https://github.com/pooza/mulukhiya-toot-proxy/blob/main/docs/capsicum-requirements.md)）。
+詳細な検出プロトコルや API 仕様の整備依頼はモロヘイヤ側に [capsicum-requirements.md](https://github.com/pooza/mulukhiya-toot-proxy/blob/main/docs/capsicum-requirements.md) として起票済み。
 
 ### 対応予定の拡張機能
 
@@ -56,6 +56,24 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | お気に入りタグ | `GET /mulukhiya/api/tagging/favorites` | P3 |
 | メディアカタログ | `GET /mulukhiya/api/media` | P3 |
 | 番組情報 | `GET /mulukhiya/api/program` | P4 |
+
+## 対応バージョン方針
+
+### 基本戦略: 機能検出（Feature Probing）ベース
+
+バージョン番号による分岐は行わない。サーバーが提供する API エンドポイントを probing し、利用可能な機能に応じて UI を出し分ける。
+
+### フォークに対する方針
+
+capsicum は Mastodon 本家および Misskey 本家の API に対して実装する。Fedibird・Firefish・Sharkey 等のフォークに対して個別の対応は行わない。本家 API との互換性を維持するのはフォーク側の責任であり、probing の結果として動作するならそのまま使えるが、動作しない場合も capsicum 側では対応しない。
+
+### 機能不足時の通知
+
+probing の結果、基本的な機能が欠けているサーバーに対しては「このサーバーは一部の機能に対応していません」旨の通知を表示する。バージョン番号には言及しない。接続自体は拒否せず、利用可能な範囲で動作させる。
+
+### 開発上のターゲット
+
+主な動作確認対象は自前のサーバー（Bshockdon / ダイスキー）であり、最新の Mastodon / Misskey に追従している前提で開発する。古いバージョン固有の互換処理やフォーク固有の互換処理は原則として書かない。
 
 ## ブランチ戦略
 
