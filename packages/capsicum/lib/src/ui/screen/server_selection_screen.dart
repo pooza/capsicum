@@ -4,6 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+const _presetServers = [
+  'precure.ml',
+  'mstdn.delmulin.com',
+  'misskey.delmulin.com',
+  'mstdn.b-shock.org',
+];
+
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key});
 
@@ -24,10 +31,7 @@ class _ServerSelectionScreenState
     super.dispose();
   }
 
-  Future<void> _onSubmit() async {
-    final host = _hostController.text.trim();
-    if (host.isEmpty) return;
-
+  Future<void> _connectTo(String host) async {
     setState(() {
       _isProbing = true;
       _error = null;
@@ -58,42 +62,54 @@ class _ServerSelectionScreenState
     }
   }
 
+  void _onSubmit() {
+    final host = _hostController.text.trim();
+    if (host.isEmpty) return;
+    _connectTo(host);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('サーバーを選択')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _hostController,
-              decoration: InputDecoration(
-                labelText: 'サーバーアドレス',
-                hintText: 'example.com',
-                errorText: _error,
-                prefixIcon: const Icon(Icons.dns),
-              ),
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.go,
-              onSubmitted: (_) => _onSubmit(),
-              autocorrect: false,
+      body: _isProbing
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const SizedBox(height: 8),
+                ...List.generate(_presetServers.length, (index) {
+                  final server = _presetServers[index];
+                  return ListTile(
+                    leading: const Icon(Icons.dns),
+                    title: Text(server),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    onTap: () => _connectTo(server),
+                  );
+                }),
+                const Divider(height: 32),
+                TextField(
+                  controller: _hostController,
+                  decoration: InputDecoration(
+                    labelText: 'その他のサーバー',
+                    hintText: 'example.com',
+                    errorText: _error,
+                    prefixIcon: const Icon(Icons.dns),
+                  ),
+                  keyboardType: TextInputType.url,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (_) => _onSubmit(),
+                  autocorrect: false,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _onSubmit,
+                  child: const Text('接続'),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child:
-                  _isProbing
-                      ? const Center(child: CircularProgressIndicator())
-                      : FilledButton(
-                        onPressed: _onSubmit,
-                        child: const Text('接続'),
-                      ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
