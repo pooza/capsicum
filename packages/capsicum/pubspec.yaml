@@ -1,0 +1,35 @@
+name: capsicum
+description: Flutter-based Mastodon / Misskey client
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+  flutter: ">=3.41.0"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  capsicum_core:
+    path: ../capsicum_core
+  capsicum_backends:
+    path: ../capsicum_backends
+  fediverse_objects:
+    path: ../fediverse_objects
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1
+  flutter_secure_storage: ^9.2.4
+  shared_preferences: ^2.5.3
+  dio: ^5.8.0+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true

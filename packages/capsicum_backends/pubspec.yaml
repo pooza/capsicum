@@ -1,0 +1,20 @@
+name: capsicum_backends
+description: Mastodon and Misskey API implementations for capsicum
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+resolution: workspace
+
+dependencies:
+  capsicum_core:
+    path: ../capsicum_core
+  fediverse_objects:
+    path: ../fediverse_objects
+  dio: ^5.8.0+1
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.15
+  mocktail: ^1.0.4

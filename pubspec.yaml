@@ -1,0 +1,49 @@
+name: capsicum_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+workspace:
+  - packages/capsicum
+  - packages/capsicum_core
+  - packages/capsicum_backends
+  - packages/fediverse_objects
+
+dev_dependencies:
+  melos: ^7.4.0
+
+melos:
+  name: capsicum
+  repository: https://github.com/pooza/capsicum
+
+  scripts:
+    analyze:
+      run: dart analyze --fatal-infos
+      exec:
+        concurrency: 1
+      description: Run dart analyze in all packages
+
+    test:
+      run: flutter test
+      exec:
+        concurrency: 1
+      packageFilters:
+        dirExists: test
+      description: Run tests in all packages
+
+    build_runner:
+      run: dart run build_runner build --delete-conflicting-outputs
+      exec:
+        concurrency: 1
+      packageFilters:
+        dependsOn: build_runner
+      description: Run build_runner in packages that use it
+
+    gen_l10n:
+      run: flutter gen-l10n
+      exec:
+        concurrency: 1
+      packageFilters:
+        fileExists: l10n.yaml
+      description: Generate localizations

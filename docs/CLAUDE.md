@@ -27,8 +27,8 @@ Flutter ベースの Mastodon / Misskey クライアント。
 ### Kaiteki から変更する点
 
 - Flutter SDK を stable channel に固定
-- ストレージ層の見直し（Hive → 要検討）
-- HTTP クライアントの見直し（`http` → 要検討）
+- ストレージ層の刷新（Hive → flutter_secure_storage + shared_preferences）
+- HTTP クライアントの刷新（`http` → dio）
 - 初期スコープは Mastodon + Misskey に絞る（Tumblr 等は除外）
 - Widget テストの追加
 - L10n はサブモジュールでなく直接管理
@@ -42,7 +42,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 
 ### 検出
 
-サーバー接続時に `/api/v1/mulukhiya/diag`（Mastodon）または `/api/mulukhiya/diag`（Misskey）を叩き、モロヘイヤの有無を判定する。
+`GET /mulukhiya/api/about` にリクエストし、HTTP 200 + JSON レスポンスが返ればモロヘイヤありと判定する。認証不要でバージョン情報・コントローラ種別も取得できる。
 詳細な検出プロトコルや API 仕様の整備依頼はモロヘイヤ側に [capsicum-requirements.md](https://github.com/pooza/mulukhiya-toot-proxy/blob/main/docs/capsicum-requirements.md) として起票済み。
 
 ### 対応予定の拡張機能
@@ -94,8 +94,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 capsicum/
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
-    architecture.md       # アーキテクチャ設計（予定）
-    mulukhiya-integration.md  # モロヘイヤ連携仕様（予定）
+    architecture.md       # アーキテクチャ設計
   packages/               # モノレポ構成（Melos）
     capsicum/             # メインアプリ
     capsicum_core/        # ドメインモデル・Adapter インターフェース
