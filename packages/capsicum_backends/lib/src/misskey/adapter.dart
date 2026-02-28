@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:uuid/uuid.dart';
 
 import 'client.dart';
+import 'extensions.dart';
 
 class MisskeyCapabilities extends AdapterCapabilities {
   @override
@@ -26,9 +30,17 @@ class MisskeyCapabilities extends AdapterCapabilities {
 }
 
 class MisskeyAdapter extends DecentralizedBackendAdapter
-    with FavoriteSupport, BookmarkSupport, FollowSupport, NotificationSupport,
-        SearchSupport, ReactionSupport, CustomEmojiSupport, ListSupport,
-        HashtagSupport {
+    with
+        FavoriteSupport,
+        BookmarkSupport,
+        FollowSupport,
+        NotificationSupport,
+        SearchSupport,
+        ReactionSupport,
+        CustomEmojiSupport,
+        ListSupport,
+        HashtagSupport,
+        LoginSupport {
   final MisskeyClient client;
 
   @override
@@ -36,6 +48,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   final AdapterCapabilities capabilities = MisskeyCapabilities();
+
+  static const _permissions = [
+    'read:account',
+    'write:account',
+    'read:blocks',
+    'write:blocks',
+    'read:drive',
+    'write:drive',
+    'read:favorites',
+    'write:favorites',
+    'read:following',
+    'write:following',
+    'read:mutes',
+    'write:mutes',
+    'read:notifications',
+    'write:notifications',
+    'write:notes',
+    'read:reactions',
+    'write:reactions',
+    'write:votes',
+  ];
 
   MisskeyAdapter._(this.client, this.host);
 
@@ -47,7 +80,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // BackendAdapter
 
   @override
-  Future<User> getMyself() => throw UnimplementedError();
+  FutureOr<void> applySecrets(
+    ClientSecretData? clientSecret,
+    UserSecret userSecret,
+  ) {
+    client.setAccessToken(userSecret.accessToken);
+  }
+
+  @override
+  Future<User> getMyself() async {
+    final user = await client.getI();
+    return user.toCapsicum(host);
+  }
 
   @override
   Future<User?> getUser(String username, [String? host]) =>
@@ -66,7 +110,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<List<Post>> getTimeline(
     TimelineType type, {
     TimelineQuery? query,
-  }) => throw UnimplementedError();
+  }) async {
+    final notes = switch (type) {
+      TimelineType.home => await client.getTimeline(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+      ),
+      TimelineType.local => await client.getLocalTimeline(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+      ),
+      TimelineType.federated => await client.getGlobalTimeline(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+      ),
+      _ => throw UnimplementedError('Timeline type $type not supported'),
+    };
+    return notes.map((n) => n.toCapsicum(host)).toList();
+  }
 
   @override
   Future<Post> getPostById(String id) => throw UnimplementedError();
@@ -86,6 +150,45 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<Attachment> uploadAttachment(AttachmentDraft draft) =>
       throw UnimplementedError();
+
+  // LoginSupport
+
+  @override
+  Future<LoginResult> startLogin(ApplicationInfo application) async {
+    try {
+      final session = const Uuid().v4();
+      final authUrl = Uri.https(host, '/miauth/$session', {
+        'name': application.name,
+        'callback': application.redirectUri.toString(),
+        'permission': _permissions.join(','),
+      });
+      return LoginNeedsOAuth(
+        authorizationUrl: authUrl,
+        extra: {'session': session},
+      );
+    } catch (e, s) {
+      return LoginFailure(e, s);
+    }
+  }
+
+  @override
+  Future<LoginResult> completeLogin(
+    Uri callbackUri,
+    Map<String, String> extra,
+  ) async {
+    try {
+      final session = extra['session']!;
+      final response = await client.checkSession(session);
+      client.setAccessToken(response.token);
+
+      return LoginSuccess(
+        userSecret: UserSecret(accessToken: response.token),
+        user: response.user.toCapsicum(host),
+      );
+    } catch (e, s) {
+      return LoginFailure(e, s);
+    }
+  }
 
   // FavoriteSupport
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 
 import 'client.dart';
+import 'extensions.dart';
 
 class MastodonCapabilities extends AdapterCapabilities {
   @override
@@ -26,8 +29,16 @@ class MastodonCapabilities extends AdapterCapabilities {
 }
 
 class MastodonAdapter extends DecentralizedBackendAdapter
-    with FavoriteSupport, BookmarkSupport, FollowSupport, NotificationSupport,
-        SearchSupport, CustomEmojiSupport, ListSupport, HashtagSupport {
+    with
+        FavoriteSupport,
+        BookmarkSupport,
+        FollowSupport,
+        NotificationSupport,
+        SearchSupport,
+        CustomEmojiSupport,
+        ListSupport,
+        HashtagSupport,
+        LoginSupport {
   final MastodonClient client;
 
   @override
@@ -35,6 +46,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   final AdapterCapabilities capabilities = MastodonCapabilities();
+
+  static const _scopes = ['read', 'write', 'follow', 'push'];
 
   MastodonAdapter._(this.client, this.host);
 
@@ -46,7 +59,18 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // BackendAdapter
 
   @override
-  Future<User> getMyself() => throw UnimplementedError();
+  FutureOr<void> applySecrets(
+    ClientSecretData? clientSecret,
+    UserSecret userSecret,
+  ) {
+    client.setAccessToken(userSecret.accessToken);
+  }
+
+  @override
+  Future<User> getMyself() async {
+    final account = await client.verifyCredentials();
+    return account.toCapsicum(host);
+  }
 
   @override
   Future<User?> getUser(String username, [String? host]) =>
@@ -65,7 +89,29 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<List<Post>> getTimeline(
     TimelineType type, {
     TimelineQuery? query,
-  }) => throw UnimplementedError();
+  }) async {
+    final statuses = switch (type) {
+      TimelineType.home => await client.getHomeTimeline(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        minId: query?.minId,
+        limit: query?.limit,
+      ),
+      TimelineType.local => await client.getPublicTimeline(
+        local: true,
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      ),
+      TimelineType.federated => await client.getPublicTimeline(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      ),
+      _ => throw UnimplementedError('Timeline type $type not supported'),
+    };
+    return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
 
   @override
   Future<Post> getPostById(String id) => throw UnimplementedError();
@@ -85,6 +131,75 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Attachment> uploadAttachment(AttachmentDraft draft) =>
       throw UnimplementedError();
+
+  // LoginSupport
+
+  @override
+  Future<LoginResult> startLogin(ApplicationInfo application) async {
+    try {
+      final app = await client.createApplication(
+        clientName: application.name,
+        redirectUris: application.redirectUri.toString(),
+        scopes: _scopes.join(' '),
+        website: application.website?.toString(),
+      );
+
+      final authUrl = Uri.https(host, '/oauth/authorize', {
+        'response_type': 'code',
+        'client_id': app.clientId!,
+        'redirect_uri': application.redirectUri.toString(),
+        'scope': _scopes.join(' '),
+      });
+
+      return LoginNeedsOAuth(
+        authorizationUrl: authUrl,
+        extra: {
+          'client_id': app.clientId!,
+          'client_secret': app.clientSecret!,
+          'redirect_uri': application.redirectUri.toString(),
+          'scopes': _scopes.join(' '),
+        },
+      );
+    } catch (e, s) {
+      return LoginFailure(e, s);
+    }
+  }
+
+  @override
+  Future<LoginResult> completeLogin(
+    Uri callbackUri,
+    Map<String, String> extra,
+  ) async {
+    try {
+      final code = callbackUri.queryParameters['code'];
+      if (code == null) {
+        return LoginFailure(StateError('No code in callback'));
+      }
+
+      final token = await client.getToken(
+        grantType: 'authorization_code',
+        clientId: extra['client_id']!,
+        clientSecret: extra['client_secret']!,
+        redirectUri: extra['redirect_uri']!,
+        code: code,
+        scope: extra['scopes'],
+      );
+
+      client.setAccessToken(token.accessToken!);
+      final account = await client.verifyCredentials();
+
+      return LoginSuccess(
+        userSecret: UserSecret(accessToken: token.accessToken!),
+        clientSecret: ClientSecretData(
+          clientId: extra['client_id']!,
+          clientSecret: extra['client_secret']!,
+        ),
+        user: account.toCapsicum(host),
+      );
+    } catch (e, s) {
+      return LoginFailure(e, s);
+    }
+  }
 
   // FavoriteSupport
 

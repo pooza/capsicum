@@ -1,36 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'src/router.dart';
 
 void main() {
-  runApp(const CapsicumApp());
+  runApp(const ProviderScope(child: CapsicumApp()));
 }
 
-class CapsicumApp extends StatelessWidget {
+class CapsicumApp extends ConsumerWidget {
   const CapsicumApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+    return MaterialApp.router(
       title: 'capsicum',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
-      home: const HomePage(),
-    );
-  }
-}
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('capsicum'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: const Center(child: Text('capsicum')),
+      routerConfig: router,
     );
   }
 }

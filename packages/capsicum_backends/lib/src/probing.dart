@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import 'backend_type.dart';
@@ -8,6 +10,12 @@ class InstanceProbe {
   const InstanceProbe({required this.type});
 }
 
+Map<String, dynamic> _ensureMap(dynamic data) {
+  if (data is Map<String, dynamic>) return data;
+  if (data is String) return jsonDecode(data) as Map<String, dynamic>;
+  throw FormatException('Unexpected response type: ${data.runtimeType}');
+}
+
 /// Probe a server to detect its backend type via NodeInfo.
 Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
   try {
@@ -16,21 +24,27 @@ Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
     );
     if (nodeInfoResponse.statusCode != 200) return null;
 
-    final links = nodeInfoResponse.data['links'] as List?;
+    final nodeInfoData = _ensureMap(nodeInfoResponse.data);
+    final links = nodeInfoData['links'] as List?;
     if (links == null || links.isEmpty) return null;
 
-    // Prefer nodeinfo 2.1 or 2.0
-    final link = links.firstWhere(
-      (l) => (l['rel'] as String).contains('nodeinfo/2.'),
-      orElse: () => null,
-    );
+    // Find a nodeinfo 2.x link
+    Map<String, dynamic>? link;
+    for (final l in links) {
+      final rel = l['rel'] as String?;
+      if (rel != null && rel.contains('/ns/schema/2.')) {
+        link = l as Map<String, dynamic>;
+        break;
+      }
+    }
     if (link == null) return null;
 
     final href = link['href'] as String;
     final infoResponse = await dio.get(href);
     if (infoResponse.statusCode != 200) return null;
 
-    final software = infoResponse.data['software'] as Map<String, dynamic>?;
+    final infoData = _ensureMap(infoResponse.data);
+    final software = infoData['software'] as Map<String, dynamic>?;
     if (software == null) return null;
 
     final name = (software['name'] as String?)?.toLowerCase();
@@ -39,7 +53,7 @@ Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
       'misskey' => const InstanceProbe(type: BackendType.misskey),
       _ => null,
     };
-  } on DioException {
-    return null;
+  } on DioException catch (e) {
+    throw Exception('サーバーに接続できません: ${e.message}');
   }
 }

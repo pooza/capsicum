@@ -8,9 +8,16 @@ import '../model/timeline_query.dart';
 import '../model/timeline_type.dart';
 import '../model/user.dart';
 import 'capabilities.dart';
+import 'interfaces/login_support.dart';
 
 abstract class BackendAdapter {
   AdapterCapabilities get capabilities;
+
+  /// Apply stored secrets to restore an authenticated session.
+  FutureOr<void> applySecrets(
+    ClientSecretData? clientSecret,
+    UserSecret userSecret,
+  );
 
   Future<User> getMyself();
   Future<User?> getUser(String username, [String? host]);

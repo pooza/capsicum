@@ -18,6 +18,7 @@ void main() {
       expect(adapter.capabilities.supportedScopes, contains(PostScope.public));
       expect(adapter, isA<FavoriteSupport>());
       expect(adapter, isA<BookmarkSupport>());
+      expect(adapter, isA<LoginSupport>());
     });
   });
 
@@ -30,6 +31,7 @@ void main() {
         contains(Formatting.mfm),
       );
       expect(adapter, isA<ReactionSupport>());
+      expect(adapter, isA<LoginSupport>());
     });
   });
 }
