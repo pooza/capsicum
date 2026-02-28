@@ -26,11 +26,14 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _codeController = TextEditingController();
   bool _isLoggingIn = false;
-  bool _awaitingCode = false;
+  bool _awaitingInput = false;
   String? _error;
 
-  // OOB redirect URI — Mastodon displays the code on screen
-  static const _redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
+  bool get _isMastodon => widget.backendType == BackendType.mastodon;
+
+  String get _redirectUri => _isMastodon
+      ? 'urn:ietf:wg:oauth:2.0:oob'
+      : 'capsicum://oauth';
 
   // Store login state between phases
   dynamic _adapter;
@@ -70,7 +73,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
 
         setState(() {
-          _awaitingCode = true;
+          _awaitingInput = true;
           _isLoggingIn = false;
         });
       } else if (startResult is LoginFailure) {
@@ -81,15 +84,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       setState(() => _error = 'エラー: $e');
     } finally {
-      if (mounted && !_awaitingCode) {
+      if (mounted && !_awaitingInput) {
         setState(() => _isLoggingIn = false);
       }
     }
   }
 
-  Future<void> _submitCode() async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty || _oauthState == null || _adapter == null) return;
+  Future<void> _completeAuth() async {
+    if (_oauthState == null || _adapter == null) return;
+
+    // Mastodon: require code input; Misskey: just check the session
+    if (_isMastodon && _codeController.text.trim().isEmpty) return;
 
     setState(() {
       _isLoggingIn = true;
@@ -98,7 +103,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       final loginSupport = _adapter as LoginSupport;
-      final callbackUri = Uri.parse('$_redirectUri?code=$code');
+
+      final callbackUri = _isMastodon
+          ? Uri.parse('$_redirectUri?code=${_codeController.text.trim()}')
+          : Uri.parse(_redirectUri);
 
       final completeResult = await loginSupport.completeLogin(
         callbackUri,
@@ -156,7 +164,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              if (!_awaitingCode) ...[
+              if (!_awaitingInput) ...[
                 _isLoggingIn
                     ? const CircularProgressIndicator()
                     : FilledButton.icon(
@@ -165,18 +173,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       label: const Text('ブラウザでログイン'),
                     ),
               ] else ...[
-                const Text('ブラウザで認証後、表示されたコードを入力してください'),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _codeController,
-                  decoration: const InputDecoration(
-                    labelText: '認証コード',
-                    hintText: 'コードを貼り付け',
-                    prefixIcon: Icon(Icons.key),
+                if (_isMastodon) ...[
+                  const Text('ブラウザで認証後、表示されたコードを入力してください'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _codeController,
+                    decoration: const InputDecoration(
+                      labelText: '認証コード',
+                      hintText: 'コードを貼り付け',
+                      prefixIcon: Icon(Icons.key),
+                    ),
+                    autocorrect: false,
+                    onSubmitted: (_) => _completeAuth(),
                   ),
-                  autocorrect: false,
-                  onSubmitted: (_) => _submitCode(),
-                ),
+                ] else ...[
+                  const Text('ブラウザで認証を完了したら、下のボタンを押してください'),
+                ],
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -184,8 +196,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       _isLoggingIn
                           ? const Center(child: CircularProgressIndicator())
                           : FilledButton(
-                            onPressed: _submitCode,
-                            child: const Text('ログイン'),
+                            onPressed: _completeAuth,
+                            child: Text(_isMastodon ? 'ログイン' : '認証を完了'),
                           ),
                 ),
               ],

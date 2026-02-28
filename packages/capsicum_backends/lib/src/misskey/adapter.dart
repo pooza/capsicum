@@ -159,7 +159,6 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       final session = const Uuid().v4();
       final authUrl = Uri.https(host, '/miauth/$session', {
         'name': application.name,
-        'callback': application.redirectUri.toString(),
         'permission': _permissions.join(','),
       });
       return LoginNeedsOAuth(
