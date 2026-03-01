@@ -42,5 +42,11 @@ pubspec.lock
 # Melos
 .melos/
 
+# iOS
+**/ios/Podfile.lock
+
+# DevTools
+devtools_options.yaml
+
 # Coverage
 coverage/
