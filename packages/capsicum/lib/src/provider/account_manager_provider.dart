@@ -50,6 +50,20 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = state.copyWith(current: account);
   }
 
+  Future<void> logout(Account account) async {
+    final storage = ref.read(accountStorageProvider);
+    await storage.removeAccount(account.key.toStorageKey());
+
+    final remaining =
+        state.accounts.where((a) => a.key != account.key).toList();
+
+    final next = (state.current?.key == account.key)
+        ? (remaining.isNotEmpty ? remaining.first : null)
+        : state.current;
+
+    state = AccountManagerState(accounts: remaining, current: next);
+  }
+
   /// Restore sessions from secure storage on app start.
   Future<void> restoreSessions() async {
     final storage = ref.read(accountStorageProvider);

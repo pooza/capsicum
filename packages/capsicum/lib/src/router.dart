@@ -48,7 +48,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           location == '/splash';
 
       if (!isLoggedIn && !isOnAuth) return '/server';
-      if (isLoggedIn && isOnAuth && location != '/splash') return '/home';
+      if (isLoggedIn && location == '/splash') return '/home';
       return null;
     },
     routes: [
