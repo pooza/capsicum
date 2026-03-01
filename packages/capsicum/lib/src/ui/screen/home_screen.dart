@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,19 +8,51 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/post_tile.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      ref.read(timelineProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final account = ref.watch(currentAccountProvider);
     final accountState = ref.watch(accountManagerProvider);
-    final timeline = ref.watch(homeTimelineProvider);
+    final selectedType = ref.watch(selectedTimelineTypeProvider);
+    final timeline = ref.watch(timelineProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text('@${account?.user.username ?? ""}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: _buildTimelineTabs(context, selectedType),
+        ),
       ),
       drawer: _buildDrawer(context, ref, account, accountState),
       floatingActionButton: FloatingActionButton(
@@ -27,21 +60,118 @@ class HomeScreen extends ConsumerWidget {
         child: const Icon(Icons.edit),
       ),
       body: timeline.when(
-        data: (posts) => RefreshIndicator(
-          onRefresh: () => ref.refresh(homeTimelineProvider.future),
+        data: (tlState) => RefreshIndicator(
+          onRefresh: () => ref.refresh(timelineProvider.future),
           child: ListView.separated(
-            itemCount: posts.length,
+            controller: _scrollController,
+            itemCount: tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
             separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) => PostTile(post: posts[index]),
+            itemBuilder: (context, index) {
+              if (index >= tlState.posts.length) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              return PostTile(post: tlState.posts[index]);
+            },
           ),
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) => Center(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              'タイムラインの読み込みに失敗しました\n$error',
-              textAlign: TextAlign.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'タイムラインの読み込みに失敗しました\n$error',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(timelineProvider),
+                  child: const Text('再試行'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static const _timelineLabels = {
+    TimelineType.home: 'ホーム',
+    TimelineType.local: 'ローカル',
+    TimelineType.social: 'ソーシャル',
+    TimelineType.federated: 'グローバル',
+  };
+
+  /// Mastodon uses "連合" instead of "グローバル".
+  static const _mastodonLabelOverrides = {
+    TimelineType.federated: '連合',
+  };
+
+  Widget _buildTimelineTabs(BuildContext context, TimelineType selected) {
+    final adapter = ref.watch(currentAdapterProvider);
+    final supported = adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final isMastodon = !supported.contains(TimelineType.social);
+
+    // Maintain consistent ordering.
+    const order = [
+      TimelineType.home,
+      TimelineType.local,
+      TimelineType.social,
+      TimelineType.federated,
+    ];
+    final tabs = order.where(supported.contains).toList();
+
+    return Row(
+      children: tabs.map((type) {
+        final label = (isMastodon
+                ? _mastodonLabelOverrides[type]
+                : null) ??
+            _timelineLabels[type] ??
+            type.name;
+        return _tabButton(context, label, type, selected);
+      }).toList(),
+    );
+  }
+
+  Widget _tabButton(
+    BuildContext context,
+    String label,
+    TimelineType type,
+    TimelineType selected,
+  ) {
+    final isSelected = type == selected;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          ref.read(selectedTimelineTypeProvider.notifier).state = type;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isSelected ? colorScheme.primary : Colors.transparent,
+                width: 3,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isSelected
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ),

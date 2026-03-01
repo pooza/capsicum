@@ -22,6 +22,7 @@ class MisskeyCapabilities extends AdapterCapabilities {
   Set<TimelineType> get supportedTimelines => {
     TimelineType.home,
     TimelineType.local,
+    TimelineType.social,
     TimelineType.federated,
   };
 
@@ -125,6 +126,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         limit: query?.limit,
       ),
       TimelineType.local => await client.getLocalTimeline(
+        sinceId: query?.sinceId,
+        untilId: query?.maxId,
+        limit: query?.limit,
+      ),
+      TimelineType.social => await client.getHybridTimeline(
         sinceId: query?.sinceId,
         untilId: query?.maxId,
         limit: query?.limit,

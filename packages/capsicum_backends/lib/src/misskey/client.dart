@@ -73,6 +73,25 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/notes/hybrid-timeline (social = home + local)
+  Future<List<MisskeyNote>> getHybridTimeline({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/hybrid-timeline',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/notes/local-timeline
   Future<List<MisskeyNote>> getLocalTimeline({
     String? sinceId,

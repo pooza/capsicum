@@ -35,7 +35,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     try {
       await adapter.postStatus(PostDraft(content: text, scope: _scope));
       if (mounted) {
-        ref.invalidate(homeTimelineProvider);
+        ref.invalidate(timelineProvider);
         context.pop();
       }
     } catch (e) {
