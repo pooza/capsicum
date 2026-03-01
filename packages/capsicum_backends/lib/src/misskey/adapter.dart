@@ -146,10 +146,31 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> getPostById(String id) => throw UnimplementedError();
+  Future<Post> getPostById(String id) async {
+    final note = await client.getNote(id);
+    return note.toCapsicum(host);
+  }
 
   @override
-  Future<List<Post>> getThread(String postId) => throw UnimplementedError();
+  Future<List<Post>> getThread(String postId) async {
+    final target = await client.getNote(postId);
+    final children = await client.getNoteChildren(noteId: postId, limit: 100);
+
+    // Walk up the reply chain to get ancestors.
+    final ancestors = <Post>[];
+    var currentNote = target;
+    while (currentNote.replyId != null) {
+      final parent = await client.getNote(currentNote.replyId!);
+      ancestors.insert(0, parent.toCapsicum(host));
+      currentNote = parent;
+    }
+
+    return [
+      ...ancestors,
+      target.toCapsicum(host),
+      ...children.map((n) => n.toCapsicum(host)),
+    ];
+  }
 
   @override
   Future<void> repeatPost(String id) => throw UnimplementedError();

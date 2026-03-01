@@ -92,6 +92,28 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/statuses/:id
+  Future<MastodonStatus> getStatus(String id) async {
+    final response = await dio.get('/api/v1/statuses/$id');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// GET /api/v1/statuses/:id/context
+  /// Returns { ancestors: [Status], descendants: [Status] }.
+  Future<({List<MastodonStatus> ancestors, List<MastodonStatus> descendants})>
+      getStatusContext(String id) async {
+    final response = await dio.get('/api/v1/statuses/$id/context');
+    final data = response.data as Map<String, dynamic>;
+    return (
+      ancestors: (data['ancestors'] as List)
+          .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      descendants: (data['descendants'] as List)
+          .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,

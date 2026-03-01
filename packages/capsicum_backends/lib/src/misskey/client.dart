@@ -73,6 +73,29 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/notes/show
+  Future<MisskeyNote> getNote(String noteId) async {
+    final response = await dio.post(
+      '/api/notes/show',
+      data: createBody({'noteId': noteId}),
+    );
+    return MisskeyNote.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/notes/children
+  Future<List<MisskeyNote>> getNoteChildren({
+    required String noteId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/children',
+      data: createBody({'noteId': noteId, 'limit': ?limit}),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/notes/hybrid-timeline (social = home + local)
   Future<List<MisskeyNote>> getHybridTimeline({
     String? sinceId,

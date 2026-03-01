@@ -1,4 +1,5 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/compose_screen.dart';
+import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/splash_screen.dart';
 
 /// A [ChangeNotifier] that notifies GoRouter when auth state changes.
@@ -78,6 +80,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/compose',
         builder: (context, state) => const ComposeScreen(),
+      ),
+      GoRoute(
+        path: '/post',
+        builder: (context, state) {
+          final post = state.extra! as Post;
+          return PostDetailScreen(post: post);
+        },
       ),
     ],
   );
