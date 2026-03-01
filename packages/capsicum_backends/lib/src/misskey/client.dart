@@ -96,6 +96,34 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/notes/favorites/create
+  Future<void> favoriteNote(String noteId) async {
+    await dio.post(
+      '/api/notes/favorites/create',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/notes/favorites/delete
+  Future<void> unfavoriteNote(String noteId) async {
+    await dio.post(
+      '/api/notes/favorites/delete',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/notes/create (renote)
+  Future<MisskeyNote> renote(String noteId) async {
+    final response = await dio.post(
+      '/api/notes/create',
+      data: createBody({'renoteId': noteId}),
+    );
+    return MisskeyNote.fromJson(
+      (response.data as Map<String, dynamic>)['createdNote']
+          as Map<String, dynamic>,
+    );
+  }
+
   /// POST /api/notes/hybrid-timeline (social = home + local)
   Future<List<MisskeyNote>> getHybridTimeline({
     String? sinceId,

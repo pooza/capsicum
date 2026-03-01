@@ -32,7 +32,6 @@ class MisskeyCapabilities extends AdapterCapabilities {
 
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
-        FavoriteSupport,
         BookmarkSupport,
         FollowSupport,
         NotificationSupport,
@@ -173,7 +172,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> repeatPost(String id) => throw UnimplementedError();
+  Future<void> repeatPost(String id) async {
+    await client.renote(id);
+  }
 
   @override
   Future<void> unrepeatPost(String id) => throw UnimplementedError();
@@ -223,21 +224,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
   }
 
-  // FavoriteSupport
+  // BookmarkSupport (Misskey の「お気に入り」= Mastodon のブックマーク相当)
 
   @override
-  Future<Post> favoritePost(String id) => throw UnimplementedError();
+  Future<Post> bookmarkPost(String id) async {
+    await client.favoriteNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host);
+  }
 
   @override
-  Future<Post> unfavoritePost(String id) => throw UnimplementedError();
-
-  // BookmarkSupport
-
-  @override
-  Future<Post> bookmarkPost(String id) => throw UnimplementedError();
-
-  @override
-  Future<Post> unbookmarkPost(String id) => throw UnimplementedError();
+  Future<Post> unbookmarkPost(String id) async {
+    await client.unfavoriteNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host);
+  }
 
   @override
   Future<List<Post>> getBookmarks({TimelineQuery? query}) =>

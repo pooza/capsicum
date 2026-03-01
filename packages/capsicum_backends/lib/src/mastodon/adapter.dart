@@ -139,10 +139,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> repeatPost(String id) => throw UnimplementedError();
+  Future<void> repeatPost(String id) async {
+    await client.reblogStatus(id);
+  }
 
   @override
-  Future<void> unrepeatPost(String id) => throw UnimplementedError();
+  Future<void> unrepeatPost(String id) async {
+    await client.unreblogStatus(id);
+  }
 
   @override
   Future<Instance> getInstance() => throw UnimplementedError();
@@ -223,18 +227,30 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // FavoriteSupport
 
   @override
-  Future<Post> favoritePost(String id) => throw UnimplementedError();
+  Future<Post> favoritePost(String id) async {
+    final status = await client.favouriteStatus(id);
+    return status.toCapsicum(host);
+  }
 
   @override
-  Future<Post> unfavoritePost(String id) => throw UnimplementedError();
+  Future<Post> unfavoritePost(String id) async {
+    final status = await client.unfavouriteStatus(id);
+    return status.toCapsicum(host);
+  }
 
   // BookmarkSupport
 
   @override
-  Future<Post> bookmarkPost(String id) => throw UnimplementedError();
+  Future<Post> bookmarkPost(String id) async {
+    final status = await client.bookmarkStatus(id);
+    return status.toCapsicum(host);
+  }
 
   @override
-  Future<Post> unbookmarkPost(String id) => throw UnimplementedError();
+  Future<Post> unbookmarkPost(String id) async {
+    final status = await client.unbookmarkStatus(id);
+    return status.toCapsicum(host);
+  }
 
   @override
   Future<List<Post>> getBookmarks({TimelineQuery? query}) =>

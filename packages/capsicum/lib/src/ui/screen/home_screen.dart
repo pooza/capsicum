@@ -195,9 +195,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           UserAccountsDrawerHeader(
             accountName: Text(
               current?.user.displayName ?? current?.user.username ?? '',
+              style: const TextStyle(color: Colors.black),
             ),
             accountEmail: Text(
               '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+              style: const TextStyle(color: Colors.black),
             ),
             currentAccountPicture: CircleAvatar(
               backgroundImage: current?.user.avatarUrl != null

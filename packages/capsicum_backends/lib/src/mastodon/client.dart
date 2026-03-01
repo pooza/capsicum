@@ -114,6 +114,42 @@ class MastodonClient {
     );
   }
 
+  /// POST /api/v1/statuses/:id/favourite
+  Future<MastodonStatus> favouriteStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/favourite');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unfavourite
+  Future<MastodonStatus> unfavouriteStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unfavourite');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/reblog
+  Future<MastodonStatus> reblogStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/reblog');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unreblog
+  Future<MastodonStatus> unreblogStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unreblog');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/bookmark
+  Future<MastodonStatus> bookmarkStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/bookmark');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unbookmark
+  Future<MastodonStatus> unbookmarkStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unbookmark');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,
