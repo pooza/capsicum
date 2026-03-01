@@ -53,6 +53,26 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/notes/create
+  Future<MisskeyNote> createNote({
+    required String text,
+    required String visibility,
+    String? replyId,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/create',
+      data: createBody({
+        'text': text,
+        'visibility': visibility,
+        'replyId': ?replyId,
+      }),
+    );
+    return MisskeyNote.fromJson(
+      (response.data as Map<String, dynamic>)['createdNote']
+          as Map<String, dynamic>,
+    );
+  }
+
   /// POST /api/notes/local-timeline
   Future<List<MisskeyNote>> getLocalTimeline({
     String? sinceId,

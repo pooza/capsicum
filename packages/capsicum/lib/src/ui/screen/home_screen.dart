@@ -22,6 +22,10 @@ class HomeScreen extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       drawer: _buildDrawer(context, ref, account, accountState),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/compose'),
+        child: const Icon(Icons.edit),
+      ),
       body: timeline.when(
         data: (posts) => RefreshIndicator(
           onRefresh: () => ref.refresh(homeTimelineProvider.future),

@@ -80,7 +80,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<User> getUserById(String id) => throw UnimplementedError();
 
   @override
-  Future<Post> postStatus(PostDraft draft) => throw UnimplementedError();
+  Future<Post> postStatus(PostDraft draft) async {
+    final status = await client.postStatus(
+      status: draft.content ?? '',
+      visibility: mastodonVisibilityFromScope(draft.scope),
+      inReplyToId: draft.inReplyToId,
+      spoilerText: draft.spoilerText,
+    );
+    return status.toCapsicum(host);
+  }
 
   @override
   Future<void> deletePost(String id) => throw UnimplementedError();

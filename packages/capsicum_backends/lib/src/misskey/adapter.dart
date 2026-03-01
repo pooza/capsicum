@@ -101,7 +101,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<User> getUserById(String id) => throw UnimplementedError();
 
   @override
-  Future<Post> postStatus(PostDraft draft) => throw UnimplementedError();
+  Future<Post> postStatus(PostDraft draft) async {
+    final note = await client.createNote(
+      text: draft.content ?? '',
+      visibility: misskeyVisibilityFromScope(draft.scope),
+      replyId: draft.inReplyToId,
+    );
+    return note.toCapsicum(host);
+  }
 
   @override
   Future<void> deletePost(String id) => throw UnimplementedError();

@@ -8,6 +8,9 @@ const misskeyVisibilityRosetta = <String, PostScope>{
   'specified': PostScope.direct,
 };
 
+String misskeyVisibilityFromScope(PostScope scope) =>
+    misskeyVisibilityRosetta.entries.firstWhere((e) => e.value == scope).key;
+
 extension CapsicumMisskeyUserExtension on MisskeyUser {
   User toCapsicum(String localHost) {
     return User(

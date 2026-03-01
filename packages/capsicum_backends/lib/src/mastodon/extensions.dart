@@ -8,6 +8,9 @@ const mastodonVisibilityRosetta = <String, PostScope>{
   'direct': PostScope.direct,
 };
 
+String mastodonVisibilityFromScope(PostScope scope) =>
+    mastodonVisibilityRosetta.entries.firstWhere((e) => e.value == scope).key;
+
 const mastodonAttachmentTypeMap = <String, AttachmentType>{
   'image': AttachmentType.image,
   'video': AttachmentType.video,

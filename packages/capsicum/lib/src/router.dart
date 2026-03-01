@@ -7,6 +7,7 @@ import 'provider/account_manager_provider.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
+import 'ui/screen/compose_screen.dart';
 import 'ui/screen/splash_screen.dart';
 
 /// A [ChangeNotifier] that notifies GoRouter when auth state changes.
@@ -73,6 +74,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/home',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/compose',
+        builder: (context, state) => const ComposeScreen(),
       ),
     ],
   );

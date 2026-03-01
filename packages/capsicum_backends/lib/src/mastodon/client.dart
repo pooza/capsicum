@@ -76,6 +76,22 @@ class MastodonClient {
         .toList();
   }
 
+  /// POST /api/v1/statuses
+  Future<MastodonStatus> postStatus({
+    required String status,
+    required String visibility,
+    String? inReplyToId,
+    String? spoilerText,
+  }) async {
+    final response = await dio.post('/api/v1/statuses', data: {
+      'status': status,
+      'visibility': visibility,
+      'in_reply_to_id': ?inReplyToId,
+      'spoiler_text': ?spoilerText,
+    });
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,
