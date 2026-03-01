@@ -51,11 +51,11 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 |------|--------------------------|--------|
 | サーバー情報表示 | `GET /mulukhiya/api/about` | P1 |
 | ユーザー設定 | `GET/POST /mulukhiya/api/config` | P2 |
-| タグ付け | `POST /mulukhiya/api/status/tags` | P2 |
+| タグ付け | `POST /mulukhiya/api/status/tags` | P1 |
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | P2 |
 | お気に入りタグ | `GET /mulukhiya/api/tagging/favorites` | P3 |
 | メディアカタログ | `GET /mulukhiya/api/media` | P3 |
-| 番組情報 | `GET /mulukhiya/api/program` | P4 |
+| 番組情報 | `GET /mulukhiya/api/program` | P2 |
 
 ## UI 設計方針
 
@@ -95,7 +95,11 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 
 ### フォークに対する方針
 
-capsicum は Mastodon 本家および Misskey 本家の API に対して実装する。Fedibird・Firefish・Sharkey 等のフォークに対して個別の対応は行わない。本家 API との互換性を維持するのはフォーク側の責任であり、probing の結果として動作するならそのまま使えるが、動作しない場合も capsicum 側では対応しない。
+capsicum は Mastodon 本家および Misskey 本家の API に対して実装する。フォークに対して個別の互換処理は行わない。本家 API との互換性を維持するのはフォーク側の責任であり、probing の結果として動作するならそのまま使えるが、動作しない場合も capsicum 側では対応しない。
+
+なお、Mastodon フォークが Misskey 互換の API を提供するケースもありうる。この場合も同様に probing の結果に従い、利用可能な機能があればそのまま使う。フォーク固有の対応は行わない。
+
+ただし、自前のサーバー（モロヘイヤ導入済み環境）が提供する独自機能には最大限対応する。capsicum の主目的は自前のインフラとの連携であり、フォーク互換とは別の話である。
 
 ### 機能不足時の通知
 
@@ -103,7 +107,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ### 開発上のターゲット
 
-主な動作確認対象は自前のサーバー（Bshockdon / ダイスキー）であり、最新の Mastodon / Misskey に追従している前提で開発する。古いバージョン固有の互換処理やフォーク固有の互換処理は原則として書かない。
+主な動作確認対象は自前のサーバー（美食丼 / デルムリン丼 / キュアスタ！ / ダイスキー）であり、最新の Mastodon / Misskey に追従している前提で開発する。古いバージョン固有の互換処理やフォーク固有の互換処理は原則として書かない。
 
 ## ブランチ戦略
 
