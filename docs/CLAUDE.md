@@ -57,6 +57,36 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | メディアカタログ | `GET /mulukhiya/api/media` | P3 |
 | 番組情報 | `GET /mulukhiya/api/program` | P4 |
 
+## UI 設計方針
+
+### 用語統一
+
+| 旧称 | 現在の呼称 | 備考 |
+|------|-----------|------|
+| トゥート / ノート | 投稿 | Mastodon / Misskey 共通 |
+| インスタンス | サーバー | Mastodon / Misskey 共通 |
+
+コード内部の識別子（`Instance`, `InstanceProbe` 等）は変更不要。UI に表示する文字列のみ統一する。
+
+### アクションメニュー
+
+投稿に対するアクション（お気に入り・ブースト・ブックマーク等）は、タイムライン上にボタンを露出させず、長押しで表示する BottomSheet メニュー内に格納する。誤タップ防止のため。
+
+### Mastodon / Misskey 機能マッピング
+
+| 操作 | Mastodon | Misskey | 備考 |
+|------|----------|---------|------|
+| お気に入り | FavoriteSupport | ―（リアクションで代替） | Misskey は ReactionSupport で対応予定 |
+| ブックマーク | BookmarkSupport | BookmarkSupport（内部は favorites API） | Misskey の「お気に入り」は意味的にブックマーク相当 |
+| ブースト / リノート | repeatPost() | repeatPost()（renote） | ラベルは ReactionSupport の有無で切替 |
+
+- Misskey adapter は `FavoriteSupport` mixin を持たない（リアクション対応時に吸収）
+- Misskey 判定は `adapter is ReactionSupport` で行う
+
+### プッシュ通知
+
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。インフラコストを抑えるため、当面はプッシュ通知を実装せず、通知一覧のポーリング表示から始める。
+
 ## 対応バージョン方針
 
 ### 基本戦略: 機能検出（Feature Probing）ベース
@@ -121,6 +151,31 @@ capsicum/
 | [mastodon](https://github.com/pooza/mastodon) | Mastodon フォーク（美食丼 / デルムリン丼 / キュアスタ！） |
 | [misskey](https://github.com/pooza/misskey) | Misskey フォーク（ダイスキー） |
 | [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) | 設計の参考元（アーカイブ済み） |
+
+## 実装ステータス
+
+### 実装済み
+
+- NodeInfo によるサーバー probing（Mastodon/Misskey 自動検出）
+- Mastodon OAuth ログイン（OOB コード入力方式）
+- Misskey MiAuth ログイン（手動完了ボタン方式）
+- セッション永続化・復元（flutter_secure_storage）
+- マルチアカウント対応（ドロワーでアカウント切替・追加・ログアウト）
+- タイムライン表示（ホーム / ローカル / ソーシャル / 連合）+ 無限スクロール
+- テキスト投稿（公開範囲選択、文字数カウンター）
+- 投稿詳細・スレッド表示
+- アクションメニュー（お気に入り / ブースト / ブックマーク）
+- プリセットサーバーリスト
+
+### 未実装（優先度順）
+
+- 通知一覧（ポーリング方式）
+- Misskey リアクション（絵文字ピッカー）
+- メディア添付（画像選択 + アップロード）
+- 検索
+- ユーザープロフィール
+- ストリーミング（WebSocket）
+- モロヘイヤ連携
 
 ## ドキュメント表記規約
 
