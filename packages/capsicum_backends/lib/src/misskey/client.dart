@@ -124,6 +124,25 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/i/notifications
+  Future<List<MisskeyNotification>> getNotifications({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/i/notifications',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/notes/hybrid-timeline (social = home + local)
   Future<List<MisskeyNote>> getHybridTimeline({
     String? sinceId,

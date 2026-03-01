@@ -1,0 +1,99 @@
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/material.dart' hide Notification;
+import 'package:go_router/go_router.dart';
+
+class NotificationTile extends StatelessWidget {
+  final Notification notification;
+
+  const NotificationTile({super.key, required this.notification});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (icon, label) = _iconAndLabel;
+
+    return InkWell(
+      onTap: notification.post != null
+          ? () => context.push('/post', extra: notification.post!)
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(context, label),
+                  if (notification.post?.content != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _stripHtml(notification.post!.content!),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    final user = notification.user;
+    final displayName = user?.displayName ?? user?.username ?? '';
+
+    return Row(
+      children: [
+        if (user != null) ...[
+          CircleAvatar(
+            radius: 12,
+            backgroundImage: user.avatarUrl != null
+                ? NetworkImage(user.avatarUrl!)
+                : null,
+            child: user.avatarUrl == null
+                ? Text(user.username[0].toUpperCase(),
+                    style: const TextStyle(fontSize: 10))
+                : null,
+          ),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            '$displayName が$label',
+            style: theme.textTheme.bodySmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  (IconData, String) get _iconAndLabel => switch (notification.type) {
+    NotificationType.mention => (Icons.alternate_email, 'メンション'),
+    NotificationType.reblog => (Icons.repeat, 'ブースト'),
+    NotificationType.favourite => (Icons.star, 'お気に入り'),
+    NotificationType.follow => (Icons.person_add, 'フォロー'),
+    NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
+    NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
+    NotificationType.poll => (Icons.poll, 'アンケート終了'),
+    NotificationType.update => (Icons.edit, '投稿を編集'),
+    NotificationType.other => (Icons.notifications, '通知'),
+  };
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '');
+  }
+}

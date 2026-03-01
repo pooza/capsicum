@@ -44,6 +44,28 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
   }
 }
 
+const misskeyNotificationTypeMap = <String, NotificationType>{
+  'mention': NotificationType.mention,
+  'reply': NotificationType.mention,
+  'renote': NotificationType.reblog,
+  'follow': NotificationType.follow,
+  'receiveFollowRequest': NotificationType.followRequest,
+  'reaction': NotificationType.reaction,
+  'pollEnded': NotificationType.poll,
+};
+
+extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
+  Notification toCapsicum(String localHost) {
+    return Notification(
+      id: id,
+      type: misskeyNotificationTypeMap[type] ?? NotificationType.other,
+      createdAt: createdAt,
+      user: user?.toCapsicum(localHost),
+      post: note?.toCapsicum(localHost),
+    );
+  }
+}
+
 extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   Attachment toCapsicum() {
     return Attachment(

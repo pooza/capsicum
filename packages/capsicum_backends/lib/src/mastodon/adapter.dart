@@ -275,8 +275,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<List<Notification>> getNotifications() =>
-      throw UnimplementedError();
+  Future<List<Notification>> getNotifications({TimelineQuery? query}) async {
+    final notifications = await client.getNotifications(
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return notifications.map((n) => n.toCapsicum(host)).toList();
+  }
 
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();

@@ -9,6 +9,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/compose_screen.dart';
+import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/splash_screen.dart';
 
@@ -80,6 +81,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/compose',
         builder: (context, state) => const ComposeScreen(),
+      ),
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationScreen(),
       ),
       GoRoute(
         path: '/post',

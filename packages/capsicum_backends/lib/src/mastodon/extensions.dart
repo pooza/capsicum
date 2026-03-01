@@ -58,6 +58,28 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
   }
 }
 
+const mastodonNotificationTypeMap = <String, NotificationType>{
+  'mention': NotificationType.mention,
+  'reblog': NotificationType.reblog,
+  'favourite': NotificationType.favourite,
+  'follow': NotificationType.follow,
+  'follow_request': NotificationType.followRequest,
+  'poll': NotificationType.poll,
+  'update': NotificationType.update,
+};
+
+extension CapsicumMastodonNotificationExtension on MastodonNotification {
+  Notification toCapsicum(String localHost) {
+    return Notification(
+      id: id,
+      type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
+      createdAt: createdAt,
+      user: account.toCapsicum(localHost),
+      post: status?.toCapsicum(localHost),
+    );
+  }
+}
+
 extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
   Attachment toCapsicum() {
     return Attachment(

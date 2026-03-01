@@ -263,8 +263,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<List<Notification>> getNotifications() =>
-      throw UnimplementedError();
+  Future<List<Notification>> getNotifications({TimelineQuery? query}) async {
+    final notifications = await client.getNotifications(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notifications.map((n) => n.toCapsicum(host)).toList();
+  }
 
   @override
   Future<void> clearAllNotifications() => throw UnimplementedError();

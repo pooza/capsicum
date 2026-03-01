@@ -150,6 +150,25 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/notifications
+  Future<List<MastodonNotification>> getNotifications({
+    String? maxId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/notifications',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
+    );
+    return (response.data as List)
+        .map((e) => MastodonNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,
