@@ -91,9 +91,26 @@ class NotificationTile extends StatelessWidget {
   };
 
   String _stripHtml(String html) {
-    return html
+    var text = html
         .replaceAll(RegExp(r'<br\s*/?>'), '\n')
         .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
         .replaceAll(RegExp(r'<[^>]*>'), '');
+    // Decode HTML entities.
+    text = text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'")
+        .replaceAllMapped(
+          RegExp(r'&#(\d+);'),
+          (m) => String.fromCharCode(int.parse(m[1]!)),
+        )
+        .replaceAllMapped(
+          RegExp(r'&#x([0-9a-fA-F]+);'),
+          (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
+        );
+    return text;
   }
 }
