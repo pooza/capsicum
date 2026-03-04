@@ -92,16 +92,16 @@ class _EmojiPickerState extends State<EmojiPicker>
         TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(text: 'Unicode'),
             if (hasCustom) const Tab(text: 'カスタム'),
+            const Tab(text: 'Unicode'),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildUnicodeTab(),
               if (hasCustom) _buildCustomTab(),
+              _buildUnicodeTab(),
             ],
           ),
         ),
