@@ -39,6 +39,9 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       attachments: (files ?? []).map((f) => f.toCapsicum()).toList(),
       reblogCount: renoteCount,
       replyCount: repliesCount,
+      reactions: reactions ?? const {},
+      myReaction: myReaction,
+      reactionEmojis: reactionEmojis ?? const {},
       reblog: renote?.toCapsicum(localHost),
     );
   }

@@ -20,6 +20,8 @@ class MisskeyNote {
   final int renoteCount;
   final int repliesCount;
   final Map<String, int>? reactions;
+  final Map<String, String>? reactionEmojis;
+  final String? myReaction;
 
   const MisskeyNote({
     required this.id,
@@ -35,6 +37,8 @@ class MisskeyNote {
     required this.renoteCount,
     required this.repliesCount,
     this.reactions,
+    this.reactionEmojis,
+    this.myReaction,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>

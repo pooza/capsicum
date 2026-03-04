@@ -143,6 +143,29 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/notes/reactions/create
+  Future<void> createReaction(String noteId, String reaction) async {
+    await dio.post(
+      '/api/notes/reactions/create',
+      data: createBody({'noteId': noteId, 'reaction': reaction}),
+    );
+  }
+
+  /// POST /api/notes/reactions/delete
+  Future<void> deleteReaction(String noteId) async {
+    await dio.post(
+      '/api/notes/reactions/delete',
+      data: createBody({'noteId': noteId}),
+    );
+  }
+
+  /// POST /api/emojis
+  Future<List<Map<String, dynamic>>> getEmojis() async {
+    final response = await dio.post('/api/emojis', data: {});
+    final emojis = response.data['emojis'] as List;
+    return emojis.cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/notes/hybrid-timeline (social = home + local)
   Future<List<MisskeyNote>> getHybridTimeline({
     String? sinceId,

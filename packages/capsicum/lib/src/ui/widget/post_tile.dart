@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import 'emoji_picker.dart';
 
 
 class PostTile extends ConsumerWidget {
@@ -61,6 +62,11 @@ class PostTile extends ConsumerWidget {
                     maxLines: 6,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (displayPost.reactions.isNotEmpty)
+                    _ReactionChips(
+                      post: displayPost,
+                      onToggle: (emoji) => _toggleReaction(context, ref, emoji),
+                    ),
                 ],
               ),
             ),
@@ -68,6 +74,29 @@ class PostTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _toggleReaction(BuildContext context, WidgetRef ref, String emoji) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! ReactionSupport) return;
+
+    final reactionAdapter = adapter as ReactionSupport;
+    final targetPost = post.reblog ?? post;
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (targetPost.myReaction == emoji) {
+      _runAction(
+        messenger,
+        () => reactionAdapter.removeReaction(targetPost.id, emoji),
+        'リアクションを取り消しました',
+      );
+    } else {
+      _runAction(
+        messenger,
+        () => reactionAdapter.addReaction(targetPost.id, emoji),
+        'リアクションしました',
+      );
+    }
   }
 
   void _showActionMenu(BuildContext context, WidgetRef ref) {
@@ -82,7 +111,7 @@ class PostTile extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -91,7 +120,7 @@ class PostTile extends ConsumerWidget {
                 leading: const Icon(Icons.star_outline),
                 title: const Text('お気に入り'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _runAction(
                     messenger,
                     () => (adapter as FavoriteSupport)
@@ -100,11 +129,20 @@ class PostTile extends ConsumerWidget {
                   );
                 },
               ),
+            if (adapter is ReactionSupport)
+              ListTile(
+                leading: const Icon(Icons.add_reaction_outlined),
+                title: const Text('リアクション'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showEmojiPicker(context, ref);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.repeat),
               title: Text(boostLabel),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _runAction(
                   messenger,
                   () => adapter.repeatPost(targetPost.id),
@@ -117,7 +155,7 @@ class PostTile extends ConsumerWidget {
                 leading: const Icon(Icons.bookmark_outline),
                 title: Text(bookmarkLabel),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _runAction(
                     messenger,
                     () => (adapter as BookmarkSupport)
@@ -127,6 +165,34 @@ class PostTile extends ConsumerWidget {
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showEmojiPicker(BuildContext context, WidgetRef ref) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ReactionSupport) return;
+
+    final targetPost = post.reblog ?? post;
+    final messenger = ScaffoldMessenger.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: EmojiPicker(
+          adapter: adapter as BackendAdapter,
+          onSelected: (emoji) {
+            Navigator.pop(context);
+            _runAction(
+              messenger,
+              () => (adapter as ReactionSupport)
+                  .addReaction(targetPost.id, emoji),
+              'リアクションしました',
+            );
+          },
         ),
       ),
     );
@@ -151,5 +217,66 @@ class PostTile extends ConsumerWidget {
         .replaceAll(RegExp(r'<br\s*/?>'), '\n')
         .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
         .replaceAll(RegExp(r'<[^>]*>'), '');
+  }
+}
+
+class _ReactionChips extends StatelessWidget {
+  final Post post;
+  final ValueChanged<String> onToggle;
+
+  const _ReactionChips({required this.post, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: post.reactions.entries.map((entry) {
+          final isMyReaction = post.myReaction == entry.key;
+          final emojiUrl = post.reactionEmojis[
+              entry.key.replaceAll(':', '').replaceAll('@.', '')];
+          return ActionChip(
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+            side: isMyReaction
+                ? BorderSide(color: theme.colorScheme.primary)
+                : null,
+            backgroundColor:
+                isMyReaction ? theme.colorScheme.primaryContainer : null,
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (emojiUrl != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Image.network(
+                      emojiUrl,
+                      width: 18,
+                      height: 18,
+                      errorBuilder: (_, _, _) => Text(
+                        entry.key,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(entry.key, style: const TextStyle(fontSize: 14)),
+                  ),
+                Text(
+                  '${entry.value}',
+                  style: theme.textTheme.labelSmall,
+                ),
+              ],
+            ),
+            onPressed: () => onToggle(entry.key),
+          );
+        }).toList(),
+      ),
+    );
   }
 }

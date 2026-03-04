@@ -283,17 +283,30 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // ReactionSupport
 
   @override
-  Future<void> addReaction(String postId, String emoji) =>
-      throw UnimplementedError();
+  Future<void> addReaction(String postId, String emoji) async {
+    await client.createReaction(postId, emoji);
+  }
 
   @override
-  Future<void> removeReaction(String postId, String emoji) =>
-      throw UnimplementedError();
+  Future<void> removeReaction(String postId, String emoji) async {
+    await client.deleteReaction(postId);
+  }
 
   // CustomEmojiSupport
 
   @override
-  Future<List<CustomEmoji>> getEmojis() => throw UnimplementedError();
+  Future<List<CustomEmoji>> getEmojis() async {
+    final emojis = await client.getEmojis();
+    return emojis
+        .map(
+          (e) => CustomEmoji(
+            shortcode: e['name'] as String,
+            url: (e['url'] as String?) ?? '',
+            category: e['category'] as String?,
+          ),
+        )
+        .toList();
+  }
 
   // ListSupport
 

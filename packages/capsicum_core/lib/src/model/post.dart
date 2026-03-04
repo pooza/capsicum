@@ -15,6 +15,9 @@ class Post {
   final bool favourited;
   final bool reblogged;
   final bool bookmarked;
+  final Map<String, int> reactions;
+  final String? myReaction;
+  final Map<String, String> reactionEmojis;
   final String? inReplyToId;
   final Post? reblog;
 
@@ -31,6 +34,9 @@ class Post {
     this.favourited = false,
     this.reblogged = false,
     this.bookmarked = false,
+    this.reactions = const {},
+    this.myReaction,
+    this.reactionEmojis = const {},
     this.inReplyToId,
     this.reblog,
   });
