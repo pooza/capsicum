@@ -1,17 +1,20 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'provider/account_manager_provider.dart';
+import 'ui/screen/compose_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
-import 'ui/screen/server_selection_screen.dart';
-import 'ui/screen/compose_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/splash_screen.dart';
+
+/// Navigator key exposed for navigation from notification taps.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// A [ChangeNotifier] that notifies GoRouter when auth state changes.
 class _AuthNotifier extends ChangeNotifier {
@@ -41,6 +44,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = ref.read(_authNotifierProvider);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: authNotifier,
     redirect: (context, state) {

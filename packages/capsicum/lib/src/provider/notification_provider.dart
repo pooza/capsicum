@@ -1,6 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../service/background_notification_service.dart';
 import 'account_manager_provider.dart';
 
 /// Paginated notification state.
@@ -41,9 +43,25 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     final notifications = await (adapter as NotificationSupport).getNotifications(
       query: const TimelineQuery(limit: _pageSize),
     );
+    // Update last-seen ID so background polling skips already-seen items.
+    if (notifications.isNotEmpty) {
+      _updateLastSeen(notifications.first.id);
+    }
+
     return NotificationState(
       notifications: notifications,
       hasMore: notifications.length >= _pageSize,
+    );
+  }
+
+  /// Persist the newest notification ID for background polling.
+  Future<void> _updateLastSeen(String newestId) async {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      BackgroundNotificationService.lastSeenKey(account.key.toStorageKey()),
+      newestId,
     );
   }
 
