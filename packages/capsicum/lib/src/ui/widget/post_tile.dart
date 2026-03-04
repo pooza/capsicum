@@ -236,8 +236,13 @@ class _ReactionChips extends StatelessWidget {
         runSpacing: 4,
         children: post.reactions.entries.map((entry) {
           final isMyReaction = post.myReaction == entry.key;
-          final emojiUrl = post.reactionEmojis[
-              entry.key.replaceAll(':', '').replaceAll('@.', '')];
+          // Misskey reaction keys: ":name@.:" for custom, unicode for built-in.
+          // reactionEmojis keys: "name@." (without surrounding colons).
+          final strippedKey = entry.key.startsWith(':') &&
+                  entry.key.endsWith(':')
+              ? entry.key.substring(1, entry.key.length - 1)
+              : entry.key;
+          final emojiUrl = post.reactionEmojis[strippedKey];
           return ActionChip(
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
