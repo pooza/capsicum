@@ -27,3 +27,4 @@ export 'src/social/interfaces/login_support.dart';
 export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/reaction_support.dart';
 export 'src/social/interfaces/search_support.dart';
+export 'src/social/interfaces/stream_support.dart';

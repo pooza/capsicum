@@ -4,10 +4,14 @@ import 'package:fediverse_objects/fediverse_objects.dart';
 class MastodonClient {
   final Dio dio;
   final String host;
+  String? _accessToken;
 
   MastodonClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
 
+  String? get accessToken => _accessToken;
+
   void setAccessToken(String token) {
+    _accessToken = token;
     dio.options.headers['Authorization'] = 'Bearer $token';
   }
 

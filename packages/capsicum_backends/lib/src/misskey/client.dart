@@ -8,6 +8,8 @@ class MisskeyClient {
 
   MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
 
+  String? get accessToken => _token;
+
   void setAccessToken(String token) {
     _token = token;
   }

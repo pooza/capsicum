@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -32,9 +34,10 @@ class TimelineState {
       );
 }
 
-/// Notifier that manages paginated timeline fetching.
+/// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
+  StreamSubscription<Post>? _streamSubscription;
 
   @override
   Future<TimelineState> build() async {
@@ -42,14 +45,42 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
 
+    // Initial REST fetch.
     final posts = await adapter.getTimeline(
       type,
       query: const TimelineQuery(limit: _pageSize),
     );
+
+    // Start streaming if supported.
+    if (adapter is StreamSupport) {
+      _startStreaming(adapter as StreamSupport, type);
+    }
+
+    ref.onDispose(() {
+      _streamSubscription?.cancel();
+      if (adapter is StreamSupport) {
+        (adapter as StreamSupport).disposeStream();
+      }
+    });
+
     return TimelineState(
       posts: posts,
       hasMore: posts.length >= _pageSize,
     );
+  }
+
+  void _startStreaming(StreamSupport adapter, TimelineType type) {
+    _streamSubscription?.cancel();
+    final stream = adapter.streamTimeline(type);
+    _streamSubscription = stream.listen((newPost) {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      // Prepend new post, avoiding duplicates.
+      if (current.posts.any((p) => p.id == newPost.id)) return;
+      state = AsyncData(
+        current.copyWith(posts: [newPost, ...current.posts]),
+      );
+    });
   }
 
   /// Load next page of posts (older posts).
@@ -89,4 +120,3 @@ final timelineProvider =
     AsyncNotifierProvider.autoDispose<TimelineNotifier, TimelineState>(
   TimelineNotifier.new,
 );
-

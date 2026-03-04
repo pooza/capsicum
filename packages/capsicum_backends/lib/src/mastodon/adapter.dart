@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 
 import 'client.dart';
 import 'extensions.dart';
+import 'streaming.dart';
 
 class MastodonCapabilities extends AdapterCapabilities {
   @override
@@ -38,8 +39,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
-        LoginSupport {
+        LoginSupport,
+        StreamSupport {
   final MastodonClient client;
+  MastodonStreaming? _streaming;
 
   @override
   final String host;
@@ -321,4 +324,21 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String hashtag, {
     TimelineQuery? query,
   }) => throw UnimplementedError();
+
+  // StreamSupport
+
+  @override
+  Stream<Post> streamTimeline(TimelineType type) {
+    _streaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    _streaming = MastodonStreaming(host: host, accessToken: token);
+    return _streaming!.connect(type);
+  }
+
+  @override
+  void disposeStream() {
+    _streaming?.dispose();
+    _streaming = null;
+  }
 }

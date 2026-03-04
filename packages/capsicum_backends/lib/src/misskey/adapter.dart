@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import 'client.dart';
 import 'extensions.dart';
+import 'streaming.dart';
 
 class MisskeyCapabilities extends AdapterCapabilities {
   @override
@@ -40,7 +41,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
-        LoginSupport {
+        LoginSupport,
+        StreamSupport {
+  MisskeyStreaming? _streaming;
   final MisskeyClient client;
 
   @override
@@ -332,4 +335,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String hashtag, {
     TimelineQuery? query,
   }) => throw UnimplementedError();
+
+  // StreamSupport
+
+  @override
+  Stream<Post> streamTimeline(TimelineType type) {
+    _streaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    _streaming = MisskeyStreaming(host: host, accessToken: token);
+    return _streaming!.connect(type);
+  }
+
+  @override
+  void disposeStream() {
+    _streaming?.dispose();
+    _streaming = null;
+  }
 }
