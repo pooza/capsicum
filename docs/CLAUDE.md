@@ -177,12 +177,20 @@ capsicum/
 ### 未実装（優先度順）
 
 - メディア添付（画像選択 + アップロード）
-- 検索
+- 検索（アカウント・ハッシュタグのみ。全文検索は対象外）
 - ユーザープロフィール
+- 削除して下書きに戻す
+- ブックマークのタイムライン
+- お知らせ（サーバーからの告知）
 - 引用（Mastodon: quote / Misskey: 引用リノート）
-- 予約投稿（Mastodon のみ・API は存在）
+- 予約投稿（Mastodon / Misskey 両対応）
 - 下書き（Misskey のみ）
 - モロヘイヤ連携
+
+### 実装しない機能
+
+- 投稿の更新（Mastodon）— SNS にふさわしい機能と判断しないため
+- 全文検索 — サーバーリソースの制約により対象外。代替として [notestock](https://notestock.osa-p.net) / [f.chomechome](https://f.chomechome.jp) への誘導を行う
 
 ## ドキュメント表記規約
 
