@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -23,31 +24,38 @@ class NotificationInit {
   static Future<void> initialize({
     required void Function(NotificationResponse) onTap,
   }) async {
-    // Local notifications.
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    await plugin.initialize(
-      const InitializationSettings(
-        android: androidSettings,
-        iOS: iosSettings,
-      ),
-      onDidReceiveNotificationResponse: onTap,
-    );
+    try {
+      // Local notifications.
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      await plugin.initialize(
+        const InitializationSettings(
+          android: androidSettings,
+          iOS: iosSettings,
+        ),
+        onDidReceiveNotificationResponse: onTap,
+      );
 
-    // Background polling.
-    await Workmanager().initialize(backgroundDispatcher, isInDebugMode: false);
-    await Workmanager().registerPeriodicTask(
-      _taskName,
-      _taskName,
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
-    );
+      // Background polling.
+      await Workmanager().initialize(
+        backgroundDispatcher,
+        isInDebugMode: false,
+      );
+      await Workmanager().registerPeriodicTask(
+        _taskName,
+        _taskName,
+        frequency: const Duration(minutes: 15),
+        constraints: Constraints(networkType: NetworkType.connected),
+        existingWorkPolicy: ExistingWorkPolicy.keep,
+      );
+    } catch (e) {
+      debugPrint('NotificationInit failed: $e');
+    }
   }
 }

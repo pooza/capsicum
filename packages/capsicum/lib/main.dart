@@ -7,8 +7,11 @@ import 'src/service/notification_init.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const ProviderScope(child: CapsicumApp()));
 
-  await NotificationInit.initialize(
+  // Initialize notifications after the widget tree is built so that
+  // the permission dialog on iOS does not block rendering.
+  NotificationInit.initialize(
     onTap: (response) {
       final context = rootNavigatorKey.currentContext;
       if (context != null) {
@@ -16,8 +19,6 @@ void main() async {
       }
     },
   );
-
-  runApp(const ProviderScope(child: CapsicumApp()));
 }
 
 class CapsicumApp extends ConsumerWidget {

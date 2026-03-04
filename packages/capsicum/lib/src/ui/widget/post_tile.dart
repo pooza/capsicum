@@ -50,19 +50,86 @@ class PostTile extends ConsumerWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          displayPost.author.displayName ??
+                              displayPost.author.username,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _scopeIcon(displayPost.scope),
+                        size: 14,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _relativeTime(displayPost.postedAt),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                   Text(
-                    displayPost.author.displayName ??
-                        displayPost.author.username,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    _handleText(displayPost.author),
+                    style: Theme.of(context).textTheme.bodySmall,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (displayPost.inReplyToId != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.reply,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '返信',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 4),
-                  Text(
-                    _stripHtml(displayPost.content ?? ''),
-                    maxLines: 6,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Builder(builder: (_) {
+                    final parsed = _parseContent(displayPost.content ?? '');
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(parsed.body),
+                        if (parsed.trailingTags.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: parsed.trailingTags
+                                  .take(3)
+                                  .map(
+                                    (tag) => Chip(
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      label: Text(
+                                        '#$tag',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                      ],
+                    );
+                  }),
                   if (displayPost.reactions.isNotEmpty)
                     _ReactionChips(
                       post: displayPost,
@@ -240,13 +307,103 @@ class PostTile extends ConsumerWidget {
     }
   }
 
-  /// Minimal HTML tag stripping for display.
-  String _stripHtml(String html) {
+  String _handleText(User author) {
+    final handle = '@${author.username}';
+    if (author.host != null) {
+      return '$handle@${author.host}';
+    }
+    return handle;
+  }
+
+  String _relativeTime(DateTime postedAt) {
+    final diff = DateTime.now().toUtc().difference(postedAt);
+    if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
+    if (diff.inHours < 24) return '${diff.inHours}時間前';
+    if (diff.inDays < 30) return '${diff.inDays}日前';
+    final months = diff.inDays ~/ 30;
+    if (months < 12) return '$monthsヶ月前';
+    return '${diff.inDays ~/ 365}年前';
+  }
+
+  IconData _scopeIcon(PostScope scope) {
+    switch (scope) {
+      case PostScope.public:
+        return Icons.public;
+      case PostScope.unlisted:
+        return Icons.lock_open;
+      case PostScope.followersOnly:
+        return Icons.lock;
+      case PostScope.direct:
+        return Icons.mail;
+    }
+  }
+
+  /// Parse content into body text and trailing hashtags.
+  /// Supports both Mastodon (HTML) and Misskey (MFM plain text).
+  ({String body, List<String> trailingTags}) _parseContent(String content) {
+    final isHtml = content.contains('<') && content.contains('>');
+
+    if (isHtml) {
+      return _parseHtmlContent(content);
+    }
+    return _parseMfmContent(content);
+  }
+
+  /// Mastodon HTML: trailing <p> block with hashtag links.
+  ({String body, List<String> trailingTags}) _parseHtmlContent(String html) {
+    var bodyHtml = html;
+    final trailingTags = <String>[];
+
+    final trailingTagBlock = RegExp(
+      r'<p>\s*((<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>\s*)+)</p>\s*$',
+      caseSensitive: false,
+    );
+    final blockMatch = trailingTagBlock.firstMatch(bodyHtml);
+    if (blockMatch != null) {
+      final tagBlockHtml = blockMatch.group(1)!;
+      final withoutTags = tagBlockHtml
+          .replaceAll(RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'), '')
+          .trim();
+      if (withoutTags.isEmpty) {
+        final tagPattern = RegExp(r'#<span>([^<]+)</span>');
+        for (final m in tagPattern.allMatches(tagBlockHtml)) {
+          trailingTags.add(m.group(1)!);
+        }
+        bodyHtml = bodyHtml.substring(0, blockMatch.start).trimRight();
+      }
+    }
+
+    return (body: _decodeHtml(bodyHtml), trailingTags: trailingTags);
+  }
+
+  /// Misskey MFM: trailing line of #tag after a blank line.
+  ({String body, List<String> trailingTags}) _parseMfmContent(String text) {
+    final trailingTags = <String>[];
+
+    // Match a trailing line that contains only hashtags, preceded by a blank line.
+    final trailingTagLine = RegExp(r'\n\n((?:#\S+\s*)+)$');
+    final match = trailingTagLine.firstMatch(text);
+    if (match != null) {
+      final tagLine = match.group(1)!;
+      final tagPattern = RegExp(r'#(\S+)');
+      for (final m in tagPattern.allMatches(tagLine)) {
+        trailingTags.add(m.group(1)!);
+      }
+      return (
+        body: text.substring(0, match.start).trimRight(),
+        trailingTags: trailingTags,
+      );
+    }
+
+    return (body: text, trailingTags: trailingTags);
+  }
+
+  String _decodeHtml(String html) {
     var text = html
         .replaceAll(RegExp(r'<br\s*/?>'), '\n')
         .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
         .replaceAll(RegExp(r'<[^>]*>'), '');
-    // Decode HTML entities.
     text = text
         .replaceAll('&amp;', '&')
         .replaceAll('&lt;', '<')
