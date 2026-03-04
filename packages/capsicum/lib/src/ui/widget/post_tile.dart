@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
 
 
@@ -85,14 +86,20 @@ class PostTile extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
 
     if (targetPost.myReaction == emoji) {
-      _runAction(
+      _runReactionAction(
+        ref,
         messenger,
+        adapter,
+        targetPost.id,
         () => reactionAdapter.removeReaction(targetPost.id, emoji),
         'リアクションを取り消しました',
       );
     } else {
-      _runAction(
+      _runReactionAction(
+        ref,
         messenger,
+        adapter,
+        targetPost.id,
         () => reactionAdapter.addReaction(targetPost.id, emoji),
         'リアクションしました',
       );
@@ -186,8 +193,11 @@ class PostTile extends ConsumerWidget {
           adapter: adapter as BackendAdapter,
           onSelected: (emoji) {
             Navigator.pop(context);
-            _runAction(
+            _runReactionAction(
+              ref,
               messenger,
+              adapter as BackendAdapter,
+              targetPost.id,
               () => (adapter as ReactionSupport)
                   .addReaction(targetPost.id, emoji),
               'リアクションしました',
@@ -196,6 +206,25 @@ class PostTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _runReactionAction(
+    WidgetRef ref,
+    ScaffoldMessengerState messenger,
+    BackendAdapter adapter,
+    String postId,
+    Future<void> Function() action,
+    String successMessage,
+  ) async {
+    try {
+      await action();
+      // Refetch the post and update the timeline.
+      final updated = await adapter.getPostById(postId);
+      ref.read(timelineProvider.notifier).updatePost(updated);
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
+    }
   }
 
   Future<void> _runAction(
@@ -237,12 +266,13 @@ class _ReactionChips extends StatelessWidget {
         children: post.reactions.entries.map((entry) {
           final isMyReaction = post.myReaction == entry.key;
           // Misskey reaction keys: ":name@.:" for custom, unicode for built-in.
-          // reactionEmojis keys: "name@." (without surrounding colons).
+          // reactionEmojis keys vary: "name@." or "name" (without colons).
           final strippedKey = entry.key.startsWith(':') &&
                   entry.key.endsWith(':')
               ? entry.key.substring(1, entry.key.length - 1)
               : entry.key;
-          final emojiUrl = post.reactionEmojis[strippedKey];
+          final emojiUrl = post.reactionEmojis[strippedKey] ??
+              post.reactionEmojis[strippedKey.replaceAll('@.', '')];
           return ActionChip(
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,

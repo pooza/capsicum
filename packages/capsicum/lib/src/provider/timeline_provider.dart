@@ -83,6 +83,39 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     });
   }
 
+  /// Replace a post in the list by ID (e.g. after reacting).
+  void updatePost(Post updated) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = current.posts.map((p) {
+      if (p.id == updated.id) return updated;
+      // Also check reblog target.
+      if (p.reblog?.id == updated.id) {
+        return Post(
+          id: p.id,
+          postedAt: p.postedAt,
+          author: p.author,
+          content: p.content,
+          scope: p.scope,
+          attachments: p.attachments,
+          favouriteCount: p.favouriteCount,
+          reblogCount: p.reblogCount,
+          replyCount: p.replyCount,
+          favourited: p.favourited,
+          reblogged: p.reblogged,
+          bookmarked: p.bookmarked,
+          reactions: p.reactions,
+          myReaction: p.myReaction,
+          reactionEmojis: p.reactionEmojis,
+          inReplyToId: p.inReplyToId,
+          reblog: updated,
+        );
+      }
+      return p;
+    }).toList();
+    state = AsyncData(current.copyWith(posts: posts));
+  }
+
   /// Load next page of posts (older posts).
   Future<void> loadMore() async {
     final current = state.valueOrNull;
