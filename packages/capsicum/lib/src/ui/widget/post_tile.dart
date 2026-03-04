@@ -267,12 +267,18 @@ class _ReactionChips extends StatelessWidget {
           final isMyReaction = post.myReaction == entry.key;
           // Misskey reaction keys: ":name@.:" for custom, unicode for built-in.
           // reactionEmojis keys vary: "name@." or "name" (without colons).
-          final strippedKey = entry.key.startsWith(':') &&
-                  entry.key.endsWith(':')
+          final isCustomEmoji =
+              entry.key.startsWith(':') && entry.key.endsWith(':');
+          final strippedKey = isCustomEmoji
               ? entry.key.substring(1, entry.key.length - 1)
               : entry.key;
-          final emojiUrl = post.reactionEmojis[strippedKey] ??
-              post.reactionEmojis[strippedKey.replaceAll('@.', '')];
+          final nameOnly = strippedKey.replaceAll('@.', '');
+          var emojiUrl = post.reactionEmojis[strippedKey] ??
+              post.reactionEmojis[nameOnly];
+          // Fallback: construct URL from Misskey emoji endpoint.
+          if (emojiUrl == null && isCustomEmoji && post.author.host != null) {
+            emojiUrl = 'https://${post.author.host}/emoji/$nameOnly.webp';
+          }
           return ActionChip(
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,

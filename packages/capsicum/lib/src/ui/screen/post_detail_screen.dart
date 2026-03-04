@@ -33,7 +33,7 @@ class PostDetailScreen extends ConsumerWidget {
                       .primaryContainer
                       .withValues(alpha: 0.3)
                   : null,
-              child: PostTile(post: p),
+              child: PostTile(post: p, tappable: !isTarget),
             );
           },
         ),
