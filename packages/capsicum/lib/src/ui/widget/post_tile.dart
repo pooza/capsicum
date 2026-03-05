@@ -1,7 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -27,11 +29,62 @@ class PostTile extends ConsumerStatefulWidget {
 class _PostTileState extends ConsumerState<PostTile> {
   static const _maxLines = 8;
   static const _maxTags = 3;
+  static final _urlRegex = RegExp(r'https?://[^\s<>\]）」』】]+');
   bool _expanded = false;
   bool _tagsExpanded = false;
+  final List<GestureRecognizer> _recognizers = [];
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  TextSpan _buildContentSpan(String text, TextStyle? baseStyle) {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+
+    final matches = _urlRegex.allMatches(text).toList();
+    if (matches.isEmpty) {
+      return TextSpan(text: text, style: baseStyle);
+    }
+
+    final children = <TextSpan>[];
+    var lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        children.add(TextSpan(text: text.substring(lastEnd, match.start)));
+      }
+      final url = match.group(0)!;
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => launchUrl(Uri.parse(url));
+      _recognizers.add(recognizer);
+      final displayUrl = Uri.decodeFull(url);
+      children.add(TextSpan(
+        text: displayUrl,
+        style: const TextStyle(
+          color: Colors.blue,
+          decoration: TextDecoration.underline,
+        ),
+        recognizer: recognizer,
+      ));
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < text.length) {
+      children.add(TextSpan(text: text.substring(lastEnd)));
+    }
+
+    return TextSpan(children: children, style: baseStyle);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,12 +178,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                       children: [
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            final textSpan = TextSpan(
-                              text: parsed.body,
-                              style: DefaultTextStyle.of(context).style,
+                            final baseStyle = DefaultTextStyle.of(context).style;
+                            final contentSpan = _buildContentSpan(
+                              parsed.body,
+                              baseStyle,
                             );
                             final textPainter = TextPainter(
-                              text: textSpan,
+                              text: contentSpan,
                               maxLines: _maxLines,
                               textDirection: TextDirection.ltr,
                             )..layout(maxWidth: constraints.maxWidth);
@@ -139,8 +193,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  parsed.body,
+                                Text.rich(
+                                  contentSpan,
                                   maxLines: _expanded ? null : _maxLines,
                                   overflow: _expanded
                                       ? null
