@@ -182,6 +182,7 @@ capsicum/
 - 削除して下書きに戻す
 - ブックマークのタイムライン
 - お知らせ（サーバーからの告知）
+- ワードフィルタのタイムライン反映（[#7](https://github.com/pooza/capsicum/issues/7)）
 - モロヘイヤ連携
 
 ### 初期バージョン後（Issue 管理）
@@ -190,6 +191,8 @@ capsicum/
 - プレビューカードの表示（[#2](https://github.com/pooza/capsicum/issues/2)）
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
 - メディアサムネイルのタップで全体表示（[#6](https://github.com/pooza/capsicum/issues/6)）
+- ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
+- コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
 
 ### 実装しない機能
 
