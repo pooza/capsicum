@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
@@ -141,11 +142,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Row(
       children: tabs.map((type) {
-        final label = (isMastodon
+        var label = (isMastodon
                 ? _mastodonLabelOverrides[type]
                 : null) ??
             _timelineLabels[type] ??
             type.name;
+        if (type == TimelineType.local) {
+          label = ref.watch(localTimelineNameProvider);
+        }
         return _tabButton(context, label, type, selected);
       }).toList(),
     );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 
@@ -116,21 +117,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
     if (_results == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.search, size: 48, color: Colors.grey),
-              SizedBox(height: 16),
+              const Icon(Icons.search, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
               Text(
                 '@ユーザー名  アカウントを検索\n'
                 '#タグ名  ハッシュタグを検索\n'
-                'URL  リモートの投稿やアカウントを取得\n'
+                'URL  リモートの${ref.watch(postLabelProvider)}やアカウントを取得\n'
                 'キーワード  全文検索',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, height: 1.8),
+                style: const TextStyle(color: Colors.grey, height: 1.8),
               ),
             ],
           ),
@@ -168,11 +169,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       length: 3,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
             tabs: [
-              Tab(text: 'アカウント'),
-              Tab(text: 'ハッシュタグ'),
-              Tab(text: '投稿'),
+              const Tab(text: 'アカウント'),
+              const Tab(text: 'ハッシュタグ'),
+              Tab(text: ref.watch(postLabelProvider)),
             ],
           ),
           Expanded(
@@ -262,7 +263,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildPostList(List<Post> posts) {
     if (posts.isEmpty) {
-      return const Center(child: Text('投稿が見つかりませんでした'));
+      return Center(child: Text('${ref.watch(postLabelProvider)}が見つかりませんでした'));
     }
     return ListView.separated(
       itemCount: posts.length,

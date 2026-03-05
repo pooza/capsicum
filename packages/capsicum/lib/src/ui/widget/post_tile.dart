@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
 import 'emoji_text.dart';
@@ -653,8 +654,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('投稿を削除'),
-        content: const Text('この投稿を削除しますか？この操作は取り消せません。'),
+        title: Text('${ref.read(postLabelProvider)}を削除'),
+        content: Text('この${ref.read(postLabelProvider)}を削除しますか？この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -669,7 +670,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                   await adapter.deletePost(targetPost.id);
                   ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 },
-                '投稿を削除しました',
+                '${ref.read(postLabelProvider)}を削除しました',
               );
             },
             child: Text(
@@ -692,7 +693,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('削除して再編集'),
-        content: const Text('投稿を削除し、内容を再編集します。この操作は取り消せません。'),
+        content: Text('${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -710,7 +711,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                     router.push('/compose', extra: targetPost);
                   }
                 },
-                '投稿を削除しました',
+                '${ref.read(postLabelProvider)}を削除しました',
               );
             },
             child: Text(
@@ -801,6 +802,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       builder: (_) => _RetagSheet(
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
+        postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
           try {
             // Build new body: original body + new footer tags.
@@ -1164,11 +1166,13 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
 class _RetagSheet extends StatefulWidget {
   final List<String> initialTags;
   final MulukhiyaService mulukhiya;
+  final String postLabel;
   final Future<void> Function(List<String> tags) onSubmit;
 
   const _RetagSheet({
     required this.initialTags,
     required this.mulukhiya,
+    required this.postLabel,
     required this.onSubmit,
   });
 
@@ -1234,7 +1238,7 @@ class _RetagSheetState extends State<_RetagSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              '元の投稿を削除し、指定したタグで再投稿します。',
+              '元の${widget.postLabel}を削除し、指定したタグで再${widget.postLabel}します。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -1293,7 +1297,7 @@ class _RetagSheetState extends State<_RetagSheet> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('タグを変更して再投稿'),
+                    : Text('タグを変更して再${widget.postLabel}'),
               ),
             ),
           ],

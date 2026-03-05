@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/notification_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../widget/notification_tile.dart';
 
 class NotificationScreen extends ConsumerStatefulWidget {
@@ -62,6 +63,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                     }
                     return NotificationTile(
                       notification: state.notifications[index],
+                      postLabel: ref.watch(postLabelProvider),
                     );
                   },
                 ),

@@ -6,8 +6,13 @@ import 'emoji_text.dart';
 
 class NotificationTile extends StatelessWidget {
   final Notification notification;
+  final String postLabel;
 
-  const NotificationTile({super.key, required this.notification});
+  const NotificationTile({
+    super.key,
+    required this.notification,
+    this.postLabel = '投稿',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +112,7 @@ class NotificationTile extends StatelessWidget {
     NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
     NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
     NotificationType.poll => (Icons.poll, 'アンケート終了'),
-    NotificationType.update => (Icons.edit, '投稿を編集'),
+    NotificationType.update => (Icons.edit, '$postLabelを編集'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
 

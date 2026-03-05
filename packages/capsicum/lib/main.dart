@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
 
@@ -30,7 +31,9 @@ class CapsicumApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'capsicum',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: ref.watch(themeSeedColorProvider),
+        ),
         useMaterial3: true,
       ),
       routerConfig: router,

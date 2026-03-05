@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 
@@ -241,7 +242,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              _statItem(context, '投稿', user.postCount),
+              _statItem(context, ref.watch(postLabelProvider), user.postCount),
               const SizedBox(width: 24),
               _statItem(context, 'フォロー', user.followingCount),
               const SizedBox(width: 24),

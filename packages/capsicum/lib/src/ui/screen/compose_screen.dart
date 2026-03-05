@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -182,7 +183,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('投稿に失敗しました: $e')));
+        ).showSnackBar(SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました: $e')));
         setState(() => _sending = false);
       }
     }
@@ -190,12 +191,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final adapter = ref.watch(currentAdapterProvider);
-    final maxLength = adapter?.capabilities.maxPostContentLength;
+    final maxLength = ref.watch(maxPostLengthProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('投稿'),
+        title: Text(ref.watch(postLabelProvider)),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -380,7 +380,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     style: TextStyle(
                       color: _controller.text.length > maxLength
                           ? Theme.of(context).colorScheme.error
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                          : _controller.text.length > maxLength * 0.8
+                              ? Colors.orange
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
               ],

@@ -36,17 +36,36 @@ class MulukhiyaProgram {
   });
 }
 
+/// Extract the first default hashtag (without '#') from the about response.
+String? _parseDefaultHashtag(dynamic value) {
+  if (value is String && value.isNotEmpty) {
+    return value.replaceFirst('#', '');
+  }
+  if (value is List && value.isNotEmpty) {
+    return value.first.toString().replaceFirst('#', '');
+  }
+  return null;
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
   final String controllerType;
   final String version;
+  final int? maxPostLength;
+  final String? postLabel;
+  final String? themeColorHex;
+  final String? defaultHashtag;
 
   MulukhiyaService._({
     required Dio dio,
     required this.baseUrl,
     required this.controllerType,
     required this.version,
+    this.maxPostLength,
+    this.postLabel,
+    this.themeColorHex,
+    this.defaultHashtag,
   }) : _dio = dio;
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
@@ -71,11 +90,18 @@ class MulukhiyaService {
       final config = data['config'] as Map<String, dynamic>?;
       if (package == null || config == null) return null;
 
+      final status = config['status'] as Map<String, dynamic>?;
+      final theme = config['theme'] as Map<String, dynamic>?;
+
       return MulukhiyaService._(
         dio: dio,
         baseUrl: 'https://$domain/mulukhiya/api',
         controllerType: config['controller'] as String? ?? 'mastodon',
         version: package['version'] as String? ?? '0.0.0',
+        maxPostLength: status?['max_length'] as int?,
+        postLabel: status?['label'] as String?,
+        themeColorHex: theme?['color'] as String?,
+        defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
       );
     } catch (_) {
       // Not found or connection error — mulukhiya not present
