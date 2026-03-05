@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:http_parser/http_parser.dart';
 
 class MisskeyClient {
   final Dio dio;
@@ -55,11 +56,35 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/drive/files/create
+  Future<Map<String, dynamic>> createDriveFile(
+    String filePath, {
+    String? comment,
+    String? mimeType,
+  }) async {
+    final fileName = filePath.split('/').last;
+    final mediaType = mimeType != null
+        ? MediaType.parse(mimeType)
+        : null;
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(
+        filePath,
+        filename: fileName,
+        contentType: mediaType,
+      ),
+      'comment': ?comment,
+      if (_token != null) 'i': _token,
+    });
+    final response = await dio.post('/api/drive/files/create', data: formData);
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/notes/create
   Future<MisskeyNote> createNote({
     required String text,
     required String visibility,
     String? replyId,
+    List<String>? fileIds,
   }) async {
     final response = await dio.post(
       '/api/notes/create',
@@ -67,6 +92,7 @@ class MisskeyClient {
         'text': text,
         'visibility': visibility,
         'replyId': ?replyId,
+        'fileIds': ?fileIds,
       }),
     );
     return MisskeyNote.fromJson(

@@ -13,6 +13,7 @@ dependencies:
   fediverse_objects:
     path: ../fediverse_objects
   dio: ^5.8.0+1
+  http_parser: ^4.1.0
   uuid: ^4.0.0
   web_socket_channel: ^3.0.0
 

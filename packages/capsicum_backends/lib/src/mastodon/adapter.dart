@@ -89,6 +89,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       visibility: mastodonVisibilityFromScope(draft.scope),
       inReplyToId: draft.inReplyToId,
       spoilerText: draft.spoilerText,
+      mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
     );
     return status.toCapsicum(host);
   }
@@ -155,8 +156,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<Instance> getInstance() => throw UnimplementedError();
 
   @override
-  Future<Attachment> uploadAttachment(AttachmentDraft draft) =>
-      throw UnimplementedError();
+  Future<Attachment> uploadAttachment(AttachmentDraft draft) async {
+    final media = await client.uploadMedia(
+      draft.filePath,
+      description: draft.description,
+      mimeType: draft.mimeType,
+    );
+    return media.toCapsicum();
+  }
 
   // LoginSupport
 

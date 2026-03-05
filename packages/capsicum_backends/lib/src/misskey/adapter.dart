@@ -109,6 +109,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
       replyId: draft.inReplyToId,
+      fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
     );
     return note.toCapsicum(host);
   }
@@ -186,8 +187,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<Instance> getInstance() => throw UnimplementedError();
 
   @override
-  Future<Attachment> uploadAttachment(AttachmentDraft draft) =>
-      throw UnimplementedError();
+  Future<Attachment> uploadAttachment(AttachmentDraft draft) async {
+    final file = await client.createDriveFile(
+      draft.filePath,
+      comment: draft.description,
+      mimeType: draft.mimeType,
+    );
+    return Attachment(
+      id: file['id'] as String,
+      type: _driveFileType(file['type'] as String?),
+      url: file['url'] as String,
+      previewUrl: file['thumbnailUrl'] as String?,
+      description: file['comment'] as String?,
+    );
+  }
+
+  static AttachmentType _driveFileType(String? mimeType) {
+    if (mimeType == null) return AttachmentType.unknown;
+    if (mimeType.startsWith('image/')) return AttachmentType.image;
+    if (mimeType.startsWith('video/')) return AttachmentType.video;
+    if (mimeType.startsWith('audio/')) return AttachmentType.audio;
+    return AttachmentType.unknown;
+  }
 
   // LoginSupport
 

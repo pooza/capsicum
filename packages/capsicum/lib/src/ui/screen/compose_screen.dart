@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -15,6 +18,8 @@ class ComposeScreen extends ConsumerStatefulWidget {
 
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _controller = TextEditingController();
+  final _imagePicker = ImagePicker();
+  final List<XFile> _attachments = [];
   PostScope _scope = PostScope.public;
   bool _sending = false;
 
@@ -24,16 +29,45 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     super.dispose();
   }
 
+  Future<void> _pickMedia() async {
+    final files = await _imagePicker.pickMultipleMedia();
+    if (files.isNotEmpty) {
+      setState(() => _attachments.addAll(files));
+    }
+  }
+
+  void _removeAttachment(int index) {
+    setState(() => _attachments.removeAt(index));
+  }
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _attachments.isEmpty) return;
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
     setState(() => _sending = true);
     try {
-      await adapter.postStatus(PostDraft(content: text, scope: _scope));
+      // Upload attachments in parallel.
+      final mediaIds = await Future.wait(
+        _attachments.map((file) async {
+          final draft = AttachmentDraft(
+            filePath: file.path,
+            mimeType: file.mimeType,
+          );
+          final attachment = await adapter.uploadAttachment(draft);
+          return attachment.id;
+        }),
+      );
+
+      await adapter.postStatus(
+        PostDraft(
+          content: text.isNotEmpty ? text : null,
+          scope: _scope,
+          mediaIds: mediaIds,
+        ),
+      );
       if (mounted) {
         ref.invalidate(timelineProvider);
         context.pop();
@@ -90,9 +124,61 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 onChanged: (_) => setState(() {}),
               ),
             ),
+            if (_attachments.isNotEmpty) ...[
+              const Divider(),
+              SizedBox(
+                height: 100,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _attachments.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    return Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(_attachments[index].path),
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: GestureDetector(
+                            onTap: _sending
+                                ? null
+                                : () => _removeAttachment(index),
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              padding: const EdgeInsets.all(4),
+                              child: const Icon(
+                                Icons.close,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
             const Divider(),
             Row(
               children: [
+                IconButton(
+                  onPressed: _sending ? null : _pickMedia,
+                  icon: const Icon(Icons.photo),
+                  tooltip: 'メディアを添付',
+                ),
                 DropdownButton<PostScope>(
                   value: _scope,
                   underline: const SizedBox.shrink(),

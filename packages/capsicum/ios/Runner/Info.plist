@@ -47,6 +47,10 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>投稿にメディアを添付するためにフォトライブラリへのアクセスが必要です</string>
+	<key>NSCameraUsageDescription</key>
+	<string>投稿に写真を添付するためにカメラへのアクセスが必要です</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>

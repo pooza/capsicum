@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:http_parser/http_parser.dart';
 
 class MastodonClient {
   final Dio dio;
@@ -86,12 +87,14 @@ class MastodonClient {
     required String visibility,
     String? inReplyToId,
     String? spoilerText,
+    List<String>? mediaIds,
   }) async {
     final response = await dio.post('/api/v1/statuses', data: {
       'status': status,
       'visibility': visibility,
       'in_reply_to_id': ?inReplyToId,
       'spoiler_text': ?spoilerText,
+      'media_ids': ?mediaIds,
     });
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
@@ -171,6 +174,30 @@ class MastodonClient {
     return (response.data as List)
         .map((e) => MastodonNotification.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// POST /api/v2/media
+  Future<MastodonMediaAttachment> uploadMedia(
+    String filePath, {
+    String? description,
+    String? mimeType,
+  }) async {
+    final fileName = filePath.split('/').last;
+    final mediaType = mimeType != null
+        ? MediaType.parse(mimeType)
+        : null;
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(
+        filePath,
+        filename: fileName,
+        contentType: mediaType,
+      ),
+      'description': ?description,
+    });
+    final response = await dio.post('/api/v2/media', data: formData);
+    return MastodonMediaAttachment.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   /// GET /api/v1/timelines/public
