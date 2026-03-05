@@ -4,8 +4,13 @@ import '../../model/user.dart';
 class SearchResults {
   final List<Post> posts;
   final List<User> users;
+  final List<String> hashtags;
 
-  const SearchResults({this.posts = const [], this.users = const []});
+  const SearchResults({
+    this.posts = const [],
+    this.users = const [],
+    this.hashtags = const [],
+  });
 }
 
 abstract mixin class SearchSupport {

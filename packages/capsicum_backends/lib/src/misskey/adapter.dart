@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 
 import 'client.dart';
@@ -304,7 +305,35 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // SearchSupport
 
   @override
-  Future<SearchResults> search(String query) => throw UnimplementedError();
+  Future<SearchResults> search(String query) async {
+    final isUrl = Uri.tryParse(query)?.hasScheme ?? false;
+
+    if (isUrl) {
+      try {
+        final data = await client.apShow(query);
+        final type = data['type'] as String?;
+        if (type == 'Note') {
+          final note =
+              MisskeyNote.fromJson(data['object'] as Map<String, dynamic>);
+          return SearchResults(posts: [note.toCapsicum(host)]);
+        } else if (type == 'User') {
+          final user =
+              MisskeyUser.fromJson(data['object'] as Map<String, dynamic>);
+          return SearchResults(users: [user.toCapsicum(host)]);
+        }
+      } catch (_) {
+        // resolve failed — return empty results.
+      }
+      return const SearchResults();
+    }
+
+    final users = await client.searchUsers(query, limit: 20);
+    final hashtags = await client.searchHashtags(query, limit: 20);
+    return SearchResults(
+      users: users.map((u) => u.toCapsicum(host)).toList(),
+      hashtags: hashtags,
+    );
+  }
 
   // ReactionSupport
 

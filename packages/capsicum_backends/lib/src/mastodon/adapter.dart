@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:fediverse_objects/fediverse_objects.dart';
 
 import 'client.dart';
 import 'extensions.dart';
@@ -302,7 +303,30 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // SearchSupport
 
   @override
-  Future<SearchResults> search(String query) => throw UnimplementedError();
+  Future<SearchResults> search(String query) async {
+    final isUrl = Uri.tryParse(query)?.hasScheme ?? false;
+    final data = await client.search(
+      query,
+      resolve: isUrl ? true : null,
+      limit: 20,
+    );
+    final accounts = (data['accounts'] as List? ?? [])
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .map((a) => a.toCapsicum(host))
+        .toList();
+    final statuses = (data['statuses'] as List? ?? [])
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .map((s) => s.toCapsicum(host))
+        .toList();
+    final hashtags = (data['hashtags'] as List? ?? [])
+        .map((e) => (e as Map<String, dynamic>)['name'] as String)
+        .toList();
+    return SearchResults(
+      users: accounts,
+      posts: statuses,
+      hashtags: hashtags,
+    );
+  }
 
   // CustomEmojiSupport
 

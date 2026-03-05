@@ -10,6 +10,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/splash_screen.dart';
 
@@ -88,6 +89,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           final draft = state.extra as Post?;
           return ComposeScreen(redraft: draft);
         },
+      ),
+      GoRoute(
+        path: '/search',
+        builder: (context, state) => const SearchScreen(),
       ),
       GoRoute(
         path: '/notifications',

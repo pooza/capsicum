@@ -205,6 +205,25 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// GET /api/v2/search
+  Future<Map<String, dynamic>> search(
+    String query, {
+    String? type,
+    bool? resolve,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v2/search',
+      queryParameters: {
+        'q': query,
+        'type': ?type,
+        'resolve': ?resolve,
+        'limit': ?limit,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,

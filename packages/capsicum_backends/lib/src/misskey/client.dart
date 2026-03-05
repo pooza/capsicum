@@ -199,6 +199,35 @@ class MisskeyClient {
     return emojis.cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/users/search
+  Future<List<MisskeyUser>> searchUsers(String query, {int? limit}) async {
+    final response = await dio.post(
+      '/api/users/search',
+      data: createBody({'query': query, 'limit': ?limit}),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyUser.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/hashtags/search
+  Future<List<String>> searchHashtags(String query, {int? limit}) async {
+    final response = await dio.post(
+      '/api/hashtags/search',
+      data: createBody({'query': query, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<String>();
+  }
+
+  /// POST /api/ap/show — resolve a remote URI to a local object.
+  Future<Map<String, dynamic>> apShow(String uri) async {
+    final response = await dio.post(
+      '/api/ap/show',
+      data: createBody({'uri': uri}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/notes/hybrid-timeline (social = home + local)
   Future<List<MisskeyNote>> getHybridTimeline({
     String? sinceId,
