@@ -604,6 +604,15 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             if (isOwn) ...[
               const Divider(),
+              if (ref.read(currentMulukhiyaProvider) != null)
+                ListTile(
+                  leading: const Icon(Icons.sell_outlined),
+                  title: const Text('削除してタグづけ'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showRetagSheet(context, targetPost);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('削除して再編集'),
@@ -774,6 +783,35 @@ class _PostTileState extends ConsumerState<PostTile> {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
     }
+  }
+
+  void _showRetagSheet(BuildContext context, Post targetPost) {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    if (mulukhiya == null) return;
+
+    final parsed = _parseContent(targetPost.content ?? '');
+    final messenger = ScaffoldMessenger.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _RetagSheet(
+        initialTags: parsed.trailingTags,
+        onSubmit: (tags) async {
+          try {
+            await mulukhiya.statusTags(id: targetPost.id, tags: tags);
+            ref.read(timelineProvider.notifier).removePost(targetPost.id);
+            messenger.showSnackBar(
+              const SnackBar(content: Text('タグを変更しました')),
+            );
+          } catch (e) {
+            messenger.showSnackBar(
+              SnackBar(content: Text('エラー: $e')),
+            );
+          }
+        },
+      ),
+    );
   }
 
   String _handleText(User author) {
@@ -1102,6 +1140,121 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RetagSheet extends StatefulWidget {
+  final List<String> initialTags;
+  final Future<void> Function(List<String> tags) onSubmit;
+
+  const _RetagSheet({required this.initialTags, required this.onSubmit});
+
+  @override
+  State<_RetagSheet> createState() => _RetagSheetState();
+}
+
+class _RetagSheetState extends State<_RetagSheet> {
+  late final List<String> _tags;
+  final _controller = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tags = List.of(widget.initialTags);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _addTag() {
+    final text = _controller.text.trim().replaceAll('#', '');
+    if (text.isEmpty || _tags.contains(text)) return;
+    setState(() => _tags.add(text));
+    _controller.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '削除してタグづけ',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '元の投稿を削除し、指定したタグで再投稿します。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _tags
+                .map((tag) => Chip(
+                      label: Text('#$tag'),
+                      onDeleted: () =>
+                          setState(() => _tags.remove(tag)),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: const InputDecoration(
+                    hintText: 'タグを追加',
+                    prefixText: '#',
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _addTag(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _addTag,
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _submitting
+                  ? null
+                  : () async {
+                      setState(() => _submitting = true);
+                      await widget.onSubmit(_tags);
+                      if (mounted) Navigator.pop(context);
+                    },
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('タグを変更して再投稿'),
+            ),
+          ),
+        ],
       ),
     );
   }
