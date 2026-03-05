@@ -189,6 +189,7 @@ capsicum/
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
 - プレビューカードの表示（[#2](https://github.com/pooza/capsicum/issues/2)）
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
+- メディアサムネイルのタップで全体表示（[#6](https://github.com/pooza/capsicum/issues/6)）
 
 ### 実装しない機能
 
