@@ -9,6 +9,9 @@ class PostDraft {
   final bool sensitive;
   final bool localOnly;
 
+  /// When true, adds X-Mulukhiya header to bypass mulukhiya hooks.
+  final bool skipMulukhiya;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -17,5 +20,6 @@ class PostDraft {
     this.spoilerText,
     this.sensitive = false,
     this.localOnly = false,
+    this.skipMulukhiya = false,
   });
 }

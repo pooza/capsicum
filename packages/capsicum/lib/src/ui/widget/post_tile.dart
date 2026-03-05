@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -788,6 +789,8 @@ class _PostTileState extends ConsumerState<PostTile> {
   void _showRetagSheet(BuildContext context, Post targetPost) {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
 
     final parsed = _parseContent(targetPost.content ?? '');
     final messenger = ScaffoldMessenger.of(context);
@@ -797,9 +800,22 @@ class _PostTileState extends ConsumerState<PostTile> {
       isScrollControlled: true,
       builder: (_) => _RetagSheet(
         initialTags: parsed.trailingTags,
+        mulukhiya: mulukhiya,
         onSubmit: (tags) async {
           try {
-            await mulukhiya.statusTags(id: targetPost.id, tags: tags);
+            // Build new body: original body + new footer tags.
+            final tagLine = tags.map((t) => '#$t').join(' ');
+            final newContent = parsed.body.trimRight() +
+                (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
+
+            // Delete original, then repost with X-Mulukhiya to skip hooks.
+            await adapter.deletePost(targetPost.id);
+            await adapter.postStatus(PostDraft(
+              content: newContent,
+              scope: targetPost.scope,
+              spoilerText: targetPost.spoilerText,
+              skipMulukhiya: true,
+            ));
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
             messenger.showSnackBar(
               const SnackBar(content: Text('タグを変更しました')),
@@ -1147,9 +1163,14 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
 
 class _RetagSheet extends StatefulWidget {
   final List<String> initialTags;
+  final MulukhiyaService mulukhiya;
   final Future<void> Function(List<String> tags) onSubmit;
 
-  const _RetagSheet({required this.initialTags, required this.onSubmit});
+  const _RetagSheet({
+    required this.initialTags,
+    required this.mulukhiya,
+    required this.onSubmit,
+  });
 
   @override
   State<_RetagSheet> createState() => _RetagSheetState();
@@ -1159,11 +1180,18 @@ class _RetagSheetState extends State<_RetagSheet> {
   late final List<String> _tags;
   final _controller = TextEditingController();
   bool _submitting = false;
+  List<String> _defaultTags = [];
 
   @override
   void initState() {
     super.initState();
     _tags = List.of(widget.initialTags);
+    _loadDefaultTags();
+  }
+
+  Future<void> _loadDefaultTags() async {
+    final tags = await widget.mulukhiya.getDefaultHashtags();
+    if (mounted) setState(() => _defaultTags = tags);
   }
 
   @override
@@ -1178,6 +1206,9 @@ class _RetagSheetState extends State<_RetagSheet> {
     setState(() => _tags.add(text));
     _controller.clear();
   }
+
+  bool _isDefaultTag(String tag) =>
+      _defaultTags.any((d) => d.toLowerCase() == tag.toLowerCase());
 
   @override
   Widget build(BuildContext context) {
@@ -1213,13 +1244,14 @@ class _RetagSheetState extends State<_RetagSheet> {
                 child: Wrap(
                   spacing: 6,
                   runSpacing: 6,
-                  children: _tags
-                      .map((tag) => Chip(
-                            label: Text('#$tag'),
-                            onDeleted: () =>
-                                setState(() => _tags.remove(tag)),
-                          ))
-                      .toList(),
+                  children: _tags.map((tag) {
+                    final locked = _isDefaultTag(tag);
+                    return Chip(
+                      label: Text('#$tag'),
+                      onDeleted: locked ? null : () =>
+                          setState(() => _tags.remove(tag)),
+                    );
+                  }).toList(),
                 ),
               ),
             ),

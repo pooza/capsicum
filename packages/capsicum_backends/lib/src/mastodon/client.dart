@@ -113,15 +113,20 @@ class MastodonClient {
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
+    Map<String, String>? extraHeaders,
   }) async {
-    final response = await dio.post('/api/v1/statuses', data: {
-      'status': status,
-      'visibility': visibility,
-      'in_reply_to_id': ?inReplyToId,
-      'spoiler_text': ?spoilerText,
-      'media_ids': ?mediaIds,
-      'sensitive': ?sensitive,
-    });
+    final response = await dio.post(
+      '/api/v1/statuses',
+      data: {
+        'status': status,
+        'visibility': visibility,
+        'in_reply_to_id': ?inReplyToId,
+        'spoiler_text': ?spoilerText,
+        'media_ids': ?mediaIds,
+        'sensitive': ?sensitive,
+      },
+      options: extraHeaders != null ? Options(headers: extraHeaders) : null,
+    );
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 

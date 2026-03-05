@@ -117,6 +117,7 @@ class MisskeyClient {
     List<String>? fileIds,
     String? cw,
     bool? localOnly,
+    Map<String, String>? extraHeaders,
   }) async {
     final response = await dio.post(
       '/api/notes/create',
@@ -128,6 +129,7 @@ class MisskeyClient {
         'cw': ?cw,
         'localOnly': ?localOnly,
       }),
+      options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']

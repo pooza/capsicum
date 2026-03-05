@@ -126,6 +126,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
+      extraHeaders: draft.skipMulukhiya
+          ? {'X-Mulukhiya': 'capsicum'}
+          : null,
     );
     return note.toCapsicum(host);
   }

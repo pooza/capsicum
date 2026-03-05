@@ -101,6 +101,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       sensitive: draft.sensitive ? true : null,
+      extraHeaders: draft.skipMulukhiya
+          ? {'X-Mulukhiya': 'capsicum'}
+          : null,
     );
     return status.toCapsicum(host);
   }

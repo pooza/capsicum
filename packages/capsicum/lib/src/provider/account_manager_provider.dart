@@ -43,10 +43,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
     // Detect mulukhiya on the server (non-blocking — failure is fine).
-    final mulukhiya = await _detectMulukhiya(
-      account.key.host,
-      account.userSecret.accessToken,
-    );
+    final mulukhiya = await _detectMulukhiya(account.key.host);
     final enriched = mulukhiya != null
         ? Account(
             key: account.key,
@@ -83,18 +80,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = AccountManagerState(accounts: remaining, current: next);
   }
 
-  /// Detect mulukhiya on the given host and set the auth token if found.
-  Future<MulukhiyaService?> _detectMulukhiya(
-    String host,
-    String accessToken,
-  ) async {
+  /// Detect mulukhiya on the given host.
+  Future<MulukhiyaService?> _detectMulukhiya(String host) async {
     try {
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 5),
       ));
       final mulukhiya = await MulukhiyaService.detect(dio, host);
       if (mulukhiya != null) {
-        mulukhiya.setToken(accessToken);
         debugPrint('capsicum: mulukhiya detected on $host '
             '(${mulukhiya.controllerType} v${mulukhiya.version})');
       } else {
@@ -135,10 +128,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         await adapter.applySecrets(clientSecret, userSecret);
         final user = await adapter.getMyself();
 
-        final mulukhiya = await _detectMulukhiya(
-          accountKey.host,
-          userSecret.accessToken,
-        );
+        final mulukhiya = await _detectMulukhiya(accountKey.host);
 
         final account = Account(
           key: accountKey,

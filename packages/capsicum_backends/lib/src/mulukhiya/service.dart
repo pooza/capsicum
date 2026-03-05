@@ -41,7 +41,6 @@ class MulukhiyaService {
   final String baseUrl;
   final String controllerType;
   final String version;
-  String? _token;
 
   MulukhiyaService._({
     required Dio dio,
@@ -49,14 +48,6 @@ class MulukhiyaService {
     required this.controllerType,
     required this.version,
   }) : _dio = dio;
-
-  /// Set the authentication token for API calls that require it.
-  void setToken(String token) {
-    _token = token;
-  }
-
-  Map<String, String> get _authHeaders =>
-      _token != null ? {'Authorization': 'Bearer $_token'} : {};
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
   /// Returns [MulukhiyaService] if present, null otherwise.
@@ -136,15 +127,29 @@ class MulukhiyaService {
     await _dio.post('$baseUrl/program/update');
   }
 
-  /// Change tags on a status and re-post it.
-  Future<void> statusTags({
-    required String id,
-    required List<String> tags,
-  }) async {
-    await _dio.post(
-      '$baseUrl/status/tags',
-      data: {'id': id, 'tags': tags},
-      options: Options(headers: _authHeaders),
-    );
+  /// Fetch default hashtags from /mulukhiya/api/about.
+  /// The about endpoint is public (no auth required).
+  Future<List<String>> getDefaultHashtags() async {
+    try {
+      final response = await _dio.get('$baseUrl/about');
+      final data = response.data as Map<String, dynamic>?;
+      if (data == null) return [];
+      final config = data['config'] as Map<String, dynamic>?;
+      if (config == null) return [];
+      final status = config['status'] as Map<String, dynamic>?;
+      if (status == null) return [];
+      final defaultHashtag = status['default_hashtag'];
+      if (defaultHashtag is String) {
+        return [defaultHashtag.replaceFirst('#', '')];
+      }
+      if (defaultHashtag is List) {
+        return defaultHashtag
+            .map((e) => e.toString().replaceFirst('#', ''))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
   }
 }
