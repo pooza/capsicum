@@ -47,6 +47,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         StreamSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
+  List<List<String>> _mutedWords = [];
+  List<List<String>> _hardMutedWords = [];
 
   @override
   final String host;
@@ -95,6 +97,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<User> getMyself() async {
     final user = await client.getI();
+    _mutedWords = user.mutedWords ?? [];
+    _hardMutedWords = user.hardMutedWords ?? [];
     return user.toCapsicum(host);
   }
 
@@ -158,7 +162,69 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    return notes.map((n) => n.toCapsicum(host)).toList();
+    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
+
+  Post _applyWordFilter(Post post) {
+    if (_mutedWords.isEmpty && _hardMutedWords.isEmpty) return post;
+    final text = '${post.content ?? ''} ${post.spoilerText ?? ''}'.toLowerCase();
+    if (text.trim().isEmpty) return post;
+
+    if (_matchesMuteWords(text, _hardMutedWords)) {
+      return Post(
+        id: post.id, postedAt: post.postedAt, author: post.author,
+        content: post.content, scope: post.scope,
+        attachments: post.attachments,
+        favouriteCount: post.favouriteCount, reblogCount: post.reblogCount,
+        replyCount: post.replyCount,
+        favourited: post.favourited, reblogged: post.reblogged,
+        bookmarked: post.bookmarked, sensitive: post.sensitive,
+        reactions: post.reactions, myReaction: post.myReaction,
+        reactionEmojis: post.reactionEmojis,
+        inReplyToId: post.inReplyToId, reblog: post.reblog,
+        spoilerText: post.spoilerText, emojis: post.emojis,
+        emojiHost: post.emojiHost,
+        filterAction: FilterAction.hide, filterTitle: 'ワードミュート',
+      );
+    }
+    if (_matchesMuteWords(text, _mutedWords)) {
+      return Post(
+        id: post.id, postedAt: post.postedAt, author: post.author,
+        content: post.content, scope: post.scope,
+        attachments: post.attachments,
+        favouriteCount: post.favouriteCount, reblogCount: post.reblogCount,
+        replyCount: post.replyCount,
+        favourited: post.favourited, reblogged: post.reblogged,
+        bookmarked: post.bookmarked, sensitive: post.sensitive,
+        reactions: post.reactions, myReaction: post.myReaction,
+        reactionEmojis: post.reactionEmojis,
+        inReplyToId: post.inReplyToId, reblog: post.reblog,
+        spoilerText: post.spoilerText, emojis: post.emojis,
+        emojiHost: post.emojiHost,
+        filterAction: FilterAction.warn, filterTitle: 'ワードミュート',
+      );
+    }
+    return post;
+  }
+
+  static bool _matchesMuteWords(String text, List<List<String>> muteWords) {
+    for (final group in muteWords) {
+      if (group.isEmpty) continue;
+      // Single-element group starting with "/" is a regex pattern.
+      if (group.length == 1 && group[0].startsWith('/') && group[0].endsWith('/')) {
+        final pattern = group[0].substring(1, group[0].length - 1);
+        try {
+          if (RegExp(pattern, caseSensitive: false).hasMatch(text)) return true;
+        } catch (_) {
+          // Invalid regex — skip.
+        }
+        continue;
+      }
+      // Multi-element group: all words must match (AND condition).
+      final allMatch = group.every((word) => text.contains(word.toLowerCase()));
+      if (allMatch) return true;
+    }
+    return false;
   }
 
   @override
@@ -425,7 +491,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
     _streaming = MisskeyStreaming(host: host, accessToken: token);
-    return _streaming!.connect(type);
+    return _streaming!.connect(type).map(_applyWordFilter);
   }
 
   @override

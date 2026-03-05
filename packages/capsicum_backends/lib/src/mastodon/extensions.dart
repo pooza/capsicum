@@ -50,6 +50,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
 
 extension CapsicumMastodonStatusExtension on MastodonStatus {
   Post toCapsicum(String localHost) {
+    final filterResult = _parseFilterResult(filtered);
     return Post(
       id: id,
       postedAt: createdAt,
@@ -76,8 +77,27 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
             e['shortcode'] as String:
                 (e['url'] as String?) ?? (e['static_url'] as String),
       },
+      filterAction: filterResult?.action,
+      filterTitle: filterResult?.title,
     );
   }
+}
+
+({FilterAction action, String? title})? _parseFilterResult(
+    List<Map<String, dynamic>>? filtered) {
+  if (filtered == null || filtered.isEmpty) return null;
+  FilterAction action = FilterAction.warn;
+  String? title;
+  for (final entry in filtered) {
+    final filter = entry['filter'] as Map<String, dynamic>?;
+    if (filter == null) continue;
+    final filterAction = filter['filter_action'] as String?;
+    title ??= filter['title'] as String?;
+    if (filterAction == 'hide') {
+      return (action: FilterAction.hide, title: title);
+    }
+  }
+  return (action: action, title: title);
 }
 
 const mastodonNotificationTypeMap = <String, NotificationType>{

@@ -35,6 +35,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _expanded = false;
   bool _tagsExpanded = false;
   bool _cwExpanded = false;
+  bool _filterExpanded = false;
   final List<GestureRecognizer> _recognizers = [];
 
   Post get post => widget.post;
@@ -138,6 +139,39 @@ class _PostTileState extends ConsumerState<PostTile> {
   @override
   Widget build(BuildContext context) {
     final displayPost = post.reblog ?? post;
+    final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
+
+    // Show a compact placeholder for warn-filtered posts until expanded.
+    if (isFilteredWarn && !_filterExpanded) {
+      return InkWell(
+        onTap: () => setState(() => _filterExpanded = true),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.filter_alt_outlined,
+                  size: 16,
+                  color: Theme.of(context).textTheme.bodySmall?.color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'フィルタ: ${displayPost.filterTitle ?? "非表示"}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              Text(
+                '表示する',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return InkWell(
       onTap: widget.tappable ? () => context.push('/post', extra: post) : null,
       onLongPress: () => _showActionMenu(context),

@@ -186,10 +186,10 @@ capsicum/
 - メディア拡大ビューア（PageView + ピンチズーム）
 - 投稿のエンゲージメント数表示（リプライ・ブースト・お気に入り）
 - CW（Content Warning）投稿対応 + sensitive 自動連動（Mastodon / Misskey 両対応）
+- ワードフィルタのタイムライン反映（Mastodon の `filtered` フィールドに基づく hide/warn 表示 + Misskey クライアント側ワードミュート）
 
 ### 未実装（優先度順）
 
-- ワードフィルタのタイムライン反映（[#7](https://github.com/pooza/capsicum/issues/7)）
 - モロヘイヤ連携
 
 ### 初期バージョン後（Issue 管理）

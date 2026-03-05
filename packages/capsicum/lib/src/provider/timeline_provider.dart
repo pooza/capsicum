@@ -63,8 +63,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
+    final visible = posts.where((p) => p.filterAction != FilterAction.hide).toList();
     return TimelineState(
-      posts: posts,
+      posts: visible,
       hasMore: posts.length >= _pageSize,
     );
   }
@@ -75,6 +76,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _streamSubscription = stream.listen((newPost) {
       final current = state.valueOrNull;
       if (current == null) return;
+      if (newPost.filterAction == FilterAction.hide) return;
       // Prepend new post, avoiding duplicates.
       if (current.posts.any((p) => p.id == newPost.id)) return;
       state = AsyncData(
@@ -142,9 +144,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         query: TimelineQuery(maxId: lastId, limit: _pageSize),
       );
 
+      final visibleOlder = older.where((p) => p.filterAction != FilterAction.hide).toList();
       state = AsyncData(
         current.copyWith(
-          posts: [...current.posts, ...older],
+          posts: [...current.posts, ...visibleOlder],
           isLoadingMore: false,
           hasMore: older.length >= _pageSize,
         ),

@@ -24,6 +24,8 @@ class Post {
   final String? spoilerText;
   final Map<String, String> emojis;
   final String? emojiHost;
+  final FilterAction? filterAction;
+  final String? filterTitle;
 
   const Post({
     required this.id,
@@ -47,5 +49,9 @@ class Post {
     this.spoilerText,
     this.emojis = const {},
     this.emojiHost,
+    this.filterAction,
+    this.filterTitle,
   });
 }
+
+enum FilterAction { hide, warn }

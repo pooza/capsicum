@@ -24,6 +24,7 @@ class MastodonStatus {
   final String? spoilerText;
   final List<Map<String, dynamic>>? emojis;
   final bool? sensitive;
+  final List<Map<String, dynamic>>? filtered;
 
   const MastodonStatus({
     required this.id,
@@ -43,6 +44,7 @@ class MastodonStatus {
     this.spoilerText,
     this.emojis,
     this.sensitive,
+    this.filtered,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>
