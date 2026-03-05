@@ -54,15 +54,23 @@ class NotificationTile extends StatelessWidget {
     return Row(
       children: [
         if (user != null) ...[
-          CircleAvatar(
-            radius: 12,
-            backgroundImage: user.avatarUrl != null
-                ? NetworkImage(user.avatarUrl!)
-                : null,
-            child: user.avatarUrl == null
-                ? Text(user.username[0].toUpperCase(),
-                    style: const TextStyle(fontSize: 10))
-                : null,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: user.avatarUrl != null
+                ? Image.network(
+                    user.avatarUrl!,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.cover,
+                  )
+                : Container(
+                    width: 24,
+                    height: 24,
+                    color: theme.colorScheme.primaryContainer,
+                    alignment: Alignment.center,
+                    child: Text(user.username[0].toUpperCase(),
+                        style: const TextStyle(fontSize: 10)),
+                  ),
           ),
           const SizedBox(width: 8),
         ],

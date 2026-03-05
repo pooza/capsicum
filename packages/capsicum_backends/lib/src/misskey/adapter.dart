@@ -102,7 +102,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       throw UnimplementedError();
 
   @override
-  Future<User> getUserById(String id) => throw UnimplementedError();
+  Future<User> getUserById(String id) async {
+    final user = await client.showUser(id);
+    return user.toCapsicum(host);
+  }
+
+  Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
+    final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
+    return notes.map((n) => n.toCapsicum(host)).toList();
+  }
 
   @override
   Future<Post> postStatus(PostDraft draft) async {

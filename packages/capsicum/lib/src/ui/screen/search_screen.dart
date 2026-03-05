@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/post_tile.dart';
 
@@ -207,12 +208,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       itemBuilder: (context, index) {
         final user = users[index];
         return ListTile(
-          leading: CircleAvatar(
-            backgroundImage:
-                user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
-            child: user.avatarUrl == null
-                ? Text(user.username[0].toUpperCase())
-                : null,
+          onTap: () => context.push('/profile', extra: user),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: user.avatarUrl != null
+                ? Image.network(
+                    user.avatarUrl!,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                  )
+                : Container(
+                    width: 40,
+                    height: 40,
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    alignment: Alignment.center,
+                    child: Text(user.username[0].toUpperCase()),
+                  ),
           ),
           title: Text(
             user.displayName ?? user.username,

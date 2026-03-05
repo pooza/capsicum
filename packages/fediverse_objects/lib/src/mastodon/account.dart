@@ -14,6 +14,7 @@ class MastodonAccount {
   final int followersCount;
   final int followingCount;
   final int statusesCount;
+  final List<Map<String, dynamic>> fields;
 
   const MastodonAccount({
     required this.id,
@@ -26,6 +27,7 @@ class MastodonAccount {
     required this.followersCount,
     required this.followingCount,
     required this.statusesCount,
+    this.fields = const [],
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>

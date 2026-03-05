@@ -37,6 +37,34 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/users/show
+  Future<MisskeyUser> showUser(String userId) async {
+    final response = await dio.post(
+      '/api/users/show',
+      data: createBody({'userId': userId}),
+    );
+    return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/notes
+  Future<List<MisskeyNote>> getUserNotes(
+    String userId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/notes',
+      data: createBody({
+        'userId': userId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/notes/timeline (home)
   Future<List<MisskeyNote>> getTimeline({
     String? sinceId,

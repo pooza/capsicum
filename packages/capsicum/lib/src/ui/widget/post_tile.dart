@@ -96,17 +96,27 @@ class _PostTileState extends ConsumerState<PostTile> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundImage:
-                  displayPost.author.avatarUrl != null
-                      ? NetworkImage(displayPost.author.avatarUrl!)
-                      : null,
-              child:
-                  displayPost.author.avatarUrl == null
-                      ? Text(
-                        displayPost.author.username[0].toUpperCase(),
+            GestureDetector(
+              onTap: () => context.push('/profile', extra: displayPost.author),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: displayPost.author.avatarUrl != null
+                    ? Image.network(
+                        displayPost.author.avatarUrl!,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
                       )
-                      : null,
+                    : Container(
+                        width: 40,
+                        height: 40,
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        alignment: Alignment.center,
+                        child: Text(
+                          displayPost.author.username[0].toUpperCase(),
+                        ),
+                      ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(

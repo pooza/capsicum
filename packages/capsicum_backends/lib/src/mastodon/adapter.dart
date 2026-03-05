@@ -81,7 +81,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       throw UnimplementedError();
 
   @override
-  Future<User> getUserById(String id) => throw UnimplementedError();
+  Future<User> getUserById(String id) async {
+    final account = await client.getAccount(id);
+    return account.toCapsicum(host);
+  }
+
+  Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
+    final statuses = await client.getAccountStatuses(id, maxId: maxId, limit: 20);
+    return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
 
   @override
   Future<Post> postStatus(PostDraft draft) async {

@@ -60,6 +60,30 @@ class MastodonClient {
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/accounts/:id
+  Future<MastodonAccount> getAccount(String id) async {
+    final response = await dio.get('/api/v1/accounts/$id');
+    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// GET /api/v1/accounts/:id/statuses
+  Future<List<MastodonStatus>> getAccountStatuses(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$id/statuses',
+      queryParameters: {
+        'max_id': ?maxId,
+        'limit': ?limit,
+      },
+    );
+    return (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/timelines/home
   Future<List<MastodonStatus>> getHomeTimeline({
     String? maxId,

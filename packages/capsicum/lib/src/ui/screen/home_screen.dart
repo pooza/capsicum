@@ -211,16 +211,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
               style: const TextStyle(color: Colors.black),
             ),
-            currentAccountPicture: CircleAvatar(
-              backgroundImage: current?.user.avatarUrl != null
-                  ? NetworkImage(current!.user.avatarUrl!)
-                  : null,
-              child: current?.user.avatarUrl == null
-                  ? Text(
-                      (current?.user.username ?? '?')[0].toUpperCase(),
-                      style: const TextStyle(fontSize: 24),
+            currentAccountPicture: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: current?.user.avatarUrl != null
+                  ? Image.network(
+                      current!.user.avatarUrl!,
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
                     )
-                  : null,
+                  : Container(
+                      width: 72,
+                      height: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                      alignment: Alignment.center,
+                      child: Text(
+                        (current?.user.username ?? '?')[0].toUpperCase(),
+                        style: const TextStyle(fontSize: 24, color: Colors.white),
+                      ),
+                    ),
             ),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
@@ -236,14 +245,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) => ListTile(
-                leading: CircleAvatar(
-                  radius: 16,
-                  backgroundImage: account.user.avatarUrl != null
-                      ? NetworkImage(account.user.avatarUrl!)
-                      : null,
-                  child: account.user.avatarUrl == null
-                      ? Text(account.user.username[0].toUpperCase())
-                      : null,
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: account.user.avatarUrl != null
+                      ? Image.network(
+                          account.user.avatarUrl!,
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 32,
+                          height: 32,
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          alignment: Alignment.center,
+                          child: Text(account.user.username[0].toUpperCase()),
+                        ),
                 ),
                 title: Text(
                   account.user.displayName ?? account.user.username,

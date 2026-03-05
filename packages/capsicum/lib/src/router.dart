@@ -10,6 +10,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/splash_screen.dart';
@@ -103,6 +104,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final post = state.extra! as Post;
           return PostDetailScreen(post: post);
+        },
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) {
+          final user = state.extra! as User;
+          return ProfileScreen(user: user);
         },
       ),
     ],

@@ -33,6 +33,12 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followersCount: followersCount,
       followingCount: followingCount,
       postCount: statusesCount,
+      fields: fields
+          .map((f) => UserField(
+                name: f['name'] as String? ?? '',
+                value: f['value'] as String? ?? '',
+              ))
+          .toList(),
     );
   }
 }

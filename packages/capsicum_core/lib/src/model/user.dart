@@ -1,3 +1,10 @@
+class UserField {
+  final String name;
+  final String value;
+
+  const UserField({required this.name, required this.value});
+}
+
 class User {
   final String id;
   final String username;
@@ -9,6 +16,7 @@ class User {
   final int followersCount;
   final int followingCount;
   final int postCount;
+  final List<UserField> fields;
 
   const User({
     required this.id,
@@ -21,5 +29,6 @@ class User {
     this.followersCount = 0,
     this.followingCount = 0,
     this.postCount = 0,
+    this.fields = const [],
   });
 }
