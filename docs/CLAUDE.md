@@ -204,6 +204,7 @@ capsicum/
 - メディアの説明・センシティブ設定（[#13](https://github.com/pooza/capsicum/issues/13)）
 - モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
 - アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
+- Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
 
 ### 実装しない機能
 
