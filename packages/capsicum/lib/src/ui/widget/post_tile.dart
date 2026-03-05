@@ -11,8 +11,14 @@ import 'emoji_picker.dart';
 class PostTile extends ConsumerWidget {
   final Post post;
   final bool tappable;
+  final VoidCallback? onActionCompleted;
 
-  const PostTile({super.key, required this.post, this.tappable = true});
+  const PostTile({
+    super.key,
+    required this.post,
+    this.tappable = true,
+    this.onActionCompleted,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -288,6 +294,7 @@ class PostTile extends ConsumerWidget {
       // Refetch the post and update the timeline.
       final updated = await adapter.getPostById(postId);
       ref.read(timelineProvider.notifier).updatePost(updated);
+      onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
@@ -301,6 +308,7 @@ class PostTile extends ConsumerWidget {
   ) async {
     try {
       await action();
+      onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
