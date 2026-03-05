@@ -193,6 +193,26 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/announcements
+  Future<List<MisskeyAnnouncement>> getAnnouncements({int? limit}) async {
+    final response = await dio.post(
+      '/api/announcements',
+      data: createBody({'limit': ?limit}),
+    );
+    return (response.data as List)
+        .map((e) =>
+            MisskeyAnnouncement.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/i/read-announcement
+  Future<void> readAnnouncement(String announcementId) async {
+    await dio.post(
+      '/api/i/read-announcement',
+      data: createBody({'announcementId': announcementId}),
+    );
+  }
+
   /// POST /api/notes/create (renote)
   Future<MisskeyNote> renote(String noteId) async {
     final response = await dio.post(

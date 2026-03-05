@@ -35,6 +35,7 @@ class MisskeyCapabilities extends AdapterCapabilities {
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
         BookmarkSupport,
+        AnnouncementSupport,
         FollowSupport,
         NotificationSupport,
         SearchSupport,
@@ -284,6 +285,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return notes.map((n) => n.toCapsicum(host)).toList();
   }
+
+  // AnnouncementSupport
+
+  @override
+  Future<List<Announcement>> getAnnouncements() async {
+    final announcements = await client.getAnnouncements();
+    return announcements.map((a) => a.toCapsicum()).toList();
+  }
+
+  @override
+  Future<void> dismissAnnouncement(String id) =>
+      client.readAnnouncement(id);
 
   // FollowSupport
 

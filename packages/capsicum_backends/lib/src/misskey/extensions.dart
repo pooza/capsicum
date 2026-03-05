@@ -75,6 +75,19 @@ extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
   }
 }
 
+extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
+  Announcement toCapsicum() {
+    return Announcement(
+      id: id,
+      content: text,
+      title: title,
+      imageUrl: imageUrl,
+      publishedAt: createdAt,
+      read: isRead,
+    );
+  }
+}
+
 extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   Attachment toCapsicum() {
     return Attachment(

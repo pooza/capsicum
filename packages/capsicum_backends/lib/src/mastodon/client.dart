@@ -243,6 +243,19 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/announcements
+  Future<List<MastodonAnnouncement>> getAnnouncements() async {
+    final response = await dio.get('/api/v1/announcements');
+    return (response.data as List)
+        .map((e) => MastodonAnnouncement.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/v1/announcements/:id/dismiss
+  Future<void> dismissAnnouncement(String id) async {
+    await dio.post('/api/v1/announcements/$id/dismiss');
+  }
+
   /// DELETE /api/v1/statuses/:id
   Future<void> deleteStatus(String id) async {
     await dio.delete('/api/v1/statuses/$id');

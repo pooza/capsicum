@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'provider/account_manager_provider.dart';
+import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/home_screen.dart';
@@ -103,6 +104,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/bookmarks',
         builder: (context, state) => const BookmarkScreen(),
+      ),
+      GoRoute(
+        path: '/announcements',
+        builder: (context, state) => const AnnouncementScreen(),
       ),
       GoRoute(
         path: '/post',

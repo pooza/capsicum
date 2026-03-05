@@ -294,6 +294,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/bookmarks');
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.campaign_outlined),
+            title: const Text('お知らせ'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/announcements');
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.person_add),

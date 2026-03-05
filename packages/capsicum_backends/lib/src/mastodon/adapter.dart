@@ -34,6 +34,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     with
         FavoriteSupport,
         BookmarkSupport,
+        AnnouncementSupport,
         FollowSupport,
         NotificationSupport,
         SearchSupport,
@@ -282,6 +283,18 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return statuses.map((s) => s.toCapsicum(host)).toList();
   }
+
+  // AnnouncementSupport
+
+  @override
+  Future<List<Announcement>> getAnnouncements() async {
+    final announcements = await client.getAnnouncements();
+    return announcements.reversed.map((a) => a.toCapsicum()).toList();
+  }
+
+  @override
+  Future<void> dismissAnnouncement(String id) =>
+      client.dismissAnnouncement(id);
 
   // FollowSupport
 
