@@ -125,6 +125,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       replyId: draft.inReplyToId,
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
+      localOnly: draft.localOnly ? true : null,
     );
     return note.toCapsicum(host);
   }

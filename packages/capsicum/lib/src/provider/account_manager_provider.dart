@@ -1,4 +1,7 @@
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
@@ -39,10 +42,26 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     };
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
-    final newAccounts = [...state.accounts, account];
+    // Detect mulukhiya on the server (non-blocking — failure is fine).
+    final mulukhiya = await _detectMulukhiya(
+      account.key.host,
+      account.userSecret.accessToken,
+    );
+    final enriched = mulukhiya != null
+        ? Account(
+            key: account.key,
+            adapter: account.adapter,
+            user: account.user,
+            userSecret: account.userSecret,
+            clientSecret: account.clientSecret,
+            mulukhiya: mulukhiya,
+          )
+        : account;
+
+    final newAccounts = [...state.accounts, enriched];
     state = AccountManagerState(
       accounts: newAccounts,
-      current: state.current ?? account,
+      current: state.current ?? enriched,
     );
   }
 
@@ -62,6 +81,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : state.current;
 
     state = AccountManagerState(accounts: remaining, current: next);
+  }
+
+  /// Detect mulukhiya on the given host and set the auth token if found.
+  Future<MulukhiyaService?> _detectMulukhiya(
+    String host,
+    String accessToken,
+  ) async {
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 5),
+      ));
+      final mulukhiya = await MulukhiyaService.detect(dio, host);
+      if (mulukhiya != null) {
+        mulukhiya.setToken(accessToken);
+        debugPrint('capsicum: mulukhiya detected on $host '
+            '(${mulukhiya.controllerType} v${mulukhiya.version})');
+      } else {
+        debugPrint('capsicum: mulukhiya not found on $host');
+      }
+      return mulukhiya;
+    } catch (e) {
+      debugPrint('capsicum: mulukhiya detection error on $host: $e');
+      return null;
+    }
   }
 
   /// Restore sessions from secure storage on app start.
@@ -92,12 +135,18 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         await adapter.applySecrets(clientSecret, userSecret);
         final user = await adapter.getMyself();
 
+        final mulukhiya = await _detectMulukhiya(
+          accountKey.host,
+          userSecret.accessToken,
+        );
+
         final account = Account(
           key: accountKey,
           adapter: adapter,
           user: user,
           userSecret: userSecret,
           clientSecret: clientSecret,
+          mulukhiya: mulukhiya,
         );
 
         final newAccounts = [...state.accounts, account];
@@ -130,4 +179,9 @@ final currentAccountProvider = Provider<Account?>((ref) {
 /// Convenience provider for the current adapter.
 final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
   return ref.watch(currentAccountProvider)?.adapter;
+});
+
+/// Convenience provider for the current account's mulukhiya service.
+final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
+  return ref.watch(currentAccountProvider)?.mulukhiya;
 });

@@ -7,6 +7,7 @@ class PostDraft {
   final List<String> mediaIds;
   final String? spoilerText;
   final bool sensitive;
+  final bool localOnly;
 
   const PostDraft({
     this.content,
@@ -15,5 +16,6 @@ class PostDraft {
     this.mediaIds = const [],
     this.spoilerText,
     this.sensitive = false,
+    this.localOnly = false,
   });
 }

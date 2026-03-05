@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +72,139 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   void _removeAttachment(int index) {
     setState(() => _attachments.removeAt(index));
+  }
+
+  Future<void> _showTagsetSheet() async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    if (mulukhiya == null) return;
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+
+    final isMisskey = adapter is ReactionSupport;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return _TagsetSheet(
+          mulukhiya: mulukhiya,
+          isMisskey: isMisskey,
+          onSelect: (program) async {
+            Navigator.pop(sheetContext);
+            await _sendTagsetCommand(mulukhiya, adapter, program, isMisskey);
+          },
+          onClear: () async {
+            Navigator.pop(sheetContext);
+            await _sendTagsetCommand(mulukhiya, adapter, null, isMisskey);
+          },
+          onReload: () async {
+            try {
+              await mulukhiya.updateProgram();
+              if (sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('番組表を更新しました')),
+                );
+              }
+            } catch (e) {
+              if (sheetContext.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('更新に失敗しました: $e')),
+                );
+              }
+            }
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendTagsetCommand(
+    MulukhiyaService mulukhiya,
+    DecentralizedBackendAdapter adapter,
+    MulukhiyaProgram? program,
+    bool isMisskey,
+  ) async {
+    try {
+      final String commandText;
+      PostScope scope;
+      bool localOnly = false;
+
+      if (program == null) {
+        // Clear tags
+        if (isMisskey) {
+          commandText = json.encode({
+            'command': 'user_config',
+            'tagging': {'user_tags': null},
+          });
+          scope = PostScope.direct;
+          localOnly = true;
+        } else {
+          commandText = 'command: user_config\ntagging:\n  user_tags: null';
+          scope = PostScope.public;
+        }
+      } else {
+        // Build tag list
+        final tags = <String>[];
+        if (program.series != null) tags.add(program.series!);
+        if (program.air) tags.add('エア番組');
+        if (program.livecure) tags.add('実況');
+        if (program.episode != null) {
+          tags.add('第${program.episode}${program.episodeSuffix ?? '話'}');
+        }
+        if (program.subtitle != null) tags.add(program.subtitle!);
+        tags.addAll(program.extraTags);
+
+        if (isMisskey) {
+          final payload = <String, dynamic>{
+            'command': 'user_config',
+            'tagging': {
+              'user_tags': tags,
+              if (program.minutes != null) 'minutes': program.minutes,
+            },
+            'decoration': {
+              if (program.minutes != null) 'minutes': program.minutes,
+            },
+          };
+          commandText = json.encode(payload);
+          scope = PostScope.direct;
+          localOnly = true;
+        } else {
+          final yamlTags = tags.map((t) => '    - $t').join('\n');
+          final lines = ['command: user_config', 'tagging:', '  user_tags:'];
+          lines.add(yamlTags);
+          if (program.minutes != null) {
+            lines.add('  minutes: ${program.minutes}');
+          }
+          commandText = lines.join('\n');
+          scope = PostScope.public;
+        }
+      }
+
+      await adapter.postStatus(PostDraft(
+        content: commandText,
+        scope: scope,
+        localOnly: localOnly,
+      ));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              program != null
+                  ? '実況タグを設定しました: ${program.series ?? program.name}'
+                  : 'タグセットを削除しました',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('コマンド送信に失敗しました: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -238,6 +373,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   ),
                   tooltip: '閲覧注意',
                 ),
+                if (ref.watch(currentMulukhiyaProvider) != null)
+                  IconButton(
+                    onPressed: _sending ? null : _showTagsetSheet,
+                    icon: const Icon(Icons.live_tv),
+                    tooltip: '実況',
+                  ),
+              ],
+            ),
+            Row(
+              children: [
                 DropdownButton<PostScope>(
                   value: _scope,
                   underline: const SizedBox.shrink(),
@@ -307,6 +452,133 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TagsetSheet extends StatefulWidget {
+  final MulukhiyaService mulukhiya;
+  final bool isMisskey;
+  final void Function(MulukhiyaProgram program) onSelect;
+  final VoidCallback onClear;
+  final VoidCallback onReload;
+
+  const _TagsetSheet({
+    required this.mulukhiya,
+    required this.isMisskey,
+    required this.onSelect,
+    required this.onClear,
+    required this.onReload,
+  });
+
+  @override
+  State<_TagsetSheet> createState() => _TagsetSheetState();
+}
+
+class _TagsetSheetState extends State<_TagsetSheet> {
+  Map<String, MulukhiyaProgram>? _programs;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrograms();
+  }
+
+  Future<void> _loadPrograms() async {
+    try {
+      final programs = await widget.mulukhiya.getProgram();
+      if (mounted) {
+        setState(() {
+          _programs = programs;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  String _programLabel(MulukhiyaProgram p) {
+    final parts = <String>[];
+    if (p.series != null) parts.add(p.series!);
+    if (p.episode != null) {
+      parts.add('第${p.episode}${p.episodeSuffix ?? '話'}');
+    }
+    if (p.subtitle != null) parts.add(p.subtitle!);
+    return parts.isNotEmpty ? parts.join(' ') : p.name;
+  }
+
+  String _programSublabel(MulukhiyaProgram p) {
+    final flags = <String>[];
+    if (p.air) flags.add('エア番組');
+    if (p.livecure) flags.add('実況');
+    if (p.minutes != null) flags.add('${p.minutes}分');
+    if (p.extraTags.isNotEmpty) flags.addAll(p.extraTags);
+    return flags.join(' / ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              '実況タグセット',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('読み込みに失敗しました: $_error'),
+            )
+          else ...[
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.clear),
+                    title: const Text('タグなし'),
+                    subtitle: const Text('タグセットを削除し、実況を終了する'),
+                    onTap: widget.onClear,
+                  ),
+                  if (_programs != null)
+                    for (final entry in _programs!.entries)
+                      ListTile(
+                        leading: const Icon(Icons.live_tv),
+                        title: Text(_programLabel(entry.value)),
+                        subtitle: Text(_programSublabel(entry.value)),
+                        onTap: () => widget.onSelect(entry.value),
+                      ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.refresh),
+                    title: const Text('番組表を更新'),
+                    subtitle: const Text('モロヘイヤから番組表をダウンロードし直す'),
+                    onTap: widget.onReload,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

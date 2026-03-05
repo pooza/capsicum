@@ -116,6 +116,7 @@ class MisskeyClient {
     String? replyId,
     List<String>? fileIds,
     String? cw,
+    bool? localOnly,
   }) async {
     final response = await dio.post(
       '/api/notes/create',
@@ -125,6 +126,7 @@ class MisskeyClient {
         'replyId': ?replyId,
         'fileIds': ?fileIds,
         'cw': ?cw,
+        'localOnly': ?localOnly,
       }),
     );
     return MisskeyNote.fromJson(

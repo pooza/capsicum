@@ -1,3 +1,4 @@
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 
 import 'account_key.dart';
@@ -9,6 +10,7 @@ class Account {
   final User user;
   final UserSecret userSecret;
   final ClientSecretData? clientSecret;
+  final MulukhiyaService? mulukhiya;
 
   const Account({
     required this.key,
@@ -16,5 +18,6 @@ class Account {
     required this.user,
     required this.userSecret,
     this.clientSecret,
+    this.mulukhiya,
   });
 }
