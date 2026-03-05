@@ -188,7 +188,7 @@ capsicum/
 - CW（Content Warning）投稿対応 + sensitive 自動連動（Mastodon / Misskey 両対応）
 - ワードフィルタのタイムライン反映（Mastodon の `filtered` フィールドに基づく hide/warn 表示 + Misskey クライアント側ワードミュート）
 - モロヘイヤ連携: タグセット（投稿画面の実況ボタン + 番組選択 BottomSheet）
-- モロヘイヤ連携: 削除してタグづけ（アクションメニュー + タグ編集 BottomSheet）
+- モロヘイヤ連携: 削除してタグづけ（削除 + X-Mulukhiya ヘッダー付き再投稿方式、デフォルトタグ保護）
 - モロヘイヤ自動検出（ログイン・セッション復元時に `GET /mulukhiya/api/about` で検出）
 
 ### 初期バージョン後（Issue 管理）
