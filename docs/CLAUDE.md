@@ -188,6 +188,7 @@ capsicum/
 
 ### 未実装（優先度順）
 
+- CW 設定時の sensitive 自動連動（[#13](https://github.com/pooza/capsicum/issues/13) の先行実装）
 - ワードフィルタのタイムライン反映（[#7](https://github.com/pooza/capsicum/issues/7)）
 - モロヘイヤ連携
 
