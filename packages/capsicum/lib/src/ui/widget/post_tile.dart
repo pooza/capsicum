@@ -1181,80 +1181,91 @@ class _RetagSheetState extends State<_RetagSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '削除してタグづけ',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '元の投稿を削除し、指定したタグで再投稿します。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _tags
-                .map((tag) => Chip(
-                      label: Text('#$tag'),
-                      onDeleted: () =>
-                          setState(() => _tags.remove(tag)),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  decoration: const InputDecoration(
-                    hintText: 'タグを追加',
-                    prefixText: '#',
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _addTag(),
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (context, scrollController) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '削除してタグづけ',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '元の投稿を削除し、指定したタグで再投稿します。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _tags
+                      .map((tag) => Chip(
+                            label: Text('#$tag'),
+                            onDeleted: () =>
+                                setState(() => _tags.remove(tag)),
+                          ))
+                      .toList(),
                 ),
               ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: _addTag,
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _submitting
-                  ? null
-                  : () async {
-                      setState(() => _submitting = true);
-                      await widget.onSubmit(_tags);
-                      if (mounted) Navigator.pop(context);
-                    },
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('タグを変更して再投稿'),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      hintText: 'タグを追加',
+                      prefixText: '#',
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _addTag(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _addTag,
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _submitting
+                    ? null
+                    : () async {
+                        setState(() => _submitting = true);
+                        await widget.onSubmit(_tags);
+                        if (mounted) Navigator.pop(context);
+                      },
+                child: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('タグを変更して再投稿'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -78,24 +77,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
 
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
-
-    final isMisskey = adapter is ReactionSupport;
-
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) {
         return _TagsetSheet(
           mulukhiya: mulukhiya,
-          isMisskey: isMisskey,
-          onSelect: (program) async {
+          onSelect: (program) {
             Navigator.pop(sheetContext);
-            await _sendTagsetCommand(mulukhiya, adapter, program, isMisskey);
+            _insertTagsetYaml(program);
           },
-          onClear: () async {
+          onClear: () {
             Navigator.pop(sheetContext);
-            await _sendTagsetCommand(mulukhiya, adapter, null, isMisskey);
+            _insertTagsetYaml(null);
           },
           onReload: () async {
             try {
@@ -119,92 +112,34 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
-  Future<void> _sendTagsetCommand(
-    MulukhiyaService mulukhiya,
-    DecentralizedBackendAdapter adapter,
-    MulukhiyaProgram? program,
-    bool isMisskey,
-  ) async {
-    try {
-      final String commandText;
-      PostScope scope;
-      bool localOnly = false;
+  void _insertTagsetYaml(MulukhiyaProgram? program) {
+    final String yaml;
 
-      if (program == null) {
-        // Clear tags
-        if (isMisskey) {
-          commandText = json.encode({
-            'command': 'user_config',
-            'tagging': {'user_tags': null},
-          });
-          scope = PostScope.direct;
-          localOnly = true;
-        } else {
-          commandText = 'command: user_config\ntagging:\n  user_tags: null';
-          scope = PostScope.public;
-        }
-      } else {
-        // Build tag list
-        final tags = <String>[];
-        if (program.series != null) tags.add(program.series!);
-        if (program.air) tags.add('エア番組');
-        if (program.livecure) tags.add('実況');
-        if (program.episode != null) {
-          tags.add('第${program.episode}${program.episodeSuffix ?? '話'}');
-        }
-        if (program.subtitle != null) tags.add(program.subtitle!);
-        tags.addAll(program.extraTags);
-
-        if (isMisskey) {
-          final payload = <String, dynamic>{
-            'command': 'user_config',
-            'tagging': {
-              'user_tags': tags,
-              if (program.minutes != null) 'minutes': program.minutes,
-            },
-            'decoration': {
-              if (program.minutes != null) 'minutes': program.minutes,
-            },
-          };
-          commandText = json.encode(payload);
-          scope = PostScope.direct;
-          localOnly = true;
-        } else {
-          final yamlTags = tags.map((t) => '    - $t').join('\n');
-          final lines = ['command: user_config', 'tagging:', '  user_tags:'];
-          lines.add(yamlTags);
-          if (program.minutes != null) {
-            lines.add('  minutes: ${program.minutes}');
-          }
-          commandText = lines.join('\n');
-          scope = PostScope.public;
-        }
+    if (program == null) {
+      yaml = 'command: user_config\ntagging:\n  user_tags: null';
+    } else {
+      final tags = <String>[];
+      if (program.series != null) tags.add(program.series!);
+      if (program.air) tags.add('エア番組');
+      if (program.livecure) tags.add('実況');
+      if (program.episode != null) {
+        tags.add('第${program.episode}${program.episodeSuffix ?? '話'}');
       }
+      if (program.subtitle != null) tags.add(program.subtitle!);
+      tags.addAll(program.extraTags);
 
-      await adapter.postStatus(PostDraft(
-        content: commandText,
-        scope: scope,
-        localOnly: localOnly,
-      ));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              program != null
-                  ? '実況タグを設定しました: ${program.series ?? program.name}'
-                  : 'タグセットを削除しました',
-            ),
-          ),
-        );
+      final yamlTags = tags.map((t) => '    - $t').join('\n');
+      final lines = ['command: user_config', 'tagging:', '  user_tags:'];
+      lines.add(yamlTags);
+      if (program.minutes != null) {
+        lines.add('  minutes: ${program.minutes}');
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('コマンド送信に失敗しました: $e')),
-        );
-      }
+      yaml = lines.join('\n');
     }
+
+    _controller.text = yaml;
+    _controller.selection =
+        TextSelection.collapsed(offset: _controller.text.length);
   }
 
   Future<void> _submit() async {
@@ -459,14 +394,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
 class _TagsetSheet extends StatefulWidget {
   final MulukhiyaService mulukhiya;
-  final bool isMisskey;
   final void Function(MulukhiyaProgram program) onSelect;
   final VoidCallback onClear;
   final VoidCallback onReload;
 
   const _TagsetSheet({
     required this.mulukhiya,
-    required this.isMisskey,
     required this.onSelect,
     required this.onClear,
     required this.onReload,
