@@ -283,8 +283,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 },
               ),
             ),
-            const Divider(),
           ],
+          ListTile(
+            leading: const Icon(Icons.person_add),
+            title: const Text('アカウントを追加'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/server');
+            },
+          ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.bookmark_outline),
             title: Text(
@@ -303,15 +311,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onTap: () {
               Navigator.of(context).pop();
               context.push('/announcements');
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.person_add),
-            title: const Text('アカウントを追加'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/server');
             },
           ),
           ListTile(

@@ -400,6 +400,63 @@ class _PostTileState extends ConsumerState<PostTile> {
                         ),
                       ),
                   ],
+                  if (displayPost.replyCount > 0 ||
+                      displayPost.reblogCount > 0 ||
+                      displayPost.favouriteCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        children: [
+                          if (displayPost.replyCount > 0) ...[
+                            Icon(
+                              Icons.reply,
+                              size: 14,
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${displayPost.replyCount}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          if (displayPost.reblogCount > 0) ...[
+                            Icon(
+                              Icons.repeat,
+                              size: 14,
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${displayPost.reblogCount}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          if (displayPost.favouriteCount > 0) ...[
+                            Icon(
+                              Icons.star_outline,
+                              size: 14,
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${displayPost.favouriteCount}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   if (displayPost.reactions.isNotEmpty)
                     _ReactionChips(
                       post: displayPost,
