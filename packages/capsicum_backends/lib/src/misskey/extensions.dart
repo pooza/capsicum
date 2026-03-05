@@ -44,6 +44,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       content: text,
       scope: misskeyVisibilityRosetta[visibility] ?? PostScope.public,
       attachments: (files ?? []).map((f) => f.toCapsicum()).toList(),
+      sensitive: (files ?? []).any((f) => f.isSensitive),
       reblogCount: renoteCount,
       replyCount: repliesCount,
       reactions: reactions ?? const {},

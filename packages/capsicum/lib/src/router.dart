@@ -8,6 +8,7 @@ import 'provider/account_manager_provider.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
+import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
@@ -121,6 +122,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final user = state.extra! as User;
           return ProfileScreen(user: user);
+        },
+      ),
+      GoRoute(
+        path: '/media',
+        builder: (context, state) {
+          final extra = state.extra! as Map<String, dynamic>;
+          return MediaViewerScreen(
+            attachments: extra['attachments'] as List<Attachment>,
+            initialIndex: extra['initialIndex'] as int? ?? 0,
+          );
         },
       ),
     ],

@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -397,6 +399,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                         padding: const EdgeInsets.only(top: 8),
                         child: _AttachmentThumbnails(
                           attachments: displayPost.attachments,
+                          sensitive: displayPost.sensitive,
                         ),
                       ),
                   ],
@@ -928,34 +931,37 @@ class _ReactionChips extends StatelessWidget {
   }
 }
 
-class _AttachmentThumbnails extends StatelessWidget {
+class _AttachmentThumbnails extends StatefulWidget {
   final List<Attachment> attachments;
+  final bool sensitive;
 
-  const _AttachmentThumbnails({required this.attachments});
+  const _AttachmentThumbnails({
+    required this.attachments,
+    this.sensitive = false,
+  });
+
+  @override
+  State<_AttachmentThumbnails> createState() => _AttachmentThumbnailsState();
+}
+
+class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
+  bool _revealed = false;
 
   @override
   Widget build(BuildContext context) {
-    final images = attachments
+    final images = widget.attachments
         .where((a) =>
             a.type == AttachmentType.image || a.type == AttachmentType.gifv)
         .toList();
     if (images.isEmpty) return const SizedBox.shrink();
 
     if (images.length == 1) {
-      final imageUrl = images.first.previewUrl ?? images.first.url;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          imageUrl,
-          height: 160,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(
-            height: 160,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: const Icon(Icons.broken_image_outlined),
-          ),
-        ),
+      return _buildThumbnail(
+        context,
+        images.first,
+        0,
+        images,
+        width: double.infinity,
       );
     }
 
@@ -965,25 +971,103 @@ class _AttachmentThumbnails extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         itemCount: images.length,
         separatorBuilder: (_, _) => const SizedBox(width: 4),
-        itemBuilder: (context, index) {
-          final attachment = images[index];
-          final imageUrl = attachment.previewUrl ?? attachment.url;
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              imageUrl,
-              height: 160,
-              width: 200,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
+        itemBuilder: (context, index) => _buildThumbnail(
+          context,
+          images[index],
+          index,
+          images,
+          width: 200,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(
+    BuildContext context,
+    Attachment attachment,
+    int index,
+    List<Attachment> images, {
+    double? width,
+  }) {
+    final imageUrl = attachment.previewUrl ?? attachment.url;
+    final isSensitive = widget.sensitive && !_revealed;
+
+    return GestureDetector(
+      onTap: () {
+        if (isSensitive) {
+          setState(() => _revealed = true);
+        } else {
+          context.push('/media', extra: {
+            'attachments': images,
+            'initialIndex': index,
+          });
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          children: [
+            ImageFiltered(
+              imageFilter: isSensitive
+                  ? ImageFilter.blur(sigmaX: 30, sigmaY: 30)
+                  : ImageFilter.matrix(Matrix4.identity().storage),
+              child: Image.network(
+                imageUrl,
                 height: 160,
-                width: 200,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Icon(Icons.broken_image_outlined),
+                width: width,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  height: 160,
+                  width: width,
+                  color:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
               ),
             ),
-          );
-        },
+            if (isSensitive)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black45,
+                  alignment: Alignment.center,
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.visibility_off,
+                          color: Colors.white70, size: 28),
+                      SizedBox(height: 4),
+                      Text(
+                        '閲覧注意',
+                        style:
+                            TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (!isSensitive && attachment.description != null)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'ALT',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

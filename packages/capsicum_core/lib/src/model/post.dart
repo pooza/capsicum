@@ -15,6 +15,7 @@ class Post {
   final bool favourited;
   final bool reblogged;
   final bool bookmarked;
+  final bool sensitive;
   final Map<String, int> reactions;
   final String? myReaction;
   final Map<String, String> reactionEmojis;
@@ -37,6 +38,7 @@ class Post {
     this.favourited = false,
     this.reblogged = false,
     this.bookmarked = false,
+    this.sensitive = false,
     this.reactions = const {},
     this.myReaction,
     this.reactionEmojis = const {},
