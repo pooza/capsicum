@@ -187,10 +187,9 @@ capsicum/
 - 投稿のエンゲージメント数表示（リプライ・ブースト・お気に入り）
 - CW（Content Warning）投稿対応 + sensitive 自動連動（Mastodon / Misskey 両対応）
 - ワードフィルタのタイムライン反映（Mastodon の `filtered` フィールドに基づく hide/warn 表示 + Misskey クライアント側ワードミュート）
-
-### 未実装（優先度順）
-
-- モロヘイヤ連携
+- モロヘイヤ連携: タグセット（投稿画面の実況ボタン + 番組選択 BottomSheet）
+- モロヘイヤ連携: 削除してタグづけ（アクションメニュー + タグ編集 BottomSheet）
+- モロヘイヤ自動検出（ログイン・セッション復元時に `GET /mulukhiya/api/about` で検出）
 
 ### 初期バージョン後（Issue 管理）
 
@@ -203,6 +202,8 @@ capsicum/
 - 投票の表示・操作（[#10](https://github.com/pooza/capsicum/issues/10)）
 - ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
 - メディアの説明・センシティブ設定（[#13](https://github.com/pooza/capsicum/issues/13)）
+- モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
+- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
 
 ### 実装しない機能
 
