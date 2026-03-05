@@ -26,7 +26,9 @@ class PostTile extends ConsumerStatefulWidget {
 
 class _PostTileState extends ConsumerState<PostTile> {
   static const _maxLines = 8;
+  static const _maxTags = 3;
   bool _expanded = false;
+  bool _tagsExpanded = false;
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
@@ -171,20 +173,38 @@ class _PostTileState extends ConsumerState<PostTile> {
                             child: Wrap(
                               spacing: 4,
                               runSpacing: 4,
-                              children: parsed.trailingTags
-                                  .take(3)
-                                  .map(
-                                    (tag) => Chip(
+                              children: [
+                                ...(_tagsExpanded
+                                        ? parsed.trailingTags
+                                        : parsed.trailingTags.take(_maxTags))
+                                    .map(
+                                      (tag) => Chip(
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        visualDensity: VisualDensity.compact,
+                                        label: Text(
+                                          '#$tag',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                    ),
+                                if (parsed.trailingTags.length > _maxTags)
+                                  GestureDetector(
+                                    onTap: () => setState(
+                                        () => _tagsExpanded = !_tagsExpanded),
+                                    child: Chip(
                                       materialTapTargetSize:
                                           MaterialTapTargetSize.shrinkWrap,
                                       visualDensity: VisualDensity.compact,
                                       label: Text(
-                                        '#$tag',
+                                        _tagsExpanded
+                                            ? '...'
+                                            : '+${parsed.trailingTags.length - _maxTags}',
                                         style: const TextStyle(fontSize: 12),
                                       ),
                                     ),
-                                  )
-                                  .toList(),
+                                  ),
+                              ],
                             ),
                           ),
                       ],
