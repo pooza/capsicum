@@ -64,16 +64,15 @@ class _PostTileState extends ConsumerState<PostTile> {
         children.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
       final url = match.group(0)!;
+      final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
       final recognizer = TapGestureRecognizer()
-        ..onTap = () => launchUrl(Uri.parse(url));
+        ..onTap = uri != null ? () => launchUrl(uri) : null;
       _recognizers.add(recognizer);
-      final displayUrl = Uri.decodeFull(url);
+      final displayUrl =
+          uri != null ? Uri.decodeFull(uri.toString()) : url;
       children.add(TextSpan(
         text: displayUrl,
-        style: const TextStyle(
-          color: Colors.blue,
-          decoration: TextDecoration.underline,
-        ),
+        style: const TextStyle(color: Colors.blue),
         recognizer: recognizer,
       ));
       lastEnd = match.end;
@@ -648,34 +647,49 @@ class _AttachmentThumbnails extends StatelessWidget {
         .toList();
     if (images.isEmpty) return const SizedBox.shrink();
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        height: 160,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: images.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 4),
-          itemBuilder: (context, index) {
-            final attachment = images[index];
-            final imageUrl = attachment.previewUrl ?? attachment.url;
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrl,
-                height: 160,
-                width: images.length == 1 ? double.infinity : 200,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  height: 160,
-                  width: 200,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            );
-          },
+    if (images.length == 1) {
+      final imageUrl = images.first.previewUrl ?? images.first.url;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          imageUrl,
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => Container(
+            height: 160,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Icon(Icons.broken_image_outlined),
+          ),
         ),
+      );
+    }
+
+    return SizedBox(
+      height: 160,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: images.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (context, index) {
+          final attachment = images[index];
+          final imageUrl = attachment.previewUrl ?? attachment.url;
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(
+              imageUrl,
+              height: 160,
+              width: 200,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                height: 160,
+                width: 200,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: const Icon(Icons.broken_image_outlined),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
