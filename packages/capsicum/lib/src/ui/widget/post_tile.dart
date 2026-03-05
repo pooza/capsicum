@@ -210,6 +210,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ],
                     );
                   }),
+                  if (displayPost.attachments.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _AttachmentThumbnails(
+                        attachments: displayPost.attachments,
+                      ),
+                    ),
                   if (displayPost.reactions.isNotEmpty)
                     _ReactionChips(
                       post: displayPost,
@@ -569,6 +576,52 @@ class _ReactionChips extends StatelessWidget {
             onPressed: () => onToggle(entry.key),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _AttachmentThumbnails extends StatelessWidget {
+  final List<Attachment> attachments;
+
+  const _AttachmentThumbnails({required this.attachments});
+
+  @override
+  Widget build(BuildContext context) {
+    final images = attachments
+        .where((a) =>
+            a.type == AttachmentType.image || a.type == AttachmentType.gifv)
+        .toList();
+    if (images.isEmpty) return const SizedBox.shrink();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        height: 160,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: images.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 4),
+          itemBuilder: (context, index) {
+            final attachment = images[index];
+            final imageUrl = attachment.previewUrl ?? attachment.url;
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                imageUrl,
+                height: 160,
+                width: images.length == 1 ? double.infinity : 200,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  height: 160,
+                  width: 200,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
