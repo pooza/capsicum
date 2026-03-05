@@ -315,7 +315,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
+    final currentUser = ref.read(currentAccountProvider)?.user;
     final targetPost = post.reblog ?? post;
+    final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
     final messenger = ScaffoldMessenger.of(context);
     final isMisskey = adapter is ReactionSupport;
     final boostLabel = isMisskey ? 'リノート' : 'ブースト';
@@ -376,8 +378,113 @@ class _PostTileState extends ConsumerState<PostTile> {
                   );
                 },
               ),
+            if (isOwn) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('削除して再編集'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmDeleteAndRedraft(context, targetPost);
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  '削除',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmDelete(context, targetPost);
+                },
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, Post targetPost) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('投稿を削除'),
+        content: const Text('この投稿を削除しますか？この操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _runAction(
+                messenger,
+                () async {
+                  await adapter.deletePost(targetPost.id);
+                  ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                },
+                '投稿を削除しました',
+              );
+            },
+            child: Text(
+              '削除',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAndRedraft(BuildContext context, Post targetPost) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('削除して再編集'),
+        content: const Text('投稿を削除し、内容を再編集します。この操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _runAction(
+                messenger,
+                () async {
+                  await adapter.deletePost(targetPost.id);
+                  ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                  if (mounted) {
+                    router.push('/compose', extra: targetPost);
+                  }
+                },
+                '投稿を削除しました',
+              );
+            },
+            child: Text(
+              '削除して再編集',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
       ),
     );
   }

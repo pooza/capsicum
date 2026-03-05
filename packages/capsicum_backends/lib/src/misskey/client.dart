@@ -101,6 +101,11 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/notes/delete
+  Future<void> deleteNote(String noteId) async {
+    await dio.post('/api/notes/delete', data: createBody({'noteId': noteId}));
+  }
+
   /// POST /api/notes/show
   Future<MisskeyNote> getNote(String noteId) async {
     final response = await dio.post(

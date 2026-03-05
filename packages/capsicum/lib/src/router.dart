@@ -84,7 +84,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/compose',
-        builder: (context, state) => const ComposeScreen(),
+        builder: (context, state) {
+          final draft = state.extra as Post?;
+          return ComposeScreen(redraft: draft);
+        },
       ),
       GoRoute(
         path: '/notifications',

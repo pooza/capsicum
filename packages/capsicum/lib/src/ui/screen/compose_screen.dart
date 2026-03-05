@@ -10,7 +10,9 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key});
+  final Post? redraft;
+
+  const ComposeScreen({super.key, this.redraft});
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -24,9 +26,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sending = false;
 
   @override
+  void initState() {
+    super.initState();
+    final redraft = widget.redraft;
+    if (redraft != null) {
+      _controller.text = _extractPlainText(redraft.content ?? '');
+      _scope = redraft.scope;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  String _extractPlainText(String content) {
+    final isHtml = content.contains('<') && content.contains('>');
+    if (!isHtml) return content;
+    var text = content
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '');
+    text = text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
+    return text;
   }
 
   Future<void> _pickMedia() async {

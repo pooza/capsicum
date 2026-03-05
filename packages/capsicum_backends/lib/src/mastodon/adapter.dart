@@ -95,7 +95,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> deletePost(String id) => throw UnimplementedError();
+  Future<void> deletePost(String id) async {
+    await client.deleteStatus(id);
+  }
 
   @override
   Future<List<Post>> getTimeline(

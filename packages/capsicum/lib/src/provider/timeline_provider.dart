@@ -116,6 +116,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     state = AsyncData(current.copyWith(posts: posts));
   }
 
+  /// Remove a post from the list by ID (e.g. after deletion).
+  void removePost(String id) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = current.posts.where((p) => p.id != id).toList();
+    state = AsyncData(current.copyWith(posts: posts));
+  }
+
   /// Load next page of posts (older posts).
   Future<void> loadMore() async {
     final current = state.valueOrNull;

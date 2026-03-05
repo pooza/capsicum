@@ -200,6 +200,11 @@ class MastodonClient {
     );
   }
 
+  /// DELETE /api/v1/statuses/:id
+  Future<void> deleteStatus(String id) async {
+    await dio.delete('/api/v1/statuses/$id');
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,

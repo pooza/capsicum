@@ -115,7 +115,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> deletePost(String id) => throw UnimplementedError();
+  Future<void> deletePost(String id) async {
+    await client.deleteNote(id);
+  }
 
   @override
   Future<List<Post>> getTimeline(
