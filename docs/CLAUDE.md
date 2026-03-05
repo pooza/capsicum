@@ -185,10 +185,10 @@ capsicum/
 - メディア ALT バッジ・キャプション表示
 - メディア拡大ビューア（PageView + ピンチズーム）
 - 投稿のエンゲージメント数表示（リプライ・ブースト・お気に入り）
+- CW（Content Warning）投稿対応 + sensitive 自動連動（Mastodon / Misskey 両対応）
 
 ### 未実装（優先度順）
 
-- CW 設定時の sensitive 自動連動（[#13](https://github.com/pooza/capsicum/issues/13) の先行実装）
 - ワードフィルタのタイムライン反映（[#7](https://github.com/pooza/capsicum/issues/7)）
 - モロヘイヤ連携
 

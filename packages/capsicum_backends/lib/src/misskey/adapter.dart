@@ -120,6 +120,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       visibility: misskeyVisibilityFromScope(draft.scope),
       replyId: draft.inReplyToId,
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+      cw: draft.spoilerText,
     );
     return note.toCapsicum(host);
   }
@@ -204,6 +205,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       draft.filePath,
       comment: draft.description,
       mimeType: draft.mimeType,
+      isSensitive: draft.sensitive ? true : null,
     );
     return Attachment(
       id: file['id'] as String,

@@ -112,6 +112,7 @@ class MastodonClient {
     String? inReplyToId,
     String? spoilerText,
     List<String>? mediaIds,
+    bool? sensitive,
   }) async {
     final response = await dio.post('/api/v1/statuses', data: {
       'status': status,
@@ -119,6 +120,7 @@ class MastodonClient {
       'in_reply_to_id': ?inReplyToId,
       'spoiler_text': ?spoilerText,
       'media_ids': ?mediaIds,
+      'sensitive': ?sensitive,
     });
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }

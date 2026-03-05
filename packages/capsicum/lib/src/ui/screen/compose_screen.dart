@@ -20,9 +20,11 @@ class ComposeScreen extends ConsumerStatefulWidget {
 
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _controller = TextEditingController();
+  final _cwController = TextEditingController();
   final _imagePicker = ImagePicker();
   final List<XFile> _attachments = [];
   PostScope _scope = PostScope.public;
+  bool _cwEnabled = false;
   bool _sending = false;
 
   @override
@@ -38,6 +40,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _cwController.dispose();
     super.dispose();
   }
 
@@ -84,17 +87,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           final draft = AttachmentDraft(
             filePath: file.path,
             mimeType: file.mimeType,
+            sensitive: _cwEnabled,
           );
           final attachment = await adapter.uploadAttachment(draft);
           return attachment.id;
         }),
       );
 
+      final spoilerText = _cwEnabled ? _cwController.text.trim() : null;
       await adapter.postStatus(
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
           mediaIds: mediaIds,
+          spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
+          sensitive: _cwEnabled,
         ),
       );
       if (mounted) {
@@ -138,6 +145,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_cwEnabled)
+              TextField(
+                controller: _cwController,
+                enabled: !_sending,
+                decoration: const InputDecoration(
+                  hintText: '閲覧注意の警告文',
+                  border: UnderlineInputBorder(),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
             Expanded(
               child: TextField(
                 controller: _controller,
@@ -207,6 +225,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   onPressed: _sending ? null : _pickMedia,
                   icon: const Icon(Icons.photo),
                   tooltip: 'メディアを添付',
+                ),
+                IconButton(
+                  onPressed: _sending
+                      ? null
+                      : () => setState(() => _cwEnabled = !_cwEnabled),
+                  icon: Icon(
+                    Icons.warning_amber,
+                    color: _cwEnabled
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  tooltip: '閲覧注意',
                 ),
                 DropdownButton<PostScope>(
                   value: _scope,

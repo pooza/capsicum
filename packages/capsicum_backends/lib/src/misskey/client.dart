@@ -89,6 +89,7 @@ class MisskeyClient {
     String filePath, {
     String? comment,
     String? mimeType,
+    bool? isSensitive,
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null
@@ -101,6 +102,7 @@ class MisskeyClient {
         contentType: mediaType,
       ),
       'comment': ?comment,
+      'isSensitive': ?isSensitive,
       if (_token != null) 'i': _token,
     });
     final response = await dio.post('/api/drive/files/create', data: formData);
@@ -113,6 +115,7 @@ class MisskeyClient {
     required String visibility,
     String? replyId,
     List<String>? fileIds,
+    String? cw,
   }) async {
     final response = await dio.post(
       '/api/notes/create',
@@ -121,6 +124,7 @@ class MisskeyClient {
         'visibility': visibility,
         'replyId': ?replyId,
         'fileIds': ?fileIds,
+        'cw': ?cw,
       }),
     );
     return MisskeyNote.fromJson(

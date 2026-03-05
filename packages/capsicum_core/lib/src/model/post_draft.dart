@@ -6,6 +6,7 @@ class PostDraft {
   final String? inReplyToId;
   final List<String> mediaIds;
   final String? spoilerText;
+  final bool sensitive;
 
   const PostDraft({
     this.content,
@@ -13,5 +14,6 @@ class PostDraft {
     this.inReplyToId,
     this.mediaIds = const [],
     this.spoilerText,
+    this.sensitive = false,
   });
 }

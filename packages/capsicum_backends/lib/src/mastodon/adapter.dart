@@ -100,6 +100,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       inReplyToId: draft.inReplyToId,
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+      sensitive: draft.sensitive ? true : null,
     );
     return status.toCapsicum(host);
   }

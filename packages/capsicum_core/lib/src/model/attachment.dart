@@ -20,10 +20,12 @@ class AttachmentDraft {
   final String filePath;
   final String? description;
   final String? mimeType;
+  final bool sensitive;
 
   const AttachmentDraft({
     required this.filePath,
     this.description,
     this.mimeType,
+    this.sensitive = false,
   });
 }
