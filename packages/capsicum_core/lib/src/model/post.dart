@@ -20,6 +20,9 @@ class Post {
   final Map<String, String> reactionEmojis;
   final String? inReplyToId;
   final Post? reblog;
+  final String? spoilerText;
+  final Map<String, String> emojis;
+  final String? emojiHost;
 
   const Post({
     required this.id,
@@ -39,5 +42,8 @@ class Post {
     this.reactionEmojis = const {},
     this.inReplyToId,
     this.reblog,
+    this.spoilerText,
+    this.emojis = const {},
+    this.emojiHost,
   });
 }

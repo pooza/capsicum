@@ -179,6 +179,8 @@ capsicum/
 - ユーザープロフィール（バナー・アバター・Bio・補足情報・統計・投稿一覧）
 - ブックマークのタイムライン（Mastodon: ブックマーク / Misskey: お気に入り）
 - お知らせ（サーバーからの告知・既読管理）
+- CW（Content Warning）折り畳み表示
+- カスタム絵文字のインライン表示（投稿本文・表示名）
 
 ### 未実装（優先度順）
 
@@ -194,6 +196,8 @@ capsicum/
 - メディアサムネイルのタップで全体表示（[#6](https://github.com/pooza/capsicum/issues/6)）
 - ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
 - コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
+- 投票の表示・操作（[#10](https://github.com/pooza/capsicum/issues/10)）
+- ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
 
 ### 実装しない機能
 

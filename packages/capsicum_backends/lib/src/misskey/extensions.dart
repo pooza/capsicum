@@ -30,6 +30,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
                 value: f['value'] as String? ?? '',
               ))
           .toList(),
+      emojis: emojis ?? const {},
     );
   }
 }
@@ -49,6 +50,9 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
       reblog: renote?.toCapsicum(localHost),
+      spoilerText: cw,
+      emojis: reactionEmojis ?? const {},
+      emojiHost: localHost,
     );
   }
 }

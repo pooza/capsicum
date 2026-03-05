@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -203,8 +204,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         padding: EdgeInsets.zero,
         children: [
           UserAccountsDrawerHeader(
-            accountName: Text(
+            accountName: EmojiText(
               current?.user.displayName ?? current?.user.username ?? '',
+              emojis: current?.user.emojis ?? const {},
               style: const TextStyle(color: Colors.black),
             ),
             accountEmail: Text(
@@ -262,8 +264,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: Text(account.user.username[0].toUpperCase()),
                         ),
                 ),
-                title: Text(
+                title: EmojiText(
                   account.user.displayName ?? account.user.username,
+                  emojis: account.user.emojis,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

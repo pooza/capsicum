@@ -2,6 +2,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:go_router/go_router.dart';
 
+import 'emoji_text.dart';
+
 class NotificationTile extends StatelessWidget {
   final Notification notification;
 
@@ -75,11 +77,22 @@ class NotificationTile extends StatelessWidget {
           const SizedBox(width: 8),
         ],
         Expanded(
-          child: Text(
-            '$displayName が$label',
-            style: theme.textTheme.bodySmall,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              Flexible(
+                child: EmojiText(
+                  displayName,
+                  emojis: user?.emojis ?? const {},
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                ' が$label',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
       ],

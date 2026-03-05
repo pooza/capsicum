@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
+import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 
 enum _QueryType { account, hashtag, url, fulltext }
@@ -226,8 +227,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     child: Text(user.username[0].toUpperCase()),
                   ),
           ),
-          title: Text(
+          title: EmojiText(
             user.displayName ?? user.username,
+            emojis: user.emojis,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

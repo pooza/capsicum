@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -208,8 +209,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    EmojiText(
                       user.displayName ?? user.username,
+                      emojis: user.emojis,
                       style: theme.textTheme.titleLarge
                           ?.copyWith(fontWeight: FontWeight.bold),
                       maxLines: 2,
@@ -230,8 +232,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           if (user.description != null && user.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
+            EmojiText(
               _stripHtml(user.description!),
+              emojis: user.emojis,
               style: theme.textTheme.bodyMedium,
             ),
           ],
@@ -263,8 +266,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
+                        child: EmojiText(
                           _stripHtml(field.value),
+                          emojis: user.emojis,
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),

@@ -39,6 +39,11 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
                 value: f['value'] as String? ?? '',
               ))
           .toList(),
+      emojis: {
+        for (final e in emojis ?? [])
+          if (e['shortcode'] is String && e['url'] is String)
+            e['shortcode'] as String: e['url'] as String,
+      },
     );
   }
 }
@@ -60,6 +65,16 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       bookmarked: bookmarked ?? false,
       inReplyToId: inReplyToId,
       reblog: reblog?.toCapsicum(localHost),
+      spoilerText:
+          spoilerText?.isNotEmpty == true ? spoilerText : null,
+      emojis: {
+        ..._extractHtmlCustomEmojis(content),
+        for (final e in emojis ?? [])
+          if (e['shortcode'] is String &&
+              (e['url'] is String || e['static_url'] is String))
+            e['shortcode'] as String:
+                (e['url'] as String?) ?? (e['static_url'] as String),
+      },
     );
   }
 }
@@ -95,6 +110,21 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
       read: read,
     );
   }
+}
+
+Map<String, String> _extractHtmlCustomEmojis(String html) {
+  final map = <String, String>{};
+  final imgRegex = RegExp(r'<img[^>]+>');
+  for (final match in imgRegex.allMatches(html)) {
+    final img = match.group(0)!;
+    final altMatch =
+        RegExp(r'alt=":([a-zA-Z0-9_-]+):"').firstMatch(img);
+    final srcMatch = RegExp(r'src="([^"]+)"').firstMatch(img);
+    if (altMatch != null && srcMatch != null) {
+      map[altMatch.group(1)!] = srcMatch.group(1)!;
+    }
+  }
+  return map;
 }
 
 String _stripHtml(String html) {

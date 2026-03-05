@@ -22,6 +22,7 @@ class MastodonStatus {
   final MastodonStatus? reblog;
   final List<MastodonMediaAttachment> mediaAttachments;
   final String? spoilerText;
+  final List<Map<String, dynamic>>? emojis;
 
   const MastodonStatus({
     required this.id,
@@ -39,6 +40,7 @@ class MastodonStatus {
     this.reblog,
     required this.mediaAttachments,
     this.spoilerText,
+    this.emojis,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

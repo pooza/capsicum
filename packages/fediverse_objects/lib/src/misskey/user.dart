@@ -15,6 +15,7 @@ class MisskeyUser {
   final int? followingCount;
   final int? notesCount;
   final List<Map<String, dynamic>>? fields;
+  final Map<String, String>? emojis;
 
   const MisskeyUser({
     required this.id,
@@ -28,6 +29,7 @@ class MisskeyUser {
     this.followingCount,
     this.notesCount,
     this.fields,
+    this.emojis,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>

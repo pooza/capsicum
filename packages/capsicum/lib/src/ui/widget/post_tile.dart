@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
+import 'emoji_text.dart';
 
 
 class PostTile extends ConsumerStatefulWidget {
@@ -29,9 +30,9 @@ class PostTile extends ConsumerStatefulWidget {
 class _PostTileState extends ConsumerState<PostTile> {
   static const _maxLines = 8;
   static const _maxTags = 3;
-  static final _urlRegex = RegExp(r'https?://[^\s<>\]）」』】]+');
   bool _expanded = false;
   bool _tagsExpanded = false;
+  bool _cwExpanded = false;
   final List<GestureRecognizer> _recognizers = [];
 
   Post get post => widget.post;
@@ -45,36 +46,82 @@ class _PostTileState extends ConsumerState<PostTile> {
     super.dispose();
   }
 
-  TextSpan _buildContentSpan(String text, TextStyle? baseStyle) {
+  String? _resolveEmojiUrl(
+    String shortcode,
+    Map<String, String> emojis,
+    String? fallbackHost,
+  ) {
+    final url = emojis[shortcode];
+    if (url != null) return url;
+    if (fallbackHost != null) {
+      return 'https://$fallbackHost/emoji/$shortcode.webp';
+    }
+    return null;
+  }
+
+  TextSpan _buildContentSpan(
+    String text,
+    TextStyle? baseStyle,
+    Map<String, String> emojis, {
+    String? fallbackHost,
+  }) {
     for (final r in _recognizers) {
       r.dispose();
     }
     _recognizers.clear();
 
-    final matches = _urlRegex.allMatches(text).toList();
+    final pattern = RegExp(
+      r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):',
+    );
+    final matches = pattern.allMatches(text).toList();
     if (matches.isEmpty) {
       return TextSpan(text: text, style: baseStyle);
     }
 
-    final children = <TextSpan>[];
+    final children = <InlineSpan>[];
     var lastEnd = 0;
 
     for (final match in matches) {
       if (match.start > lastEnd) {
         children.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
-      final url = match.group(0)!;
-      final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
-      final recognizer = TapGestureRecognizer()
-        ..onTap = uri != null ? () => launchUrl(uri) : null;
-      _recognizers.add(recognizer);
-      final displayUrl =
-          uri != null ? Uri.decodeFull(uri.toString()) : url;
-      children.add(TextSpan(
-        text: displayUrl,
-        style: const TextStyle(color: Colors.blue),
-        recognizer: recognizer,
-      ));
+
+      if (match.group(1) != null) {
+        // Emoji shortcode
+        final shortcode = match.group(1)!;
+        final emojiUrl =
+            _resolveEmojiUrl(shortcode, emojis, fallbackHost);
+        if (emojiUrl != null) {
+          children.add(WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Image.network(
+              emojiUrl,
+              width: 20,
+              height: 20,
+              errorBuilder: (_, _, _) => Text(
+                ':$shortcode:',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ));
+        } else {
+          children.add(TextSpan(text: match.group(0)!));
+        }
+      } else {
+        // URL
+        final url = match.group(0)!;
+        final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
+        final recognizer = TapGestureRecognizer()
+          ..onTap = uri != null ? () => launchUrl(uri) : null;
+        _recognizers.add(recognizer);
+        final displayUrl =
+            uri != null ? Uri.decodeFull(uri.toString()) : url;
+        children.add(TextSpan(
+          text: displayUrl,
+          style: const TextStyle(color: Colors.blue),
+          recognizer: recognizer,
+        ));
+      }
       lastEnd = match.end;
     }
 
@@ -84,6 +131,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
     return TextSpan(children: children, style: baseStyle);
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -134,12 +182,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
+                        child: EmojiText(
                           displayPost.author.displayName ??
                               displayPost.author.username,
+                          emojis: displayPost.author.emojis,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          fallbackHost: displayPost.emojiHost,
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -180,106 +230,176 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Builder(builder: (_) {
-                    final parsed = _parseContent(displayPost.content ?? '');
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (displayPost.spoilerText != null) ...[
+                    Row(
                       children: [
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final baseStyle = DefaultTextStyle.of(context).style;
-                            final contentSpan = _buildContentSpan(
-                              parsed.body,
-                              baseStyle,
-                            );
-                            final textPainter = TextPainter(
-                              text: contentSpan,
-                              maxLines: _maxLines,
-                              textDirection: TextDirection.ltr,
-                            )..layout(maxWidth: constraints.maxWidth);
-                            final overflows = textPainter.didExceedMaxLines;
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text.rich(
-                                  contentSpan,
-                                  maxLines: _expanded ? null : _maxLines,
-                                  overflow: _expanded
-                                      ? null
-                                      : TextOverflow.ellipsis,
-                                ),
-                                if (overflows)
-                                  GestureDetector(
-                                    onTap: () =>
-                                        setState(() => _expanded = !_expanded),
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        _expanded ? '折り畳む' : '続きを読む',
-                                        style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
+                        Icon(
+                          Icons.warning_amber,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.error,
                         ),
-                        if (parsed.trailingTags.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: [
-                                ...(_tagsExpanded
-                                        ? parsed.trailingTags
-                                        : parsed.trailingTags.take(_maxTags))
-                                    .map(
-                                      (tag) => Chip(
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        visualDensity: VisualDensity.compact,
-                                        label: Text(
-                                          '#$tag',
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                      ),
-                                    ),
-                                if (parsed.trailingTags.length > _maxTags)
-                                  GestureDetector(
-                                    onTap: () => setState(
-                                        () => _tagsExpanded = !_tagsExpanded),
-                                    child: Chip(
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                      label: Text(
-                                        _tagsExpanded
-                                            ? '...'
-                                            : '+${parsed.trailingTags.length - _maxTags}',
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: EmojiText(
+                            displayPost.spoilerText!,
+                            emojis: {
+                              ...displayPost.emojis,
+                              ...displayPost.author.emojis,
+                            },
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                            fallbackHost: displayPost.emojiHost,
                           ),
+                        ),
                       ],
-                    );
-                  }),
-                  if (displayPost.attachments.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _AttachmentThumbnails(
-                        attachments: displayPost.attachments,
+                    ),
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _cwExpanded = !_cwExpanded),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _cwExpanded ? '閉じる' : '続きを表示',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
+                  ],
+                  if (displayPost.spoilerText == null || _cwExpanded) ...[
+                    Builder(builder: (_) {
+                      final parsed =
+                          _parseContent(displayPost.content ?? '');
+                      final allEmojis = {
+                        ...displayPost.emojis,
+                        ...displayPost.author.emojis,
+                      };
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final baseStyle =
+                                  DefaultTextStyle.of(context).style;
+                              final contentSpan = _buildContentSpan(
+                                parsed.body,
+                                baseStyle,
+                                allEmojis,
+                                fallbackHost:
+                                    displayPost.emojiHost,
+                              );
+                              // Use a plain TextSpan for overflow measurement
+                              // because TextPainter cannot measure WidgetSpan.
+                              final measureSpan = TextSpan(
+                                text: parsed.body,
+                                style: baseStyle,
+                              );
+                              final textPainter = TextPainter(
+                                text: measureSpan,
+                                maxLines: _maxLines,
+                                textDirection: TextDirection.ltr,
+                              )..layout(maxWidth: constraints.maxWidth);
+                              final overflows =
+                                  textPainter.didExceedMaxLines;
+
+                              return Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text.rich(
+                                    contentSpan,
+                                    maxLines:
+                                        _expanded ? null : _maxLines,
+                                    overflow: _expanded
+                                        ? null
+                                        : TextOverflow.ellipsis,
+                                  ),
+                                  if (overflows)
+                                    GestureDetector(
+                                      onTap: () => setState(
+                                          () => _expanded = !_expanded),
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _expanded
+                                              ? '折り畳む'
+                                              : '続きを読む',
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          if (parsed.trailingTags.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Wrap(
+                                spacing: 4,
+                                runSpacing: 4,
+                                children: [
+                                  ...(_tagsExpanded
+                                          ? parsed.trailingTags
+                                          : parsed.trailingTags
+                                              .take(_maxTags))
+                                      .map(
+                                        (tag) => Chip(
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize
+                                                  .shrinkWrap,
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          label: Text(
+                                            '#$tag',
+                                            style: const TextStyle(
+                                                fontSize: 12),
+                                          ),
+                                        ),
+                                      ),
+                                  if (parsed.trailingTags.length >
+                                      _maxTags)
+                                    GestureDetector(
+                                      onTap: () => setState(() =>
+                                          _tagsExpanded =
+                                              !_tagsExpanded),
+                                      child: Chip(
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize
+                                                .shrinkWrap,
+                                        visualDensity:
+                                            VisualDensity.compact,
+                                        label: Text(
+                                          _tagsExpanded
+                                              ? '...'
+                                              : '+${parsed.trailingTags.length - _maxTags}',
+                                          style: const TextStyle(
+                                              fontSize: 12),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      );
+                    }),
+                    if (displayPost.attachments.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _AttachmentThumbnails(
+                          attachments: displayPost.attachments,
+                        ),
+                      ),
+                  ],
                   if (displayPost.reactions.isNotEmpty)
                     _ReactionChips(
                       post: displayPost,

@@ -17,6 +17,7 @@ class User {
   final int followingCount;
   final int postCount;
   final List<UserField> fields;
+  final Map<String, String> emojis;
 
   const User({
     required this.id,
@@ -30,5 +31,6 @@ class User {
     this.followingCount = 0,
     this.postCount = 0,
     this.fields = const [],
+    this.emojis = const {},
   });
 }
