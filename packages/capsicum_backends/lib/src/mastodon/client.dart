@@ -224,6 +224,25 @@ class MastodonClient {
     );
   }
 
+  /// GET /api/v1/bookmarks
+  Future<List<MastodonStatus>> getBookmarks({
+    String? maxId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/bookmarks',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
+    );
+    return (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// DELETE /api/v1/statuses/:id
   Future<void> deleteStatus(String id) async {
     await dio.delete('/api/v1/statuses/$id');

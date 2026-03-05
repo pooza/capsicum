@@ -177,17 +177,17 @@ capsicum/
 - 投稿の削除 + 削除して再編集
 - 検索（アカウント・ハッシュタグ・URL 解決・全文検索）
 - ユーザープロフィール（バナー・アバター・Bio・補足情報・統計・投稿一覧）
+- ブックマークのタイムライン（Mastodon: ブックマーク / Misskey: お気に入り）
 
 ### 未実装（優先度順）
 
-- プロフィール編集
-- ブックマークのタイムライン
 - お知らせ（サーバーからの告知）
 - ワードフィルタのタイムライン反映（[#7](https://github.com/pooza/capsicum/issues/7)）
 - モロヘイヤ連携
 
 ### 初期バージョン後（Issue 管理）
 
+- プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
 - プレビューカードの表示（[#2](https://github.com/pooza/capsicum/issues/2)）
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）

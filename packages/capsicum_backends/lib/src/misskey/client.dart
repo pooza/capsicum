@@ -173,6 +173,26 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/i/favorites
+  Future<List<MisskeyNote>> getFavorites({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/i/favorites',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(
+            (e as Map<String, dynamic>)['note'] as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/notes/create (renote)
   Future<MisskeyNote> renote(String noteId) async {
     final response = await dio.post(

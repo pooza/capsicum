@@ -274,8 +274,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Post>> getBookmarks({TimelineQuery? query}) =>
-      throw UnimplementedError();
+  Future<List<Post>> getBookmarks({TimelineQuery? query}) async {
+    final statuses = await client.getBookmarks(
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
 
   // FollowSupport
 

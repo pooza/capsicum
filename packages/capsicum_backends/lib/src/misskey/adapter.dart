@@ -276,8 +276,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Post>> getBookmarks({TimelineQuery? query}) =>
-      throw UnimplementedError();
+  Future<List<Post>> getBookmarks({TimelineQuery? query}) async {
+    final notes = await client.getFavorites(
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return notes.map((n) => n.toCapsicum(host)).toList();
+  }
 
   // FollowSupport
 
