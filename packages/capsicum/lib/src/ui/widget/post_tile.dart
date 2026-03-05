@@ -8,7 +8,7 @@ import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
 
 
-class PostTile extends ConsumerWidget {
+class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
   final VoidCallback? onActionCompleted;
@@ -21,11 +21,22 @@ class PostTile extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PostTile> createState() => _PostTileState();
+}
+
+class _PostTileState extends ConsumerState<PostTile> {
+  static const _maxLines = 8;
+  bool _expanded = false;
+
+  Post get post => widget.post;
+  VoidCallback? get onActionCompleted => widget.onActionCompleted;
+
+  @override
+  Widget build(BuildContext context) {
     final displayPost = post.reblog ?? post;
     return InkWell(
-      onTap: tappable ? () => context.push('/post', extra: post) : null,
-      onLongPress: () => _showActionMenu(context, ref),
+      onTap: widget.tappable ? () => context.push('/post', extra: post) : null,
+      onLongPress: () => _showActionMenu(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -110,7 +121,50 @@ class PostTile extends ConsumerWidget {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(parsed.body),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final textSpan = TextSpan(
+                              text: parsed.body,
+                              style: DefaultTextStyle.of(context).style,
+                            );
+                            final textPainter = TextPainter(
+                              text: textSpan,
+                              maxLines: _maxLines,
+                              textDirection: TextDirection.ltr,
+                            )..layout(maxWidth: constraints.maxWidth);
+                            final overflows = textPainter.didExceedMaxLines;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  parsed.body,
+                                  maxLines: _expanded ? null : _maxLines,
+                                  overflow: _expanded
+                                      ? null
+                                      : TextOverflow.ellipsis,
+                                ),
+                                if (overflows)
+                                  GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _expanded = !_expanded),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        _expanded ? '折り畳む' : '続きを読む',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
                         if (parsed.trailingTags.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
@@ -139,7 +193,7 @@ class PostTile extends ConsumerWidget {
                   if (displayPost.reactions.isNotEmpty)
                     _ReactionChips(
                       post: displayPost,
-                      onToggle: (emoji) => _toggleReaction(context, ref, emoji),
+                      onToggle: (emoji) => _toggleReaction(context, emoji),
                     ),
                 ],
               ),
@@ -150,7 +204,7 @@ class PostTile extends ConsumerWidget {
     );
   }
 
-  void _toggleReaction(BuildContext context, WidgetRef ref, String emoji) {
+  void _toggleReaction(BuildContext context, String emoji) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! ReactionSupport) return;
 
@@ -160,7 +214,6 @@ class PostTile extends ConsumerWidget {
 
     if (targetPost.myReaction == emoji) {
       _runReactionAction(
-        ref,
         messenger,
         adapter,
         targetPost.id,
@@ -169,7 +222,6 @@ class PostTile extends ConsumerWidget {
       );
     } else {
       _runReactionAction(
-        ref,
         messenger,
         adapter,
         targetPost.id,
@@ -179,7 +231,7 @@ class PostTile extends ConsumerWidget {
     }
   }
 
-  void _showActionMenu(BuildContext context, WidgetRef ref) {
+  void _showActionMenu(BuildContext context) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
@@ -215,7 +267,7 @@ class PostTile extends ConsumerWidget {
                 title: const Text('リアクション'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _showEmojiPicker(context, ref);
+                  _showEmojiPicker(context);
                 },
               ),
             ListTile(
@@ -250,7 +302,7 @@ class PostTile extends ConsumerWidget {
     );
   }
 
-  void _showEmojiPicker(BuildContext context, WidgetRef ref) {
+  void _showEmojiPicker(BuildContext context) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ReactionSupport) return;
 
@@ -267,7 +319,6 @@ class PostTile extends ConsumerWidget {
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
-              ref,
               messenger,
               adapter as BackendAdapter,
               targetPost.id,
@@ -282,7 +333,6 @@ class PostTile extends ConsumerWidget {
   }
 
   Future<void> _runReactionAction(
-    WidgetRef ref,
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
     String postId,
