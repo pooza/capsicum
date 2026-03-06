@@ -33,6 +33,10 @@ dart format --set-exit-if-changed .
 dart analyze --fatal-infos
 ```
 
+## 方針
+
+汎用の Fediverse クライアントですが、開発者自身が運営するサーバーのメンバーの利益を最優先します。外部ユーザーからの要望や、開発者のサーバーで使用していないバージョン・フォークへの対応は保証しません。
+
 ## ライセンス
 
 [AGPL-3.0](LICENSE)
