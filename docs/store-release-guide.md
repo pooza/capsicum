@@ -15,9 +15,9 @@
 
 ### 1.3 iOS 署名
 
-- [ ] App Store Connect でアプリの新規作成（Bundle ID: `net.shrieker.capsicum`）
-- [ ] 配布用証明書（Distribution Certificate）の確認
-- [ ] App Store 用 Provisioning Profile の作成
+- [x] App Store Connect でアプリの新規作成（Bundle ID: `jp.co.b-shock.capsicum`）
+- [x] 配布用証明書（Distribution Certificate）の確認 — Automatic Signing で自動管理
+- [x] App Store 用 Provisioning Profile の作成 — Automatic Signing で自動管理
 - [x] PrivacyInfo.xcprivacy の追加
 - [x] ITSAppUsesNonExemptEncryption の設定
 

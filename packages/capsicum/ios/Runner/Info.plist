@@ -57,7 +57,7 @@
 	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>net.shrieker.capsicum.iOSBackgroundAppRefresh</string>
+		<string>jp.co.b-shock.capsicum.iOSBackgroundAppRefresh</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
