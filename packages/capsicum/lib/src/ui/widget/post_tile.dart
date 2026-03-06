@@ -1037,23 +1037,61 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     if (images.isEmpty) return const SizedBox.shrink();
 
     if (images.length == 1) {
-      return _buildThumbnail(
-        context,
-        images.first,
-        0,
-        images,
-        width: double.infinity,
+      return _buildThumbnail(context, images.first, 0, images);
+    }
+
+    if (images.length == 2) {
+      return SizedBox(
+        height: 160,
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildThumbnail(context, images[0], 0, images),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _buildThumbnail(context, images[1], 1, images),
+            ),
+          ],
+        ),
       );
     }
 
+    // 3 or 4 images: 2x2 grid
     return SizedBox(
-      height: 160,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: images.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 4),
-        itemBuilder: (context, index) =>
-            _buildThumbnail(context, images[index], index, images, width: 200),
+      height: 320,
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildThumbnail(context, images[0], 0, images),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: _buildThumbnail(context, images[1], 1, images),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildThumbnail(context, images[2], 2, images),
+                ),
+                if (images.length >= 4) ...[
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: _buildThumbnail(context, images[3], 3, images),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1062,9 +1100,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     BuildContext context,
     Attachment attachment,
     int index,
-    List<Attachment> images, {
-    double? width,
-  }) {
+    List<Attachment> images,
+  ) {
     final imageUrl = attachment.previewUrl ?? attachment.url;
     final isSensitive = widget.sensitive && !_revealed;
 
@@ -1082,6 +1119,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Stack(
+          fit: StackFit.expand,
           children: [
             ImageFiltered(
               imageFilter: isSensitive
@@ -1089,12 +1127,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   : ImageFilter.matrix(Matrix4.identity().storage),
               child: Image.network(
                 imageUrl,
-                height: 160,
-                width: width,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
-                  height: 160,
-                  width: width,
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.broken_image_outlined),
                 ),

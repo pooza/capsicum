@@ -11,6 +11,14 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 
+class _MediaEntry {
+  final XFile file;
+  String description = '';
+  bool sensitive = false;
+
+  _MediaEntry(this.file);
+}
+
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
 
@@ -24,9 +32,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _controller = TextEditingController();
   final _cwController = TextEditingController();
   final _imagePicker = ImagePicker();
-  final List<XFile> _attachments = [];
+  final List<_MediaEntry> _attachments = [];
   PostScope _scope = PostScope.public;
   bool _cwEnabled = false;
+  bool _sensitiveEnabled = false;
   bool _sending = false;
 
   @override
@@ -66,12 +75,51 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Future<void> _pickMedia() async {
     final files = await _imagePicker.pickMultipleMedia();
     if (files.isNotEmpty) {
-      setState(() => _attachments.addAll(files));
+      setState(() {
+        _attachments.addAll(files.map((f) => _MediaEntry(f)));
+      });
     }
   }
 
   void _removeAttachment(int index) {
     setState(() => _attachments.removeAt(index));
+  }
+
+  bool _isVideo(String? mimeType) {
+    return mimeType != null && mimeType.startsWith('video/');
+  }
+
+  Future<void> _editDescription(int index) async {
+    final entry = _attachments[index];
+    final descController = TextEditingController(text: entry.description);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('メディアの説明'),
+        content: TextField(
+          controller: descController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '画像の説明を入力（ALT テキスト）',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, descController.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) {
+      setState(() => entry.description = result);
+    }
   }
 
   Future<void> _showTagsetSheet() async {
@@ -144,6 +192,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
+  bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
@@ -155,11 +205,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     try {
       // Upload attachments in parallel.
       final mediaIds = await Future.wait(
-        _attachments.map((file) async {
+        _attachments.map((entry) async {
           final draft = AttachmentDraft(
-            filePath: file.path,
-            mimeType: file.mimeType,
-            sensitive: _cwEnabled,
+            filePath: entry.file.path,
+            description: entry.description.isNotEmpty ? entry.description : null,
+            mimeType: entry.file.mimeType,
+            sensitive: _effectiveSensitive || entry.sensitive,
           );
           final attachment = await adapter.uploadAttachment(draft);
           return attachment.id;
@@ -173,7 +224,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           scope: _scope,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
-          sensitive: _cwEnabled,
+          sensitive: _effectiveSensitive,
         ),
       );
       if (mounted) {
@@ -251,39 +302,83 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   itemCount: _attachments.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
-                    return Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            File(_attachments[index].path),
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
+                    final entry = _attachments[index];
+                    final isVideo = _isVideo(entry.file.mimeType);
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _sending ? null : () => _editDescription(index),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: isVideo
+                                ? Container(
+                                    width: 100,
+                                    height: 100,
+                                    color: Colors.black87,
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.videocam,
+                                        color: Colors.white,
+                                        size: 36,
+                                      ),
+                                    ),
+                                  )
+                                : Image.file(
+                                    File(entry.file.path),
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: GestureDetector(
-                            onTap: _sending
-                                ? null
-                                : () => _removeAttachment(index),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.black54,
-                                shape: BoxShape.circle,
+                          // ALT badge
+                          if (entry.description.isNotEmpty)
+                            Positioned(
+                              bottom: 4,
+                              left: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'ALT',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                              padding: const EdgeInsets.all(4),
-                              child: const Icon(
-                                Icons.close,
-                                size: 16,
-                                color: Colors.white,
+                            ),
+                          // Remove button
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              onTap: _sending
+                                  ? null
+                                  : () => _removeAttachment(index),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                padding: const EdgeInsets.all(4),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -309,6 +404,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   ),
                   tooltip: '閲覧注意',
                 ),
+                if (_attachments.isNotEmpty)
+                  IconButton(
+                    onPressed: _sending
+                        ? null
+                        : () => setState(
+                            () => _sensitiveEnabled = !_sensitiveEnabled),
+                    icon: Icon(
+                      _effectiveSensitive
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: _effectiveSensitive
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: '閲覧注意メディア',
+                  ),
                 if (ref.watch(currentMulukhiyaProvider) != null)
                   IconButton(
                     onPressed: _sending ? null : _showTagsetSheet,
