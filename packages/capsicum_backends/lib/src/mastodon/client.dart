@@ -211,7 +211,6 @@ class MastodonClient {
   /// POST /api/v2/media
   Future<MastodonMediaAttachment> uploadMedia(
     String filePath, {
-    String? description,
     String? mimeType,
   }) async {
     final fileName = filePath.split('/').last;
@@ -222,9 +221,22 @@ class MastodonClient {
         filename: fileName,
         contentType: mediaType,
       ),
-      'description': ?description,
     });
     final response = await dio.post('/api/v2/media', data: formData);
+    return MastodonMediaAttachment.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// PUT /api/v1/media/:id
+  Future<MastodonMediaAttachment> updateMedia(
+    String id, {
+    String? description,
+  }) async {
+    final response = await dio.put(
+      '/api/v1/media/$id',
+      data: {'description': ?description},
+    );
     return MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );

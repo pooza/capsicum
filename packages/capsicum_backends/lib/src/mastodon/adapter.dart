@@ -175,11 +175,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<Attachment> uploadAttachment(AttachmentDraft draft) async {
-    final media = await client.uploadMedia(
+    var media = await client.uploadMedia(
       draft.filePath,
-      description: draft.description,
       mimeType: draft.mimeType,
     );
+    if (draft.description != null && draft.description!.isNotEmpty) {
+      media = await client.updateMedia(
+        media.id,
+        description: draft.description,
+      );
+    }
     return media.toCapsicum();
   }
 
