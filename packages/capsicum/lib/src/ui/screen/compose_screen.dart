@@ -110,8 +110,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             child: const Text('キャンセル'),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, descController.text),
+            onPressed: () => Navigator.pop(dialogContext, descController.text),
             child: const Text('OK'),
           ),
         ],
@@ -208,7 +207,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         _attachments.map((entry) async {
           final draft = AttachmentDraft(
             filePath: entry.file.path,
-            description: entry.description.isNotEmpty ? entry.description : null,
+            description: entry.description.isNotEmpty
+                ? entry.description
+                : null,
             mimeType: entry.file.mimeType,
             sensitive: _effectiveSensitive || entry.sensitive,
           );
@@ -409,7 +410,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     onPressed: _sending
                         ? null
                         : () => setState(
-                            () => _sensitiveEnabled = !_sensitiveEnabled),
+                            () => _sensitiveEnabled = !_sensitiveEnabled,
+                          ),
                     icon: Icon(
                       _effectiveSensitive
                           ? Icons.visibility_off

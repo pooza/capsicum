@@ -56,32 +56,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final dio = Dio();
       if (_isMastodon) {
-        final res =
-            await dio.get('https://${widget.host}/api/v2/instance');
+        final res = await dio.get('https://${widget.host}/api/v2/instance');
         if (res.statusCode == 200) {
           final data = res.data as Map<String, dynamic>;
           if (mounted) {
             setState(() {
               _serverName = data['title'] as String?;
-              _serverDescription =
-                  _stripHtml(data['description'] as String? ?? '');
+              _serverDescription = _stripHtml(
+                data['description'] as String? ?? '',
+              );
               final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
               _serverThumbnail = thumbnail?['url'] as String?;
             });
           }
         }
       } else {
-        final res = await dio.post(
-          'https://${widget.host}/api/meta',
-          data: {},
-        );
+        final res = await dio.post('https://${widget.host}/api/meta', data: {});
         if (res.statusCode == 200) {
           final data = res.data as Map<String, dynamic>;
           if (mounted) {
             setState(() {
               _serverName = data['name'] as String?;
-              _serverDescription =
-                  _stripHtml(data['description'] as String? ?? '');
+              _serverDescription = _stripHtml(
+                data['description'] as String? ?? '',
+              );
               _serverThumbnail = data['bannerUrl'] as String?;
             });
           }
@@ -221,9 +219,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           Center(
             child: Text(
               _serverName ?? widget.host,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           Center(
@@ -235,8 +233,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           // Server description
-          if (_serverDescription != null &&
-              _serverDescription!.isNotEmpty) ...[
+          if (_serverDescription != null && _serverDescription!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
               _serverDescription!,

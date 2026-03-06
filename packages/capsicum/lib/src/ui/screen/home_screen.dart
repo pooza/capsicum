@@ -73,12 +73,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   EmojiText(
                     account?.user.displayName ?? account?.user.username ?? '',
                     emojis: account?.user.emojis ?? const {},
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Tooltip(
-                    message: '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
+                    message:
+                        '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
                     child: Text(
                       '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
                       style: Theme.of(context).textTheme.bodySmall,
@@ -251,7 +255,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               style: const TextStyle(color: Colors.black),
             ),
             accountEmail: Tooltip(
-              message: '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+              message:
+                  '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
               child: Text(
                 '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
                 style: const TextStyle(color: Colors.black),
@@ -451,9 +456,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
                           '${current.key.host} (${current.key.type.displayName})',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
                         ),
                       ),
                     Text(
