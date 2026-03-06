@@ -29,6 +29,7 @@ class CapsicumApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
       title: 'capsicum',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

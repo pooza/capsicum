@@ -24,13 +24,13 @@
 ### 1.4 プライバシーポリシー
 
 - [x] プライバシーポリシーの作成（`docs/privacy-policy.md`）
-- [ ] `capsicum.shrieker.net/privacy-policy` で公開
-- [ ] URL をストアの掲載情報に設定
+- [x] `capsicum.shrieker.net/privacy-policy` で公開
+- [x] URL をストアの掲載情報に設定
 
 ### 1.5 コンテンツレーティング
 
 - [ ] Google Play: IARC 質問回答
-- [ ] App Store: 年齢区分の設定
+- [x] App Store: 年齢区分の設定（16+）
 - SNS クライアントのため「ユーザー生成コンテンツ」に該当
 
 ## 2. ストア掲載情報
@@ -41,7 +41,7 @@
 - [x] 短い説明文（80 文字以内）— `store-listing.md` に記載
 - [x] 詳細な説明文 — `store-listing.md` に記載
 - [x] カテゴリ: ソーシャルネットワーキング
-- [ ] プライバシーポリシー URL
+- [x] プライバシーポリシー URL
 
 ### 2.2 Google Play 固有
 
@@ -51,7 +51,7 @@
 
 ### 2.3 App Store 固有
 
-- [ ] スクリーンショット（6.7 インチ、6.5 インチ、5.5 インチ）
+- [x] スクリーンショット（6.7 インチ — 1284×2778 にリサイズして登録済み）
 - [x] アイコン（1024x1024）— 設定済み
 - [x] キーワード（100 文字以内）— `store-listing.md` に記載
 - [x] サポート URL — `https://github.com/pooza/capsicum/issues`
