@@ -194,7 +194,7 @@ capsicum/
 
 ### リリース計画
 
-#### 身内テスト版
+#### v0.0（身内テスト版）
 
 現状の実装済み機能に加え、以下を対応してから身内テスターに配布する。
 
@@ -227,14 +227,13 @@ capsicum/
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
 - ハッシュタグタイムライン（[#23](https://github.com/pooza/capsicum/issues/23)）
 - タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
-
-v1.0 または実装量次第で v1.1:
-
-- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
-- タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
+- フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
+- フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
 
 #### v1.1 以降（Issue 管理）
 
+- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
+- タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
 - ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
 - コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
