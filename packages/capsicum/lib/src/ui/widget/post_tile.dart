@@ -1031,13 +1031,31 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     final images = widget.attachments
         .where(
           (a) =>
-              a.type == AttachmentType.image || a.type == AttachmentType.gifv,
+              a.type == AttachmentType.image ||
+              a.type == AttachmentType.gifv ||
+              a.type == AttachmentType.video,
         )
         .toList();
-    if (images.isEmpty) return const SizedBox.shrink();
+    final audios = widget.attachments
+        .where((a) => a.type == AttachmentType.audio)
+        .toList();
+    if (images.isEmpty && audios.isEmpty) return const SizedBox.shrink();
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (images.isNotEmpty) _buildImageGrid(context, images),
+        for (final audio in audios) _buildAudioCard(context, audio, audios),
+      ],
+    );
+  }
+
+  Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
     if (images.length == 1) {
-      return _buildThumbnail(context, images.first, 0, images);
+      return SizedBox(
+        height: 200,
+        child: _buildThumbnail(context, images.first, 0, images),
+      );
     }
 
     if (images.length == 2) {
@@ -1045,13 +1063,9 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
         height: 160,
         child: Row(
           children: [
-            Expanded(
-              child: _buildThumbnail(context, images[0], 0, images),
-            ),
+            Expanded(child: _buildThumbnail(context, images[0], 0, images)),
             const SizedBox(width: 4),
-            Expanded(
-              child: _buildThumbnail(context, images[1], 1, images),
-            ),
+            Expanded(child: _buildThumbnail(context, images[1], 1, images)),
           ],
         ),
       );
@@ -1066,13 +1080,9 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
           Expanded(
             child: Row(
               children: [
-                Expanded(
-                  child: _buildThumbnail(context, images[0], 0, images),
-                ),
+                Expanded(child: _buildThumbnail(context, images[0], 0, images)),
                 const SizedBox(width: 4),
-                Expanded(
-                  child: _buildThumbnail(context, images[1], 1, images),
-                ),
+                Expanded(child: _buildThumbnail(context, images[1], 1, images)),
               ],
             ),
           ),
@@ -1080,9 +1090,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
           Expanded(
             child: Row(
               children: [
-                Expanded(
-                  child: _buildThumbnail(context, images[2], 2, images),
-                ),
+                Expanded(child: _buildThumbnail(context, images[2], 2, images)),
                 if (images.length >= 4) ...[
                   const SizedBox(width: 4),
                   Expanded(
@@ -1094,10 +1102,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                           GestureDetector(
                             onTap: () => context.push(
                               '/media',
-                              extra: {
-                                'attachments': images,
-                                'initialIndex': 3,
-                              },
+                              extra: {'attachments': images, 'initialIndex': 3},
                             ),
                             child: Container(
                               decoration: BoxDecoration(
@@ -1187,6 +1192,14 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   ),
                 ),
               ),
+            if (!isSensitive && attachment.type == AttachmentType.video)
+              const Center(
+                child: Icon(
+                  Icons.play_circle_outline,
+                  color: Colors.white70,
+                  size: 48,
+                ),
+              ),
             if (!isSensitive && attachment.description != null)
               Positioned(
                 right: 4,
@@ -1211,6 +1224,53 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioCard(
+    BuildContext context,
+    Attachment audio,
+    List<Attachment> allAudios,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: GestureDetector(
+        onTap: () => context.push(
+          '/media',
+          extra: {
+            'attachments': [audio],
+            'initialIndex': 0,
+          },
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.music_note,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  audio.description ?? '音声',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              Icon(
+                Icons.play_circle_outline,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
       ),
     );
