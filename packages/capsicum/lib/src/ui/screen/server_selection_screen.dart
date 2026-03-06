@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 const _presetServers = [
-  'precure.ml',
-  'mstdn.delmulin.com',
-  'misskey.delmulin.com',
-  'mstdn.b-shock.org',
+  ('precure.ml', 'キュアスタ！'),
+  ('mk.precure.fun', 'きゅあすきー'),
+  ('mstdn.delmulin.com', 'デルムリン丼'),
+  ('misskey.delmulin.com', 'ダイスキー'),
 ];
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
@@ -67,22 +67,40 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('サーバーを選択')),
+      appBar: AppBar(),
       body: _isProbing
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const SizedBox(height: 8),
-                ...List.generate(_presetServers.length, (index) {
-                  final server = _presetServers[index];
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    'capsicum',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    'サーバーを選択',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ..._presetServers.map((entry) {
+                  final (host, name) = entry;
                   return ListTile(
                     leading: const Icon(Icons.dns),
-                    title: Text(server),
+                    title: Text(name),
+                    subtitle: Text(host),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    onTap: () => _connectTo(server),
+                    onTap: () => _connectTo(host),
                   );
                 }),
                 const Divider(height: 32),

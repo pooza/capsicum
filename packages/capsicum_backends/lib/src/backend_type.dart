@@ -4,9 +4,10 @@ import 'mastodon/adapter.dart';
 import 'misskey/adapter.dart';
 
 enum BackendType {
-  mastodon(MastodonAdapter.create),
-  misskey(MisskeyAdapter.create);
+  mastodon(MastodonAdapter.create, 'Mastodon'),
+  misskey(MisskeyAdapter.create, 'Misskey');
 
   final Future<DecentralizedBackendAdapter> Function(String host) createAdapter;
-  const BackendType(this.createAdapter);
+  final String displayName;
+  const BackendType(this.createAdapter, this.displayName);
 }
