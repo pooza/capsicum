@@ -7,6 +7,10 @@
 - [ ] [Google Play Console](https://play.google.com/console) でアカウント登録（$25）
 - [ ] アプリの新規作成（パッケージ名: `net.shrieker.capsicum`）
 
+> **注意:** iOS の Bundle ID は `jp.co.b-shock.capsicum`（Apple Developer Team の制約による）。
+> Android の applicationId は `net.shrieker.capsicum` のまま。通常は一致させるが、
+> Android にはハイフンが使えない制約もあり、本アプリでは意図的に異なる値としている。
+
 ### 1.2 Android 署名鍵
 
 - [x] リリース用 keystore の生成（`capsicum-release.jks`）
