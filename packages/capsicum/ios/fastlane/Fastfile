@@ -1,0 +1,19 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Deploy to TestFlight"
+  lane :beta do
+    sh "cd ../.. && flutter build ipa --release"
+    upload_to_testflight(
+      ipa: '../../build/ios/ipa/capsicum.ipa',
+    )
+  end
+
+  desc "Submit to App Store"
+  lane :release do
+    upload_to_app_store(
+      ipa: '../../build/ios/ipa/capsicum.ipa',
+      submit_for_review: true,
+    )
+  end
+end

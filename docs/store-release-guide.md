@@ -9,36 +9,22 @@
 
 ### 1.2 Android 署名鍵
 
-- [ ] アップロード鍵の生成
-
-```bash
-keytool -genkey -v -keystore upload-keystore.jks \
-  -keyalg RSA -keysize 2048 -validity 10000 \
-  -alias upload
-```
-
-- [ ] `android/key.properties` の作成（git 管理外）
-
-```properties
-storePassword=<password>
-keyPassword=<password>
-keyAlias=upload
-storeFile=<path>/upload-keystore.jks
-```
-
-- [ ] `android/app/build.gradle` に署名設定を追加
+- [x] リリース用 keystore の生成（`capsicum-release.jks`）
+- [x] `android/key.properties` の作成（git 管理外）
+- [x] `android/app/build.gradle.kts` に署名設定を追加
 
 ### 1.3 iOS 署名
 
 - [ ] App Store Connect でアプリの新規作成（Bundle ID: `net.shrieker.capsicum`）
 - [ ] 配布用証明書（Distribution Certificate）の確認
 - [ ] App Store 用 Provisioning Profile の作成
+- [x] PrivacyInfo.xcprivacy の追加
+- [x] ITSAppUsesNonExemptEncryption の設定
 
 ### 1.4 プライバシーポリシー
 
-- [ ] プライバシーポリシーのページを作成・公開（GitHub Pages 等）
-  - 収集するデータ: なし（サーバーとの直接通信のみ、アプリ側でデータ収集しない）
-  - 認証情報の保存方法: デバイスのセキュアストレージ
+- [x] プライバシーポリシーの作成（`docs/privacy-policy.md`）
+- [ ] `capsicum.shrieker.net/privacy-policy` で公開
 - [ ] URL をストアの掲載情報に設定
 
 ### 1.5 コンテンツレーティング
@@ -51,24 +37,24 @@ storeFile=<path>/upload-keystore.jks
 
 ### 2.1 共通で必要なもの
 
-- [ ] アプリ名: capsicum
-- [ ] 短い説明文（80 文字以内）
-- [ ] 詳細な説明文
-- [ ] カテゴリ: ソーシャルネットワーキング
+- [x] アプリ名: capsicum
+- [x] 短い説明文（80 文字以内）— `store-listing.md` に記載
+- [x] 詳細な説明文 — `store-listing.md` に記載
+- [x] カテゴリ: ソーシャルネットワーキング
 - [ ] プライバシーポリシー URL
 
 ### 2.2 Google Play 固有
 
 - [ ] フィーチャーグラフィック（1024x500）
 - [ ] スクリーンショット（最低 2 枚、推奨 4-8 枚）
-- [ ] アイコン（512x512）
+- [x] アイコン（512x512）— Adaptive Icon 設定済み
 
 ### 2.3 App Store 固有
 
 - [ ] スクリーンショット（6.7 インチ、6.5 インチ、5.5 インチ）
-- [ ] アイコン（1024x1024）
-- [ ] キーワード（100 文字以内）
-- [ ] サポート URL
+- [x] アイコン（1024x1024）— 設定済み
+- [x] キーワード（100 文字以内）— `store-listing.md` に記載
+- [x] サポート URL — `https://github.com/pooza/capsicum/issues`
 
 ## 3. Fastlane セットアップ
 
