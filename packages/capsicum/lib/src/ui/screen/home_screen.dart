@@ -277,6 +277,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
             ),
+            onDetailsPressed: current != null
+                ? () {
+                    Navigator.of(context).pop();
+                    context.push('/profile', extra: current.user);
+                  }
+                : null,
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
             ),
@@ -406,6 +412,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               }
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('capsicum について'),
+            onTap: () {
+              Navigator.of(context).pop();
+              showAboutDialog(
+                context: context,
+                applicationName: 'capsicum',
+                applicationLegalese: 'Mastodon / Misskey クライアント',
+              );
+            },
+          ),
           const Divider(),
           FutureBuilder<PackageInfo>(
             future: PackageInfo.fromPlatform(),
@@ -424,7 +442,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '${current.key.host} (${current.key.type.name})',
+                          '${current.key.host} (${current.key.type.displayName})',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.outline,
                           ),
