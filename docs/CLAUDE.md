@@ -192,20 +192,58 @@ capsicum/
 - モロヘイヤ自動検出（ログイン・セッション復元時に `GET /mulukhiya/api/about` で検出）
 - モロヘイヤ連携: サーバー固有 UI 反映（投稿ラベル・字数上限・テーマカラー・ローカルTL名を about レスポンスから取得）
 
-### 初期バージョン後（Issue 管理）
+### リリース計画
 
-- プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
+#### 身内テスト版
+
+現状の実装済み機能に加え、以下を対応してから身内テスターに配布する。
+
+- メディアの説明・センシティブ設定（[#13](https://github.com/pooza/capsicum/issues/13)）
+- UI / ブランディング整備（[#18](https://github.com/pooza/capsicum/issues/18)）
+
+配布方法: Android は APK 直配布、iOS は TestFlight。
+
+#### ストアリリース準備（v1.0 公開前）
+
+詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
+
+- Google Play Developer アカウント登録・アプリ作成
+- Android 署名鍵の生成
+- iOS App Store Connect でのアプリ作成・証明書設定
+- プライバシーポリシーの作成・公開
+- コンテンツレーティングの回答
+- ストア掲載情報（説明文・スクリーンショット）
+- Fastlane セットアップ（ビルド・アップロード自動化）
+
+#### v1.0（ストア公開）
+
+身内テスト版に加え、以下を対応してからストア公開する。
+
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
 - プレビューカードの表示（[#2](https://github.com/pooza/capsicum/issues/2)）
+- 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）
+- リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）
+- ログインの自動コールバック化（[#21](https://github.com/pooza/capsicum/issues/21)）
+- モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
+- ハッシュタグタイムライン（[#23](https://github.com/pooza/capsicum/issues/23)）
+- タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
+
+v1.0 または実装量次第で v1.1:
+
+- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
+- タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
+
+#### v1.1 以降（Issue 管理）
+
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
 - ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
 - コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
-- 投票の表示・操作（[#10](https://github.com/pooza/capsicum/issues/10)）
+- プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
 - ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
-- メディアの説明・センシティブ設定（[#13](https://github.com/pooza/capsicum/issues/13)）
 - モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
-- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
 - Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
+- リストの作成・編集・削除（[#20](https://github.com/pooza/capsicum/issues/20)）
+- サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
 
 ### 実装しない機能
 
