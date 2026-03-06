@@ -250,9 +250,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               emojis: current?.user.emojis ?? const {},
               style: const TextStyle(color: Colors.black),
             ),
-            accountEmail: Text(
-              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-              style: const TextStyle(color: Colors.black),
+            accountEmail: Tooltip(
+              message: '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+              child: Text(
+                '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                style: const TextStyle(color: Colors.black),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             currentAccountPicture: ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -415,11 +420,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('capsicum について'),
-            onTap: () {
+            onTap: () async {
               Navigator.of(context).pop();
+              final info = await PackageInfo.fromPlatform();
+              if (!context.mounted) return;
               showAboutDialog(
                 context: context,
                 applicationName: 'capsicum',
+                applicationVersion: 'v${info.version} (${info.buildNumber})',
                 applicationLegalese: 'Mastodon / Misskey クライアント',
               );
             },
