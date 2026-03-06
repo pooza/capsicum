@@ -19,10 +19,7 @@ class BookmarkNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       query: const TimelineQuery(limit: _pageSize),
     );
 
-    return TimelineState(
-      posts: posts,
-      hasMore: posts.length >= _pageSize,
-    );
+    return TimelineState(posts: posts, hasMore: posts.length >= _pageSize);
   }
 
   /// Load next page of bookmarks (older bookmarks).
@@ -57,5 +54,5 @@ class BookmarkNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
 final bookmarkProvider =
     AsyncNotifierProvider.autoDispose<BookmarkNotifier, TimelineState>(
-  BookmarkNotifier.new,
-);
+      BookmarkNotifier.new,
+    );

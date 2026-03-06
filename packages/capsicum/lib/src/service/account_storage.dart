@@ -8,24 +8,18 @@ class AccountStorage {
   final FlutterSecureStorage _storage;
 
   AccountStorage([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   /// Save access token and optional client credentials for an account.
   Future<void> saveAccount(
     String accountKey,
     Map<String, String> secrets,
   ) async {
-    await _storage.write(
-      key: 'secret_$accountKey',
-      value: jsonEncode(secrets),
-    );
+    await _storage.write(key: 'secret_$accountKey', value: jsonEncode(secrets));
     final list = await getAccountKeys();
     if (!list.contains(accountKey)) {
       list.add(accountKey);
-      await _storage.write(
-        key: _accountListKey,
-        value: jsonEncode(list),
-      );
+      await _storage.write(key: _accountListKey, value: jsonEncode(list));
     }
   }
 
@@ -48,9 +42,6 @@ class AccountStorage {
     await _storage.delete(key: 'secret_$accountKey');
     final list = await getAccountKeys();
     list.remove(accountKey);
-    await _storage.write(
-      key: _accountListKey,
-      value: jsonEncode(list),
-    );
+    await _storage.write(key: _accountListKey, value: jsonEncode(list));
   }
 }

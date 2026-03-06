@@ -28,9 +28,7 @@ class MastodonStreaming {
   Stream<Post> connect(TimelineType type) {
     _currentType = type;
     _controller?.close();
-    _controller = StreamController<Post>.broadcast(
-      onCancel: dispose,
-    );
+    _controller = StreamController<Post>.broadcast(onCancel: dispose);
     _connect(type);
     return _controller!.stream;
   }
@@ -44,10 +42,7 @@ class MastodonStreaming {
       scheme: 'wss',
       host: host,
       path: '/api/v1/streaming',
-      queryParameters: {
-        'access_token': accessToken,
-        'stream': stream,
-      },
+      queryParameters: {'access_token': accessToken, 'stream': stream},
     );
 
     _channel = WebSocketChannel.connect(uri);

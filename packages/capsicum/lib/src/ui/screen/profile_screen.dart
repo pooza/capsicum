@@ -104,10 +104,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }) async {
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
-    return await (adapter as dynamic).getUserPosts(
-      widget.user.id,
-      maxId: maxId,
-    ) as List<Post>;
+    return await (adapter as dynamic).getUserPosts(widget.user.id, maxId: maxId)
+        as List<Post>;
   }
 
   @override
@@ -154,23 +152,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             )
           else
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (index >= _posts.length) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      PostTile(post: _posts[index]),
-                      const Divider(height: 1),
-                    ],
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index >= _posts.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
                   );
-                },
-                childCount: _posts.length + (_loadingMore ? 1 : 0),
-              ),
+                }
+                return Column(
+                  children: [
+                    PostTile(post: _posts[index]),
+                    const Divider(height: 1),
+                  ],
+                );
+              }, childCount: _posts.length + (_loadingMore ? 1 : 0)),
             ),
         ],
       ),
@@ -201,8 +196,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         height: 72,
                         color: theme.colorScheme.primaryContainer,
                         alignment: Alignment.center,
-                        child: Text(user.username[0].toUpperCase(),
-                            style: const TextStyle(fontSize: 28)),
+                        child: Text(
+                          user.username[0].toUpperCase(),
+                          style: const TextStyle(fontSize: 28),
+                        ),
                       ),
               ),
               const SizedBox(width: 16),
@@ -213,8 +210,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     EmojiText(
                       user.displayName ?? user.username,
                       emojis: user.emojis,
-                      style: theme.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -251,31 +249,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),
-            ...user.fields.map((field) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 100,
-                        child: Text(
-                          field.name,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+            ...user.fields.map(
+              (field) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 100,
+                      child: Text(
+                        field.name,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: EmojiText(
-                          _stripHtml(field.value),
-                          emojis: user.emojis,
-                          style: theme.textTheme.bodyMedium,
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: EmojiText(
+                        _stripHtml(field.value),
+                        emojis: user.emojis,
+                        style: theme.textTheme.bodyMedium,
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
           const Divider(height: 24),
         ],
@@ -288,10 +288,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       children: [
         Text(
           _formatCount(count),
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],

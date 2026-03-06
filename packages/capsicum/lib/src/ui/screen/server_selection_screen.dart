@@ -19,8 +19,7 @@ class ServerSelectionScreen extends ConsumerStatefulWidget {
       _ServerSelectionScreenState();
 }
 
-class _ServerSelectionScreenState
-    extends ConsumerState<ServerSelectionScreen> {
+class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
   final _hostController = TextEditingController();
   bool _isProbing = false;
   String? _error;
@@ -49,10 +48,7 @@ class _ServerSelectionScreenState
       }
 
       if (!mounted) return;
-      context.push(
-        '/login',
-        extra: {'host': host, 'backendType': probe.type},
-      );
+      context.push('/login', extra: {'host': host, 'backendType': probe.type});
     } catch (e) {
       setState(() {
         _error = '接続に失敗しました: $e';
@@ -104,10 +100,7 @@ class _ServerSelectionScreenState
                   autocorrect: false,
                 ),
                 const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _onSubmit,
-                  child: const Text('接続'),
-                ),
+                FilledButton(onPressed: _onSubmit, child: const Text('接続')),
               ],
             ),
     );

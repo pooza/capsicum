@@ -21,12 +21,11 @@ class NotificationState {
     List<Notification>? notifications,
     bool? isLoadingMore,
     bool? hasMore,
-  }) =>
-      NotificationState(
-        notifications: notifications ?? this.notifications,
-        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-        hasMore: hasMore ?? this.hasMore,
-      );
+  }) => NotificationState(
+    notifications: notifications ?? this.notifications,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    hasMore: hasMore ?? this.hasMore,
+  );
 }
 
 /// Notifier that manages paginated notification fetching.
@@ -40,9 +39,8 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       return const NotificationState(hasMore: false);
     }
 
-    final notifications = await (adapter as NotificationSupport).getNotifications(
-      query: const TimelineQuery(limit: _pageSize),
-    );
+    final notifications = await (adapter as NotificationSupport)
+        .getNotifications(query: const TimelineQuery(limit: _pageSize));
     // Update last-seen ID so background polling skips already-seen items.
     if (notifications.isNotEmpty) {
       _updateLastSeen(notifications.first.id);
@@ -97,5 +95,5 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
 final notificationProvider =
     AsyncNotifierProvider.autoDispose<NotificationNotifier, NotificationState>(
-  NotificationNotifier.new,
-);
+      NotificationNotifier.new,
+    );

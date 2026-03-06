@@ -51,7 +51,8 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                 onRefresh: () => ref.refresh(notificationProvider.future),
                 child: ListView.separated(
                   controller: _scrollController,
-                  itemCount: state.notifications.length +
+                  itemCount:
+                      state.notifications.length +
                       (state.isLoadingMore ? 1 : 0),
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
@@ -75,10 +76,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '通知の読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('通知の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(notificationProvider),

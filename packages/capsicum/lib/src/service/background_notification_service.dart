@@ -44,10 +44,10 @@ class BackgroundNotificationService {
         if (adapter is! NotificationSupport) continue;
 
         final lastSeenId = prefs.getString('$_lastSeenPrefix$keyStr');
-        final notifications =
-            await (adapter as NotificationSupport).getNotifications(
-          query: TimelineQuery(sinceId: lastSeenId, limit: 20),
-        );
+        final notifications = await (adapter as NotificationSupport)
+            .getNotifications(
+              query: TimelineQuery(sinceId: lastSeenId, limit: 20),
+            );
 
         if (notifications.isEmpty) continue;
 

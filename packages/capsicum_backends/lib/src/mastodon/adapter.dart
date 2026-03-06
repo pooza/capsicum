@@ -88,7 +88,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
-    final statuses = await client.getAccountStatuses(id, maxId: maxId, limit: 20);
+    final statuses = await client.getAccountStatuses(
+      id,
+      maxId: maxId,
+      limit: 20,
+    );
     return statuses.map((s) => s.toCapsicum(host)).toList();
   }
 
@@ -101,9 +105,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       sensitive: draft.sensitive ? true : null,
-      extraHeaders: draft.skipMulukhiya
-          ? {'X-Mulukhiya': 'capsicum'}
-          : null,
+      extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return status.toCapsicum(host);
   }
@@ -297,8 +299,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> dismissAnnouncement(String id) =>
-      client.dismissAnnouncement(id);
+  Future<void> dismissAnnouncement(String id) => client.dismissAnnouncement(id);
 
   // FollowSupport
 
@@ -309,12 +310,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> unfollowUser(String id) => throw UnimplementedError();
 
   @override
-  Future<List<User>> getFollowers(String userId) =>
-      throw UnimplementedError();
+  Future<List<User>> getFollowers(String userId) => throw UnimplementedError();
 
   @override
-  Future<List<User>> getFollowing(String userId) =>
-      throw UnimplementedError();
+  Future<List<User>> getFollowing(String userId) => throw UnimplementedError();
 
   // NotificationSupport
 
@@ -352,11 +351,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final hashtags = (data['hashtags'] as List? ?? [])
         .map((e) => (e as Map<String, dynamic>)['name'] as String)
         .toList();
-    return SearchResults(
-      users: accounts,
-      posts: statuses,
-      hashtags: hashtags,
-    );
+    return SearchResults(users: accounts, posts: statuses, hashtags: hashtags);
   }
 
   // CustomEmojiSupport

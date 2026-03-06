@@ -115,8 +115,8 @@ class MulukhiyaService {
     final package = data['package'] as Map<String, dynamic>;
     return MulukhiyaAbout(
       version: package['version'] as String,
-      controllerType: (data['config']
-          as Map<String, dynamic>)['controller'] as String,
+      controllerType:
+          (data['config'] as Map<String, dynamic>)['controller'] as String,
       packageUrl: package['url'] as String?,
     );
   }
@@ -139,10 +139,8 @@ class MulukhiyaService {
         air: v['air'] == true,
         livecure: v['livecure'] == true,
         minutes: v['minutes'] as int?,
-        extraTags: (v['extra_tags'] as List?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [],
+        extraTags:
+            (v['extra_tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
       );
     }
     return programs;

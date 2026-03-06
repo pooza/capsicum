@@ -10,14 +10,11 @@ class AnnouncementState {
   const AnnouncementState({this.announcements = const []});
 
   AnnouncementState copyWith({List<Announcement>? announcements}) =>
-      AnnouncementState(
-        announcements: announcements ?? this.announcements,
-      );
+      AnnouncementState(announcements: announcements ?? this.announcements);
 }
 
 /// Notifier that manages announcement fetching and dismissal.
-class AnnouncementNotifier
-    extends AutoDisposeAsyncNotifier<AnnouncementState> {
+class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
   @override
   Future<AnnouncementState> build() async {
     final adapter = ref.watch(currentAdapterProvider);
@@ -25,8 +22,8 @@ class AnnouncementNotifier
       return const AnnouncementState();
     }
 
-    final announcements =
-        await (adapter as AnnouncementSupport).getAnnouncements();
+    final announcements = await (adapter as AnnouncementSupport)
+        .getAnnouncements();
 
     return AnnouncementState(announcements: announcements);
   }
@@ -48,7 +45,7 @@ class AnnouncementNotifier
   }
 }
 
-final announcementProvider = AsyncNotifierProvider.autoDispose<
-    AnnouncementNotifier, AnnouncementState>(
-  AnnouncementNotifier.new,
-);
+final announcementProvider =
+    AsyncNotifierProvider.autoDispose<AnnouncementNotifier, AnnouncementState>(
+      AnnouncementNotifier.new,
+    );

@@ -31,9 +31,7 @@ class MisskeyStreaming {
   Stream<Post> connect(TimelineType type) {
     _currentType = type;
     _controller?.close();
-    _controller = StreamController<Post>.broadcast(
-      onCancel: dispose,
-    );
+    _controller = StreamController<Post>.broadcast(onCancel: dispose);
     _connect(type);
     return _controller!.stream;
   }
@@ -59,13 +57,12 @@ class MisskeyStreaming {
     // Subscribe to the timeline channel after connecting.
     _subscriptionId = const Uuid().v4();
     final channelName = _channelMap[type] ?? 'homeTimeline';
-    _channel!.sink.add(jsonEncode({
-      'type': 'connect',
-      'body': {
-        'channel': channelName,
-        'id': _subscriptionId,
-      },
-    }));
+    _channel!.sink.add(
+      jsonEncode({
+        'type': 'connect',
+        'body': {'channel': channelName, 'id': _subscriptionId},
+      }),
+    );
   }
 
   void _onMessage(dynamic message) {

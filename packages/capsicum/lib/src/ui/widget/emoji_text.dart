@@ -50,18 +50,18 @@ class EmojiText extends StatelessWidget {
       final url = _resolveUrl(shortcode);
 
       if (url != null) {
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Image.network(
-            url,
-            width: 20,
-            height: 20,
-            errorBuilder: (_, _, _) => Text(
-              ':$shortcode:',
-              style: const TextStyle(fontSize: 14),
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Image.network(
+              url,
+              width: 20,
+              height: 20,
+              errorBuilder: (_, _, _) =>
+                  Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
             ),
           ),
-        ));
+        );
       } else {
         spans.add(TextSpan(text: match.group(0)!));
       }

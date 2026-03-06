@@ -56,8 +56,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
                 onRefresh: () => ref.refresh(bookmarkProvider.future),
                 child: ListView.separated(
                   controller: _scrollController,
-                  itemCount:
-                      state.posts.length + (state.isLoadingMore ? 1 : 0),
+                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     if (index >= state.posts.length) {
@@ -77,10 +76,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '$titleの読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('$titleの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(bookmarkProvider),

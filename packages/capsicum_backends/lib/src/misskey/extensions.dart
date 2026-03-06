@@ -25,10 +25,12 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       followingCount: followingCount ?? 0,
       postCount: notesCount ?? 0,
       fields: (fields ?? [])
-          .map((f) => UserField(
-                name: f['name'] as String? ?? '',
-                value: f['value'] as String? ?? '',
-              ))
+          .map(
+            (f) => UserField(
+              name: f['name'] as String? ?? '',
+              value: f['value'] as String? ?? '',
+            ),
+          )
           .toList(),
       emojis: emojis ?? const {},
     );

@@ -96,10 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'タイムラインの読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('タイムラインの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(timelineProvider),
@@ -121,13 +118,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   };
 
   /// Mastodon uses "連合" instead of "グローバル".
-  static const _mastodonLabelOverrides = {
-    TimelineType.federated: '連合',
-  };
+  static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
 
   Widget _buildTimelineTabs(BuildContext context, TimelineType selected) {
     final adapter = ref.watch(currentAdapterProvider);
-    final supported = adapter?.capabilities.supportedTimelines ??
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final isMastodon = !supported.contains(TimelineType.social);
 
@@ -142,9 +138,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Row(
       children: tabs.map((type) {
-        var label = (isMastodon
-                ? _mastodonLabelOverrides[type]
-                : null) ??
+        var label =
+            (isMastodon ? _mastodonLabelOverrides[type] : null) ??
             _timelineLabels[type] ??
             type.name;
         if (type == TimelineType.local) {
@@ -200,8 +195,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Account? current,
     AccountManagerState accountState,
   ) {
-    final otherAccounts =
-        accountState.accounts.where((a) => a.key != current?.key).toList();
+    final otherAccounts = accountState.accounts
+        .where((a) => a.key != current?.key)
+        .toList();
 
     return Drawer(
       child: ListView(
@@ -233,7 +229,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       alignment: Alignment.center,
                       child: Text(
                         (current?.user.username ?? '?')[0].toUpperCase(),
-                        style: const TextStyle(fontSize: 24, color: Colors.white),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
             ),

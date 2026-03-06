@@ -13,10 +13,7 @@ class ClientSecretData {
   final String clientId;
   final String clientSecret;
 
-  const ClientSecretData({
-    required this.clientId,
-    required this.clientSecret,
-  });
+  const ClientSecretData({required this.clientId, required this.clientSecret});
 }
 
 /// Application info to register with the server.
@@ -58,10 +55,7 @@ class LoginNeedsOAuth extends LoginResult {
   /// Extra data the adapter needs to complete the flow (e.g., session ID).
   final Map<String, String> extra;
 
-  const LoginNeedsOAuth({
-    required this.authorizationUrl,
-    required this.extra,
-  });
+  const LoginNeedsOAuth({required this.authorizationUrl, required this.extra});
 }
 
 class LoginFailure extends LoginResult {
@@ -77,8 +71,5 @@ class LoginFailure extends LoginResult {
 /// Phase 2: [completeLogin] is called with the callback URI after browser redirect.
 abstract mixin class LoginSupport {
   Future<LoginResult> startLogin(ApplicationInfo application);
-  Future<LoginResult> completeLogin(
-    Uri callbackUri,
-    Map<String, String> extra,
-  );
+  Future<LoginResult> completeLogin(Uri callbackUri, Map<String, String> extra);
 }

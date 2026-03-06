@@ -45,10 +45,7 @@ class AnnouncementTile extends StatelessWidget {
                   ),
                 ),
                 if (!announcement.read && onDismiss != null)
-                  TextButton(
-                    onPressed: onDismiss,
-                    child: const Text('既読にする'),
-                  ),
+                  TextButton(onPressed: onDismiss, child: const Text('既読にする')),
               ],
             ),
             if (announcement.title != null) ...[
@@ -56,8 +53,9 @@ class AnnouncementTile extends StatelessWidget {
               Text(
                 announcement.title!,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight:
-                      announcement.read ? FontWeight.normal : FontWeight.bold,
+                  fontWeight: announcement.read
+                      ? FontWeight.normal
+                      : FontWeight.bold,
                 ),
               ),
             ],
@@ -65,9 +63,7 @@ class AnnouncementTile extends StatelessWidget {
             Text(
               announcement.content,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: announcement.read
-                    ? theme.colorScheme.outline
-                    : null,
+                color: announcement.read ? theme.colorScheme.outline : null,
               ),
             ),
             if (announcement.imageUrl != null) ...[

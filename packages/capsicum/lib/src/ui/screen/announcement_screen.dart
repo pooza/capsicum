@@ -20,8 +20,7 @@ class AnnouncementScreen extends ConsumerWidget {
         data: (state) => state.announcements.isEmpty
             ? const Center(child: Text('お知らせはありません'))
             : RefreshIndicator(
-                onRefresh: () =>
-                    ref.refresh(announcementProvider.future),
+                onRefresh: () => ref.refresh(announcementProvider.future),
                 child: ListView.separated(
                   itemCount: state.announcements.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
@@ -32,8 +31,8 @@ class AnnouncementScreen extends ConsumerWidget {
                       onDismiss: announcement.read
                           ? null
                           : () => ref
-                              .read(announcementProvider.notifier)
-                              .dismiss(announcement.id),
+                                .read(announcementProvider.notifier)
+                                .dismiss(announcement.id),
                     );
                   },
                 ),
@@ -45,10 +44,7 @@ class AnnouncementScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'お知らせの読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('お知らせの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(announcementProvider),

@@ -16,11 +16,11 @@ class Announcement {
   });
 
   Announcement copyWith({bool? read}) => Announcement(
-        id: id,
-        content: content,
-        title: title,
-        imageUrl: imageUrl,
-        publishedAt: publishedAt,
-        read: read ?? this.read,
-      );
+    id: id,
+    content: content,
+    title: title,
+    imageUrl: imageUrl,
+    publishedAt: publishedAt,
+    read: read ?? this.read,
+  );
 }

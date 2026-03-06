@@ -111,8 +111,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child:
-              Text('検索に失敗しました\n$_error', textAlign: TextAlign.center),
+          child: Text('検索に失敗しました\n$_error', textAlign: TextAlign.center),
         ),
       );
     }
@@ -160,8 +159,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     if (!hasUsers && !hasHashtags && !hasPosts) {
       return const Center(
-        child: Text('このサーバーは全文検索に対応していないか、\n結果が見つかりませんでした',
-            textAlign: TextAlign.center),
+        child: Text(
+          'このサーバーは全文検索に対応していないか、\n結果が見つかりませんでした',
+          textAlign: TextAlign.center,
+        ),
       );
     }
 
@@ -253,10 +254,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final tag = hashtags[index];
-        return ListTile(
-          leading: const Icon(Icons.tag),
-          title: Text('#$tag'),
-        );
+        return ListTile(leading: const Icon(Icons.tag), title: Text('#$tag'));
       },
     );
   }

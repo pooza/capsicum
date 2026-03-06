@@ -14,7 +14,6 @@ import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
 import 'emoji_text.dart';
 
-
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
@@ -75,9 +74,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
     _recognizers.clear();
 
-    final pattern = RegExp(
-      r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):',
-    );
+    final pattern = RegExp(r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):');
     final matches = pattern.allMatches(text).toList();
     if (matches.isEmpty) {
       return TextSpan(text: text, style: baseStyle);
@@ -94,21 +91,20 @@ class _PostTileState extends ConsumerState<PostTile> {
       if (match.group(1) != null) {
         // Emoji shortcode
         final shortcode = match.group(1)!;
-        final emojiUrl =
-            _resolveEmojiUrl(shortcode, emojis, fallbackHost);
+        final emojiUrl = _resolveEmojiUrl(shortcode, emojis, fallbackHost);
         if (emojiUrl != null) {
-          children.add(WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Image.network(
-              emojiUrl,
-              width: 20,
-              height: 20,
-              errorBuilder: (_, _, _) => Text(
-                ':$shortcode:',
-                style: const TextStyle(fontSize: 14),
+          children.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Image.network(
+                emojiUrl,
+                width: 20,
+                height: 20,
+                errorBuilder: (_, _, _) =>
+                    Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
               ),
             ),
-          ));
+          );
         } else {
           children.add(TextSpan(text: match.group(0)!));
         }
@@ -119,13 +115,14 @@ class _PostTileState extends ConsumerState<PostTile> {
         final recognizer = TapGestureRecognizer()
           ..onTap = uri != null ? () => launchUrl(uri) : null;
         _recognizers.add(recognizer);
-        final displayUrl =
-            uri != null ? Uri.decodeFull(uri.toString()) : url;
-        children.add(TextSpan(
-          text: displayUrl,
-          style: const TextStyle(color: Colors.blue),
-          recognizer: recognizer,
-        ));
+        final displayUrl = uri != null ? Uri.decodeFull(uri.toString()) : url;
+        children.add(
+          TextSpan(
+            text: displayUrl,
+            style: const TextStyle(color: Colors.blue),
+            recognizer: recognizer,
+          ),
+        );
       }
       lastEnd = match.end;
     }
@@ -136,7 +133,6 @@ class _PostTileState extends ConsumerState<PostTile> {
 
     return TextSpan(children: children, style: baseStyle);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -151,9 +147,11 @@ class _PostTileState extends ConsumerState<PostTile> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(Icons.filter_alt_outlined,
-                  size: 16,
-                  color: Theme.of(context).textTheme.bodySmall?.color),
+              Icon(
+                Icons.filter_alt_outlined,
+                size: 16,
+                color: Theme.of(context).textTheme.bodySmall?.color,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -292,8 +290,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ],
                     ),
                     GestureDetector(
-                      onTap: () =>
-                          setState(() => _cwExpanded = !_cwExpanded),
+                      onTap: () => setState(() => _cwExpanded = !_cwExpanded),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
@@ -307,129 +304,127 @@ class _PostTileState extends ConsumerState<PostTile> {
                     ),
                   ],
                   if (displayPost.spoilerText == null || _cwExpanded) ...[
-                    Builder(builder: (_) {
-                      final parsed =
-                          _parseContent(displayPost.content ?? '');
-                      final allEmojis = {
-                        ...displayPost.emojis,
-                        ...displayPost.author.emojis,
-                      };
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final baseStyle =
-                                  DefaultTextStyle.of(context).style;
-                              final contentSpan = _buildContentSpan(
-                                parsed.body,
-                                baseStyle,
-                                allEmojis,
-                                fallbackHost:
-                                    displayPost.emojiHost,
-                              );
-                              // Use a plain TextSpan for overflow measurement
-                              // because TextPainter cannot measure WidgetSpan.
-                              final measureSpan = TextSpan(
-                                text: parsed.body,
-                                style: baseStyle,
-                              );
-                              final textPainter = TextPainter(
-                                text: measureSpan,
-                                maxLines: _maxLines,
-                                textDirection: TextDirection.ltr,
-                              )..layout(maxWidth: constraints.maxWidth);
-                              final overflows =
-                                  textPainter.didExceedMaxLines;
+                    Builder(
+                      builder: (_) {
+                        final parsed = _parseContent(displayPost.content ?? '');
+                        final allEmojis = {
+                          ...displayPost.emojis,
+                          ...displayPost.author.emojis,
+                        };
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final baseStyle = DefaultTextStyle.of(
+                                  context,
+                                ).style;
+                                final contentSpan = _buildContentSpan(
+                                  parsed.body,
+                                  baseStyle,
+                                  allEmojis,
+                                  fallbackHost: displayPost.emojiHost,
+                                );
+                                // Use a plain TextSpan for overflow measurement
+                                // because TextPainter cannot measure WidgetSpan.
+                                final measureSpan = TextSpan(
+                                  text: parsed.body,
+                                  style: baseStyle,
+                                );
+                                final textPainter = TextPainter(
+                                  text: measureSpan,
+                                  maxLines: _maxLines,
+                                  textDirection: TextDirection.ltr,
+                                )..layout(maxWidth: constraints.maxWidth);
+                                final overflows = textPainter.didExceedMaxLines;
 
-                              return Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text.rich(
-                                    contentSpan,
-                                    maxLines:
-                                        _expanded ? null : _maxLines,
-                                    overflow: _expanded
-                                        ? null
-                                        : TextOverflow.ellipsis,
-                                  ),
-                                  if (overflows)
-                                    GestureDetector(
-                                      onTap: () => setState(
-                                          () => _expanded = !_expanded),
-                                      child: Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          _expanded
-                                              ? '折り畳む'
-                                              : '続きを読む',
-                                          style: TextStyle(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                            fontSize: 13,
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text.rich(
+                                      contentSpan,
+                                      maxLines: _expanded ? null : _maxLines,
+                                      overflow: _expanded
+                                          ? null
+                                          : TextOverflow.ellipsis,
+                                    ),
+                                    if (overflows)
+                                      GestureDetector(
+                                        onTap: () => setState(
+                                          () => _expanded = !_expanded,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                          ),
+                                          child: Text(
+                                            _expanded ? '折り畳む' : '続きを読む',
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                          if (parsed.trailingTags.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Wrap(
-                                spacing: 4,
-                                runSpacing: 4,
-                                children: [
-                                  ...(_tagsExpanded
-                                          ? parsed.trailingTags
-                                          : parsed.trailingTags
-                                              .take(_maxTags))
-                                      .map(
-                                        (tag) => Chip(
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize
-                                                  .shrinkWrap,
-                                          visualDensity:
-                                              VisualDensity.compact,
-                                          label: Text(
-                                            '#$tag',
-                                            style: const TextStyle(
-                                                fontSize: 12),
-                                          ),
-                                        ),
-                                      ),
-                                  if (parsed.trailingTags.length >
-                                      _maxTags)
-                                    GestureDetector(
-                                      onTap: () => setState(() =>
-                                          _tagsExpanded =
-                                              !_tagsExpanded),
-                                      child: Chip(
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize
-                                                .shrinkWrap,
-                                        visualDensity:
-                                            VisualDensity.compact,
-                                        label: Text(
-                                          _tagsExpanded
-                                              ? '...'
-                                              : '+${parsed.trailingTags.length - _maxTags}',
-                                          style: const TextStyle(
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                                  ],
+                                );
+                              },
                             ),
-                        ],
-                      );
-                    }),
+                            if (parsed.trailingTags.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: [
+                                    ...(_tagsExpanded
+                                            ? parsed.trailingTags
+                                            : parsed.trailingTags.take(
+                                                _maxTags,
+                                              ))
+                                        .map(
+                                          (tag) => Chip(
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            label: Text(
+                                              '#$tag',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    if (parsed.trailingTags.length > _maxTags)
+                                      GestureDetector(
+                                        onTap: () => setState(
+                                          () => _tagsExpanded = !_tagsExpanded,
+                                        ),
+                                        child: Chip(
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text(
+                                            _tagsExpanded
+                                                ? '...'
+                                                : '+${parsed.trailingTags.length - _maxTags}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                     if (displayPost.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -450,10 +445,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                             Icon(
                               Icons.reply,
                               size: 14,
-                              color: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.color,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
                             ),
                             const SizedBox(width: 2),
                             Text(
@@ -466,10 +460,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                             Icon(
                               Icons.repeat,
                               size: 14,
-                              color: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.color,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
                             ),
                             const SizedBox(width: 2),
                             Text(
@@ -482,10 +475,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                             Icon(
                               Icons.star_outline,
                               size: 14,
-                              color: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.color,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
                             ),
                             const SizedBox(width: 2),
                             Text(
@@ -563,8 +555,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                   Navigator.pop(sheetContext);
                   _runAction(
                     messenger,
-                    () => (adapter as FavoriteSupport)
-                        .favoritePost(targetPost.id),
+                    () => (adapter as FavoriteSupport).favoritePost(
+                      targetPost.id,
+                    ),
                     'お気に入りに追加しました',
                   );
                 },
@@ -598,8 +591,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                   Navigator.pop(sheetContext);
                   _runAction(
                     messenger,
-                    () => (adapter as BookmarkSupport)
-                        .bookmarkPost(targetPost.id),
+                    () => (adapter as BookmarkSupport).bookmarkPost(
+                      targetPost.id,
+                    ),
                     '$bookmarkLabelに追加しました',
                   );
                 },
@@ -630,9 +624,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ),
                 title: Text(
                   '削除',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -664,14 +656,10 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              _runAction(
-                messenger,
-                () async {
-                  await adapter.deletePost(targetPost.id);
-                  ref.read(timelineProvider.notifier).removePost(targetPost.id);
-                },
-                '${ref.read(postLabelProvider)}を削除しました',
-              );
+              _runAction(messenger, () async {
+                await adapter.deletePost(targetPost.id);
+                ref.read(timelineProvider.notifier).removePost(targetPost.id);
+              }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
               '削除',
@@ -693,7 +681,9 @@ class _PostTileState extends ConsumerState<PostTile> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('削除して再編集'),
-        content: Text('${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。'),
+        content: Text(
+          '${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -702,17 +692,13 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              _runAction(
-                messenger,
-                () async {
-                  await adapter.deletePost(targetPost.id);
-                  ref.read(timelineProvider.notifier).removePost(targetPost.id);
-                  if (mounted) {
-                    router.push('/compose', extra: targetPost);
-                  }
-                },
-                '${ref.read(postLabelProvider)}を削除しました',
-              );
+              _runAction(messenger, () async {
+                await adapter.deletePost(targetPost.id);
+                ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                if (mounted) {
+                  router.push('/compose', extra: targetPost);
+                }
+              }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
               '削除して再編集',
@@ -744,8 +730,10 @@ class _PostTileState extends ConsumerState<PostTile> {
               messenger,
               adapter as BackendAdapter,
               targetPost.id,
-              () => (adapter as ReactionSupport)
-                  .addReaction(targetPost.id, emoji),
+              () => (adapter as ReactionSupport).addReaction(
+                targetPost.id,
+                emoji,
+              ),
               'リアクションしました',
             );
           },
@@ -807,25 +795,24 @@ class _PostTileState extends ConsumerState<PostTile> {
           try {
             // Build new body: original body + new footer tags.
             final tagLine = tags.map((t) => '#$t').join(' ');
-            final newContent = parsed.body.trimRight() +
+            final newContent =
+                parsed.body.trimRight() +
                 (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
 
             // Delete original, then repost with X-Mulukhiya to skip hooks.
             await adapter.deletePost(targetPost.id);
-            await adapter.postStatus(PostDraft(
-              content: newContent,
-              scope: targetPost.scope,
-              spoilerText: targetPost.spoilerText,
-              skipMulukhiya: true,
-            ));
+            await adapter.postStatus(
+              PostDraft(
+                content: newContent,
+                scope: targetPost.scope,
+                spoilerText: targetPost.spoilerText,
+                skipMulukhiya: true,
+              ),
+            );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
-            messenger.showSnackBar(
-              const SnackBar(content: Text('タグを変更しました')),
-            );
+            messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
-            messenger.showSnackBar(
-              SnackBar(content: Text('エラー: $e')),
-            );
+            messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
           }
         },
       ),
@@ -888,7 +875,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (blockMatch != null) {
       final tagBlockHtml = blockMatch.group(1)!;
       final withoutTags = tagBlockHtml
-          .replaceAll(RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'), '')
+          .replaceAll(
+            RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'),
+            '',
+          )
           .trim();
       if (withoutTags.isEmpty) {
         final tagPattern = RegExp(r'#<span>([^<]+)</span>');
@@ -972,8 +962,8 @@ class _ReactionChips extends StatelessWidget {
               ? entry.key.substring(1, entry.key.length - 1)
               : entry.key;
           final nameOnly = strippedKey.replaceAll('@.', '');
-          var emojiUrl = post.reactionEmojis[strippedKey] ??
-              post.reactionEmojis[nameOnly];
+          var emojiUrl =
+              post.reactionEmojis[strippedKey] ?? post.reactionEmojis[nameOnly];
           // Fallback: construct URL from Misskey emoji endpoint.
           if (emojiUrl == null && isCustomEmoji && post.author.host != null) {
             emojiUrl = 'https://${post.author.host}/emoji/$nameOnly.webp';
@@ -984,8 +974,9 @@ class _ReactionChips extends StatelessWidget {
             side: isMyReaction
                 ? BorderSide(color: theme.colorScheme.primary)
                 : null,
-            backgroundColor:
-                isMyReaction ? theme.colorScheme.primaryContainer : null,
+            backgroundColor: isMyReaction
+                ? theme.colorScheme.primaryContainer
+                : null,
             label: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -996,21 +987,19 @@ class _ReactionChips extends StatelessWidget {
                       emojiUrl,
                       width: 18,
                       height: 18,
-                      errorBuilder: (_, _, _) => Text(
-                        entry.key,
-                        style: const TextStyle(fontSize: 14),
-                      ),
+                      errorBuilder: (_, _, _) =>
+                          Text(entry.key, style: const TextStyle(fontSize: 14)),
                     ),
                   )
                 else
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Text(entry.key, style: const TextStyle(fontSize: 14)),
+                    child: Text(
+                      entry.key,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   ),
-                Text(
-                  '${entry.value}',
-                  style: theme.textTheme.labelSmall,
-                ),
+                Text('${entry.value}', style: theme.textTheme.labelSmall),
               ],
             ),
             onPressed: () => onToggle(entry.key),
@@ -1040,8 +1029,10 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
   @override
   Widget build(BuildContext context) {
     final images = widget.attachments
-        .where((a) =>
-            a.type == AttachmentType.image || a.type == AttachmentType.gifv)
+        .where(
+          (a) =>
+              a.type == AttachmentType.image || a.type == AttachmentType.gifv,
+        )
         .toList();
     if (images.isEmpty) return const SizedBox.shrink();
 
@@ -1061,13 +1052,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
         scrollDirection: Axis.horizontal,
         itemCount: images.length,
         separatorBuilder: (_, _) => const SizedBox(width: 4),
-        itemBuilder: (context, index) => _buildThumbnail(
-          context,
-          images[index],
-          index,
-          images,
-          width: 200,
-        ),
+        itemBuilder: (context, index) =>
+            _buildThumbnail(context, images[index], index, images, width: 200),
       ),
     );
   }
@@ -1087,10 +1073,10 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
         if (isSensitive) {
           setState(() => _revealed = true);
         } else {
-          context.push('/media', extra: {
-            'attachments': images,
-            'initialIndex': index,
-          });
+          context.push(
+            '/media',
+            extra: {'attachments': images, 'initialIndex': index},
+          );
         }
       },
       child: ClipRRect(
@@ -1109,8 +1095,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                 errorBuilder: (_, _, _) => Container(
                   height: 160,
                   width: width,
-                  color:
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.broken_image_outlined),
                 ),
               ),
@@ -1123,13 +1108,15 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   child: const Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.visibility_off,
-                          color: Colors.white70, size: 28),
+                      Icon(
+                        Icons.visibility_off,
+                        color: Colors.white70,
+                        size: 28,
+                      ),
                       SizedBox(height: 4),
                       Text(
                         '閲覧注意',
-                        style:
-                            TextStyle(color: Colors.white70, fontSize: 12),
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ],
                   ),
@@ -1140,8 +1127,10 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                 right: 4,
                 bottom: 4,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(4),
@@ -1232,10 +1221,7 @@ class _RetagSheetState extends State<_RetagSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '削除してタグづけ',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('削除してタグづけ', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
               '元の${widget.postLabel}を削除し、指定したタグで再${widget.postLabel}します。',
@@ -1252,8 +1238,9 @@ class _RetagSheetState extends State<_RetagSheet> {
                     final locked = _isDefaultTag(tag);
                     return Chip(
                       label: Text('#$tag'),
-                      onDeleted: locked ? null : () =>
-                          setState(() => _tags.remove(tag)),
+                      onDeleted: locked
+                          ? null
+                          : () => setState(() => _tags.remove(tag)),
                     );
                   }).toList(),
                 ),
@@ -1274,10 +1261,7 @@ class _RetagSheetState extends State<_RetagSheet> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _addTag,
-                  icon: const Icon(Icons.add),
-                ),
+                IconButton(onPressed: _addTag, icon: const Icon(Icons.add)),
               ],
             ),
             const SizedBox(height: 16),

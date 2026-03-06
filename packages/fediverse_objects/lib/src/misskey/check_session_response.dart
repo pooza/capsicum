@@ -9,10 +9,7 @@ class MisskeyCheckSessionResponse {
   final String token;
   final MisskeyUser user;
 
-  const MisskeyCheckSessionResponse({
-    required this.token,
-    required this.user,
-  });
+  const MisskeyCheckSessionResponse({required this.token, required this.user});
 
   factory MisskeyCheckSessionResponse.fromJson(Map<String, dynamic> json) =>
       _$MisskeyCheckSessionResponseFromJson(json);

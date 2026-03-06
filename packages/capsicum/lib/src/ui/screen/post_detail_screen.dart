@@ -28,10 +28,9 @@ class PostDetailScreen extends ConsumerWidget {
             final isTarget = p.id == post.id;
             return Container(
               color: isTarget
-                  ? Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withValues(alpha: 0.3)
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer.withValues(alpha: 0.3)
                   : null,
               child: PostTile(
                 post: p,
@@ -49,10 +48,7 @@ class PostDetailScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'スレッドの読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(_threadProvider(post.id)),
@@ -67,8 +63,10 @@ class PostDetailScreen extends ConsumerWidget {
   }
 }
 
-final _threadProvider =
-    FutureProvider.autoDispose.family<List<Post>, String>((ref, postId) async {
+final _threadProvider = FutureProvider.autoDispose.family<List<Post>, String>((
+  ref,
+  postId,
+) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null) return [];
   return adapter.getThread(postId);

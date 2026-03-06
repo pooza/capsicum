@@ -23,15 +23,16 @@ class MastodonClient {
     required String scopes,
     String? website,
   }) async {
-    final response = await dio.post('/api/v1/apps', data: {
-      'client_name': clientName,
-      'redirect_uris': redirectUris,
-      'scopes': scopes,
-      'website': ?website,
-    });
-    return MastodonApplication.fromJson(
-      response.data as Map<String, dynamic>,
+    final response = await dio.post(
+      '/api/v1/apps',
+      data: {
+        'client_name': clientName,
+        'redirect_uris': redirectUris,
+        'scopes': scopes,
+        'website': ?website,
+      },
     );
+    return MastodonApplication.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// POST /oauth/token
@@ -43,14 +44,17 @@ class MastodonClient {
     String? code,
     String? scope,
   }) async {
-    final response = await dio.post('/oauth/token', data: {
-      'grant_type': grantType,
-      'client_id': clientId,
-      'client_secret': clientSecret,
-      'redirect_uri': redirectUri,
-      'code': ?code,
-      'scope': ?scope,
-    });
+    final response = await dio.post(
+      '/oauth/token',
+      data: {
+        'grant_type': grantType,
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'redirect_uri': redirectUri,
+        'code': ?code,
+        'scope': ?scope,
+      },
+    );
     return MastodonToken.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -74,10 +78,7 @@ class MastodonClient {
   }) async {
     final response = await dio.get(
       '/api/v1/accounts/$id/statuses',
-      queryParameters: {
-        'max_id': ?maxId,
-        'limit': ?limit,
-      },
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
     );
     return (response.data as List)
         .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
@@ -139,7 +140,7 @@ class MastodonClient {
   /// GET /api/v1/statuses/:id/context
   /// Returns { ancestors: [Status], descendants: [Status] }.
   Future<({List<MastodonStatus> ancestors, List<MastodonStatus> descendants})>
-      getStatusContext(String id) async {
+  getStatusContext(String id) async {
     final response = await dio.get('/api/v1/statuses/$id/context');
     final data = response.data as Map<String, dynamic>;
     return (
@@ -214,9 +215,7 @@ class MastodonClient {
     String? mimeType,
   }) async {
     final fileName = filePath.split('/').last;
-    final mediaType = mimeType != null
-        ? MediaType.parse(mimeType)
-        : null;
+    final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,

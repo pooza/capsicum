@@ -15,10 +15,7 @@ class AccountManagerState {
 
   const AccountManagerState({this.accounts = const [], this.current});
 
-  AccountManagerState copyWith({
-    List<Account>? accounts,
-    Account? current,
-  }) =>
+  AccountManagerState copyWith({List<Account>? accounts, Account? current}) =>
       AccountManagerState(
         accounts: accounts ?? this.accounts,
         current: current ?? this.current,
@@ -70,8 +67,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
 
-    final remaining =
-        state.accounts.where((a) => a.key != account.key).toList();
+    final remaining = state.accounts
+        .where((a) => a.key != account.key)
+        .toList();
 
     final next = (state.current?.key == account.key)
         ? (remaining.isNotEmpty ? remaining.first : null)
@@ -83,13 +81,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// Detect mulukhiya on the given host.
   Future<MulukhiyaService?> _detectMulukhiya(String host) async {
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 5),
-      ));
+      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
       final mulukhiya = await MulukhiyaService.detect(dio, host);
       if (mulukhiya != null) {
-        debugPrint('capsicum: mulukhiya detected on $host '
-            '(${mulukhiya.controllerType} v${mulukhiya.version})');
+        debugPrint(
+          'capsicum: mulukhiya detected on $host '
+          '(${mulukhiya.controllerType} v${mulukhiya.version})',
+        );
       } else {
         debugPrint('capsicum: mulukhiya not found on $host');
       }
@@ -117,13 +115,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           accessToken: secrets['access_token']!,
           refreshToken: secrets['refresh_token'],
         );
-        final clientSecret =
-            secrets.containsKey('client_id')
-                ? ClientSecretData(
-                  clientId: secrets['client_id']!,
-                  clientSecret: secrets['client_secret']!,
-                )
-                : null;
+        final clientSecret = secrets.containsKey('client_id')
+            ? ClientSecretData(
+                clientId: secrets['client_id']!,
+                clientSecret: secrets['client_secret']!,
+              )
+            : null;
 
         await adapter.applySecrets(clientSecret, userSecret);
         final user = await adapter.getMyself();

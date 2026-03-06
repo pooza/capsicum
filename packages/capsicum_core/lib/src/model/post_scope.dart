@@ -1,6 +1,1 @@
-enum PostScope {
-  public,
-  unlisted,
-  followersOnly,
-  direct,
-}
+enum PostScope { public, unlisted, followersOnly, direct }

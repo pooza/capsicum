@@ -126,9 +126,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
-      extraHeaders: draft.skipMulukhiya
-          ? {'X-Mulukhiya': 'capsicum'}
-          : null,
+      extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return note.toCapsicum(host);
   }
@@ -171,41 +169,62 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   Post _applyWordFilter(Post post) {
     if (_mutedWords.isEmpty && _hardMutedWords.isEmpty) return post;
-    final text = '${post.content ?? ''} ${post.spoilerText ?? ''}'.toLowerCase();
+    final text = '${post.content ?? ''} ${post.spoilerText ?? ''}'
+        .toLowerCase();
     if (text.trim().isEmpty) return post;
 
     if (_matchesMuteWords(text, _hardMutedWords)) {
       return Post(
-        id: post.id, postedAt: post.postedAt, author: post.author,
-        content: post.content, scope: post.scope,
+        id: post.id,
+        postedAt: post.postedAt,
+        author: post.author,
+        content: post.content,
+        scope: post.scope,
         attachments: post.attachments,
-        favouriteCount: post.favouriteCount, reblogCount: post.reblogCount,
+        favouriteCount: post.favouriteCount,
+        reblogCount: post.reblogCount,
         replyCount: post.replyCount,
-        favourited: post.favourited, reblogged: post.reblogged,
-        bookmarked: post.bookmarked, sensitive: post.sensitive,
-        reactions: post.reactions, myReaction: post.myReaction,
+        favourited: post.favourited,
+        reblogged: post.reblogged,
+        bookmarked: post.bookmarked,
+        sensitive: post.sensitive,
+        reactions: post.reactions,
+        myReaction: post.myReaction,
         reactionEmojis: post.reactionEmojis,
-        inReplyToId: post.inReplyToId, reblog: post.reblog,
-        spoilerText: post.spoilerText, emojis: post.emojis,
+        inReplyToId: post.inReplyToId,
+        reblog: post.reblog,
+        spoilerText: post.spoilerText,
+        emojis: post.emojis,
         emojiHost: post.emojiHost,
-        filterAction: FilterAction.hide, filterTitle: 'ワードミュート',
+        filterAction: FilterAction.hide,
+        filterTitle: 'ワードミュート',
       );
     }
     if (_matchesMuteWords(text, _mutedWords)) {
       return Post(
-        id: post.id, postedAt: post.postedAt, author: post.author,
-        content: post.content, scope: post.scope,
+        id: post.id,
+        postedAt: post.postedAt,
+        author: post.author,
+        content: post.content,
+        scope: post.scope,
         attachments: post.attachments,
-        favouriteCount: post.favouriteCount, reblogCount: post.reblogCount,
+        favouriteCount: post.favouriteCount,
+        reblogCount: post.reblogCount,
         replyCount: post.replyCount,
-        favourited: post.favourited, reblogged: post.reblogged,
-        bookmarked: post.bookmarked, sensitive: post.sensitive,
-        reactions: post.reactions, myReaction: post.myReaction,
+        favourited: post.favourited,
+        reblogged: post.reblogged,
+        bookmarked: post.bookmarked,
+        sensitive: post.sensitive,
+        reactions: post.reactions,
+        myReaction: post.myReaction,
         reactionEmojis: post.reactionEmojis,
-        inReplyToId: post.inReplyToId, reblog: post.reblog,
-        spoilerText: post.spoilerText, emojis: post.emojis,
+        inReplyToId: post.inReplyToId,
+        reblog: post.reblog,
+        spoilerText: post.spoilerText,
+        emojis: post.emojis,
         emojiHost: post.emojiHost,
-        filterAction: FilterAction.warn, filterTitle: 'ワードミュート',
+        filterAction: FilterAction.warn,
+        filterTitle: 'ワードミュート',
       );
     }
     return post;
@@ -215,7 +234,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     for (final group in muteWords) {
       if (group.isEmpty) continue;
       // Single-element group starting with "/" is a regex pattern.
-      if (group.length == 1 && group[0].startsWith('/') && group[0].endsWith('/')) {
+      if (group.length == 1 &&
+          group[0].startsWith('/') &&
+          group[0].endsWith('/')) {
         final pattern = group[0].substring(1, group[0].length - 1);
         try {
           if (RegExp(pattern, caseSensitive: false).hasMatch(text)) return true;
@@ -367,8 +388,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> dismissAnnouncement(String id) =>
-      client.readAnnouncement(id);
+  Future<void> dismissAnnouncement(String id) => client.readAnnouncement(id);
 
   // FollowSupport
 
@@ -379,12 +399,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> unfollowUser(String id) => throw UnimplementedError();
 
   @override
-  Future<List<User>> getFollowers(String userId) =>
-      throw UnimplementedError();
+  Future<List<User>> getFollowers(String userId) => throw UnimplementedError();
 
   @override
-  Future<List<User>> getFollowing(String userId) =>
-      throw UnimplementedError();
+  Future<List<User>> getFollowing(String userId) => throw UnimplementedError();
 
   // NotificationSupport
 
@@ -412,12 +430,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         final data = await client.apShow(query);
         final type = data['type'] as String?;
         if (type == 'Note') {
-          final note =
-              MisskeyNote.fromJson(data['object'] as Map<String, dynamic>);
+          final note = MisskeyNote.fromJson(
+            data['object'] as Map<String, dynamic>,
+          );
           return SearchResults(posts: [note.toCapsicum(host)]);
         } else if (type == 'User') {
-          final user =
-              MisskeyUser.fromJson(data['object'] as Map<String, dynamic>);
+          final user = MisskeyUser.fromJson(
+            data['object'] as Map<String, dynamic>,
+          );
           return SearchResults(users: [user.toCapsicum(host)]);
         }
       } catch (_) {

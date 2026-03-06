@@ -13,11 +13,7 @@ class LoginScreen extends ConsumerStatefulWidget {
   final String host;
   final BackendType backendType;
 
-  const LoginScreen({
-    super.key,
-    required this.host,
-    required this.backendType,
-  });
+  const LoginScreen({super.key, required this.host, required this.backendType});
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -31,9 +27,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool get _isMastodon => widget.backendType == BackendType.mastodon;
 
-  String get _redirectUri => _isMastodon
-      ? 'urn:ietf:wg:oauth:2.0:oob'
-      : 'capsicum://oauth';
+  String get _redirectUri =>
+      _isMastodon ? 'urn:ietf:wg:oauth:2.0:oob' : 'capsicum://oauth';
 
   // Store login state between phases
   dynamic _adapter;
@@ -77,9 +72,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _isLoggingIn = false;
         });
       } else if (startResult is LoginFailure) {
-        setState(
-          () => _error = 'ログインの開始に失敗しました: ${startResult.error}',
-        );
+        setState(() => _error = 'ログインの開始に失敗しました: ${startResult.error}');
       }
     } catch (e) {
       setState(() => _error = 'エラー: $e');
@@ -129,9 +122,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await ref.read(accountManagerProvider.notifier).addAccount(account);
         if (mounted) context.go('/home');
       } else if (completeResult is LoginFailure) {
-        setState(
-          () => _error = 'ログインに失敗しました: ${completeResult.error}',
-        );
+        setState(() => _error = 'ログインに失敗しました: ${completeResult.error}');
       }
     } catch (e) {
       setState(() => _error = 'エラー: $e');
@@ -158,9 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               if (_error != null) ...[
                 Text(
                   _error!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -168,10 +157,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 _isLoggingIn
                     ? const CircularProgressIndicator()
                     : FilledButton.icon(
-                      onPressed: _openBrowser,
-                      icon: const Icon(Icons.open_in_browser),
-                      label: const Text('ブラウザでログイン'),
-                    ),
+                        onPressed: _openBrowser,
+                        icon: const Icon(Icons.open_in_browser),
+                        label: const Text('ブラウザでログイン'),
+                      ),
               ] else ...[
                 if (_isMastodon) ...[
                   const Text('ブラウザで認証後、表示されたコードを入力してください'),
@@ -192,13 +181,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
-                  child:
-                      _isLoggingIn
-                          ? const Center(child: CircularProgressIndicator())
-                          : FilledButton(
-                            onPressed: _completeAuth,
-                            child: Text(_isMastodon ? 'ログイン' : '認証を完了'),
-                          ),
+                  child: _isLoggingIn
+                      ? const Center(child: CircularProgressIndicator())
+                      : FilledButton(
+                          onPressed: _completeAuth,
+                          child: Text(_isMastodon ? 'ログイン' : '認証を完了'),
+                        ),
                 ),
               ],
             ],

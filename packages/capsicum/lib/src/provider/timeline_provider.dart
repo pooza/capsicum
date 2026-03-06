@@ -26,12 +26,11 @@ class TimelineState {
     List<Post>? posts,
     bool? isLoadingMore,
     bool? hasMore,
-  }) =>
-      TimelineState(
-        posts: posts ?? this.posts,
-        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-        hasMore: hasMore ?? this.hasMore,
-      );
+  }) => TimelineState(
+    posts: posts ?? this.posts,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    hasMore: hasMore ?? this.hasMore,
+  );
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.
@@ -63,11 +62,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
-    final visible = posts.where((p) => p.filterAction != FilterAction.hide).toList();
-    return TimelineState(
-      posts: visible,
-      hasMore: posts.length >= _pageSize,
-    );
+    final visible = posts
+        .where((p) => p.filterAction != FilterAction.hide)
+        .toList();
+    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -79,9 +77,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (newPost.filterAction == FilterAction.hide) return;
       // Prepend new post, avoiding duplicates.
       if (current.posts.any((p) => p.id == newPost.id)) return;
-      state = AsyncData(
-        current.copyWith(posts: [newPost, ...current.posts]),
-      );
+      state = AsyncData(current.copyWith(posts: [newPost, ...current.posts]));
     });
   }
 
@@ -144,7 +140,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         query: TimelineQuery(maxId: lastId, limit: _pageSize),
       );
 
-      final visibleOlder = older.where((p) => p.filterAction != FilterAction.hide).toList();
+      final visibleOlder = older
+          .where((p) => p.filterAction != FilterAction.hide)
+          .toList();
       state = AsyncData(
         current.copyWith(
           posts: [...current.posts, ...visibleOlder],
@@ -162,5 +160,5 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
 final timelineProvider =
     AsyncNotifierProvider.autoDispose<TimelineNotifier, TimelineState>(
-  TimelineNotifier.new,
-);
+      TimelineNotifier.new,
+    );

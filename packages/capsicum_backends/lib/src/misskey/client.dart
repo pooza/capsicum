@@ -92,9 +92,7 @@ class MisskeyClient {
     bool? isSensitive,
   }) async {
     final fileName = filePath.split('/').last;
-    final mediaType = mimeType != null
-        ? MediaType.parse(mimeType)
-        : null;
+    final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
@@ -196,8 +194,11 @@ class MisskeyClient {
       }),
     );
     return (response.data as List)
-        .map((e) => MisskeyNote.fromJson(
-            (e as Map<String, dynamic>)['note'] as Map<String, dynamic>))
+        .map(
+          (e) => MisskeyNote.fromJson(
+            (e as Map<String, dynamic>)['note'] as Map<String, dynamic>,
+          ),
+        )
         .toList();
   }
 
@@ -208,8 +209,7 @@ class MisskeyClient {
       data: createBody({'limit': ?limit}),
     );
     return (response.data as List)
-        .map((e) =>
-            MisskeyAnnouncement.fromJson(e as Map<String, dynamic>))
+        .map((e) => MisskeyAnnouncement.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

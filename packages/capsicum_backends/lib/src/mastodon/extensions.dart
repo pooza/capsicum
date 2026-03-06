@@ -34,10 +34,12 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followingCount: followingCount,
       postCount: statusesCount,
       fields: fields
-          .map((f) => UserField(
-                name: f['name'] as String? ?? '',
-                value: f['value'] as String? ?? '',
-              ))
+          .map(
+            (f) => UserField(
+              name: f['name'] as String? ?? '',
+              value: f['value'] as String? ?? '',
+            ),
+          )
           .toList(),
       emojis: {
         for (final e in emojis ?? [])
@@ -67,8 +69,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       sensitive: sensitive ?? false,
       inReplyToId: inReplyToId,
       reblog: reblog?.toCapsicum(localHost),
-      spoilerText:
-          spoilerText?.isNotEmpty == true ? spoilerText : null,
+      spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
       emojis: {
         ..._extractHtmlCustomEmojis(content),
         for (final e in emojis ?? [])
@@ -84,7 +85,8 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
 }
 
 ({FilterAction action, String? title})? _parseFilterResult(
-    List<Map<String, dynamic>>? filtered) {
+  List<Map<String, dynamic>>? filtered,
+) {
   if (filtered == null || filtered.isEmpty) return null;
   FilterAction action = FilterAction.warn;
   String? title;
@@ -138,8 +140,7 @@ Map<String, String> _extractHtmlCustomEmojis(String html) {
   final imgRegex = RegExp(r'<img[^>]+>');
   for (final match in imgRegex.allMatches(html)) {
     final img = match.group(0)!;
-    final altMatch =
-        RegExp(r'alt=":([a-zA-Z0-9_-]+):"').firstMatch(img);
+    final altMatch = RegExp(r'alt=":([a-zA-Z0-9_-]+):"').firstMatch(img);
     final srcMatch = RegExp(r'src="([^"]+)"').firstMatch(img);
     if (altMatch != null && srcMatch != null) {
       map[altMatch.group(1)!] = srcMatch.group(1)!;

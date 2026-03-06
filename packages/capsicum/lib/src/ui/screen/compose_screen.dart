@@ -96,15 +96,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               await mulukhiya.updateProgram();
               if (sheetContext.mounted) {
                 Navigator.pop(sheetContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('番組表を更新しました')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('番組表を更新しました')));
               }
             } catch (e) {
               if (sheetContext.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('更新に失敗しました: $e')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));
               }
             }
           },
@@ -139,8 +139,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
 
     _controller.text = yaml;
-    _controller.selection =
-        TextSelection.collapsed(offset: _controller.text.length);
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
   }
 
   Future<void> _submit() async {
@@ -181,9 +182,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました: $e')),
+        );
         setState(() => _sending = false);
       }
     }
@@ -381,8 +382,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       color: _controller.text.length > maxLength
                           ? Theme.of(context).colorScheme.error
                           : _controller.text.length > maxLength * 0.8
-                              ? Colors.orange
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ? Colors.orange
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
               ],
