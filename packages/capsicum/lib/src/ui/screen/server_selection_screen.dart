@@ -75,13 +75,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
               children: [
                 const SizedBox(height: 16),
                 Center(
-                  child: Text(
-                    'capsicum',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
+                  child: Image.asset('assets/images/logo.png', height: 96),
                 ),
                 const SizedBox(height: 16),
                 Center(

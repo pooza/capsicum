@@ -32,13 +32,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'capsicum',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
+            Image.asset('assets/images/logo.png', height: 64),
             const SizedBox(height: 24),
             const CircularProgressIndicator(),
           ],

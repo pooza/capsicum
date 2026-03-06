@@ -43,10 +43,7 @@ class NotificationInit {
       );
 
       // Background polling.
-      await Workmanager().initialize(
-        backgroundDispatcher,
-        isInDebugMode: false,
-      );
+      await Workmanager().initialize(backgroundDispatcher);
       await Workmanager().registerPeriodicTask(
         _taskName,
         _taskName,

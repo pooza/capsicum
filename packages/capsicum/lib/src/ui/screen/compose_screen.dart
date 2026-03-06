@@ -143,12 +143,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               await mulukhiya.updateProgram();
               if (sheetContext.mounted) {
                 Navigator.pop(sheetContext);
+              }
+              if (mounted) {
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(const SnackBar(content: Text('番組表を更新しました')));
               }
             } catch (e) {
               if (sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+              }
+              if (mounted) {
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));

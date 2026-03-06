@@ -1398,7 +1398,7 @@ class _RetagSheetState extends State<_RetagSheet> {
                     : () async {
                         setState(() => _submitting = true);
                         await widget.onSubmit(_tags);
-                        if (mounted) Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       },
                 child: _submitting
                     ? const SizedBox(

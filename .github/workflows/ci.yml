@@ -15,6 +15,9 @@ jobs:
         with:
           channel: stable
       - run: flutter pub get
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+        working-directory: packages/fediverse_objects
       - name: Check formatting
         run: dart format --set-exit-if-changed .
       - name: Analyze
