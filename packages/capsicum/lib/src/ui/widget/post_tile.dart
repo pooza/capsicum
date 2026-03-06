@@ -1057,7 +1057,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
       );
     }
 
-    // 3 or 4 images: 2x2 grid
+    // 3+ images: 2x2 grid (with +N overlay if more than 4)
+    final extraCount = images.length - 4;
     return SizedBox(
       height: 320,
       child: Column(
@@ -1085,7 +1086,37 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                 if (images.length >= 4) ...[
                   const SizedBox(width: 4),
                   Expanded(
-                    child: _buildThumbnail(context, images[3], 3, images),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildThumbnail(context, images[3], 3, images),
+                        if (extraCount > 0)
+                          GestureDetector(
+                            onTap: () => context.push(
+                              '/media',
+                              extra: {
+                                'attachments': images,
+                                'initialIndex': 3,
+                              },
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                '+$extraCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ],
