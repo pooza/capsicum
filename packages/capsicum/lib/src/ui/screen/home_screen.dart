@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
@@ -49,7 +50,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${account?.user.username ?? ""}'),
+        title: Row(
+          children: [
+            if (account?.user.avatarUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Image.network(
+                    account!.user.avatarUrl!,
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  EmojiText(
+                    account?.user.displayName ?? account?.user.username ?? '',
+                    emojis: account?.user.emojis ?? const {},
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Tooltip(
+                    message: '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
+                    child: Text(
+                      '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -297,6 +338,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const Divider(),
           ListTile(
+            leading: const Icon(Icons.search),
+            title: const Text('検索'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/search');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('通知'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/notifications');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.bookmark_outline),
             title: Text(
               ref.read(currentAdapterProvider) is ReactionSupport
@@ -347,6 +404,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               if (confirmed == true) {
                 await ref.read(accountManagerProvider.notifier).logout(current);
               }
+            },
+          ),
+          const Divider(),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox.shrink();
+              final info = snapshot.data!;
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (current != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '${current.key.host} (${current.key.type.name})',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        ),
+                      ),
+                    Text(
+                      'capsicum v${info.version} (${info.buildNumber})',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              );
             },
           ),
         ],

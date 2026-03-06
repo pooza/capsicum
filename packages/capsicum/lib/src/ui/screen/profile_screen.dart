@@ -121,6 +121,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             expandedHeight: 200,
             pinned: true,
             backgroundColor: colorScheme.inversePrimary,
+            leading: Padding(
+              padding: const EdgeInsets.all(8),
+              child: CircleAvatar(
+                backgroundColor: Colors.black38,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
