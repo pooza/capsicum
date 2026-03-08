@@ -50,3 +50,11 @@ devtools_options.yaml
 
 # Coverage
 coverage/
+
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/README.md
+
+# Android signing
+**/android/key.properties
+**/android/*.jks
