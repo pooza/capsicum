@@ -170,10 +170,12 @@ capsicum/
 - 投稿詳細・スレッド表示
 - アクションメニュー（お気に入り / ブースト / ブックマーク）
 - プリセットサーバーリスト
-- 通知一覧（無限スクロール・プルリフレッシュ対応）
+- 通知一覧（無限スクロール・プルリフレッシュ対応）+ バックグラウンドポーリング・ローカル OS 通知
 - Misskey リアクション（絵文字ピッカー・リアクションチップ表示）
 - ストリーミング（WebSocket・Mastodon / Misskey 両対応・自動再接続）
-- メディア添付（画像選択 + アップロード、Mastodon / Misskey 両対応）
+- メディア添付（画像選択 + アップロード + 説明・センシティブ設定、Mastodon / Misskey 両対応）
+- 動画・音声メディアの再生
+- 複数画像グリッド表示（5枚以上は +N オーバーレイ）
 - 投稿の削除 + 削除して再編集
 - 検索（アカウント・ハッシュタグ・URL 解決・全文検索）
 - ユーザープロフィール（バナー・アバター・Bio・補足情報・統計・投稿一覧）
@@ -191,15 +193,14 @@ capsicum/
 - モロヘイヤ連携: 削除してタグづけ（削除 + X-Mulukhiya ヘッダー付き再投稿方式、デフォルトタグ保護）
 - モロヘイヤ自動検出（ログイン・セッション復元時に `GET /mulukhiya/api/about` で検出）
 - モロヘイヤ連携: サーバー固有 UI 反映（投稿ラベル・字数上限・テーマカラー・ローカルTL名を about レスポンスから取得）
+- UI / ブランディング整備（スプラッシュ画面・アプリアイコン・About 画面・ログイン画面改善）
+- CI（GitHub Actions: dart format + analyze）
 
 ### リリース計画
 
-#### v0.0（身内テスト版）
+#### v0.0（身内テスト版） — 機能実装完了
 
-現状の実装済み機能に加え、以下を対応してから身内テスターに配布する。
-
-- メディアの説明・センシティブ設定（[#13](https://github.com/pooza/capsicum/issues/13)）
-- UI / ブランディング整備（[#18](https://github.com/pooza/capsicum/issues/18)）
+[#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。身内テスターへの配布待ち。
 
 配布方法: Android は APK 直配布、iOS は TestFlight。
 
@@ -207,13 +208,14 @@ capsicum/
 
 詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
 
-- Google Play Developer アカウント登録・アプリ作成
-- Android 署名鍵の生成
-- iOS App Store Connect でのアプリ作成・証明書設定
-- プライバシーポリシーの作成・公開
-- コンテンツレーティングの回答
-- ストア掲載情報（説明文・スクリーンショット）
-- Fastlane セットアップ（ビルド・アップロード自動化）
+- [x] iOS App Store Connect でのアプリ作成・証明書設定
+- [x] プライバシーポリシーの作成・公開
+- [x] ストア掲載情報（説明文・カテゴリ・レーティング等）
+- [x] Fastlane セットアップ（ビルド・アップロード自動化）
+- [ ] Google Play Developer アカウント登録・アプリ作成
+- [ ] Android 署名鍵の生成
+- [ ] コンテンツレーティングの回答
+- [ ] スクリーンショットの作成
 
 #### v1.0（ストア公開）
 
