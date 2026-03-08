@@ -208,14 +208,17 @@ capsicum/
 
 詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
 
+- [x] Android 署名鍵の生成（keystore・key.properties・build.gradle.kts）
 - [x] iOS App Store Connect でのアプリ作成・証明書設定
 - [x] プライバシーポリシーの作成・公開
-- [x] ストア掲載情報（説明文・カテゴリ・レーティング等）
+- [x] ストア掲載情報（説明文・カテゴリ・キーワード等）
+- [x] App Store 年齢区分設定（16+）
+- [x] App Store スクリーンショット登録
 - [x] Fastlane セットアップ（ビルド・アップロード自動化）
-- [ ] Google Play Developer アカウント登録・アプリ作成
-- [ ] Android 署名鍵の生成
-- [ ] コンテンツレーティングの回答
-- [ ] スクリーンショットの作成
+- [ ] Google Play Developer アカウント登録（$25）・アプリ作成
+- [ ] Google Play IARC レーティング回答
+- [ ] Google Play フィーチャーグラフィック（1024x500）
+- [ ] Google Play スクリーンショット（最低2枚）
 
 #### v1.0（ストア公開）
 
