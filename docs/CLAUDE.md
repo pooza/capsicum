@@ -198,7 +198,7 @@ capsicum/
 
 ### リリース計画
 
-#### v0.0（身内テスト版） — 機能実装完了
+#### v0.1（身内テスト版） — 機能実装完了
 
 [#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。身内テスターへの配布待ち。
 
@@ -212,7 +212,7 @@ capsicum/
 1. `pubspec.yaml` の version を確認・更新
 2. Android: `flutter build apk --release` → APK を取得
 3. iOS: `flutter build ipa --release` → `cd ios && fastlane beta`（TestFlight にアップロード）
-4. GitHub で `v0.0.x` タグを作成しリリースを作る
+4. GitHub で `v0.1.x` タグを作成しリリースを作る
 5. Android APK をリリースアセットとしてアップロード
 6. テスターに GitHub Releases URL（Android）と TestFlight 招待（iOS）を送付
 
