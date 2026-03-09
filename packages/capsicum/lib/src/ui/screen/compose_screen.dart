@@ -42,6 +42,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   @override
   void initState() {
     super.initState();
+    _controller.addListener(_onTextChanged);
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     if (redraft != null) {
@@ -51,6 +52,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
     }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    _cwController.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {});
   }
 
   void _initReplyMentions(Post replyTo) {
@@ -77,13 +90,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       return '${user.username}@${user.host}';
     }
     return user.username;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _cwController.dispose();
-    super.dispose();
   }
 
   String _extractPlainText(String content) {
@@ -331,7 +337,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   hintText: '今なにしてる？',
                   border: InputBorder.none,
                 ),
-                onChanged: (_) => setState(() {}),
               ),
             ),
             if (_attachments.isNotEmpty) ...[
