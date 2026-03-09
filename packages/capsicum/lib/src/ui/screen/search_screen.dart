@@ -71,7 +71,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
       if (mounted) setState(() => _results = results);
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      debugPrint('Search error: $e');
+      if (mounted) setState(() => _error = '検索に失敗しました');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

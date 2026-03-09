@@ -112,8 +112,10 @@ class _PostTileState extends ConsumerState<PostTile> {
         // URL
         final url = match.group(0)!;
         final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
+        final isSafeScheme =
+            uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
         final recognizer = TapGestureRecognizer()
-          ..onTap = uri != null ? () => launchUrl(uri) : null;
+          ..onTap = isSafeScheme ? () => launchUrl(uri) : null;
         _recognizers.add(recognizer);
         final displayUrl = uri != null ? Uri.decodeFull(uri.toString()) : url;
         children.add(
@@ -757,7 +759,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
     }
   }
 
@@ -771,7 +773,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
     }
   }
 
@@ -812,7 +814,7 @@ class _PostTileState extends ConsumerState<PostTile> {
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
-            messenger.showSnackBar(SnackBar(content: Text('エラー: $e')));
+            messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
           }
         },
       ),

@@ -51,7 +51,8 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
       context.push('/login', extra: {'host': host, 'backendType': probe.type});
     } catch (e) {
       setState(() {
-        _error = '接続に失敗しました: $e';
+        debugPrint('Server probe error: $e');
+        _error = '接続に失敗しました';
       });
     } finally {
       if (mounted) setState(() => _isProbing = false);

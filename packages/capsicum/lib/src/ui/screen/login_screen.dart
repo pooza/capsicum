@@ -139,10 +139,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           await ref.read(accountManagerProvider.notifier).addAccount(account);
           if (mounted) context.go('/home');
         } else if (completeResult is LoginFailure) {
-          setState(() => _error = 'ログインに失敗しました: ${completeResult.error}');
+          debugPrint('Login failed: ${completeResult.error}');
+          setState(() => _error = 'ログインに失敗しました');
         }
       } else if (startResult is LoginFailure) {
-        setState(() => _error = 'ログインの開始に失敗しました: ${startResult.error}');
+        debugPrint('Login start failed: ${startResult.error}');
+        setState(() => _error = 'ログインの開始に失敗しました');
       }
     } catch (e) {
       // User cancelled the browser — not an error.
@@ -150,7 +152,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           e.toString().contains('cancelled')) {
         // Do nothing.
       } else {
-        setState(() => _error = 'エラー: $e');
+        debugPrint('Login error: $e');
+        setState(() => _error = '通信に失敗しました');
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);

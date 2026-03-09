@@ -156,7 +156,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               if (mounted) {
                 ScaffoldMessenger.of(
                   context,
-                ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));
+                ).showSnackBar(const SnackBar(content: Text('更新に失敗しました')));
               }
             }
           },
@@ -240,7 +240,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました: $e')),
+          SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました')),
         );
         setState(() => _sending = false);
       }
