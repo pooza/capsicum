@@ -2,13 +2,13 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
@@ -37,118 +37,50 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   bool _cwExpanded = false;
   bool _filterExpanded = false;
-  final List<GestureRecognizer> _recognizers = [];
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
 
   @override
   void dispose() {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
+    _contentRenderer?.dispose();
     super.dispose();
   }
 
-  String? _resolveEmojiUrl(
-    String shortcode,
-    Map<String, String> emojis,
-    String? fallbackHost,
-  ) {
-    final url = emojis[shortcode];
-    if (url != null) return url;
-    if (fallbackHost != null) {
-      return 'https://$fallbackHost/emoji/$shortcode.webp';
-    }
-    return null;
-  }
+  ContentRenderer? _contentRenderer;
 
-  TextSpan _buildContentSpan(
-    String text,
-    TextStyle? baseStyle,
+  TextSpan _renderContent(
+    String content,
+    TextStyle baseStyle,
     Map<String, String> emojis, {
     String? fallbackHost,
+    required bool isHtml,
   }) {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
-    _recognizers.clear();
-
-    final pattern = RegExp(
-      r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):|#([a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\uFF66-\uFF9F_]+)',
-    );
-    final matches = pattern.allMatches(text).toList();
-    if (matches.isEmpty) {
-      return TextSpan(text: text, style: baseStyle);
-    }
-
-    final children = <InlineSpan>[];
-    var lastEnd = 0;
-
-    for (final match in matches) {
-      if (match.start > lastEnd) {
-        children.add(TextSpan(text: text.substring(lastEnd, match.start)));
-      }
-
-      if (match.group(1) != null) {
-        // Emoji shortcode
-        final shortcode = match.group(1)!;
-        final emojiUrl = _resolveEmojiUrl(shortcode, emojis, fallbackHost);
-        if (emojiUrl != null) {
-          children.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Image.network(
-                emojiUrl,
-                width: 20,
-                height: 20,
-                errorBuilder: (_, _, _) =>
-                    Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
-              ),
-            ),
-          );
-        } else {
-          children.add(TextSpan(text: match.group(0)!));
+    _contentRenderer?.dispose();
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        final url = emojis[shortcode];
+        if (url != null) return url;
+        if (fallbackHost != null) {
+          return 'https://$fallbackHost/emoji/$shortcode.webp';
         }
-      } else if (match.group(2) != null) {
-        // Hashtag
-        final tag = match.group(2)!;
-        final recognizer = TapGestureRecognizer()
-          ..onTap = () => context.push('/hashtag/$tag');
-        _recognizers.add(recognizer);
-        children.add(
-          TextSpan(
-            text: '#$tag',
-            style: const TextStyle(color: Colors.blue),
-            recognizer: recognizer,
-          ),
-        );
-      } else {
-        // URL
-        final url = match.group(0)!;
-        final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
-        final isSafeScheme =
-            uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
-        final recognizer = TapGestureRecognizer()
-          ..onTap = isSafeScheme ? () => launchUrl(uri) : null;
-        _recognizers.add(recognizer);
-        final displayUrl = uri != null ? Uri.decodeFull(uri.toString()) : url;
-        children.add(
-          TextSpan(
-            text: displayUrl,
-            style: const TextStyle(color: Colors.blue),
-            recognizer: recognizer,
-          ),
-        );
-      }
-      lastEnd = match.end;
-    }
-
-    if (lastEnd < text.length) {
-      children.add(TextSpan(text: text.substring(lastEnd)));
-    }
-
-    return TextSpan(children: children, style: baseStyle);
+        return null;
+      },
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onMentionTap: (mention) {
+        // TODO: navigate to user profile
+      },
+    );
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
   }
 
   @override
@@ -332,7 +264,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                   if (displayPost.spoilerText == null || _cwExpanded) ...[
                     Builder(
                       builder: (_) {
-                        final parsed = _parseContent(displayPost.content ?? '');
+                        final rawContent = displayPost.content ?? '';
+                        final isHtml =
+                            rawContent.contains('<p>') || rawContent.contains('<br');
+                        final parsed = isHtml
+                            ? extractTrailingTagsHtml(rawContent)
+                            : extractTrailingTagsMfm(rawContent);
                         final allEmojis = {
                           ...displayPost.emojis,
                           ...displayPost.author.emojis,
@@ -345,11 +282,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 final baseStyle = DefaultTextStyle.of(
                                   context,
                                 ).style;
-                                final contentSpan = _buildContentSpan(
+                                final contentSpan = _renderContent(
                                   parsed.body,
                                   baseStyle,
                                   allEmojis,
                                   fallbackHost: displayPost.emojiHost,
+                                  isHtml: isHtml,
                                 );
                                 // Use a plain TextSpan for overflow measurement
                                 // because TextPainter cannot measure WidgetSpan.
@@ -837,7 +775,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final parsed = _parseContent(targetPost.content ?? '');
+    final retagContent = targetPost.content ?? '';
+    final retagIsHtml =
+        retagContent.contains('<p>') || retagContent.contains('<br');
+    final parsed = retagIsHtml
+        ? extractTrailingTagsHtml(retagContent)
+        : extractTrailingTagsMfm(retagContent);
     final messenger = ScaffoldMessenger.of(context);
 
     showModalBottomSheet(
@@ -907,91 +850,6 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  /// Parse content into body text and trailing hashtags.
-  /// Supports both Mastodon (HTML) and Misskey (MFM plain text).
-  ({String body, List<String> trailingTags}) _parseContent(String content) {
-    final isHtml = content.contains('<') && content.contains('>');
-
-    if (isHtml) {
-      return _parseHtmlContent(content);
-    }
-    return _parseMfmContent(content);
-  }
-
-  /// Mastodon HTML: trailing <p> block with hashtag links.
-  ({String body, List<String> trailingTags}) _parseHtmlContent(String html) {
-    var bodyHtml = html;
-    final trailingTags = <String>[];
-
-    final trailingTagBlock = RegExp(
-      r'<p>\s*((<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>\s*)+)</p>\s*$',
-      caseSensitive: false,
-    );
-    final blockMatch = trailingTagBlock.firstMatch(bodyHtml);
-    if (blockMatch != null) {
-      final tagBlockHtml = blockMatch.group(1)!;
-      final withoutTags = tagBlockHtml
-          .replaceAll(
-            RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'),
-            '',
-          )
-          .trim();
-      if (withoutTags.isEmpty) {
-        final tagPattern = RegExp(r'#<span>([^<]+)</span>');
-        for (final m in tagPattern.allMatches(tagBlockHtml)) {
-          trailingTags.add(m.group(1)!);
-        }
-        bodyHtml = bodyHtml.substring(0, blockMatch.start).trimRight();
-      }
-    }
-
-    return (body: _decodeHtml(bodyHtml), trailingTags: trailingTags);
-  }
-
-  /// Misskey MFM: trailing line of #tag after a blank line.
-  ({String body, List<String> trailingTags}) _parseMfmContent(String text) {
-    final trailingTags = <String>[];
-
-    // Match a trailing line that contains only hashtags, preceded by a blank line.
-    final trailingTagLine = RegExp(r'\n\n((?:#\S+\s*)+)$');
-    final match = trailingTagLine.firstMatch(text);
-    if (match != null) {
-      final tagLine = match.group(1)!;
-      final tagPattern = RegExp(r'#(\S+)');
-      for (final m in tagPattern.allMatches(tagLine)) {
-        trailingTags.add(m.group(1)!);
-      }
-      return (
-        body: text.substring(0, match.start).trimRight(),
-        trailingTags: trailingTags,
-      );
-    }
-
-    return (body: text, trailingTags: trailingTags);
-  }
-
-  String _decodeHtml(String html) {
-    var text = html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .replaceAllMapped(
-          RegExp(r'&#(\d+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!)),
-        )
-        .replaceAllMapped(
-          RegExp(r'&#x([0-9a-fA-F]+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-        );
-    return text;
-  }
 }
 
 class _ReactionChips extends StatelessWidget {
