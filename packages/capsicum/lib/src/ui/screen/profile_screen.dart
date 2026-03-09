@@ -24,6 +24,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _loadingPosts = true;
   bool _loadingMore = false;
   bool _hasMore = true;
+  UserRelationship? _relationship;
+  bool _relationshipLoading = false;
+
+  bool get _isOwnProfile {
+    final current = ref.read(currentAccountProvider);
+    return current != null && current.user.id == widget.user.id;
+  }
 
   @override
   void initState() {
@@ -31,6 +38,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
     _loadPosts();
+    _loadRelationship();
   }
 
   @override
@@ -84,6 +92,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
     } catch (e) {
       if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  Future<void> _loadRelationship() async {
+    if (_isOwnProfile) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! FollowSupport) return;
+    try {
+      final rel =
+          await (adapter as FollowSupport).getRelationship(widget.user.id);
+      if (mounted) setState(() => _relationship = rel);
+    } catch (e, st) {
+      debugPrint('Failed to load relationship: $e\n$st');
+    }
+  }
+
+  Future<void> _performAction(Future<void> Function() action) async {
+    if (_relationshipLoading) return;
+    setState(() => _relationshipLoading = true);
+    try {
+      await action();
+      await _loadRelationship();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
+      }
+      debugPrint('User action error: $e');
+    } finally {
+      if (mounted) setState(() => _relationshipLoading = false);
     }
   }
 
@@ -264,6 +303,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ],
           ),
+          if (!_isOwnProfile && _relationship != null) ...[
+            const SizedBox(height: 12),
+            _buildActionButtons(context),
+          ],
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...user.fields.map(
@@ -298,6 +341,138 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    final rel = _relationship!;
+    final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
+
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _relationshipLoading
+                ? null
+                : () => _performAction(
+                      () => rel.following
+                          ? adapter.unfollowUser(widget.user.id)
+                          : adapter.followUser(widget.user.id),
+                    ),
+            icon: Icon(rel.following ? Icons.person_remove : Icons.person_add),
+            label: Text(rel.following ? 'フォロー解除' : 'フォロー'),
+            style: rel.following
+                ? FilledButton.styleFrom(
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    foregroundColor:
+                        Theme.of(context).colorScheme.onSurface,
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(width: 8),
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            switch (value) {
+              case 'mute':
+                _performAction(() => adapter.muteUser(widget.user.id));
+              case 'mute_duration':
+                _showMuteDurationPicker(adapter);
+              case 'unmute':
+                _performAction(() => adapter.unmuteUser(widget.user.id));
+              case 'block':
+                _confirmAndBlock(adapter);
+              case 'unblock':
+                _performAction(() => adapter.unblockUser(widget.user.id));
+            }
+          },
+          itemBuilder: (_) => [
+            if (rel.muting)
+              const PopupMenuItem(
+                value: 'unmute',
+                child: Text('ミュート解除'),
+              )
+            else ...[
+              const PopupMenuItem(
+                value: 'mute',
+                child: Text('ミュート'),
+              ),
+              const PopupMenuItem(
+                value: 'mute_duration',
+                child: Text('期間を指定してミュート'),
+              ),
+            ],
+            if (rel.blocking)
+              const PopupMenuItem(
+                value: 'unblock',
+                child: Text('ブロック解除'),
+              )
+            else
+              const PopupMenuItem(
+                value: 'block',
+                child: Text('ブロック'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showMuteDurationPicker(FollowSupport adapter) async {
+    final durations = <(String, Duration)>[
+      ('30分', const Duration(minutes: 30)),
+      ('1時間', const Duration(hours: 1)),
+      ('6時間', const Duration(hours: 6)),
+      ('1日', const Duration(days: 1)),
+      ('3日', const Duration(days: 3)),
+      ('7日', const Duration(days: 7)),
+    ];
+    final selected = await showModalBottomSheet<Duration>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('ミュート期間', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ...durations.map(
+              (entry) => ListTile(
+                title: Text(entry.$1),
+                onTap: () => Navigator.pop(context, entry.$2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null && mounted) {
+      _performAction(() => adapter.muteUser(widget.user.id, duration: selected));
+    }
+  }
+
+  Future<void> _confirmAndBlock(FollowSupport adapter) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ブロック'),
+        content: Text('@${widget.user.username} をブロックしますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ブロック'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _performAction(() => adapter.blockUser(widget.user.id));
+    }
   }
 
   Widget _statItem(BuildContext context, String label, int count) {

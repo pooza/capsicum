@@ -395,10 +395,38 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // FollowSupport
 
   @override
-  Future<void> followUser(String id) => throw UnimplementedError();
+  Future<UserRelationship> getRelationship(String userId) async {
+    final r = await client.getUserRelation(userId);
+    return UserRelationship(
+      following: r['isFollowing'] as bool? ?? false,
+      followedBy: r['isFollowed'] as bool? ?? false,
+      muting: r['isMuted'] as bool? ?? false,
+      blocking: r['isBlocking'] as bool? ?? false,
+    );
+  }
 
   @override
-  Future<void> unfollowUser(String id) => throw UnimplementedError();
+  Future<void> followUser(String id) => client.followUser(id);
+
+  @override
+  Future<void> unfollowUser(String id) => client.unfollowUser(id);
+
+  @override
+  Future<void> muteUser(String id, {Duration? duration}) {
+    final expiresAt = duration != null && duration.inMilliseconds > 0
+        ? DateTime.now().add(duration).millisecondsSinceEpoch
+        : null;
+    return client.muteUser(id, expiresAt: expiresAt);
+  }
+
+  @override
+  Future<void> unmuteUser(String id) => client.unmuteUser(id);
+
+  @override
+  Future<void> blockUser(String id) => client.blockUser(id);
+
+  @override
+  Future<void> unblockUser(String id) => client.unblockUser(id);
 
   @override
   Future<List<User>> getFollowers(

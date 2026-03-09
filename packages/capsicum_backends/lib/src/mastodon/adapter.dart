@@ -310,10 +310,36 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // FollowSupport
 
   @override
-  Future<void> followUser(String id) => throw UnimplementedError();
+  Future<UserRelationship> getRelationship(String userId) async {
+    final rels = await client.getRelationships([userId]);
+    if (rels.isEmpty) return const UserRelationship();
+    final r = rels.first;
+    return UserRelationship(
+      following: r['following'] as bool? ?? false,
+      followedBy: r['followed_by'] as bool? ?? false,
+      muting: r['muting'] as bool? ?? false,
+      blocking: r['blocking'] as bool? ?? false,
+    );
+  }
 
   @override
-  Future<void> unfollowUser(String id) => throw UnimplementedError();
+  Future<void> followUser(String id) => client.followAccount(id);
+
+  @override
+  Future<void> unfollowUser(String id) => client.unfollowAccount(id);
+
+  @override
+  Future<void> muteUser(String id, {Duration? duration}) =>
+      client.muteAccount(id, duration: duration?.inSeconds);
+
+  @override
+  Future<void> unmuteUser(String id) => client.unmuteAccount(id);
+
+  @override
+  Future<void> blockUser(String id) => client.blockAccount(id);
+
+  @override
+  Future<void> unblockUser(String id) => client.unblockAccount(id);
 
   @override
   Future<List<User>> getFollowers(

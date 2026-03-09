@@ -115,6 +115,50 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/accounts/relationships
+  Future<List<Map<String, dynamic>>> getRelationships(
+    List<String> ids,
+  ) async {
+    final response = await dio.get(
+      '/api/v1/accounts/relationships',
+      queryParameters: {'id[]': ids},
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/v1/accounts/:id/follow
+  Future<void> followAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/follow');
+  }
+
+  /// POST /api/v1/accounts/:id/unfollow
+  Future<void> unfollowAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unfollow');
+  }
+
+  /// POST /api/v1/accounts/:id/mute
+  Future<void> muteAccount(String id, {int? duration}) async {
+    await dio.post(
+      '/api/v1/accounts/$id/mute',
+      data: {'duration': duration ?? 0},
+    );
+  }
+
+  /// POST /api/v1/accounts/:id/unmute
+  Future<void> unmuteAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unmute');
+  }
+
+  /// POST /api/v1/accounts/:id/block
+  Future<void> blockAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/block');
+  }
+
+  /// POST /api/v1/accounts/:id/unblock
+  Future<void> unblockAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unblock');
+  }
+
   /// GET /api/v1/timelines/home
   Future<List<MastodonStatus>> getHomeTimeline({
     String? maxId,
