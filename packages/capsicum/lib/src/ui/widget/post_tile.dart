@@ -74,7 +74,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
     _recognizers.clear();
 
-    final pattern = RegExp(r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):');
+    final pattern = RegExp(
+      r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):|#([a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\uFF66-\uFF9F_]+)',
+    );
     final matches = pattern.allMatches(text).toList();
     if (matches.isEmpty) {
       return TextSpan(text: text, style: baseStyle);
@@ -108,6 +110,19 @@ class _PostTileState extends ConsumerState<PostTile> {
         } else {
           children.add(TextSpan(text: match.group(0)!));
         }
+      } else if (match.group(2) != null) {
+        // Hashtag
+        final tag = match.group(2)!;
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => context.push('/hashtag/$tag');
+        _recognizers.add(recognizer);
+        children.add(
+          TextSpan(
+            text: '#$tag',
+            style: const TextStyle(color: Colors.blue),
+            recognizer: recognizer,
+          ),
+        );
       } else {
         // URL
         final url = match.group(0)!;
