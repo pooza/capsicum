@@ -281,6 +281,9 @@ class MastodonClient {
   }
 
   /// POST /api/v2/media
+  ///
+  /// 動画等の大きいファイルは 202 (非同期処理中) が返る。
+  /// その場合は GET /api/v1/media/:id をポーリングして処理完了を待つ。
   Future<MastodonMediaAttachment> uploadMedia(
     String filePath, {
     String? mimeType,
@@ -295,9 +298,33 @@ class MastodonClient {
       ),
     });
     final response = await dio.post('/api/v2/media', data: formData);
-    return MastodonMediaAttachment.fromJson(
+    final attachment = MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );
+    if (response.statusCode == 202) {
+      return _waitForMediaProcessing(attachment.id);
+    }
+    return attachment;
+  }
+
+  /// GET /api/v1/media/:id — メディア処理完了をポーリング
+  Future<MastodonMediaAttachment> _waitForMediaProcessing(String id) async {
+    const maxAttempts = 30;
+    const interval = Duration(seconds: 2);
+    for (var i = 0; i < maxAttempts; i++) {
+      await Future.delayed(interval);
+      final response = await dio.get(
+        '/api/v1/media/$id',
+        options: Options(validateStatus: (s) => s == 200 || s == 206),
+      );
+      if (response.statusCode == 200) {
+        return MastodonMediaAttachment.fromJson(
+          response.data as Map<String, dynamic>,
+        );
+      }
+      // 206: まだ処理中 → 次のポーリングへ
+    }
+    throw Exception('Media processing timed out (id: $id)');
   }
 
   /// PUT /api/v1/media/:id
