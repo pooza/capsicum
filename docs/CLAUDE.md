@@ -213,6 +213,7 @@ capsicum/
 - リプライ機能（返信先の引用表示・公開範囲の自動制限・メンション自動挿入）
 - IME composing 干渉の軽減（投稿画面: ValueListenableBuilder による部分再描画化）
 - 動画アップロード修正（v1 API 使用 + nullable url + 拡張子フォールバック動画判定）
+- 引用投稿の表示（Mastodon: quote オブジェクトの quoted_status パース / Misskey: renote+text 判定）
 
 ### リリース計画
 
@@ -272,7 +273,7 @@ v0.2.0 リリース済み:
 
 身内テスト版に加え、以下を対応してからストア公開する。
 
-- 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
+- ~~引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）~~ — 対応済み
 - ~~投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）~~ — v0.2.0 で対応済み
 - ~~リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）~~ — v0.2.0 で対応済み
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
