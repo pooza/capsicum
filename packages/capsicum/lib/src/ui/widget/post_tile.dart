@@ -284,38 +284,47 @@ class _PostTileState extends ConsumerState<PostTile> {
                     ),
                   const SizedBox(height: 4),
                   if (displayPost.spoilerText != null) ...[
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: EmojiText(
-                            displayPost.spoilerText!,
-                            emojis: {
-                              ...displayPost.emojis,
-                              ...displayPost.author.emojis,
-                            },
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                            fallbackHost: displayPost.emojiHost,
-                          ),
-                        ),
-                      ],
-                    ),
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => setState(() => _cwExpanded = !_cwExpanded),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          _cwExpanded ? '閉じる' : '続きを表示',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 13,
-                          ),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: EmojiText(
+                                    displayPost.spoilerText!,
+                                    emojis: {
+                                      ...displayPost.emojis,
+                                      ...displayPost.author.emojis,
+                                    },
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                    fallbackHost: displayPost.emojiHost,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _cwExpanded ? '閉じる' : '続きを表示',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
