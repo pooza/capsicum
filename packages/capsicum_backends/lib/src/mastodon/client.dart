@@ -298,6 +298,26 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/timelines/tag/:hashtag
+  Future<List<MastodonStatus>> getTagTimeline(
+    String hashtag, {
+    String? maxId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/timelines/tag/${Uri.encodeComponent(hashtag)}',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
+    );
+    return (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/timelines/public
   Future<List<MastodonStatus>> getPublicTimeline({
     bool? local,

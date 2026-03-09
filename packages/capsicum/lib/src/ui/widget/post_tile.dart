@@ -387,7 +387,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 _maxTags,
                                               ))
                                         .map(
-                                          (tag) => Chip(
+                                          (tag) => ActionChip(
                                             materialTapTargetSize:
                                                 MaterialTapTargetSize
                                                     .shrinkWrap,
@@ -398,6 +398,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                               style: const TextStyle(
                                                 fontSize: 12,
                                               ),
+                                            ),
+                                            onPressed: () => context.push(
+                                              '/hashtag/$tag',
                                             ),
                                           ),
                                         ),

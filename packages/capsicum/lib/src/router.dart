@@ -9,6 +9,7 @@ import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
+import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
@@ -119,6 +120,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final user = state.extra! as User;
           return ProfileScreen(user: user);
+        },
+      ),
+      GoRoute(
+        path: '/hashtag/:tag',
+        builder: (context, state) {
+          final tag = state.pathParameters['tag']!;
+          return HashtagTimelineScreen(hashtag: tag);
         },
       ),
       GoRoute(

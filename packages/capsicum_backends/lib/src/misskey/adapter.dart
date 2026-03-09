@@ -506,7 +506,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
     TimelineQuery? query,
-  }) => throw UnimplementedError();
+  }) async {
+    final notes = await client.searchByTag(
+      hashtag,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
 
   // StreamSupport
 

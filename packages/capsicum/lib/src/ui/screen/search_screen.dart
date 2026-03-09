@@ -255,7 +255,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final tag = hashtags[index];
-        return ListTile(leading: const Icon(Icons.tag), title: Text('#$tag'));
+        return ListTile(
+          leading: const Icon(Icons.tag),
+          title: Text('#$tag'),
+          onTap: () => context.push('/hashtag/$tag'),
+        );
       },
     );
   }

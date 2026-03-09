@@ -295,6 +295,27 @@ class MisskeyClient {
     return (response.data as List).cast<String>();
   }
 
+  /// POST /api/notes/search-by-tag
+  Future<List<MisskeyNote>> searchByTag(
+    String tag, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/search-by-tag',
+      data: createBody({
+        'tag': tag,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/ap/show — resolve a remote URI to a local object.
   Future<Map<String, dynamic>> apShow(String uri) async {
     final response = await dio.post(

@@ -387,7 +387,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
     TimelineQuery? query,
-  }) => throw UnimplementedError();
+  }) async {
+    final statuses = await client.getTagTimeline(
+      hashtag,
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
 
   // StreamSupport
 
