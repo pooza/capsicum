@@ -233,7 +233,7 @@ extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
     return Attachment(
       id: id,
       type: mastodonAttachmentTypeMap[type] ?? AttachmentType.unknown,
-      url: url,
+      url: url ?? '',
       previewUrl: previewUrl,
       description: description,
     );
