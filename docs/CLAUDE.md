@@ -251,8 +251,10 @@ v0.1.0 リリース済み:
 - タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
 - フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
 - フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
+- エラーメッセージの汎用化（[#31](https://github.com/pooza/capsicum/issues/31)）
+- launchUrl() の URL スキーム検証追加（[#32](https://github.com/pooza/capsicum/issues/32)）
 
-#### v1.1 以降（Issue 管理）
+#### v1.1
 
 - アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
 - タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
@@ -264,7 +266,19 @@ v0.1.0 リリース済み:
 - モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
 - Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
 - リストの作成・編集・削除（[#20](https://github.com/pooza/capsicum/issues/20)）
+- 投稿済みメディアの説明（ALT）編集（[#30](https://github.com/pooza/capsicum/issues/30)）
+
+#### v1.2
+
 - サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
+- ボットアカウントのバッジ表示（[#33](https://github.com/pooza/capsicum/issues/33)）
+- ロールのプロフィール表示（[#34](https://github.com/pooza/capsicum/issues/34)）
+- Misskey: チャンネル宛て投稿の識別表示（[#35](https://github.com/pooza/capsicum/issues/35)）
+- Misskey: チャンネルタイムライン（[#36](https://github.com/pooza/capsicum/issues/36)）
+
+#### リリース前の定期タスク
+
+- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）— 各マイルストーンの issue をすべて消化した後、リリース直前に毎度実施
 
 ### 実装しない機能
 
