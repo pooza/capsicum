@@ -248,7 +248,7 @@ v0.1.0 リリース済み:
 身内テスト版に加え、以下を対応してからストア公開する。
 
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
-- 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）
+- 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）— 実装済み・未検証（Mastodon / Misskey 両方の表示・投票操作を要確認）
 - リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
 - フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
