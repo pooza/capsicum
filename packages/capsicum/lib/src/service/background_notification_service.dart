@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -66,7 +67,8 @@ class BackgroundNotificationService {
             _platformDetails(),
           );
         }
-      } catch (_) {
+      } catch (e) {
+        debugPrint('BackgroundNotificationService: $keyStr failed: $e');
         continue;
       }
     }
