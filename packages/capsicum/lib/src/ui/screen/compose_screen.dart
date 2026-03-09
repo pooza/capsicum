@@ -21,8 +21,9 @@ class _MediaEntry {
 
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
+  final Post? replyTo;
 
-  const ComposeScreen({super.key, this.redraft});
+  const ComposeScreen({super.key, this.redraft, this.replyTo});
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -42,10 +43,40 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   void initState() {
     super.initState();
     final redraft = widget.redraft;
+    final replyTo = widget.replyTo;
     if (redraft != null) {
       _controller.text = _extractPlainText(redraft.content ?? '');
       _scope = redraft.scope;
+    } else if (replyTo != null) {
+      _scope = replyTo.scope;
+      _initReplyMentions(replyTo);
     }
+  }
+
+  void _initReplyMentions(Post replyTo) {
+    final currentUser = ref.read(currentAccountProvider)?.user;
+    final mentions = <String>{};
+
+    // Add the author of the post being replied to.
+    final authorAcct = _buildAcct(replyTo.author);
+    if (currentUser == null || replyTo.author.id != currentUser.id) {
+      mentions.add(authorAcct);
+    }
+
+    if (mentions.isNotEmpty) {
+      final prefix = mentions.map((m) => '@$m').join(' ');
+      _controller.text = '$prefix ';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  String _buildAcct(User user) {
+    if (user.host != null && user.host!.isNotEmpty) {
+      return '${user.username}@${user.host}';
+    }
+    return user.username;
   }
 
   @override
@@ -228,6 +259,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
+          inReplyToId: widget.replyTo?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
@@ -253,7 +285,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(ref.watch(postLabelProvider)),
+        title: Text(widget.replyTo != null ? 'リプライ' : ref.watch(postLabelProvider)),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -273,6 +305,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.replyTo != null)
+              _ReplyPreview(post: widget.replyTo!),
             if (_cwEnabled)
               TextField(
                 controller: _cwController,
@@ -508,6 +542,81 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ReplyPreview extends StatelessWidget {
+  final Post post;
+
+  const _ReplyPreview({required this.post});
+
+  String _extractPlainText(String content) {
+    final isHtml = content.contains('<') && content.contains('>');
+    if (!isHtml) return content;
+    var text = content
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '');
+    text = text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
+    return text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayName = post.author.displayName ?? post.author.username;
+    final preview = _extractPlainText(post.content ?? '');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.reply,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (preview.isNotEmpty)
+                  Text(
+                    preview,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

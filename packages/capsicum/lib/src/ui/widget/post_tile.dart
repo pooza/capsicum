@@ -591,6 +591,17 @@ class _PostTileState extends ConsumerState<PostTile> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('リプライ'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push(
+                  '/compose',
+                  extra: {'replyTo': targetPost},
+                );
+              },
+            ),
             if (adapter is FavoriteSupport)
               ListTile(
                 leading: const Icon(Icons.star_outline),
@@ -740,7 +751,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) {
-                  router.push('/compose', extra: targetPost);
+                  router.push('/compose', extra: {'redraft': targetPost});
                 }
               }, '${ref.read(postLabelProvider)}を削除しました');
             },

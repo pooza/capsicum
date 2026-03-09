@@ -89,8 +89,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/compose',
         builder: (context, state) {
-          final draft = state.extra as Post?;
-          return ComposeScreen(redraft: draft);
+          final extra = state.extra as Map<String, dynamic>?;
+          return ComposeScreen(
+            redraft: extra?['redraft'] as Post?,
+            replyTo: extra?['replyTo'] as Post?,
+          );
         },
       ),
       GoRoute(
