@@ -382,6 +382,38 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/lists/list
+  Future<List<MisskeyList>> getLists() async {
+    final response = await dio.post(
+      '/api/users/lists/list',
+      data: createBody(),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyList.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/notes/user-list-timeline
+  Future<List<MisskeyNote>> getUserListTimeline(
+    String listId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/user-list-timeline',
+      data: createBody({
+        'listId': listId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> votePoll(String noteId, int choice) async {
     await dio.post(
       '/api/notes/polls/vote',

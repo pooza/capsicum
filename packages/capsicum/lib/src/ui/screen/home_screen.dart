@@ -6,10 +6,14 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/list_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
+
+/// Currently selected list ID (null = normal timeline mode).
+final selectedListProvider = StateProvider<PostList?>((ref) => null);
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -37,7 +41,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      ref.read(timelineProvider.notifier).loadMore();
+      final selectedList = ref.read(selectedListProvider);
+      if (selectedList != null) {
+        ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
+      } else {
+        ref.read(timelineProvider.notifier).loadMore();
+      }
     }
   }
 
@@ -46,7 +55,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final account = ref.watch(currentAccountProvider);
     final accountState = ref.watch(accountManagerProvider);
     final selectedType = ref.watch(selectedTimelineTypeProvider);
-    final timeline = ref.watch(timelineProvider);
+    final selectedList = ref.watch(selectedListProvider);
+
+    // Choose which timeline data to display.
+    final timeline = selectedList != null
+        ? ref.watch(listTimelineProvider(selectedList.id))
+        : ref.watch(timelineProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -108,7 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
-          child: _buildTimelineTabs(context, selectedType),
+          child: _buildTimelineTabs(context, selectedType, selectedList),
         ),
       ),
       drawer: _buildDrawer(context, ref, account, accountState),
@@ -118,7 +132,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: timeline.when(
         data: (tlState) => RefreshIndicator(
-          onRefresh: () => ref.refresh(timelineProvider.future),
+          onRefresh: () {
+            if (selectedList != null) {
+              return ref.refresh(
+                listTimelineProvider(selectedList.id).future,
+              );
+            }
+            return ref.refresh(timelineProvider.future);
+          },
           child: ListView.separated(
             controller: _scrollController,
             itemCount: tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
@@ -144,7 +165,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Text('タイムラインの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => ref.invalidate(timelineProvider),
+                  onPressed: () {
+                    if (selectedList != null) {
+                      ref.invalidate(listTimelineProvider(selectedList.id));
+                    } else {
+                      ref.invalidate(timelineProvider);
+                    }
+                  },
                   child: const Text('再試行'),
                 ),
               ],
@@ -165,7 +192,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Mastodon uses "連合" instead of "グローバル".
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
 
-  Widget _buildTimelineTabs(BuildContext context, TimelineType selected) {
+  Widget _buildTimelineTabs(
+    BuildContext context,
+    TimelineType selected,
+    PostList? selectedList,
+  ) {
     final adapter = ref.watch(currentAdapterProvider);
     final supported =
         adapter?.capabilities.supportedTimelines ??
@@ -181,53 +212,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ];
     final tabs = order.where(supported.contains).toList();
 
-    return Row(
-      children: tabs.map((type) {
-        var label =
-            (isMastodon ? _mastodonLabelOverrides[type] : null) ??
-            _timelineLabels[type] ??
-            type.name;
-        if (type == TimelineType.local) {
-          label = ref.watch(localTimelineNameProvider);
-        }
-        return _tabButton(context, label, type, selected);
-      }).toList(),
+    // Fetch lists.
+    final listsAsync = ref.watch(listsProvider);
+    final lists = listsAsync.valueOrNull ?? [];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          // Timeline type tabs.
+          ...tabs.map((type) {
+            var label =
+                (isMastodon ? _mastodonLabelOverrides[type] : null) ??
+                _timelineLabels[type] ??
+                type.name;
+            if (type == TimelineType.local) {
+              label = ref.watch(localTimelineNameProvider);
+            }
+            final isSelected = selectedList == null && type == selected;
+            return _tabChip(context, label, isSelected, () {
+              ref.read(selectedListProvider.notifier).state = null;
+              ref.read(selectedTimelineTypeProvider.notifier).state = type;
+            });
+          }),
+          // List tabs.
+          ...lists.map((list) {
+            final isSelected = selectedList?.id == list.id;
+            return _tabChip(context, list.title, isSelected, () {
+              ref.read(selectedListProvider.notifier).state = list;
+            });
+          }),
+        ],
+      ),
     );
   }
 
-  Widget _tabButton(
+  Widget _tabChip(
     BuildContext context,
     String label,
-    TimelineType type,
-    TimelineType selected,
+    bool isSelected,
+    VoidCallback onTap,
   ) {
-    final isSelected = type == selected;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          ref.read(selectedTimelineTypeProvider.notifier).state = type;
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isSelected ? colorScheme.primary : Colors.transparent,
-                width: 3,
-              ),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: isSelected ? colorScheme.primary : Colors.transparent,
+              width: 3,
             ),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isSelected
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ),

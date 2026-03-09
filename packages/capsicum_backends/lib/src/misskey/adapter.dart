@@ -487,7 +487,24 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // ListSupport
 
   @override
-  Future<List<PostList>> getLists() => throw UnimplementedError();
+  Future<List<PostList>> getLists() async {
+    final lists = await client.getLists();
+    return lists.map((l) => l.toCapsicum()).toList();
+  }
+
+  @override
+  Future<List<Post>> getListTimeline(
+    String listId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getUserListTimeline(
+      listId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
 
   @override
   Future<PostList> createList(String title) => throw UnimplementedError();

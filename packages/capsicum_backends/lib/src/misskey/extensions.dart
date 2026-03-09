@@ -96,6 +96,12 @@ extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
   }
 }
 
+extension CapsicumMisskeyListExtension on MisskeyList {
+  PostList toCapsicum() {
+    return PostList(id: id, title: name);
+  }
+}
+
 extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   Attachment toCapsicum() {
     return Attachment(

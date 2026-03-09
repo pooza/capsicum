@@ -224,6 +224,12 @@ String _stripHtml(String html) {
   return text;
 }
 
+extension CapsicumMastodonListExtension on MastodonList {
+  PostList toCapsicum() {
+    return PostList(id: id, title: title);
+  }
+}
+
 extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
   Attachment toCapsicum() {
     return Attachment(

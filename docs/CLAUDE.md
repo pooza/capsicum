@@ -282,6 +282,15 @@ v0.1.0 リリース済み:
 - Misskey: チャンネル宛て投稿の識別表示（[#35](https://github.com/pooza/capsicum/issues/35)）
 - Misskey: チャンネルタイムライン（[#36](https://github.com/pooza/capsicum/issues/36)）
 
+#### v1.3
+
+- ハッシュタグ・Acct のリンク化（[#46](https://github.com/pooza/capsicum/issues/46)）
+- 引用投稿の操作（[#49](https://github.com/pooza/capsicum/issues/49)）
+- 複数URLのプレビューカード表示対応（[#42](https://github.com/pooza/capsicum/issues/42)）
+- ハッシュタグ・Acct の入力補完（[#47](https://github.com/pooza/capsicum/issues/47)）
+- お気に入り・ブーストしたユーザーのリスト表示（[#48](https://github.com/pooza/capsicum/issues/48)）
+- プロフィール補足情報の rel=me 認証バッジ表示（[#50](https://github.com/pooza/capsicum/issues/50)）
+
 #### リリース前の定期タスク
 
 - セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）— 各マイルストーンの issue をすべて消化した後、リリース直前に毎度実施
