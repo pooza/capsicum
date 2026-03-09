@@ -206,6 +206,9 @@ capsicum/
 - 投稿本文中ハッシュタグのリンク化
 - CJK フォントの日本語ロケール描画修正
 - Android 13+ の通知権限リクエスト
+- CW 開閉タップ領域の拡大（警告行全体をタップ可能に）
+- フォロー・フォロワーリスト表示（プロフィール画面から遷移、無限スクロール対応）
+- フォロー・アンフォロー・ミュート・ブロック操作（ミュート期限選択・ブロック確認ダイアログ付き）— 実装済み・未検証
 
 ### リリース計画
 
@@ -269,8 +272,8 @@ v0.2.0 リリース済み:
 - ~~投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）~~ — v0.2.0 で対応済み
 - ~~リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）~~ — v0.2.0 で対応済み
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
-- フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
-- フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
+- ~~フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）~~ — 対応済み
+- フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）— 実装済み・未検証
 - MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
 - Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）
 - リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）
