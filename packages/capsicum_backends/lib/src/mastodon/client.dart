@@ -338,4 +338,11 @@ class MastodonClient {
         .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  Future<void> votePoll(String pollId, List<int> choices) async {
+    await dio.post(
+      '/api/v1/polls/$pollId/votes',
+      data: {'choices': choices},
+    );
+  }
 }

@@ -459,6 +459,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                         padding: const EdgeInsets.only(top: 8),
                         child: _PreviewCardWidget(card: displayPost.card!),
                       ),
+                    if (displayPost.poll != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _PollWidget(
+                          poll: displayPost.poll!,
+                          postId: displayPost.id,
+                          onActionCompleted: onActionCompleted,
+                        ),
+                      ),
                   ],
                   if (displayPost.replyCount > 0 ||
                       displayPost.reblogCount > 0 ||
@@ -1031,6 +1040,230 @@ class _ReactionChips extends StatelessWidget {
             onPressed: () => onToggle(entry.key),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _PollWidget extends ConsumerStatefulWidget {
+  final Poll poll;
+  final String postId;
+  final VoidCallback? onActionCompleted;
+
+  const _PollWidget({
+    required this.poll,
+    required this.postId,
+    this.onActionCompleted,
+  });
+
+  @override
+  ConsumerState<_PollWidget> createState() => _PollWidgetState();
+}
+
+class _PollWidgetState extends ConsumerState<_PollWidget> {
+  late Set<int> _selected;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.poll.ownVotes.toSet();
+  }
+
+  bool get _hasVoted => widget.poll.voted;
+  bool get _showResults => _hasVoted || widget.poll.expired;
+
+  Future<void> _vote() async {
+    if (_selected.isEmpty || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final adapter = ref.read(currentAdapterProvider);
+      if (adapter != null && adapter is PollSupport) {
+        await (adapter as PollSupport).votePoll(widget.poll.id, _selected.toList());
+        widget.onActionCompleted?.call();
+      }
+    } catch (e) {
+      debugPrint('Poll vote error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('投票に失敗しました')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  String _formatExpiry(Poll poll) {
+    if (poll.expired) return '終了';
+    final expiresAt = poll.expiresAt;
+    if (expiresAt == null) return '';
+    final diff = expiresAt.difference(DateTime.now());
+    if (diff.isNegative) return '終了';
+    if (diff.inDays > 0) return '残り${diff.inDays}日';
+    if (diff.inHours > 0) return '残り${diff.inHours}時間';
+    if (diff.inMinutes > 0) return '残り${diff.inMinutes}分';
+    return '残りわずか';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final poll = widget.poll;
+    final totalVotes =
+        poll.options.fold<int>(0, (sum, o) => sum + o.votesCount);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < poll.options.length; i++)
+          _buildOption(context, theme, poll.options[i], i, totalVotes),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Text(
+              '$totalVotes票',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (_formatExpiry(poll).isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                _formatExpiry(poll),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (!_showResults && _selected.isNotEmpty) ...[
+              const Spacer(),
+              SizedBox(
+                height: 28,
+                child: FilledButton(
+                  onPressed: _submitting ? null : _vote,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('投票'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOption(
+    BuildContext context,
+    ThemeData theme,
+    PollOption option,
+    int index,
+    int totalVotes,
+  ) {
+    final fraction = totalVotes > 0 ? option.votesCount / totalVotes : 0.0;
+    final percentage = (fraction * 100).round();
+    final isOwnVote = widget.poll.ownVotes.contains(index);
+
+    if (_showResults) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (isOwnVote)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(
+                      Icons.check_circle,
+                      size: 14,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                Expanded(
+                  child: Text(
+                    option.title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: isOwnVote ? FontWeight.bold : null,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$percentage%',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: fraction,
+                minHeight: 6,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Voting mode
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (widget.poll.multiple) {
+              if (_selected.contains(index)) {
+                _selected.remove(index);
+              } else {
+                _selected.add(index);
+              }
+            } else {
+              _selected = {index};
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _selected.contains(index)
+                  ? theme.colorScheme.primary
+                  : theme.dividerColor,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                widget.poll.multiple
+                    ? (_selected.contains(index)
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank)
+                    : (_selected.contains(index)
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked),
+                size: 18,
+                color: _selected.contains(index)
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(option.title)),
+            ],
+          ),
+        ),
       ),
     );
   }

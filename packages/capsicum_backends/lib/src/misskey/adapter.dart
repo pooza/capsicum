@@ -43,6 +43,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
+        PollSupport,
         LoginSupport,
         StreamSupport {
   MisskeyStreaming? _streaming;
@@ -514,6 +515,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
+
+  // PollSupport
+
+  @override
+  Future<void> votePoll(String pollId, List<int> choices) async {
+    for (final choice in choices) {
+      await client.votePoll(pollId, choice);
+    }
   }
 
   // StreamSupport

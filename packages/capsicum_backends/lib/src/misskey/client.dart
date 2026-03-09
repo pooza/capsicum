@@ -381,4 +381,14 @@ class MisskeyClient {
         .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  Future<void> votePoll(String noteId, int choice) async {
+    await dio.post(
+      '/api/notes/polls/vote',
+      data: createBody({
+        'noteId': noteId,
+        'choice': choice,
+      }),
+    );
+  }
 }

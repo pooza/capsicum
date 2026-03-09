@@ -23,6 +23,7 @@ class MisskeyNote {
   final Map<String, String>? reactionEmojis;
   final String? myReaction;
   final String? cw;
+  final Map<String, dynamic>? poll;
 
   const MisskeyNote({
     required this.id,
@@ -41,6 +42,7 @@ class MisskeyNote {
     this.reactionEmojis,
     this.myReaction,
     this.cw,
+    this.poll,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>

@@ -1,4 +1,5 @@
 import 'attachment.dart';
+import 'poll.dart';
 import 'post_scope.dart';
 import 'preview_card.dart';
 import 'user.dart';
@@ -26,6 +27,7 @@ class Post {
   final Map<String, String> emojis;
   final String? emojiHost;
   final PreviewCard? card;
+  final Poll? poll;
   final FilterAction? filterAction;
   final String? filterTitle;
 
@@ -52,6 +54,7 @@ class Post {
     this.emojis = const {},
     this.emojiHost,
     this.card,
+    this.poll,
     this.filterAction,
     this.filterTitle,
   });

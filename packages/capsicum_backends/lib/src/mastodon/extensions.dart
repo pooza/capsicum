@@ -79,10 +79,48 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
                 (e['url'] as String?) ?? (e['static_url'] as String),
       },
       card: _parseCard(card),
+      poll: _parseMastodonPoll(poll),
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
     );
   }
+}
+
+Poll? _parseMastodonPoll(Map<String, dynamic>? poll) {
+  if (poll == null) return null;
+  final id = poll['id'] as String?;
+  final options = poll['options'] as List<dynamic>?;
+  if (id == null || options == null) return null;
+  final expiresAtStr = poll['expires_at'] as String?;
+  final emojis = poll['emojis'] as List<dynamic>? ?? [];
+  return Poll(
+    id: id,
+    options: options
+        .map(
+          (o) => PollOption(
+            title: (o as Map<String, dynamic>)['title'] as String? ?? '',
+            votesCount: o['votes_count'] as int? ?? 0,
+          ),
+        )
+        .toList(),
+    votersCount: poll['voters_count'] as int? ?? 0,
+    multiple: poll['multiple'] as bool? ?? false,
+    expired: poll['expired'] as bool? ?? false,
+    expiresAt:
+        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    voted: poll['voted'] as bool? ?? false,
+    ownVotes: (poll['own_votes'] as List<dynamic>?)
+            ?.map((v) => v as int)
+            .toList() ??
+        const [],
+    emojis: {
+      for (final e in emojis)
+        if (e is Map<String, dynamic> &&
+            e['shortcode'] is String &&
+            e['url'] is String)
+          e['shortcode'] as String: e['url'] as String,
+    },
+  );
 }
 
 PreviewCard? _parseCard(Map<String, dynamic>? card) {

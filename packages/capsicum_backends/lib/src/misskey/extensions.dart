@@ -53,6 +53,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
       reblog: renote?.toCapsicum(localHost),
+      poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
       emojis: reactionEmojis ?? const {},
       emojiHost: localHost,
@@ -105,6 +106,42 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
       description: comment,
     );
   }
+}
+
+Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
+  if (poll == null) return null;
+  final choices = poll['choices'] as List<dynamic>?;
+  if (choices == null) return null;
+  final expiresAtStr = poll['expiresAt'] as String?;
+  final expired = expiresAtStr != null &&
+      DateTime.tryParse(expiresAtStr)?.isBefore(DateTime.now()) == true;
+  return Poll(
+    id: noteId,
+    options: choices
+        .map(
+          (c) => PollOption(
+            title: (c as Map<String, dynamic>)['text'] as String? ?? '',
+            votesCount: c['votes'] as int? ?? 0,
+          ),
+        )
+        .toList(),
+    votersCount: choices.fold<int>(
+      0,
+      (sum, c) => sum + ((c as Map<String, dynamic>)['votes'] as int? ?? 0),
+    ),
+    multiple: poll['multiple'] as bool? ?? false,
+    expired: expired,
+    expiresAt:
+        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    voted: choices.any(
+      (c) => (c as Map<String, dynamic>)['isVoted'] as bool? ?? false,
+    ),
+    ownVotes: [
+      for (var i = 0; i < choices.length; i++)
+        if ((choices[i] as Map<String, dynamic>)['isVoted'] as bool? ?? false)
+          i,
+    ],
+  );
 }
 
 AttachmentType _mapMisskeyFileType(String mimeType) {

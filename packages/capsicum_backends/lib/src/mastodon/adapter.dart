@@ -41,6 +41,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         CustomEmojiSupport,
         ListSupport,
         HashtagSupport,
+        PollSupport,
         LoginSupport,
         StreamSupport {
   final MastodonClient client;
@@ -395,6 +396,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
+
+  // PollSupport
+
+  @override
+  Future<void> votePoll(String pollId, List<int> choices) async {
+    await client.votePoll(pollId, choices);
   }
 
   // StreamSupport

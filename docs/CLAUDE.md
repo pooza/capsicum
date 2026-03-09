@@ -22,6 +22,7 @@ Flutter ベースの Mastodon / Misskey クライアント。
 - **モデル変換**: `toKaiteki()` extension method による統一ドメインモデルへの変換
 - **Probing**: NodeInfo → API endpoint 試行によるサーバー種別の自動検出
 - **テキストパーサー**: MFM / HTML / Markdown の Strategy パターン
+  - 注意: MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること
 - **モノレポ構成**: core / backends / fediverse_objects / メインアプリの分離
 
 ### Kaiteki から変更する点
@@ -195,6 +196,11 @@ capsicum/
 - モロヘイヤ連携: サーバー固有 UI 反映（投稿ラベル・字数上限・テーマカラー・ローカルTL名を about レスポンスから取得）
 - UI / ブランディング整備（スプラッシュ画面・アプリアイコン・About 画面・ログイン画面改善）
 - CI（GitHub Actions: dart format + analyze）
+- ログインの自動コールバック化（flutter_web_auth_2 によるシングルステップ認証）
+- エラーメッセージの汎用化（内部情報を非表示・debugPrint へ出力）
+- launchUrl() の URL スキーム検証追加（http/https のみ許可）
+- ハッシュタグタイムライン（検索結果・インラインハッシュタグからの遷移対応）
+- プレビューカードの表示（Mastodon、メディア添付がない投稿で表示）
 
 ### リリース計画
 
@@ -242,34 +248,31 @@ v0.1.0 リリース済み:
 身内テスト版に加え、以下を対応してからストア公開する。
 
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
-- プレビューカードの表示（[#2](https://github.com/pooza/capsicum/issues/2)）
 - 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）
 - リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）
-- ログインの自動コールバック化（[#21](https://github.com/pooza/capsicum/issues/21)）
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
-- ハッシュタグタイムライン（[#23](https://github.com/pooza/capsicum/issues/23)）
-- タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
 - フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
 - フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
-- エラーメッセージの汎用化（[#31](https://github.com/pooza/capsicum/issues/31)）
-- launchUrl() の URL スキーム検証追加（[#32](https://github.com/pooza/capsicum/issues/32)）
+- MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
 
 #### v1.1
 
 - アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
 - タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
+- タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
 - 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
 - ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
-- コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
 - プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
 - ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
-- モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
-- Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
 - リストの作成・編集・削除（[#20](https://github.com/pooza/capsicum/issues/20)）
 - 投稿済みメディアの説明（ALT）編集（[#30](https://github.com/pooza/capsicum/issues/30)）
+- 横長カスタム絵文字の表示対応（[#40](https://github.com/pooza/capsicum/issues/40)）
 
 #### v1.2
 
+- コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
+- モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
+- Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
 - サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
 - ボットアカウントのバッジ表示（[#33](https://github.com/pooza/capsicum/issues/33)）
 - ロールのプロフィール表示（[#34](https://github.com/pooza/capsicum/issues/34)）
