@@ -106,12 +106,10 @@ Poll? _parseMastodonPoll(Map<String, dynamic>? poll) {
     votersCount: poll['voters_count'] as int? ?? 0,
     multiple: poll['multiple'] as bool? ?? false,
     expired: poll['expired'] as bool? ?? false,
-    expiresAt:
-        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    expiresAt: expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
     voted: poll['voted'] as bool? ?? false,
-    ownVotes: (poll['own_votes'] as List<dynamic>?)
-            ?.map((v) => v as int)
-            .toList() ??
+    ownVotes:
+        (poll['own_votes'] as List<dynamic>?)?.map((v) => v as int).toList() ??
         const [],
     emojis: {
       for (final e in emojis)

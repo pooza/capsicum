@@ -134,9 +134,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         data: (tlState) => RefreshIndicator(
           onRefresh: () {
             if (selectedList != null) {
-              return ref.refresh(
-                listTimelineProvider(selectedList.id).future,
-              );
+              return ref.refresh(listTimelineProvider(selectedList.id).future);
             }
             return ref.refresh(timelineProvider.future);
           },

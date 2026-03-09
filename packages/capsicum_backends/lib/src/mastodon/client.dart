@@ -116,9 +116,7 @@ class MastodonClient {
   }
 
   /// GET /api/v1/accounts/relationships
-  Future<List<Map<String, dynamic>>> getRelationships(
-    List<String> ids,
-  ) async {
+  Future<List<Map<String, dynamic>>> getRelationships(List<String> ids) async {
     final response = await dio.get(
       '/api/v1/accounts/relationships',
       queryParameters: {'id[]': ids},
@@ -442,9 +440,6 @@ class MastodonClient {
   }
 
   Future<void> votePoll(String pollId, List<int> choices) async {
-    await dio.post(
-      '/api/v1/polls/$pollId/votes',
-      data: {'choices': choices},
-    );
+    await dio.post('/api/v1/polls/$pollId/votes', data: {'choices': choices});
   }
 }

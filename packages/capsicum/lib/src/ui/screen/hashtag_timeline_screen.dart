@@ -14,8 +14,7 @@ class HashtagTimelineScreen extends ConsumerStatefulWidget {
       _HashtagTimelineScreenState();
 }
 
-class _HashtagTimelineScreenState
-    extends ConsumerState<HashtagTimelineScreen> {
+class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   final _scrollController = ScrollController();
 
   @override
@@ -51,9 +50,8 @@ class _HashtagTimelineScreenState
         data: (state) => state.posts.isEmpty
             ? const Center(child: Text('投稿がありません'))
             : RefreshIndicator(
-                onRefresh: () => ref.refresh(
-                  hashtagTimelineProvider(widget.hashtag).future,
-                ),
+                onRefresh: () =>
+                    ref.refresh(hashtagTimelineProvider(widget.hashtag).future),
                 child: ListView.separated(
                   controller: _scrollController,
                   itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
@@ -79,9 +77,8 @@ class _HashtagTimelineScreenState
                 const Text('読み込みに失敗しました', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => ref.invalidate(
-                    hashtagTimelineProvider(widget.hashtag),
-                  ),
+                  onPressed: () =>
+                      ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
                   child: const Text('再試行'),
                 ),
               ],

@@ -429,10 +429,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> unblockUser(String id) => client.unblockUser(id);
 
   @override
-  Future<List<User>> getFollowers(
-    String userId, {
-    TimelineQuery? query,
-  }) async {
+  Future<List<User>> getFollowers(String userId, {TimelineQuery? query}) async {
     final items = await client.getUserFollowers(
       userId,
       untilId: query?.maxId,
@@ -445,10 +442,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<User>> getFollowing(
-    String userId, {
-    TimelineQuery? query,
-  }) async {
+  Future<List<User>> getFollowing(String userId, {TimelineQuery? query}) async {
     final items = await client.getUserFollowing(
       userId,
       untilId: query?.maxId,

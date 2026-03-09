@@ -119,7 +119,8 @@ Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
   final choices = poll['choices'] as List<dynamic>?;
   if (choices == null) return null;
   final expiresAtStr = poll['expiresAt'] as String?;
-  final expired = expiresAtStr != null &&
+  final expired =
+      expiresAtStr != null &&
       DateTime.tryParse(expiresAtStr)?.isBefore(DateTime.now()) == true;
   return Poll(
     id: noteId,
@@ -137,8 +138,7 @@ Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
     ),
     multiple: poll['multiple'] as bool? ?? false,
     expired: expired,
-    expiresAt:
-        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    expiresAt: expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
     voted: choices.any(
       (c) => (c as Map<String, dynamic>)['isVoted'] as bool? ?? false,
     ),

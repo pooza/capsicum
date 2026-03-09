@@ -285,7 +285,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.replyTo != null ? 'リプライ' : ref.watch(postLabelProvider)),
+        title: Text(
+          widget.replyTo != null ? 'リプライ' : ref.watch(postLabelProvider),
+        ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -305,8 +307,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.replyTo != null)
-              _ReplyPreview(post: widget.replyTo!),
+            if (widget.replyTo != null) _ReplyPreview(post: widget.replyTo!),
             if (_cwEnabled)
               TextField(
                 controller: _cwController,

@@ -91,68 +91,66 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title =
-        widget.type == UserListType.followers ? 'フォロワー' : 'フォロー';
+    final title = widget.type == UserListType.followers ? 'フォロワー' : 'フォロー';
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _users.isEmpty
-              ? Center(child: Text('$titleはいません'))
-              : RefreshIndicator(
-                  onRefresh: () async {
-                    setState(() => _loading = true);
-                    await _loadInitial();
-                  },
-                  child: ListView.separated(
-                    controller: _scrollController,
-                    itemCount: _users.length + (_loadingMore ? 1 : 0),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= _users.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final user = _users[index];
-                      return ListTile(
-                        onTap: () => context.push('/profile', extra: user),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: user.avatarUrl != null
-                              ? Image.network(
-                                  user.avatarUrl!,
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 40,
-                                  height: 40,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer,
-                                  alignment: Alignment.center,
-                                  child:
-                                      Text(user.username[0].toUpperCase()),
-                                ),
-                        ),
-                        title: EmojiText(
-                          user.displayName ?? user.username,
-                          emojis: user.emojis,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '@${user.username}@${user.host}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    },
-                  ),
-                ),
+          ? Center(child: Text('$titleはいません'))
+          : RefreshIndicator(
+              onRefresh: () async {
+                setState(() => _loading = true);
+                await _loadInitial();
+              },
+              child: ListView.separated(
+                controller: _scrollController,
+                itemCount: _users.length + (_loadingMore ? 1 : 0),
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (index >= _users.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final user = _users[index];
+                  return ListTile(
+                    onTap: () => context.push('/profile', extra: user),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: user.avatarUrl != null
+                          ? Image.network(
+                              user.avatarUrl!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: 40,
+                              height: 40,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              alignment: Alignment.center,
+                              child: Text(user.username[0].toUpperCase()),
+                            ),
+                    ),
+                    title: EmojiText(
+                      user.displayName ?? user.username,
+                      emojis: user.emojis,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '@${user.username}@${user.host}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
 }

@@ -342,10 +342,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> unblockUser(String id) => client.unblockAccount(id);
 
   @override
-  Future<List<User>> getFollowers(
-    String userId, {
-    TimelineQuery? query,
-  }) async {
+  Future<List<User>> getFollowers(String userId, {TimelineQuery? query}) async {
     final accounts = await client.getAccountFollowers(
       userId,
       maxId: query?.maxId,
@@ -355,10 +352,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<User>> getFollowing(
-    String userId, {
-    TimelineQuery? query,
-  }) async {
+  Future<List<User>> getFollowing(String userId, {TimelineQuery? query}) async {
     final accounts = await client.getAccountFollowing(
       userId,
       maxId: query?.maxId,

@@ -115,7 +115,10 @@ class MisskeyClient {
 
   /// POST /api/following/create
   Future<void> followUser(String userId) async {
-    await dio.post('/api/following/create', data: createBody({'userId': userId}));
+    await dio.post(
+      '/api/following/create',
+      data: createBody({'userId': userId}),
+    );
   }
 
   /// POST /api/following/delete
@@ -130,10 +133,7 @@ class MisskeyClient {
   Future<void> muteUser(String userId, {int? expiresAt}) async {
     await dio.post(
       '/api/mute/create',
-      data: createBody({
-        'userId': userId,
-        'expiresAt': ?expiresAt,
-      }),
+      data: createBody({'userId': userId, 'expiresAt': ?expiresAt}),
     );
   }
 
@@ -510,10 +510,7 @@ class MisskeyClient {
   Future<void> votePoll(String noteId, int choice) async {
     await dio.post(
       '/api/notes/polls/vote',
-      data: createBody({
-        'noteId': noteId,
-        'choice': choice,
-      }),
+      data: createBody({'noteId': noteId, 'choice': choice}),
     );
   }
 }

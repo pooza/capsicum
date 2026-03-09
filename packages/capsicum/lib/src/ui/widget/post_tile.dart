@@ -423,9 +423,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 fontSize: 12,
                                               ),
                                             ),
-                                            onPressed: () => context.push(
-                                              '/hashtag/$tag',
-                                            ),
+                                            onPressed: () =>
+                                                context.push('/hashtag/$tag'),
                                           ),
                                         ),
                                     if (parsed.trailingTags.length > _maxTags)
@@ -596,10 +595,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               title: const Text('リプライ'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                context.push(
-                  '/compose',
-                  extra: {'replyTo': targetPost},
-                );
+                context.push('/compose', extra: {'replyTo': targetPost});
               },
             ),
             if (adapter is FavoriteSupport)
@@ -1099,15 +1095,18 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     try {
       final adapter = ref.read(currentAdapterProvider);
       if (adapter != null && adapter is PollSupport) {
-        await (adapter as PollSupport).votePoll(widget.poll.id, _selected.toList());
+        await (adapter as PollSupport).votePoll(
+          widget.poll.id,
+          _selected.toList(),
+        );
         widget.onActionCompleted?.call();
       }
     } catch (e) {
       debugPrint('Poll vote error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投票に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('投票に失敗しました')));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -1130,8 +1129,10 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final poll = widget.poll;
-    final totalVotes =
-        poll.options.fold<int>(0, (sum, o) => sum + o.votesCount);
+    final totalVotes = poll.options.fold<int>(
+      0,
+      (sum, o) => sum + o.votesCount,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1269,11 +1270,11 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
               Icon(
                 widget.poll.multiple
                     ? (_selected.contains(index)
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank)
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank)
                     : (_selected.contains(index)
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked),
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked),
                 size: 18,
                 color: _selected.contains(index)
                     ? theme.colorScheme.primary
@@ -1300,8 +1301,7 @@ class _PreviewCardWidget extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null &&
-            (uri.scheme == 'http' || uri.scheme == 'https')) {
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
           launchUrl(uri);
         }
       },

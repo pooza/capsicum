@@ -100,8 +100,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! FollowSupport) return;
     try {
-      final rel =
-          await (adapter as FollowSupport).getRelationship(widget.user.id);
+      final rel = await (adapter as FollowSupport).getRelationship(
+        widget.user.id,
+      );
       if (mounted) setState(() => _relationship = rel);
     } catch (e, st) {
       debugPrint('Failed to load relationship: $e\n$st');
@@ -354,18 +355,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             onPressed: _relationshipLoading
                 ? null
                 : () => _performAction(
-                      () => rel.following
-                          ? adapter.unfollowUser(widget.user.id)
-                          : adapter.followUser(widget.user.id),
-                    ),
+                    () => rel.following
+                        ? adapter.unfollowUser(widget.user.id)
+                        : adapter.followUser(widget.user.id),
+                  ),
             icon: Icon(rel.following ? Icons.person_remove : Icons.person_add),
             label: Text(rel.following ? 'フォロー解除' : 'フォロー'),
             style: rel.following
                 ? FilledButton.styleFrom(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                    foregroundColor:
-                        Theme.of(context).colorScheme.onSurface,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
                   )
                 : null,
           ),
@@ -388,30 +389,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           },
           itemBuilder: (_) => [
             if (rel.muting)
-              const PopupMenuItem(
-                value: 'unmute',
-                child: Text('ミュート解除'),
-              )
+              const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
             else ...[
-              const PopupMenuItem(
-                value: 'mute',
-                child: Text('ミュート'),
-              ),
+              const PopupMenuItem(value: 'mute', child: Text('ミュート')),
               const PopupMenuItem(
                 value: 'mute_duration',
                 child: Text('期間を指定してミュート'),
               ),
             ],
             if (rel.blocking)
-              const PopupMenuItem(
-                value: 'unblock',
-                child: Text('ブロック解除'),
-              )
+              const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
             else
-              const PopupMenuItem(
-                value: 'block',
-                child: Text('ブロック'),
-              ),
+              const PopupMenuItem(value: 'block', child: Text('ブロック')),
           ],
         ),
       ],
@@ -435,7 +424,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('ミュート期間', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: Text(
+                'ミュート期間',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             ...durations.map(
               (entry) => ListTile(
@@ -448,7 +440,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (selected != null && mounted) {
-      _performAction(() => adapter.muteUser(widget.user.id, duration: selected));
+      _performAction(
+        () => adapter.muteUser(widget.user.id, duration: selected),
+      );
     }
   }
 
