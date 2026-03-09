@@ -200,7 +200,7 @@ capsicum/
 - エラーメッセージの汎用化（内部情報を非表示・debugPrint へ出力）
 - launchUrl() の URL スキーム検証追加（http/https のみ許可）
 - ハッシュタグタイムライン（検索結果・インラインハッシュタグからの遷移対応）
-- プレビューカードの表示（Mastodon、メディア添付がない投稿で表示）
+- プレビューカードの表示（Mastodon のみ、メディア添付がない投稿で表示。Misskey は note レスポンスにカード情報を含まず別途 `/api/url` が必要なため v1.2 に先送り）
 
 ### リリース計画
 
@@ -273,6 +273,7 @@ v0.1.0 リリース済み:
 - コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
 - モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
 - Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
+- Misskey プレビューカード対応（[#41](https://github.com/pooza/capsicum/issues/41)）
 - サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
 - ボットアカウントのバッジ表示（[#33](https://github.com/pooza/capsicum/issues/33)）
 - ロールのプロフィール表示（[#34](https://github.com/pooza/capsicum/issues/34)）

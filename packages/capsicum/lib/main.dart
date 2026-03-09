@@ -31,6 +31,8 @@ class CapsicumApp extends ConsumerWidget {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: 'capsicum',
+      locale: const Locale('ja'),
+      supportedLocales: const [Locale('ja')],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: ref.watch(themeSeedColorProvider),
