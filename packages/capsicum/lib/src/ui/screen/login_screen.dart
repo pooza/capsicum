@@ -3,8 +3,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../model/account.dart';
 import '../../model/account_key.dart';
@@ -21,9 +21,10 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _codeController = TextEditingController();
+  static const _callbackUrlScheme = 'capsicum';
+  static const _redirectUri = 'capsicum://oauth';
+
   bool _isLoggingIn = false;
-  bool _awaitingInput = false;
   String? _error;
 
   // Server info
@@ -33,23 +34,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool get _isMastodon => widget.backendType == BackendType.mastodon;
 
-  String get _redirectUri =>
-      _isMastodon ? 'urn:ietf:wg:oauth:2.0:oob' : 'capsicum://oauth';
-
-  // Store login state between phases
-  dynamic _adapter;
-  LoginNeedsOAuth? _oauthState;
-
   @override
   void initState() {
     super.initState();
     _fetchServerInfo();
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
   }
 
   Future<void> _fetchServerInfo() async {
@@ -104,7 +92,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         .trim();
   }
 
-  Future<void> _openBrowser() async {
+  Future<void> _login() async {
     setState(() {
       _isLoggingIn = true;
       _error = null;
@@ -123,73 +111,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final startResult = await loginSupport.startLogin(application);
 
       if (startResult is LoginNeedsOAuth) {
-        _adapter = adapter;
-        _oauthState = startResult;
-
-        await launchUrl(
-          startResult.authorizationUrl,
-          mode: LaunchMode.externalApplication,
+        // Open browser and wait for callback redirect.
+        final resultUrl = await FlutterWebAuth2.authenticate(
+          url: startResult.authorizationUrl.toString(),
+          callbackUrlScheme: _callbackUrlScheme,
         );
 
-        setState(() {
-          _awaitingInput = true;
-          _isLoggingIn = false;
-        });
+        final callbackUri = Uri.parse(resultUrl);
+        final completeResult = await loginSupport.completeLogin(
+          callbackUri,
+          startResult.extra,
+        );
+
+        if (completeResult is LoginSuccess) {
+          final account = Account(
+            key: AccountKey(
+              type: widget.backendType,
+              host: widget.host,
+              username: completeResult.user.username,
+            ),
+            adapter: adapter,
+            user: completeResult.user,
+            userSecret: completeResult.userSecret,
+            clientSecret: completeResult.clientSecret,
+          );
+
+          await ref.read(accountManagerProvider.notifier).addAccount(account);
+          if (mounted) context.go('/home');
+        } else if (completeResult is LoginFailure) {
+          setState(() => _error = 'ログインに失敗しました: ${completeResult.error}');
+        }
       } else if (startResult is LoginFailure) {
         setState(() => _error = 'ログインの開始に失敗しました: ${startResult.error}');
       }
     } catch (e) {
-      setState(() => _error = 'エラー: $e');
-    } finally {
-      if (mounted && !_awaitingInput) {
-        setState(() => _isLoggingIn = false);
+      // User cancelled the browser — not an error.
+      if (e.toString().contains('CANCELED') ||
+          e.toString().contains('cancelled')) {
+        // Do nothing.
+      } else {
+        setState(() => _error = 'エラー: $e');
       }
-    }
-  }
-
-  Future<void> _completeAuth() async {
-    if (_oauthState == null || _adapter == null) return;
-
-    // Mastodon: require code input; Misskey: just check the session
-    if (_isMastodon && _codeController.text.trim().isEmpty) return;
-
-    setState(() {
-      _isLoggingIn = true;
-      _error = null;
-    });
-
-    try {
-      final loginSupport = _adapter as LoginSupport;
-
-      final callbackUri = _isMastodon
-          ? Uri.parse('$_redirectUri?code=${_codeController.text.trim()}')
-          : Uri.parse(_redirectUri);
-
-      final completeResult = await loginSupport.completeLogin(
-        callbackUri,
-        _oauthState!.extra,
-      );
-
-      if (completeResult is LoginSuccess) {
-        final account = Account(
-          key: AccountKey(
-            type: widget.backendType,
-            host: widget.host,
-            username: completeResult.user.username,
-          ),
-          adapter: _adapter as DecentralizedBackendAdapter,
-          user: completeResult.user,
-          userSecret: completeResult.userSecret,
-          clientSecret: completeResult.clientSecret,
-        );
-
-        await ref.read(accountManagerProvider.notifier).addAccount(account);
-        if (mounted) context.go('/home');
-      } else if (completeResult is LoginFailure) {
-        setState(() => _error = 'ログインに失敗しました: ${completeResult.error}');
-      }
-    } catch (e) {
-      setState(() => _error = 'エラー: $e');
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
     }
@@ -252,50 +214,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (!_awaitingInput) ...[
-            Center(
-              child: _isLoggingIn
-                  ? const CircularProgressIndicator()
-                  : FilledButton.icon(
-                      onPressed: _openBrowser,
-                      icon: const Icon(Icons.open_in_browser),
-                      label: const Text('ブラウザでログイン'),
-                    ),
-            ),
-          ] else ...[
-            if (_isMastodon) ...[
-              const Text(
-                'ブラウザで認証後、表示されたコードを入力してください',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _codeController,
-                decoration: const InputDecoration(
-                  labelText: '認証コード',
-                  hintText: 'コードを貼り付け',
-                  prefixIcon: Icon(Icons.key),
-                ),
-                autocorrect: false,
-                onSubmitted: (_) => _completeAuth(),
-              ),
-            ] else ...[
-              const Text(
-                'ブラウザで認証を完了したら、下のボタンを押してください',
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: _isLoggingIn
-                  ? const Center(child: CircularProgressIndicator())
-                  : FilledButton(
-                      onPressed: _completeAuth,
-                      child: Text(_isMastodon ? 'ログイン' : '認証を完了'),
-                    ),
-            ),
-          ],
+          Center(
+            child: _isLoggingIn
+                ? const CircularProgressIndicator()
+                : FilledButton.icon(
+                    onPressed: _login,
+                    icon: const Icon(Icons.open_in_browser),
+                    label: const Text('ブラウザでログイン'),
+                  ),
+          ),
         ],
       ),
     );
