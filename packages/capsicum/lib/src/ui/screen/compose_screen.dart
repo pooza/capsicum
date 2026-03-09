@@ -42,7 +42,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onTextChanged);
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     if (redraft != null) {
@@ -56,14 +55,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   @override
   void dispose() {
-    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
     super.dispose();
-  }
-
-  void _onTextChanged() {
-    setState(() {});
   }
 
   void _initReplyMentions(Post replyTo) {
@@ -534,15 +528,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
                 const Spacer(),
                 if (maxLength != null)
-                  Text(
-                    '${_controller.text.length} / $maxLength',
-                    style: TextStyle(
-                      color: _controller.text.length > maxLength
-                          ? Theme.of(context).colorScheme.error
-                          : _controller.text.length > maxLength * 0.8
-                          ? Colors.orange
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _controller,
+                    builder: (context, value, _) {
+                      final len = value.text.length;
+                      return Text(
+                        '$len / $maxLength',
+                        style: TextStyle(
+                          color: len > maxLength
+                              ? Theme.of(context).colorScheme.error
+                              : len > maxLength * 0.8
+                              ? Colors.orange
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      );
+                    },
                   ),
               ],
             ),
