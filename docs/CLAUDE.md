@@ -201,6 +201,11 @@ capsicum/
 - launchUrl() の URL スキーム検証追加（http/https のみ許可）
 - ハッシュタグタイムライン（検索結果・インラインハッシュタグからの遷移対応）
 - プレビューカードの表示（Mastodon のみ、メディア添付がない投稿で表示。Misskey は note レスポンスにカード情報を含まず別途 `/api/url` が必要なため v1.2 に先送り）
+- 投票（Poll）の表示・投票対応（Mastodon / Misskey 両対応）
+- リスト機能（一覧・TL表示）+ タブバー統合
+- 投稿本文中ハッシュタグのリンク化
+- CJK フォントの日本語ロケール描画修正
+- Android 13+ の通知権限リクエスト
 
 ### リリース計画
 
@@ -211,21 +216,34 @@ capsicum/
 v0.1.0 リリース済み:
 
 - Android APK: [GitHub Releases v0.1.0](https://github.com/pooza/capsicum/releases/tag/v0.1.0)
-- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）、テスター招待中
+- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）
+
+v0.2.0 リリース済み:
+
+- Android APK: [GitHub Releases v0.2.0](https://github.com/pooza/capsicum/releases/tag/v0.2.0)
+- iOS: TestFlight 外部テスター向け Beta App Review 提出済み
+- iPhone のみ（iPad 除外）
 
 配布方法:
 
-- **iOS**: TestFlight（App Store Connect の公式テスト配布機能）
+- **iOS**: TestFlight 外部テスターのみ（内部テスターは本名が相互に見える問題のため不使用）
 - **Android**: GitHub Releases にリリース用 APK をアセットとして添付
 
-身内テスト配布手順:
+テスト版配布手順:
 
 1. `pubspec.yaml` の version を確認・更新
 2. Android: `flutter build apk --release` → APK を取得
 3. iOS: `flutter build ipa --release` → `cd ios && fastlane beta`（TestFlight にアップロード）
-4. GitHub で `v0.1.x` タグを作成しリリースを作る
+4. GitHub で `vX.Y.Z` タグを作成しリリースを作る（`--prerelease` 付き）
 5. Android APK をリリースアセットとしてアップロード
 6. テスターに GitHub Releases URL（Android）と TestFlight 招待（iOS）を送付
+
+各マシン共通の前提（詳細は [store-release-guide.md](store-release-guide.md) を参照）:
+
+- `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置
+- Xcode → Settings → Accounts で Apple Distribution 証明書を作成
+- `gem install fastlane`（rbenv の Ruby を使用）
+- Android 署名鍵: `android/key.properties`（git 管理外、手動配置）
 
 #### ストアリリース準備（v1.0 公開前）
 
@@ -248,8 +266,8 @@ v0.1.0 リリース済み:
 身内テスト版に加え、以下を対応してからストア公開する。
 
 - 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
-- 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）— 実装済み・未検証（Mastodon / Misskey 両方の表示・投票操作を要確認）
-- リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）
+- ~~投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）~~ — v0.2.0 で対応済み
+- ~~リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）~~ — v0.2.0 で対応済み
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
 - フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
 - フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
