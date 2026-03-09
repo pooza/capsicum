@@ -254,6 +254,8 @@ v0.1.0 リリース済み:
 - フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
 - フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
 - MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
+- Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）
+- リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）
 
 #### v1.1
 
