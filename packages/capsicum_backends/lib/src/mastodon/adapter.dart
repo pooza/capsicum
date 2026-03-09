@@ -316,10 +316,30 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> unfollowUser(String id) => throw UnimplementedError();
 
   @override
-  Future<List<User>> getFollowers(String userId) => throw UnimplementedError();
+  Future<List<User>> getFollowers(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final accounts = await client.getAccountFollowers(
+      userId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+  }
 
   @override
-  Future<List<User>> getFollowing(String userId) => throw UnimplementedError();
+  Future<List<User>> getFollowing(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final accounts = await client.getAccountFollowing(
+      userId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+  }
 
   // NotificationSupport
 

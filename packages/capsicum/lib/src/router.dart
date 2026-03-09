@@ -18,6 +18,7 @@ import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/splash_screen.dart';
+import 'ui/screen/user_list_screen.dart';
 
 /// Navigator key exposed for navigation from notification taps.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -120,6 +121,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final user = state.extra! as User;
           return ProfileScreen(user: user);
+        },
+      ),
+      GoRoute(
+        path: '/followers',
+        builder: (context, state) {
+          final user = state.extra! as User;
+          return UserListScreen(user: user, type: UserListType.followers);
+        },
+      ),
+      GoRoute(
+        path: '/following',
+        builder: (context, state) {
+          final user = state.extra! as User;
+          return UserListScreen(user: user, type: UserListType.following);
         },
       ),
       GoRoute(

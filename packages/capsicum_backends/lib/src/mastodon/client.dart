@@ -85,6 +85,36 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/accounts/:id/followers
+  Future<List<MastodonAccount>> getAccountFollowers(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$id/followers',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// GET /api/v1/accounts/:id/following
+  Future<List<MastodonAccount>> getAccountFollowing(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$id/following',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/timelines/home
   Future<List<MastodonStatus>> getHomeTimeline({
     String? maxId,

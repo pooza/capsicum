@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -252,9 +253,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             children: [
               _statItem(context, ref.watch(postLabelProvider), user.postCount),
               const SizedBox(width: 24),
-              _statItem(context, 'フォロー', user.followingCount),
+              GestureDetector(
+                onTap: () => context.push('/following', extra: user),
+                child: _statItem(context, 'フォロー', user.followingCount),
+              ),
               const SizedBox(width: 24),
-              _statItem(context, 'フォロワー', user.followersCount),
+              GestureDetector(
+                onTap: () => context.push('/followers', extra: user),
+                child: _statItem(context, 'フォロワー', user.followersCount),
+              ),
             ],
           ),
           if (user.fields.isNotEmpty) ...[
