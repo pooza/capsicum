@@ -211,8 +211,8 @@ capsicum/
 - フォロー・アンフォロー・ミュート・ブロック操作（ミュート期限選択・ブロック確認ダイアログ付き）— 実装済み・未検証
 - Android アダプティブアイコンのセーフゾーン対応
 - リプライ機能（返信先の引用表示・公開範囲の自動制限・メンション自動挿入）
-- IME composing 干渉の軽減（TextField の onChanged 除去）
-- 動画アップロード時の 202 非同期処理対応
+- IME composing 干渉の軽減（投稿画面: ValueListenableBuilder による部分再描画化）
+- 動画アップロード修正（v1 API 使用 + nullable url + 拡張子フォールバック動画判定）
 
 ### リリース計画
 
@@ -281,9 +281,7 @@ v0.2.0 リリース済み:
 - MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
 - ~~Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）~~ — 対応済み
 - ~~リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）~~ — 対応済み
-- ATOK で日本語入力が二重になる（[#54](https://github.com/pooza/capsicum/issues/54)）— Flutter engine レベルの iOS+ATOK 相性問題、テスター環境で未検証
 - ~~動画添付で投稿するとエラーになる（[#55](https://github.com/pooza/capsicum/issues/55)）~~ — 修正済み
-- 特定の画像が描画されない（[#56](https://github.com/pooza/capsicum/issues/56)）
 
 #### v1.1
 
