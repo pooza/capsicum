@@ -7,6 +7,7 @@ export 'src/model/attachment.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
 export 'src/model/post.dart';
+export 'src/model/preview_card.dart';
 export 'src/model/post_draft.dart';
 export 'src/model/post_scope.dart';
 export 'src/model/timeline_query.dart';

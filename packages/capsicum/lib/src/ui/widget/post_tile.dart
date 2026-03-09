@@ -438,6 +438,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                           sensitive: displayPost.sensitive,
                         ),
                       ),
+                    if (displayPost.card != null &&
+                        displayPost.attachments.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _PreviewCardWidget(card: displayPost.card!),
+                      ),
                   ],
                   if (displayPost.replyCount > 0 ||
                       displayPost.reblogCount > 0 ||
@@ -1010,6 +1016,74 @@ class _ReactionChips extends StatelessWidget {
             onPressed: () => onToggle(entry.key),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _PreviewCardWidget extends StatelessWidget {
+  final PreviewCard card;
+
+  const _PreviewCardWidget({required this.card});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () {
+        final uri = Uri.tryParse(card.url);
+        if (uri != null &&
+            (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (card.imageUrl != null)
+              Image.network(
+                card.imageUrl!,
+                width: double.infinity,
+                height: 160,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    card.title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (card.description != null &&
+                      card.description!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      card.description!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

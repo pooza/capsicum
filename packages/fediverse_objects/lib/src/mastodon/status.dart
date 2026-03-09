@@ -25,6 +25,7 @@ class MastodonStatus {
   final List<Map<String, dynamic>>? emojis;
   final bool? sensitive;
   final List<Map<String, dynamic>>? filtered;
+  final Map<String, dynamic>? card;
 
   const MastodonStatus({
     required this.id,
@@ -45,6 +46,7 @@ class MastodonStatus {
     this.emojis,
     this.sensitive,
     this.filtered,
+    this.card,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

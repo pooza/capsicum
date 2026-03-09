@@ -78,10 +78,24 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
             e['shortcode'] as String:
                 (e['url'] as String?) ?? (e['static_url'] as String),
       },
+      card: _parseCard(card),
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
     );
   }
+}
+
+PreviewCard? _parseCard(Map<String, dynamic>? card) {
+  if (card == null) return null;
+  final url = card['url'] as String?;
+  final title = card['title'] as String?;
+  if (url == null || title == null || title.isEmpty) return null;
+  return PreviewCard(
+    url: url,
+    title: title,
+    description: card['description'] as String?,
+    imageUrl: card['image'] as String?,
+  );
 }
 
 ({FilterAction action, String? title})? _parseFilterResult(
