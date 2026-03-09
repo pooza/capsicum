@@ -200,7 +200,12 @@ capsicum/
 
 #### v0.1（身内テスト版） — 機能実装完了
 
-[#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。身内テスターへの配布待ち。
+[#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。
+
+v0.1.0 リリース済み:
+
+- Android APK: [GitHub Releases v0.1.0](https://github.com/pooza/capsicum/releases/tag/v0.1.0)
+- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）、テスター招待中
 
 配布方法:
 
