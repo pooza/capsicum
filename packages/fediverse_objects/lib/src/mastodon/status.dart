@@ -20,6 +20,8 @@ class MastodonStatus {
   final bool? bookmarked;
   final String? inReplyToId;
   final MastodonStatus? reblog;
+  @JsonKey(fromJson: _readQuote)
+  final Object? quote;
   final List<MastodonMediaAttachment> mediaAttachments;
   final String? spoilerText;
   final List<Map<String, dynamic>>? emojis;
@@ -42,6 +44,7 @@ class MastodonStatus {
     this.bookmarked,
     this.inReplyToId,
     this.reblog,
+    this.quote,
     required this.mediaAttachments,
     this.spoilerText,
     this.emojis,
@@ -56,3 +59,5 @@ class MastodonStatus {
 
   Map<String, dynamic> toJson() => _$MastodonStatusToJson(this);
 }
+
+Object? _readQuote(dynamic value) => value;

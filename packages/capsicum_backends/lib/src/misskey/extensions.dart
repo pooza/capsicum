@@ -39,6 +39,8 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
 
 extension CapsicumMisskeyNoteExtension on MisskeyNote {
   Post toCapsicum(String localHost) {
+    // Misskey: renote + text = quote, renote without text = simple renote
+    final isQuote = renote != null && text != null;
     return Post(
       id: id,
       postedAt: createdAt,
@@ -52,7 +54,8 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       reactions: reactions ?? const {},
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
-      reblog: renote?.toCapsicum(localHost),
+      reblog: isQuote ? null : renote?.toCapsicum(localHost),
+      quote: isQuote ? renote?.toCapsicum(localHost) : null,
       poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
       emojis: reactionEmojis ?? const {},

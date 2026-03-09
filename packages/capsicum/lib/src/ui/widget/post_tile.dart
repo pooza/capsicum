@@ -453,6 +453,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                         );
                       },
                     ),
+                    if (displayPost.quote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _QuoteCard(quote: displayPost.quote!),
+                      ),
                     if (displayPost.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -1287,6 +1292,96 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
         ),
       ),
     );
+  }
+}
+
+class _QuoteCard extends StatelessWidget {
+  final Post quote;
+
+  const _QuoteCard({required this.quote});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () => context.push('/post', extra: quote),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (quote.author.avatarUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      quote.author.avatarUrl!,
+                      width: 16,
+                      height: 16,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                if (quote.author.avatarUrl != null) const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    quote.author.displayName ?? quote.author.username,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (quote.content != null && quote.content!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _stripHtmlSimple(quote.content!),
+                style: theme.textTheme.bodySmall,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (quote.attachments.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.attach_file,
+                    size: 14,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${quote.attachments.length}件の添付',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _stripHtmlSimple(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
   }
 }
 
