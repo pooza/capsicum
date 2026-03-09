@@ -24,6 +24,12 @@
 - [x] App Store 用 Provisioning Profile の作成 — Automatic Signing で自動管理
 - [x] PrivacyInfo.xcprivacy の追加
 - [x] ITSAppUsesNonExemptEncryption の設定
+- [x] App Store Connect API Key の配置
+
+> **各マシン共通の前提:**
+> App Store Connect API Key（`.p8`）を `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に配置すること。
+> Fastlane の Fastfile はこのパスを参照する。
+> 配布用証明書（Apple Distribution）は Xcode → Settings → Accounts → Manage Certificates で追加する。
 
 ### 1.4 プライバシーポリシー
 
