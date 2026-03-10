@@ -668,7 +668,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              _runAction(messenger, () async {
+              _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
               }, '${ref.read(postLabelProvider)}を削除しました');
@@ -704,7 +704,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              _runAction(messenger, () async {
+              _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) {
@@ -774,6 +774,21 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   Future<void> _runAction(
+    ScaffoldMessengerState messenger,
+    Future<Post> Function() action,
+    String successMessage,
+  ) async {
+    try {
+      final updated = await action();
+      ref.read(timelineProvider.notifier).updatePost(updated);
+      onActionCompleted?.call();
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e) {
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    }
+  }
+
+  Future<void> _runVoidAction(
     ScaffoldMessengerState messenger,
     Future<void> Function() action,
     String successMessage,
@@ -1192,13 +1207,16 @@ class _QuoteCard extends StatelessWidget {
             Row(
               children: [
                 if (quote.author.avatarUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      quote.author.avatarUrl!,
-                      width: 16,
-                      height: 16,
-                      fit: BoxFit.cover,
+                  GestureDetector(
+                    onTap: () => context.push('/profile', extra: quote.author),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.network(
+                        quote.author.avatarUrl!,
+                        width: 16,
+                        height: 16,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                 if (quote.author.avatarUrl != null) const SizedBox(width: 4),
