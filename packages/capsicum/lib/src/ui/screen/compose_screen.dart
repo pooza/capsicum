@@ -41,9 +41,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
-    PostScope.unlisted: '未収載',
-    PostScope.followersOnly: 'フォロワー限定',
-    PostScope.direct: 'ダイレクト',
+    PostScope.unlisted: 'ひかえめな公開',
+    PostScope.followersOnly: 'フォロワー',
+    PostScope.direct: '非公開の返信',
   };
 
   static const _misskeyScopeLabels = {
