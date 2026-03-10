@@ -35,6 +35,7 @@ class PostDetailScreen extends ConsumerWidget {
               child: PostTile(
                 post: p,
                 tappable: !isTarget,
+                initialCwExpanded: isTarget,
                 onActionCompleted: () =>
                     ref.invalidate(_threadProvider(post.id)),
               ),
