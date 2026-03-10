@@ -269,6 +269,7 @@ v0.2.0 リリース済み:
 - [ ] Google Play IARC レーティング回答
 - [ ] Google Play フィーチャーグラフィック（1024x500）
 - [ ] Google Play スクリーンショット（最低2枚）
+- [ ] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
 
 #### v1.0（ストア公開）
 
