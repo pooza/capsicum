@@ -143,6 +143,12 @@ capsicum/
 - 優先度ラベル: P1 〜 P4
 - 1 マイルストーンあたり 10 件前後
 
+### 正本ルール
+
+- **Issue のステータス・一覧は GitHub が正本**。CLAUDE.md や MEMORY.md に個別 Issue の一覧・対応済み/未済を複写しない
+- リリース計画の確認は `gh issue list --milestone v1.0` 等で GitHub を直接参照する
+- CLAUDE.md に書くのは Issue に書けない情報（マイルストーンの方針・運用ルール・設計判断の背景 等）に限定する
+
 ### クロスリファレンス
 
 - capsicum → モロヘイヤ: `pooza/mulukhiya-toot-proxy#XXXX`
@@ -271,59 +277,21 @@ v0.2.0 リリース済み:
 - [ ] Google Play スクリーンショット（最低2枚）
 - [ ] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
 
-#### v1.0（ストア公開）
+#### v1.0 以降のリリース計画
 
-身内テスト版に加え、以下を対応してからストア公開する。
+GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
-- ~~引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）~~ — 対応済み
-- ~~投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）~~ — v0.2.0 で対応済み
-- ~~リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）~~ — v0.2.0 で対応済み
-- モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
-- ~~フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）~~ — 対応済み
-- ~~フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）~~ — 対応済み
-- ~~MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）~~ — 対応済み
-- ~~Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）~~ — 対応済み
-- ~~リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）~~ — 対応済み
-- ~~動画添付で投稿するとエラーになる（[#55](https://github.com/pooza/capsicum/issues/55)）~~ — 修正済み
+各マイルストーンの方針:
 
-#### v1.1
+- **v1.0**（ストア公開）— ストアに出せる最低限の品質。テスターFB のバグ修正を含む
+- **v1.1** — ユーザー体験の向上（プロフィール編集・ピン留め・予約投稿・リスト管理 等）
+- **v1.2** — Misskey 固有機能の拡充 + モロヘイヤ WebUI 連携
+- **v1.3** — 補完的機能（入力補完・引用操作・rel=me 等）
 
-- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
-- タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
-- タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
-- 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
-- ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
-- プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
-- ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
-- リストの作成・編集・削除（[#20](https://github.com/pooza/capsicum/issues/20)）
-- 投稿済みメディアの説明（ALT）編集（[#30](https://github.com/pooza/capsicum/issues/30)）
-- 横長カスタム絵文字の表示対応（[#40](https://github.com/pooza/capsicum/issues/40)）
-- 投稿テキストの選択・コピー（[#57](https://github.com/pooza/capsicum/issues/57)）
+運用ルール:
 
-#### v1.2
-
-- コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
-- モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
-- Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
-- Misskey プレビューカード対応（[#41](https://github.com/pooza/capsicum/issues/41)）
-- サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
-- ボットアカウントのバッジ表示（[#33](https://github.com/pooza/capsicum/issues/33)）
-- ロールのプロフィール表示（[#34](https://github.com/pooza/capsicum/issues/34)）
-- Misskey: チャンネル宛て投稿の識別表示（[#35](https://github.com/pooza/capsicum/issues/35)）
-- Misskey: チャンネルタイムライン（[#36](https://github.com/pooza/capsicum/issues/36)）
-
-#### v1.3
-
-- ハッシュタグ・Acct のリンク化（[#46](https://github.com/pooza/capsicum/issues/46)）
-- 引用投稿の操作（[#49](https://github.com/pooza/capsicum/issues/49)）
-- 複数URLのプレビューカード表示対応（[#42](https://github.com/pooza/capsicum/issues/42)）
-- ハッシュタグ・Acct の入力補完（[#47](https://github.com/pooza/capsicum/issues/47)）
-- お気に入り・ブーストしたユーザーのリスト表示（[#48](https://github.com/pooza/capsicum/issues/48)）
-- プロフィール補足情報の rel=me 認証バッジ表示（[#50](https://github.com/pooza/capsicum/issues/50)）
-
-#### リリース前の定期タスク
-
-- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）— 各マイルストーンの issue をすべて消化した後、リリース直前に毎度実施
+- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）は各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する
+- マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 
 ### 実装しない機能
 
