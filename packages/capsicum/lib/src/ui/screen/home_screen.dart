@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -154,30 +155,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('タイムラインの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    if (selectedList != null) {
-                      ref.invalidate(listTimelineProvider(selectedList.id));
-                    } else {
-                      ref.invalidate(timelineProvider);
-                    }
-                  },
-                  child: const Text('再試行'),
-                ),
-              ],
+        error: (error, stack) {
+          final message = _timelineErrorMessage(error);
+          final canRetry = !_isForbiddenError(error);
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(message, textAlign: TextAlign.center),
+                  if (canRetry) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (selectedList != null) {
+                          ref.invalidate(listTimelineProvider(selectedList.id));
+                        } else {
+                          ref.invalidate(timelineProvider);
+                        }
+                      },
+                      child: const Text('再試行'),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
+  }
+
+  static bool _isForbiddenError(Object error) {
+    if (error is DioException) {
+      return error.response?.statusCode == 403;
+    }
+    return false;
+  }
+
+  static String _timelineErrorMessage(Object error) {
+    if (_isForbiddenError(error)) {
+      return 'このサーバーではこのタイムラインが利用できません';
+    }
+    return 'タイムラインの読み込みに失敗しました';
   }
 
   static const _timelineLabels = {
