@@ -39,6 +39,47 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sensitiveEnabled = false;
   bool _sending = false;
 
+  static const _mastodonScopeLabels = {
+    PostScope.public: '公開',
+    PostScope.unlisted: '未収載',
+    PostScope.followersOnly: 'フォロワー限定',
+    PostScope.direct: 'ダイレクト',
+  };
+
+  static const _misskeyScopeLabels = {
+    PostScope.public: 'パブリック',
+    PostScope.unlisted: 'ホーム',
+    PostScope.followersOnly: 'フォロワー',
+    PostScope.direct: 'ダイレクト',
+  };
+
+  static const _scopeIcons = {
+    PostScope.public: Icons.public,
+    PostScope.unlisted: Icons.lock_open,
+    PostScope.followersOnly: Icons.lock,
+    PostScope.direct: Icons.mail,
+  };
+
+  List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
+    final adapter = ref.read(currentAdapterProvider);
+    final isMisskey = adapter is ReactionSupport;
+    final labels = isMisskey ? _misskeyScopeLabels : _mastodonScopeLabels;
+
+    return PostScope.values.map((scope) {
+      return DropdownMenuItem(
+        value: scope,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_scopeIcons[scope], size: 18),
+            const SizedBox(width: 4),
+            Text(labels[scope]!),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -497,52 +538,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       : (value) {
                           if (value != null) setState(() => _scope = value);
                         },
-                  items: const [
-                    DropdownMenuItem(
-                      value: PostScope.public,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.public, size: 18),
-                          SizedBox(width: 4),
-                          Text('公開'),
-                        ],
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: PostScope.unlisted,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock_open, size: 18),
-                          SizedBox(width: 4),
-                          Text('未収載'),
-                        ],
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: PostScope.followersOnly,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock, size: 18),
-                          SizedBox(width: 4),
-                          Text('フォロワー限定'),
-                        ],
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: PostScope.direct,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.mail, size: 18),
-                          SizedBox(width: 4),
-                          Text('ダイレクト'),
-                        ],
-                      ),
-                    ),
-                  ],
+                  items: _scopeItems(ref),
                 ),
                 const Spacer(),
                 if (maxLength != null)

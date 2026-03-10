@@ -6,8 +6,9 @@ import 'backend_type.dart';
 
 class InstanceProbe {
   final BackendType type;
+  final String? softwareVersion;
 
-  const InstanceProbe({required this.type});
+  const InstanceProbe({required this.type, this.softwareVersion});
 }
 
 Map<String, dynamic> _ensureMap(dynamic data) {
@@ -48,9 +49,16 @@ Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
     if (software == null) return null;
 
     final name = (software['name'] as String?)?.toLowerCase();
+    final version = software['version'] as String?;
     return switch (name) {
-      'mastodon' => const InstanceProbe(type: BackendType.mastodon),
-      'misskey' => const InstanceProbe(type: BackendType.misskey),
+      'mastodon' => InstanceProbe(
+        type: BackendType.mastodon,
+        softwareVersion: version,
+      ),
+      'misskey' => InstanceProbe(
+        type: BackendType.misskey,
+        softwareVersion: version,
+      ),
       _ => null,
     };
   } on DioException catch (e) {

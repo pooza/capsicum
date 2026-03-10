@@ -11,6 +11,7 @@ class Account {
   final UserSecret userSecret;
   final ClientSecretData? clientSecret;
   final MulukhiyaService? mulukhiya;
+  final String? softwareVersion;
 
   const Account({
     required this.key,
@@ -19,5 +20,6 @@ class Account {
     required this.userSecret,
     this.clientSecret,
     this.mulukhiya,
+    this.softwareVersion,
   });
 }

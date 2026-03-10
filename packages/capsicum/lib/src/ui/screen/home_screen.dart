@@ -131,60 +131,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onPressed: () => context.push('/compose'),
         child: const Icon(Icons.edit),
       ),
-      body: timeline.when(
-        data: (tlState) => RefreshIndicator(
-          onRefresh: () {
-            if (selectedList != null) {
-              return ref.refresh(listTimelineProvider(selectedList.id).future);
-            }
-            return ref.refresh(timelineProvider.future);
-          },
-          child: ListView.separated(
-            controller: _scrollController,
-            itemCount: tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              if (index >= tlState.posts.length) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
+      body: GestureDetector(
+        onHorizontalDragEnd: selectedList == null
+            ? (details) => _onSwipe(details, selectedType)
+            : null,
+        child: timeline.when(
+          data: (tlState) => RefreshIndicator(
+            onRefresh: () {
+              if (selectedList != null) {
+                return ref.refresh(
+                  listTimelineProvider(selectedList.id).future,
                 );
               }
-              return PostTile(post: tlState.posts[index]);
+              return ref.refresh(timelineProvider.future);
             },
-          ),
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) {
-          final message = _timelineErrorMessage(error);
-          final canRetry = !_isForbiddenError(error);
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(message, textAlign: TextAlign.center),
-                  if (canRetry) ...[
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (selectedList != null) {
-                          ref.invalidate(listTimelineProvider(selectedList.id));
-                        } else {
-                          ref.invalidate(timelineProvider);
-                        }
-                      },
-                      child: const Text('再試行'),
-                    ),
-                  ],
-                ],
-              ),
+            child: ListView.separated(
+              controller: _scrollController,
+              itemCount: tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                if (index >= tlState.posts.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return PostTile(post: tlState.posts[index]);
+              },
             ),
-          );
-        },
+          ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stack) {
+            final message = _timelineErrorMessage(error);
+            final canRetry = !_isForbiddenError(error);
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(message, textAlign: TextAlign.center),
+                    if (canRetry) ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (selectedList != null) {
+                            ref.invalidate(
+                              listTimelineProvider(selectedList.id),
+                            );
+                          } else {
+                            ref.invalidate(timelineProvider);
+                          }
+                        },
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  void _onSwipe(DragEndDetails details, TimelineType current) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 300) return;
+
+    final adapter = ref.read(currentAdapterProvider);
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    const order = [
+      TimelineType.home,
+      TimelineType.local,
+      TimelineType.social,
+      TimelineType.federated,
+    ];
+    final tabs = order.where(supported.contains).toList();
+    final index = tabs.indexOf(current);
+    if (index < 0) return;
+
+    final next = velocity < 0 ? index + 1 : index - 1;
+    if (next < 0 || next >= tabs.length) return;
+
+    ref.read(selectedTimelineTypeProvider.notifier).state = tabs[next];
   }
 
   static bool _isForbiddenError(Object error) {
@@ -520,7 +553,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '${current.key.host} (${current.key.type.displayName})',
+                          '${current.key.host} (${current.key.type.displayName})'
+                          '${current.softwareVersion != null ? ' v${current.softwareVersion}' : ''}',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,

@@ -48,7 +48,14 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
       }
 
       if (!mounted) return;
-      context.push('/login', extra: {'host': host, 'backendType': probe.type});
+      context.push(
+        '/login',
+        extra: {
+          'host': host,
+          'backendType': probe.type,
+          'softwareVersion': probe.softwareVersion,
+        },
+      );
     } catch (e) {
       setState(() {
         debugPrint('Server probe error: $e');
