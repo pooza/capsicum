@@ -208,12 +208,13 @@ capsicum/
 - Android 13+ の通知権限リクエスト
 - CW 開閉タップ領域の拡大（警告行全体をタップ可能に）
 - フォロー・フォロワーリスト表示（プロフィール画面から遷移、無限スクロール対応）
-- フォロー・アンフォロー・ミュート・ブロック操作（ミュート期限選択・ブロック確認ダイアログ付き）— 実装済み・未検証
+- フォロー・アンフォロー・ミュート・ブロック操作（ミュート期限選択・ブロック確認ダイアログ付き）
 - Android アダプティブアイコンのセーフゾーン対応
 - リプライ機能（返信先の引用表示・公開範囲の自動制限・メンション自動挿入）
 - IME composing 干渉の軽減（投稿画面: ValueListenableBuilder による部分再描画化）
 - 動画アップロード修正（v1 API 使用 + nullable url + 拡張子フォールバック動画判定）
 - 引用投稿の表示（Mastodon: quote オブジェクトの quoted_status パース / Misskey: renote+text 判定）
+- MFM / HTML テキストパーサー（太字・斜体・打ち消し・コード・ルビ・リンク・メンション・引用ブロック・center・small + HTML の <code> タグ対応）
 
 ### リリース計画
 
@@ -278,8 +279,8 @@ v0.2.0 リリース済み:
 - ~~リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）~~ — v0.2.0 で対応済み
 - モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
 - ~~フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）~~ — 対応済み
-- フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）— 実装済み・未検証
-- MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
+- ~~フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）~~ — 対応済み
+- ~~MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）~~ — 対応済み
 - ~~Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）~~ — 対応済み
 - ~~リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）~~ — 対応済み
 - ~~動画添付で投稿するとエラーになる（[#55](https://github.com/pooza/capsicum/issues/55)）~~ — 修正済み
