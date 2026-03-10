@@ -534,8 +534,9 @@ class _MfmParser {
     final lines = <String>[];
     while (_pos < input.length && input[_pos] == '>') {
       _pos++; // skip >
-      if (_pos < input.length && input[_pos] == ' ')
+      if (_pos < input.length && input[_pos] == ' ') {
         _pos++; // skip optional space
+      }
       final lineBuf = StringBuffer();
       while (_pos < input.length && input[_pos] != '\n') {
         lineBuf.write(input[_pos]);
