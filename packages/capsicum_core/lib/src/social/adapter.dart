@@ -27,8 +27,8 @@ abstract class BackendAdapter {
   Future<List<Post>> getTimeline(TimelineType type, {TimelineQuery? query});
   Future<Post> getPostById(String id);
   Future<List<Post>> getThread(String postId);
-  Future<void> repeatPost(String id);
-  Future<void> unrepeatPost(String id);
+  Future<Post> repeatPost(String id);
+  Future<Post> unrepeatPost(String id);
   Future<Instance> getInstance();
   Future<Attachment> uploadAttachment(AttachmentDraft draft);
 }

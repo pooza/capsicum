@@ -281,12 +281,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> repeatPost(String id) async {
-    await client.renote(id);
+  Future<Post> repeatPost(String id) async {
+    final note = await client.renote(id);
+    return note.toCapsicum(host);
   }
 
   @override
-  Future<void> unrepeatPost(String id) => throw UnimplementedError();
+  Future<Post> unrepeatPost(String id) => throw UnimplementedError();
 
   @override
   Future<Instance> getInstance() => throw UnimplementedError();
