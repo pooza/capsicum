@@ -673,7 +673,6 @@ class ContentRenderer {
           TextSpan(text: '\n', style: style),
           WidgetSpan(
             child: Container(
-              width: double.infinity,
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.grey.withValues(alpha: 0.15),
@@ -694,12 +693,9 @@ class ContentRenderer {
       case _NodeType.center:
         return [
           WidgetSpan(
-            child: SizedBox(
-              width: double.infinity,
-              child: Text.rich(
-                TextSpan(children: _renderNodes(node.children, style)),
-                textAlign: TextAlign.center,
-              ),
+            child: Text.rich(
+              TextSpan(children: _renderNodes(node.children, style)),
+              textAlign: TextAlign.center,
             ),
           ),
         ];
@@ -789,7 +785,6 @@ class ContentRenderer {
           TextSpan(text: '\n', style: style),
           WidgetSpan(
             child: Container(
-              width: double.infinity,
               padding: const EdgeInsets.only(left: 8),
               decoration: BoxDecoration(
                 border: Border(
@@ -803,7 +798,9 @@ class ContentRenderer {
                 TextSpan(
                   children: _renderNodes(
                     node.children,
-                    style.copyWith(color: style.color?.withValues(alpha: 0.7)),
+                    style.copyWith(
+                      color: style.color?.withValues(alpha: 0.7),
+                    ),
                   ),
                 ),
               ),

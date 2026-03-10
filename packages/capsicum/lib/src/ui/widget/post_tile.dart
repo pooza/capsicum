@@ -126,33 +126,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       onLongPress: () => _showActionMenu(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            GestureDetector(
-              onTap: () => context.push('/profile', extra: displayPost.author),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: displayPost.author.avatarUrl != null
-                    ? Image.network(
-                        displayPost.author.avatarUrl!,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 40,
-                        height: 40,
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        alignment: Alignment.center,
-                        child: Text(
-                          displayPost.author.username[0].toUpperCase(),
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+            Padding(
+              padding: const EdgeInsets.only(left: 52),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -481,6 +458,45 @@ class _PostTileState extends ConsumerState<PostTile> {
                       onToggle: (emoji) => _toggleReaction(context, emoji),
                     ),
                 ],
+              ),
+            ),
+            Positioned(
+              left: 0,
+              top: 0,
+              child: GestureDetector(
+                onTap: () =>
+                    context.push('/profile', extra: displayPost.author),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: displayPost.author.avatarUrl != null
+                      ? Image.network(
+                          displayPost.author.avatarUrl!,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            width: 40,
+                            height: 40,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer,
+                            alignment: Alignment.center,
+                            child: Text(
+                              displayPost.author.username[0].toUpperCase(),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          width: 40,
+                          height: 40,
+                          color:
+                              Theme.of(context).colorScheme.primaryContainer,
+                          alignment: Alignment.center,
+                          child: Text(
+                            displayPost.author.username[0].toUpperCase(),
+                          ),
+                        ),
+                ),
               ),
             ),
           ],
