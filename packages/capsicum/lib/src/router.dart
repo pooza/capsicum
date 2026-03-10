@@ -17,6 +17,7 @@ import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
+import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
 
@@ -147,6 +148,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           final tag = state.pathParameters['tag']!;
           return HashtagTimelineScreen(hashtag: tag);
         },
+      ),
+      GoRoute(
+        path: '/episodes',
+        builder: (context, state) => const EpisodeBrowserScreen(),
       ),
       GoRoute(
         path: '/media',
