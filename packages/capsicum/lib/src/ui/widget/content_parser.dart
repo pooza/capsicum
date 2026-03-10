@@ -798,9 +798,7 @@ class ContentRenderer {
                 TextSpan(
                   children: _renderNodes(
                     node.children,
-                    style.copyWith(
-                      color: style.color?.withValues(alpha: 0.7),
-                    ),
+                    style.copyWith(color: style.color?.withValues(alpha: 0.7)),
                   ),
                 ),
               ),

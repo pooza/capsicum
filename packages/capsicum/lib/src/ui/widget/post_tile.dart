@@ -477,9 +477,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                           errorBuilder: (_, _, _) => Container(
                             width: 40,
                             height: 40,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primaryContainer,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
                             alignment: Alignment.center,
                             child: Text(
                               displayPost.author.username[0].toUpperCase(),
@@ -489,8 +489,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       : Container(
                           width: 40,
                           height: 40,
-                          color:
-                              Theme.of(context).colorScheme.primaryContainer,
+                          color: Theme.of(context).colorScheme.primaryContainer,
                           alignment: Alignment.center,
                           child: Text(
                             displayPost.author.username[0].toUpperCase(),
