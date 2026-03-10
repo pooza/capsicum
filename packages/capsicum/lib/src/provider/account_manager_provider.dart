@@ -130,6 +130,24 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
 
+        // Retrieve software version from storage, or probe NodeInfo as fallback.
+        var softwareVersion = secrets['software_version'];
+        if (softwareVersion == null) {
+          try {
+            final dio = Dio(
+              BaseOptions(connectTimeout: const Duration(seconds: 5)),
+            );
+            final probe = await probeInstance(dio, accountKey.host);
+            softwareVersion = probe?.softwareVersion;
+            if (softwareVersion != null) {
+              secrets['software_version'] = softwareVersion;
+              await storage.saveAccount(keyStr, secrets);
+            }
+          } catch (_) {
+            // Version detection is optional; ignore errors.
+          }
+        }
+
         final account = Account(
           key: accountKey,
           adapter: adapter,
@@ -137,7 +155,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           userSecret: userSecret,
           clientSecret: clientSecret,
           mulukhiya: mulukhiya,
-          softwareVersion: secrets['software_version'],
+          softwareVersion: softwareVersion,
         );
 
         final newAccounts = [...state.accounts, account];
