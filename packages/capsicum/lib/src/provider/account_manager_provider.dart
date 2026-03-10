@@ -36,6 +36,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         'client_id': account.clientSecret!.clientId,
         'client_secret': account.clientSecret!.clientSecret,
       },
+      if (account.softwareVersion != null)
+        'software_version': account.softwareVersion!,
     };
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
@@ -49,6 +51,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
             userSecret: account.userSecret,
             clientSecret: account.clientSecret,
             mulukhiya: mulukhiya,
+            softwareVersion: account.softwareVersion,
           )
         : account;
 
@@ -134,6 +137,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           userSecret: userSecret,
           clientSecret: clientSecret,
           mulukhiya: mulukhiya,
+          softwareVersion: secrets['software_version'],
         );
 
         final newAccounts = [...state.accounts, account];

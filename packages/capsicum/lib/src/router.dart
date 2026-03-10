@@ -82,6 +82,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return LoginScreen(
             host: extra['host'] as String,
             backendType: extra['backendType'] as BackendType,
+            softwareVersion: extra['softwareVersion'] as String?,
           );
         },
       ),

@@ -13,8 +13,14 @@ import '../../provider/account_manager_provider.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   final String host;
   final BackendType backendType;
+  final String? softwareVersion;
 
-  const LoginScreen({super.key, required this.host, required this.backendType});
+  const LoginScreen({
+    super.key,
+    required this.host,
+    required this.backendType,
+    this.softwareVersion,
+  });
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -134,6 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             user: completeResult.user,
             userSecret: completeResult.userSecret,
             clientSecret: completeResult.clientSecret,
+            softwareVersion: widget.softwareVersion,
           );
 
           await ref.read(accountManagerProvider.notifier).addAccount(account);
