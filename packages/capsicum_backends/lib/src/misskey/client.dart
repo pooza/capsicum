@@ -65,6 +65,99 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/followers
+  Future<List<Map<String, dynamic>>> getUserFollowers(
+    String userId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/followers',
+      data: createBody({
+        'userId': userId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/users/following
+  Future<List<Map<String, dynamic>>> getUserFollowing(
+    String userId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/following',
+      data: createBody({
+        'userId': userId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/users/relation
+  Future<Map<String, dynamic>> getUserRelation(String userId) async {
+    final response = await dio.post(
+      '/api/users/relation',
+      data: createBody({'userId': userId}),
+    );
+    final data = response.data;
+    // API returns a single object for single userId, or an array for multiple.
+    if (data is List) {
+      return data.first as Map<String, dynamic>;
+    }
+    return data as Map<String, dynamic>;
+  }
+
+  /// POST /api/following/create
+  Future<void> followUser(String userId) async {
+    await dio.post(
+      '/api/following/create',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/following/delete
+  Future<void> unfollowUser(String userId) async {
+    await dio.post(
+      '/api/following/delete',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/mute/create
+  Future<void> muteUser(String userId, {int? expiresAt}) async {
+    await dio.post(
+      '/api/mute/create',
+      data: createBody({'userId': userId, 'expiresAt': ?expiresAt}),
+    );
+  }
+
+  /// POST /api/mute/delete
+  Future<void> unmuteUser(String userId) async {
+    await dio.post('/api/mute/delete', data: createBody({'userId': userId}));
+  }
+
+  /// POST /api/blocking/create
+  Future<void> blockUser(String userId) async {
+    await dio.post(
+      '/api/blocking/create',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/blocking/delete
+  Future<void> unblockUser(String userId) async {
+    await dio.post(
+      '/api/blocking/delete',
+      data: createBody({'userId': userId}),
+    );
+  }
+
   /// POST /api/notes/timeline (home)
   Future<List<MisskeyNote>> getTimeline({
     String? sinceId,
@@ -382,13 +475,42 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/lists/list
+  Future<List<MisskeyList>> getLists() async {
+    final response = await dio.post(
+      '/api/users/lists/list',
+      data: createBody(),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyList.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/notes/user-list-timeline
+  Future<List<MisskeyNote>> getUserListTimeline(
+    String listId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/user-list-timeline',
+      data: createBody({
+        'listId': listId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> votePoll(String noteId, int choice) async {
     await dio.post(
       '/api/notes/polls/vote',
-      data: createBody({
-        'noteId': noteId,
-        'choice': choice,
-      }),
+      data: createBody({'noteId': noteId, 'choice': choice}),
     );
   }
 }

@@ -42,6 +42,13 @@ class NotificationInit {
         onDidReceiveNotificationResponse: onTap,
       );
 
+      // Request notification permission on Android 13+.
+      final androidPlugin = plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await androidPlugin?.requestNotificationsPermission();
+
       // Background polling.
       await Workmanager().initialize(backgroundDispatcher);
       await Workmanager().registerPeriodicTask(

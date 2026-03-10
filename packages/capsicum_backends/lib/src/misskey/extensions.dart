@@ -39,6 +39,8 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
 
 extension CapsicumMisskeyNoteExtension on MisskeyNote {
   Post toCapsicum(String localHost) {
+    // Misskey: renote + text = quote, renote without text = simple renote
+    final isQuote = renote != null && text != null;
     return Post(
       id: id,
       postedAt: createdAt,
@@ -52,7 +54,8 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       reactions: reactions ?? const {},
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
-      reblog: renote?.toCapsicum(localHost),
+      reblog: isQuote ? null : renote?.toCapsicum(localHost),
+      quote: isQuote ? renote?.toCapsicum(localHost) : null,
       poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
       emojis: reactionEmojis ?? const {},
@@ -96,6 +99,12 @@ extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
   }
 }
 
+extension CapsicumMisskeyListExtension on MisskeyList {
+  PostList toCapsicum() {
+    return PostList(id: id, title: name);
+  }
+}
+
 extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   Attachment toCapsicum() {
     return Attachment(
@@ -113,7 +122,8 @@ Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
   final choices = poll['choices'] as List<dynamic>?;
   if (choices == null) return null;
   final expiresAtStr = poll['expiresAt'] as String?;
-  final expired = expiresAtStr != null &&
+  final expired =
+      expiresAtStr != null &&
       DateTime.tryParse(expiresAtStr)?.isBefore(DateTime.now()) == true;
   return Poll(
     id: noteId,
@@ -131,8 +141,7 @@ Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
     ),
     multiple: poll['multiple'] as bool? ?? false,
     expired: expired,
-    expiresAt:
-        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    expiresAt: expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
     voted: choices.any(
       (c) => (c as Map<String, dynamic>)['isVoted'] as bool? ?? false,
     ),

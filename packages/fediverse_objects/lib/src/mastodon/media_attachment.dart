@@ -6,14 +6,14 @@ part 'media_attachment.g.dart';
 class MastodonMediaAttachment {
   final String id;
   final String type;
-  final String url;
+  final String? url;
   final String? previewUrl;
   final String? description;
 
   const MastodonMediaAttachment({
     required this.id,
     required this.type,
-    required this.url,
+    this.url,
     this.previewUrl,
     this.description,
   });

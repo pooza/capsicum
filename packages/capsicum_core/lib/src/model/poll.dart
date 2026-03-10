@@ -26,8 +26,5 @@ class PollOption {
   final String title;
   final int votesCount;
 
-  const PollOption({
-    required this.title,
-    this.votesCount = 0,
-  });
+  const PollOption({required this.title, this.votesCount = 0});
 }

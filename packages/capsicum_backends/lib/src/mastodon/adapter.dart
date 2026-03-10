@@ -310,16 +310,56 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // FollowSupport
 
   @override
-  Future<void> followUser(String id) => throw UnimplementedError();
+  Future<UserRelationship> getRelationship(String userId) async {
+    final rels = await client.getRelationships([userId]);
+    if (rels.isEmpty) return const UserRelationship();
+    final r = rels.first;
+    return UserRelationship(
+      following: r['following'] as bool? ?? false,
+      followedBy: r['followed_by'] as bool? ?? false,
+      muting: r['muting'] as bool? ?? false,
+      blocking: r['blocking'] as bool? ?? false,
+    );
+  }
 
   @override
-  Future<void> unfollowUser(String id) => throw UnimplementedError();
+  Future<void> followUser(String id) => client.followAccount(id);
 
   @override
-  Future<List<User>> getFollowers(String userId) => throw UnimplementedError();
+  Future<void> unfollowUser(String id) => client.unfollowAccount(id);
 
   @override
-  Future<List<User>> getFollowing(String userId) => throw UnimplementedError();
+  Future<void> muteUser(String id, {Duration? duration}) =>
+      client.muteAccount(id, duration: duration?.inSeconds);
+
+  @override
+  Future<void> unmuteUser(String id) => client.unmuteAccount(id);
+
+  @override
+  Future<void> blockUser(String id) => client.blockAccount(id);
+
+  @override
+  Future<void> unblockUser(String id) => client.unblockAccount(id);
+
+  @override
+  Future<List<User>> getFollowers(String userId, {TimelineQuery? query}) async {
+    final accounts = await client.getAccountFollowers(
+      userId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+  }
+
+  @override
+  Future<List<User>> getFollowing(String userId, {TimelineQuery? query}) async {
+    final accounts = await client.getAccountFollowing(
+      userId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+  }
 
   // NotificationSupport
 
@@ -368,7 +408,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // ListSupport
 
   @override
-  Future<List<PostList>> getLists() => throw UnimplementedError();
+  Future<List<PostList>> getLists() async {
+    final lists = await client.getLists();
+    return lists.map((l) => l.toCapsicum()).toList();
+  }
+
+  @override
+  Future<List<Post>> getListTimeline(
+    String listId, {
+    TimelineQuery? query,
+  }) async {
+    final statuses = await client.getListTimeline(
+      listId,
+      maxId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return statuses.map((s) => s.toCapsicum(host)).toList();
+  }
 
   @override
   Future<PostList> createList(String title) => throw UnimplementedError();

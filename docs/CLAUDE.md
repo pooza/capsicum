@@ -143,6 +143,12 @@ capsicum/
 - 優先度ラベル: P1 〜 P4
 - 1 マイルストーンあたり 10 件前後
 
+### 正本ルール
+
+- **Issue のステータス・一覧は GitHub が正本**。CLAUDE.md や MEMORY.md に個別 Issue の一覧・対応済み/未済を複写しない
+- リリース計画の確認は `gh issue list --milestone v1.0` 等で GitHub を直接参照する
+- CLAUDE.md に書くのは Issue に書けない情報（マイルストーンの方針・運用ルール・設計判断の背景 等）に限定する
+
 ### クロスリファレンス
 
 - capsicum → モロヘイヤ: `pooza/mulukhiya-toot-proxy#XXXX`
@@ -201,6 +207,20 @@ capsicum/
 - launchUrl() の URL スキーム検証追加（http/https のみ許可）
 - ハッシュタグタイムライン（検索結果・インラインハッシュタグからの遷移対応）
 - プレビューカードの表示（Mastodon のみ、メディア添付がない投稿で表示。Misskey は note レスポンスにカード情報を含まず別途 `/api/url` が必要なため v1.2 に先送り）
+- 投票（Poll）の表示・投票対応（Mastodon / Misskey 両対応）
+- リスト機能（一覧・TL表示）+ タブバー統合
+- 投稿本文中ハッシュタグのリンク化
+- CJK フォントの日本語ロケール描画修正
+- Android 13+ の通知権限リクエスト
+- CW 開閉タップ領域の拡大（警告行全体をタップ可能に）
+- フォロー・フォロワーリスト表示（プロフィール画面から遷移、無限スクロール対応）
+- フォロー・アンフォロー・ミュート・ブロック操作（ミュート期限選択・ブロック確認ダイアログ付き）
+- Android アダプティブアイコンのセーフゾーン対応
+- リプライ機能（返信先の引用表示・公開範囲の自動制限・メンション自動挿入）
+- IME composing 干渉の軽減（投稿画面: ValueListenableBuilder による部分再描画化）
+- 動画アップロード修正（v1 API 使用 + nullable url + 拡張子フォールバック動画判定）
+- 引用投稿の表示（Mastodon: quote オブジェクトの quoted_status パース / Misskey: renote+text 判定）
+- MFM / HTML テキストパーサー（太字・斜体・打ち消し・コード・ルビ・リンク・メンション・引用ブロック・center・small + HTML の <code> タグ対応）
 
 ### リリース計画
 
@@ -211,21 +231,34 @@ capsicum/
 v0.1.0 リリース済み:
 
 - Android APK: [GitHub Releases v0.1.0](https://github.com/pooza/capsicum/releases/tag/v0.1.0)
-- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）、テスター招待中
+- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）
+
+v0.2.0 リリース済み:
+
+- Android APK: [GitHub Releases v0.2.0](https://github.com/pooza/capsicum/releases/tag/v0.2.0)
+- iOS: TestFlight 外部テスター向け Beta App Review 提出済み
+- iPhone のみ（iPad 除外）
 
 配布方法:
 
-- **iOS**: TestFlight（App Store Connect の公式テスト配布機能）
+- **iOS**: TestFlight 外部テスターのみ（内部テスターは本名が相互に見える問題のため不使用）
 - **Android**: GitHub Releases にリリース用 APK をアセットとして添付
 
-身内テスト配布手順:
+テスト版配布手順:
 
 1. `pubspec.yaml` の version を確認・更新
 2. Android: `flutter build apk --release` → APK を取得
 3. iOS: `flutter build ipa --release` → `cd ios && fastlane beta`（TestFlight にアップロード）
-4. GitHub で `v0.1.x` タグを作成しリリースを作る
+4. GitHub で `vX.Y.Z` タグを作成しリリースを作る（`--prerelease` 付き）
 5. Android APK をリリースアセットとしてアップロード
 6. テスターに GitHub Releases URL（Android）と TestFlight 招待（iOS）を送付
+
+各マシン共通の前提（詳細は [store-release-guide.md](store-release-guide.md) を参照）:
+
+- `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置
+- Xcode → Settings → Accounts で Apple Distribution 証明書を作成
+- `gem install fastlane`（rbenv の Ruby を使用）
+- Android 署名鍵: `android/key.properties`（git 管理外、手動配置）
 
 #### ストアリリース準備（v1.0 公開前）
 
@@ -242,49 +275,23 @@ v0.1.0 リリース済み:
 - [ ] Google Play IARC レーティング回答
 - [ ] Google Play フィーチャーグラフィック（1024x500）
 - [ ] Google Play スクリーンショット（最低2枚）
+- [ ] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
 
-#### v1.0（ストア公開）
+#### v1.0 以降のリリース計画
 
-身内テスト版に加え、以下を対応してからストア公開する。
+GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
-- 引用投稿の表示（[#1](https://github.com/pooza/capsicum/issues/1)）
-- 投票の表示（[#10](https://github.com/pooza/capsicum/issues/10)）— 実装済み・未検証（Mastodon / Misskey 両方の表示・投票操作を要確認）
-- リスト機能（一覧・TL表示）（[#19](https://github.com/pooza/capsicum/issues/19)）
-- モロヘイヤ連携: エピソードブラウザ（[#22](https://github.com/pooza/capsicum/issues/22)）
-- フォロー・フォロワーリスト（[#28](https://github.com/pooza/capsicum/issues/28)）
-- フォロー・アンフォロー・ミュート・ブロック操作（[#29](https://github.com/pooza/capsicum/issues/29)）
-- MFM / HTML / Markdown テキストパーサーの実装（[#39](https://github.com/pooza/capsicum/issues/39)）
-- Android アダプティブアイコンのセーフゾーン対応（[#44](https://github.com/pooza/capsicum/issues/44)）
-- リプライ機能（[#45](https://github.com/pooza/capsicum/issues/45)）
+各マイルストーンの方針:
 
-#### v1.1
+- **v1.0**（ストア公開）— ストアに出せる最低限の品質。テスターFB のバグ修正を含む
+- **v1.1** — ユーザー体験の向上（プロフィール編集・ピン留め・予約投稿・リスト管理 等）
+- **v1.2** — Misskey 固有機能の拡充 + モロヘイヤ WebUI 連携
+- **v1.3** — 補完的機能（入力補完・引用操作・rel=me 等）
 
-- アバターデコレーション表示（[#15](https://github.com/pooza/capsicum/issues/15)）
-- タグセット連動アバターデコレーション（[#24](https://github.com/pooza/capsicum/issues/24)）— #15 が前提
-- タイムライン既読位置の保存・復元（[#25](https://github.com/pooza/capsicum/issues/25)）
-- 予約投稿・下書き保存（[#5](https://github.com/pooza/capsicum/issues/5)）
-- ワードフィルタ設定UI（[#7](https://github.com/pooza/capsicum/issues/7)）
-- プロフィール編集（[#9](https://github.com/pooza/capsicum/issues/9)）
-- ピン留め投稿の表示（[#11](https://github.com/pooza/capsicum/issues/11)）
-- リストの作成・編集・削除（[#20](https://github.com/pooza/capsicum/issues/20)）
-- 投稿済みメディアの説明（ALT）編集（[#30](https://github.com/pooza/capsicum/issues/30)）
-- 横長カスタム絵文字の表示対応（[#40](https://github.com/pooza/capsicum/issues/40)）
+運用ルール:
 
-#### v1.2
-
-- コマンドトゥート結果の JSON / YAML レンダリング（[#8](https://github.com/pooza/capsicum/issues/8)）
-- モロヘイヤ WebUI 機能の対応（[#14](https://github.com/pooza/capsicum/issues/14)）
-- Misskey ローカルオンリー投稿対応（[#17](https://github.com/pooza/capsicum/issues/17)）
-- Misskey プレビューカード対応（[#41](https://github.com/pooza/capsicum/issues/41)）
-- サーバーカスタムリンクの表示（[#26](https://github.com/pooza/capsicum/issues/26)）
-- ボットアカウントのバッジ表示（[#33](https://github.com/pooza/capsicum/issues/33)）
-- ロールのプロフィール表示（[#34](https://github.com/pooza/capsicum/issues/34)）
-- Misskey: チャンネル宛て投稿の識別表示（[#35](https://github.com/pooza/capsicum/issues/35)）
-- Misskey: チャンネルタイムライン（[#36](https://github.com/pooza/capsicum/issues/36)）
-
-#### リリース前の定期タスク
-
-- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）— 各マイルストーンの issue をすべて消化した後、リリース直前に毎度実施
+- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）は各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する
+- マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 
 ### 実装しない機能
 

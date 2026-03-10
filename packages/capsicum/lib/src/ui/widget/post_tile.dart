@@ -2,13 +2,13 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
@@ -37,118 +37,50 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   bool _cwExpanded = false;
   bool _filterExpanded = false;
-  final List<GestureRecognizer> _recognizers = [];
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
 
   @override
   void dispose() {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
+    _contentRenderer?.dispose();
     super.dispose();
   }
 
-  String? _resolveEmojiUrl(
-    String shortcode,
-    Map<String, String> emojis,
-    String? fallbackHost,
-  ) {
-    final url = emojis[shortcode];
-    if (url != null) return url;
-    if (fallbackHost != null) {
-      return 'https://$fallbackHost/emoji/$shortcode.webp';
-    }
-    return null;
-  }
+  ContentRenderer? _contentRenderer;
 
-  TextSpan _buildContentSpan(
-    String text,
-    TextStyle? baseStyle,
+  TextSpan _renderContent(
+    String content,
+    TextStyle baseStyle,
     Map<String, String> emojis, {
     String? fallbackHost,
+    required bool isHtml,
   }) {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
-    _recognizers.clear();
-
-    final pattern = RegExp(
-      r'https?://[^\s<>\]）」』】]+|:([a-zA-Z0-9_-]+):|#([a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\uFF66-\uFF9F_]+)',
-    );
-    final matches = pattern.allMatches(text).toList();
-    if (matches.isEmpty) {
-      return TextSpan(text: text, style: baseStyle);
-    }
-
-    final children = <InlineSpan>[];
-    var lastEnd = 0;
-
-    for (final match in matches) {
-      if (match.start > lastEnd) {
-        children.add(TextSpan(text: text.substring(lastEnd, match.start)));
-      }
-
-      if (match.group(1) != null) {
-        // Emoji shortcode
-        final shortcode = match.group(1)!;
-        final emojiUrl = _resolveEmojiUrl(shortcode, emojis, fallbackHost);
-        if (emojiUrl != null) {
-          children.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Image.network(
-                emojiUrl,
-                width: 20,
-                height: 20,
-                errorBuilder: (_, _, _) =>
-                    Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
-              ),
-            ),
-          );
-        } else {
-          children.add(TextSpan(text: match.group(0)!));
+    _contentRenderer?.dispose();
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        final url = emojis[shortcode];
+        if (url != null) return url;
+        if (fallbackHost != null) {
+          return 'https://$fallbackHost/emoji/$shortcode.webp';
         }
-      } else if (match.group(2) != null) {
-        // Hashtag
-        final tag = match.group(2)!;
-        final recognizer = TapGestureRecognizer()
-          ..onTap = () => context.push('/hashtag/$tag');
-        _recognizers.add(recognizer);
-        children.add(
-          TextSpan(
-            text: '#$tag',
-            style: const TextStyle(color: Colors.blue),
-            recognizer: recognizer,
-          ),
-        );
-      } else {
-        // URL
-        final url = match.group(0)!;
-        final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
-        final isSafeScheme =
-            uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
-        final recognizer = TapGestureRecognizer()
-          ..onTap = isSafeScheme ? () => launchUrl(uri) : null;
-        _recognizers.add(recognizer);
-        final displayUrl = uri != null ? Uri.decodeFull(uri.toString()) : url;
-        children.add(
-          TextSpan(
-            text: displayUrl,
-            style: const TextStyle(color: Colors.blue),
-            recognizer: recognizer,
-          ),
-        );
-      }
-      lastEnd = match.end;
-    }
-
-    if (lastEnd < text.length) {
-      children.add(TextSpan(text: text.substring(lastEnd)));
-    }
-
-    return TextSpan(children: children, style: baseStyle);
+        return null;
+      },
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onMentionTap: (mention) {
+        // TODO: navigate to user profile
+      },
+    );
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
   }
 
   @override
@@ -194,33 +126,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       onLongPress: () => _showActionMenu(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            GestureDetector(
-              onTap: () => context.push('/profile', extra: displayPost.author),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: displayPost.author.avatarUrl != null
-                    ? Image.network(
-                        displayPost.author.avatarUrl!,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 40,
-                        height: 40,
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        alignment: Alignment.center,
-                        child: Text(
-                          displayPost.author.username[0].toUpperCase(),
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+            Padding(
+              padding: const EdgeInsets.only(left: 52),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -284,38 +193,47 @@ class _PostTileState extends ConsumerState<PostTile> {
                     ),
                   const SizedBox(height: 4),
                   if (displayPost.spoilerText != null) ...[
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: EmojiText(
-                            displayPost.spoilerText!,
-                            emojis: {
-                              ...displayPost.emojis,
-                              ...displayPost.author.emojis,
-                            },
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                            fallbackHost: displayPost.emojiHost,
-                          ),
-                        ),
-                      ],
-                    ),
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => setState(() => _cwExpanded = !_cwExpanded),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          _cwExpanded ? '閉じる' : '続きを表示',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 13,
-                          ),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: EmojiText(
+                                    displayPost.spoilerText!,
+                                    emojis: {
+                                      ...displayPost.emojis,
+                                      ...displayPost.author.emojis,
+                                    },
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                    fallbackHost: displayPost.emojiHost,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _cwExpanded ? '閉じる' : '続きを表示',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -323,7 +241,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                   if (displayPost.spoilerText == null || _cwExpanded) ...[
                     Builder(
                       builder: (_) {
-                        final parsed = _parseContent(displayPost.content ?? '');
+                        final rawContent = displayPost.content ?? '';
+                        final isHtml =
+                            rawContent.contains('<p>') ||
+                            rawContent.contains('<br');
+                        final parsed = isHtml
+                            ? extractTrailingTagsHtml(rawContent)
+                            : extractTrailingTagsMfm(rawContent);
                         final allEmojis = {
                           ...displayPost.emojis,
                           ...displayPost.author.emojis,
@@ -336,11 +260,12 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 final baseStyle = DefaultTextStyle.of(
                                   context,
                                 ).style;
-                                final contentSpan = _buildContentSpan(
+                                final contentSpan = _renderContent(
                                   parsed.body,
                                   baseStyle,
                                   allEmojis,
                                   fallbackHost: displayPost.emojiHost,
+                                  isHtml: isHtml,
                                 );
                                 // Use a plain TextSpan for overflow measurement
                                 // because TextPainter cannot measure WidgetSpan.
@@ -414,9 +339,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 fontSize: 12,
                                               ),
                                             ),
-                                            onPressed: () => context.push(
-                                              '/hashtag/$tag',
-                                            ),
+                                            onPressed: () =>
+                                                context.push('/hashtag/$tag'),
                                           ),
                                         ),
                                     if (parsed.trailingTags.length > _maxTags)
@@ -445,6 +369,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                         );
                       },
                     ),
+                    if (displayPost.quote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _QuoteCard(quote: displayPost.quote!),
+                      ),
                     if (displayPost.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -531,6 +460,44 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ],
               ),
             ),
+            Positioned(
+              left: 0,
+              top: 0,
+              child: GestureDetector(
+                onTap: () =>
+                    context.push('/profile', extra: displayPost.author),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: displayPost.author.avatarUrl != null
+                      ? Image.network(
+                          displayPost.author.avatarUrl!,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            width: 40,
+                            height: 40,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
+                            alignment: Alignment.center,
+                            child: Text(
+                              displayPost.author.username[0].toUpperCase(),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          width: 40,
+                          height: 40,
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          alignment: Alignment.center,
+                          child: Text(
+                            displayPost.author.username[0].toUpperCase(),
+                          ),
+                        ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -582,6 +549,14 @@ class _PostTileState extends ConsumerState<PostTile> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('リプライ'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push('/compose', extra: {'replyTo': targetPost});
+              },
+            ),
             if (adapter is FavoriteSupport)
               ListTile(
                 leading: const Icon(Icons.star_outline),
@@ -731,7 +706,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) {
-                  router.push('/compose', extra: targetPost);
+                  router.push('/compose', extra: {'redraft': targetPost});
                 }
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
@@ -816,7 +791,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final parsed = _parseContent(targetPost.content ?? '');
+    final retagContent = targetPost.content ?? '';
+    final retagIsHtml =
+        retagContent.contains('<p>') || retagContent.contains('<br');
+    final parsed = retagIsHtml
+        ? extractTrailingTagsHtml(retagContent)
+        : extractTrailingTagsMfm(retagContent);
     final messenger = ScaffoldMessenger.of(context);
 
     showModalBottomSheet(
@@ -884,92 +864,6 @@ class _PostTileState extends ConsumerState<PostTile> {
       case PostScope.direct:
         return Icons.mail;
     }
-  }
-
-  /// Parse content into body text and trailing hashtags.
-  /// Supports both Mastodon (HTML) and Misskey (MFM plain text).
-  ({String body, List<String> trailingTags}) _parseContent(String content) {
-    final isHtml = content.contains('<') && content.contains('>');
-
-    if (isHtml) {
-      return _parseHtmlContent(content);
-    }
-    return _parseMfmContent(content);
-  }
-
-  /// Mastodon HTML: trailing <p> block with hashtag links.
-  ({String body, List<String> trailingTags}) _parseHtmlContent(String html) {
-    var bodyHtml = html;
-    final trailingTags = <String>[];
-
-    final trailingTagBlock = RegExp(
-      r'<p>\s*((<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>\s*)+)</p>\s*$',
-      caseSensitive: false,
-    );
-    final blockMatch = trailingTagBlock.firstMatch(bodyHtml);
-    if (blockMatch != null) {
-      final tagBlockHtml = blockMatch.group(1)!;
-      final withoutTags = tagBlockHtml
-          .replaceAll(
-            RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'),
-            '',
-          )
-          .trim();
-      if (withoutTags.isEmpty) {
-        final tagPattern = RegExp(r'#<span>([^<]+)</span>');
-        for (final m in tagPattern.allMatches(tagBlockHtml)) {
-          trailingTags.add(m.group(1)!);
-        }
-        bodyHtml = bodyHtml.substring(0, blockMatch.start).trimRight();
-      }
-    }
-
-    return (body: _decodeHtml(bodyHtml), trailingTags: trailingTags);
-  }
-
-  /// Misskey MFM: trailing line of #tag after a blank line.
-  ({String body, List<String> trailingTags}) _parseMfmContent(String text) {
-    final trailingTags = <String>[];
-
-    // Match a trailing line that contains only hashtags, preceded by a blank line.
-    final trailingTagLine = RegExp(r'\n\n((?:#\S+\s*)+)$');
-    final match = trailingTagLine.firstMatch(text);
-    if (match != null) {
-      final tagLine = match.group(1)!;
-      final tagPattern = RegExp(r'#(\S+)');
-      for (final m in tagPattern.allMatches(tagLine)) {
-        trailingTags.add(m.group(1)!);
-      }
-      return (
-        body: text.substring(0, match.start).trimRight(),
-        trailingTags: trailingTags,
-      );
-    }
-
-    return (body: text, trailingTags: trailingTags);
-  }
-
-  String _decodeHtml(String html) {
-    var text = html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .replaceAllMapped(
-          RegExp(r'&#(\d+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!)),
-        )
-        .replaceAllMapped(
-          RegExp(r'&#x([0-9a-fA-F]+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-        );
-    return text;
   }
 }
 
@@ -1079,15 +973,18 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     try {
       final adapter = ref.read(currentAdapterProvider);
       if (adapter != null && adapter is PollSupport) {
-        await (adapter as PollSupport).votePoll(widget.poll.id, _selected.toList());
+        await (adapter as PollSupport).votePoll(
+          widget.poll.id,
+          _selected.toList(),
+        );
         widget.onActionCompleted?.call();
       }
     } catch (e) {
       debugPrint('Poll vote error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投票に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('投票に失敗しました')));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -1110,8 +1007,10 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final poll = widget.poll;
-    final totalVotes =
-        poll.options.fold<int>(0, (sum, o) => sum + o.votesCount);
+    final totalVotes = poll.options.fold<int>(
+      0,
+      (sum, o) => sum + o.votesCount,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1249,11 +1148,11 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
               Icon(
                 widget.poll.multiple
                     ? (_selected.contains(index)
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank)
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank)
                     : (_selected.contains(index)
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked),
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked),
                 size: 18,
                 color: _selected.contains(index)
                     ? theme.colorScheme.primary
@@ -1269,6 +1168,96 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   }
 }
 
+class _QuoteCard extends StatelessWidget {
+  final Post quote;
+
+  const _QuoteCard({required this.quote});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () => context.push('/post', extra: quote),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (quote.author.avatarUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      quote.author.avatarUrl!,
+                      width: 16,
+                      height: 16,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                if (quote.author.avatarUrl != null) const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    quote.author.displayName ?? quote.author.username,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (quote.content != null && quote.content!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _stripHtmlSimple(quote.content!),
+                style: theme.textTheme.bodySmall,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (quote.attachments.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.attach_file,
+                    size: 14,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${quote.attachments.length}件の添付',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _stripHtmlSimple(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
+  }
+}
+
 class _PreviewCardWidget extends StatelessWidget {
   final PreviewCard card;
 
@@ -1280,8 +1269,7 @@ class _PreviewCardWidget extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null &&
-            (uri.scheme == 'http' || uri.scheme == 'https')) {
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
           launchUrl(uri);
         }
       },

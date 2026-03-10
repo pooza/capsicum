@@ -69,6 +69,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       sensitive: sensitive ?? false,
       inReplyToId: inReplyToId,
       reblog: reblog?.toCapsicum(localHost),
+      quote: _parseQuote(quote, localHost),
       spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
       emojis: {
         ..._extractHtmlCustomEmojis(content),
@@ -84,6 +85,63 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterTitle: filterResult?.title,
     );
   }
+}
+
+Post? _parseQuote(Object? quoteRaw, String localHost) {
+  if (quoteRaw == null) return null;
+  if (quoteRaw is! Map<String, dynamic>) return null;
+  // Mastodon latest: quote is { "state": "accepted", "quoted_status": {...} }
+  final state = quoteRaw['state'] as String?;
+  if (state != null && state != 'accepted') return null;
+  final quote =
+      (quoteRaw['quoted_status'] as Map<String, dynamic>?) ?? quoteRaw;
+  final id = quote['id'] as String?;
+  final account = quote['account'] as Map<String, dynamic>?;
+  if (id == null || account == null) return null;
+  final username = account['username'] as String? ?? '';
+  final acct = account['acct'] as String? ?? username;
+  final atHost = acct.contains('@') ? acct.split('@').last : null;
+  final emojis = account['emojis'] as List<dynamic>? ?? [];
+  return Post(
+    id: id,
+    postedAt:
+        DateTime.tryParse(quote['created_at'] as String? ?? '') ??
+        DateTime.now(),
+    author: User(
+      id: account['id'] as String? ?? '',
+      username: username,
+      displayName: (account['display_name'] as String?)?.isNotEmpty == true
+          ? account['display_name'] as String
+          : null,
+      host: atHost ?? localHost,
+      avatarUrl: account['avatar'] as String?,
+      emojis: {
+        for (final e in emojis)
+          if (e is Map<String, dynamic> &&
+              e['shortcode'] is String &&
+              e['url'] is String)
+            e['shortcode'] as String: e['url'] as String,
+      },
+    ),
+    content: quote['content'] as String? ?? '',
+    scope:
+        mastodonVisibilityRosetta[quote['visibility'] as String?] ??
+        PostScope.public,
+    attachments: ((quote['media_attachments'] as List<dynamic>?) ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (a) => Attachment(
+            id: a['id'] as String? ?? '',
+            type:
+                mastodonAttachmentTypeMap[a['type'] as String?] ??
+                AttachmentType.unknown,
+            url: a['url'] as String? ?? '',
+            previewUrl: a['preview_url'] as String?,
+            description: a['description'] as String?,
+          ),
+        )
+        .toList(),
+  );
 }
 
 Poll? _parseMastodonPoll(Map<String, dynamic>? poll) {
@@ -106,12 +164,10 @@ Poll? _parseMastodonPoll(Map<String, dynamic>? poll) {
     votersCount: poll['voters_count'] as int? ?? 0,
     multiple: poll['multiple'] as bool? ?? false,
     expired: poll['expired'] as bool? ?? false,
-    expiresAt:
-        expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
+    expiresAt: expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null,
     voted: poll['voted'] as bool? ?? false,
-    ownVotes: (poll['own_votes'] as List<dynamic>?)
-            ?.map((v) => v as int)
-            .toList() ??
+    ownVotes:
+        (poll['own_votes'] as List<dynamic>?)?.map((v) => v as int).toList() ??
         const [],
     emojis: {
       for (final e in emojis)
@@ -224,12 +280,18 @@ String _stripHtml(String html) {
   return text;
 }
 
+extension CapsicumMastodonListExtension on MastodonList {
+  PostList toCapsicum() {
+    return PostList(id: id, title: title);
+  }
+}
+
 extension CapsicumMastodonMediaAttachmentExtension on MastodonMediaAttachment {
   Attachment toCapsicum() {
     return Attachment(
       id: id,
       type: mastodonAttachmentTypeMap[type] ?? AttachmentType.unknown,
-      url: url,
+      url: url ?? '',
       previewUrl: previewUrl,
       description: description,
     );

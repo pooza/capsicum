@@ -85,6 +85,78 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/accounts/:id/followers
+  Future<List<MastodonAccount>> getAccountFollowers(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$id/followers',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// GET /api/v1/accounts/:id/following
+  Future<List<MastodonAccount>> getAccountFollowing(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$id/following',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// GET /api/v1/accounts/relationships
+  Future<List<Map<String, dynamic>>> getRelationships(List<String> ids) async {
+    final response = await dio.get(
+      '/api/v1/accounts/relationships',
+      queryParameters: {'id[]': ids},
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/v1/accounts/:id/follow
+  Future<void> followAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/follow');
+  }
+
+  /// POST /api/v1/accounts/:id/unfollow
+  Future<void> unfollowAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unfollow');
+  }
+
+  /// POST /api/v1/accounts/:id/mute
+  Future<void> muteAccount(String id, {int? duration}) async {
+    await dio.post(
+      '/api/v1/accounts/$id/mute',
+      data: {'duration': duration ?? 0},
+    );
+  }
+
+  /// POST /api/v1/accounts/:id/unmute
+  Future<void> unmuteAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unmute');
+  }
+
+  /// POST /api/v1/accounts/:id/block
+  Future<void> blockAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/block');
+  }
+
+  /// POST /api/v1/accounts/:id/unblock
+  Future<void> unblockAccount(String id) async {
+    await dio.post('/api/v1/accounts/$id/unblock');
+  }
+
   /// GET /api/v1/timelines/home
   Future<List<MastodonStatus>> getHomeTimeline({
     String? maxId,
@@ -208,7 +280,10 @@ class MastodonClient {
         .toList();
   }
 
-  /// POST /api/v2/media
+  /// POST /api/v1/media
+  ///
+  /// v1 は同期処理で、トランスコード完了後に 200 + 完全な JSON を返す。
+  /// モロヘイヤ経由の場合も安定して動作する。
   Future<MastodonMediaAttachment> uploadMedia(
     String filePath, {
     String? mimeType,
@@ -222,7 +297,7 @@ class MastodonClient {
         contentType: mediaType,
       ),
     });
-    final response = await dio.post('/api/v2/media', data: formData);
+    final response = await dio.post('/api/v1/media', data: formData);
     return MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );
@@ -339,10 +414,35 @@ class MastodonClient {
         .toList();
   }
 
-  Future<void> votePoll(String pollId, List<int> choices) async {
-    await dio.post(
-      '/api/v1/polls/$pollId/votes',
-      data: {'choices': choices},
+  /// GET /api/v1/lists
+  Future<List<MastodonList>> getLists() async {
+    final response = await dio.get('/api/v1/lists');
+    return (response.data as List)
+        .map((e) => MastodonList.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// GET /api/v1/timelines/list/:id
+  Future<List<MastodonStatus>> getListTimeline(
+    String listId, {
+    String? maxId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/timelines/list/$listId',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
     );
+    return (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> votePoll(String pollId, List<int> choices) async {
+    await dio.post('/api/v1/polls/$pollId/votes', data: {'choices': choices});
   }
 }

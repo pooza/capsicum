@@ -14,6 +14,7 @@ export 'src/model/post_scope.dart';
 export 'src/model/timeline_query.dart';
 export 'src/model/timeline_type.dart';
 export 'src/model/user.dart';
+export 'src/model/user_relationship.dart';
 
 // Social / Adapter
 export 'src/social/adapter.dart';
