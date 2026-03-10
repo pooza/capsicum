@@ -17,14 +17,14 @@ import 'emoji_text.dart';
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
-  final bool initialCwExpanded;
+  final bool initialExpanded;
   final VoidCallback? onActionCompleted;
 
   const PostTile({
     super.key,
     required this.post,
     this.tappable = true,
-    this.initialCwExpanded = false,
+    this.initialExpanded = false,
     this.onActionCompleted,
   });
 
@@ -35,9 +35,9 @@ class PostTile extends ConsumerStatefulWidget {
 class _PostTileState extends ConsumerState<PostTile> {
   static const _maxLines = 8;
   static const _maxTags = 3;
-  bool _expanded = false;
+  late bool _expanded = widget.initialExpanded;
   bool _tagsExpanded = false;
-  late bool _cwExpanded = widget.initialCwExpanded;
+  late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
 
   Post get post => widget.post;
