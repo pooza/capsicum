@@ -36,8 +36,6 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         'client_id': account.clientSecret!.clientId,
         'client_secret': account.clientSecret!.clientSecret,
       },
-      if (account.softwareVersion != null)
-        'software_version': account.softwareVersion!,
     };
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
@@ -79,6 +77,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : state.current;
 
     state = AccountManagerState(accounts: remaining, current: next);
+  }
+
+  /// Detect software version via NodeInfo on the given host.
+  Future<String?> _detectSoftwareVersion(String host) async {
+    try {
+      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
+      final probe = await probeInstance(dio, host);
+      return probe?.softwareVersion;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Detect mulukhiya on the given host.
@@ -129,24 +138,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         final user = await adapter.getMyself();
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
-
-        // Retrieve software version from storage, or probe NodeInfo as fallback.
-        var softwareVersion = secrets['software_version'];
-        if (softwareVersion == null) {
-          try {
-            final dio = Dio(
-              BaseOptions(connectTimeout: const Duration(seconds: 5)),
-            );
-            final probe = await probeInstance(dio, accountKey.host);
-            softwareVersion = probe?.softwareVersion;
-            if (softwareVersion != null) {
-              secrets['software_version'] = softwareVersion;
-              await storage.saveAccount(keyStr, secrets);
-            }
-          } catch (_) {
-            // Version detection is optional; ignore errors.
-          }
-        }
+        final softwareVersion = await _detectSoftwareVersion(accountKey.host);
 
         final account = Account(
           key: accountKey,
