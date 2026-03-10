@@ -164,7 +164,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> repeatPost(String id) async {
     final status = await client.reblogStatus(id);
-    return status.toCapsicum(host);
+    final post = status.toCapsicum(host);
+    // reblog API returns a wrapper post; extract the original with updated counts.
+    return post.reblog ?? post;
   }
 
   @override

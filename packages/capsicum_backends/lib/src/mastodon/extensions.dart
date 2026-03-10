@@ -63,6 +63,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       favouriteCount: favouritesCount,
       reblogCount: reblogsCount,
       replyCount: repliesCount,
+      quoteCount: quotesCount ?? 0,
       favourited: favourited ?? false,
       reblogged: reblogged ?? false,
       bookmarked: bookmarked ?? false,

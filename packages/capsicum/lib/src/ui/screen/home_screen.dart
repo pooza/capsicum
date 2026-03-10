@@ -70,13 +70,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (account?.user.avatarUrl != null)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.network(
-                    account!.user.avatarUrl!,
-                    width: 28,
-                    height: 28,
-                    fit: BoxFit.cover,
+                child: GestureDetector(
+                  onTap: () => context.push('/profile', extra: account.user),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      account!.user.avatarUrl!,
+                      width: 28,
+                      height: 28,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
               ),
@@ -362,28 +365,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            currentAccountPicture: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: current?.user.avatarUrl != null
-                  ? Image.network(
-                      current!.user.avatarUrl!,
-                      width: 72,
-                      height: 72,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      width: 72,
-                      height: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                      alignment: Alignment.center,
-                      child: Text(
-                        (current?.user.username ?? '?')[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 24,
-                          color: Colors.white,
+            currentAccountPicture: GestureDetector(
+              onTap: current != null
+                  ? () {
+                      Navigator.of(context).pop();
+                      context.push('/profile', extra: current.user);
+                    }
+                  : null,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: current?.user.avatarUrl != null
+                    ? Image.network(
+                        current!.user.avatarUrl!,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        width: 72,
+                        height: 72,
+                        color: Theme.of(context).colorScheme.primary,
+                        alignment: Alignment.center,
+                        child: Text(
+                          (current?.user.username ?? '?')[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
             onDetailsPressed: current != null
                 ? () {

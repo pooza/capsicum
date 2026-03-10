@@ -402,7 +402,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                   ],
                   if (displayPost.replyCount > 0 ||
                       displayPost.reblogCount > 0 ||
-                      displayPost.favouriteCount > 0)
+                      displayPost.favouriteCount > 0 ||
+                      displayPost.quoteCount > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
@@ -433,6 +434,21 @@ class _PostTileState extends ConsumerState<PostTile> {
                             const SizedBox(width: 2),
                             Text(
                               '${displayPost.reblogCount}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          if (displayPost.quoteCount > 0) ...[
+                            Icon(
+                              Icons.format_quote,
+                              size: 14,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${displayPost.quoteCount}',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                             const SizedBox(width: 12),

@@ -14,6 +14,7 @@ class Post {
   final int favouriteCount;
   final int reblogCount;
   final int replyCount;
+  final int quoteCount;
   final bool favourited;
   final bool reblogged;
   final bool bookmarked;
@@ -42,6 +43,7 @@ class Post {
     this.favouriteCount = 0,
     this.reblogCount = 0,
     this.replyCount = 0,
+    this.quoteCount = 0,
     this.favourited = false,
     this.reblogged = false,
     this.bookmarked = false,
