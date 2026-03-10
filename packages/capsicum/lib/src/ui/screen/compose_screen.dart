@@ -208,6 +208,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
   }
 
+  Future<void> _openEpisodeBrowser() async {
+    final commandToot = await context.push<String>('/episodes');
+    if (commandToot != null && mounted) {
+      _controller.text = commandToot;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
   Future<void> _showTagsetSheet() async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
@@ -525,6 +535,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     onPressed: _sending ? null : _showTagsetSheet,
                     icon: const Icon(Icons.live_tv),
                     tooltip: '実況',
+                  ),
+                if (ref.watch(currentMulukhiyaProvider)?.annictEnabled ==
+                    true)
+                  IconButton(
+                    onPressed: _sending ? null : _openEpisodeBrowser,
+                    icon: const Icon(Icons.video_library),
+                    tooltip: 'エピソード',
                   ),
               ],
             ),

@@ -12,6 +12,42 @@ class MulukhiyaAbout {
   });
 }
 
+class AnnictWork {
+  final int annictId;
+  final String title;
+  final int? seasonYear;
+  final String? officialSiteUrl;
+  final String? hashtag;
+  final String? commandToot;
+
+  const AnnictWork({
+    required this.annictId,
+    required this.title,
+    this.seasonYear,
+    this.officialSiteUrl,
+    this.hashtag,
+    this.commandToot,
+  });
+}
+
+class AnnictEpisode {
+  final int annictId;
+  final String? numberText;
+  final String? title;
+  final String? hashtag;
+  final String? url;
+  final String? commandToot;
+
+  const AnnictEpisode({
+    required this.annictId,
+    this.numberText,
+    this.title,
+    this.hashtag,
+    this.url,
+    this.commandToot,
+  });
+}
+
 class MulukhiyaProgram {
   final String name;
   final String? series;
@@ -56,6 +92,7 @@ class MulukhiyaService {
   final String? postLabel;
   final String? themeColorHex;
   final String? defaultHashtag;
+  final bool annictEnabled;
 
   MulukhiyaService._({
     required Dio dio,
@@ -66,6 +103,7 @@ class MulukhiyaService {
     this.postLabel,
     this.themeColorHex,
     this.defaultHashtag,
+    this.annictEnabled = false,
   }) : _dio = dio;
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
@@ -92,6 +130,7 @@ class MulukhiyaService {
 
       final status = config['status'] as Map<String, dynamic>?;
       final theme = config['theme'] as Map<String, dynamic>?;
+      final features = config['features'] as Map<String, dynamic>?;
 
       return MulukhiyaService._(
         dio: dio,
@@ -102,6 +141,7 @@ class MulukhiyaService {
         postLabel: status?['label'] as String?,
         themeColorHex: theme?['color'] as String?,
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
+        annictEnabled: features?['annict'] == true,
       );
     } catch (_) {
       // Not found or connection error — mulukhiya not present
@@ -149,6 +189,69 @@ class MulukhiyaService {
   /// Trigger program data update on the server.
   Future<void> updateProgram() async {
     await _dio.post('$baseUrl/program/update');
+  }
+
+  /// Get the Annict OAuth authorization URL from the server.
+  /// The client_id is server-side config, so capsicum cannot build this URL.
+  Future<String> getAnnictOAuthUri() async {
+    final response = await _dio.get('$baseUrl/annict/oauth_uri');
+    final data = response.data as Map<String, dynamic>;
+    return data['oauth_uri'] as String;
+  }
+
+  /// Exchange an Annict OAuth authorization code for an access token.
+  /// The token is stored server-side in the user's mulukhiya config.
+  /// [snsToken] is the SNS account token for authentication.
+  /// [annictCode] is the authorization code from Annict OAuth.
+  Future<void> authenticateAnnict({
+    required String snsToken,
+    required String annictCode,
+  }) async {
+    await _dio.post(
+      '$baseUrl/annict/auth',
+      data: {'token': snsToken, 'code': annictCode},
+    );
+  }
+
+  /// Search Annict works by keyword.
+  /// Returns an empty list if Annict is not enabled or the user is not
+  /// authenticated with Annict.
+  Future<List<AnnictWork>> searchWorks({String? keyword}) async {
+    final response = await _dio.get(
+      '$baseUrl/program/works',
+      queryParameters: {'q': ?keyword},
+    );
+    final data = response.data;
+    if (data is! List) return [];
+    return data.map((e) {
+      final m = e as Map<String, dynamic>;
+      return AnnictWork(
+        annictId: m['annictId'] as int,
+        title: m['title'] as String,
+        seasonYear: m['seasonYear'] as int?,
+        officialSiteUrl: m['officialSiteUrl'] as String?,
+        hashtag: m['hashtag'] as String?,
+        commandToot: m['command_toot'] as String?,
+      );
+    }).toList();
+  }
+
+  /// Fetch episodes for a given Annict work ID.
+  Future<List<AnnictEpisode>> getEpisodes(int workId) async {
+    final response = await _dio.get('$baseUrl/program/works/$workId/episodes');
+    final data = response.data;
+    if (data is! List) return [];
+    return data.map((e) {
+      final m = e as Map<String, dynamic>;
+      return AnnictEpisode(
+        annictId: m['annictId'] as int,
+        numberText: m['numberText'] as String?,
+        title: m['title'] as String?,
+        hashtag: m['hashtag'] as String?,
+        url: m['url'] as String?,
+        commandToot: m['command_toot'] as String?,
+      );
+    }).toList();
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.

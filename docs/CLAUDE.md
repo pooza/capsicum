@@ -57,6 +57,8 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | お気に入りタグ | `GET /mulukhiya/api/tagging/favorites` | P3 |
 | メディアカタログ | `GET /mulukhiya/api/media` | P3 |
 | 番組情報 | `GET /mulukhiya/api/program` | P2 |
+| エピソードブラウザ | `GET /mulukhiya/api/program/works`, `GET /mulukhiya/api/program/works/:id/episodes` | P2 |
+| Annict OAuth | `GET /mulukhiya/api/annict/oauth_uri`, `POST /mulukhiya/api/annict/auth` | P2 |
 
 ## UI 設計方針
 
@@ -226,6 +228,8 @@ capsicum/
 - スワイプ操作によるタイムライン切り替え
 - アバターアイコンからのプロフィール遷移（タイムライン・引用・通知・AppBar・ドロワー）
 - スレッド遷移時の CW・長文展開状態維持
+- モロヘイヤ連携: features フラグ解析（`/about` の `config.features` から Annict 有効判定）
+- モロヘイヤ連携: エピソードブラウザ（Annict 作品検索・エピソード一覧・タグセット投稿連携）+ Annict OAuth（OOB 方式）
 
 ### リリース計画
 
