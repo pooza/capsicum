@@ -266,7 +266,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                       builder: (_) {
                         final rawContent = displayPost.content ?? '';
                         final isHtml =
-                            rawContent.contains('<p>') || rawContent.contains('<br');
+                            rawContent.contains('<p>') ||
+                            rawContent.contains('<br');
                         final parsed = isHtml
                             ? extractTrailingTagsHtml(rawContent)
                             : extractTrailingTagsMfm(rawContent);
@@ -849,7 +850,6 @@ class _PostTileState extends ConsumerState<PostTile> {
         return Icons.mail;
     }
   }
-
 }
 
 class _ReactionChips extends StatelessWidget {

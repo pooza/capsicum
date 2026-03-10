@@ -117,7 +117,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   }
 
   static const _videoExtensions = {
-    'mov', 'mp4', 'avi', 'mkv', 'webm', 'm4v', '3gp',
+    'mov',
+    'mp4',
+    'avi',
+    'mkv',
+    'webm',
+    'm4v',
+    '3gp',
   };
 
   bool _isVideo(String? mimeType, [String? path]) {
@@ -352,7 +358,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
                     final entry = _attachments[index];
-                    final isVideo = _isVideo(entry.file.mimeType, entry.file.path);
+                    final isVideo = _isVideo(
+                      entry.file.mimeType,
+                      entry.file.path,
+                    );
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: _sending ? null : () => _editDescription(index),

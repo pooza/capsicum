@@ -42,11 +42,11 @@ class _Node {
   });
 
   const _Node.text(this.text)
-      : type = _NodeType.text,
-        children = const [],
-        rubyReading = null,
-        url = null,
-        language = null;
+    : type = _NodeType.text,
+      children = const [],
+      rubyReading = null,
+      url = null,
+      language = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,8 @@ class _MfmParser {
       }
 
       // Link: [text](url) or ?[text](url)
-      if ((c == '[' || (c == '?' && _pos + 1 < input.length && input[_pos + 1] == '['))) {
+      if ((c == '[' ||
+          (c == '?' && _pos + 1 < input.length && input[_pos + 1] == '['))) {
         flushBuf();
         final node = _tryLink();
         if (node != null) {
@@ -320,7 +321,8 @@ class _MfmParser {
     _pos += 2;
     // Parse function name
     final nameBuf = StringBuffer();
-    while (_pos < input.length && RegExp(r'[a-zA-Z0-9_]').hasMatch(input[_pos])) {
+    while (_pos < input.length &&
+        RegExp(r'[a-zA-Z0-9_]').hasMatch(input[_pos])) {
       nameBuf.write(input[_pos]);
       _pos++;
     }
@@ -387,11 +389,7 @@ class _MfmParser {
     }
     final base = content.substring(0, lastSpace);
     final reading = content.substring(lastSpace + 1);
-    return _Node(
-      type: _NodeType.ruby,
-      text: base,
-      rubyReading: reading,
-    );
+    return _Node(type: _NodeType.ruby, text: base, rubyReading: reading);
   }
 
   _Node? _tryHtmlTag() {
@@ -488,7 +486,8 @@ class _MfmParser {
     final start = _pos;
     _pos++; // skip @
     final userBuf = StringBuffer();
-    while (_pos < input.length && RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
+    while (_pos < input.length &&
+        RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
       userBuf.write(input[_pos]);
       _pos++;
     }
@@ -501,7 +500,8 @@ class _MfmParser {
     if (_pos < input.length && input[_pos] == '@') {
       _pos++;
       final hostBuf = StringBuffer();
-      while (_pos < input.length && RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
+      while (_pos < input.length &&
+          RegExp(r'[a-zA-Z0-9_.-]').hasMatch(input[_pos])) {
         hostBuf.write(input[_pos]);
         _pos++;
       }
@@ -534,7 +534,8 @@ class _MfmParser {
     final lines = <String>[];
     while (_pos < input.length && input[_pos] == '>') {
       _pos++; // skip >
-      if (_pos < input.length && input[_pos] == ' ') _pos++; // skip optional space
+      if (_pos < input.length && input[_pos] == ' ')
+        _pos++; // skip optional space
       final lineBuf = StringBuffer();
       while (_pos < input.length && input[_pos] != '\n') {
         lineBuf.write(input[_pos]);
@@ -649,8 +650,9 @@ class ContentRenderer {
         return _renderNodes(node.children, italicStyle);
 
       case _NodeType.strikethrough:
-        final strikeStyle =
-            style.copyWith(decoration: TextDecoration.lineThrough);
+        final strikeStyle = style.copyWith(
+          decoration: TextDecoration.lineThrough,
+        );
         return _renderNodes(node.children, strikeStyle);
 
       case _NodeType.code:
@@ -791,17 +793,17 @@ class ContentRenderer {
               decoration: BoxDecoration(
                 border: Border(
                   left: BorderSide(
-                    color: style.color?.withValues(alpha: 0.4) ??
-                        Colors.grey,
+                    color: style.color?.withValues(alpha: 0.4) ?? Colors.grey,
                     width: 3,
                   ),
                 ),
               ),
               child: Text.rich(
                 TextSpan(
-                  children: _renderNodes(node.children, style.copyWith(
-                    color: style.color?.withValues(alpha: 0.7),
-                  )),
+                  children: _renderNodes(
+                    node.children,
+                    style.copyWith(color: style.color?.withValues(alpha: 0.7)),
+                  ),
                 ),
               ),
             ),
@@ -852,16 +854,17 @@ class _RubyWidget extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// Extract trailing hashtags from MFM content.
-({String body, List<String> trailingTags}) extractTrailingTagsMfm(
-  String text,
-) {
+({String body, List<String> trailingTags}) extractTrailingTagsMfm(String text) {
   final trailingTagLine = RegExp(r'\n\n((?:#\S+\s*)+)$');
   final match = trailingTagLine.firstMatch(text);
   if (match != null) {
     final tagLine = match.group(1)!;
     final tagPattern = RegExp(r'#(\S+)');
     final tags = [for (final m in tagPattern.allMatches(tagLine)) m.group(1)!];
-    return (body: text.substring(0, match.start).trimRight(), trailingTags: tags);
+    return (
+      body: text.substring(0, match.start).trimRight(),
+      trailingTags: tags,
+    );
   }
   return (body: text, trailingTags: const []);
 }

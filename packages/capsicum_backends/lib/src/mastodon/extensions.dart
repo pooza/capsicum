@@ -93,7 +93,8 @@ Post? _parseQuote(Object? quoteRaw, String localHost) {
   // Mastodon latest: quote is { "state": "accepted", "quoted_status": {...} }
   final state = quoteRaw['state'] as String?;
   if (state != null && state != 'accepted') return null;
-  final quote = (quoteRaw['quoted_status'] as Map<String, dynamic>?) ?? quoteRaw;
+  final quote =
+      (quoteRaw['quoted_status'] as Map<String, dynamic>?) ?? quoteRaw;
   final id = quote['id'] as String?;
   final account = quote['account'] as Map<String, dynamic>?;
   if (id == null || account == null) return null;
@@ -103,7 +104,8 @@ Post? _parseQuote(Object? quoteRaw, String localHost) {
   final emojis = account['emojis'] as List<dynamic>? ?? [];
   return Post(
     id: id,
-    postedAt: DateTime.tryParse(quote['created_at'] as String? ?? '') ??
+    postedAt:
+        DateTime.tryParse(quote['created_at'] as String? ?? '') ??
         DateTime.now(),
     author: User(
       id: account['id'] as String? ?? '',
@@ -122,14 +124,16 @@ Post? _parseQuote(Object? quoteRaw, String localHost) {
       },
     ),
     content: quote['content'] as String? ?? '',
-    scope: mastodonVisibilityRosetta[quote['visibility'] as String?] ??
+    scope:
+        mastodonVisibilityRosetta[quote['visibility'] as String?] ??
         PostScope.public,
     attachments: ((quote['media_attachments'] as List<dynamic>?) ?? [])
         .whereType<Map<String, dynamic>>()
         .map(
           (a) => Attachment(
             id: a['id'] as String? ?? '',
-            type: mastodonAttachmentTypeMap[a['type'] as String?] ??
+            type:
+                mastodonAttachmentTypeMap[a['type'] as String?] ??
                 AttachmentType.unknown,
             url: a['url'] as String? ?? '',
             previewUrl: a['preview_url'] as String?,
