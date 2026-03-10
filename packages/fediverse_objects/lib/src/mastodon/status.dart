@@ -29,6 +29,7 @@ class MastodonStatus {
   final List<Map<String, dynamic>>? filtered;
   final Map<String, dynamic>? card;
   final Map<String, dynamic>? poll;
+  final int? quotesCount;
 
   const MastodonStatus({
     required this.id,
@@ -52,6 +53,7 @@ class MastodonStatus {
     this.filtered,
     this.card,
     this.poll,
+    this.quotesCount,
   });
 
   factory MastodonStatus.fromJson(Map<String, dynamic> json) =>

@@ -99,6 +99,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           favouriteCount: p.favouriteCount,
           reblogCount: p.reblogCount,
           replyCount: p.replyCount,
+          quoteCount: p.quoteCount,
           favourited: p.favourited,
           reblogged: p.reblogged,
           bookmarked: p.bookmarked,
