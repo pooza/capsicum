@@ -60,14 +60,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  Future<void> switchAccount(Account account) async {
-    final storage = ref.read(accountStorageProvider);
-    await storage.touchAccount(account.key.toStorageKey());
+  void switchAccount(Account account) {
     final reordered = [
       account,
       ...state.accounts.where((a) => a.key != account.key),
     ];
     state = AccountManagerState(accounts: reordered, current: account);
+
+    // Persist MRU order in background (failure is non-fatal).
+    final storage = ref.read(accountStorageProvider);
+    storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
   }
 
   Future<void> logout(Account account) async {
