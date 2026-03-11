@@ -58,3 +58,6 @@ coverage/
 # Android signing
 **/android/key.properties
 **/android/*.jks
+
+# Claude Code
+.claude/
