@@ -4,9 +4,24 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 
+import 'dart:developer' as developer;
+
 import 'client.dart';
 import 'extensions.dart';
 import 'streaming.dart';
+
+/// Convert a list of items, skipping any that throw during conversion.
+List<T> _safeConvert<S, T>(List<S> items, T Function(S) convert) {
+  final results = <T>[];
+  for (final item in items) {
+    try {
+      results.add(convert(item));
+    } catch (e) {
+      developer.log('skipping item during conversion: $e', name: 'capsicum');
+    }
+  }
+  return results;
+}
 
 class MisskeyCapabilities extends AdapterCapabilities {
   @override
@@ -115,7 +130,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
     final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
-    return notes.map((n) => n.toCapsicum(host)).toList();
+    return _safeConvert(notes, (n) => n.toCapsicum(host));
   }
 
   @override
@@ -379,7 +394,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return notes.map((n) => n.toCapsicum(host)).toList();
+    return _safeConvert(notes, (n) => n.toCapsicum(host));
   }
 
   // AnnouncementSupport
@@ -472,7 +487,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return notifications.map((n) => n.toCapsicum(host)).toList();
+    return _safeConvert(notifications, (n) => n.toCapsicum(host));
   }
 
   @override

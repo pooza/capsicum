@@ -3,9 +3,24 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 
+import 'dart:developer' as developer;
+
 import 'client.dart';
 import 'extensions.dart';
 import 'streaming.dart';
+
+/// Convert a list of items, skipping any that throw during conversion.
+List<T> _safeConvertPosts<S, T>(List<S> items, T Function(S) convert) {
+  final results = <T>[];
+  for (final item in items) {
+    try {
+      results.add(convert(item));
+    } catch (e) {
+      developer.log('skipping item during conversion: $e', name: 'capsicum');
+    }
+  }
+  return results;
+}
 
 class MastodonCapabilities extends AdapterCapabilities {
   @override
@@ -94,7 +109,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       maxId: maxId,
       limit: 20,
     );
-    return statuses.map((s) => s.toCapsicum(host)).toList();
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
   @override
@@ -141,7 +156,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    return statuses.map((s) => s.toCapsicum(host)).toList();
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
   @override
@@ -297,7 +312,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return statuses.map((s) => s.toCapsicum(host)).toList();
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
   // AnnouncementSupport
@@ -440,7 +455,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return statuses.map((s) => s.toCapsicum(host)).toList();
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
   @override
@@ -468,7 +483,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return statuses.map((s) => s.toCapsicum(host)).toList();
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
   // PollSupport
