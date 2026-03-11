@@ -10,6 +10,12 @@ abstract mixin class FollowSupport {
   Future<void> unmuteUser(String id);
   Future<void> blockUser(String id);
   Future<void> unblockUser(String id);
-  Future<List<User>> getFollowers(String userId, {TimelineQuery? query});
-  Future<List<User>> getFollowing(String userId, {TimelineQuery? query});
+  Future<({List<User> users, String? nextCursor})> getFollowers(
+    String userId, {
+    TimelineQuery? query,
+  });
+  Future<({List<User> users, String? nextCursor})> getFollowing(
+    String userId, {
+    TimelineQuery? query,
+  });
 }

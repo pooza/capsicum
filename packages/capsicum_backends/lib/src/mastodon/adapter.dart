@@ -346,23 +346,35 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> unblockUser(String id) => client.unblockAccount(id);
 
   @override
-  Future<List<User>> getFollowers(String userId, {TimelineQuery? query}) async {
-    final accounts = await client.getAccountFollowers(
+  Future<({List<User> users, String? nextCursor})> getFollowers(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getAccountFollowers(
       userId,
       maxId: query?.maxId,
       limit: query?.limit,
     );
-    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+    return (
+      users: result.accounts.map((a) => a.toCapsicum(client.host)).toList(),
+      nextCursor: result.nextMaxId,
+    );
   }
 
   @override
-  Future<List<User>> getFollowing(String userId, {TimelineQuery? query}) async {
-    final accounts = await client.getAccountFollowing(
+  Future<({List<User> users, String? nextCursor})> getFollowing(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getAccountFollowing(
       userId,
       maxId: query?.maxId,
       limit: query?.limit,
     );
-    return accounts.map((a) => a.toCapsicum(client.host)).toList();
+    return (
+      users: result.accounts.map((a) => a.toCapsicum(client.host)).toList(),
+      nextCursor: result.nextMaxId,
+    );
   }
 
   // NotificationSupport

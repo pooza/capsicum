@@ -86,7 +86,8 @@ class MastodonClient {
   }
 
   /// GET /api/v1/accounts/:id/followers
-  Future<List<MastodonAccount>> getAccountFollowers(
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})>
+      getAccountFollowers(
     String id, {
     String? maxId,
     int? limit,
@@ -95,13 +96,15 @@ class MastodonClient {
       '/api/v1/accounts/$id/followers',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},
     );
-    return (response.data as List)
+    final accounts = (response.data as List)
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
   /// GET /api/v1/accounts/:id/following
-  Future<List<MastodonAccount>> getAccountFollowing(
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})>
+      getAccountFollowing(
     String id, {
     String? maxId,
     int? limit,
@@ -110,9 +113,20 @@ class MastodonClient {
       '/api/v1/accounts/$id/following',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},
     );
-    return (response.data as List)
+    final accounts = (response.data as List)
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
         .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
+  /// Parse the Link header to extract max_id from rel="next".
+  static String? _parseLinkNextMaxId(dynamic response) {
+    final link = response.headers.value('link');
+    if (link == null) return null;
+    final nextMatch = RegExp(
+      r'<[^>]*[?&]max_id=([^&>]+)[^>]*>;\s*rel="next"',
+    ).firstMatch(link);
+    return nextMatch?.group(1);
   }
 
   /// GET /api/v1/accounts/relationships
