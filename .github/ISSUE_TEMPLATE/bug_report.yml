@@ -1,0 +1,63 @@
+name: バグ報告
+description: 不具合・意図しない動作の報告
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何が起きているかを簡潔に
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: どうすれば再現できるか
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+    validations:
+      required: false
+  - type: dropdown
+    id: platform
+    attributes:
+      label: プラットフォーム
+      options:
+        - Android
+        - iOS
+        - 両方
+        - 未確認
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: サーバーソフトウェア
+      options:
+        - Mastodon
+        - Misskey
+        - 両方
+        - 未確認
+    validations:
+      required: true
+  - type: input
+    id: server_name
+    attributes:
+      label: サーバー名
+      description: 再現したサーバー（例: precure.ml）
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: 補足
+      description: スクリーンショット、ログ、その他気づいたことなど
+    validations:
+      required: false
