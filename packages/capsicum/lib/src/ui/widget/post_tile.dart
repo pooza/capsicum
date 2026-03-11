@@ -963,12 +963,20 @@ class _ReactionChips extends StatelessWidget {
                 if (emojiUrl != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Image.network(
-                      emojiUrl,
-                      width: 18,
-                      height: 18,
-                      errorBuilder: (_, _, _) =>
-                          Text(entry.key, style: const TextStyle(fontSize: 14)),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: 18,
+                        maxWidth: 54,
+                      ),
+                      child: Image.network(
+                        emojiUrl,
+                        height: 18,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
                     ),
                   )
                 else
