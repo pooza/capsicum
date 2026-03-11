@@ -537,8 +537,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     icon: const Icon(Icons.live_tv),
                     tooltip: '実況',
                   ),
-                if (ref.watch(currentMulukhiyaProvider)?.annictEnabled ==
-                    true)
+                if (ref.watch(currentMulukhiyaProvider)?.annictEnabled == true)
                   IconButton(
                     onPressed: _sending ? null : _openEpisodeBrowser,
                     icon: const Icon(Icons.video_library),
