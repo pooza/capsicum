@@ -872,22 +872,30 @@ class _RubyWidget extends StatelessWidget {
   final trailingTags = <String>[];
   var bodyHtml = html;
 
+  // Mastodon native: <a class="...hashtag..." href="...">#<span>tag</span></a>
+  // Misskey federated: <a href="...">#tag</a> (no class="hashtag")
   final trailingTagBlock = RegExp(
-    r'<p>\s*((<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>\s*)+)</p>\s*$',
+    r'<p>\s*((<a[^>]*>.*?</a>\s*)+)</p>\s*$',
     caseSensitive: false,
   );
   final blockMatch = trailingTagBlock.firstMatch(bodyHtml);
   if (blockMatch != null) {
     final tagBlockHtml = blockMatch.group(1)!;
-    final withoutTags = tagBlockHtml
-        .replaceAll(
-          RegExp(r'<a[^>]*class="[^"]*hashtag[^"]*"[^>]*>.*?</a>'),
-          '',
-        )
+    // Check that ALL <a> tags in the block are hashtag links.
+    final allAnchors = RegExp(r'<a[^>]*>(.*?)</a>');
+    final anchors = allAnchors.allMatches(tagBlockHtml).toList();
+    final hashtagAnchor = RegExp(
+      r'<a[^>]*>#(?:<span>)?([^<]+)(?:</span>)?</a>',
+    );
+    final hashMatches = hashtagAnchor.allMatches(tagBlockHtml).toList();
+    // Verify that every anchor is a hashtag anchor.
+    final withoutAnchors = tagBlockHtml
+        .replaceAll(allAnchors, '')
         .trim();
-    if (withoutTags.isEmpty) {
-      final tagPattern = RegExp(r'#<span>([^<]+)</span>');
-      for (final m in tagPattern.allMatches(tagBlockHtml)) {
+    if (withoutAnchors.isEmpty &&
+        anchors.length == hashMatches.length &&
+        hashMatches.isNotEmpty) {
+      for (final m in hashMatches) {
         trailingTags.add(m.group(1)!);
       }
       bodyHtml = bodyHtml.substring(0, blockMatch.start).trimRight();
