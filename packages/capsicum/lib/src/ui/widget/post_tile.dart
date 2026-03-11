@@ -1434,9 +1434,15 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
 
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
     if (images.length == 1) {
-      return SizedBox(
-        height: 200,
-        child: _buildThumbnail(context, images.first, 0, images),
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 400),
+        child: _buildThumbnail(
+          context,
+          images.first,
+          0,
+          images,
+          fit: BoxFit.contain,
+        ),
       );
     }
 
@@ -1518,8 +1524,9 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     BuildContext context,
     Attachment attachment,
     int index,
-    List<Attachment> images,
-  ) {
+    List<Attachment> images, {
+    BoxFit fit = BoxFit.cover,
+  }) {
     final imageUrl = attachment.previewUrl ?? attachment.url;
     final isSensitive = widget.sensitive && !_revealed;
 
@@ -1545,7 +1552,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   : ImageFilter.matrix(Matrix4.identity().storage),
               child: Image.network(
                 imageUrl,
-                fit: BoxFit.cover,
+                fit: fit,
                 errorBuilder: (_, _, _) => Container(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.broken_image_outlined),
