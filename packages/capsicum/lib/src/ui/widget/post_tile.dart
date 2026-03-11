@@ -990,9 +990,11 @@ class _ReactionChips extends StatelessWidget {
     );
   }
 
-  /// Add emoji variation selector (U+FE0F) to ensure color emoji rendering.
+  /// Add emoji variation selector (U+FE0F) for BMP characters like ❤ (U+2764).
+  /// Supplementary plane emoji (🧘 etc.) already have emoji presentation.
   static String _ensureEmojiPresentation(String s) {
-    if (s.length <= 2 && !s.contains('\uFE0F')) {
+    final runes = s.runes.toList();
+    if (runes.length == 1 && runes[0] < 0x10000 && !s.contains('\uFE0F')) {
       return '$s\uFE0F';
     }
     return s;
