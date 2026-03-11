@@ -53,12 +53,15 @@ class EmojiText extends StatelessWidget {
         spans.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: Image.network(
-              url,
-              width: 20,
-              height: 20,
-              errorBuilder: (_, _, _) =>
-                  Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 20, maxWidth: 60),
+              child: Image.network(
+                url,
+                height: 20,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) =>
+                    Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
+              ),
             ),
           ),
         );

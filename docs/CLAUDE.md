@@ -238,6 +238,13 @@ capsicum/
 - スレッド遷移時の CW・長文展開状態維持
 - モロヘイヤ連携: features フラグ解析（`/about` の `config.features` から Annict 有効判定）
 - モロヘイヤ連携: エピソードブラウザ（Annict 作品検索・エピソード一覧・タグセット投稿連携）+ Annict OAuth（OOB 方式）
+- WebSocket 接続エラー（`ready` Future の未処理例外）のハンドリング追加（Mastodon / Misskey）
+- Mastodon 引用投稿の `quoted_status` パース修正
+- お知らせ本文の MFM / HTML レンダリング対応（`isHtml` フラグ追加）
+- 通知ヘッダーのアカウント名カスタム絵文字に `fallbackHost` を追加
+- 横長カスタム絵文字の `ConstrainedBox` 対応（投稿本文・リアクションチップ・絵文字ピッカー）
+- アカウント切替時の MRU 順並び替え（ドロワー最上位 + 永続化）
+- リリースノートに「既知の不具合」セクションを設ける運用を開始
 
 ### リリース計画
 

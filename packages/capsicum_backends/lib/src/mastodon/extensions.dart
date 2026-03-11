@@ -91,11 +91,19 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
 Post? _parseQuote(Object? quoteRaw, String localHost) {
   if (quoteRaw == null) return null;
   if (quoteRaw is! Map<String, dynamic>) return null;
-  // Mastodon latest: quote is { "state": "accepted", "quoted_status": {...} }
-  final state = quoteRaw['state'] as String?;
-  if (state != null && state != 'accepted') return null;
-  final quote =
-      (quoteRaw['quoted_status'] as Map<String, dynamic>?) ?? quoteRaw;
+  // Mastodon latest: quote is { "state": "...", "quoted_status": {...} }
+  // Use quoted_status if present (regardless of state — "pending" also has data).
+  // If the object has a "state" key but no "quoted_status", the quote is unavailable.
+  // Otherwise treat quoteRaw itself as a status object (older format fallback).
+  final Map<String, dynamic>? quote;
+  if (quoteRaw.containsKey('quoted_status')) {
+    quote = quoteRaw['quoted_status'] as Map<String, dynamic>?;
+  } else if (quoteRaw.containsKey('state')) {
+    return null;
+  } else {
+    quote = quoteRaw;
+  }
+  if (quote == null) return null;
   final id = quote['id'] as String?;
   final account = quote['account'] as Map<String, dynamic>?;
   if (id == null || account == null) return null;
@@ -237,9 +245,10 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
   Announcement toCapsicum() {
     return Announcement(
       id: id,
-      content: _stripHtml(content),
+      content: content,
       publishedAt: publishedAt,
       read: read,
+      isHtml: true,
     );
   }
 }
@@ -256,29 +265,6 @@ Map<String, String> _extractHtmlCustomEmojis(String html) {
     }
   }
   return map;
-}
-
-String _stripHtml(String html) {
-  var text = html
-      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-      .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-      .replaceAll(RegExp(r'<[^>]*>'), '');
-  text = text
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'")
-      .replaceAllMapped(
-        RegExp(r'&#(\d+);'),
-        (m) => String.fromCharCode(int.parse(m[1]!)),
-      )
-      .replaceAllMapped(
-        RegExp(r'&#x([0-9a-fA-F]+);'),
-        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-      );
-  return text;
 }
 
 extension CapsicumMastodonListExtension on MastodonList {

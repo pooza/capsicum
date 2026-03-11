@@ -60,8 +60,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  void switchAccount(Account account) {
-    state = state.copyWith(current: account);
+  Future<void> switchAccount(Account account) async {
+    final storage = ref.read(accountStorageProvider);
+    await storage.touchAccount(account.key.toStorageKey());
+    final reordered = [
+      account,
+      ...state.accounts.where((a) => a.key != account.key),
+    ];
+    state = AccountManagerState(accounts: reordered, current: account);
   }
 
   Future<void> logout(Account account) async {

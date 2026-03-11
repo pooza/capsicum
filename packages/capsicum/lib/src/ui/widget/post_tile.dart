@@ -963,12 +963,20 @@ class _ReactionChips extends StatelessWidget {
                 if (emojiUrl != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Image.network(
-                      emojiUrl,
-                      width: 18,
-                      height: 18,
-                      errorBuilder: (_, _, _) =>
-                          Text(entry.key, style: const TextStyle(fontSize: 14)),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: 18,
+                        maxWidth: 54,
+                      ),
+                      child: Image.network(
+                        emojiUrl,
+                        height: 18,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
                     ),
                   )
                 else
@@ -1434,9 +1442,15 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
 
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
     if (images.length == 1) {
-      return SizedBox(
-        height: 200,
-        child: _buildThumbnail(context, images.first, 0, images),
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 400),
+        child: _buildThumbnail(
+          context,
+          images.first,
+          0,
+          images,
+          fit: BoxFit.contain,
+        ),
       );
     }
 
@@ -1518,8 +1532,9 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     BuildContext context,
     Attachment attachment,
     int index,
-    List<Attachment> images,
-  ) {
+    List<Attachment> images, {
+    BoxFit fit = BoxFit.cover,
+  }) {
     final imageUrl = attachment.previewUrl ?? attachment.url;
     final isSensitive = widget.sensitive && !_revealed;
 
@@ -1545,7 +1560,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   : ImageFilter.matrix(Matrix4.identity().storage),
               child: Image.network(
                 imageUrl,
-                fit: BoxFit.cover,
+                fit: fit,
                 errorBuilder: (_, _, _) => Container(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.broken_image_outlined),

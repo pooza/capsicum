@@ -253,12 +253,18 @@ class _EmojiPickerState extends State<EmojiPicker>
                       message: ':${emoji.shortcode}:',
                       child: Padding(
                         padding: const EdgeInsets.all(4),
-                        child: Image.network(
-                          emoji.url,
-                          width: 32,
-                          height: 32,
-                          errorBuilder: (_, _, _) =>
-                              const Icon(Icons.broken_image, size: 32),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxHeight: 32,
+                            maxWidth: 96,
+                          ),
+                          child: Image.network(
+                            emoji.url,
+                            height: 32,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.broken_image, size: 32),
+                          ),
                         ),
                       ),
                     ),

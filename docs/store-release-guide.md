@@ -125,10 +125,17 @@ end
 
 ## 4. リリース手順（毎回）
 
-### 4.1 バージョン更新
+### 4.1 バージョン更新・依存関係の更新
 
 ```bash
 # pubspec.yaml の version を更新（例: 1.0.0+1 → 1.0.1+2）
+
+# 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
+cd packages/capsicum
+flutter pub upgrade
+
+# メジャーバージョンアップも含める場合（pubspec.yaml の制約も更新される）
+flutter pub upgrade --major-versions
 ```
 
 ### 4.2 ビルド + アップロード
