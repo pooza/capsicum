@@ -4,6 +4,31 @@ import 'package:dio/dio.dart';
 
 import 'backend_type.dart';
 
+const _mastodonForks = {
+  'mastodon',
+  'fedibird',
+  'hometown',
+  'glitch-soc',
+  'kmyblue',
+};
+
+const _misskeyForks = {
+  'misskey',
+  'firefish',
+  'sharkey',
+  'foundkey',
+  'catodon',
+  'cherrypick',
+  'iceshrimp',
+};
+
+BackendType? _detectBackendType(String? name) {
+  if (name == null) return null;
+  if (_mastodonForks.contains(name)) return BackendType.mastodon;
+  if (_misskeyForks.contains(name)) return BackendType.misskey;
+  return null;
+}
+
 class InstanceProbe {
   final BackendType type;
   final String? softwareVersion;
@@ -50,17 +75,9 @@ Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
 
     final name = (software['name'] as String?)?.toLowerCase();
     final version = software['version'] as String?;
-    return switch (name) {
-      'mastodon' => InstanceProbe(
-        type: BackendType.mastodon,
-        softwareVersion: version,
-      ),
-      'misskey' => InstanceProbe(
-        type: BackendType.misskey,
-        softwareVersion: version,
-      ),
-      _ => null,
-    };
+    final type = _detectBackendType(name);
+    if (type == null) return null;
+    return InstanceProbe(type: type, softwareVersion: version);
   } on DioException catch (e) {
     throw Exception('サーバーに接続できません: ${e.message}');
   }
