@@ -1,14 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  const dsn = String.fromEnvironment('SENTRY_DSN');
+
+  if (dsn.isNotEmpty) {
+    await SentryFlutter.init((options) {
+      options.dsn = dsn;
+      options.tracesSampleRate = 1.0;
+      options.environment = const String.fromEnvironment(
+        'SENTRY_ENV',
+        defaultValue: 'debug',
+      );
+    }, appRunner: () => _startApp());
+  } else {
+    _startApp();
+  }
+}
+
+void _startApp() {
   runApp(const ProviderScope(child: CapsicumApp()));
 
   // Initialize notifications after the widget tree is built so that

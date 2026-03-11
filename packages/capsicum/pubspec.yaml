@@ -33,6 +33,7 @@ dependencies:
   image_picker: ^1.2.1
   video_player: ^2.11.0
   package_info_plus: ^8.3.0
+  sentry_flutter: ^9.14.0
 
 dev_dependencies:
   flutter_test:
