@@ -134,11 +134,19 @@ end
 ### 4.2 ビルド + アップロード
 
 ```bash
-# Android
-cd android && fastlane internal
+# Sentry DSN（全ビルドで常に指定する）
+SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
 
 # iOS
+flutter build ipa --release \
+  --dart-define=SENTRY_DSN=$SENTRY_DSN \
+  --dart-define=SENTRY_ENV=production
 cd ios && fastlane beta
+
+# Android
+flutter build apk --release \
+  --dart-define=SENTRY_DSN=$SENTRY_DSN \
+  --dart-define=SENTRY_ENV=production
 ```
 
 ### 4.3 ストアでの確認
