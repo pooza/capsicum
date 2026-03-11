@@ -974,16 +974,12 @@ class _ReactionChips extends StatelessWidget {
                 else
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Text(
-                      // Ensure emoji presentation (e.g. ❤ → ❤️)
-                      _ensureEmojiPresentation(entry.key),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontFamilyFallback: [
-                          'Apple Color Emoji',
-                          'Noto Color Emoji',
-                        ],
-                      ),
+                    child: Image.network(
+                      _twemojiUrl(entry.key),
+                      width: 18,
+                      height: 18,
+                      errorBuilder: (_, _, _) =>
+                          Text(entry.key, style: const TextStyle(fontSize: 14)),
                     ),
                   ),
                 Text('${entry.value}', style: theme.textTheme.labelSmall),
@@ -996,14 +992,13 @@ class _ReactionChips extends StatelessWidget {
     );
   }
 
-  /// Add emoji variation selector (U+FE0F) for BMP characters like ❤ (U+2764).
-  /// Supplementary plane emoji (🧘 etc.) already have emoji presentation.
-  static String _ensureEmojiPresentation(String s) {
-    final runes = s.runes.toList();
-    if (runes.length == 1 && runes[0] < 0x10000 && !s.contains('\uFE0F')) {
-      return '$s\uFE0F';
-    }
-    return s;
+  /// Build Twemoji CDN URL from a Unicode emoji string.
+  static String _twemojiUrl(String emoji) {
+    final codepoints = emoji.runes
+        .where((r) => r != 0xFE0F) // strip variation selectors
+        .map((r) => r.toRadixString(16))
+        .join('-');
+    return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png';
   }
 }
 
