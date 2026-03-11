@@ -37,6 +37,15 @@ class AccountStorage {
     return List<String>.from(jsonDecode(raw) as List);
   }
 
+  /// Move an account key to the front of the list (MRU tracking).
+  Future<void> touchAccount(String accountKey) async {
+    final list = await getAccountKeys();
+    if (!list.contains(accountKey)) return;
+    list.remove(accountKey);
+    list.insert(0, accountKey);
+    await _storage.write(key: _accountListKey, value: jsonEncode(list));
+  }
+
   /// Remove an account.
   Future<void> removeAccount(String accountKey) async {
     await _storage.delete(key: 'secret_$accountKey');
