@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:developer' as developer;
-
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account_manager_provider.dart';
 
@@ -154,10 +153,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       );
     } catch (e, st) {
       final failedMaxId = current.posts.lastOrNull?.id;
-      developer.log(
-        'Timeline loadMore error after maxId=$failedMaxId',
-        error: e,
+      Sentry.captureException(
+        e,
         stackTrace: st,
+        hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
       );
       state = AsyncData(current.copyWith(isLoadingMore: false));
     }
