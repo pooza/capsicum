@@ -933,15 +933,17 @@ class _ReactionChips extends StatelessWidget {
               post.reactionEmojis[strippedKey] ?? post.reactionEmojis[nameOnly];
           // Fallback: construct URL from Misskey emoji endpoint.
           if (emojiUrl == null && isCustomEmoji) {
-            // Extract host from reaction key (e.g. "name@remote.host"),
-            // fall back to post author's host.
+            // Extract host from reaction key (e.g. "name@remote.host").
+            // "@." means local server → use emojiHost (logged-in server).
             final atIndex = strippedKey.indexOf('@');
-            final emojiHost = atIndex >= 0
-                ? strippedKey.substring(atIndex + 1).replaceAll('.', '') ==
-                          '' // "@." case
-                      ? post.author.host
-                      : strippedKey.substring(atIndex + 1)
-                : post.author.host;
+            final hostPart = atIndex >= 0
+                ? strippedKey.substring(atIndex + 1)
+                : null;
+            final isLocal =
+                hostPart == null || hostPart == '.' || hostPart.isEmpty;
+            final emojiHost = isLocal
+                ? (post.emojiHost ?? post.author.host)
+                : hostPart;
             if (emojiHost != null) {
               emojiUrl = 'https://$emojiHost/emoji/$nameOnly.webp';
             }
@@ -973,8 +975,9 @@ class _ReactionChips extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: Text(
-                      entry.key,
-                      style: const TextStyle(fontSize: 14),
+                      // Ensure emoji presentation (e.g. ❤ → ❤️)
+                      _ensureEmojiPresentation(entry.key),
+                      style: const TextStyle(fontSize: 18),
                     ),
                   ),
                 Text('${entry.value}', style: theme.textTheme.labelSmall),
@@ -985,6 +988,14 @@ class _ReactionChips extends StatelessWidget {
         }).toList(),
       ),
     );
+  }
+
+  /// Add emoji variation selector (U+FE0F) to ensure color emoji rendering.
+  static String _ensureEmojiPresentation(String s) {
+    if (s.length <= 2 && !s.contains('\uFE0F')) {
+      return '$s\uFE0F';
+    }
+    return s;
   }
 }
 
