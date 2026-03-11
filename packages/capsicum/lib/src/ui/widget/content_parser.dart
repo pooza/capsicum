@@ -766,13 +766,16 @@ class ContentRenderer {
           return [
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
-              child: Image.network(
-                emojiUrl,
-                width: 20,
-                height: 20,
-                errorBuilder: (_, _, _) => Text(
-                  ':${node.text}:',
-                  style: const TextStyle(fontSize: 14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 20, maxWidth: 60),
+                child: Image.network(
+                  emojiUrl,
+                  height: 20,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => Text(
+                    ':${node.text}:',
+                    style: const TextStyle(fontSize: 14),
+                  ),
                 ),
               ),
             ),
