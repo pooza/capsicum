@@ -210,9 +210,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   }
 
   Future<void> _openEpisodeBrowser() async {
-    final commandToot = await context.push<String>('/episodes');
-    if (commandToot != null && mounted) {
-      _controller.text = commandToot;
+    final result = await context.push<String>('/episodes');
+    if (result != null && mounted) {
+      _controller.text = result;
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
@@ -228,6 +228,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       builder: (sheetContext) {
         return _TagsetSheet(
           mulukhiya: mulukhiya,
+          annictEnabled: mulukhiya.annictEnabled,
           onSelect: (program) {
             Navigator.pop(sheetContext);
             _insertTagsetYaml(program);
@@ -235,6 +236,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           onClear: () {
             Navigator.pop(sheetContext);
             _insertTagsetYaml(null);
+          },
+          onEpisodeBrowser: () {
+            Navigator.pop(sheetContext);
+            _openEpisodeBrowser();
           },
           onReload: () async {
             try {
@@ -537,12 +542,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     icon: const Icon(Icons.live_tv),
                     tooltip: '実況',
                   ),
-                if (ref.watch(currentMulukhiyaProvider)?.annictEnabled == true)
-                  IconButton(
-                    onPressed: _sending ? null : _openEpisodeBrowser,
-                    icon: const Icon(Icons.video_library),
-                    tooltip: 'エピソード',
-                  ),
               ],
             ),
             Row(
@@ -662,14 +661,18 @@ class _ReplyPreview extends StatelessWidget {
 
 class _TagsetSheet extends StatefulWidget {
   final MulukhiyaService mulukhiya;
+  final bool annictEnabled;
   final void Function(MulukhiyaProgram program) onSelect;
   final VoidCallback onClear;
+  final VoidCallback? onEpisodeBrowser;
   final VoidCallback onReload;
 
   const _TagsetSheet({
     required this.mulukhiya,
+    this.annictEnabled = false,
     required this.onSelect,
     required this.onClear,
+    this.onEpisodeBrowser,
     required this.onReload,
   });
 
@@ -768,6 +771,12 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         subtitle: Text(_programSublabel(entry.value)),
                         onTap: () => widget.onSelect(entry.value),
                       ),
+                  if (widget.annictEnabled && widget.onEpisodeBrowser != null)
+                    ListTile(
+                      leading: const Icon(Icons.video_library),
+                      title: const Text('エピソードブラウザ'),
+                      onTap: widget.onEpisodeBrowser,
+                    ),
                   const Divider(),
                   ListTile(
                     leading: const Icon(Icons.refresh),

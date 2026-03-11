@@ -1,11 +1,13 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../provider/account_manager_provider.dart';
 
 /// Screen for browsing Annict works and episodes.
-/// Returns the selected episode's command_toot YAML via Navigator.pop().
+/// Returns the selected episode's command_toot via context.pop().
 class EpisodeBrowserScreen extends ConsumerStatefulWidget {
   const EpisodeBrowserScreen({super.key});
 
@@ -20,10 +22,15 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
   bool _loading = false;
   String? _error;
 
+  // Episode list state (null = showing works list)
+  AnnictWork? _selectedWork;
+  List<AnnictEpisode>? _episodes;
+  bool _episodesLoading = false;
+  String? _episodesError;
+
   @override
   void initState() {
     super.initState();
-    // Load default works on open.
     _searchWorks();
   }
 
@@ -167,23 +174,44 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     }
   }
 
-  void _showEpisodes(AnnictWork work) {
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute<String>(
-            builder: (_) =>
-                _EpisodeListScreen(mulukhiya: _mulukhiya!, work: work),
-          ),
-        )
-        .then((commandToot) {
-          if (commandToot != null && mounted) {
-            Navigator.pop(context, commandToot);
-          }
-        });
+  Future<void> _selectWork(AnnictWork work) async {
+    final mulukhiya = _mulukhiya;
+    if (mulukhiya == null) return;
+
+    setState(() {
+      _selectedWork = work;
+      _episodesLoading = true;
+      _episodesError = null;
+    });
+
+    try {
+      final episodes = await mulukhiya.getEpisodes(work.annictId);
+      if (mounted) setState(() => _episodes = episodes);
+    } catch (e) {
+      debugPrint('Episode load error: $e');
+      if (mounted) setState(() => _episodesError = 'エピソードの取得に失敗しました');
+    } finally {
+      if (mounted) setState(() => _episodesLoading = false);
+    }
+  }
+
+  void _backToWorks() {
+    setState(() {
+      _selectedWork = null;
+      _episodes = null;
+      _episodesError = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedWork != null) {
+      return _buildEpisodeView();
+    }
+    return _buildWorksView();
+  }
+
+  Widget _buildWorksView() {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -203,11 +231,11 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildWorksBody(),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildWorksBody() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -258,76 +286,56 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
               ? Text('${work.seasonYear}年')
               : null,
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showEpisodes(work),
+          onTap: () => _selectWork(work),
         );
       },
     );
   }
-}
 
-class _EpisodeListScreen extends StatefulWidget {
-  final MulukhiyaService mulukhiya;
-  final AnnictWork work;
-
-  const _EpisodeListScreen({required this.mulukhiya, required this.work});
-
-  @override
-  State<_EpisodeListScreen> createState() => _EpisodeListScreenState();
-}
-
-class _EpisodeListScreenState extends State<_EpisodeListScreen> {
-  List<AnnictEpisode>? _episodes;
-  bool _loading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadEpisodes();
-  }
-
-  Future<void> _loadEpisodes() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final episodes = await widget.mulukhiya.getEpisodes(widget.work.annictId);
-      if (mounted) setState(() => _episodes = episodes);
-    } catch (e) {
-      debugPrint('Episode load error: $e');
-      if (mounted) setState(() => _error = 'エピソードの取得に失敗しました');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildEpisodeView() {
+    final work = _selectedWork!;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.work.title),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _backToWorks,
+        ),
+        title: Text(work.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.copy),
+            tooltip: '番組名をコピー',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: work.title));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('番組名をコピーしました')),
+              );
+            },
+          ),
+        ],
       ),
-      body: _buildBody(),
+      body: _buildEpisodesBody(),
     );
   }
 
-  Widget _buildBody() {
-    if (_loading) {
+  Widget _buildEpisodesBody() {
+    if (_episodesLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null) {
+    if (_episodesError != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_error!, textAlign: TextAlign.center),
+              Text(_episodesError!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _loadEpisodes, child: const Text('再試行')),
+              FilledButton(
+                onPressed: () => _selectWork(_selectedWork!),
+                child: const Text('再試行'),
+              ),
             ],
           ),
         ),
@@ -350,9 +358,34 @@ class _EpisodeListScreenState extends State<_EpisodeListScreen> {
         return ListTile(
           leading: const Icon(Icons.play_circle_outline),
           title: Text(subtitle.isNotEmpty ? subtitle : 'エピソード ${ep.annictId}'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (ep.title != null)
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 20),
+                  tooltip: 'サブタイトルをコピー',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: ep.title!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('サブタイトルをコピーしました')),
+                    );
+                  },
+                ),
+              if (ep.hashtag != null)
+                IconButton(
+                  icon: const Icon(Icons.tag, size: 20),
+                  tooltip: 'ハッシュタグTL',
+                  onPressed: () {
+                    final tag = ep.hashtag!.replaceFirst('#', '');
+                    context.push('/hashtag/$tag');
+                  },
+                ),
+            ],
+          ),
           onTap: () {
             if (ep.commandToot != null) {
-              Navigator.pop(context, ep.commandToot);
+              context.pop(ep.commandToot);
             }
           },
         );

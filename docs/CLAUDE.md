@@ -86,6 +86,14 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 - Misskey adapter は `FavoriteSupport` mixin を持たない（リアクション対応時に吸収）
 - Misskey 判定は `adapter is ReactionSupport` で行う
 
+### go_router での画面間値受け渡し
+
+`context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では go_router が戻り値を握りつぶすため使用不可。`showGeneralDialog` のコールバック方式もリビルド時にコールバックが消失するため不可。
+
+### モロヘイヤ連携画面の導線
+
+エピソードブラウザはタグセット BottomSheet 内のメニュー項目として配置する（Mastodon 改造版 WebUI と同じ動線）。投稿画面のツールバーに独立したアイコンを置く方式は、ユーザーに発見されにくいため採用しない。
+
 ### プッシュ通知
 
 プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。インフラコストを抑えるため、当面はプッシュ通知を実装せず、通知一覧のポーリング表示から始める。
