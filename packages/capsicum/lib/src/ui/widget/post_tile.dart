@@ -138,9 +138,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                   if (post.reblog != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
+                      child: EmojiText(
                         '${post.author.displayName ?? post.author.username} がブースト',
+                        emojis: post.author.emojis,
                         style: Theme.of(context).textTheme.bodySmall,
+                        fallbackHost: post.emojiHost,
                       ),
                     ),
                   Row(
@@ -1237,8 +1239,9 @@ class _QuoteCard extends StatelessWidget {
                   ),
                 if (quote.author.avatarUrl != null) const SizedBox(width: 4),
                 Expanded(
-                  child: Text(
+                  child: EmojiText(
                     quote.author.displayName ?? quote.author.username,
+                    emojis: quote.author.emojis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

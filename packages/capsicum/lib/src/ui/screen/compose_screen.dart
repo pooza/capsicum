@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../widget/emoji_text.dart';
 
 class _MediaEntry {
   final XFile file;
@@ -630,8 +631,9 @@ class _ReplyPreview extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                EmojiText(
                   displayName,
+                  emojis: post.author.emojis,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
