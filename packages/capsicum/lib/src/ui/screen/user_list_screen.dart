@@ -22,6 +22,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
   static const _pageSize = 20;
   final _scrollController = ScrollController();
   List<User> _users = [];
+  String? _nextCursor;
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -49,12 +50,13 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
   Future<void> _loadInitial() async {
     final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
     try {
-      final users = await _fetch(adapter, null);
+      final result = await _fetch(adapter, null);
       if (!mounted) return;
       setState(() {
-        _users = users;
+        _users = result.users;
+        _nextCursor = result.nextCursor;
         _loading = false;
-        _hasMore = users.length >= _pageSize;
+        _hasMore = result.users.length >= _pageSize;
       });
     } catch (e) {
       debugPrint('UserListScreen load error: $e');
@@ -68,12 +70,13 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     setState(() => _loadingMore = true);
     final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
     try {
-      final users = await _fetch(adapter, _users.last.id);
+      final result = await _fetch(adapter, _nextCursor);
       if (!mounted) return;
       setState(() {
-        _users = [..._users, ...users];
+        _users = [..._users, ...result.users];
+        _nextCursor = result.nextCursor;
         _loadingMore = false;
-        _hasMore = users.length >= _pageSize;
+        _hasMore = result.users.length >= _pageSize;
       });
     } catch (e) {
       debugPrint('UserListScreen loadMore error: $e');
@@ -82,8 +85,11 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     }
   }
 
-  Future<List<User>> _fetch(FollowSupport adapter, String? maxId) {
-    final query = TimelineQuery(maxId: maxId, limit: _pageSize);
+  Future<({List<User> users, String? nextCursor})> _fetch(
+    FollowSupport adapter,
+    String? cursor,
+  ) {
+    final query = TimelineQuery(maxId: cursor, limit: _pageSize);
     return widget.type == UserListType.followers
         ? adapter.getFollowers(widget.user.id, query: query)
         : adapter.getFollowing(widget.user.id, query: query);
