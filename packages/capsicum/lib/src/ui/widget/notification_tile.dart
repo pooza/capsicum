@@ -34,10 +34,7 @@ class _NotificationTileState extends State<NotificationTile> {
   TextSpan _renderContent(String content, TextStyle baseStyle) {
     _contentRenderer?.dispose();
     final post = notification.post;
-    final allEmojis = {
-      ...?post?.emojis,
-      ...?post?.author.emojis,
-    };
+    final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
     final host = post?.author.host;
     _contentRenderer = ContentRenderer(
       baseStyle: baseStyle,
@@ -85,7 +82,10 @@ class _NotificationTileState extends State<NotificationTile> {
                   if (content != null) ...[
                     const SizedBox(height: 4),
                     Text.rich(
-                      _renderContent(content, theme.textTheme.bodyMedium ?? const TextStyle()),
+                      _renderContent(
+                        content,
+                        theme.textTheme.bodyMedium ?? const TextStyle(),
+                      ),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -139,6 +139,7 @@ class _NotificationTileState extends State<NotificationTile> {
                 child: EmojiText(
                   displayName,
                   emojis: user?.emojis ?? const {},
+                  fallbackHost: user?.host,
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

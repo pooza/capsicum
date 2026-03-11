@@ -58,7 +58,8 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
     final theme = Theme.of(context);
     final d = announcement.publishedAt;
     final dateStr = '${d.year}/${d.month}/${d.day}';
-    final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+    final baseStyle =
+        theme.textTheme.bodyMedium?.copyWith(
           color: announcement.read ? theme.colorScheme.outline : null,
         ) ??
         const TextStyle();
@@ -102,8 +103,9 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
               Text(
                 announcement.title!,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight:
-                      announcement.read ? FontWeight.normal : FontWeight.bold,
+                  fontWeight: announcement.read
+                      ? FontWeight.normal
+                      : FontWeight.bold,
                 ),
               ),
             ],

@@ -267,7 +267,6 @@ Map<String, String> _extractHtmlCustomEmojis(String html) {
   return map;
 }
 
-
 extension CapsicumMastodonListExtension on MastodonList {
   PostList toCapsicum() {
     return PostList(id: id, title: title);
