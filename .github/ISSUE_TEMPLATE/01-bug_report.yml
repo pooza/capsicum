@@ -14,9 +14,6 @@ body:
     attributes:
       label: 再現手順
       description: どうすれば再現できるか
-      placeholder: |
-        1. ...
-        2. ...
     validations:
       required: false
   - type: textarea
@@ -26,31 +23,10 @@ body:
       description: どうなるべきか
     validations:
       required: false
-  - type: input
-    id: platform
-    attributes:
-      label: プラットフォーム
-      description: Android / iOS / 両方 / 未確認
-    validations:
-      required: false
-  - type: input
-    id: server
-    attributes:
-      label: サーバーソフトウェア
-      description: Mastodon / Misskey / 両方 / 未確認
-    validations:
-      required: false
-  - type: input
-    id: server_name
-    attributes:
-      label: サーバー名
-      description: 再現したサーバー（例: precure.ml）
-    validations:
-      required: false
   - type: textarea
     id: extra
     attributes:
       label: 補足
-      description: スクリーンショット、ログ、その他気づいたことなど
+      description: プラットフォーム、サーバー名、スクリーンショット、ログなど
     validations:
       required: false
