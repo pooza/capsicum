@@ -95,6 +95,7 @@ extension CapsicumMisskeyAnnouncementExtension on MisskeyAnnouncement {
       imageUrl: imageUrl,
       publishedAt: createdAt,
       read: isRead,
+      isHtml: false,
     );
   }
 }

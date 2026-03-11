@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../widget/announcement_tile.dart';
 
@@ -28,6 +29,7 @@ class AnnouncementScreen extends ConsumerWidget {
                     final announcement = state.announcements[index];
                     return AnnouncementTile(
                       announcement: announcement,
+                      host: ref.read(currentAccountProvider)?.key.host,
                       onDismiss: announcement.read
                           ? null
                           : () => ref

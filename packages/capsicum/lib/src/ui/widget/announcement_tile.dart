@@ -1,21 +1,67 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class AnnouncementTile extends StatelessWidget {
+import 'content_parser.dart';
+
+class AnnouncementTile extends StatefulWidget {
   final Announcement announcement;
+  final String? host;
   final VoidCallback? onDismiss;
 
   const AnnouncementTile({
     super.key,
     required this.announcement,
+    this.host,
     this.onDismiss,
   });
+
+  @override
+  State<AnnouncementTile> createState() => _AnnouncementTileState();
+}
+
+class _AnnouncementTileState extends State<AnnouncementTile> {
+  ContentRenderer? _contentRenderer;
+
+  Announcement get announcement => widget.announcement;
+
+  @override
+  void dispose() {
+    _contentRenderer?.dispose();
+    super.dispose();
+  }
+
+  TextSpan _renderContent(String content, TextStyle baseStyle) {
+    _contentRenderer?.dispose();
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        if (widget.host != null) {
+          return 'https://${widget.host}/emoji/$shortcode.webp';
+        }
+        return null;
+      },
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+    );
+    return announcement.isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final d = announcement.publishedAt;
     final dateStr = '${d.year}/${d.month}/${d.day}';
+    final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+          color: announcement.read ? theme.colorScheme.outline : null,
+        ) ??
+        const TextStyle();
 
     return Container(
       color: announcement.read
@@ -44,8 +90,11 @@ class AnnouncementTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (!announcement.read && onDismiss != null)
-                  TextButton(onPressed: onDismiss, child: const Text('既読にする')),
+                if (!announcement.read && widget.onDismiss != null)
+                  TextButton(
+                    onPressed: widget.onDismiss,
+                    child: const Text('既読にする'),
+                  ),
               ],
             ),
             if (announcement.title != null) ...[
@@ -53,19 +102,13 @@ class AnnouncementTile extends StatelessWidget {
               Text(
                 announcement.title!,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: announcement.read
-                      ? FontWeight.normal
-                      : FontWeight.bold,
+                  fontWeight:
+                      announcement.read ? FontWeight.normal : FontWeight.bold,
                 ),
               ),
             ],
             const SizedBox(height: 4),
-            Text(
-              announcement.content,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: announcement.read ? theme.colorScheme.outline : null,
-              ),
-            ),
+            Text.rich(_renderContent(announcement.content, baseStyle)),
             if (announcement.imageUrl != null) ...[
               const SizedBox(height: 8),
               ClipRRect(

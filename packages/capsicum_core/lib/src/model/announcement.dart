@@ -5,6 +5,7 @@ class Announcement {
   final String? imageUrl;
   final DateTime publishedAt;
   final bool read;
+  final bool isHtml;
 
   const Announcement({
     required this.id,
@@ -13,6 +14,7 @@ class Announcement {
     this.imageUrl,
     required this.publishedAt,
     this.read = false,
+    this.isHtml = false,
   });
 
   Announcement copyWith({bool? read}) => Announcement(
@@ -22,5 +24,6 @@ class Announcement {
     imageUrl: imageUrl,
     publishedAt: publishedAt,
     read: read ?? this.read,
+    isHtml: isHtml,
   );
 }
