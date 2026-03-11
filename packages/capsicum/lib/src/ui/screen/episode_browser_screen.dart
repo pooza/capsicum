@@ -308,9 +308,9 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
             tooltip: '番組名をコピー',
             onPressed: () {
               Clipboard.setData(ClipboardData(text: work.title));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('番組名をコピーしました')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('番組名をコピーしました')));
             },
           ),
         ],
