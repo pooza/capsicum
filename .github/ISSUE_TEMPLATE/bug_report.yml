@@ -23,12 +23,14 @@ body:
     id: expected
     attributes:
       label: 期待する動作
+      description: どうなるべきか
     validations:
       required: false
   - type: dropdown
     id: platform
     attributes:
       label: プラットフォーム
+      description: 再現した環境
       options:
         - Android
         - iOS
@@ -40,6 +42,7 @@ body:
     id: server
     attributes:
       label: サーバーソフトウェア
+      description: 再現したサーバーの種類
       options:
         - Mastodon
         - Misskey
