@@ -87,11 +87,7 @@ class MastodonClient {
 
   /// GET /api/v1/accounts/:id/followers
   Future<({List<MastodonAccount> accounts, String? nextMaxId})>
-      getAccountFollowers(
-    String id, {
-    String? maxId,
-    int? limit,
-  }) async {
+  getAccountFollowers(String id, {String? maxId, int? limit}) async {
     final response = await dio.get(
       '/api/v1/accounts/$id/followers',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},
@@ -104,11 +100,7 @@ class MastodonClient {
 
   /// GET /api/v1/accounts/:id/following
   Future<({List<MastodonAccount> accounts, String? nextMaxId})>
-      getAccountFollowing(
-    String id, {
-    String? maxId,
-    int? limit,
-  }) async {
+  getAccountFollowing(String id, {String? maxId, int? limit}) async {
     final response = await dio.get(
       '/api/v1/accounts/$id/following',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},

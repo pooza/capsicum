@@ -168,18 +168,18 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
   }
 
   void _showEpisodes(AnnictWork work) {
-    Navigator.of(context).push(
-      MaterialPageRoute<String>(
-        builder: (_) => _EpisodeListScreen(
-          mulukhiya: _mulukhiya!,
-          work: work,
-        ),
-      ),
-    ).then((commandToot) {
-      if (commandToot != null && mounted) {
-        Navigator.pop(context, commandToot);
-      }
-    });
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute<String>(
+            builder: (_) =>
+                _EpisodeListScreen(mulukhiya: _mulukhiya!, work: work),
+          ),
+        )
+        .then((commandToot) {
+          if (commandToot != null && mounted) {
+            Navigator.pop(context, commandToot);
+          }
+        });
   }
 
   @override
@@ -220,10 +220,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _searchWorks,
-                child: const Text('再試行'),
-              ),
+              FilledButton(onPressed: _searchWorks, child: const Text('再試行')),
             ],
           ),
         ),
@@ -272,10 +269,7 @@ class _EpisodeListScreen extends StatefulWidget {
   final MulukhiyaService mulukhiya;
   final AnnictWork work;
 
-  const _EpisodeListScreen({
-    required this.mulukhiya,
-    required this.work,
-  });
+  const _EpisodeListScreen({required this.mulukhiya, required this.work});
 
   @override
   State<_EpisodeListScreen> createState() => _EpisodeListScreenState();
@@ -299,9 +293,7 @@ class _EpisodeListScreenState extends State<_EpisodeListScreen> {
     });
 
     try {
-      final episodes = await widget.mulukhiya.getEpisodes(
-        widget.work.annictId,
-      );
+      final episodes = await widget.mulukhiya.getEpisodes(widget.work.annictId);
       if (mounted) setState(() => _episodes = episodes);
     } catch (e) {
       debugPrint('Episode load error: $e');
@@ -335,10 +327,7 @@ class _EpisodeListScreenState extends State<_EpisodeListScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _loadEpisodes,
-                child: const Text('再試行'),
-              ),
+              FilledButton(onPressed: _loadEpisodes, child: const Text('再試行')),
             ],
           ),
         ),
@@ -360,9 +349,7 @@ class _EpisodeListScreenState extends State<_EpisodeListScreen> {
 
         return ListTile(
           leading: const Icon(Icons.play_circle_outline),
-          title: Text(
-            subtitle.isNotEmpty ? subtitle : 'エピソード ${ep.annictId}',
-          ),
+          title: Text(subtitle.isNotEmpty ? subtitle : 'エピソード ${ep.annictId}'),
           onTap: () {
             if (ep.commandToot != null) {
               Navigator.pop(context, ep.commandToot);

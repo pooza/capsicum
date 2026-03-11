@@ -889,9 +889,7 @@ class _RubyWidget extends StatelessWidget {
     );
     final hashMatches = hashtagAnchor.allMatches(tagBlockHtml).toList();
     // Verify that every anchor is a hashtag anchor.
-    final withoutAnchors = tagBlockHtml
-        .replaceAll(allAnchors, '')
-        .trim();
+    final withoutAnchors = tagBlockHtml.replaceAll(allAnchors, '').trim();
     if (withoutAnchors.isEmpty &&
         anchors.length == hashMatches.length &&
         hashMatches.isNotEmpty) {

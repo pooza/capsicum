@@ -929,18 +929,18 @@ class _ReactionChips extends StatelessWidget {
           final nameOnly = strippedKey.contains('@')
               ? strippedKey.substring(0, strippedKey.indexOf('@'))
               : strippedKey;
-          var emojiUrl = post.reactionEmojis[strippedKey] ??
-              post.reactionEmojis[nameOnly];
+          var emojiUrl =
+              post.reactionEmojis[strippedKey] ?? post.reactionEmojis[nameOnly];
           // Fallback: construct URL from Misskey emoji endpoint.
           if (emojiUrl == null && isCustomEmoji) {
             // Extract host from reaction key (e.g. "name@remote.host"),
             // fall back to post author's host.
             final atIndex = strippedKey.indexOf('@');
             final emojiHost = atIndex >= 0
-                ? strippedKey.substring(atIndex + 1).replaceAll('.', '')
-                    == '' // "@." case
-                    ? post.author.host
-                    : strippedKey.substring(atIndex + 1)
+                ? strippedKey.substring(atIndex + 1).replaceAll('.', '') ==
+                          '' // "@." case
+                      ? post.author.host
+                      : strippedKey.substring(atIndex + 1)
                 : post.author.host;
             if (emojiHost != null) {
               emojiUrl = 'https://$emojiHost/emoji/$nameOnly.webp';
