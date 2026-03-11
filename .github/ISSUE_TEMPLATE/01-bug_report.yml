@@ -26,28 +26,18 @@ body:
       description: どうなるべきか
     validations:
       required: false
-  - type: dropdown
+  - type: input
     id: platform
     attributes:
       label: プラットフォーム
-      description: 再現した環境
-      options:
-        - Android
-        - iOS
-        - 両方
-        - 未確認
+      description: Android / iOS / 両方 / 未確認
     validations:
       required: false
-  - type: dropdown
+  - type: input
     id: server
     attributes:
       label: サーバーソフトウェア
-      description: 再現したサーバーの種類
-      options:
-        - Mastodon
-        - Misskey
-        - 両方
-        - 未確認
+      description: Mastodon / Misskey / 両方 / 未確認
     validations:
       required: false
   - type: input
