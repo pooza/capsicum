@@ -977,7 +977,7 @@ class _ReactionChips extends StatelessWidget {
                     child: Text(
                       // Ensure emoji presentation (e.g. ❤ → ❤️)
                       _ensureEmojiPresentation(entry.key),
-                      style: const TextStyle(fontSize: 18),
+                      style: const TextStyle(fontSize: 14),
                     ),
                   ),
                 Text('${entry.value}', style: theme.textTheme.labelSmall),
