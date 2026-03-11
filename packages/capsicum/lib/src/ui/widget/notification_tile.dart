@@ -1,10 +1,12 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'content_parser.dart';
 import 'emoji_text.dart';
 
-class NotificationTile extends StatelessWidget {
+class NotificationTile extends StatefulWidget {
   final Notification notification;
   final String postLabel;
 
@@ -15,9 +17,54 @@ class NotificationTile extends StatelessWidget {
   });
 
   @override
+  State<NotificationTile> createState() => _NotificationTileState();
+}
+
+class _NotificationTileState extends State<NotificationTile> {
+  ContentRenderer? _contentRenderer;
+
+  Notification get notification => widget.notification;
+
+  @override
+  void dispose() {
+    _contentRenderer?.dispose();
+    super.dispose();
+  }
+
+  TextSpan _renderContent(String content, TextStyle baseStyle) {
+    _contentRenderer?.dispose();
+    final post = notification.post;
+    final allEmojis = {
+      ...?post?.emojis,
+      ...?post?.author.emojis,
+    };
+    final host = post?.author.host;
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        final url = allEmojis[shortcode];
+        if (url != null) return url;
+        if (host != null) return 'https://$host/emoji/$shortcode.webp';
+        return null;
+      },
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+    );
+    final isHtml = content.contains('<p>') || content.contains('<br');
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (icon, label) = _iconAndLabel;
+    final content = notification.post?.content;
 
     return InkWell(
       onTap: notification.post != null
@@ -35,13 +82,12 @@ class NotificationTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(context, label),
-                  if (notification.post?.content != null) ...[
+                  if (content != null) ...[
                     const SizedBox(height: 4),
-                    Text(
-                      _stripHtml(notification.post!.content!),
+                    Text.rich(
+                      _renderContent(content, theme.textTheme.bodyMedium ?? const TextStyle()),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium,
                     ),
                   ],
                 ],
@@ -114,31 +160,7 @@ class NotificationTile extends StatelessWidget {
     NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
     NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
     NotificationType.poll => (Icons.poll, 'アンケート終了'),
-    NotificationType.update => (Icons.edit, '$postLabelを編集'),
+    NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
-
-  String _stripHtml(String html) {
-    var text = html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    // Decode HTML entities.
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .replaceAllMapped(
-          RegExp(r'&#(\d+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!)),
-        )
-        .replaceAllMapped(
-          RegExp(r'&#x([0-9a-fA-F]+);'),
-          (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-        );
-    return text;
-  }
 }
