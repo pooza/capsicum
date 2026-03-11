@@ -46,6 +46,7 @@ class MastodonStreaming {
     );
 
     _channel = WebSocketChannel.connect(uri);
+    _channel!.ready.catchError((_) => _scheduleReconnect());
     _channel!.stream.listen(
       _onMessage,
       onError: (_) => _scheduleReconnect(),

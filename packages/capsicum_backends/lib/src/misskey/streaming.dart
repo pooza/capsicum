@@ -57,12 +57,15 @@ class MisskeyStreaming {
     // Subscribe to the timeline channel after connecting.
     _subscriptionId = const Uuid().v4();
     final channelName = _channelMap[type] ?? 'homeTimeline';
-    _channel!.sink.add(
-      jsonEncode({
-        'type': 'connect',
-        'body': {'channel': channelName, 'id': _subscriptionId},
-      }),
-    );
+    _channel!.ready.then((_) {
+      if (_disposed) return;
+      _channel!.sink.add(
+        jsonEncode({
+          'type': 'connect',
+          'body': {'channel': channelName, 'id': _subscriptionId},
+        }),
+      );
+    }).catchError((_) { _scheduleReconnect(); });
   }
 
   void _onMessage(dynamic message) {
