@@ -640,7 +640,7 @@ class ContentRenderer {
   List<InlineSpan> _renderNode(_Node node, TextStyle style) {
     switch (node.type) {
       case _NodeType.text:
-        return [TextSpan(text: node.text, style: style)];
+        return _buildTextWithEmoji(node.text, style);
 
       case _NodeType.bold:
         final boldStyle = style.copyWith(fontWeight: FontWeight.bold);
@@ -811,6 +811,63 @@ class ContentRenderer {
         // Unhandled $[fn ...] — render children as-is
         return _renderNodes(node.children, style);
     }
+  }
+
+  // Emoji ranges for Unicode emoji detection.
+  static final _emojiRegex = RegExp(
+    r'(?:[\u{1F1E0}-\u{1F1FF}]{2}'
+    r'|[\u{1F000}-\u{1FFFF}]'
+    r'|[\u{2600}-\u{27BF}]'
+    r'|[\u{2300}-\u{23FF}]'
+    r'|[\u{2B50}\u{2B55}]'
+    r'|[\u{2934}\u{2935}]'
+    r'|[\u{25AA}-\u{25FE}]'
+    r'|[\u{2B05}-\u{2B1C}]'
+    r'|[\u{3030}\u{303D}\u{3297}\u{3299}]'
+    r'|[\u{00A9}\u{00AE}]'
+    r')'
+    r'[\u{FE0E}\u{FE0F}\u{200D}\u{20E3}\u{1F3FB}-\u{1F3FF}'
+    r'\u{E0020}-\u{E007F}'
+    r'\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}]*',
+    unicode: true,
+  );
+
+  List<InlineSpan> _buildTextWithEmoji(String text, TextStyle style) {
+    final matches = _emojiRegex.allMatches(text).toList();
+    if (matches.isEmpty) {
+      return [TextSpan(text: text, style: style)];
+    }
+    final spans = <InlineSpan>[];
+    var lastEnd = 0;
+    final emojiSize = style.fontSize ?? 14.0;
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(
+          TextSpan(text: text.substring(lastEnd, match.start), style: style),
+        );
+      }
+      final emoji = match.group(0)!;
+      final codepoints = emoji.runes
+          .where((r) => r != 0xFE0F && r != 0xFE0E)
+          .map((r) => r.toRadixString(16))
+          .join('-');
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Image.network(
+            'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png',
+            width: emojiSize,
+            height: emojiSize,
+            errorBuilder: (_, _, _) => Text(emoji, style: style),
+          ),
+        ),
+      );
+      lastEnd = match.end;
+    }
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd), style: style));
+    }
+    return spans;
   }
 }
 
