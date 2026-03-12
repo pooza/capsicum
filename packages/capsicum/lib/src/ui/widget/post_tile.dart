@@ -287,12 +287,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text.rich(
-                                      contentSpan,
-                                      maxLines: _expanded ? null : _maxLines,
-                                      overflow: _expanded
-                                          ? null
-                                          : TextOverflow.ellipsis,
+                                    SelectionArea(
+                                      child: Text.rich(
+                                        contentSpan,
+                                        maxLines: _expanded ? null : _maxLines,
+                                        overflow: _expanded
+                                            ? null
+                                            : TextOverflow.ellipsis,
+                                      ),
                                     ),
                                     if (overflows)
                                       GestureDetector(
