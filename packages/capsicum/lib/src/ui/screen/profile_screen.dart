@@ -61,8 +61,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     try {
-      final posts = await (adapter as dynamic).getPinnedPosts(widget.user.id)
-          as List<Post>;
+      final posts =
+          await (adapter as dynamic).getPinnedPosts(widget.user.id)
+              as List<Post>;
       if (mounted) setState(() => _pinnedPosts = posts);
     } catch (_) {
       // ピン留め投稿非対応の場合は無視して続行。
@@ -248,9 +249,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 childCount: _pinnedPosts.length,
               ),
             ),
-            const SliverToBoxAdapter(
-              child: Divider(height: 8, thickness: 4),
-            ),
+            const SliverToBoxAdapter(child: Divider(height: 8, thickness: 4)),
           ],
           if (_loadingPosts)
             const SliverFillRemaining(
