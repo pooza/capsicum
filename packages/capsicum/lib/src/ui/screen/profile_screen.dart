@@ -20,6 +20,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _scrollController = ScrollController();
   late User _user = widget.user;
+  List<Post> _pinnedPosts = [];
   List<Post> _posts = [];
   bool _loadingPosts = true;
   bool _loadingMore = false;
@@ -37,6 +38,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
+    _loadPinnedPosts();
     _loadPosts();
     _loadRelationship();
   }
@@ -52,6 +54,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       _loadMorePosts();
+    }
+  }
+
+  Future<void> _loadPinnedPosts() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final posts = await (adapter as dynamic).getPinnedPosts(widget.user.id)
+          as List<Post>;
+      if (mounted) setState(() => _pinnedPosts = posts);
+    } catch (_) {
+      // ピン留め投稿非対応の場合は無視して続行。
     }
   }
 
@@ -197,6 +211,47 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
           SliverToBoxAdapter(child: _buildProfileHeader(context, user)),
+          if (_pinnedPosts.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.push_pin,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'ピン留め',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => Column(
+                  children: [
+                    PostTile(post: _pinnedPosts[index]),
+                    const Divider(height: 1),
+                  ],
+                ),
+                childCount: _pinnedPosts.length,
+              ),
+            ),
+            const SliverToBoxAdapter(
+              child: Divider(height: 8, thickness: 4),
+            ),
+          ],
           if (_loadingPosts)
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator()),

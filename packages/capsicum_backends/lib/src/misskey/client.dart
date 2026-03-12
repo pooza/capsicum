@@ -51,6 +51,7 @@ class MisskeyClient {
     String userId, {
     String? untilId,
     int? limit,
+    bool? pinned,
   }) async {
     final response = await dio.post(
       '/api/users/notes',
@@ -58,6 +59,7 @@ class MisskeyClient {
         'userId': userId,
         'untilId': ?untilId,
         'limit': ?limit,
+        'pinned': ?pinned,
       }),
     );
     return (response.data as List)

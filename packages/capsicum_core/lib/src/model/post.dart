@@ -32,6 +32,7 @@ class Post {
   final Poll? poll;
   final FilterAction? filterAction;
   final String? filterTitle;
+  final bool pinned;
 
   const Post({
     required this.id,
@@ -61,6 +62,7 @@ class Post {
     this.poll,
     this.filterAction,
     this.filterTitle,
+    this.pinned = false,
   });
 }
 

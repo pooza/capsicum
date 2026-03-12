@@ -133,6 +133,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return _safeConvert(notes, (n) => n.toCapsicum(host));
   }
 
+  Future<List<Post>> getPinnedPosts(String id) async {
+    final notes = await client.getUserNotes(id, pinned: true);
+    return _safeConvert(notes, (n) => n.toCapsicum(host, pinned: true));
+  }
+
   @override
   Future<Post> postStatus(PostDraft draft) async {
     final note = await client.createNote(
@@ -212,6 +217,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         spoilerText: post.spoilerText,
         emojis: post.emojis,
         emojiHost: post.emojiHost,
+        pinned: post.pinned,
         filterAction: FilterAction.hide,
         filterTitle: 'ワードミュート',
       );
@@ -239,6 +245,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         spoilerText: post.spoilerText,
         emojis: post.emojis,
         emojiHost: post.emojiHost,
+        pinned: post.pinned,
         filterAction: FilterAction.warn,
         filterTitle: 'ワードミュート',
       );

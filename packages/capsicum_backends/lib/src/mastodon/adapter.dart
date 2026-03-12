@@ -112,6 +112,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
   }
 
+  Future<List<Post>> getPinnedPosts(String id) async {
+    final statuses = await client.getAccountStatuses(id, pinned: true);
+    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host, pinned: true));
+  }
+
   @override
   Future<Post> postStatus(PostDraft draft) async {
     final status = await client.postStatus(
