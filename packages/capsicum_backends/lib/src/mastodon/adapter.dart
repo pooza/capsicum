@@ -118,7 +118,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   Future<List<Post>> getPinnedPosts(String id) async {
     final statuses = await client.getAccountStatuses(id, pinned: true);
-    return _safeConvert(statuses, (s) => s.toCapsicum(host, pinned: true)).results;
+    return _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host, pinned: true),
+    ).results;
   }
 
   @override
@@ -166,7 +169,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
     final converted = _safeConvert(statuses, (s) => s.toCapsicum(host));
-    return TimelineResponse(posts: converted.results, rawCount: converted.rawCount);
+    return TimelineResponse(
+      posts: converted.results,
+      rawCount: converted.rawCount,
+    );
   }
 
   @override

@@ -25,7 +25,10 @@ abstract class BackendAdapter {
   Future<User> getUserById(String id);
   Future<Post> postStatus(PostDraft draft);
   Future<void> deletePost(String id);
-  Future<TimelineResponse> getTimeline(TimelineType type, {TimelineQuery? query});
+  Future<TimelineResponse> getTimeline(
+    TimelineType type, {
+    TimelineQuery? query,
+  });
   Future<Post> getPostById(String id);
   Future<List<Post>> getThread(String postId);
   Future<Post> repeatPost(String id);

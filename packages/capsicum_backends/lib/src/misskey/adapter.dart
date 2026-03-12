@@ -185,7 +185,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    final posts = notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+    final posts = notes
+        .map((n) => n.toCapsicum(host))
+        .map(_applyWordFilter)
+        .toList();
     return TimelineResponse(posts: posts, rawCount: notes.length);
   }
 
