@@ -45,7 +45,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (adapter == null) return const TimelineState();
 
     // Initial REST fetch.
-    final posts = await adapter.getTimeline(
+    final response = await adapter.getTimeline(
       type,
       query: const TimelineQuery(limit: _pageSize),
     );
@@ -62,10 +62,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
-    final visible = posts
+    final visible = response.posts
         .where((p) => p.filterAction != FilterAction.hide)
         .toList();
-    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
+    return TimelineState(posts: visible, hasMore: response.rawCount >= _pageSize);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -144,20 +144,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       bool hasMore = true;
 
       while (hasMore) {
-        final older = await adapter.getTimeline(
+        final response = await adapter.getTimeline(
           type,
           query: TimelineQuery(maxId: maxId, limit: _pageSize),
         );
 
-        hasMore = older.length >= _pageSize;
+        hasMore = response.rawCount >= _pageSize;
 
-        final visibleOlder = older
+        final visibleOlder = response.posts
             .where((p) => p.filterAction != FilterAction.hide)
             .toList();
         allVisible.addAll(visibleOlder);
 
-        if (older.isEmpty) break;
-        maxId = older.last.id;
+        if (response.posts.isEmpty) break;
+        maxId = response.posts.last.id;
 
         // Stop when visible posts are found or the server has no more data.
         if (allVisible.isNotEmpty || !hasMore) break;

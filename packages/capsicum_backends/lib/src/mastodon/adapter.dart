@@ -10,7 +10,11 @@ import 'extensions.dart';
 import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
-List<T> _safeConvertPosts<S, T>(List<S> items, T Function(S) convert) {
+/// Returns both the converted results and the original item count.
+({List<T> results, int rawCount}) _safeConvert<S, T>(
+  List<S> items,
+  T Function(S) convert,
+) {
   final results = <T>[];
   for (final item in items) {
     try {
@@ -19,7 +23,7 @@ List<T> _safeConvertPosts<S, T>(List<S> items, T Function(S) convert) {
       developer.log('skipping item during conversion: $e', name: 'capsicum');
     }
   }
-  return results;
+  return (results: results, rawCount: items.length);
 }
 
 class MastodonCapabilities extends AdapterCapabilities {
@@ -109,12 +113,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       maxId: maxId,
       limit: 20,
     );
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
+    return _safeConvert(statuses, (s) => s.toCapsicum(host)).results;
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
     final statuses = await client.getAccountStatuses(id, pinned: true);
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host, pinned: true));
+    return _safeConvert(statuses, (s) => s.toCapsicum(host, pinned: true)).results;
   }
 
   @override
@@ -137,7 +141,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Post>> getTimeline(
+  Future<TimelineResponse> getTimeline(
     TimelineType type, {
     TimelineQuery? query,
   }) async {
@@ -161,7 +165,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
+    final converted = _safeConvert(statuses, (s) => s.toCapsicum(host));
+    return TimelineResponse(posts: converted.results, rawCount: converted.rawCount);
   }
 
   @override
@@ -317,7 +322,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
+    return _safeConvert(statuses, (s) => s.toCapsicum(host)).results;
   }
 
   // AnnouncementSupport
@@ -460,7 +465,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
+    return _safeConvert(statuses, (s) => s.toCapsicum(host)).results;
   }
 
   @override
@@ -488,7 +493,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvertPosts(statuses, (s) => s.toCapsicum(host));
+    return _safeConvert(statuses, (s) => s.toCapsicum(host)).results;
   }
 
   // PollSupport

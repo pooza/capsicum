@@ -5,6 +5,7 @@ import '../model/instance.dart';
 import '../model/post.dart';
 import '../model/post_draft.dart';
 import '../model/timeline_query.dart';
+import '../model/timeline_response.dart';
 import '../model/timeline_type.dart';
 import '../model/user.dart';
 import 'capabilities.dart';
@@ -24,7 +25,7 @@ abstract class BackendAdapter {
   Future<User> getUserById(String id);
   Future<Post> postStatus(PostDraft draft);
   Future<void> deletePost(String id);
-  Future<List<Post>> getTimeline(TimelineType type, {TimelineQuery? query});
+  Future<TimelineResponse> getTimeline(TimelineType type, {TimelineQuery? query});
   Future<Post> getPostById(String id);
   Future<List<Post>> getThread(String postId);
   Future<Post> repeatPost(String id);
