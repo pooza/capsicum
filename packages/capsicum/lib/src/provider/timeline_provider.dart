@@ -131,6 +131,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// If an entire page is filtered out (e.g. word filters / mutes), skips
   /// ahead using the raw last ID until visible posts are found or the
   /// timeline is exhausted.
+  ///
+  /// --- 調査メモ (#89 v0.6.0 でも 4-5 回スクロールで読み込み停止の報告あり) ---
+  /// フィルタは無関係の可能性が高い。未調査の疑い箇所:
+  ///  - catch ブロックが古い current で上書き → ストリーミング中の投稿消失
+  ///  - Sentry.captureException 自体が失敗すると isLoadingMore: true 固定
+  ///  - サーバーが空レスポンス → rawCount=0 → hasMore=false で永久停止
+  ///  - L172 の state 再取得で async 中の状態変化とのレース
+  /// 次回調査時は Sentry breadcrumb を仕込んで再現データを取ること。
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
@@ -140,7 +148,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     try {
       final adapter = ref.read(currentAdapterProvider);
       final type = ref.read(selectedTimelineTypeProvider);
-      if (adapter == null) return;
+      if (adapter == null) {
+        state = AsyncData(current.copyWith(isLoadingMore: false));
+        return;
+      }
 
       String? maxId = current.posts.lastOrNull?.id;
       final allVisible = <Post>[];
