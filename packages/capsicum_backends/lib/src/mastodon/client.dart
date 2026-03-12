@@ -75,10 +75,11 @@ class MastodonClient {
     String id, {
     String? maxId,
     int? limit,
+    bool? pinned,
   }) async {
     final response = await dio.get(
       '/api/v1/accounts/$id/statuses',
-      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit, 'pinned': ?pinned},
     );
     return (response.data as List)
         .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))

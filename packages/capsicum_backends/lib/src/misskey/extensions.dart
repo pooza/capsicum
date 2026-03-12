@@ -38,7 +38,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
 }
 
 extension CapsicumMisskeyNoteExtension on MisskeyNote {
-  Post toCapsicum(String localHost) {
+  Post toCapsicum(String localHost, {bool pinned = false}) {
     // Misskey: renote + text = quote, renote without text = simple renote
     final isQuote = renote != null && text != null;
     return Post(
@@ -60,6 +60,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       spoilerText: cw,
       emojis: reactionEmojis ?? const {},
       emojiHost: localHost,
+      pinned: pinned,
     );
   }
 }

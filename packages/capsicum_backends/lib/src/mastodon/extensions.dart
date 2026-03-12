@@ -51,7 +51,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
 }
 
 extension CapsicumMastodonStatusExtension on MastodonStatus {
-  Post toCapsicum(String localHost) {
+  Post toCapsicum(String localHost, {bool pinned = false}) {
     final filterResult = _parseFilterResult(filtered);
     return Post(
       id: id,
@@ -84,6 +84,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       poll: _parseMastodonPoll(poll),
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
+      pinned: pinned,
     );
   }
 }
