@@ -56,7 +56,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
         _users = result.users;
         _nextCursor = result.nextCursor;
         _loading = false;
-        _hasMore = result.users.length >= _pageSize;
+        _hasMore =
+            result.users.length >= _pageSize && result.nextCursor != null;
       });
     } catch (e) {
       debugPrint('UserListScreen load error: $e');
@@ -76,7 +77,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
         _users = [..._users, ...result.users];
         _nextCursor = result.nextCursor;
         _loadingMore = false;
-        _hasMore = result.users.length >= _pageSize;
+        _hasMore =
+            result.users.length >= _pageSize && result.nextCursor != null;
       });
     } catch (e) {
       debugPrint('UserListScreen loadMore error: $e');
