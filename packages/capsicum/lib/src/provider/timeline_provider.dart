@@ -178,7 +178,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         stackTrace: st,
         hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
       );
-      state = AsyncData(current.copyWith(isLoadingMore: false, hasMore: false));
+      state = AsyncData(current.copyWith(isLoadingMore: false));
     }
   }
 }
