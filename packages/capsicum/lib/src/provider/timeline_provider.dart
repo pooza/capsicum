@@ -124,6 +124,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }
 
   /// Load next page of posts (older posts).
+  ///
+  /// If an entire page is filtered out (e.g. word filters / mutes), skips
+  /// ahead using the raw last ID until visible posts are found or the
+  /// timeline is exhausted.
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
@@ -135,20 +139,36 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       final type = ref.read(selectedTimelineTypeProvider);
       if (adapter == null) return;
 
-      final lastId = current.posts.last.id;
-      final older = await adapter.getTimeline(
-        type,
-        query: TimelineQuery(maxId: lastId, limit: _pageSize),
-      );
+      String? maxId = current.posts.lastOrNull?.id;
+      final allVisible = <Post>[];
+      bool hasMore = true;
 
-      final visibleOlder = older
-          .where((p) => p.filterAction != FilterAction.hide)
-          .toList();
+      while (hasMore) {
+        final older = await adapter.getTimeline(
+          type,
+          query: TimelineQuery(maxId: maxId, limit: _pageSize),
+        );
+
+        hasMore = older.length >= _pageSize;
+
+        final visibleOlder = older
+            .where((p) => p.filterAction != FilterAction.hide)
+            .toList();
+        allVisible.addAll(visibleOlder);
+
+        if (older.isEmpty) break;
+        maxId = older.last.id;
+
+        // Stop when visible posts are found or the server has no more data.
+        if (allVisible.isNotEmpty || !hasMore) break;
+      }
+
+      final updated = state.valueOrNull ?? current;
       state = AsyncData(
-        current.copyWith(
-          posts: [...current.posts, ...visibleOlder],
+        updated.copyWith(
+          posts: [...updated.posts, ...allVisible],
           isLoadingMore: false,
-          hasMore: older.length >= _pageSize,
+          hasMore: hasMore,
         ),
       );
     } catch (e, st) {
