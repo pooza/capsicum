@@ -45,7 +45,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (adapter == null) return const TimelineState();
 
     // Initial REST fetch.
-    final posts = await adapter.getTimeline(
+    final response = await adapter.getTimeline(
       type,
       query: const TimelineQuery(limit: _pageSize),
     );
@@ -62,10 +62,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
-    final visible = posts
+    final visible = response.posts
         .where((p) => p.filterAction != FilterAction.hide)
         .toList();
-    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
+    return TimelineState(
+      posts: visible,
+      hasMore: response.rawCount >= _pageSize,
+    );
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -137,49 +140,101 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     try {
       final adapter = ref.read(currentAdapterProvider);
       final type = ref.read(selectedTimelineTypeProvider);
-      if (adapter == null) return;
+      if (adapter == null) {
+        _resetLoading();
+        return;
+      }
 
       String? maxId = current.posts.lastOrNull?.id;
       final allVisible = <Post>[];
       bool hasMore = true;
 
       while (hasMore) {
-        final older = await adapter.getTimeline(
+        final response = await adapter.getTimeline(
           type,
           query: TimelineQuery(maxId: maxId, limit: _pageSize),
         );
 
-        hasMore = older.length >= _pageSize;
+        // Report any conversion failures to Sentry for debugging.
+        if (response.skippedPosts.isNotEmpty) {
+          _reportSkippedPosts(response.skippedPosts, maxId);
+        }
 
-        final visibleOlder = older
+        // Use rawLastId to advance cursor even when all posts were skipped.
+        final rawLast = response.rawLastId;
+        if (response.posts.isEmpty) {
+          if (rawLast != null && rawLast != maxId) {
+            // Server had data but all conversions failed; advance cursor.
+            hasMore = response.rawCount >= _pageSize;
+            maxId = rawLast;
+            if (hasMore) continue;
+          }
+          hasMore = false;
+          break;
+        }
+
+        hasMore = response.rawCount >= _pageSize;
+        maxId = response.posts.last.id;
+
+        final visibleOlder = response.posts
             .where((p) => p.filterAction != FilterAction.hide)
             .toList();
         allVisible.addAll(visibleOlder);
-
-        if (older.isEmpty) break;
-        maxId = older.last.id;
 
         // Stop when visible posts are found or the server has no more data.
         if (allVisible.isNotEmpty || !hasMore) break;
       }
 
-      final updated = state.valueOrNull ?? current;
+      // Re-read state to preserve posts added by streaming during await.
+      final latest = state.valueOrNull ?? current;
       state = AsyncData(
-        updated.copyWith(
-          posts: [...updated.posts, ...allVisible],
+        latest.copyWith(
+          posts: [...latest.posts, ...allVisible],
           isLoadingMore: false,
           hasMore: hasMore,
         ),
       );
     } catch (e, st) {
-      final failedMaxId = current.posts.lastOrNull?.id;
-      Sentry.captureException(
-        e,
-        stackTrace: st,
-        hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
-      );
-      state = AsyncData(current.copyWith(isLoadingMore: false, hasMore: false));
+      try {
+        final failedMaxId = current.posts.lastOrNull?.id;
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
+        );
+      } catch (_) {
+        // Sentry failure must not block state recovery.
+      }
+      _resetLoading();
     }
+  }
+
+  /// Report posts that failed conversion to Sentry for debugging.
+  /// Only sends post IDs and error messages — never post content.
+  void _reportSkippedPosts(List<SkippedPost> skipped, String? maxId) {
+    try {
+      for (final post in skipped) {
+        Sentry.captureMessage(
+          'Post conversion failed',
+          level: SentryLevel.warning,
+          params: [post.id, post.error],
+          hint: Hint.withMap({
+            'skippedPostId': post.id,
+            'conversionError': post.error,
+            'maxId': maxId ?? 'null',
+          }),
+        );
+      }
+    } catch (_) {
+      // Sentry failure must not affect timeline loading.
+    }
+  }
+
+  /// Reset isLoadingMore to false, preserving the latest state.
+  void _resetLoading() {
+    final latest = state.valueOrNull;
+    if (latest == null) return;
+    state = AsyncData(latest.copyWith(isLoadingMore: false));
   }
 }
 
