@@ -307,10 +307,10 @@ v0.2.0 リリース済み:
 - [x] App Store 年齢区分設定（16+）
 - [x] App Store スクリーンショット登録
 - [x] Fastlane セットアップ（ビルド・アップロード自動化）
-- [ ] Google Play Developer アカウント登録（$25）・アプリ作成
-- [ ] Google Play IARC レーティング回答
-- [ ] Google Play フィーチャーグラフィック（1024x500）
-- [ ] Google Play スクリーンショット（最低2枚）
+- [x] Google Play Developer アカウント登録（$25）・アプリ作成
+- [x] Google Play IARC レーティング回答
+- [x] Google Play フィーチャーグラフィック（1024x500）
+- [x] Google Play スクリーンショット（最低2枚）
 - [x] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
 
 #### v1.0 以降のリリース計画
