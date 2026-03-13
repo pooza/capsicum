@@ -131,14 +131,6 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// If an entire page is filtered out (e.g. word filters / mutes), skips
   /// ahead using the raw last ID until visible posts are found or the
   /// timeline is exhausted.
-  ///
-  /// --- 調査メモ (#89 v0.6.0 でも 4-5 回スクロールで読み込み停止の報告あり) ---
-  /// フィルタは無関係の可能性が高い。未調査の疑い箇所:
-  ///  - catch ブロックが古い current で上書き → ストリーミング中の投稿消失
-  ///  - Sentry.captureException 自体が失敗すると isLoadingMore: true 固定
-  ///  - サーバーが空レスポンス → rawCount=0 → hasMore=false で永久停止
-  ///  - L172 の state 再取得で async 中の状態変化とのレース
-  /// 次回調査時は Sentry breadcrumb を仕込んで再現データを取ること。
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
@@ -149,7 +141,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       final adapter = ref.read(currentAdapterProvider);
       final type = ref.read(selectedTimelineTypeProvider);
       if (adapter == null) {
-        state = AsyncData(current.copyWith(isLoadingMore: false));
+        _resetLoading();
         return;
       }
 
@@ -163,37 +155,49 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           query: TimelineQuery(maxId: maxId, limit: _pageSize),
         );
 
+        if (response.posts.isEmpty) break;
+
         hasMore = response.rawCount >= _pageSize;
+        maxId = response.posts.last.id;
 
         final visibleOlder = response.posts
             .where((p) => p.filterAction != FilterAction.hide)
             .toList();
         allVisible.addAll(visibleOlder);
 
-        if (response.posts.isEmpty) break;
-        maxId = response.posts.last.id;
-
         // Stop when visible posts are found or the server has no more data.
         if (allVisible.isNotEmpty || !hasMore) break;
       }
 
-      final updated = state.valueOrNull ?? current;
+      // Re-read state to preserve posts added by streaming during await.
+      final latest = state.valueOrNull ?? current;
       state = AsyncData(
-        updated.copyWith(
-          posts: [...updated.posts, ...allVisible],
+        latest.copyWith(
+          posts: [...latest.posts, ...allVisible],
           isLoadingMore: false,
           hasMore: hasMore,
         ),
       );
     } catch (e, st) {
-      final failedMaxId = current.posts.lastOrNull?.id;
-      Sentry.captureException(
-        e,
-        stackTrace: st,
-        hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
-      );
-      state = AsyncData(current.copyWith(isLoadingMore: false));
+      try {
+        final failedMaxId = current.posts.lastOrNull?.id;
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          hint: Hint.withMap({'maxId': failedMaxId ?? 'null'}),
+        );
+      } catch (_) {
+        // Sentry failure must not block state recovery.
+      }
+      _resetLoading();
     }
+  }
+
+  /// Reset isLoadingMore to false, preserving the latest state.
+  void _resetLoading() {
+    final latest = state.valueOrNull;
+    if (latest == null) return;
+    state = AsyncData(latest.copyWith(isLoadingMore: false));
   }
 }
 
