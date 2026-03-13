@@ -155,7 +155,22 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           query: TimelineQuery(maxId: maxId, limit: _pageSize),
         );
 
-        if (response.posts.isEmpty) break;
+        // Report any conversion failures to Sentry for debugging.
+        if (response.skippedPosts.isNotEmpty) {
+          _reportSkippedPosts(response.skippedPosts, maxId);
+        }
+
+        // Use rawLastId to advance cursor even when all posts were skipped.
+        final rawLast = response.rawLastId;
+        if (response.posts.isEmpty) {
+          if (rawLast != null && rawLast != maxId) {
+            // Server had data but all conversions failed; advance cursor.
+            hasMore = response.rawCount >= _pageSize;
+            maxId = rawLast;
+            if (hasMore) continue;
+          }
+          break;
+        }
 
         hasMore = response.rawCount >= _pageSize;
         maxId = response.posts.last.id;
@@ -190,6 +205,27 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         // Sentry failure must not block state recovery.
       }
       _resetLoading();
+    }
+  }
+
+  /// Report posts that failed conversion to Sentry for debugging.
+  /// Only sends post IDs and error messages — never post content.
+  void _reportSkippedPosts(List<SkippedPost> skipped, String? maxId) {
+    try {
+      for (final post in skipped) {
+        Sentry.captureMessage(
+          'Post conversion failed',
+          level: SentryLevel.warning,
+          params: [post.id, post.error],
+          hint: Hint.withMap({
+            'skippedPostId': post.id,
+            'conversionError': post.error,
+            'maxId': maxId ?? 'null',
+          }),
+        );
+      }
+    } catch (_) {
+      // Sentry failure must not affect timeline loading.
     }
   }
 

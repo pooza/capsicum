@@ -11,16 +11,32 @@ import 'extensions.dart';
 import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
-List<T> _safeConvert<S, T>(List<S> items, T Function(S) convert) {
+/// Returns the converted results, original item count, raw last ID, and
+/// details of any items that failed conversion.
+({List<T> results, int rawCount, String? rawLastId, List<SkippedPost> skipped})
+_safeConvert<S, T>(
+  List<S> items,
+  T Function(S) convert,
+  String Function(S) getId,
+) {
   final results = <T>[];
+  final skipped = <SkippedPost>[];
   for (final item in items) {
     try {
       results.add(convert(item));
     } catch (e) {
       developer.log('skipping item during conversion: $e', name: 'capsicum');
+      try {
+        skipped.add(SkippedPost(id: getId(item), error: '$e'));
+      } catch (_) {}
     }
   }
-  return results;
+  return (
+    results: results,
+    rawCount: items.length,
+    rawLastId: items.isNotEmpty ? getId(items.last) : null,
+    skipped: skipped,
+  );
 }
 
 class MisskeyCapabilities extends AdapterCapabilities {
@@ -130,12 +146,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
     final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
-    return _safeConvert(notes, (n) => n.toCapsicum(host));
+    return _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id).results;
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
     final notes = await client.getUserNotes(id, pinned: true);
-    return _safeConvert(notes, (n) => n.toCapsicum(host, pinned: true));
+    return _safeConvert(notes, (n) => n.toCapsicum(host, pinned: true),
+        (n) => n.id).results;
   }
 
   @override
@@ -185,11 +202,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    final posts = notes
-        .map((n) => n.toCapsicum(host))
-        .map(_applyWordFilter)
-        .toList();
-    return TimelineResponse(posts: posts, rawCount: notes.length);
+    final converted =
+        _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id);
+    final posts = converted.results.map(_applyWordFilter).toList();
+    return TimelineResponse(
+      posts: posts,
+      rawCount: converted.rawCount,
+      rawLastId: converted.rawLastId,
+      skippedPosts: converted.skipped,
+    );
   }
 
   Post _applyWordFilter(Post post) {
@@ -405,7 +426,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(notes, (n) => n.toCapsicum(host));
+    return _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id).results;
   }
 
   // AnnouncementSupport
@@ -498,7 +519,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return _safeConvert(notifications, (n) => n.toCapsicum(host));
+    return _safeConvert(notifications, (n) => n.toCapsicum(host), (n) => n.id)
+        .results;
   }
 
   @override
