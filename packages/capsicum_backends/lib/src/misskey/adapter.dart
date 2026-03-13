@@ -151,8 +151,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   Future<List<Post>> getPinnedPosts(String id) async {
     final notes = await client.getUserNotes(id, pinned: true);
-    return _safeConvert(notes, (n) => n.toCapsicum(host, pinned: true),
-        (n) => n.id).results;
+    return _safeConvert(
+      notes,
+      (n) => n.toCapsicum(host, pinned: true),
+      (n) => n.id,
+    ).results;
   }
 
   @override
@@ -202,8 +205,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    final converted =
-        _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id);
+    final converted = _safeConvert(
+      notes,
+      (n) => n.toCapsicum(host),
+      (n) => n.id,
+    );
     final posts = converted.results.map(_applyWordFilter).toList();
     return TimelineResponse(
       posts: posts,
@@ -519,8 +525,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return _safeConvert(notifications, (n) => n.toCapsicum(host), (n) => n.id)
-        .results;
+    return _safeConvert(
+      notifications,
+      (n) => n.toCapsicum(host),
+      (n) => n.id,
+    ).results;
   }
 
   @override

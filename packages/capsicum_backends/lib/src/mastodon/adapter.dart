@@ -125,8 +125,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       maxId: maxId,
       limit: 20,
     );
-    return _safeConvert(statuses, (s) => s.toCapsicum(host), (s) => s.id)
-        .results;
+    return _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host),
+      (s) => s.id,
+    ).results;
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
@@ -182,8 +185,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       ),
       _ => throw UnimplementedError('Timeline type $type not supported'),
     };
-    final converted =
-        _safeConvert(statuses, (s) => s.toCapsicum(host), (s) => s.id);
+    final converted = _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host),
+      (s) => s.id,
+    );
     return TimelineResponse(
       posts: converted.results,
       rawCount: converted.rawCount,
@@ -345,8 +351,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(statuses, (s) => s.toCapsicum(host), (s) => s.id)
-        .results;
+    return _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host),
+      (s) => s.id,
+    ).results;
   }
 
   // AnnouncementSupport
@@ -489,8 +498,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(statuses, (s) => s.toCapsicum(host), (s) => s.id)
-        .results;
+    return _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host),
+      (s) => s.id,
+    ).results;
   }
 
   @override
@@ -518,8 +530,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(statuses, (s) => s.toCapsicum(host), (s) => s.id)
-        .results;
+    return _safeConvert(
+      statuses,
+      (s) => s.toCapsicum(host),
+      (s) => s.id,
+    ).results;
   }
 
   // PollSupport
