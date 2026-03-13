@@ -1,21 +1,19 @@
 # capsicum
 
-Mastodon / Misskey 対応の Fediverse クライアント（Flutter）
+Mastodon / Misskey 対応の Fediverse クライアント（Flutter）。iPhone / iPad / Android に対応しています。
 
-## 機能
+## 特徴
 
-- Mastodon / Misskey 両対応（NodeInfo による自動検出）
-- マルチアカウント
-- タイムライン（ホーム / ローカル / ソーシャル / 連合）
-- 投稿（公開範囲選択、CW、メディア添付）
-- 通知
-- 検索
-- ブックマーク
-- Misskey リアクション
-- ストリーミング（WebSocket）
-- カスタム絵文字
-- ワードフィルタ
-- モロヘイヤ連携
+- 複数のサーバー・アカウントを登録して切り替え
+- タイムライン閲覧（ホーム / ローカル / 連合 / リスト / ハッシュタグ）と無限スクロール
+- テキスト・メディア・投票付き投稿（公開範囲選択、CW 対応）
+- リプライ・ブースト・お気に入り・ブックマーク
+- Misskey リアクション（絵文字ピッカー付き）
+- リアルタイム更新（WebSocket ストリーミング）
+- MFM / HTML / カスタム絵文字の描画
+- 通知一覧・検索・プロフィール表示
+- フォロー / ミュート / ブロック操作
+- [mulukhiya-toot-proxy](https://github.com/pooza/mulukhiya-toot-proxy)（モロヘイヤ）連携 — タグセット・エピソードブラウザ等
 
 ## 開発
 
@@ -33,9 +31,13 @@ dart format --set-exit-if-changed .
 dart analyze --fatal-infos
 ```
 
+コードの大半は [Claude Code](https://claude.ai/claude-code) によって書かれています。設計の出発点は [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) の Adapter パターンとモデル構造です。
+
 ## 方針
 
 汎用の Fediverse クライアントですが、開発者自身が運営するサーバーのメンバーの利益を最優先します。外部ユーザーからの要望や、開発者のサーバーで使用していないバージョン・フォークへの対応は保証しません。
+
+詳しくは [capsicum.shrieker.net](https://capsicum.shrieker.net) をご覧ください。
 
 ## ライセンス
 
