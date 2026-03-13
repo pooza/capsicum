@@ -169,6 +169,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
             maxId = rawLast;
             if (hasMore) continue;
           }
+          hasMore = false;
           break;
         }
 
