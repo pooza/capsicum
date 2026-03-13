@@ -254,6 +254,9 @@ capsicum/
 - プロフィール画面にピン留め投稿セクションを表示（Mastodon / Misskey 両対応）
 - 投稿テキストの選択・コピーを可能にする（SelectionArea）
 - ワードフィルタ除外後の空ページでタイムライン読み込みが停止するバグ修正
+- タイムライン loadMore の状態管理堅牢化（catch での state 上書き・Sentry 失敗時の isLoadingMore 固定・空レスポンス処理の順序修正）
+- 変換失敗した投稿の Sentry 報告 + rawLastId によるカーソル進行保証（Misskey getTimeline も _safeConvert に移行）
+- Sentry dSYM / ProGuard マッピング自動アップロード（sentry_dart_plugin）
 
 ### リリース計画
 
