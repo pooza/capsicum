@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
@@ -27,8 +28,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  static const _callbackUrlScheme = 'capsicum';
-  static const _redirectUri = 'capsicum://oauth';
+  static final _redirectUri = '${AppConstants.callbackUrlScheme}://oauth';
 
   bool _isLoggingIn = false;
   String? _error;
@@ -109,10 +109,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final loginSupport = adapter as LoginSupport;
 
       final application = ApplicationInfo(
-        name: 'capsicum',
+        name: AppConstants.appName,
         redirectUri: Uri.parse(_redirectUri),
         scopes: const ['read', 'write', 'follow', 'push'],
-        website: Uri.parse('https://capsicum.shrieker.net'),
+        website: AppConstants.websiteUrl,
       );
 
       final startResult = await loginSupport.startLogin(application);
@@ -121,7 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // Open browser and wait for callback redirect.
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
-          callbackUrlScheme: _callbackUrlScheme,
+          callbackUrlScheme: AppConstants.callbackUrlScheme,
         );
 
         final callbackUri = Uri.parse(resultUrl);

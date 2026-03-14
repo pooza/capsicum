@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
@@ -541,16 +542,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               if (!context.mounted) return;
               showAboutDialog(
                 context: context,
-                applicationName: 'capsicum',
+                applicationName: AppConstants.appName,
                 applicationVersion: 'v${info.version} (${info.buildNumber})',
                 applicationLegalese: 'Mastodon / Misskey クライアント',
                 children: [
                   const SizedBox(height: 16),
                   GestureDetector(
-                    onTap: () =>
-                        launchUrl(Uri.parse('https://capsicum.shrieker.net')),
+                    onTap: () => launchUrl(AppConstants.websiteUrl),
                     child: Text(
-                      'https://capsicum.shrieker.net',
+                      AppConstants.websiteUrl.toString(),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         decoration: TextDecoration.underline,
@@ -559,8 +559,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(
-                      Uri.parse('https://github.com/pooza/capsicum/issues'),
+                    onTap: () => launchUrl(AppConstants.issuesUrl,
                     ),
                     child: Text(
                       '問題を報告',
