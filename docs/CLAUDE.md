@@ -280,16 +280,9 @@ v0.2.0 リリース済み:
 配布方法:
 
 - **iOS**: TestFlight 外部テスターのみ（内部テスターは本名が相互に見える問題のため不使用）
-- **Android**: GitHub Releases にリリース用 APK をアセットとして添付
+- **Android**: v0.2.0 までは GitHub Releases に APK を添付。v1.0 以降は Google Play 内部テストトラックに移行
 
-テスト版配布手順:
-
-1. `pubspec.yaml` の version を確認・更新
-2. Android: `flutter build apk --release` → APK を取得
-3. iOS: `flutter build ipa --release` → `cd ios && fastlane beta`（TestFlight にアップロード）
-4. GitHub で `vX.Y.Z` タグを作成しリリースを作る（`--prerelease` 付き）
-5. Android APK をリリースアセットとしてアップロード
-6. テスターに GitHub Releases URL（Android）と TestFlight 招待（iOS）を送付
+リリース手順は [store-release-guide.md](store-release-guide.md) を参照。
 
 各マシン共通の前提（詳細は [store-release-guide.md](store-release-guide.md) を参照）:
 
