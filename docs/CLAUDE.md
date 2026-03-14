@@ -178,6 +178,7 @@ capsicum/
 | [mastodon](https://github.com/pooza/mastodon) | Mastodon フォーク（美食丼 / デルムリン丼 / キュアスタ！） |
 | [misskey](https://github.com/pooza/misskey) | Misskey フォーク（ダイスキー） |
 | [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) | 設計の参考元（アーカイブ済み） |
+| [capsicum-site](https://github.com/pooza/capsicum-site) | プロジェクトサイト（`capsicum.shrieker.net`）。GitHub Pages で配信。プライバシーポリシー・子どもの安全基準等 |
 
 ## 実装ステータス
 
