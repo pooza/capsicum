@@ -59,5 +59,8 @@ coverage/
 **/android/key.properties
 **/android/*.jks
 
+# Sentry
+.sentryclirc
+
 # Claude Code
 .claude/
