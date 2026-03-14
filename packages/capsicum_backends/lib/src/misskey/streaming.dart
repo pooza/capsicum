@@ -25,6 +25,10 @@ class MisskeyStreaming {
   TimelineType? _currentType;
   String? _subscriptionId;
   bool _disposed = false;
+  int _reconnectAttempts = 0;
+  static const _maxReconnectAttempts = 10;
+  static const _baseReconnectDelay = Duration(seconds: 5);
+  static const _maxReconnectDelay = Duration(seconds: 300);
 
   MisskeyStreaming({required this.host, required this.accessToken});
 
@@ -51,7 +55,10 @@ class MisskeyStreaming {
     _channel!.stream.listen(
       _onMessage,
       onError: (_) => _scheduleReconnect(),
-      onDone: _scheduleReconnect,
+      onDone: () {
+        _reconnectAttempts = 0;
+        _scheduleReconnect();
+      },
     );
 
     // Subscribe to the timeline channel after connecting.
@@ -61,6 +68,7 @@ class MisskeyStreaming {
     final subId = _subscriptionId!;
     channel.ready
         .then((_) {
+          _reconnectAttempts = 0;
           if (_disposed || _channel != channel) return;
           channel.sink.add(
             jsonEncode({
@@ -91,8 +99,14 @@ class MisskeyStreaming {
 
   void _scheduleReconnect() {
     if (_disposed) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) return;
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+    final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
+    final delay = Duration(
+      seconds: delaySecs.clamp(0, _maxReconnectDelay.inSeconds),
+    );
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(delay, () {
       if (!_disposed && _currentType != null) {
         _connect(_currentType!);
       }

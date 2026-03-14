@@ -257,6 +257,8 @@ capsicum/
 - タイムライン loadMore の状態管理堅牢化（catch での state 上書き・Sentry 失敗時の isLoadingMore 固定・空レスポンス処理の順序修正）
 - 変換失敗した投稿の Sentry 報告 + rawLastId によるカーソル進行保証（Misskey getTimeline も _safeConvert に移行）
 - Sentry dSYM / ProGuard マッピング自動アップロード（sentry_dart_plugin）
+- WebSocket 再接続の指数バックオフ + 上限（10回失敗で停止、graceful degradation）
+- loadMore 診断 breadcrumb（Sentry に skip 理由を記録）
 
 ### リリース計画
 
