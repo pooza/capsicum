@@ -260,6 +260,7 @@ capsicum/
 - Sentry dSYM / ProGuard マッピング自動アップロード（sentry_dart_plugin）
 - WebSocket 再接続の指数バックオフ + 上限（10回失敗で停止、graceful degradation）
 - loadMore 診断 breadcrumb（Sentry に skip 理由を記録）
+- About 画面に「問題を報告」リンク（GitHub Issues への導線、Google Play 子どもの安全基準対応）
 
 ### リリース計画
 
