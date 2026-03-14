@@ -547,9 +547,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 children: [
                   const SizedBox(height: 16),
                   GestureDetector(
-                    onTap: () => launchUrl(
-                      Uri.parse('https://capsicum.shrieker.net'),
-                    ),
+                    onTap: () =>
+                        launchUrl(Uri.parse('https://capsicum.shrieker.net')),
                     child: Text(
                       'https://capsicum.shrieker.net',
                       style: TextStyle(
