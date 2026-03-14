@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
@@ -543,6 +544,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 applicationName: 'capsicum',
                 applicationVersion: 'v${info.version} (${info.buildNumber})',
                 applicationLegalese: 'Mastodon / Misskey クライアント',
+                children: [
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () =>
+                        launchUrl(Uri.parse('https://capsicum.shrieker.net')),
+                    child: Text(
+                      'https://capsicum.shrieker.net',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse('https://github.com/pooza/capsicum/issues'),
+                    ),
+                    child: Text(
+                      '問題を報告',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
           ),

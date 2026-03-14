@@ -3,10 +3,9 @@ default_platform(:android)
 platform :android do
   desc "Deploy to Google Play internal testing"
   lane :internal do
-    sh "cd ../.. && flutter build appbundle --release"
     upload_to_play_store(
       track: 'internal',
-      aab: '../../build/app/outputs/bundle/release/app-release.aab',
+      aab: '../build/app/outputs/bundle/release/app-release.aab',
     )
   end
 

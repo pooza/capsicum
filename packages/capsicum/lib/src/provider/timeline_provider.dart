@@ -133,7 +133,23 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// timeline is exhausted.
   Future<void> loadMore() async {
     final current = state.valueOrNull;
-    if (current == null || current.isLoadingMore || !current.hasMore) return;
+    if (current == null || current.isLoadingMore || !current.hasMore) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          message: 'loadMore skipped',
+          category: 'timeline',
+          data: {
+            'reason': current == null
+                ? 'state_null'
+                : current.isLoadingMore
+                ? 'already_loading'
+                : 'no_more',
+            'postCount': current?.posts.length ?? 0,
+          },
+        ),
+      );
+      return;
+    }
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
 

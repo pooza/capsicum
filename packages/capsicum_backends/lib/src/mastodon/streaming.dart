@@ -22,6 +22,10 @@ class MastodonStreaming {
   Timer? _reconnectTimer;
   TimelineType? _currentType;
   bool _disposed = false;
+  int _reconnectAttempts = 0;
+  static const _maxReconnectAttempts = 10;
+  static const _baseReconnectDelay = Duration(seconds: 5);
+  static const _maxReconnectDelay = Duration(seconds: 300);
 
   MastodonStreaming({required this.host, required this.accessToken});
 
@@ -46,11 +50,20 @@ class MastodonStreaming {
     );
 
     _channel = WebSocketChannel.connect(uri);
-    _channel!.ready.catchError((_) => _scheduleReconnect());
+    _channel!.ready
+        .then((_) {
+          _reconnectAttempts = 0;
+        })
+        .catchError((_) {
+          _scheduleReconnect();
+        });
     _channel!.stream.listen(
       _onMessage,
       onError: (_) => _scheduleReconnect(),
-      onDone: _scheduleReconnect,
+      onDone: () {
+        _reconnectAttempts = 0;
+        _scheduleReconnect();
+      },
     );
   }
 
@@ -72,8 +85,14 @@ class MastodonStreaming {
 
   void _scheduleReconnect() {
     if (_disposed) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) return;
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+    final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
+    final delay = Duration(
+      seconds: delaySecs.clamp(0, _maxReconnectDelay.inSeconds),
+    );
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(delay, () {
       if (!_disposed && _currentType != null) {
         _connect(_currentType!);
       }

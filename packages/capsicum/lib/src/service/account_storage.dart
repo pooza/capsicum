@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// Persists account secrets to flutter_secure_storage.
 class AccountStorage {
@@ -25,16 +28,30 @@ class AccountStorage {
 
   /// Retrieve stored secrets for an account.
   Future<Map<String, String>?> getSecrets(String accountKey) async {
-    final raw = await _storage.read(key: 'secret_$accountKey');
-    if (raw == null) return null;
-    return Map<String, String>.from(jsonDecode(raw) as Map);
+    try {
+      final raw = await _storage.read(key: 'secret_$accountKey');
+      if (raw == null) return null;
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } on PlatformException catch (e, st) {
+      debugPrint('capsicum: failed to read secrets for $accountKey: $e');
+      Sentry.captureException(e, stackTrace: st);
+      await _storage.delete(key: 'secret_$accountKey');
+      return null;
+    }
   }
 
   /// Get all stored account keys.
   Future<List<String>> getAccountKeys() async {
-    final raw = await _storage.read(key: _accountListKey);
-    if (raw == null) return [];
-    return List<String>.from(jsonDecode(raw) as List);
+    try {
+      final raw = await _storage.read(key: _accountListKey);
+      if (raw == null) return [];
+      return List<String>.from(jsonDecode(raw) as List);
+    } on PlatformException catch (e, st) {
+      debugPrint('capsicum: failed to read account keys: $e');
+      Sentry.captureException(e, stackTrace: st);
+      await _storage.deleteAll();
+      return [];
+    }
   }
 
   /// Move an account key to the front of the list (MRU tracking).

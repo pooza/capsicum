@@ -39,7 +39,7 @@
 
 ### 1.5 コンテンツレーティング
 
-- [ ] Google Play: IARC 質問回答
+- [x] Google Play: IARC 質問回答
 - [x] App Store: 年齢区分の設定（16+）
 - SNS クライアントのため「ユーザー生成コンテンツ」に該当
 
@@ -55,8 +55,8 @@
 
 ### 2.2 Google Play 固有
 
-- [ ] フィーチャーグラフィック（1024x500）
-- [ ] スクリーンショット（最低 2 枚、推奨 4-8 枚）
+- [x] フィーチャーグラフィック（1024x500）
+- [x] スクリーンショット（最低 2 枚、推奨 4-8 枚）
 - [x] アイコン（512x512）— Adaptive Icon 設定済み
 
 ### 2.3 App Store 固有
@@ -76,13 +76,14 @@ gem install fastlane
 
 ### 3.2 Android（`android/fastlane/Fastfile`）
 
+ビルドは事前に行い、Fastlane は Play Store へのアップロードのみを担当する（iOS と同じ方式）。
+
 ```ruby
 default_platform(:android)
 
 platform :android do
   desc "Deploy to Google Play internal testing"
   lane :internal do
-    sh "flutter build appbundle --release"
     upload_to_play_store(
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
@@ -101,13 +102,14 @@ end
 
 ### 3.3 iOS（`ios/fastlane/Fastfile`）
 
+ビルドは事前に行い、Fastlane は TestFlight / App Store へのアップロードのみを担当する。
+
 ```ruby
 default_platform(:ios)
 
 platform :ios do
   desc "Deploy to TestFlight"
   lane :beta do
-    sh "flutter build ipa --release"
     upload_to_testflight(
       ipa: '../build/ios/ipa/capsicum.ipa',
     )
@@ -129,6 +131,8 @@ end
 
 ```bash
 # pubspec.yaml の version を更新（例: 1.0.0+1 → 1.0.1+2）
+# 注意: ビルド番号（+N）は一度ストアにアップロードすると、リリースを破棄しても再利用不可。
+# 上げ直す場合は必ずビルド番号をインクリメントすること。
 
 # 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
 cd packages/capsicum
@@ -141,22 +145,25 @@ flutter pub upgrade --major-versions
 ### 4.2 ビルド + アップロード
 
 ```bash
+cd packages/capsicum
+
 # Sentry DSN（全ビルドで常に指定する）
 SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
 
-# iOS
+# iOS: ビルド → TestFlight アップロード
 flutter build ipa --release \
   --dart-define=SENTRY_DSN=$SENTRY_DSN \
   --dart-define=SENTRY_ENV=production
-cd ios && fastlane beta
+cd ios && fastlane beta && cd ..
 
-# Android
-flutter build apk --release \
+# Android: ビルド → Play Store 内部テストトラックにアップロード
+flutter build appbundle --release \
   --dart-define=SENTRY_DSN=$SENTRY_DSN \
   --dart-define=SENTRY_ENV=production
+cd android && fastlane internal && cd ..
 ```
 
 ### 4.3 ストアでの確認
 
-- Google Play Console で内部テストを確認 → 製品版に昇格
-- TestFlight でテスト → App Store Connect で審査提出
+- **Google Play**: 内部テストトラックで確認 → `cd android && fastlane release` で製品版に昇格
+- **App Store**: TestFlight でテスト → `cd ios && fastlane release` で審査提出
