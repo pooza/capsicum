@@ -112,6 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         name: 'capsicum',
         redirectUri: Uri.parse(_redirectUri),
         scopes: const ['read', 'write', 'follow', 'push'],
+        website: Uri.parse('https://capsicum.shrieker.net'),
       );
 
       final startResult = await loginSupport.startLogin(application);
