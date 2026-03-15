@@ -261,6 +261,9 @@ capsicum/
 - WebSocket 再接続の指数バックオフ + 上限（10回失敗で停止、graceful degradation）
 - loadMore 診断 breadcrumb（Sentry に skip 理由を記録）
 - About 画面に「問題を報告」リンク（GitHub Issues への導線、Google Play 子どもの安全基準対応）
+- ボットアカウントのバッジ表示（タイムライン・プロフィール）
+- ロールのプロフィール表示（Mastodon / Misskey 両対応）+ タイムラインにロールアイコン（Misskey: iconUrl / Mastodon: 管理者シールド）
+- 未読お知らせのバッジ表示（AppBar ドロワーアイコンにドット + ドロワー「お知らせ」メニューに未読数）
 
 ### リリース計画
 
