@@ -202,6 +202,18 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/drive/files/update
+  Future<MisskeyDriveFile> updateDriveFile(
+    String fileId, {
+    String? comment,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/files/update',
+      data: createBody({'fileId': fileId, 'comment': comment}),
+    );
+    return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/notes/create
   Future<MisskeyNote> createNote({
     required String text,

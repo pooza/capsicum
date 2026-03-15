@@ -43,6 +43,43 @@ class _PostTileState extends ConsumerState<PostTile> {
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
 
+  void _onMediaDescriptionUpdated(
+    Post displayPost,
+    List<Attachment> updatedAttachments,
+  ) {
+    final updatedPost = Post(
+      id: displayPost.id,
+      postedAt: displayPost.postedAt,
+      author: displayPost.author,
+      content: displayPost.content,
+      scope: displayPost.scope,
+      attachments: updatedAttachments,
+      favouriteCount: displayPost.favouriteCount,
+      reblogCount: displayPost.reblogCount,
+      replyCount: displayPost.replyCount,
+      quoteCount: displayPost.quoteCount,
+      favourited: displayPost.favourited,
+      reblogged: displayPost.reblogged,
+      bookmarked: displayPost.bookmarked,
+      sensitive: displayPost.sensitive,
+      reactions: displayPost.reactions,
+      myReaction: displayPost.myReaction,
+      reactionEmojis: displayPost.reactionEmojis,
+      inReplyToId: displayPost.inReplyToId,
+      reblog: displayPost.reblog,
+      quote: displayPost.quote,
+      spoilerText: displayPost.spoilerText,
+      emojis: displayPost.emojis,
+      emojiHost: displayPost.emojiHost,
+      card: displayPost.card,
+      poll: displayPost.poll,
+      filterAction: displayPost.filterAction,
+      filterTitle: displayPost.filterTitle,
+      pinned: displayPost.pinned,
+    );
+    ref.read(timelineProvider.notifier).updatePost(updatedPost);
+  }
+
   @override
   void dispose() {
     _contentRenderer?.dispose();
@@ -422,6 +459,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                         child: _AttachmentThumbnails(
                           attachments: displayPost.attachments,
                           sensitive: displayPost.sensitive,
+                          postAuthorId: displayPost.author.id,
+                          postId: displayPost.id,
+                          onAttachmentsUpdated: (updated) {
+                            _onMediaDescriptionUpdated(displayPost, updated);
+                          },
                         ),
                       ),
                     if (displayPost.card != null &&
@@ -1440,10 +1482,16 @@ class _PreviewCardWidget extends StatelessWidget {
 class _AttachmentThumbnails extends StatefulWidget {
   final List<Attachment> attachments;
   final bool sensitive;
+  final String? postAuthorId;
+  final String? postId;
+  final ValueChanged<List<Attachment>>? onAttachmentsUpdated;
 
   const _AttachmentThumbnails({
     required this.attachments,
     this.sensitive = false,
+    this.postAuthorId,
+    this.postId,
+    this.onAttachmentsUpdated,
   });
 
   @override
@@ -1452,6 +1500,25 @@ class _AttachmentThumbnails extends StatefulWidget {
 
 class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
   bool _revealed = false;
+
+  Future<void> _openMediaViewer(
+    BuildContext context,
+    List<Attachment> attachments,
+    int index,
+  ) async {
+    final result = await context.push<List<Attachment>>(
+      '/media',
+      extra: {
+        'attachments': attachments,
+        'initialIndex': index,
+        'postAuthorId': widget.postAuthorId,
+        'postId': widget.postId,
+      },
+    );
+    if (result != null) {
+      widget.onAttachmentsUpdated?.call(result);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1533,10 +1600,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                         _buildThumbnail(context, images[3], 3, images),
                         if (extraCount > 0)
                           GestureDetector(
-                            onTap: () => context.push(
-                              '/media',
-                              extra: {'attachments': images, 'initialIndex': 3},
-                            ),
+                            onTap: () => _openMediaViewer(context, images, 3),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: Colors.black54,
@@ -1580,10 +1644,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
         if (isSensitive) {
           setState(() => _revealed = true);
         } else {
-          context.push(
-            '/media',
-            extra: {'attachments': images, 'initialIndex': index},
-          );
+          _openMediaViewer(context, images, index);
         }
       },
       child: ClipRRect(
@@ -1671,13 +1732,7 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: GestureDetector(
-        onTap: () => context.push(
-          '/media',
-          extra: {
-            'attachments': [audio],
-            'initialIndex': 0,
-          },
-        ),
+        onTap: () => _openMediaViewer(context, [audio], 0),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
