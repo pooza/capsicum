@@ -324,19 +324,6 @@ class MastodonClient {
     );
   }
 
-  /// PUT /api/v1/statuses/:id — update media descriptions via media_attributes
-  Future<MastodonStatus> updateStatusMedia(
-    String statusId, {
-    required List<Map<String, String>> mediaAttributes,
-  }) async {
-    final response = await dio.put(
-      '/api/v1/statuses/$statusId',
-      data: {'media_attributes': mediaAttributes},
-      options: Options(headers: {'X-Mulukhiya-Purpose': 'media_update'}),
-    );
-    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
-  }
-
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,
