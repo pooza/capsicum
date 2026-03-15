@@ -33,6 +33,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followersCount: followersCount,
       followingCount: followingCount,
       postCount: statusesCount,
+      isBot: bot ?? false,
       fields: fields
           .map(
             (f) => UserField(

@@ -312,14 +312,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    EmojiText(
-                      user.displayName ?? user.username,
-                      emojis: user.emojis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: EmojiText(
+                            user.displayName ?? user.username,
+                            emojis: user.emojis,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (user.isBot) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: 'Bot',
+                            child: Icon(
+                              Icons.smart_toy,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Text(
                       '@${user.username}@${user.host ?? ""}',

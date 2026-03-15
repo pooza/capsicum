@@ -16,6 +16,7 @@ class User {
   final int followersCount;
   final int followingCount;
   final int postCount;
+  final bool isBot;
   final List<UserField> fields;
   final Map<String, String> emojis;
 
@@ -30,6 +31,7 @@ class User {
     this.followersCount = 0,
     this.followingCount = 0,
     this.postCount = 0,
+    this.isBot = false,
     this.fields = const [],
     this.emojis = const {},
   });

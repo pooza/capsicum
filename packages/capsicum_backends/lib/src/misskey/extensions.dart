@@ -24,6 +24,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       followersCount: followersCount ?? 0,
       followingCount: followingCount ?? 0,
       postCount: notesCount ?? 0,
+      isBot: isBot ?? false,
       fields: (fields ?? [])
           .map(
             (f) => UserField(

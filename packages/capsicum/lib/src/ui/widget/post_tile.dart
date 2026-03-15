@@ -158,6 +158,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                           fallbackHost: displayPost.emojiHost,
                         ),
                       ),
+                      if (displayPost.author.isBot) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.smart_toy,
+                          size: 14,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ],
                       const SizedBox(width: 4),
                       Icon(
                         _scopeIcon(displayPost.scope),
