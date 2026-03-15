@@ -92,13 +92,19 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     final mediaSupport = adapter as MediaUpdateSupport;
 
     try {
-      final updated = await mediaSupport.updateAttachmentDescription(
+      await mediaSupport.updateAttachmentDescription(
         attachment.id,
         result,
         postId: widget.postId!,
       );
       setState(() {
-        _attachments[_currentIndex] = updated;
+        _attachments[_currentIndex] = Attachment(
+          id: attachment.id,
+          type: attachment.type,
+          url: attachment.url,
+          previewUrl: attachment.previewUrl,
+          description: result,
+        );
         _modified = true;
       });
       if (mounted) {

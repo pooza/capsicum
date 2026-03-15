@@ -374,21 +374,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // MediaUpdateSupport
 
   @override
-  Future<Attachment> updateAttachmentDescription(
+  Future<void> updateAttachmentDescription(
     String mediaId,
     String description, {
     required String postId,
   }) async {
-    final file = await client.updateDriveFile(
+    await client.updateDriveFile(
       mediaId,
       comment: description.isNotEmpty ? description : null,
-    );
-    return Attachment(
-      id: file.id,
-      type: _driveFileType(file.type),
-      url: file.url ?? '',
-      previewUrl: file.thumbnailUrl,
-      description: file.comment,
     );
   }
 

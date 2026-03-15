@@ -251,19 +251,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // MediaUpdateSupport
 
   @override
-  Future<Attachment> updateAttachmentDescription(
+  Future<void> updateAttachmentDescription(
     String mediaId,
     String description, {
     required String postId,
   }) async {
-    final status = await client.updateStatusMedia(
+    await client.updateStatusMedia(
       postId,
       mediaAttributes: [
         {'id': mediaId, 'description': description},
       ],
     );
-    final updated = status.mediaAttachments.firstWhere((m) => m.id == mediaId);
-    return updated.toCapsicum();
   }
 
   // LoginSupport
