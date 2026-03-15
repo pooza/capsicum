@@ -379,6 +379,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 12),
             _buildActionButtons(context),
           ],
+          if (user.roles.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: user.roles.map((role) {
+                Color? chipColor;
+                if (role.color != null &&
+                    role.color!.startsWith('#') &&
+                    role.color!.length >= 7) {
+                  try {
+                    chipColor = Color(
+                      0xFF000000 |
+                          int.parse(role.color!.substring(1, 7), radix: 16),
+                    );
+                  } catch (_) {}
+                }
+                return Chip(
+                  avatar: role.iconUrl != null
+                      ? Image.network(
+                          role.iconUrl!,
+                          width: 16,
+                          height: 16,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        )
+                      : null,
+                  label: Text(
+                    role.name,
+                    style: TextStyle(fontSize: 12, color: chipColor),
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  side: chipColor != null
+                      ? BorderSide(color: chipColor.withValues(alpha: 0.5))
+                      : null,
+                );
+              }).toList(),
+            ),
+          ],
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...user.fields.map(

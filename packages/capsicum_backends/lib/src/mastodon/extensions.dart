@@ -34,6 +34,15 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followingCount: followingCount,
       postCount: statusesCount,
       isBot: bot ?? false,
+      roles: (roles ?? [])
+          .map(
+            (r) => UserRole(
+              id: r['id']?.toString() ?? '',
+              name: r['name'] as String? ?? '',
+              color: r['color'] as String?,
+            ),
+          )
+          .toList(),
       fields: fields
           .map(
             (f) => UserField(
