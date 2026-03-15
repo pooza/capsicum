@@ -49,3 +49,9 @@ final announcementProvider =
     AsyncNotifierProvider.autoDispose<AnnouncementNotifier, AnnouncementState>(
       AnnouncementNotifier.new,
     );
+
+/// Number of unread announcements (0 while loading or on error).
+final unreadAnnouncementCountProvider = Provider.autoDispose<int>((ref) {
+  final state = ref.watch(announcementProvider);
+  return state.valueOrNull?.announcements.where((a) => !a.read).length ?? 0;
+});

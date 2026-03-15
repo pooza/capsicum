@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/announcement_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -59,6 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accountState = ref.watch(accountManagerProvider);
     final selectedType = ref.watch(selectedTimelineTypeProvider);
     final selectedList = ref.watch(selectedListProvider);
+    final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
 
     // Choose which timeline data to display.
     final timeline = selectedList != null
@@ -67,6 +69,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Badge(
+              isLabelVisible: unreadAnnouncements > 0,
+              child: const Icon(Icons.menu),
+            ),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: Row(
           children: [
             if (account?.user.avatarUrl != null)
@@ -131,7 +142,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: _buildTimelineTabs(context, selectedType, selectedList),
         ),
       ),
-      drawer: _buildDrawer(context, ref, account, accountState),
+      drawer: _buildDrawer(
+        context,
+        ref,
+        account,
+        accountState,
+        unreadAnnouncements,
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/compose'),
         child: const Icon(Icons.edit),
@@ -342,6 +359,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetRef ref,
     Account? current,
     AccountManagerState accountState,
+    int unreadAnnouncements,
   ) {
     final otherAccounts = accountState.accounts
         .where((a) => a.key != current?.key)
@@ -495,6 +513,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.campaign_outlined),
             title: const Text('お知らせ'),
+            trailing: unreadAnnouncements > 0
+                ? Badge(label: Text('$unreadAnnouncements'))
+                : null,
             onTap: () {
               Navigator.of(context).pop();
               context.push('/announcements');
@@ -559,8 +580,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.issuesUrl,
-                    ),
+                    onTap: () => launchUrl(AppConstants.issuesUrl),
                     child: Text(
                       '問題を報告',
                       style: TextStyle(
