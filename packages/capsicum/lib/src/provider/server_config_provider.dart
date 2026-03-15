@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,14 @@ import 'account_manager_provider.dart';
 final postLabelProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
   return mulukhiya?.postLabel ?? '投稿';
+});
+
+/// The label to use for "boost/renote" actions (e.g. "リキュア" on precure.fun).
+final reblogLabelProvider = Provider<String>((ref) {
+  final mulukhiya = ref.watch(currentMulukhiyaProvider);
+  if (mulukhiya?.reblogLabel != null) return mulukhiya!.reblogLabel!;
+  final adapter = ref.watch(currentAdapterProvider);
+  return adapter is ReactionSupport ? 'リノート' : 'ブースト';
 });
 
 /// Maximum post content length from mulukhiya, falling back to adapter default.

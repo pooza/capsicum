@@ -139,7 +139,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: EmojiText(
-                        '${post.author.displayName ?? post.author.username} がブースト',
+                        '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
                         emojis: post.author.emojis,
                         style: Theme.of(context).textTheme.bodySmall,
                         fallbackHost: post.emojiHost,
@@ -561,9 +561,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     final targetPost = post.reblog ?? post;
     final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
     final messenger = ScaffoldMessenger.of(context);
-    final isMisskey = adapter is ReactionSupport;
-    final boostLabel = isMisskey ? 'リノート' : 'ブースト';
-    final bookmarkLabel = isMisskey ? 'お気に入り' : 'ブックマーク';
+    final boostLabel = ref.read(reblogLabelProvider);
+    final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
 
     showModalBottomSheet(
       context: context,

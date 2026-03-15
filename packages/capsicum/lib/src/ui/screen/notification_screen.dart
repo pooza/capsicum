@@ -65,6 +65,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                     return NotificationTile(
                       notification: state.notifications[index],
                       postLabel: ref.watch(postLabelProvider),
+                      reblogLabel: ref.watch(reblogLabelProvider),
                     );
                   },
                 ),

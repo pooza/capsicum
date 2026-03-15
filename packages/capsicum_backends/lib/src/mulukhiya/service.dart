@@ -92,6 +92,7 @@ class MulukhiyaService {
   final String? postLabel;
   final String? themeColorHex;
   final String? defaultHashtag;
+  final String? reblogLabel;
   final bool annictEnabled;
 
   MulukhiyaService._({
@@ -103,6 +104,7 @@ class MulukhiyaService {
     this.postLabel,
     this.themeColorHex,
     this.defaultHashtag,
+    this.reblogLabel,
     this.annictEnabled = false,
   }) : _dio = dio;
 
@@ -141,6 +143,7 @@ class MulukhiyaService {
         postLabel: status?['label'] as String?,
         themeColorHex: theme?['color'] as String?,
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
+        reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
       );
     } catch (_) {
