@@ -160,6 +160,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return MediaViewerScreen(
             attachments: extra['attachments'] as List<Attachment>,
             initialIndex: extra['initialIndex'] as int? ?? 0,
+            postAuthorId: extra['postAuthorId'] as String?,
+            postId: extra['postId'] as String?,
           );
         },
       ),

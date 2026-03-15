@@ -5,6 +5,22 @@ class UserField {
   const UserField({required this.name, required this.value});
 }
 
+class UserRole {
+  final String id;
+  final String name;
+  final String? color;
+  final String? iconUrl;
+  final bool isAdmin;
+
+  const UserRole({
+    required this.id,
+    required this.name,
+    this.color,
+    this.iconUrl,
+    this.isAdmin = false,
+  });
+}
+
 class User {
   final String id;
   final String username;
@@ -16,6 +32,8 @@ class User {
   final int followersCount;
   final int followingCount;
   final int postCount;
+  final bool isBot;
+  final List<UserRole> roles;
   final List<UserField> fields;
   final Map<String, String> emojis;
 
@@ -30,6 +48,8 @@ class User {
     this.followersCount = 0,
     this.followingCount = 0,
     this.postCount = 0,
+    this.isBot = false,
+    this.roles = const [],
     this.fields = const [],
     this.emojis = const {},
   });

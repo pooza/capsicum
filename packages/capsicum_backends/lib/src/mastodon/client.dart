@@ -324,6 +324,28 @@ class MastodonClient {
     );
   }
 
+  /// PUT /api/v1/statuses/:id — update media descriptions via media_attributes
+  Future<MastodonStatus> updateStatusMedia(
+    String statusId, {
+    required List<Map<String, String>> mediaAttributes,
+  }) async {
+    // Mastodon expects Rails-style form encoding:
+    // media_attributes[0][id]=...&media_attributes[0][description]=...
+    final formData = FormData();
+    for (var i = 0; i < mediaAttributes.length; i++) {
+      for (final entry in mediaAttributes[i].entries) {
+        formData.fields.add(
+          MapEntry('media_attributes[$i][${entry.key}]', entry.value),
+        );
+      }
+    }
+    final response = await dio.put(
+      '/api/v1/statuses/$statusId',
+      data: formData,
+    );
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,

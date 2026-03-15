@@ -74,7 +74,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         HashtagSupport,
         PollSupport,
         LoginSupport,
-        StreamSupport {
+        StreamSupport,
+        MediaUpdateSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -245,6 +246,24 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
     }
     return media.toCapsicum();
+  }
+
+  // MediaUpdateSupport
+
+  @override
+  Future<Attachment> updateAttachmentDescription(
+    String mediaId,
+    String description, {
+    required String postId,
+  }) async {
+    final status = await client.updateStatusMedia(
+      postId,
+      mediaAttributes: [
+        {'id': mediaId, 'description': description},
+      ],
+    );
+    final updated = status.mediaAttachments.firstWhere((m) => m.id == mediaId);
+    return updated.toCapsicum();
   }
 
   // LoginSupport

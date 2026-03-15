@@ -312,14 +312,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    EmojiText(
-                      user.displayName ?? user.username,
-                      emojis: user.emojis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: EmojiText(
+                            user.displayName ?? user.username,
+                            emojis: user.emojis,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (user.isBot) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: 'Bot',
+                            child: Icon(
+                              Icons.smart_toy,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Text(
                       '@${user.username}@${user.host ?? ""}',
@@ -361,6 +378,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           if (!_isOwnProfile && _relationship != null) ...[
             const SizedBox(height: 12),
             _buildActionButtons(context),
+          ],
+          if (user.roles.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: user.roles.map((role) {
+                Color? chipColor;
+                if (role.color != null &&
+                    role.color!.startsWith('#') &&
+                    role.color!.length >= 7) {
+                  try {
+                    chipColor = Color(
+                      0xFF000000 |
+                          int.parse(role.color!.substring(1, 7), radix: 16),
+                    );
+                  } catch (_) {}
+                }
+                return Chip(
+                  avatar: role.iconUrl != null
+                      ? Image.network(
+                          role.iconUrl!,
+                          width: 16,
+                          height: 16,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        )
+                      : null,
+                  label: Text(
+                    role.name,
+                    style: TextStyle(fontSize: 12, color: chipColor),
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  side: chipColor != null
+                      ? BorderSide(color: chipColor.withValues(alpha: 0.5))
+                      : null,
+                );
+              }).toList(),
+            ),
           ],
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),

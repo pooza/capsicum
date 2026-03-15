@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import 'src/constants.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
@@ -52,7 +53,7 @@ class CapsicumApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: 'capsicum',
+      title: AppConstants.appName,
       locale: const Locale('ja'),
       supportedLocales: const [Locale('ja')],
       localizationsDelegates: const [

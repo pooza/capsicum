@@ -81,12 +81,15 @@ gem install fastlane
 ```ruby
 default_platform(:android)
 
+json_key_path = File.expand_path('~/.config/capsicum/google-play-service-account.json')
+
 platform :android do
   desc "Deploy to Google Play internal testing"
   lane :internal do
     upload_to_play_store(
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
+      json_key: json_key_path,
     )
   end
 
@@ -95,10 +98,15 @@ platform :android do
     upload_to_play_store(
       track: 'internal',
       track_promote_to: 'production',
+      json_key: json_key_path,
     )
   end
 end
 ```
+
+> **各マシン共通の前提:**
+> Google Play サービスアカウントの JSON キーを `~/.config/capsicum/google-play-service-account.json` に配置すること。
+> キーは Google Cloud Console のサービスアカウント管理画面からダウンロードし、Play Console の「ユーザーと権限」でそのサービスアカウントに capsicum アプリのリリース権限を付与しておく。
 
 ### 3.3 iOS（`ios/fastlane/Fastfile`）
 

@@ -29,6 +29,7 @@ export 'src/social/interfaces/favorite_support.dart';
 export 'src/social/interfaces/follow_support.dart';
 export 'src/social/interfaces/hashtag_support.dart';
 export 'src/social/interfaces/list_support.dart';
+export 'src/social/interfaces/media_update_support.dart';
 export 'src/social/interfaces/login_support.dart';
 export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/poll_support.dart';

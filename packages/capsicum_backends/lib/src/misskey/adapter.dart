@@ -76,7 +76,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         HashtagSupport,
         PollSupport,
         LoginSupport,
-        StreamSupport {
+        StreamSupport,
+        MediaUpdateSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -368,6 +369,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     if (mimeType.startsWith('video/')) return AttachmentType.video;
     if (mimeType.startsWith('audio/')) return AttachmentType.audio;
     return AttachmentType.unknown;
+  }
+
+  // MediaUpdateSupport
+
+  @override
+  Future<Attachment> updateAttachmentDescription(
+    String mediaId,
+    String description, {
+    required String postId,
+  }) async {
+    final file = await client.updateDriveFile(
+      mediaId,
+      comment: description.isNotEmpty ? description : null,
+    );
+    return Attachment(
+      id: file.id,
+      type: _driveFileType(file.type),
+      url: file.url ?? '',
+      previewUrl: file.thumbnailUrl,
+      description: file.comment,
+    );
   }
 
   // LoginSupport

@@ -14,6 +14,8 @@ class MisskeyUser {
   final int? followersCount;
   final int? followingCount;
   final int? notesCount;
+  final bool? isBot;
+  final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>>? fields;
   final Map<String, String>? emojis;
   final List<List<String>>? mutedWords;
@@ -30,6 +32,8 @@ class MisskeyUser {
     this.followersCount,
     this.followingCount,
     this.notesCount,
+    this.isBot,
+    this.roles,
     this.fields,
     this.emojis,
     this.mutedWords,

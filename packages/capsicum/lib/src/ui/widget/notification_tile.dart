@@ -9,11 +9,13 @@ import 'emoji_text.dart';
 class NotificationTile extends StatefulWidget {
   final Notification notification;
   final String postLabel;
+  final String reblogLabel;
 
   const NotificationTile({
     super.key,
     required this.notification,
     this.postLabel = '投稿',
+    this.reblogLabel = 'ブースト',
   });
 
   @override
@@ -155,7 +157,7 @@ class _NotificationTileState extends State<NotificationTile> {
 
   (IconData, String) get _iconAndLabel => switch (notification.type) {
     NotificationType.mention => (Icons.alternate_email, 'メンション'),
-    NotificationType.reblog => (Icons.repeat, 'ブースト'),
+    NotificationType.reblog => (Icons.repeat, widget.reblogLabel),
     NotificationType.favourite => (Icons.star, 'お気に入り'),
     NotificationType.follow => (Icons.person_add, 'フォロー'),
     NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),

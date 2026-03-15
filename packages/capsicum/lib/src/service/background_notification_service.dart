@@ -59,10 +59,11 @@ class BackgroundNotificationService {
         );
 
         // Show a local notification for each new item.
+        final reblogLabel = adapter is ReactionSupport ? 'リノート' : 'ブースト';
         for (final n in notifications) {
           await plugin.show(
             notificationId++,
-            _buildTitle(n, accountKey),
+            _buildTitle(n, accountKey, reblogLabel: reblogLabel),
             _buildBody(n),
             _platformDetails(),
           );
@@ -76,11 +77,15 @@ class BackgroundNotificationService {
     await prefs.setInt('capsicum_notification_id_counter', notificationId);
   }
 
-  static String _buildTitle(Notification n, AccountKey key) {
+  static String _buildTitle(
+    Notification n,
+    AccountKey key, {
+    String reblogLabel = 'ブースト',
+  }) {
     final name = n.user?.displayName ?? n.user?.username ?? '???';
     return switch (n.type) {
       NotificationType.mention => '$name さんがあなたに返信しました',
-      NotificationType.reblog => '$name さんがブーストしました',
+      NotificationType.reblog => '$name さんが$reblogLabelしました',
       NotificationType.favourite => '$name さんがお気に入りしました',
       NotificationType.follow => '$name さんにフォローされました',
       NotificationType.followRequest => '$name さんからフォローリクエスト',
