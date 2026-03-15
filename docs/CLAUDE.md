@@ -289,6 +289,7 @@ v0.2.0 リリース済み:
 各マシン共通の前提（詳細は [store-release-guide.md](store-release-guide.md) を参照）:
 
 - `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置
+- `~/.config/capsicum/google-play-service-account.json` に Google Play サービスアカウント JSON キーを配置
 - Xcode → Settings → Accounts で Apple Distribution 証明書を作成
 - `gem install fastlane`（rbenv の Ruby を使用）
 - Android 署名鍵: `android/key.properties`（git 管理外、手動配置）

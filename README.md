@@ -33,6 +33,11 @@ dart analyze --fatal-infos
 
 コードの大半は [Claude Code](https://claude.ai/claude-code) によって書かれています。設計の出発点は [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) の Adapter パターンとモデル構造です。
 
+## ドキュメント
+
+- [開発ガイド](docs/CLAUDE.md) — 設計方針・実装ステータス・リリース計画
+- [ストアリリース手順書](docs/store-release-guide.md) — 署名・Fastlane・ビルド・アップロード手順
+
 ## 方針
 
 汎用の Fediverse クライアントですが、開発者自身が運営するサーバーのメンバーの利益を最優先します。外部ユーザーからの要望や、開発者のサーバーで使用していないバージョン・フォークへの対応は保証しません。
