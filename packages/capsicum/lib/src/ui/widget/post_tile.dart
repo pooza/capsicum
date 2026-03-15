@@ -166,6 +166,34 @@ class _PostTileState extends ConsumerState<PostTile> {
                           color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ],
+                      for (final role in displayPost.author.roles)
+                        if (role.iconUrl != null) ...[
+                          const SizedBox(width: 4),
+                          Image.network(
+                            role.iconUrl!,
+                            width: 14,
+                            height: 14,
+                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          ),
+                        ] else if (role.isAdmin) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.shield,
+                            size: 14,
+                            color:
+                                role.color != null &&
+                                    role.color!.startsWith('#') &&
+                                    role.color!.length >= 7
+                                ? Color(
+                                    0xFF000000 |
+                                        int.parse(
+                                          role.color!.substring(1, 7),
+                                          radix: 16,
+                                        ),
+                                  )
+                                : Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ],
                       const SizedBox(width: 4),
                       Icon(
                         _scopeIcon(displayPost.scope),

@@ -10,12 +10,14 @@ class UserRole {
   final String name;
   final String? color;
   final String? iconUrl;
+  final bool isAdmin;
 
   const UserRole({
     required this.id,
     required this.name,
     this.color,
     this.iconUrl,
+    this.isAdmin = false,
   });
 }
 

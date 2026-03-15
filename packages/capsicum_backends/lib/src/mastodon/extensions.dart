@@ -34,15 +34,15 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followingCount: followingCount,
       postCount: statusesCount,
       isBot: bot ?? false,
-      roles: (roles ?? [])
-          .map(
-            (r) => UserRole(
-              id: r['id']?.toString() ?? '',
-              name: r['name'] as String? ?? '',
-              color: r['color'] as String?,
-            ),
-          )
-          .toList(),
+      roles: (roles ?? []).map((r) {
+        final perms = int.tryParse(r['permissions']?.toString() ?? '') ?? 0;
+        return UserRole(
+          id: r['id']?.toString() ?? '',
+          name: r['name'] as String? ?? '',
+          color: r['color'] as String?,
+          isAdmin: (perms & 0x1) != 0,
+        );
+      }).toList(),
       fields: fields
           .map(
             (f) => UserField(

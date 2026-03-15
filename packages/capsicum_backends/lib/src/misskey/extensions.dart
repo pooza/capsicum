@@ -32,6 +32,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
               name: r['name'] as String? ?? '',
               color: r['color'] as String?,
               iconUrl: r['iconUrl'] as String?,
+              isAdmin: r['isAdministrator'] as bool? ?? false,
             ),
           )
           .toList(),
