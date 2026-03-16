@@ -376,6 +376,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ],
           ),
+          if (_isOwnProfile) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final updatedUser =
+                    await context.push<User>('/profile/edit');
+                if (updatedUser != null && mounted) {
+                  setState(() => _user = updatedUser);
+                }
+              },
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('プロフィールを編集'),
+            ),
+          ],
           if (!_isOwnProfile && _relationship != null) ...[
             const SizedBox(height: 12),
             _buildActionButtons(context),

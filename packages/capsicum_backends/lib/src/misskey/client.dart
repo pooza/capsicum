@@ -553,4 +553,32 @@ class MisskeyClient {
       data: createBody({'noteId': noteId, 'choice': choice}),
     );
   }
+
+  /// POST /api/i/update
+  Future<MisskeyUser> updateI({
+    String? name,
+    String? description,
+    String? avatarId,
+    String? bannerId,
+    List<Map<String, String>>? fields,
+  }) async {
+    final params = <String, dynamic>{
+      'avatarId': ?avatarId,
+      'bannerId': ?bannerId,
+      'fields': ?fields,
+    };
+    // Misskey rejects "" but accepts explicit null to clear a field.
+    // null parameter = "not changing" (omit key), empty string = "clear" (send null value).
+    if (name != null) {
+      params['name'] = name.isEmpty ? null : name;
+    }
+    if (description != null) {
+      params['description'] = description.isEmpty ? null : description;
+    }
+    final response = await dio.post(
+      '/api/i/update',
+      data: createBody(params),
+    );
+    return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+  }
 }

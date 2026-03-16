@@ -22,4 +22,14 @@ class Account {
     this.mulukhiya,
     this.softwareVersion,
   });
+
+  Account copyWithUser(User user) => Account(
+    key: key,
+    adapter: adapter,
+    user: user,
+    userSecret: userSecret,
+    clientSecret: clientSecret,
+    mulukhiya: mulukhiya,
+    softwareVersion: softwareVersion,
+  );
 }

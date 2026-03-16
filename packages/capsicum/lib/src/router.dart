@@ -14,6 +14,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
@@ -132,6 +133,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           final user = state.extra! as User;
           return ProfileScreen(user: user);
         },
+      ),
+      GoRoute(
+        path: '/profile/edit',
+        builder: (context, state) => const ProfileEditScreen(),
       ),
       GoRoute(
         path: '/followers',

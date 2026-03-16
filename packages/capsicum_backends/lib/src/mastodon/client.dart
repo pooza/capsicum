@@ -479,6 +479,43 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/instance
+  Future<Map<String, dynamic>> getInstanceV1() async {
+    final response = await dio.get('/api/v1/instance');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// PATCH /api/v1/accounts/update_credentials
+  Future<MastodonAccount> updateCredentials({
+    String? displayName,
+    String? note,
+    String? avatarPath,
+    String? headerPath,
+    List<Map<String, String>>? fieldsAttributes,
+  }) async {
+    final map = <String, dynamic>{};
+    if (displayName != null) map['display_name'] = displayName;
+    if (note != null) map['note'] = note;
+    if (avatarPath != null) {
+      map['avatar'] = await MultipartFile.fromFile(avatarPath);
+    }
+    if (headerPath != null) {
+      map['header'] = await MultipartFile.fromFile(headerPath);
+    }
+    if (fieldsAttributes != null) {
+      for (var i = 0; i < fieldsAttributes.length; i++) {
+        map['fields_attributes[$i][name]'] = fieldsAttributes[i]['name'] ?? '';
+        map['fields_attributes[$i][value]'] =
+            fieldsAttributes[i]['value'] ?? '';
+      }
+    }
+    final response = await dio.patch(
+      '/api/v1/accounts/update_credentials',
+      data: FormData.fromMap(map),
+    );
+    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/v1/markers
   Future<void> saveMarkers({
     String? homeLastReadId,

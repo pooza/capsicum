@@ -75,7 +75,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         PollSupport,
         LoginSupport,
         StreamSupport,
-        MarkerSupport {
+        MarkerSupport,
+        ProfileEditSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -603,5 +604,39 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   void disposeStream() {
     _streaming?.dispose();
     _streaming = null;
+  }
+
+  // ProfileEditSupport
+
+  @override
+  Future<int?> getMaxProfileFields() async {
+    try {
+      final instance = await client.getInstanceV1();
+      final config = instance['configuration'] as Map<String, dynamic>?;
+      final accounts = config?['accounts'] as Map<String, dynamic>?;
+      return accounts?['max_profile_fields'] as int? ?? 4;
+    } catch (_) {
+      return 4;
+    }
+  }
+
+  @override
+  Future<User> updateProfile({
+    String? displayName,
+    String? description,
+    String? avatarFilePath,
+    String? bannerFilePath,
+    List<UserField>? fields,
+  }) async {
+    final account = await client.updateCredentials(
+      displayName: displayName,
+      note: description,
+      avatarPath: avatarFilePath,
+      headerPath: bannerFilePath,
+      fieldsAttributes: fields
+          ?.map((f) => {'name': f.name, 'value': f.value})
+          .toList(),
+    );
+    return account.toCapsicum(host);
   }
 }

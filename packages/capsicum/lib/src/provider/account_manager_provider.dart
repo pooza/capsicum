@@ -72,6 +72,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
   }
 
+  void updateCurrentUser(User user) {
+    final current = state.current;
+    if (current == null) return;
+    final updated = current.copyWithUser(user);
+    final accounts = state.accounts
+        .map((a) => a.key == updated.key ? updated : a)
+        .toList();
+    state = AccountManagerState(accounts: accounts, current: updated);
+  }
+
   Future<void> logout(Account account) async {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());

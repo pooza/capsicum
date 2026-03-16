@@ -77,7 +77,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PollSupport,
         LoginSupport,
         StreamSupport,
-        MediaUpdateSupport {
+        MediaUpdateSupport,
+        ProfileEditSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -702,5 +703,42 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   void disposeStream() {
     _streaming?.dispose();
     _streaming = null;
+  }
+
+  // ProfileEditSupport
+
+  @override
+  Future<int?> getMaxProfileFields() async => null;
+
+  @override
+  Future<User> updateProfile({
+    String? displayName,
+    String? description,
+    String? avatarFilePath,
+    String? bannerFilePath,
+    List<UserField>? fields,
+  }) async {
+    String? avatarId;
+    String? bannerId;
+    if (avatarFilePath != null) {
+      final file = await client.createDriveFile(avatarFilePath);
+      avatarId = file['id'] as String;
+    }
+    if (bannerFilePath != null) {
+      final file = await client.createDriveFile(bannerFilePath);
+      bannerId = file['id'] as String;
+    }
+    final mappedFields = fields
+        ?.where((f) => f.name.isNotEmpty || f.value.isNotEmpty)
+        .map((f) => {'name': f.name, 'value': f.value})
+        .toList();
+    final user = await client.updateI(
+      name: displayName?.isNotEmpty == true ? displayName : null,
+      description: description,
+      avatarId: avatarId,
+      bannerId: bannerId,
+      fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
+    );
+    return user.toCapsicum(host);
   }
 }

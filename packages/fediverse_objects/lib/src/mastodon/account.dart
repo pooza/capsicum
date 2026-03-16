@@ -18,6 +18,7 @@ class MastodonAccount {
   final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>> fields;
   final List<Map<String, dynamic>>? emojis;
+  final Map<String, dynamic>? source;
 
   const MastodonAccount({
     required this.id,
@@ -34,6 +35,7 @@ class MastodonAccount {
     this.roles,
     this.fields = const [],
     this.emojis,
+    this.source,
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>
