@@ -469,4 +469,28 @@ class MastodonClient {
   Future<void> votePoll(String pollId, List<int> choices) async {
     await dio.post('/api/v1/polls/$pollId/votes', data: {'choices': choices});
   }
+
+  /// GET /api/v1/markers
+  Future<Map<String, dynamic>> getMarkers(List<String> timelines) async {
+    final response = await dio.get(
+      '/api/v1/markers',
+      queryParameters: {'timeline[]': timelines},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/markers
+  Future<void> saveMarkers({
+    String? homeLastReadId,
+    String? notificationLastReadId,
+  }) async {
+    final data = <String, dynamic>{};
+    if (homeLastReadId != null) {
+      data['home'] = {'last_read_id': homeLastReadId};
+    }
+    if (notificationLastReadId != null) {
+      data['notifications'] = {'last_read_id': notificationLastReadId};
+    }
+    await dio.post('/api/v1/markers', data: data);
+  }
 }

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants.dart';
@@ -11,6 +14,7 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/list_provider.dart';
+import '../../provider/marker_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
@@ -27,30 +31,82 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  final _scrollController = ScrollController();
+  final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
+  bool _markerRestored = false;
+  Timer? _throttleTimer;
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
+    _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
+    _throttleTimer?.cancel();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      final selectedList = ref.read(selectedListProvider);
-      if (selectedList != null) {
-        ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
-      } else {
-        ref.read(timelineProvider.notifier).loadMore();
+  void _onPositionsChanged() {
+    // Throttle to avoid excessive processing.
+    if (_throttleTimer?.isActive ?? false) return;
+    _throttleTimer = Timer(const Duration(milliseconds: 200), () {});
+
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+
+    // Load more when near the end.
+    final selectedList = ref.read(selectedListProvider);
+    final timeline = selectedList != null
+        ? ref.read(listTimelineProvider(selectedList.id)).valueOrNull
+        : ref.read(timelineProvider).valueOrNull;
+    if (timeline != null && !timeline.isLoadingMore) {
+      final maxIndex = positions
+          .map((p) => p.index)
+          .reduce((a, b) => a > b ? a : b);
+      if (maxIndex >= timeline.posts.length - 3) {
+        if (selectedList != null) {
+          ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
+        } else {
+          ref.read(timelineProvider.notifier).loadMore();
+        }
       }
+    }
+
+    // Save marker (home timeline only, debounced).
+    if (selectedList == null) {
+      final selectedType = ref.read(selectedTimelineTypeProvider);
+      if (selectedType == TimelineType.home && timeline != null) {
+        final minIndex = positions
+            .map((p) => p.index)
+            .reduce((a, b) => a < b ? a : b);
+        if (minIndex < timeline.posts.length) {
+          ref.read(homeMarkerSaverProvider).save(timeline.posts[minIndex].id);
+        }
+      }
+    }
+  }
+
+  Future<void> _restoreMarker(List<Post> posts) async {
+    if (_markerRestored) return;
+    _markerRestored = true;
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! MarkerSupport) return;
+
+    try {
+      final markers = await (adapter as MarkerSupport).getMarkers();
+      if (markers.home == null) return;
+
+      final markerId = markers.home!.lastReadId;
+      final index = posts.indexWhere((p) => p.id == markerId);
+      if (index > 0 && mounted && _itemScrollController.isAttached) {
+        _itemScrollController.jumpTo(index: index);
+      }
+    } catch (_) {
+      // Marker fetch failed — silently ignore.
     }
   }
 
@@ -158,30 +214,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ? (details) => _onSwipe(details, selectedType)
             : null,
         child: timeline.when(
-          data: (tlState) => RefreshIndicator(
-            onRefresh: () {
-              if (selectedList != null) {
-                return ref.refresh(
-                  listTimelineProvider(selectedList.id).future,
-                );
-              }
-              return ref.refresh(timelineProvider.future);
-            },
-            child: ListView.separated(
-              controller: _scrollController,
-              itemCount: tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                if (index >= tlState.posts.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
+          data: (tlState) {
+            // Restore marker position on first load (home timeline only).
+            if (selectedList == null &&
+                selectedType == TimelineType.home &&
+                tlState.posts.isNotEmpty) {
+              _restoreMarker(tlState.posts);
+            }
+            return RefreshIndicator(
+              onRefresh: () {
+                _markerRestored = false;
+                if (selectedList != null) {
+                  return ref.refresh(
+                    listTimelineProvider(selectedList.id).future,
                   );
                 }
-                return PostTile(post: tlState.posts[index]);
+                return ref.refresh(timelineProvider.future);
               },
-            ),
-          ),
+              child: ScrollablePositionedList.separated(
+                itemScrollController: _itemScrollController,
+                itemPositionsListener: _itemPositionsListener,
+                itemCount:
+                    tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (index >= tlState.posts.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return PostTile(post: tlState.posts[index]);
+                },
+              ),
+            );
+          },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, stack) {
             final message = _timelineErrorMessage(error);

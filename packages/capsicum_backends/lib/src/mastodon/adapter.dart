@@ -74,7 +74,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         HashtagSupport,
         PollSupport,
         LoginSupport,
-        StreamSupport {
+        StreamSupport,
+        MarkerSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -520,6 +521,38 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> deleteList(String id) async {
     await client.deleteList(id);
+  }
+
+  // MarkerSupport
+
+  @override
+  Future<MarkerSet> getMarkers() async {
+    final data = await client.getMarkers(['home', 'notifications']);
+    return MarkerSet(
+      home: _parseMarker(data['home'] as Map<String, dynamic>?),
+      notifications: _parseMarker(
+        data['notifications'] as Map<String, dynamic>?,
+      ),
+    );
+  }
+
+  Marker? _parseMarker(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    return Marker(
+      lastReadId: data['last_read_id'] as String,
+      version: data['version'] as int,
+      updatedAt: DateTime.parse(data['updated_at'] as String),
+    );
+  }
+
+  @override
+  Future<void> saveHomeMarker(String lastReadId) async {
+    await client.saveMarkers(homeLastReadId: lastReadId);
+  }
+
+  @override
+  Future<void> saveNotificationMarker(String lastReadId) async {
+    await client.saveMarkers(notificationLastReadId: lastReadId);
   }
 
   // HashtagSupport
