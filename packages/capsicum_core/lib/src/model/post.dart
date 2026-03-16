@@ -34,6 +34,7 @@ class Post {
   final String? filterTitle;
   final bool pinned;
   final String? channelName;
+  final bool localOnly;
 
   const Post({
     required this.id,
@@ -65,6 +66,7 @@ class Post {
     this.filterTitle,
     this.pinned = false,
     this.channelName,
+    this.localOnly = false,
   });
 }
 

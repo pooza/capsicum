@@ -237,6 +237,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                         size: 14,
                         color: Theme.of(context).textTheme.bodySmall?.color,
                       ),
+                      if (displayPost.localOnly) ...[
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.edit_off,
+                          size: 14,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ],
                       const SizedBox(width: 4),
                       Text(
                         _relativeTime(displayPost.postedAt),

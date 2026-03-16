@@ -39,6 +39,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   bool _sending = false;
+  bool _localOnly = false;
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
@@ -335,6 +336,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          localOnly: _localOnly,
         ),
       );
       if (mounted) {
@@ -556,6 +558,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         },
                   items: _scopeItems(ref),
                 ),
+                if (ref.watch(currentAdapterProvider) is ReactionSupport)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: FilterChip(
+                      label: const Text('ローカルのみ'),
+                      selected: _localOnly,
+                      onSelected: _sending
+                          ? null
+                          : (v) => setState(() => _localOnly = v),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
                 const Spacer(),
                 if (maxLength != null)
                   ValueListenableBuilder<TextEditingValue>(
