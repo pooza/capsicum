@@ -18,6 +18,7 @@ class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
   final bool initialExpanded;
+  final bool selectable;
   final VoidCallback? onActionCompleted;
 
   const PostTile({
@@ -25,6 +26,7 @@ class PostTile extends ConsumerStatefulWidget {
     required this.post,
     this.tappable = true,
     this.initialExpanded = false,
+    this.selectable = false,
     this.onActionCompleted,
   });
 
@@ -42,6 +44,18 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
+
+  Widget _buildContentText(InlineSpan contentSpan) {
+    final textWidget = Text.rich(
+      contentSpan,
+      maxLines: _expanded ? null : _maxLines,
+      overflow: _expanded ? null : TextOverflow.ellipsis,
+    );
+    if (widget.selectable) {
+      return SelectionArea(child: textWidget);
+    }
+    return textWidget;
+  }
 
   void _onMediaDescriptionUpdated(
     Post displayPost,
@@ -390,15 +404,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    SelectionArea(
-                                      child: Text.rich(
-                                        contentSpan,
-                                        maxLines: _expanded ? null : _maxLines,
-                                        overflow: _expanded
-                                            ? null
-                                            : TextOverflow.ellipsis,
-                                      ),
-                                    ),
+                                    _buildContentText(contentSpan),
                                     if (overflows)
                                       GestureDetector(
                                         onTap: () => setState(

@@ -36,6 +36,7 @@ class PostDetailScreen extends ConsumerWidget {
                 post: p,
                 tappable: !isTarget,
                 initialExpanded: isTarget,
+                selectable: true,
                 onActionCompleted: () =>
                     ref.invalidate(_threadProvider(post.id)),
               ),
