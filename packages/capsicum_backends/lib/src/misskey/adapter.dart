@@ -151,7 +151,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
-    final notes = await client.getUserNotes(id, pinned: true);
+    final user = await client.showUser(id);
+    final rawNotes = user.pinnedNotes ?? [];
+    final notes = rawNotes
+        .map((e) => MisskeyNote.fromJson(e))
+        .toList();
     return _safeConvert(
       notes,
       (n) => n.toCapsicum(host, pinned: true),

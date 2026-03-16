@@ -20,6 +20,7 @@ class MisskeyUser {
   final Map<String, String>? emojis;
   final List<List<String>>? mutedWords;
   final List<List<String>>? hardMutedWords;
+  final List<Map<String, dynamic>>? pinnedNotes;
 
   const MisskeyUser({
     required this.id,
@@ -38,6 +39,7 @@ class MisskeyUser {
     this.emojis,
     this.mutedWords,
     this.hardMutedWords,
+    this.pinnedNotes,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>
