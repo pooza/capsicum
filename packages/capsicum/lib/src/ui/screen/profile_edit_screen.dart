@@ -41,8 +41,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     // Get max profile fields.
     if (adapter is ProfileEditSupport) {
-      _maxFields =
-          await (adapter as ProfileEditSupport).getMaxProfileFields();
+      _maxFields = await (adapter as ProfileEditSupport).getMaxProfileFields();
     }
 
     // For Mastodon, fetch source (plain-text bio/fields) via verifyCredentials.
@@ -54,10 +53,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       final sourceFields = source?['fields'] as List<dynamic>? ?? [];
       for (final f in sourceFields) {
         final map = f as Map<String, dynamic>;
-        _fields.add(_FieldEntry(
-          name: TextEditingController(text: map['name'] as String? ?? ''),
-          value: TextEditingController(text: map['value'] as String? ?? ''),
-        ));
+        _fields.add(
+          _FieldEntry(
+            name: TextEditingController(text: map['name'] as String? ?? ''),
+            value: TextEditingController(text: map['value'] as String? ?? ''),
+          ),
+        );
       }
     } else {
       // Misskey: description is plain text.
@@ -65,10 +66,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       _displayNameController.text = user.displayName ?? '';
       _bioController.text = user.description ?? '';
       for (final f in user.fields) {
-        _fields.add(_FieldEntry(
-          name: TextEditingController(text: f.name),
-          value: TextEditingController(text: f.value),
-        ));
+        _fields.add(
+          _FieldEntry(
+            name: TextEditingController(text: f.name),
+            value: TextEditingController(text: f.value),
+          ),
+        );
       }
     }
 
@@ -98,10 +101,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   void _addField() {
     setState(() {
-      _fields.add(_FieldEntry(
-        name: TextEditingController(),
-        value: TextEditingController(),
-      ));
+      _fields.add(
+        _FieldEntry(
+          name: TextEditingController(),
+          value: TextEditingController(),
+        ),
+      );
     });
   }
 
@@ -125,23 +130,18 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         avatarFilePath: _avatarFile?.path,
         bannerFilePath: _bannerFile?.path,
         fields: _fields
-            .map((f) => UserField(
-                  name: f.name.text,
-                  value: f.value.text,
-                ))
+            .map((f) => UserField(name: f.name.text, value: f.value.text))
             .toList(),
       );
 
-      ref
-          .read(accountManagerProvider.notifier)
-          .updateCurrentUser(updatedUser);
+      ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
 
       if (mounted) context.pop(updatedUser);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存に失敗しました: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存に失敗しました: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -214,22 +214,24 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             fit: BoxFit.cover,
           )
         : (user?.bannerUrl != null
-            ? Image.network(
-                user!.bannerUrl!,
-                height: 150,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
+              ? Image.network(
+                  user!.bannerUrl!,
+                  height: 150,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    height: 150,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    child: const Center(child: Icon(Icons.panorama, size: 48)),
+                  ),
+                )
+              : Container(
                   height: 150,
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Center(child: Icon(Icons.panorama, size: 48)),
-                ),
-              )
-            : Container(
-                height: 150,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Center(child: Icon(Icons.panorama, size: 48)),
-              ));
+                ));
 
     return GestureDetector(
       onTap: _pickBanner,
@@ -260,8 +262,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           )
         : CircleAvatar(
             radius: 40,
-            backgroundImage:
-                user?.avatarUrl != null ? NetworkImage(user!.avatarUrl!) : null,
+            backgroundImage: user?.avatarUrl != null
+                ? NetworkImage(user!.avatarUrl!)
+                : null,
             child: user?.avatarUrl == null
                 ? const Icon(Icons.person, size: 40)
                 : null,
@@ -296,10 +299,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              '補足情報',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('補足情報', style: Theme.of(context).textTheme.titleMedium),
             if (canAdd)
               TextButton.icon(
                 onPressed: _addField,

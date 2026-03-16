@@ -575,10 +575,7 @@ class MisskeyClient {
     if (description != null) {
       params['description'] = description.isEmpty ? null : description;
     }
-    final response = await dio.post(
-      '/api/i/update',
-      data: createBody(params),
-    );
+    final response = await dio.post('/api/i/update', data: createBody(params));
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 }
