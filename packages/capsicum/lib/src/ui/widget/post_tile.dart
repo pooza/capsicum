@@ -1687,7 +1687,9 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
                   ),
                 ),
               ),
-            if (!isSensitive && attachment.type == AttachmentType.video)
+            if (!isSensitive &&
+                (attachment.type == AttachmentType.video ||
+                    attachment.type == AttachmentType.gifv))
               const Center(
                 child: Icon(
                   Icons.play_circle_outline,

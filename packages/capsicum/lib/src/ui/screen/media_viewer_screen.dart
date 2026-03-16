@@ -168,7 +168,8 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
               onPageChanged: (index) => setState(() => _currentIndex = index),
               itemBuilder: (context, index) {
                 final a = _attachments[index];
-                if (a.type == AttachmentType.video) {
+                if (a.type == AttachmentType.video ||
+                    a.type == AttachmentType.gifv) {
                   return _VideoPage(url: a.url);
                 }
                 if (a.type == AttachmentType.audio) {
