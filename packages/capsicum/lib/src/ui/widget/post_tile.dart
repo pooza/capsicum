@@ -1004,15 +1004,16 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   IconData _scopeIcon(PostScope scope) {
+    final isMisskey = ref.read(currentAdapterProvider) is ReactionSupport;
     switch (scope) {
       case PostScope.public:
         return Icons.public;
       case PostScope.unlisted:
-        return Icons.lock_open;
+        return isMisskey ? Icons.home_outlined : Icons.nightlight_outlined;
       case PostScope.followersOnly:
-        return Icons.lock;
+        return Icons.lock_outline;
       case PostScope.direct:
-        return Icons.mail;
+        return isMisskey ? Icons.mail_outline : Icons.alternate_email;
     }
   }
 }

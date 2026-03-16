@@ -52,20 +52,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     PostScope.public: 'パブリック',
     PostScope.unlisted: 'ホーム',
     PostScope.followersOnly: 'フォロワー',
-    PostScope.direct: 'ダイレクト',
+    PostScope.direct: '指名',
   };
 
-  static const _scopeIcons = {
+  static const _mastodonScopeIcons = {
     PostScope.public: Icons.public,
-    PostScope.unlisted: Icons.lock_open,
-    PostScope.followersOnly: Icons.lock,
-    PostScope.direct: Icons.mail,
+    PostScope.unlisted: Icons.nightlight_outlined,
+    PostScope.followersOnly: Icons.lock_outline,
+    PostScope.direct: Icons.alternate_email,
+  };
+
+  static const _misskeyScopeIcons = {
+    PostScope.public: Icons.public,
+    PostScope.unlisted: Icons.home_outlined,
+    PostScope.followersOnly: Icons.lock_outline,
+    PostScope.direct: Icons.mail_outline,
   };
 
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
     final isMisskey = adapter is ReactionSupport;
     final labels = isMisskey ? _misskeyScopeLabels : _mastodonScopeLabels;
+    final icons = isMisskey ? _misskeyScopeIcons : _mastodonScopeIcons;
 
     return PostScope.values.map((scope) {
       return DropdownMenuItem(
@@ -73,7 +81,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_scopeIcons[scope], size: 18),
+            Icon(icons[scope], size: 18),
             const SizedBox(width: 4),
             Text(labels[scope]!),
           ],
