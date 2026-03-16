@@ -250,6 +250,28 @@ class _PostTileState extends ConsumerState<PostTile> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (displayPost.channelName != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.forum,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              displayPost.channelName!,
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (displayPost.inReplyToId != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
