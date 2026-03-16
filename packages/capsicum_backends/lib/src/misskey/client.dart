@@ -500,6 +500,32 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/lists/create
+  Future<MisskeyList> createList(String name) async {
+    final response = await dio.post(
+      '/api/users/lists/create',
+      data: createBody({'name': name}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/lists/update
+  Future<MisskeyList> updateList(String listId, String name) async {
+    final response = await dio.post(
+      '/api/users/lists/update',
+      data: createBody({'listId': listId, 'name': name}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/lists/delete
+  Future<void> deleteList(String listId) async {
+    await dio.post(
+      '/api/users/lists/delete',
+      data: createBody({'listId': listId}),
+    );
+  }
+
   /// POST /api/notes/user-list-timeline
   Future<List<MisskeyNote>> getUserListTimeline(
     String listId, {

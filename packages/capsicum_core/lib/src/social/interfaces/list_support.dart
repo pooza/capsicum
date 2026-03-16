@@ -11,5 +11,6 @@ abstract mixin class ListSupport {
   Future<List<PostList>> getLists();
   Future<List<Post>> getListTimeline(String listId, {TimelineQuery? query});
   Future<PostList> createList(String title);
+  Future<PostList> updateList(String id, String title);
   Future<void> deleteList(String id);
 }

@@ -316,6 +316,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ref.read(selectedListProvider.notifier).state = list;
             });
           }),
+          // List management button.
+          if (adapter is ListSupport)
+            IconButton(
+              icon: const Icon(Icons.edit_note, size: 20),
+              tooltip: 'リスト管理',
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              constraints: const BoxConstraints(),
+              onPressed: () => context.push('/lists/manage'),
+            ),
         ],
       ),
     );

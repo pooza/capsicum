@@ -18,6 +18,7 @@ import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
+import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
 
@@ -88,6 +89,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+      GoRoute(
+        path: '/lists/manage',
+        builder: (context, state) => const ListManagementScreen(),
+      ),
       GoRoute(
         path: '/compose',
         builder: (context, state) {

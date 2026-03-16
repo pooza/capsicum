@@ -636,10 +636,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<PostList> createList(String title) => throw UnimplementedError();
+  Future<PostList> createList(String title) async {
+    final list = await client.createList(title);
+    return list.toCapsicum();
+  }
 
   @override
-  Future<void> deleteList(String id) => throw UnimplementedError();
+  Future<PostList> updateList(String id, String title) async {
+    final list = await client.updateList(id, title);
+    return list.toCapsicum();
+  }
+
+  @override
+  Future<void> deleteList(String id) async {
+    await client.deleteList(id);
+  }
 
   // HashtagSupport
 

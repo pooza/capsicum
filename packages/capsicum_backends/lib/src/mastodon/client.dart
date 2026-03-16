@@ -429,6 +429,23 @@ class MastodonClient {
         .toList();
   }
 
+  /// POST /api/v1/lists
+  Future<MastodonList> createList(String title) async {
+    final response = await dio.post('/api/v1/lists', data: {'title': title});
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// PUT /api/v1/lists/:id
+  Future<MastodonList> updateList(String id, String title) async {
+    final response = await dio.put('/api/v1/lists/$id', data: {'title': title});
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DELETE /api/v1/lists/:id
+  Future<void> deleteList(String id) async {
+    await dio.delete('/api/v1/lists/$id');
+  }
+
   /// GET /api/v1/timelines/list/:id
   Future<List<MastodonStatus>> getListTimeline(
     String listId, {
