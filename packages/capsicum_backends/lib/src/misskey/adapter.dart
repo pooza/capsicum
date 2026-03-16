@@ -737,6 +737,30 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _streaming = null;
   }
 
+  // URL preview
+
+  Future<PreviewCard?> fetchUrlPreview(String url) async {
+    try {
+      final data = await client.getUrlPreview(url);
+      final title = data['title'] as String?;
+      final description = data['description'] as String?;
+      final imageUrl = data['thumbnail'] as String?;
+      if (title == null || title.isEmpty) return null;
+      // タイトルのみで thumbnail も description もない場合はプレビュー不可とみなす
+      if (imageUrl == null && (description == null || description.isEmpty)) {
+        return null;
+      }
+      return PreviewCard(
+        url: url,
+        title: title,
+        description: description,
+        imageUrl: imageUrl,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ProfileEditSupport
 
   @override

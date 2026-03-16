@@ -41,6 +41,30 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
+  PreviewCard? _fetchedCard;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
+    }
+  }
+
+  Future<void> _maybeFetchCard() async {
+    final displayPost = post.reblog ?? post;
+    if (displayPost.card != null || displayPost.attachments.isNotEmpty) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MisskeyAdapter) return;
+    final content = displayPost.content ?? '';
+    final urlMatch = RegExp(r'https?://\S+').firstMatch(content);
+    if (urlMatch == null) return;
+    final url = urlMatch.group(0)!;
+    final card = await adapter.fetchUrlPreview(url);
+    if (mounted && card != null) {
+      setState(() => _fetchedCard = card);
+    }
+  }
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
@@ -502,11 +526,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                           },
                         ),
                       ),
-                    if (displayPost.card != null &&
+                    if ((displayPost.card ?? _fetchedCard) != null &&
                         displayPost.attachments.isEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: _PreviewCardWidget(card: displayPost.card!),
+                        child: _PreviewCardWidget(
+                          card: (displayPost.card ?? _fetchedCard)!,
+                        ),
                       ),
                     if (displayPost.poll != null)
                       Padding(

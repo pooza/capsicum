@@ -603,4 +603,13 @@ class MisskeyClient {
     final response = await dio.post('/api/i/update', data: createBody(params));
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// GET /url
+  Future<Map<String, dynamic>> getUrlPreview(String url) async {
+    final response = await dio.get(
+      '/url',
+      queryParameters: {'url': url},
+    );
+    return response.data as Map<String, dynamic>;
+  }
 }
