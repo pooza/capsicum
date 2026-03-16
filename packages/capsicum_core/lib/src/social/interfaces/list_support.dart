@@ -13,4 +13,7 @@ abstract mixin class ListSupport {
   Future<PostList> createList(String title);
   Future<PostList> updateList(String id, String title);
   Future<void> deleteList(String id);
+  Future<List<User>> getListAccounts(String listId);
+  Future<void> addListAccounts(String listId, List<String> accountIds);
+  Future<void> removeListAccounts(String listId, List<String> accountIds);
 }

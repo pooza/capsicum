@@ -264,6 +264,9 @@ capsicum/
 - ボットアカウントのバッジ表示（タイムライン・プロフィール）
 - ロールのプロフィール表示（Mastodon / Misskey 両対応）+ タイムラインにロールアイコン（Misskey: iconUrl / Mastodon: 管理者シールド）
 - 未読お知らせのバッジ表示（AppBar ドロワーアイコンにドット + ドロワー「お知らせ」メニューに未読数）
+- リストメンバー管理（メンバー一覧・検索追加・削除、Mastodon / Misskey 両対応）
+- 利用不可タイムラインタブの非表示（Mastodon 4.5+ timelines_access API + 403 probe フォールバック）
+- ログイン改善（preferEphemeral による OAuth Cookie ループ回避 + パスワードマネージャ対応）
 
 ### リリース計画
 

@@ -526,6 +526,31 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/users/lists/show
+  Future<Map<String, dynamic>> showList(String listId) async {
+    final response = await dio.post(
+      '/api/users/lists/show',
+      data: createBody({'listId': listId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/users/lists/push
+  Future<void> pushListUser(String listId, String userId) async {
+    await dio.post(
+      '/api/users/lists/push',
+      data: createBody({'listId': listId, 'userId': userId}),
+    );
+  }
+
+  /// POST /api/users/lists/pull
+  Future<void> pullListUser(String listId, String userId) async {
+    await dio.post(
+      '/api/users/lists/pull',
+      data: createBody({'listId': listId, 'userId': userId}),
+    );
+  }
+
   /// POST /api/notes/user-list-timeline
   Future<List<MisskeyNote>> getUserListTimeline(
     String listId, {

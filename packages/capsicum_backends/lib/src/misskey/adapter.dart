@@ -582,8 +582,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
     final users = await client.searchUsers(query, limit: 20);
     final hashtags = await client.searchHashtags(query, limit: 20);
+    final seen = <String>{};
     return SearchResults(
-      users: users.map((u) => u.toCapsicum(host)).toList(),
+      users: users
+          .map((u) => u.toCapsicum(host))
+          .where((u) => seen.add(u.id))
+          .toList(),
       hashtags: hashtags,
     );
   }
@@ -653,6 +657,36 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> deleteList(String id) async {
     await client.deleteList(id);
+  }
+
+  @override
+  Future<List<User>> getListAccounts(String listId) async {
+    final data = await client.showList(listId);
+    final userIds =
+        (data['userIds'] as List?)?.cast<String>().toSet().toList() ?? [];
+    final users = <User>[];
+    for (final userId in userIds) {
+      final misskeyUser = await client.showUser(userId);
+      users.add(misskeyUser.toCapsicum(host));
+    }
+    return users;
+  }
+
+  @override
+  Future<void> addListAccounts(String listId, List<String> accountIds) async {
+    for (final id in accountIds) {
+      await client.pushListUser(listId, id);
+    }
+  }
+
+  @override
+  Future<void> removeListAccounts(
+    String listId,
+    List<String> accountIds,
+  ) async {
+    for (final id in accountIds) {
+      await client.pullListUser(listId, id);
+    }
   }
 
   // HashtagSupport

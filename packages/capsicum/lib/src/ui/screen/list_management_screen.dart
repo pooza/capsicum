@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
@@ -41,45 +42,22 @@ class ListManagementScreen extends ConsumerWidget {
                     '右上の＋ボタンからリストを作成できます',
                     style: TextStyle(color: Colors.grey),
                   ),
-                  SizedBox(height: 24),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      'メンバーの追加・削除はサーバーの WebUI から行ってください。',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
                 ],
               ),
             );
           }
           return ListView.separated(
-            itemCount: lists.length + 1,
+            itemCount: lists.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
-              if (index < lists.length) {
-                final list = lists[index];
-                return ListTile(
-                  leading: const Icon(Icons.list),
-                  title: Text(list.title),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.more_horiz),
-                    onPressed: () => _showActionSheet(context, ref, list),
-                  ),
-                );
-              }
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 24,
-                ),
-                child: Text(
-                  'メンバーの追加・削除は現在未実装です。\nサーバーの WebUI から行ってください。',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
+              final list = lists[index];
+              return ListTile(
+                leading: const Icon(Icons.list),
+                title: Text(list.title),
+                onTap: () => context.push('/lists/members', extra: list),
+                trailing: IconButton(
+                  icon: const Icon(Icons.more_horiz),
+                  onPressed: () => _showActionSheet(context, ref, list),
                 ),
               );
             },
@@ -126,6 +104,14 @@ class ListManagementScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('メンバー'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push('/lists/members', extra: list);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('名前を変更'),

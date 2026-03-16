@@ -39,6 +39,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     };
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
+    // Detect timeline availability (non-blocking).
+    final adapter = account.adapter;
+    if (adapter is MastodonAdapter) {
+      try {
+        await adapter.detectTimelineAvailability();
+      } catch (_) {}
+    }
+
     // Detect mulukhiya on the server (non-blocking — failure is fine).
     final mulukhiya = await _detectMulukhiya(account.key.host);
     final enriched = mulukhiya != null
@@ -53,10 +61,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           )
         : account;
 
-    final newAccounts = [...state.accounts, enriched];
+    final newAccounts = [enriched, ...state.accounts];
     state = AccountManagerState(
       accounts: newAccounts,
-      current: state.current ?? enriched,
+      current: enriched,
     );
   }
 
@@ -154,6 +162,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
         await adapter.applySecrets(clientSecret, userSecret);
         final user = await adapter.getMyself();
+
+        // Detect timeline availability (non-blocking).
+        if (adapter is MastodonAdapter) {
+          try {
+            await adapter.detectTimelineAvailability();
+          } catch (_) {}
+        }
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
         final softwareVersion = await _detectSoftwareVersion(accountKey.host);

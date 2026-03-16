@@ -39,6 +39,12 @@ _safeConvert<S, T>(
 }
 
 class MastodonCapabilities extends AdapterCapabilities {
+  Set<TimelineType> _supportedTimelines = {
+    TimelineType.home,
+    TimelineType.local,
+    TimelineType.federated,
+  };
+
   @override
   Set<PostScope> get supportedScopes => {
     PostScope.public,
@@ -51,11 +57,10 @@ class MastodonCapabilities extends AdapterCapabilities {
   Set<Formatting> get supportedFormattings => {Formatting.html};
 
   @override
-  Set<TimelineType> get supportedTimelines => {
-    TimelineType.home,
-    TimelineType.local,
-    TimelineType.federated,
-  };
+  Set<TimelineType> get supportedTimelines => _supportedTimelines;
+
+  set supportedTimelines(Set<TimelineType> value) =>
+      _supportedTimelines = value;
 
   @override
   int? get maxPostContentLength => 500;
@@ -84,7 +89,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   final String host;
 
   @override
-  final AdapterCapabilities capabilities = MastodonCapabilities();
+  final MastodonCapabilities capabilities = MastodonCapabilities();
 
   static const _scopes = ['read', 'write', 'follow', 'push'];
 
@@ -93,6 +98,47 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   static Future<MastodonAdapter> create(String host) async {
     final client = MastodonClient(host);
     return MastodonAdapter._(client, host);
+  }
+
+  /// Detect which public timelines are available on this server.
+  ///
+  /// First tries Mastodon 4.5+ `timelines_access` from `/api/v2/instance`.
+  /// Falls back to probing the public timeline API with 403 detection.
+  Future<void> detectTimelineAvailability() async {
+    var localEnabled = true;
+    var federatedEnabled = true;
+
+    try {
+      // Try v2 instance API (Mastodon 4.5+).
+      final instance = await client.getInstanceV2();
+      final config = instance['configuration'] as Map<String, dynamic>?;
+      final access = config?['timelines_access'] as Map<String, dynamic>?;
+      if (access != null) {
+        final liveFeeds = access['live_feeds'] as Map<String, dynamic>?;
+        if (liveFeeds != null) {
+          localEnabled = liveFeeds['local'] != 'disabled';
+          federatedEnabled = liveFeeds['remote'] != 'disabled';
+        }
+      } else {
+        // No timelines_access field — fall back to probing.
+        localEnabled = await client.probePublicTimeline(local: true);
+        federatedEnabled = await client.probePublicTimeline();
+      }
+    } catch (_) {
+      // v2 instance API failed — fall back to probing.
+      try {
+        localEnabled = await client.probePublicTimeline(local: true);
+        federatedEnabled = await client.probePublicTimeline();
+      } catch (_) {
+        // Probing also failed; keep defaults.
+      }
+    }
+
+    capabilities.supportedTimelines = {
+      TimelineType.home,
+      if (localEnabled) TimelineType.local,
+      if (federatedEnabled) TimelineType.federated,
+    };
   }
 
   // BackendAdapter
@@ -522,6 +568,33 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> deleteList(String id) async {
     await client.deleteList(id);
+  }
+
+  @override
+  Future<List<User>> getListAccounts(String listId) async {
+    final accounts = await client.getListAccounts(listId);
+    return accounts.map((a) => a.toCapsicum(host)).toList();
+  }
+
+  @override
+  Future<void> addListAccounts(String listId, List<String> accountIds) async {
+    // Mastodon (pre-4.2) requires following accounts before adding to a list.
+    // Follow any unfollowed accounts first.
+    final rels = await client.getRelationships(accountIds);
+    for (final rel in rels) {
+      if (rel['following'] != true) {
+        await client.followAccount(rel['id'] as String);
+      }
+    }
+    await client.addListAccounts(listId, accountIds);
+  }
+
+  @override
+  Future<void> removeListAccounts(
+    String listId,
+    List<String> accountIds,
+  ) async {
+    await client.removeListAccounts(listId, accountIds);
   }
 
   // MarkerSupport

@@ -122,6 +122,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
+          options: const FlutterWebAuth2Options(preferEphemeral: true),
         );
 
         final callbackUri = Uri.parse(resultUrl);

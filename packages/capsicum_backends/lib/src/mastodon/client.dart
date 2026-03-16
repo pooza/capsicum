@@ -446,6 +446,33 @@ class MastodonClient {
     await dio.delete('/api/v1/lists/$id');
   }
 
+  /// GET /api/v1/lists/:id/accounts
+  Future<List<MastodonAccount>> getListAccounts(String listId) async {
+    final response = await dio.get('/api/v1/lists/$listId/accounts');
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/v1/lists/:id/accounts
+  Future<void> addListAccounts(String listId, List<String> accountIds) async {
+    await dio.post(
+      '/api/v1/lists/$listId/accounts',
+      data: {'account_ids': accountIds},
+    );
+  }
+
+  /// DELETE /api/v1/lists/:id/accounts
+  Future<void> removeListAccounts(
+    String listId,
+    List<String> accountIds,
+  ) async {
+    await dio.delete(
+      '/api/v1/lists/$listId/accounts',
+      data: {'account_ids': accountIds},
+    );
+  }
+
   /// GET /api/v1/timelines/list/:id
   Future<List<MastodonStatus>> getListTimeline(
     String listId, {
@@ -483,6 +510,29 @@ class MastodonClient {
   Future<Map<String, dynamic>> getInstanceV1() async {
     final response = await dio.get('/api/v1/instance');
     return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v2/instance
+  Future<Map<String, dynamic>> getInstanceV2() async {
+    final response = await dio.get('/api/v2/instance');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Probe whether the public timeline is accessible.
+  /// Returns true if accessible, false if 403/401.
+  Future<bool> probePublicTimeline({bool? local}) async {
+    try {
+      await dio.get(
+        '/api/v1/timelines/public',
+        queryParameters: {'local': ?local, 'limit': 1},
+      );
+      return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403 || e.response?.statusCode == 401) {
+        return false;
+      }
+      rethrow;
+    }
   }
 
   /// PATCH /api/v1/accounts/update_credentials
