@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 
 class _MediaEntry {
@@ -152,6 +153,37 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         .replaceAll('&#39;', "'")
         .replaceAll('&apos;', "'");
     return text;
+  }
+
+  void _insertEmoji(String emoji) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    final newText = text.replaceRange(start, end, emoji);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
+    );
+  }
+
+  void _showEmojiPicker() {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: EmojiPicker(
+          adapter: adapter as BackendAdapter,
+          onSelected: (emoji) {
+            Navigator.pop(context);
+            _insertEmoji(emoji);
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _pickMedia() async {
@@ -516,6 +548,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   onPressed: _sending ? null : _pickMedia,
                   icon: const Icon(Icons.photo),
                   tooltip: 'メディアを添付',
+                ),
+                IconButton(
+                  onPressed: _sending ? null : _showEmojiPicker,
+                  icon: const Icon(Icons.emoji_emotions_outlined),
+                  tooltip: '絵文字',
                 ),
                 IconButton(
                   onPressed: _sending
