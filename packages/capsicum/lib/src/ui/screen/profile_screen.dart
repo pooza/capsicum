@@ -318,6 +318,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           child: EmojiText(
                             user.displayName ?? user.username,
                             emojis: user.emojis,
+                            fallbackHost: user.host,
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
