@@ -76,7 +76,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         HashtagSupport,
         PollSupport,
         LoginSupport,
-        StreamSupport {
+        StreamSupport,
+        MediaUpdateSupport,
+        ProfileEditSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -150,7 +152,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
-    final notes = await client.getUserNotes(id, pinned: true);
+    final user = await client.showUser(id);
+    final rawNotes = user.pinnedNotes ?? [];
+    final notes = rawNotes.map((e) => MisskeyNote.fromJson(e)).toList();
     return _safeConvert(
       notes,
       (n) => n.toCapsicum(host, pinned: true),
@@ -370,6 +374,20 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return AttachmentType.unknown;
   }
 
+  // MediaUpdateSupport
+
+  @override
+  Future<void> updateAttachmentDescription(
+    String mediaId,
+    String description, {
+    required String postId,
+  }) async {
+    await client.updateDriveFile(
+      mediaId,
+      comment: description.isNotEmpty ? description : null,
+    );
+  }
+
   // LoginSupport
 
   @override
@@ -564,8 +582,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
     final users = await client.searchUsers(query, limit: 20);
     final hashtags = await client.searchHashtags(query, limit: 20);
+    final seen = <String>{};
     return SearchResults(
-      users: users.map((u) => u.toCapsicum(host)).toList(),
+      users: users
+          .map((u) => u.toCapsicum(host))
+          .where((u) => seen.add(u.id))
+          .toList(),
       hashtags: hashtags,
     );
   }
@@ -621,10 +643,51 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<PostList> createList(String title) => throw UnimplementedError();
+  Future<PostList> createList(String title) async {
+    final list = await client.createList(title);
+    return list.toCapsicum();
+  }
 
   @override
-  Future<void> deleteList(String id) => throw UnimplementedError();
+  Future<PostList> updateList(String id, String title) async {
+    final list = await client.updateList(id, title);
+    return list.toCapsicum();
+  }
+
+  @override
+  Future<void> deleteList(String id) async {
+    await client.deleteList(id);
+  }
+
+  @override
+  Future<List<User>> getListAccounts(String listId) async {
+    final data = await client.showList(listId);
+    final userIds =
+        (data['userIds'] as List?)?.cast<String>().toSet().toList() ?? [];
+    final users = <User>[];
+    for (final userId in userIds) {
+      final misskeyUser = await client.showUser(userId);
+      users.add(misskeyUser.toCapsicum(host));
+    }
+    return users;
+  }
+
+  @override
+  Future<void> addListAccounts(String listId, List<String> accountIds) async {
+    for (final id in accountIds) {
+      await client.pushListUser(listId, id);
+    }
+  }
+
+  @override
+  Future<void> removeListAccounts(
+    String listId,
+    List<String> accountIds,
+  ) async {
+    for (final id in accountIds) {
+      await client.pullListUser(listId, id);
+    }
+  }
 
   // HashtagSupport
 
@@ -672,5 +735,68 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   void disposeStream() {
     _streaming?.dispose();
     _streaming = null;
+  }
+
+  // URL preview
+
+  Future<PreviewCard?> fetchUrlPreview(String url) async {
+    try {
+      final data = await client.getUrlPreview(url);
+      final title = data['title'] as String?;
+      final description = data['description'] as String?;
+      final imageUrl = data['thumbnail'] as String?;
+      if (title == null || title.isEmpty) return null;
+      // タイトルのみで thumbnail も description もない場合はプレビュー不可とみなす
+      if (imageUrl == null && (description == null || description.isEmpty)) {
+        return null;
+      }
+      return PreviewCard(
+        url: url,
+        title: title,
+        description: description,
+        imageUrl: imageUrl,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ProfileEditSupport
+
+  @override
+  Future<int?> getMaxProfileFields() async => null;
+
+  @override
+  Future<User> updateProfile({
+    String? displayName,
+    String? description,
+    String? avatarFilePath,
+    String? bannerFilePath,
+    List<UserField>? fields,
+  }) async {
+    String? avatarId;
+    String? bannerId;
+    if (avatarFilePath != null) {
+      final file = await client.createDriveFile(avatarFilePath);
+      avatarId = file['id'] as String;
+    }
+    if (bannerFilePath != null) {
+      final file = await client.createDriveFile(bannerFilePath);
+      bannerId = file['id'] as String;
+    }
+    final mappedFields = fields
+        ?.where((f) => f.name.isNotEmpty || f.value.isNotEmpty)
+        .map((f) => {'name': f.name, 'value': f.value})
+        .toList();
+    final user = await client.updateI(
+      name: displayName != null
+          ? (displayName.isEmpty ? '' : displayName)
+          : null,
+      description: description,
+      avatarId: avatarId,
+      bannerId: bannerId,
+      fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
+    );
+    return user.toCapsicum(host);
   }
 }

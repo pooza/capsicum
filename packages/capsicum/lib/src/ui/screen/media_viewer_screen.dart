@@ -1,29 +1,40 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
-class MediaViewerScreen extends StatefulWidget {
+import '../../provider/account_manager_provider.dart';
+
+class MediaViewerScreen extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
   final int initialIndex;
+  final String? postAuthorId;
+  final String? postId;
 
   const MediaViewerScreen({
     super.key,
     required this.attachments,
     this.initialIndex = 0,
+    this.postAuthorId,
+    this.postId,
   });
 
   @override
-  State<MediaViewerScreen> createState() => _MediaViewerScreenState();
+  ConsumerState<MediaViewerScreen> createState() => _MediaViewerScreenState();
 }
 
-class _MediaViewerScreenState extends State<MediaViewerScreen> {
+class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   late final PageController _pageController;
   late int _currentIndex;
+  late List<Attachment> _attachments;
+  bool _modified = false;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _attachments = List.of(widget.attachments);
     _pageController = PageController(initialPage: widget.initialIndex);
   }
 
@@ -33,79 +44,183 @@ class _MediaViewerScreenState extends State<MediaViewerScreen> {
     super.dispose();
   }
 
+  bool get _canEdit {
+    if (widget.postAuthorId == null || widget.postId == null) return false;
+    final currentUser = ref.read(currentAccountProvider)?.user;
+    if (currentUser == null) return false;
+    final adapter = ref.read(currentAdapterProvider);
+    return currentUser.id == widget.postAuthorId &&
+        adapter is MediaUpdateSupport;
+  }
+
+  Future<void> _editDescription() async {
+    final attachment = _attachments[_currentIndex];
+    final controller = TextEditingController(
+      text: attachment.description ?? '',
+    );
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('メディアの説明を編集'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: '説明を入力…',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MediaUpdateSupport) return;
+    final mediaSupport = adapter as MediaUpdateSupport;
+
+    try {
+      await mediaSupport.updateAttachmentDescription(
+        attachment.id,
+        result,
+        postId: widget.postId!,
+      );
+      setState(() {
+        _attachments[_currentIndex] = Attachment(
+          id: attachment.id,
+          type: attachment.type,
+          url: attachment.url,
+          previewUrl: attachment.previewUrl,
+          description: result,
+        );
+        _modified = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('説明を更新しました')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));
+      }
+    }
+  }
+
+  void _popWithResult() {
+    if (_modified) {
+      context.pop(_attachments);
+    } else {
+      context.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final attachment = widget.attachments[_currentIndex];
+    final attachment = _attachments[_currentIndex];
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.black54,
-        foregroundColor: Colors.white,
-        title: widget.attachments.length > 1
-            ? Text('${_currentIndex + 1} / ${widget.attachments.length}')
-            : null,
-      ),
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.attachments.length,
-            onPageChanged: (index) => setState(() => _currentIndex = index),
-            itemBuilder: (context, index) {
-              final a = widget.attachments[index];
-              if (a.type == AttachmentType.video) {
-                return _VideoPage(url: a.url);
-              }
-              if (a.type == AttachmentType.audio) {
-                return _AudioPage(url: a.url);
-              }
-              return InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 4.0,
-                child: Center(
-                  child: Image.network(
-                    a.url,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white54,
-                      size: 64,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _popWithResult();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.black54,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _popWithResult,
+          ),
+          title: widget.attachments.length > 1
+              ? Text('${_currentIndex + 1} / ${widget.attachments.length}')
+              : null,
+          actions: [
+            if (_canEdit)
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'メディアの説明を編集',
+                onPressed: _editDescription,
+              ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              itemCount: _attachments.length,
+              onPageChanged: (index) => setState(() => _currentIndex = index),
+              itemBuilder: (context, index) {
+                final a = _attachments[index];
+                if (a.type == AttachmentType.video ||
+                    a.type == AttachmentType.gifv) {
+                  return _VideoPage(url: a.url);
+                }
+                if (a.type == AttachmentType.audio) {
+                  return _AudioPage(url: a.url);
+                }
+                return InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.network(
+                      a.url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 64,
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-          if (attachment.description != null &&
-              attachment.description!.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black87, Colors.transparent],
+                );
+              },
+            ),
+            if (attachment.description != null &&
+                attachment.description!.isNotEmpty)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Colors.black87, Colors.transparent],
+                    ),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    32,
+                    16,
+                    MediaQuery.of(context).padding.bottom + 16,
+                  ),
+                  child: Text(
+                    attachment.description!,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  32,
-                  16,
-                  MediaQuery.of(context).padding.bottom + 16,
-                ),
-                child: Text(
-                  attachment.description!,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

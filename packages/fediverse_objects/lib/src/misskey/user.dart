@@ -14,10 +14,13 @@ class MisskeyUser {
   final int? followersCount;
   final int? followingCount;
   final int? notesCount;
+  final bool? isBot;
+  final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>>? fields;
   final Map<String, String>? emojis;
   final List<List<String>>? mutedWords;
   final List<List<String>>? hardMutedWords;
+  final List<Map<String, dynamic>>? pinnedNotes;
 
   const MisskeyUser({
     required this.id,
@@ -30,10 +33,13 @@ class MisskeyUser {
     this.followersCount,
     this.followingCount,
     this.notesCount,
+    this.isBot,
+    this.roles,
     this.fields,
     this.emojis,
     this.mutedWords,
     this.hardMutedWords,
+    this.pinnedNotes,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>

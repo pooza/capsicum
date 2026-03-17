@@ -24,6 +24,18 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       followersCount: followersCount ?? 0,
       followingCount: followingCount ?? 0,
       postCount: notesCount ?? 0,
+      isBot: isBot ?? false,
+      roles: (roles ?? [])
+          .map(
+            (r) => UserRole(
+              id: r['id']?.toString() ?? '',
+              name: r['name'] as String? ?? '',
+              color: r['color'] as String?,
+              iconUrl: r['iconUrl'] as String?,
+              isAdmin: r['isAdministrator'] as bool? ?? false,
+            ),
+          )
+          .toList(),
       fields: (fields ?? [])
           .map(
             (f) => UserField(
@@ -61,6 +73,8 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       emojis: reactionEmojis ?? const {},
       emojiHost: localHost,
       pinned: pinned,
+      channelName: channel?['name'] as String?,
+      localOnly: localOnly ?? false,
     );
   }
 }

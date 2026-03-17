@@ -14,10 +14,13 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
+import 'ui/screen/list_management_screen.dart';
+import 'ui/screen/list_members_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
 
@@ -89,6 +92,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
       GoRoute(
+        path: '/lists/manage',
+        builder: (context, state) => const ListManagementScreen(),
+      ),
+      GoRoute(
+        path: '/lists/members',
+        builder: (context, state) {
+          final postList = state.extra! as PostList;
+          return ListMembersScreen(postList: postList);
+        },
+      ),
+      GoRoute(
         path: '/compose',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
@@ -129,6 +143,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/profile/edit',
+        builder: (context, state) => const ProfileEditScreen(),
+      ),
+      GoRoute(
         path: '/followers',
         builder: (context, state) {
           final user = state.extra! as User;
@@ -160,6 +178,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return MediaViewerScreen(
             attachments: extra['attachments'] as List<Attachment>,
             initialIndex: extra['initialIndex'] as int? ?? 0,
+            postAuthorId: extra['postAuthorId'] as String?,
+            postId: extra['postId'] as String?,
           );
         },
       ),

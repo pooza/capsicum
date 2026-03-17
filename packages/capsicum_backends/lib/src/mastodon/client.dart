@@ -429,6 +429,50 @@ class MastodonClient {
         .toList();
   }
 
+  /// POST /api/v1/lists
+  Future<MastodonList> createList(String title) async {
+    final response = await dio.post('/api/v1/lists', data: {'title': title});
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// PUT /api/v1/lists/:id
+  Future<MastodonList> updateList(String id, String title) async {
+    final response = await dio.put('/api/v1/lists/$id', data: {'title': title});
+    return MastodonList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DELETE /api/v1/lists/:id
+  Future<void> deleteList(String id) async {
+    await dio.delete('/api/v1/lists/$id');
+  }
+
+  /// GET /api/v1/lists/:id/accounts
+  Future<List<MastodonAccount>> getListAccounts(String listId) async {
+    final response = await dio.get('/api/v1/lists/$listId/accounts');
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/v1/lists/:id/accounts
+  Future<void> addListAccounts(String listId, List<String> accountIds) async {
+    await dio.post(
+      '/api/v1/lists/$listId/accounts',
+      data: {'account_ids': accountIds},
+    );
+  }
+
+  /// DELETE /api/v1/lists/:id/accounts
+  Future<void> removeListAccounts(
+    String listId,
+    List<String> accountIds,
+  ) async {
+    await dio.delete(
+      '/api/v1/lists/$listId/accounts',
+      data: {'account_ids': accountIds},
+    );
+  }
+
   /// GET /api/v1/timelines/list/:id
   Future<List<MastodonStatus>> getListTimeline(
     String listId, {
@@ -451,5 +495,89 @@ class MastodonClient {
 
   Future<void> votePoll(String pollId, List<int> choices) async {
     await dio.post('/api/v1/polls/$pollId/votes', data: {'choices': choices});
+  }
+
+  /// GET /api/v1/markers
+  Future<Map<String, dynamic>> getMarkers(List<String> timelines) async {
+    final response = await dio.get(
+      '/api/v1/markers',
+      queryParameters: {'timeline[]': timelines},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v1/instance
+  Future<Map<String, dynamic>> getInstanceV1() async {
+    final response = await dio.get('/api/v1/instance');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v2/instance
+  Future<Map<String, dynamic>> getInstanceV2() async {
+    final response = await dio.get('/api/v2/instance');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Probe whether the public timeline is accessible.
+  /// Returns true if accessible, false if 403/401.
+  Future<bool> probePublicTimeline({bool? local}) async {
+    try {
+      await dio.get(
+        '/api/v1/timelines/public',
+        queryParameters: {'local': ?local, 'limit': 1},
+      );
+      return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403 || e.response?.statusCode == 401) {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  /// PATCH /api/v1/accounts/update_credentials
+  Future<MastodonAccount> updateCredentials({
+    String? displayName,
+    String? note,
+    String? avatarPath,
+    String? headerPath,
+    List<Map<String, String>>? fieldsAttributes,
+  }) async {
+    final map = <String, dynamic>{};
+    if (displayName != null) map['display_name'] = displayName;
+    if (note != null) map['note'] = note;
+    if (avatarPath != null) {
+      map['avatar'] = await MultipartFile.fromFile(avatarPath);
+    }
+    if (headerPath != null) {
+      map['header'] = await MultipartFile.fromFile(headerPath);
+    }
+    if (fieldsAttributes != null) {
+      for (var i = 0; i < fieldsAttributes.length; i++) {
+        map['fields_attributes[$i][name]'] = fieldsAttributes[i]['name'] ?? '';
+        map['fields_attributes[$i][value]'] =
+            fieldsAttributes[i]['value'] ?? '';
+      }
+    }
+    final response = await dio.patch(
+      '/api/v1/accounts/update_credentials',
+      data: FormData.fromMap(map),
+    );
+    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/markers
+  Future<void> saveMarkers({
+    String? homeLastReadId,
+    String? notificationLastReadId,
+  }) async {
+    final data = <String, dynamic>{};
+    if (homeLastReadId != null) {
+      data['home'] = {'last_read_id': homeLastReadId};
+    }
+    if (notificationLastReadId != null) {
+      data['notifications'] = {'last_read_id': notificationLastReadId};
+    }
+    await dio.post('/api/v1/markers', data: data);
   }
 }

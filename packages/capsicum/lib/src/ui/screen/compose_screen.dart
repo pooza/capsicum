@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 
 class _MediaEntry {
@@ -39,6 +40,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   bool _sending = false;
+  bool _localOnly = false;
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
@@ -51,20 +53,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     PostScope.public: 'パブリック',
     PostScope.unlisted: 'ホーム',
     PostScope.followersOnly: 'フォロワー',
-    PostScope.direct: 'ダイレクト',
+    PostScope.direct: '指名',
   };
 
-  static const _scopeIcons = {
+  static const _mastodonScopeIcons = {
     PostScope.public: Icons.public,
-    PostScope.unlisted: Icons.lock_open,
-    PostScope.followersOnly: Icons.lock,
-    PostScope.direct: Icons.mail,
+    PostScope.unlisted: Icons.nightlight_outlined,
+    PostScope.followersOnly: Icons.lock_outline,
+    PostScope.direct: Icons.alternate_email,
+  };
+
+  static const _misskeyScopeIcons = {
+    PostScope.public: Icons.public,
+    PostScope.unlisted: Icons.home_outlined,
+    PostScope.followersOnly: Icons.lock_outline,
+    PostScope.direct: Icons.mail_outline,
   };
 
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
     final isMisskey = adapter is ReactionSupport;
     final labels = isMisskey ? _misskeyScopeLabels : _mastodonScopeLabels;
+    final icons = isMisskey ? _misskeyScopeIcons : _mastodonScopeIcons;
 
     return PostScope.values.map((scope) {
       return DropdownMenuItem(
@@ -72,7 +82,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_scopeIcons[scope], size: 18),
+            Icon(icons[scope], size: 18),
             const SizedBox(width: 4),
             Text(labels[scope]!),
           ],
@@ -143,6 +153,37 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         .replaceAll('&#39;', "'")
         .replaceAll('&apos;', "'");
     return text;
+  }
+
+  void _insertEmoji(String emoji) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    final newText = text.replaceRange(start, end, emoji);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
+    );
+  }
+
+  void _showEmojiPicker() {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: EmojiPicker(
+          adapter: adapter as BackendAdapter,
+          onSelected: (emoji) {
+            Navigator.pop(context);
+            _insertEmoji(emoji);
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _pickMedia() async {
@@ -335,6 +376,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
+          localOnly: _localOnly,
         ),
       );
       if (mounted) {
@@ -508,6 +550,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   tooltip: 'メディアを添付',
                 ),
                 IconButton(
+                  onPressed: _sending ? null : _showEmojiPicker,
+                  icon: const Icon(Icons.emoji_emotions_outlined),
+                  tooltip: '絵文字',
+                ),
+                IconButton(
                   onPressed: _sending
                       ? null
                       : () => setState(() => _cwEnabled = !_cwEnabled),
@@ -556,6 +603,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         },
                   items: _scopeItems(ref),
                 ),
+                if (ref.watch(currentAdapterProvider) is ReactionSupport)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: FilterChip(
+                      label: const Text('ローカルのみ'),
+                      selected: _localOnly,
+                      onSelected: _sending
+                          ? null
+                          : (v) => setState(() => _localOnly = v),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
                 const Spacer(),
                 if (maxLength != null)
                   ValueListenableBuilder<TextEditingValue>(

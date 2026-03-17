@@ -39,6 +39,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     };
     await storage.saveAccount(account.key.toStorageKey(), secrets);
 
+    // Detect timeline availability (non-blocking).
+    final adapter = account.adapter;
+    if (adapter is MastodonAdapter) {
+      try {
+        await adapter.detectTimelineAvailability();
+      } catch (_) {}
+    }
+
     // Detect mulukhiya on the server (non-blocking — failure is fine).
     final mulukhiya = await _detectMulukhiya(account.key.host);
     final enriched = mulukhiya != null
@@ -53,11 +61,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           )
         : account;
 
-    final newAccounts = [...state.accounts, enriched];
-    state = AccountManagerState(
-      accounts: newAccounts,
-      current: state.current ?? enriched,
-    );
+    final newAccounts = [enriched, ...state.accounts];
+    state = AccountManagerState(accounts: newAccounts, current: enriched);
   }
 
   void switchAccount(Account account) {
@@ -70,6 +75,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
+  }
+
+  void updateCurrentUser(User user) {
+    final current = state.current;
+    if (current == null) return;
+    final updated = current.copyWithUser(user);
+    final accounts = state.accounts
+        .map((a) => a.key == updated.key ? updated : a)
+        .toList();
+    state = AccountManagerState(accounts: accounts, current: updated);
   }
 
   Future<void> logout(Account account) async {
@@ -144,6 +159,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
         await adapter.applySecrets(clientSecret, userSecret);
         final user = await adapter.getMyself();
+
+        // Detect timeline availability (non-blocking).
+        if (adapter is MastodonAdapter) {
+          try {
+            await adapter.detectTimelineAvailability();
+          } catch (_) {}
+        }
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
         final softwareVersion = await _detectSoftwareVersion(accountKey.host);

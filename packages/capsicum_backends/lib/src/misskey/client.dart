@@ -202,6 +202,18 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/drive/files/update
+  Future<MisskeyDriveFile> updateDriveFile(
+    String fileId, {
+    String? comment,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/files/update',
+      data: createBody({'fileId': fileId, 'comment': comment}),
+    );
+    return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/notes/create
   Future<MisskeyNote> createNote({
     required String text,
@@ -488,6 +500,57 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/lists/create
+  Future<MisskeyList> createList(String name) async {
+    final response = await dio.post(
+      '/api/users/lists/create',
+      data: createBody({'name': name}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/lists/update
+  Future<MisskeyList> updateList(String listId, String name) async {
+    final response = await dio.post(
+      '/api/users/lists/update',
+      data: createBody({'listId': listId, 'name': name}),
+    );
+    return MisskeyList.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/users/lists/delete
+  Future<void> deleteList(String listId) async {
+    await dio.post(
+      '/api/users/lists/delete',
+      data: createBody({'listId': listId}),
+    );
+  }
+
+  /// POST /api/users/lists/show
+  Future<Map<String, dynamic>> showList(String listId) async {
+    final response = await dio.post(
+      '/api/users/lists/show',
+      data: createBody({'listId': listId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/users/lists/push
+  Future<void> pushListUser(String listId, String userId) async {
+    await dio.post(
+      '/api/users/lists/push',
+      data: createBody({'listId': listId, 'userId': userId}),
+    );
+  }
+
+  /// POST /api/users/lists/pull
+  Future<void> pullListUser(String listId, String userId) async {
+    await dio.post(
+      '/api/users/lists/pull',
+      data: createBody({'listId': listId, 'userId': userId}),
+    );
+  }
+
   /// POST /api/notes/user-list-timeline
   Future<List<MisskeyNote>> getUserListTimeline(
     String listId, {
@@ -514,5 +577,36 @@ class MisskeyClient {
       '/api/notes/polls/vote',
       data: createBody({'noteId': noteId, 'choice': choice}),
     );
+  }
+
+  /// POST /api/i/update
+  Future<MisskeyUser> updateI({
+    String? name,
+    String? description,
+    String? avatarId,
+    String? bannerId,
+    List<Map<String, String>>? fields,
+  }) async {
+    final params = <String, dynamic>{
+      'avatarId': ?avatarId,
+      'bannerId': ?bannerId,
+      'fields': ?fields,
+    };
+    // Misskey rejects "" but accepts explicit null to clear a field.
+    // null parameter = "not changing" (omit key), empty string = "clear" (send null value).
+    if (name != null) {
+      params['name'] = name.isEmpty ? null : name;
+    }
+    if (description != null) {
+      params['description'] = description.isEmpty ? null : description;
+    }
+    final response = await dio.post('/api/i/update', data: createBody(params));
+    return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// GET /url
+  Future<Map<String, dynamic>> getUrlPreview(String url) async {
+    final response = await dio.get('/url', queryParameters: {'url': url});
+    return response.data as Map<String, dynamic>;
   }
 }

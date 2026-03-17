@@ -24,6 +24,8 @@ class MisskeyNote {
   final String? myReaction;
   final String? cw;
   final Map<String, dynamic>? poll;
+  final Map<String, dynamic>? channel;
+  final bool? localOnly;
 
   const MisskeyNote({
     required this.id,
@@ -43,6 +45,8 @@ class MisskeyNote {
     this.myReaction,
     this.cw,
     this.poll,
+    this.channel,
+    this.localOnly,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>
