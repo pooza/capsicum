@@ -24,10 +24,25 @@ Future<void> main() async {
         'SENTRY_ENV',
         defaultValue: 'debug',
       );
+      options.beforeSend = _scrubEvent;
     }, appRunner: () => _startApp());
   } else {
     _startApp();
   }
+}
+
+FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
+  final request = event.request;
+  if (request != null) {
+    if (request.headers.containsKey('Authorization')) {
+      request.headers['Authorization'] = '[Filtered]';
+    }
+    final data = request.data;
+    if (data is Map && data.containsKey('i')) {
+      data['i'] = '[Filtered]';
+    }
+  }
+  return event;
 }
 
 void _startApp() {
