@@ -114,6 +114,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       filterAction: displayPost.filterAction,
       filterTitle: displayPost.filterTitle,
       pinned: displayPost.pinned,
+      channelName: displayPost.channelName,
+      localOnly: displayPost.localOnly,
     );
     ref.read(timelineProvider.notifier).updatePost(updatedPost);
   }

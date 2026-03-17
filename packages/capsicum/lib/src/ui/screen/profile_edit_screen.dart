@@ -37,45 +37,55 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     final account = ref.read(currentAccountProvider);
     if (account == null) return;
 
-    final adapter = account.adapter;
+    try {
+      final adapter = account.adapter;
 
-    // Get max profile fields.
-    if (adapter is ProfileEditSupport) {
-      _maxFields = await (adapter as ProfileEditSupport).getMaxProfileFields();
-    }
-
-    // For Mastodon, fetch source (plain-text bio/fields) via verifyCredentials.
-    if (adapter is MastodonAdapter) {
-      final credentials = await adapter.client.verifyCredentials();
-      _displayNameController.text = credentials.displayName;
-      final source = credentials.source;
-      _bioController.text = (source?['note'] as String?) ?? '';
-      final sourceFields = source?['fields'] as List<dynamic>? ?? [];
-      for (final f in sourceFields) {
-        final map = f as Map<String, dynamic>;
-        _fields.add(
-          _FieldEntry(
-            name: TextEditingController(text: map['name'] as String? ?? ''),
-            value: TextEditingController(text: map['value'] as String? ?? ''),
-          ),
-        );
+      // Get max profile fields.
+      if (adapter is ProfileEditSupport) {
+        _maxFields = await (adapter as ProfileEditSupport)
+            .getMaxProfileFields();
       }
-    } else {
-      // Misskey: description is plain text.
-      final user = account.user;
-      _displayNameController.text = user.displayName ?? '';
-      _bioController.text = user.description ?? '';
-      for (final f in user.fields) {
-        _fields.add(
-          _FieldEntry(
-            name: TextEditingController(text: f.name),
-            value: TextEditingController(text: f.value),
-          ),
-        );
+
+      // For Mastodon, fetch source (plain-text bio/fields) via verifyCredentials.
+      if (adapter is MastodonAdapter) {
+        final credentials = await adapter.client.verifyCredentials();
+        _displayNameController.text = credentials.displayName;
+        final source = credentials.source;
+        _bioController.text = (source?['note'] as String?) ?? '';
+        final sourceFields = source?['fields'] as List<dynamic>? ?? [];
+        for (final f in sourceFields) {
+          final map = f as Map<String, dynamic>;
+          _fields.add(
+            _FieldEntry(
+              name: TextEditingController(text: map['name'] as String? ?? ''),
+              value: TextEditingController(text: map['value'] as String? ?? ''),
+            ),
+          );
+        }
+      } else {
+        // Misskey: description is plain text.
+        final user = account.user;
+        _displayNameController.text = user.displayName ?? '';
+        _bioController.text = user.description ?? '';
+        for (final f in user.fields) {
+          _fields.add(
+            _FieldEntry(
+              name: TextEditingController(text: f.name),
+              value: TextEditingController(text: f.value),
+            ),
+          );
+        }
+      }
+
+      if (mounted) setState(() => _loaded = true);
+    } catch (_) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('プロフィールの読み込みに失敗しました')));
       }
     }
-
-    if (mounted) setState(() => _loaded = true);
   }
 
   @override

@@ -789,7 +789,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .map((f) => {'name': f.name, 'value': f.value})
         .toList();
     final user = await client.updateI(
-      name: displayName?.isNotEmpty == true ? displayName : null,
+      name: displayName != null
+          ? (displayName.isEmpty ? '' : displayName)
+          : null,
       description: description,
       avatarId: avatarId,
       bannerId: bannerId,
