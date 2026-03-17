@@ -31,11 +31,12 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
       final members = await (adapter as ListSupport).getListAccounts(
         widget.postList.id,
       );
-      if (mounted)
+      if (mounted) {
         setState(() {
           _members = members;
           _isLoading = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
