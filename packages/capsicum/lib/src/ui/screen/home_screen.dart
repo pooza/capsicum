@@ -656,9 +656,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.issuesUrl),
+                    onTap: () => launchUrl(AppConstants.contactUrl),
                     child: Text(
-                      '問題を報告',
+                      'お問い合わせ',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         decoration: TextDecoration.underline,
