@@ -62,10 +62,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : account;
 
     final newAccounts = [enriched, ...state.accounts];
-    state = AccountManagerState(
-      accounts: newAccounts,
-      current: enriched,
-    );
+    state = AccountManagerState(accounts: newAccounts, current: enriched);
   }
 
   void switchAccount(Account account) {

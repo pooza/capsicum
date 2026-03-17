@@ -31,7 +31,11 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
       final members = await (adapter as ListSupport).getListAccounts(
         widget.postList.id,
       );
-      if (mounted) setState(() { _members = members; _isLoading = false; });
+      if (mounted)
+        setState(() {
+          _members = members;
+          _isLoading = false;
+        });
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -72,10 +76,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
             SizedBox(height: 16),
             Text('メンバーがいません'),
             SizedBox(height: 8),
-            Text(
-              '右上のボタンからメンバーを追加できます',
-              style: TextStyle(color: Colors.grey),
-            ),
+            Text('右上のボタンからメンバーを追加できます', style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -135,18 +136,15 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! ListSupport) return;
     try {
-      await (adapter as ListSupport).removeListAccounts(
-        widget.postList.id,
-        [user.id],
-      );
+      await (adapter as ListSupport).removeListAccounts(widget.postList.id, [
+        user.id,
+      ]);
       messenger.showSnackBar(
         SnackBar(content: Text('@${user.username} を削除しました')),
       );
       _loadMembers();
     } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('メンバーの削除に失敗しました')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('メンバーの削除に失敗しました')));
     }
   }
 
@@ -213,10 +211,8 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final user = results[index];
-                      final alreadyMember = _members?.any(
-                            (m) => m.id == user.id,
-                          ) ??
-                          false;
+                      final alreadyMember =
+                          _members?.any((m) => m.id == user.id) ?? false;
                       return ListTile(
                         leading: _buildAvatar(context, user),
                         title: EmojiText(
@@ -257,19 +253,16 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! ListSupport) return;
     try {
-      await (adapter as ListSupport).addListAccounts(
-        widget.postList.id,
-        [user.id],
-      );
+      await (adapter as ListSupport).addListAccounts(widget.postList.id, [
+        user.id,
+      ]);
       messenger.showSnackBar(
         SnackBar(content: Text('@${user.username} を追加しました')),
       );
       await _loadMembers();
       setSheetState(() {});
     } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('メンバーの追加に失敗しました')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('メンバーの追加に失敗しました')));
     }
   }
 }

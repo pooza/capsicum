@@ -606,10 +606,7 @@ class MisskeyClient {
 
   /// GET /url
   Future<Map<String, dynamic>> getUrlPreview(String url) async {
-    final response = await dio.get(
-      '/url',
-      queryParameters: {'url': url},
-    );
+    final response = await dio.get('/url', queryParameters: {'url': url});
     return response.data as Map<String, dynamic>;
   }
 }

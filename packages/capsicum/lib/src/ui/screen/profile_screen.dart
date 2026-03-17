@@ -380,8 +380,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
-                final updatedUser =
-                    await context.push<User>('/profile/edit');
+                final updatedUser = await context.push<User>('/profile/edit');
                 if (updatedUser != null && mounted) {
                   setState(() => _user = updatedUser);
                 }
