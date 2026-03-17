@@ -198,361 +198,146 @@ class _PostTileState extends ConsumerState<PostTile> {
       );
     }
 
-    return InkWell(
-      onTap: widget.tappable ? () => context.push('/post', extra: post) : null,
-      onLongPress: () => _showActionMenu(context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 52),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (post.reblog != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: EmojiText(
-                        '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
-                        emojis: post.author.emojis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                        fallbackHost: post.emojiHost,
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      Expanded(
+    final isDirect = displayPost.scope == PostScope.direct;
+
+    return Container(
+      color: isDirect
+          ? Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      child: InkWell(
+        onTap: widget.tappable
+            ? () => context.push('/post', extra: post)
+            : null,
+        onLongPress: () => _showActionMenu(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (post.reblog != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: EmojiText(
-                          displayPost.author.displayName ??
-                              displayPost.author.username,
-                          emojis: displayPost.author.emojis,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          fallbackHost: displayPost.emojiHost,
+                          '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
+                          emojis: post.author.emojis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                          fallbackHost: post.emojiHost,
                         ),
                       ),
-                      if (displayPost.author.isBot) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: EmojiText(
+                            displayPost.author.displayName ??
+                                displayPost.author.username,
+                            emojis: displayPost.author.emojis,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            fallbackHost: displayPost.emojiHost,
+                          ),
+                        ),
+                        if (displayPost.author.isBot) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.smart_toy,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ],
+                        for (final role in displayPost.author.roles)
+                          if (role.iconUrl != null) ...[
+                            const SizedBox(width: 4),
+                            Image.network(
+                              role.iconUrl!,
+                              width: 14,
+                              height: 14,
+                              errorBuilder: (_, _, _) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ] else if (role.isAdmin) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.shield,
+                              size: 14,
+                              color:
+                                  role.color != null &&
+                                      role.color!.startsWith('#') &&
+                                      role.color!.length >= 7
+                                  ? Color(
+                                      0xFF000000 |
+                                          int.parse(
+                                            role.color!.substring(1, 7),
+                                            radix: 16,
+                                          ),
+                                    )
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.color,
+                            ),
+                          ],
                         const SizedBox(width: 4),
                         Icon(
-                          Icons.smart_toy,
+                          _scopeIcon(displayPost.scope),
                           size: 14,
                           color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
-                      ],
-                      for (final role in displayPost.author.roles)
-                        if (role.iconUrl != null) ...[
-                          const SizedBox(width: 4),
-                          Image.network(
-                            role.iconUrl!,
-                            width: 14,
-                            height: 14,
-                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                          ),
-                        ] else if (role.isAdmin) ...[
-                          const SizedBox(width: 4),
+                        if (displayPost.localOnly) ...[
+                          const SizedBox(width: 2),
                           Icon(
-                            Icons.shield,
+                            Icons.edit_off,
                             size: 14,
-                            color:
-                                role.color != null &&
-                                    role.color!.startsWith('#') &&
-                                    role.color!.length >= 7
-                                ? Color(
-                                    0xFF000000 |
-                                        int.parse(
-                                          role.color!.substring(1, 7),
-                                          radix: 16,
-                                        ),
-                                  )
-                                : Theme.of(context).textTheme.bodySmall?.color,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                         ],
-                      const SizedBox(width: 4),
-                      Icon(
-                        _scopeIcon(displayPost.scope),
-                        size: 14,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
-                      if (displayPost.localOnly) ...[
-                        const SizedBox(width: 2),
-                        Icon(
-                          Icons.edit_off,
-                          size: 14,
-                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        const SizedBox(width: 4),
+                        Text(
+                          _relativeTime(displayPost.postedAt),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
-                      const SizedBox(width: 4),
-                      Text(
-                        _relativeTime(displayPost.postedAt),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                  Text(
-                    _handleText(displayPost.author),
-                    style: Theme.of(context).textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (displayPost.channelName != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.forum,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              displayPost.channelName!,
-                              style: Theme.of(context).textTheme.bodySmall,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                  if (displayPost.inReplyToId != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.reply,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '返信',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
+                    Text(
+                      _handleText(displayPost.author),
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  const SizedBox(height: 4),
-                  if (displayPost.spoilerText != null) ...[
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _cwExpanded = !_cwExpanded),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    if (displayPost.channelName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.warning_amber,
-                                  size: 16,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: EmojiText(
-                                    displayPost.spoilerText!,
-                                    emojis: {
-                                      ...displayPost.emojis,
-                                      ...displayPost.author.emojis,
-                                    },
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                    fallbackHost: displayPost.emojiHost,
-                                  ),
-                                ),
-                              ],
+                            Icon(
+                              Icons.forum,
+                              size: 14,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _cwExpanded ? '閉じる' : '続きを表示',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontSize: 13,
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                displayPost.channelName!,
+                                style: Theme.of(context).textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
-                  if (displayPost.spoilerText == null || _cwExpanded) ...[
-                    Builder(
-                      builder: (_) {
-                        final rawContent = displayPost.content ?? '';
-                        final isHtml =
-                            rawContent.contains('<p>') ||
-                            rawContent.contains('<br');
-                        final parsed = isHtml
-                            ? extractTrailingTagsHtml(rawContent)
-                            : extractTrailingTagsMfm(rawContent);
-                        final allEmojis = {
-                          ...displayPost.emojis,
-                          ...displayPost.author.emojis,
-                        };
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    if (displayPost.inReplyToId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
                           children: [
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final baseStyle = DefaultTextStyle.of(
-                                  context,
-                                ).style;
-                                final contentSpan = _renderContent(
-                                  parsed.body,
-                                  baseStyle,
-                                  allEmojis,
-                                  fallbackHost: displayPost.emojiHost,
-                                  isHtml: isHtml,
-                                );
-                                // Use a plain TextSpan for overflow measurement
-                                // because TextPainter cannot measure WidgetSpan.
-                                final measureSpan = TextSpan(
-                                  text: parsed.body,
-                                  style: baseStyle,
-                                );
-                                final textPainter = TextPainter(
-                                  text: measureSpan,
-                                  maxLines: _maxLines,
-                                  textDirection: TextDirection.ltr,
-                                )..layout(maxWidth: constraints.maxWidth);
-                                final overflows = textPainter.didExceedMaxLines;
-
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildContentText(contentSpan),
-                                    if (overflows)
-                                      GestureDetector(
-                                        onTap: () => setState(
-                                          () => _expanded = !_expanded,
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 4,
-                                          ),
-                                          child: Text(
-                                            _expanded ? '折り畳む' : '続きを読む',
-                                            style: TextStyle(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                            if (parsed.trailingTags.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: [
-                                    ...(_tagsExpanded
-                                            ? parsed.trailingTags
-                                            : parsed.trailingTags.take(
-                                                _maxTags,
-                                              ))
-                                        .map(
-                                          (tag) => ActionChip(
-                                            materialTapTargetSize:
-                                                MaterialTapTargetSize
-                                                    .shrinkWrap,
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            label: Text(
-                                              '#$tag',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            onPressed: () =>
-                                                context.push('/hashtag/$tag'),
-                                          ),
-                                        ),
-                                    if (parsed.trailingTags.length > _maxTags)
-                                      GestureDetector(
-                                        onTap: () => setState(
-                                          () => _tagsExpanded = !_tagsExpanded,
-                                        ),
-                                        child: Chip(
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          visualDensity: VisualDensity.compact,
-                                          label: Text(
-                                            _tagsExpanded
-                                                ? '...'
-                                                : '+${parsed.trailingTags.length - _maxTags}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                    if (displayPost.quote != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _QuoteCard(quote: displayPost.quote!),
-                      ),
-                    if (displayPost.attachments.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _AttachmentThumbnails(
-                          attachments: displayPost.attachments,
-                          sensitive: displayPost.sensitive,
-                          postAuthorId: displayPost.author.id,
-                          postId: displayPost.id,
-                          onAttachmentsUpdated: (updated) {
-                            _onMediaDescriptionUpdated(displayPost, updated);
-                          },
-                        ),
-                      ),
-                    if ((displayPost.card ?? _fetchedCard) != null &&
-                        displayPost.attachments.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _PreviewCardWidget(
-                          card: (displayPost.card ?? _fetchedCard)!,
-                        ),
-                      ),
-                    if (displayPost.poll != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _PollWidget(
-                          poll: displayPost.poll!,
-                          postId: displayPost.id,
-                          onActionCompleted: onActionCompleted,
-                        ),
-                      ),
-                  ],
-                  if (displayPost.replyCount > 0 ||
-                      displayPost.reblogCount > 0 ||
-                      displayPost.favouriteCount > 0 ||
-                      displayPost.quoteCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Row(
-                        children: [
-                          if (displayPost.replyCount > 0) ...[
                             Icon(
                               Icons.reply,
                               size: 14,
@@ -560,83 +345,334 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 context,
                               ).textTheme.bodySmall?.color,
                             ),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: 4),
                             Text(
-                              '${displayPost.replyCount}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                          if (displayPost.reblogCount > 0) ...[
-                            Icon(
-                              Icons.repeat,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${displayPost.reblogCount}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                          if (displayPost.quoteCount > 0) ...[
-                            Icon(
-                              Icons.format_quote,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${displayPost.quoteCount}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                          if (displayPost.favouriteCount > 0) ...[
-                            Icon(
-                              Icons.star_outline,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${displayPost.favouriteCount}',
+                              '返信',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  if (displayPost.reactions.isNotEmpty)
-                    _ReactionChips(
-                      post: displayPost,
-                      onToggle: (emoji) => _toggleReaction(context, emoji),
-                    ),
-                ],
+                    const SizedBox(height: 4),
+                    if (displayPost.spoilerText != null) ...[
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _cwExpanded = !_cwExpanded),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: EmojiText(
+                                      displayPost.spoilerText!,
+                                      emojis: {
+                                        ...displayPost.emojis,
+                                        ...displayPost.author.emojis,
+                                      },
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                      fallbackHost: displayPost.emojiHost,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _cwExpanded ? '閉じる' : '続きを表示',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (displayPost.spoilerText == null || _cwExpanded) ...[
+                      Builder(
+                        builder: (_) {
+                          final rawContent = displayPost.content ?? '';
+                          final isHtml =
+                              rawContent.contains('<p>') ||
+                              rawContent.contains('<br');
+                          final parsed = isHtml
+                              ? extractTrailingTagsHtml(rawContent)
+                              : extractTrailingTagsMfm(rawContent);
+                          final allEmojis = {
+                            ...displayPost.emojis,
+                            ...displayPost.author.emojis,
+                          };
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final baseStyle = DefaultTextStyle.of(
+                                    context,
+                                  ).style;
+                                  final contentSpan = _renderContent(
+                                    parsed.body,
+                                    baseStyle,
+                                    allEmojis,
+                                    fallbackHost: displayPost.emojiHost,
+                                    isHtml: isHtml,
+                                  );
+                                  // Use a plain TextSpan for overflow measurement
+                                  // because TextPainter cannot measure WidgetSpan.
+                                  final measureSpan = TextSpan(
+                                    text: parsed.body,
+                                    style: baseStyle,
+                                  );
+                                  final textPainter = TextPainter(
+                                    text: measureSpan,
+                                    maxLines: _maxLines,
+                                    textDirection: TextDirection.ltr,
+                                  )..layout(maxWidth: constraints.maxWidth);
+                                  final overflows =
+                                      textPainter.didExceedMaxLines;
+
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildContentText(contentSpan),
+                                      if (overflows)
+                                        GestureDetector(
+                                          onTap: () => setState(
+                                            () => _expanded = !_expanded,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              _expanded ? '折り畳む' : '続きを読む',
+                                              style: TextStyle(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.primary,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              if (parsed.trailingTags.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: [
+                                      ...(_tagsExpanded
+                                              ? parsed.trailingTags
+                                              : parsed.trailingTags.take(
+                                                  _maxTags,
+                                                ))
+                                          .map(
+                                            (tag) => ActionChip(
+                                              materialTapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              label: Text(
+                                                '#$tag',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              onPressed: () =>
+                                                  context.push('/hashtag/$tag'),
+                                            ),
+                                          ),
+                                      if (parsed.trailingTags.length > _maxTags)
+                                        GestureDetector(
+                                          onTap: () => setState(
+                                            () =>
+                                                _tagsExpanded = !_tagsExpanded,
+                                          ),
+                                          child: Chip(
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            label: Text(
+                                              _tagsExpanded
+                                                  ? '...'
+                                                  : '+${parsed.trailingTags.length - _maxTags}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                      if (displayPost.quote != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _QuoteCard(quote: displayPost.quote!),
+                        ),
+                      if (displayPost.attachments.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _AttachmentThumbnails(
+                            attachments: displayPost.attachments,
+                            sensitive: displayPost.sensitive,
+                            postAuthorId: displayPost.author.id,
+                            postId: displayPost.id,
+                            onAttachmentsUpdated: (updated) {
+                              _onMediaDescriptionUpdated(displayPost, updated);
+                            },
+                          ),
+                        ),
+                      if ((displayPost.card ?? _fetchedCard) != null &&
+                          displayPost.attachments.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _PreviewCardWidget(
+                            card: (displayPost.card ?? _fetchedCard)!,
+                          ),
+                        ),
+                      if (displayPost.poll != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _PollWidget(
+                            poll: displayPost.poll!,
+                            postId: displayPost.id,
+                            onActionCompleted: onActionCompleted,
+                          ),
+                        ),
+                    ],
+                    if (displayPost.replyCount > 0 ||
+                        displayPost.reblogCount > 0 ||
+                        displayPost.favouriteCount > 0 ||
+                        displayPost.quoteCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            if (displayPost.replyCount > 0) ...[
+                              Icon(
+                                Icons.reply,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${displayPost.replyCount}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            if (displayPost.reblogCount > 0) ...[
+                              Icon(
+                                Icons.repeat,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${displayPost.reblogCount}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            if (displayPost.quoteCount > 0) ...[
+                              Icon(
+                                Icons.format_quote,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${displayPost.quoteCount}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            if (displayPost.favouriteCount > 0) ...[
+                              Icon(
+                                Icons.star_outline,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${displayPost.favouriteCount}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    if (displayPost.reactions.isNotEmpty)
+                      _ReactionChips(
+                        post: displayPost,
+                        onToggle: (emoji) => _toggleReaction(context, emoji),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Positioned(
-              left: 0,
-              top: 0,
-              child: GestureDetector(
-                onTap: () =>
-                    context.push('/profile', extra: displayPost.author),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: displayPost.author.avatarUrl != null
-                      ? Image.network(
-                          displayPost.author.avatarUrl!,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
+              Positioned(
+                left: 0,
+                top: 0,
+                child: GestureDetector(
+                  onTap: () =>
+                      context.push('/profile', extra: displayPost.author),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: displayPost.author.avatarUrl != null
+                        ? Image.network(
+                            displayPost.author.avatarUrl!,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              width: 40,
+                              height: 40,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              alignment: Alignment.center,
+                              child: Text(
+                                displayPost.author.username[0].toUpperCase(),
+                              ),
+                            ),
+                          )
+                        : Container(
                             width: 40,
                             height: 40,
                             color: Theme.of(
@@ -647,20 +683,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                               displayPost.author.username[0].toUpperCase(),
                             ),
                           ),
-                        )
-                      : Container(
-                          width: 40,
-                          height: 40,
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          alignment: Alignment.center,
-                          child: Text(
-                            displayPost.author.username[0].toUpperCase(),
-                          ),
-                        ),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
