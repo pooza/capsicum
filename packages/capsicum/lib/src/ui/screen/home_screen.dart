@@ -597,6 +597,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/announcements');
             },
           ),
+          if (ref.read(currentMulukhiyaProvider) != null)
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('リンク'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showServerLinks(context, ref);
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('ログアウト'),
@@ -707,6 +716,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showServerLinks(BuildContext context, WidgetRef ref) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    final account = ref.read(currentAccountProvider);
+    if (mulukhiya == null || account == null) return;
+
+    final host = account.key.host;
+    final groups = await mulukhiya.getLinks(host);
+    if (groups.isEmpty) return;
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'リンク',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final group in groups) ...[
+              if (group.title != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    group.title!,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              for (final link in group.links)
+                ListTile(
+                  leading: const Icon(Icons.open_in_new, size: 20),
+                  title: Text(link.body),
+                  dense: true,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    final url = link.href.startsWith('/')
+                        ? Uri.parse('https://$host${link.href}')
+                        : Uri.parse(link.href);
+                    if (url.scheme == 'https' || url.scheme == 'http') {
+                      launchUrl(url);
+                    }
+                  },
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }
