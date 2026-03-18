@@ -275,9 +275,7 @@ class _EmojiPickerState extends State<EmojiPicker>
     }
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Wrap(
-        children: filtered.map(_buildCustomEmojiTile).toList(),
-      ),
+      child: Wrap(children: filtered.map(_buildCustomEmojiTile).toList()),
     );
   }
 
@@ -323,10 +321,7 @@ class _EmojiPickerState extends State<EmojiPicker>
         child: Padding(
           padding: const EdgeInsets.all(4),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxHeight: 32,
-              maxWidth: 96,
-            ),
+            constraints: const BoxConstraints(maxHeight: 32, maxWidth: 96),
             child: Image.network(
               emoji.url,
               height: 32,

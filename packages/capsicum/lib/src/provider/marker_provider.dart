@@ -65,11 +65,11 @@ class NotificationMarkerSaver {
     _pendingId = null;
     final adapter = _ref.read(currentAdapterProvider);
     if (adapter is MarkerSupport) {
-      (adapter as MarkerSupport).saveNotificationMarker(id).catchError(
-        (Object e) {
-          debugPrint('Failed to save notification marker: $e');
-        },
-      );
+      (adapter as MarkerSupport).saveNotificationMarker(id).catchError((
+        Object e,
+      ) {
+        debugPrint('Failed to save notification marker: $e');
+      });
     }
   }
 
