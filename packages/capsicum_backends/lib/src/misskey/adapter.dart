@@ -617,6 +617,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             shortcode: e['name'] as String,
             url: (e['url'] as String?) ?? '',
             category: e['category'] as String?,
+            aliases:
+                (e['aliases'] as List<dynamic>?)
+                    ?.map((a) => a as String)
+                    .toList() ??
+                const [],
           ),
         )
         .toList();

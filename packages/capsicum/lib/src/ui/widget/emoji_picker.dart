@@ -268,7 +268,11 @@ class _EmojiPickerState extends State<EmojiPicker>
 
   Widget _buildCustomSearchResults(List<CustomEmoji> emojis) {
     final filtered = emojis
-        .where((e) => e.shortcode.toLowerCase().contains(_searchQuery))
+        .where(
+          (e) =>
+              e.shortcode.toLowerCase().contains(_searchQuery) ||
+              e.aliases.any((a) => a.toLowerCase().contains(_searchQuery)),
+        )
         .toList();
     if (filtered.isEmpty) {
       return const Center(child: Text('一致する絵文字がありません'));
