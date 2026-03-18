@@ -237,7 +237,8 @@ capsicum/
 - IME composing 干渉の軽減（投稿画面: ValueListenableBuilder による部分再描画化）
 - 動画アップロード修正（v1 API 使用 + nullable url + 拡張子フォールバック動画判定）
 - 引用投稿の表示（Mastodon: quote オブジェクトの quoted_status パース / Misskey: renote+text 判定）
-- MFM / HTML テキストパーサー（太字・斜体・打ち消し・コード・ルビ・リンク・メンション・引用ブロック・center・small + HTML の <code> タグ対応）
+- MFM / HTML テキストパーサー（太字・斜体・打ち消し・コード・ルビ・リンク・メンション・ハッシュタグ・引用ブロック・center・small + HTML の <code> タグ対応）
+- メンション（@acct）タップでプロフィール遷移（Mastodon lookup API / Misskey users/show API）
 - ドロワーにサーバーソフトウェアのバージョン表示
 - 公開範囲ラベルの Mastodon / Misskey 名称対応
 - スワイプ操作によるタイムライン切り替え
