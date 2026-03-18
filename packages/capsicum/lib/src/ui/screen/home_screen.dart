@@ -123,6 +123,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? ref.watch(listTimelineProvider(selectedList.id))
         : ref.watch(timelineProvider);
 
+    // Show a SnackBar when loadMore fails.
+    ref.listen(
+      selectedList != null
+          ? listTimelineProvider(selectedList.id)
+          : timelineProvider,
+      (prev, next) {
+        final error = next.valueOrNull?.loadMoreError;
+        if (error != null && prev?.valueOrNull?.loadMoreError == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('読み込みに失敗しました'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      },
+    );
+
     return Scaffold(
       appBar: AppBar(
         leading: Builder(

@@ -52,11 +52,13 @@ class ListTimelineNotifier
           posts: [...current.posts, ...older],
           isLoadingMore: false,
           hasMore: older.length >= _pageSize,
+          loadMoreError: null,
         ),
       );
-    } catch (e, st) {
-      state = AsyncData(current.copyWith(isLoadingMore: false));
-      throw AsyncError(e, st);
+    } catch (e, _) {
+      state = AsyncData(
+        current.copyWith(isLoadingMore: false, loadMoreError: e),
+      );
     }
   }
 }
