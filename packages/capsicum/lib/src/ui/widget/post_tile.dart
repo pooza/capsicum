@@ -126,6 +126,24 @@ class _PostTileState extends ConsumerState<PostTile> {
     super.dispose();
   }
 
+  Future<void> _navigateToMention(String mention) async {
+    // Parse @user or @user@host
+    final parts = mention.replaceFirst('@', '').split('@');
+    if (parts.isEmpty) return;
+    final username = parts[0];
+    final host = parts.length > 1 ? parts[1] : null;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final user = await adapter.getUser(username, host);
+      if (user != null && mounted) {
+        context.push('/profile', extra: user);
+      }
+    } on Exception catch (e) {
+      debugPrint('Failed to look up mention $mention: $e');
+    }
+  }
+
   ContentRenderer? _contentRenderer;
 
   TextSpan _renderContent(
@@ -153,9 +171,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
-      onMentionTap: (mention) {
-        // TODO: navigate to user profile
-      },
+      onMentionTap: (mention) => _navigateToMention(mention),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)

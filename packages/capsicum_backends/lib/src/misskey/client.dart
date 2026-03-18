@@ -46,6 +46,23 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/users/show (by username)
+  Future<MisskeyUser?> showUserByName(
+    String username, [
+    String? remoteHost,
+  ]) async {
+    try {
+      final response = await dio.post(
+        '/api/users/show',
+        data: createBody({'username': username, 'host': ?remoteHost}),
+      );
+      return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// POST /api/users/notes
   Future<List<MisskeyNote>> getUserNotes(
     String userId, {

@@ -70,6 +70,20 @@ class MastodonClient {
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/accounts/lookup
+  Future<MastodonAccount?> lookupAccount(String acct) async {
+    try {
+      final response = await dio.get(
+        '/api/v1/accounts/lookup',
+        queryParameters: {'acct': acct},
+      );
+      return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// GET /api/v1/accounts/:id/statuses
   Future<List<MastodonStatus>> getAccountStatuses(
     String id, {

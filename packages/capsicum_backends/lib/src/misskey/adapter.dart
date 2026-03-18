@@ -137,8 +137,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<User?> getUser(String username, [String? host]) =>
-      throw UnimplementedError();
+  Future<User?> getUser(String username, [String? remoteHost]) async {
+    final user = await client.showUserByName(username, remoteHost);
+    return user?.toCapsicum(host);
+  }
 
   @override
   Future<User> getUserById(String id) async {

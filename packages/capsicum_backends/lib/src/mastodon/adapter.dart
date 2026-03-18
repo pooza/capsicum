@@ -158,8 +158,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<User?> getUser(String username, [String? host]) =>
-      throw UnimplementedError();
+  Future<User?> getUser(String username, [String? remoteHost]) async {
+    final acct = remoteHost != null ? '$username@$remoteHost' : username;
+    final account = await client.lookupAccount(acct);
+    return account?.toCapsicum(host);
+  }
 
   @override
   Future<User> getUserById(String id) async {

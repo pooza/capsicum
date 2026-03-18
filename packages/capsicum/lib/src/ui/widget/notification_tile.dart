@@ -52,6 +52,7 @@ class _NotificationTileState extends State<NotificationTile> {
           launchUrl(uri);
         }
       },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
     );
     final isHtml = content.contains('<p>') || content.contains('<br');
     return isHtml
