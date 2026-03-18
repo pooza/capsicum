@@ -128,6 +128,8 @@ class _EmojiPickerState extends State<EmojiPicker>
   late final TabController _tabController;
   List<CustomEmoji>? _customEmojis;
   bool _loadingCustom = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -154,6 +156,7 @@ class _EmojiPickerState extends State<EmojiPicker>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -222,6 +225,63 @@ class _EmojiPickerState extends State<EmojiPicker>
       return const Center(child: Text('カスタム絵文字がありません'));
     }
 
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: '絵文字を検索…',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+            ),
+            onChanged: (value) {
+              setState(() => _searchQuery = value.toLowerCase());
+            },
+          ),
+        ),
+        Expanded(
+          child: _searchQuery.isNotEmpty
+              ? _buildCustomSearchResults(emojis)
+              : _buildCustomCategories(emojis),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomSearchResults(List<CustomEmoji> emojis) {
+    final filtered = emojis
+        .where((e) => e.shortcode.toLowerCase().contains(_searchQuery))
+        .toList();
+    if (filtered.isEmpty) {
+      return const Center(child: Text('一致する絵文字がありません'));
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Wrap(
+        children: filtered.map(_buildCustomEmojiTile).toList(),
+      ),
+    );
+  }
+
+  Widget _buildCustomCategories(List<CustomEmoji> emojis) {
     // Group by category.
     final grouped = <String, List<CustomEmoji>>{};
     for (final emoji in emojis) {
@@ -245,36 +305,38 @@ class _EmojiPickerState extends State<EmojiPicker>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Wrap(
-                children: category.value.map((emoji) {
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => widget.onSelected(':${emoji.shortcode}:'),
-                    child: Tooltip(
-                      message: ':${emoji.shortcode}:',
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxHeight: 32,
-                            maxWidth: 96,
-                          ),
-                          child: Image.network(
-                            emoji.url,
-                            height: 32,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.broken_image, size: 32),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                children: category.value.map(_buildCustomEmojiTile).toList(),
               ),
             ),
           ],
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildCustomEmojiTile(CustomEmoji emoji) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => widget.onSelected(':${emoji.shortcode}:'),
+      child: Tooltip(
+        message: ':${emoji.shortcode}:',
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: 32,
+              maxWidth: 96,
+            ),
+            child: Image.network(
+              emoji.url,
+              height: 32,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) =>
+                  const Icon(Icons.broken_image, size: 32),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
