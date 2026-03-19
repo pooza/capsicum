@@ -237,8 +237,10 @@ class _MfmParser {
 
   // --- Parsers ---
 
+  bool get _atLineStart => _pos == 0 || input[_pos - 1] == '\n';
+
   _Node? _tryCodeBlock() {
-    if (!_lookingAt('```')) return null;
+    if (!_atLineStart || !_lookingAt('```')) return null;
     final start = _pos;
     _pos += 3;
     // Optional language
@@ -250,7 +252,7 @@ class _MfmParser {
     if (_pos < input.length) _pos++; // skip \n
     final codeBuf = StringBuffer();
     while (_pos < input.length) {
-      if (_lookingAt('```')) {
+      if (_atLineStart && _lookingAt('```')) {
         _pos += 3;
         final lang = langBuf.toString().trim();
         return _Node(
