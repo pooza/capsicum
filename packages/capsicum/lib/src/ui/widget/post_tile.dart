@@ -269,6 +269,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                             color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                         ],
+                        if (displayPost.author.isGroup) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.groups,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ],
                         for (final role in displayPost.author.roles)
                           if (role.iconUrl != null) ...[
                             const SizedBox(width: 4),

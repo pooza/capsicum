@@ -375,6 +375,21 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// GET /api/v1/accounts/search
+  Future<List<MastodonAccount>> searchAccounts(
+    String query, {
+    int? limit,
+    bool? resolve,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/search',
+      queryParameters: {'q': query, 'limit': ?limit, 'resolve': ?resolve},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v2/search
   Future<Map<String, dynamic>> search(
     String query, {

@@ -525,6 +525,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return SearchResults(users: accounts, posts: statuses, hashtags: hashtags);
   }
 
+  @override
+  Future<List<User>> searchUsers(String query, {int? limit}) async {
+    final accounts = await client.searchAccounts(query, limit: limit);
+    return accounts.map((a) => a.toCapsicum(host)).toList();
+  }
+
   // CustomEmojiSupport
 
   @override

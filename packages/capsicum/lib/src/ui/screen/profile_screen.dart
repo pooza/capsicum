@@ -337,6 +337,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                           ),
                         ],
+                        if (user.isGroup) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: 'コミュニティ',
+                            child: Icon(
+                              Icons.groups,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     Text(

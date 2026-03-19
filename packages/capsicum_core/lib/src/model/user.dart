@@ -33,6 +33,7 @@ class User {
   final int followingCount;
   final int postCount;
   final bool isBot;
+  final bool isGroup;
   final List<UserRole> roles;
   final List<UserField> fields;
   final Map<String, String> emojis;
@@ -49,6 +50,7 @@ class User {
     this.followingCount = 0,
     this.postCount = 0,
     this.isBot = false,
+    this.isGroup = false,
     this.roles = const [],
     this.fields = const [],
     this.emojis = const {},

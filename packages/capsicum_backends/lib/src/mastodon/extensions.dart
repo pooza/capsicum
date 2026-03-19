@@ -34,6 +34,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followingCount: followingCount,
       postCount: statusesCount,
       isBot: bot ?? false,
+      isGroup: actorType == 'Group',
       roles: (roles ?? []).map((r) {
         final perms = int.tryParse(r['permissions']?.toString() ?? '') ?? 0;
         return UserRole(

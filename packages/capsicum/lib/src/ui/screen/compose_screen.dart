@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'dart:async';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +43,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sensitiveEnabled = false;
   bool _sending = false;
   bool _localOnly = false;
+  List<User> _mentionSuggestions = [];
+  Timer? _mentionDebounce;
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
@@ -103,10 +107,83 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
     }
+    _controller.addListener(_onTextChanged);
+  }
+
+  String? _currentMentionQuery() {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    if (cursor < 0 || cursor > text.length) return null;
+    // Walk backwards from cursor to find '@'.
+    var start = cursor - 1;
+    while (start >= 0) {
+      final ch = text[start];
+      if (ch == '@') {
+        // Must be at start of text or preceded by whitespace.
+        if (start == 0 || text[start - 1] == ' ' || text[start - 1] == '\n') {
+          final query = text.substring(start + 1, cursor);
+          // Only trigger when at least 1 char is typed after '@'.
+          return query.isNotEmpty ? query : null;
+        }
+        return null;
+      }
+      if (ch == ' ' || ch == '\n') return null;
+      start--;
+    }
+    return null;
+  }
+
+  void _onTextChanged() {
+    final query = _currentMentionQuery();
+    if (query == null) {
+      if (_mentionSuggestions.isNotEmpty) {
+        setState(() => _mentionSuggestions = []);
+      }
+      _mentionDebounce?.cancel();
+      return;
+    }
+    _mentionDebounce?.cancel();
+    _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+      _fetchMentionSuggestions(query);
+    });
+  }
+
+  Future<void> _fetchMentionSuggestions(String query) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! SearchSupport) return;
+    try {
+      final users = await (adapter as SearchSupport).searchUsers(
+        query,
+        limit: 5,
+      );
+      if (mounted) setState(() => _mentionSuggestions = users);
+    } catch (_) {
+      // Silently ignore search failures.
+    }
+  }
+
+  void _insertMention(User user) {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    // Find the '@' that started this mention.
+    var start = cursor - 1;
+    while (start >= 0 && text[start] != '@') {
+      start--;
+    }
+    final acct = _buildAcct(user);
+    final replacement = '@$acct ';
+    final newText = text.replaceRange(start, cursor, replacement);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + replacement.length),
+    );
+    setState(() => _mentionSuggestions = []);
   }
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
     super.dispose();
@@ -447,6 +524,38 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
+            if (_mentionSuggestions.isNotEmpty)
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _mentionSuggestions.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final user = _mentionSuggestions[index];
+                    return ActionChip(
+                      avatar: user.isGroup
+                          ? const Icon(Icons.groups, size: 18)
+                          : user.isBot
+                          ? const Icon(Icons.smart_toy, size: 18)
+                          : user.avatarUrl != null
+                          ? CircleAvatar(
+                              backgroundImage: NetworkImage(user.avatarUrl!),
+                              radius: 12,
+                            )
+                          : const Icon(Icons.person, size: 18),
+                      label: Text(
+                        '@${user.username}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      tooltip: user.isGroup
+                          ? 'コミュニティ: @${_buildAcct(user)}'
+                          : '@${_buildAcct(user)}',
+                      onPressed: () => _insertMention(user),
+                    );
+                  },
+                ),
+              ),
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(

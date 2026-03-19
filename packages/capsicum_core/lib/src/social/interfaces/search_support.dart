@@ -15,4 +15,5 @@ class SearchResults {
 
 abstract mixin class SearchSupport {
   Future<SearchResults> search(String query);
+  Future<List<User>> searchUsers(String query, {int? limit});
 }

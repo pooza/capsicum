@@ -685,6 +685,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
+                    onTap: () => launchUrl(AppConstants.communityUrl),
+                    child: Text(
+                      'コミュニティ（PieFed）',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
                     onTap: () => launchUrl(AppConstants.contactUrl),
                     child: Text(
                       'お問い合わせ',

@@ -594,6 +594,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
   }
 
+  @override
+  Future<List<User>> searchUsers(String query, {int? limit}) async {
+    final users = await client.searchUsers(query, limit: limit);
+    return users.map((u) => u.toCapsicum(host)).toList();
+  }
+
   // ReactionSupport
 
   @override
