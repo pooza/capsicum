@@ -531,6 +531,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return accounts.map((a) => a.toCapsicum(host)).toList();
   }
 
+  @override
+  Future<List<String>> searchHashtags(String query, {int? limit}) async {
+    final data = await client.search(query, type: 'hashtags', limit: limit);
+    return (data['hashtags'] as List? ?? [])
+        .map((e) => (e as Map<String, dynamic>)['name'] as String)
+        .toList();
+  }
+
   // CustomEmojiSupport
 
   @override

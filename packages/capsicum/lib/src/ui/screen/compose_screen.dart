@@ -44,6 +44,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sending = false;
   bool _localOnly = false;
   List<User> _mentionSuggestions = [];
+  List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
 
   static const _mastodonScopeLabels = {
@@ -110,19 +111,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _controller.addListener(_onTextChanged);
   }
 
-  String? _currentMentionQuery() {
+  /// Walk backwards from cursor to find [trigger] (`@` or `#`).
+  /// Returns the query string after the trigger, or null.
+  String? _currentTriggerQuery(String trigger) {
     final text = _controller.text;
     final cursor = _controller.selection.baseOffset;
     if (cursor < 0 || cursor > text.length) return null;
-    // Walk backwards from cursor to find '@'.
     var start = cursor - 1;
     while (start >= 0) {
       final ch = text[start];
-      if (ch == '@') {
-        // Must be at start of text or preceded by whitespace.
+      if (ch == trigger) {
         if (start == 0 || text[start - 1] == ' ' || text[start - 1] == '\n') {
           final query = text.substring(start + 1, cursor);
-          // Only trigger when at least 1 char is typed after '@'.
           return query.isNotEmpty ? query : null;
         }
         return null;
@@ -134,18 +134,30 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   }
 
   void _onTextChanged() {
-    final query = _currentMentionQuery();
-    if (query == null) {
-      if (_mentionSuggestions.isNotEmpty) {
-        setState(() => _mentionSuggestions = []);
-      }
-      _mentionDebounce?.cancel();
-      return;
-    }
     _mentionDebounce?.cancel();
-    _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
-      _fetchMentionSuggestions(query);
-    });
+
+    // Check mention trigger first, then hashtag.
+    final mentionQuery = _currentTriggerQuery('@');
+    final hashtagQuery = mentionQuery == null
+        ? _currentTriggerQuery('#')
+        : null;
+
+    if (mentionQuery == null && _mentionSuggestions.isNotEmpty) {
+      setState(() => _mentionSuggestions = []);
+    }
+    if (hashtagQuery == null && _hashtagSuggestions.isNotEmpty) {
+      setState(() => _hashtagSuggestions = []);
+    }
+
+    if (mentionQuery != null) {
+      _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+        _fetchMentionSuggestions(mentionQuery);
+      });
+    } else if (hashtagQuery != null) {
+      _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+        _fetchHashtagSuggestions(hashtagQuery);
+      });
+    }
   }
 
   Future<void> _fetchMentionSuggestions(String query) async {
@@ -162,22 +174,43 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
   }
 
+  Future<void> _fetchHashtagSuggestions(String query) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! SearchSupport) return;
+    try {
+      final tags = await (adapter as SearchSupport).searchHashtags(
+        query,
+        limit: 5,
+      );
+      if (mounted) setState(() => _hashtagSuggestions = tags);
+    } catch (_) {
+      // Silently ignore search failures.
+    }
+  }
+
   void _insertMention(User user) {
+    final acct = _buildAcct(user);
+    _insertTriggerCompletion('@', '@$acct ');
+    setState(() => _mentionSuggestions = []);
+  }
+
+  void _insertHashtag(String tag) {
+    _insertTriggerCompletion('#', '#$tag ');
+    setState(() => _hashtagSuggestions = []);
+  }
+
+  void _insertTriggerCompletion(String trigger, String replacement) {
     final text = _controller.text;
     final cursor = _controller.selection.baseOffset;
-    // Find the '@' that started this mention.
     var start = cursor - 1;
-    while (start >= 0 && text[start] != '@') {
+    while (start >= 0 && text[start] != trigger) {
       start--;
     }
-    final acct = _buildAcct(user);
-    final replacement = '@$acct ';
     final newText = text.replaceRange(start, cursor, replacement);
     _controller.value = TextEditingValue(
       text: newText,
       selection: TextSelection.collapsed(offset: start + replacement.length),
     );
-    setState(() => _mentionSuggestions = []);
   }
 
   @override
@@ -552,6 +585,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           ? 'コミュニティ: @${_buildAcct(user)}'
                           : '@${_buildAcct(user)}',
                       onPressed: () => _insertMention(user),
+                    );
+                  },
+                ),
+              ),
+            if (_hashtagSuggestions.isNotEmpty)
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _hashtagSuggestions.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final tag = _hashtagSuggestions[index];
+                    return ActionChip(
+                      avatar: const Icon(Icons.tag, size: 18),
+                      label: Text('#$tag', overflow: TextOverflow.ellipsis),
+                      onPressed: () => _insertHashtag(tag),
                     );
                   },
                 ),

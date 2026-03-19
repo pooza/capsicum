@@ -600,6 +600,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return users.map((u) => u.toCapsicum(host)).toList();
   }
 
+  @override
+  Future<List<String>> searchHashtags(String query, {int? limit}) async {
+    return client.searchHashtags(query, limit: limit);
+  }
+
   // ReactionSupport
 
   @override
