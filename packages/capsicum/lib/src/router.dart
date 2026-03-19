@@ -110,6 +110,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ComposeScreen(
             redraft: extra?['redraft'] as Post?,
             replyTo: extra?['replyTo'] as Post?,
+            channelId: extra?['channelId'] as String?,
+            channelName: extra?['channelName'] as String?,
           );
         },
       ),

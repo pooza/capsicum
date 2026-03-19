@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
@@ -26,8 +27,16 @@ class _MediaEntry {
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
   final Post? replyTo;
+  final String? channelId;
+  final String? channelName;
 
-  const ComposeScreen({super.key, this.redraft, this.replyTo});
+  const ComposeScreen({
+    super.key,
+    this.redraft,
+    this.replyTo,
+    this.channelId,
+    this.channelName,
+  });
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -487,10 +496,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
+          channelId: widget.channelId,
         ),
       );
       if (mounted) {
         ref.invalidate(timelineProvider);
+        if (widget.channelId != null) {
+          ref.invalidate(channelTimelineProvider(widget.channelId!));
+        }
         context.pop();
       }
     } catch (e) {
@@ -510,7 +523,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.replyTo != null ? 'リプライ' : ref.watch(postLabelProvider),
+          widget.replyTo != null
+              ? 'リプライ'
+              : widget.channelName != null
+              ? '${ref.watch(postLabelProvider)}：${widget.channelName}'
+              : ref.watch(postLabelProvider),
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [

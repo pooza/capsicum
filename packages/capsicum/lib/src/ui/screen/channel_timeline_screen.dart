@@ -1,6 +1,9 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../widget/post_tile.dart';
 
@@ -45,12 +48,26 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(channelTimelineProvider(widget.channelId));
+    final adapter = ref.watch(currentAdapterProvider);
+    final canPost = adapter is ChannelSupport;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.channelName ?? 'チャンネル'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      floatingActionButton: canPost
+          ? FloatingActionButton(
+              onPressed: () => context.push(
+                '/compose',
+                extra: {
+                  'channelId': widget.channelId,
+                  'channelName': widget.channelName,
+                },
+              ),
+              child: const Icon(Icons.edit),
+            )
+          : null,
       body: timeline.when(
         data: (state) => state.posts.isEmpty
             ? const Center(child: Text('投稿がありません'))

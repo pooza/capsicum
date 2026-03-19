@@ -239,6 +239,7 @@ class MisskeyClient {
     List<String>? fileIds,
     String? cw,
     bool? localOnly,
+    String? channelId,
     Map<String, String>? extraHeaders,
   }) async {
     final response = await dio.post(
@@ -250,6 +251,7 @@ class MisskeyClient {
         'fileIds': ?fileIds,
         'cw': ?cw,
         'localOnly': ?localOnly,
+        'channelId': ?channelId,
       }),
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
