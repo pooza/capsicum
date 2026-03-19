@@ -114,6 +114,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       filterAction: displayPost.filterAction,
       filterTitle: displayPost.filterTitle,
       pinned: displayPost.pinned,
+      channelId: displayPost.channelId,
       channelName: displayPost.channelName,
       localOnly: displayPost.localOnly,
     );
@@ -338,25 +339,40 @@ class _PostTileState extends ConsumerState<PostTile> {
                     if (displayPost.channelName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.forum,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                displayPost.channelName!,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        child: GestureDetector(
+                          onTap: displayPost.channelId != null
+                              ? () => context.push(
+                                  '/channel/${displayPost.channelId}',
+                                  extra: displayPost.channelName,
+                                )
+                              : null,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.forum,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  displayPost.channelName!,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: displayPost.channelId != null
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : null,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     if (displayPost.inReplyToId != null)

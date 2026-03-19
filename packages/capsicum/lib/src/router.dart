@@ -9,6 +9,7 @@ import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
+import 'ui/screen/channel_timeline_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
@@ -165,6 +166,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final tag = state.pathParameters['tag']!;
           return HashtagTimelineScreen(hashtag: tag);
+        },
+      ),
+      GoRoute(
+        path: '/channel/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final name = state.extra as String?;
+          return ChannelTimelineScreen(channelId: id, channelName: name);
         },
       ),
       GoRoute(

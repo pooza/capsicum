@@ -33,6 +33,7 @@ class Post {
   final FilterAction? filterAction;
   final String? filterTitle;
   final bool pinned;
+  final String? channelId;
   final String? channelName;
   final bool localOnly;
 
@@ -65,6 +66,7 @@ class Post {
     this.filterAction,
     this.filterTitle,
     this.pinned = false,
+    this.channelId,
     this.channelName,
     this.localOnly = false,
   });

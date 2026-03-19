@@ -23,6 +23,7 @@ export 'src/social/capabilities.dart';
 
 // Feature interfaces
 export 'src/social/interfaces/announcement_support.dart';
+export 'src/social/interfaces/channel_support.dart';
 export 'src/social/interfaces/bookmark_support.dart';
 export 'src/social/interfaces/custom_emoji_support.dart';
 export 'src/social/interfaces/favorite_support.dart';

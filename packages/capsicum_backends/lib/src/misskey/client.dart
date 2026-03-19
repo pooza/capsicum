@@ -440,6 +440,27 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/channels/timeline
+  Future<List<MisskeyNote>> getChannelTimeline(
+    String channelId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/channels/timeline',
+      data: createBody({
+        'channelId': channelId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/ap/show — resolve a remote URI to a local object.
   Future<Map<String, dynamic>> apShow(String uri) async {
     final response = await dio.post(

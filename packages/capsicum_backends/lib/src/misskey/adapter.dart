@@ -78,7 +78,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         LoginSupport,
         StreamSupport,
         MediaUpdateSupport,
-        ProfileEditSupport {
+        ProfileEditSupport,
+        ChannelSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -722,6 +723,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }) async {
     final notes = await client.searchByTag(
       hashtag,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
+
+  // ChannelSupport
+
+  @override
+  Future<List<Post>> getChannelTimeline(
+    String channelId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getChannelTimeline(
+      channelId,
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,

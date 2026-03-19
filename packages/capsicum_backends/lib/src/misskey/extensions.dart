@@ -73,6 +73,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       emojis: reactionEmojis ?? const {},
       emojiHost: localHost,
       pinned: pinned,
+      channelId: channel?['id'] as String?,
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
     );
