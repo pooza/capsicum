@@ -566,6 +566,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 4),
                   itemBuilder: (context, index) {
                     final user = _mentionSuggestions[index];
+                    final localHost = ref
+                        .read(currentAccountProvider)
+                        ?.user
+                        .host;
+                    final isRemote =
+                        user.host != null && user.host != localHost;
+                    final label = isRemote
+                        ? '@${_buildAcct(user)}'
+                        : '@${user.username}';
                     return ActionChip(
                       avatar: user.isGroup
                           ? const Icon(Icons.groups, size: 18)
@@ -577,10 +586,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                               radius: 12,
                             )
                           : const Icon(Icons.person, size: 18),
-                      label: Text(
-                        '@${user.username}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      label: Text(label, overflow: TextOverflow.ellipsis),
                       tooltip: user.isGroup
                           ? 'コミュニティ: @${_buildAcct(user)}'
                           : '@${_buildAcct(user)}',
