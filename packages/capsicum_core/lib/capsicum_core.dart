@@ -4,6 +4,7 @@ library;
 // Models
 export 'src/model/announcement.dart';
 export 'src/model/attachment.dart';
+export 'src/model/channel.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
 export 'src/model/poll.dart';

@@ -96,6 +96,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:account',
     'read:blocks',
     'write:blocks',
+    'read:channels',
+    'write:channels',
     'read:drive',
     'write:drive',
     'read:favorites',
@@ -732,6 +734,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   // ChannelSupport
+
+  @override
+  Future<List<Channel>> getFollowedChannels() async {
+    final data = await client.getFollowedChannels(limit: 100);
+    return data
+        .map(
+          (ch) => Channel(
+            id: ch['id'] as String,
+            name: ch['name'] as String? ?? '',
+          ),
+        )
+        .toList();
+  }
 
   @override
   Future<List<Post>> getChannelTimeline(

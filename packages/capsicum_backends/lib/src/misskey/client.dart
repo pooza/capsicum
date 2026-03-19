@@ -463,6 +463,23 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/channels/followed
+  Future<List<Map<String, dynamic>>> getFollowedChannels({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/channels/followed',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/ap/show — resolve a remote URI to a local object.
   Future<Map<String, dynamic>> apShow(String uri) async {
     final response = await dio.post(

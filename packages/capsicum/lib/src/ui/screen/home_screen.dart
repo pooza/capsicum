@@ -617,6 +617,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/announcements');
             },
           ),
+          if (ref.read(currentAdapterProvider) is ChannelSupport)
+            ListTile(
+              leading: const Icon(Icons.forum),
+              title: const Text('チャンネル'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showChannelList(context, ref);
+              },
+            ),
           if (ref.read(currentMulukhiyaProvider) != null)
             ListTile(
               leading: const Icon(Icons.link),
@@ -804,6 +813,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showChannelList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChannelSupport) return;
+
+    final List<Channel> channels;
+    try {
+      channels = await (adapter as ChannelSupport).getFollowedChannels();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('チャンネルの取得に失敗しました。再ログインが必要な場合があります')),
+        );
+      }
+      return;
+    }
+    if (channels.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('フォロー中のチャンネルはありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'チャンネル',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final ch in channels)
+              ListTile(
+                leading: const Icon(Icons.forum, size: 20),
+                title: Text(ch.name),
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/channel/${ch.id}', extra: ch.name);
+                },
+              ),
           ],
         ),
       ),
