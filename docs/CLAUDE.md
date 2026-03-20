@@ -192,15 +192,9 @@ capsicum/
 | [Kaiteki](https://github.com/Kaiteki-Fedi/Kaiteki) | 設計の参考元（アーカイブ済み） |
 | [capsicum-site](https://github.com/pooza/capsicum-site) | プロジェクトサイト（`capsicum.shrieker.net`）。GitHub Pages で配信。プライバシーポリシー・子どもの安全基準等 |
 
-## 実装ステータス
+## リリース計画
 
-### 実装済み
-
-[implemented-features.md](implemented-features.md) を参照。
-
-### リリース計画
-
-#### v0.1（身内テスト版） — 機能実装完了
+### v0.1（身内テスト版） — 機能実装完了
 
 [#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。
 
@@ -230,7 +224,7 @@ v0.2.0 リリース済み:
 - `gem install fastlane`（rbenv の Ruby を使用）
 - Android 署名鍵: `android/key.properties`（git 管理外、手動配置）
 
-#### ストアリリース準備（v1.0 公開前）
+### ストアリリース準備（v1.0 公開前）
 
 詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
 
@@ -247,7 +241,7 @@ v0.2.0 リリース済み:
 - [x] Google Play スクリーンショット（最低2枚）
 - [x] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
 
-#### v1.0 以降のリリース計画
+### v1.0 以降のリリース計画
 
 GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
