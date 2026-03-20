@@ -86,6 +86,18 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 - Misskey adapter は `FavoriteSupport` mixin を持たない（リアクション対応時に吸収）
 - Misskey 判定は `adapter is ReactionSupport` で行う
 
+### Misskey MiAuth パーミッション管理
+
+新しい Misskey API エンドポイントを利用する場合、`MisskeyAdapter._permissions` リストに該当パーミッションを追加すること。追加を忘れると 403 `PERMISSION_DENIED` になる。また、パーミッション追加は既存のトークンには効かないため、ユーザーは再ログインが必要。
+
+エラー時は「権限がありません。再ログインが必要な場合があります」のようなメッセージを表示すること。
+
+### Misskey API の注意点
+
+- **`users/report-abuse`**: 通報受理時にサーバーが管理者へメール通知を試みる。SMTP 未設定のサーバーでは 500 Internal Error が返るが、これはサーバー側の問題であり capsicum 側の不具合ではない
+- **ピン留め投稿**: `/api/users/notes` の `pinned` パラメータは機能しない。`/api/users/show` レスポンスの `pinnedNotes` フィールドから取得する
+- **`i/update`**: 空文字列 `""` は 400 エラー。フィールドをクリアするには JSON で明示的に `null` を送信（キー省略は「変更なし」の意味）
+
 ### go_router での画面間値受け渡し
 
 `context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では go_router が戻り値を握りつぶすため使用不可。`showGeneralDialog` のコールバック方式もリビルド時にコールバックが消失するため不可。
