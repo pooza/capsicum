@@ -113,11 +113,7 @@ class _NotificationTileState extends State<NotificationTile> {
         if (user != null) ...[
           GestureDetector(
             onTap: () => context.push('/profile', extra: user),
-            child: UserAvatar(
-              user: user,
-              size: 24,
-              borderRadius: 4,
-            ),
+            child: UserAvatar(user: user, size: 24, borderRadius: 4),
           ),
           const SizedBox(width: 8),
         ],

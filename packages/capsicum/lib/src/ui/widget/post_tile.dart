@@ -696,10 +696,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 child: GestureDetector(
                   onTap: () =>
                       context.push('/profile', extra: displayPost.author),
-                  child: UserAvatar(
-                    user: displayPost.author,
-                    size: 40,
-                  ),
+                  child: UserAvatar(user: displayPost.author, size: 40),
                 ),
               ),
             ],

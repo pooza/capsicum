@@ -288,11 +288,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Row(
             children: [
-              UserAvatar(
-                user: user,
-                size: 72,
-                borderRadius: 8,
-              ),
+              UserAvatar(user: user, size: 72, borderRadius: 8),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(

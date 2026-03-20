@@ -45,11 +45,7 @@ class UserAvatar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: padding,
-            top: padding,
-            child: avatar,
-          ),
+          Positioned(left: padding, top: padding, child: avatar),
           for (final decoration in decorations)
             _buildDecoration(decoration, size, padding),
         ],

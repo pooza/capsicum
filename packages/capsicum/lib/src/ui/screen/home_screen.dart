@@ -486,11 +486,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     }
                   : null,
               child: current != null
-                  ? UserAvatar(
-                      user: current.user,
-                      size: 72,
-                      borderRadius: 8,
-                    )
+                  ? UserAvatar(user: current.user, size: 72, borderRadius: 8)
                   : Container(
                       width: 72,
                       height: 72,
@@ -522,10 +518,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) => ListTile(
-                leading: UserAvatar(
-                  user: account.user,
-                  size: 32,
-                ),
+                leading: UserAvatar(user: account.user, size: 32),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
                   emojis: account.user.emojis,
