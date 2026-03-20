@@ -47,9 +47,8 @@ class HashtagTimelineNotifier
           hasMore: older.length >= _pageSize,
         ),
       );
-    } catch (e, st) {
+    } catch (_) {
       state = AsyncData(current.copyWith(isLoadingMore: false));
-      throw AsyncError(e, st);
     }
   }
 }
