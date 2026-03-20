@@ -739,15 +739,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<Channel>> getFollowedChannels() async {
-    final data = await client.getFollowedChannels(limit: 100);
-    return data
-        .map(
+    final channels = <Channel>[];
+    String? untilId;
+    const pageSize = 100;
+
+    while (true) {
+      final data = await client.getFollowedChannels(
+        limit: pageSize,
+        untilId: untilId,
+      );
+      channels.addAll(
+        data.map(
           (ch) => Channel(
             id: ch['id'] as String,
             name: ch['name'] as String? ?? '',
           ),
-        )
-        .toList();
+        ),
+      );
+      if (data.length < pageSize) break;
+      untilId = data.last['id'] as String;
+    }
+
+    return channels;
   }
 
   @override
