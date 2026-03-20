@@ -2,7 +2,9 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
@@ -582,7 +584,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      _performAction(() => adapter.blockUser(widget.user.id));
+      await _performAction(() => adapter.blockUser(widget.user.id));
+      if (!mounted) return;
+      await _showReportToDeveloperDialog();
+    }
+  }
+
+  Future<void> _showReportToDeveloperDialog() async {
+    final shouldReport = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('開発者への報告'),
+        content: const Text(
+          'このユーザーをブロックしました。\nこの問題をアプリ開発者にも報告しますか？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('しない'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('報告する'),
+          ),
+        ],
+      ),
+    );
+    if (shouldReport == true) {
+      launchUrl(AppConstants.contactUrl, mode: LaunchMode.externalApplication);
     }
   }
 
