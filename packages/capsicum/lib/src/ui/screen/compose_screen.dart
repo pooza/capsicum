@@ -449,6 +449,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       lines.add(yamlTags);
       if (program.minutes != null) {
         lines.add('  minutes: ${program.minutes}');
+        lines.add('decoration:');
+        lines.add('  minutes: ${program.minutes}');
       }
       yaml = lines.join('\n');
     }
