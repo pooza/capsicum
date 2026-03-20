@@ -66,10 +66,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnAuth =
           location == '/login' ||
           location == '/server' ||
-          location == '/splash';
+          location == '/splash' ||
+          location == '/eula';
 
       if (!isLoggedIn && !isOnAuth) return '/server';
-      if (isLoggedIn && location == '/splash') return '/home';
       return null;
     },
     routes: [
