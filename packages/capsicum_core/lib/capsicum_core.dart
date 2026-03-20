@@ -4,6 +4,7 @@ library;
 // Models
 export 'src/model/announcement.dart';
 export 'src/model/attachment.dart';
+export 'src/model/channel.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
 export 'src/model/poll.dart';
@@ -23,6 +24,7 @@ export 'src/social/capabilities.dart';
 
 // Feature interfaces
 export 'src/social/interfaces/announcement_support.dart';
+export 'src/social/interfaces/channel_support.dart';
 export 'src/social/interfaces/bookmark_support.dart';
 export 'src/social/interfaces/custom_emoji_support.dart';
 export 'src/social/interfaces/favorite_support.dart';
@@ -36,5 +38,6 @@ export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/poll_support.dart';
 export 'src/social/interfaces/profile_edit_support.dart';
 export 'src/social/interfaces/reaction_support.dart';
+export 'src/social/interfaces/report_support.dart';
 export 'src/social/interfaces/search_support.dart';
 export 'src/social/interfaces/stream_support.dart';

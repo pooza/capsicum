@@ -18,6 +18,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
@@ -123,6 +124,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? ref.watch(listTimelineProvider(selectedList.id))
         : ref.watch(timelineProvider);
 
+    // Show a SnackBar when loadMore fails.
+    ref.listen(
+      selectedList != null
+          ? listTimelineProvider(selectedList.id)
+          : timelineProvider,
+      (prev, next) {
+        final error = next.valueOrNull?.loadMoreError;
+        if (error != null && prev?.valueOrNull?.loadMoreError == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('読み込みに失敗しました'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      },
+    );
+
     return Scaffold(
       appBar: AppBar(
         leading: Builder(
@@ -136,19 +157,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         title: Row(
           children: [
-            if (account?.user.avatarUrl != null)
+            if (account != null)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
                   onTap: () => context.push('/profile', extra: account.user),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      account!.user.avatarUrl!,
-                      width: 28,
-                      height: 28,
-                      fit: BoxFit.cover,
-                    ),
+                  child: UserAvatar(
+                    user: account.user,
+                    size: 28,
+                    borderRadius: 4,
                   ),
                 ),
               ),
@@ -468,29 +485,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       context.push('/profile', extra: current.user);
                     }
                   : null,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: current?.user.avatarUrl != null
-                    ? Image.network(
-                        current!.user.avatarUrl!,
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 72,
-                        height: 72,
-                        color: Theme.of(context).colorScheme.primary,
-                        alignment: Alignment.center,
-                        child: Text(
-                          (current?.user.username ?? '?')[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 24,
-                            color: Colors.white,
-                          ),
-                        ),
+              child: current != null
+                  ? UserAvatar(user: current.user, size: 72, borderRadius: 8)
+                  : Container(
+                      width: 72,
+                      height: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '?',
+                        style: TextStyle(fontSize: 24, color: Colors.white),
                       ),
-              ),
+                    ),
             ),
             onDetailsPressed: current != null
                 ? () {
@@ -512,23 +518,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) => ListTile(
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: account.user.avatarUrl != null
-                      ? Image.network(
-                          account.user.avatarUrl!,
-                          width: 32,
-                          height: 32,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 32,
-                          height: 32,
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          alignment: Alignment.center,
-                          child: Text(account.user.username[0].toUpperCase()),
-                        ),
-                ),
+                leading: UserAvatar(user: account.user, size: 32),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
                   emojis: account.user.emojis,
@@ -597,6 +587,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/announcements');
             },
           ),
+          if (ref.read(currentAdapterProvider) is ChannelSupport)
+            ListTile(
+              leading: const Icon(Icons.forum),
+              title: const Text('チャンネル'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showChannelList(context, ref);
+              },
+            ),
+          if (ref.read(currentMulukhiyaProvider) != null)
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('リンク'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showServerLinks(context, ref);
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('ログアウト'),
@@ -656,9 +664,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.issuesUrl),
+                    onTap: () => launchUrl(AppConstants.communityUrl),
                     child: Text(
-                      '問題を報告',
+                      'コミュニティ（PieFed）',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => launchUrl(AppConstants.contactUrl),
+                    child: Text(
+                      'お問い合わせ',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         decoration: TextDecoration.underline,
@@ -707,6 +726,119 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showServerLinks(BuildContext context, WidgetRef ref) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    final account = ref.read(currentAccountProvider);
+    if (mulukhiya == null || account == null) return;
+
+    final host = account.key.host;
+    final groups = await mulukhiya.getLinks(host);
+    if (groups.isEmpty) return;
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'リンク',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final group in groups) ...[
+              if (group.title != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    group.title!,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              for (final link in group.links)
+                ListTile(
+                  leading: const Icon(Icons.open_in_new, size: 20),
+                  title: Text(link.body),
+                  dense: true,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    final url = link.href.startsWith('/')
+                        ? Uri.parse('https://$host${link.href}')
+                        : Uri.parse(link.href);
+                    if (url.scheme == 'https' || url.scheme == 'http') {
+                      launchUrl(url);
+                    }
+                  },
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showChannelList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChannelSupport) return;
+
+    final List<Channel> channels;
+    try {
+      channels = await (adapter as ChannelSupport).getFollowedChannels();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('チャンネルの取得に失敗しました。再ログインが必要な場合があります')),
+        );
+      }
+      return;
+    }
+    if (channels.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('フォロー中のチャンネルはありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'チャンネル',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final ch in channels)
+              ListTile(
+                leading: const Icon(Icons.forum, size: 20),
+                title: Text(ch.name),
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/channel/${ch.id}', extra: ch.name);
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

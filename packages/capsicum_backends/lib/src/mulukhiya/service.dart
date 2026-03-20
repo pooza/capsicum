@@ -83,6 +83,21 @@ String? _parseDefaultHashtag(dynamic value) {
   return null;
 }
 
+class ServerLink {
+  final String href;
+  final String body;
+  final String? icon;
+
+  const ServerLink({required this.href, required this.body, this.icon});
+}
+
+class ServerLinkGroup {
+  final String? title;
+  final List<ServerLink> links;
+
+  const ServerLinkGroup({this.title, required this.links});
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
@@ -255,6 +270,59 @@ class MulukhiyaService {
         commandToot: m['command_toot'] as String?,
       );
     }).toList();
+  }
+
+  /// Fetch server custom links from /links.json.
+  /// Supports both grouped (Mastodon) and flat (Misskey) formats.
+  Future<List<ServerLinkGroup>> getLinks(String host) async {
+    try {
+      final response = await _dio.get('https://$host/links.json');
+      final data = response.data;
+      if (data is! List) return [];
+
+      final groups = <ServerLinkGroup>[];
+      for (final item in data) {
+        if (item is! Map<String, dynamic>) continue;
+        if (item.containsKey('links')) {
+          // Grouped format (Mastodon)
+          final rawLinks = item['links'] as List?;
+          if (rawLinks == null) continue;
+          final links = _parseLinks(rawLinks);
+          if (links.isNotEmpty) {
+            groups.add(
+              ServerLinkGroup(title: item['body'] as String?, links: links),
+            );
+          }
+        } else {
+          // Flat format (Misskey) — collect into a single group
+          final link = _parseLink(item);
+          if (link != null) {
+            groups.add(ServerLinkGroup(links: [link]));
+          }
+        }
+      }
+      return groups;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<ServerLink> _parseLinks(List items) {
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map(_parseLink)
+        .whereType<ServerLink>()
+        .toList();
+  }
+
+  ServerLink? _parseLink(Map<String, dynamic> m) {
+    final href = m['href'] as String?;
+    if (href == null) return null;
+    return ServerLink(
+      href: href,
+      body: m['body'] as String? ?? href,
+      icon: m['icon'] as String?,
+    );
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.

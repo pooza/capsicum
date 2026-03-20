@@ -78,7 +78,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         LoginSupport,
         StreamSupport,
         MediaUpdateSupport,
-        ProfileEditSupport {
+        ProfileEditSupport,
+        ChannelSupport,
+        ReportSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -95,6 +97,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:account',
     'read:blocks',
     'write:blocks',
+    'read:channels',
+    'write:channels',
     'read:drive',
     'write:drive',
     'read:favorites',
@@ -108,6 +112,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:notes',
     'read:reactions',
     'write:reactions',
+    'write:report-abuse',
     'write:votes',
   ];
 
@@ -137,8 +142,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<User?> getUser(String username, [String? host]) =>
-      throw UnimplementedError();
+  Future<User?> getUser(String username, [String? remoteHost]) async {
+    final user = await client.showUserByName(username, remoteHost);
+    return user?.toCapsicum(host);
+  }
 
   @override
   Future<User> getUserById(String id) async {
@@ -171,6 +178,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
+      channelId: draft.channelId,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return note.toCapsicum(host);
@@ -592,6 +600,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
   }
 
+  @override
+  Future<List<User>> searchUsers(String query, {int? limit}) async {
+    final users = await client.searchUsers(query, limit: limit);
+    return users.map((u) => u.toCapsicum(host)).toList();
+  }
+
+  @override
+  Future<List<String>> searchHashtags(String query, {int? limit}) async {
+    return client.searchHashtags(query, limit: limit);
+  }
+
   // ReactionSupport
 
   @override
@@ -615,6 +634,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             shortcode: e['name'] as String,
             url: (e['url'] as String?) ?? '',
             category: e['category'] as String?,
+            aliases:
+                (e['aliases'] as List<dynamic>?)
+                    ?.map((a) => a as String)
+                    .toList() ??
+                const [],
           ),
         )
         .toList();
@@ -711,6 +735,48 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
   }
 
+  // ChannelSupport
+
+  @override
+  Future<List<Channel>> getFollowedChannels() async {
+    final channels = <Channel>[];
+    String? untilId;
+    const pageSize = 100;
+
+    while (true) {
+      final data = await client.getFollowedChannels(
+        limit: pageSize,
+        untilId: untilId,
+      );
+      channels.addAll(
+        data.map(
+          (ch) => Channel(
+            id: ch['id'] as String,
+            name: ch['name'] as String? ?? '',
+          ),
+        ),
+      );
+      if (data.length < pageSize) break;
+      untilId = data.last['id'] as String;
+    }
+
+    return channels;
+  }
+
+  @override
+  Future<List<Post>> getChannelTimeline(
+    String channelId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getChannelTimeline(
+      channelId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+  }
+
   // PollSupport
 
   @override
@@ -798,5 +864,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
     );
     return user.toCapsicum(host);
+  }
+
+  // ReportSupport
+
+  @override
+  Future<void> reportPost(
+    String postId,
+    String authorId, {
+    String? comment,
+  }) async {
+    await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
   }
 }

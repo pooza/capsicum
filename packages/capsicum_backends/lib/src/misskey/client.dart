@@ -46,6 +46,23 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/users/show (by username)
+  Future<MisskeyUser?> showUserByName(
+    String username, [
+    String? remoteHost,
+  ]) async {
+    try {
+      final response = await dio.post(
+        '/api/users/show',
+        data: createBody({'username': username, 'host': ?remoteHost}),
+      );
+      return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// POST /api/users/notes
   Future<List<MisskeyNote>> getUserNotes(
     String userId, {
@@ -222,6 +239,7 @@ class MisskeyClient {
     List<String>? fileIds,
     String? cw,
     bool? localOnly,
+    String? channelId,
     Map<String, String>? extraHeaders,
   }) async {
     final response = await dio.post(
@@ -233,12 +251,21 @@ class MisskeyClient {
         'fileIds': ?fileIds,
         'cw': ?cw,
         'localOnly': ?localOnly,
+        'channelId': ?channelId,
       }),
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']
           as Map<String, dynamic>,
+    );
+  }
+
+  /// POST /api/users/report-abuse
+  Future<void> reportAbuse(String userId, {required String comment}) async {
+    await dio.post(
+      '/api/users/report-abuse',
+      data: createBody({'userId': userId, 'comment': comment}),
     );
   }
 
@@ -421,6 +448,44 @@ class MisskeyClient {
     return (response.data as List)
         .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// POST /api/channels/timeline
+  Future<List<MisskeyNote>> getChannelTimeline(
+    String channelId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/channels/timeline',
+      data: createBody({
+        'channelId': channelId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/channels/followed
+  Future<List<Map<String, dynamic>>> getFollowedChannels({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/channels/followed',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// POST /api/ap/show — resolve a remote URI to a local object.

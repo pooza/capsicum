@@ -81,7 +81,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         LoginSupport,
         StreamSupport,
         MarkerSupport,
-        ProfileEditSupport {
+        ProfileEditSupport,
+        ReportSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -158,8 +159,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<User?> getUser(String username, [String? host]) =>
-      throw UnimplementedError();
+  Future<User?> getUser(String username, [String? remoteHost]) async {
+    final acct = remoteHost != null ? '$username@$remoteHost' : username;
+    final account = await client.lookupAccount(acct);
+    return account?.toCapsicum(host);
+  }
 
   @override
   Future<User> getUserById(String id) async {
@@ -522,6 +526,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return SearchResults(users: accounts, posts: statuses, hashtags: hashtags);
   }
 
+  @override
+  Future<List<User>> searchUsers(String query, {int? limit}) async {
+    final accounts = await client.searchAccounts(query, limit: limit);
+    return accounts.map((a) => a.toCapsicum(host)).toList();
+  }
+
+  @override
+  Future<List<String>> searchHashtags(String query, {int? limit}) async {
+    final data = await client.search(query, type: 'hashtags', limit: limit);
+    return (data['hashtags'] as List? ?? [])
+        .map((e) => (e as Map<String, dynamic>)['name'] as String)
+        .toList();
+  }
+
   // CustomEmojiSupport
 
   @override
@@ -711,5 +729,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           .toList(),
     );
     return account.toCapsicum(host);
+  }
+
+  // ReportSupport
+
+  @override
+  Future<void> reportPost(
+    String postId,
+    String authorId, {
+    String? comment,
+  }) async {
+    await client.createReport(authorId, statusIds: [postId], comment: comment);
   }
 }

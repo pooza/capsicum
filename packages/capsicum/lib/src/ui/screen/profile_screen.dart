@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
+import '../widget/user_avatar.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
@@ -287,26 +288,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: user.avatarUrl != null
-                    ? Image.network(
-                        user.avatarUrl!,
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 72,
-                        height: 72,
-                        color: theme.colorScheme.primaryContainer,
-                        alignment: Alignment.center,
-                        child: Text(
-                          user.username[0].toUpperCase(),
-                          style: const TextStyle(fontSize: 28),
-                        ),
-                      ),
-              ),
+              UserAvatar(user: user, size: 72, borderRadius: 8),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -332,6 +314,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             message: 'Bot',
                             child: Icon(
                               Icons.smart_toy,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (user.isGroup) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: 'コミュニティ',
+                            child: Icon(
+                              Icons.groups,
                               size: 18,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),

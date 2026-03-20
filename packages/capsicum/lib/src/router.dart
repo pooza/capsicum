@@ -9,6 +9,8 @@ import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
+import 'ui/screen/channel_timeline_screen.dart';
+import 'ui/screen/eula_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
@@ -64,10 +66,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnAuth =
           location == '/login' ||
           location == '/server' ||
-          location == '/splash';
+          location == '/splash' ||
+          location == '/eula';
 
       if (!isLoggedIn && !isOnAuth) return '/server';
-      if (isLoggedIn && location == '/splash') return '/home';
       return null;
     },
     routes: [
@@ -90,6 +92,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      GoRoute(
+        path: '/eula',
+        builder: (context, state) {
+          final nextRoute = state.extra as String? ?? '/server';
+          return EulaScreen(nextRoute: nextRoute);
+        },
+      ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
       GoRoute(
         path: '/lists/manage',
@@ -109,6 +118,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ComposeScreen(
             redraft: extra?['redraft'] as Post?,
             replyTo: extra?['replyTo'] as Post?,
+            channelId: extra?['channelId'] as String?,
+            channelName: extra?['channelName'] as String?,
           );
         },
       ),
@@ -165,6 +176,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final tag = state.pathParameters['tag']!;
           return HashtagTimelineScreen(hashtag: tag);
+        },
+      ),
+      GoRoute(
+        path: '/channel/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final name = state.extra as String?;
+          return ChannelTimelineScreen(channelId: id, channelName: name);
         },
       ),
       GoRoute(

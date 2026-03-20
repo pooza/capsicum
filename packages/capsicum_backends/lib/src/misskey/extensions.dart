@@ -45,6 +45,19 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
           )
           .toList(),
       emojis: emojis ?? const {},
+      avatarDecorations: (avatarDecorations ?? [])
+          .map(
+            (d) => AvatarDecoration(
+              id: d['id'] as String? ?? '',
+              url: d['url'] as String? ?? '',
+              angle: (d['angle'] as num?)?.toDouble() ?? 0,
+              flipH: d['flipH'] as bool? ?? false,
+              offsetX: (d['offsetX'] as num?)?.toDouble() ?? 0,
+              offsetY: (d['offsetY'] as num?)?.toDouble() ?? 0,
+            ),
+          )
+          .where((d) => d.url.isNotEmpty)
+          .toList(),
     );
   }
 }
@@ -73,6 +86,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       emojis: reactionEmojis ?? const {},
       emojiHost: localHost,
       pinned: pinned,
+      channelId: channel?['id'] as String?,
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
     );

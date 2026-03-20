@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'dart:async';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
@@ -24,8 +27,16 @@ class _MediaEntry {
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
   final Post? replyTo;
+  final String? channelId;
+  final String? channelName;
 
-  const ComposeScreen({super.key, this.redraft, this.replyTo});
+  const ComposeScreen({
+    super.key,
+    this.redraft,
+    this.replyTo,
+    this.channelId,
+    this.channelName,
+  });
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -41,6 +52,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sensitiveEnabled = false;
   bool _sending = false;
   bool _localOnly = false;
+  List<User> _mentionSuggestions = [];
+  List<String> _hashtagSuggestions = [];
+  Timer? _mentionDebounce;
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
@@ -103,10 +117,115 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
     }
+    _controller.addListener(_onTextChanged);
+  }
+
+  /// Walk backwards from cursor to find [trigger] (`@` or `#`).
+  /// Returns the query string after the trigger, or null.
+  String? _currentTriggerQuery(String trigger) {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    if (cursor < 0 || cursor > text.length) return null;
+    var start = cursor - 1;
+    while (start >= 0) {
+      final ch = text[start];
+      if (ch == trigger) {
+        if (start == 0 || text[start - 1] == ' ' || text[start - 1] == '\n') {
+          final query = text.substring(start + 1, cursor);
+          return query.isNotEmpty ? query : null;
+        }
+        return null;
+      }
+      if (ch == ' ' || ch == '\n') return null;
+      start--;
+    }
+    return null;
+  }
+
+  void _onTextChanged() {
+    _mentionDebounce?.cancel();
+
+    // Check mention trigger first, then hashtag.
+    final mentionQuery = _currentTriggerQuery('@');
+    final hashtagQuery = mentionQuery == null
+        ? _currentTriggerQuery('#')
+        : null;
+
+    if (mentionQuery == null && _mentionSuggestions.isNotEmpty) {
+      setState(() => _mentionSuggestions = []);
+    }
+    if (hashtagQuery == null && _hashtagSuggestions.isNotEmpty) {
+      setState(() => _hashtagSuggestions = []);
+    }
+
+    if (mentionQuery != null) {
+      _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+        _fetchMentionSuggestions(mentionQuery);
+      });
+    } else if (hashtagQuery != null) {
+      _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+        _fetchHashtagSuggestions(hashtagQuery);
+      });
+    }
+  }
+
+  Future<void> _fetchMentionSuggestions(String query) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! SearchSupport) return;
+    try {
+      final users = await (adapter as SearchSupport).searchUsers(
+        query,
+        limit: 5,
+      );
+      if (mounted) setState(() => _mentionSuggestions = users);
+    } catch (_) {
+      // Silently ignore search failures.
+    }
+  }
+
+  Future<void> _fetchHashtagSuggestions(String query) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! SearchSupport) return;
+    try {
+      final tags = await (adapter as SearchSupport).searchHashtags(
+        query,
+        limit: 5,
+      );
+      if (mounted) setState(() => _hashtagSuggestions = tags);
+    } catch (_) {
+      // Silently ignore search failures.
+    }
+  }
+
+  void _insertMention(User user) {
+    final acct = _buildAcct(user);
+    _insertTriggerCompletion('@', '@$acct ');
+    setState(() => _mentionSuggestions = []);
+  }
+
+  void _insertHashtag(String tag) {
+    _insertTriggerCompletion('#', '#$tag ');
+    setState(() => _hashtagSuggestions = []);
+  }
+
+  void _insertTriggerCompletion(String trigger, String replacement) {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    var start = cursor - 1;
+    while (start >= 0 && text[start] != trigger) {
+      start--;
+    }
+    final newText = text.replaceRange(start, cursor, replacement);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + replacement.length),
+    );
   }
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
     super.dispose();
@@ -330,6 +449,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       lines.add(yamlTags);
       if (program.minutes != null) {
         lines.add('  minutes: ${program.minutes}');
+        lines.add('decoration:');
+        lines.add('  minutes: ${program.minutes}');
       }
       yaml = lines.join('\n');
     }
@@ -377,10 +498,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
+          channelId: widget.channelId,
         ),
       );
       if (mounted) {
         ref.invalidate(timelineProvider);
+        if (widget.channelId != null) {
+          ref.invalidate(channelTimelineProvider(widget.channelId!));
+        }
         context.pop();
       }
     } catch (e) {
@@ -400,7 +525,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.replyTo != null ? 'リプライ' : ref.watch(postLabelProvider),
+          widget.replyTo != null
+              ? 'リプライ'
+              : widget.channelName != null
+              ? '${ref.watch(postLabelProvider)}：${widget.channelName}'
+              : ref.watch(postLabelProvider),
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -447,6 +576,61 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
+            if (_mentionSuggestions.isNotEmpty)
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _mentionSuggestions.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final user = _mentionSuggestions[index];
+                    final localHost = ref
+                        .read(currentAccountProvider)
+                        ?.user
+                        .host;
+                    final isRemote =
+                        user.host != null && user.host != localHost;
+                    final label = isRemote
+                        ? '@${_buildAcct(user)}'
+                        : '@${user.username}';
+                    return ActionChip(
+                      avatar: user.isGroup
+                          ? const Icon(Icons.groups, size: 18)
+                          : user.isBot
+                          ? const Icon(Icons.smart_toy, size: 18)
+                          : user.avatarUrl != null
+                          ? CircleAvatar(
+                              backgroundImage: NetworkImage(user.avatarUrl!),
+                              radius: 12,
+                            )
+                          : const Icon(Icons.person, size: 18),
+                      label: Text(label, overflow: TextOverflow.ellipsis),
+                      tooltip: user.isGroup
+                          ? 'コミュニティ: @${_buildAcct(user)}'
+                          : '@${_buildAcct(user)}',
+                      onPressed: () => _insertMention(user),
+                    );
+                  },
+                ),
+              ),
+            if (_hashtagSuggestions.isNotEmpty)
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _hashtagSuggestions.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final tag = _hashtagSuggestions[index];
+                    return ActionChip(
+                      avatar: const Icon(Icons.tag, size: 18),
+                      label: Text('#$tag', overflow: TextOverflow.ellipsis),
+                      onPressed: () => _insertHashtag(tag),
+                    );
+                  },
+                ),
+              ),
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(

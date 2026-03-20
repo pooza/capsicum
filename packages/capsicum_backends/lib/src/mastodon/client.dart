@@ -70,6 +70,20 @@ class MastodonClient {
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// GET /api/v1/accounts/lookup
+  Future<MastodonAccount?> lookupAccount(String acct) async {
+    try {
+      final response = await dio.get(
+        '/api/v1/accounts/lookup',
+        queryParameters: {'acct': acct},
+      );
+      return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// GET /api/v1/accounts/:id/statuses
   Future<List<MastodonStatus>> getAccountStatuses(
     String id, {
@@ -361,6 +375,37 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// POST /api/v1/reports
+  Future<void> createReport(
+    String accountId, {
+    List<String>? statusIds,
+    String? comment,
+  }) async {
+    await dio.post(
+      '/api/v1/reports',
+      data: {
+        'account_id': accountId,
+        'status_ids': ?statusIds,
+        'comment': ?comment,
+      },
+    );
+  }
+
+  /// GET /api/v1/accounts/search
+  Future<List<MastodonAccount>> searchAccounts(
+    String query, {
+    int? limit,
+    bool? resolve,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/search',
+      queryParameters: {'q': query, 'limit': ?limit, 'resolve': ?resolve},
+    );
+    return (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v2/search
   Future<Map<String, dynamic>> search(
     String query, {
@@ -578,6 +623,15 @@ class MastodonClient {
     if (notificationLastReadId != null) {
       data['notifications'] = {'last_read_id': notificationLastReadId};
     }
-    await dio.post('/api/v1/markers', data: data);
+    try {
+      await dio.post('/api/v1/markers', data: data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409) {
+        // 409 Conflict is expected when concurrent marker updates race;
+        // the server already has a newer marker, so we can safely ignore.
+        return;
+      }
+      rethrow;
+    }
   }
 }

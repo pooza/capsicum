@@ -16,20 +16,27 @@ class TimelineState {
   final bool isLoadingMore;
   final bool hasMore;
 
+  /// Non-null when the last [loadMore] call failed.  Cleared on the next
+  /// successful load so the UI can show a transient error (e.g. SnackBar).
+  final Object? loadMoreError;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
+    this.loadMoreError,
   });
 
   TimelineState copyWith({
     List<Post>? posts,
     bool? isLoadingMore,
     bool? hasMore,
+    Object? loadMoreError,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
+    loadMoreError: loadMoreError,
   );
 }
 
@@ -208,6 +215,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           posts: [...latest.posts, ...allVisible],
           isLoadingMore: false,
           hasMore: hasMore,
+          loadMoreError: null,
         ),
       );
     } catch (e, st) {
@@ -221,7 +229,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       } catch (_) {
         // Sentry failure must not block state recovery.
       }
-      _resetLoading();
+      final latest = state.valueOrNull ?? current;
+      state = AsyncData(
+        latest.copyWith(isLoadingMore: false, loadMoreError: e),
+      );
     }
   }
 

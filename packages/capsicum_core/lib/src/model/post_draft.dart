@@ -8,6 +8,7 @@ class PostDraft {
   final String? spoilerText;
   final bool sensitive;
   final bool localOnly;
+  final String? channelId;
 
   /// When true, adds X-Mulukhiya header to bypass mulukhiya hooks.
   final bool skipMulukhiya;
@@ -20,6 +21,7 @@ class PostDraft {
     this.spoilerText,
     this.sensitive = false,
     this.localOnly = false,
+    this.channelId,
     this.skipMulukhiya = false,
   });
 }

@@ -6,6 +6,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
+import '../widget/user_avatar.dart';
 
 enum _QueryType { account, hashtag, url, fulltext }
 
@@ -213,23 +214,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         final user = users[index];
         return ListTile(
           onTap: () => context.push('/profile', extra: user),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: user.avatarUrl != null
-                ? Image.network(
-                    user.avatarUrl!,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                  )
-                : Container(
-                    width: 40,
-                    height: 40,
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    alignment: Alignment.center,
-                    child: Text(user.username[0].toUpperCase()),
-                  ),
-          ),
+          leading: UserAvatar(user: user, size: 40),
           title: EmojiText(
             user.displayName ?? user.username,
             emojis: user.emojis,

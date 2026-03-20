@@ -15,6 +15,7 @@ enum _NodeType {
   ruby,
   link,
   mention,
+  hashtag,
   url,
   emoji,
   quote,
@@ -177,6 +178,16 @@ class _MfmParser {
         }
       }
 
+      // Hashtag: #tag
+      if (c == '#' && (_pos == 0 || !_isAlnum(input[_pos - 1]))) {
+        flushBuf();
+        final node = _tryHashtag();
+        if (node != null) {
+          nodes.add(node);
+          continue;
+        }
+      }
+
       // URL
       if (c == 'h' && _lookingAt('http')) {
         flushBuf();
@@ -226,8 +237,10 @@ class _MfmParser {
 
   // --- Parsers ---
 
+  bool get _atLineStart => _pos == 0 || input[_pos - 1] == '\n';
+
   _Node? _tryCodeBlock() {
-    if (!_lookingAt('```')) return null;
+    if (!_atLineStart || !_lookingAt('```')) return null;
     final start = _pos;
     _pos += 3;
     // Optional language
@@ -239,7 +252,7 @@ class _MfmParser {
     if (_pos < input.length) _pos++; // skip \n
     final codeBuf = StringBuffer();
     while (_pos < input.length) {
-      if (_lookingAt('```')) {
+      if (_atLineStart && _lookingAt('```')) {
         _pos += 3;
         final lang = langBuf.toString().trim();
         return _Node(
@@ -512,6 +525,50 @@ class _MfmParser {
     return _Node(type: _NodeType.mention, text: mention);
   }
 
+  _Node? _tryHashtag() {
+    if (input[_pos] != '#') return null;
+    final start = _pos;
+    _pos++; // skip #
+    final tagBuf = StringBuffer();
+    // Hashtags allow word characters (including CJK) but not whitespace or
+    // common punctuation that terminates a tag.
+    while (_pos < input.length) {
+      final c = input.codeUnitAt(_pos);
+      // Stop on ASCII whitespace, control characters, or tag-terminating
+      // punctuation: . , ! ? ; : ( ) [ ] { } < > " ' ` # @
+      if (c <= 0x20 ||
+          c == 0x2e || // .
+          c == 0x2c || // ,
+          c == 0x21 || // !
+          c == 0x3f || // ?
+          c == 0x3b || // ;
+          c == 0x3a || // :
+          c == 0x28 || // (
+          c == 0x29 || // )
+          c == 0x5b || // [
+          c == 0x5d || // ]
+          c == 0x7b || // {
+          c == 0x7d || // }
+          c == 0x3c || // <
+          c == 0x3e || // >
+          c == 0x22 || // "
+          c == 0x27 || // '
+          c == 0x60 || // `
+          c == 0x23 || // #
+          c == 0x40) {
+        // @
+        break;
+      }
+      tagBuf.write(input[_pos]);
+      _pos++;
+    }
+    if (tagBuf.isEmpty) {
+      _pos = start;
+      return null;
+    }
+    return _Node(type: _NodeType.hashtag, text: tagBuf.toString());
+  }
+
   _Node? _tryUrl() {
     final urlPattern = RegExp(r'https?://[^\s<>\]）」』】]+');
     final match = urlPattern.matchAsPrefix(input, _pos);
@@ -738,6 +795,18 @@ class ContentRenderer {
         return [
           TextSpan(
             text: node.text,
+            style: style.copyWith(color: Colors.blue),
+            recognizer: recognizer,
+          ),
+        ];
+
+      case _NodeType.hashtag:
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => onHashtagTap?.call(node.text);
+        _recognizers.add(recognizer);
+        return [
+          TextSpan(
+            text: '#${node.text}',
             style: style.copyWith(color: Colors.blue),
             recognizer: recognizer,
           ),

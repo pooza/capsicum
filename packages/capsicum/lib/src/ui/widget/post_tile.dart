@@ -1,6 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
+import 'user_avatar.dart';
 import 'emoji_text.dart';
 
 class PostTile extends ConsumerStatefulWidget {
@@ -114,6 +116,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       filterAction: displayPost.filterAction,
       filterTitle: displayPost.filterTitle,
       pinned: displayPost.pinned,
+      channelId: displayPost.channelId,
       channelName: displayPost.channelName,
       localOnly: displayPost.localOnly,
     );
@@ -124,6 +127,24 @@ class _PostTileState extends ConsumerState<PostTile> {
   void dispose() {
     _contentRenderer?.dispose();
     super.dispose();
+  }
+
+  Future<void> _navigateToMention(String mention) async {
+    // Parse @user or @user@host
+    final parts = mention.replaceFirst('@', '').split('@');
+    if (parts.isEmpty) return;
+    final username = parts[0];
+    final host = parts.length > 1 ? parts[1] : null;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final user = await adapter.getUser(username, host);
+      if (user != null && mounted) {
+        context.push('/profile', extra: user);
+      }
+    } on Exception catch (e) {
+      debugPrint('Failed to look up mention $mention: $e');
+    }
   }
 
   ContentRenderer? _contentRenderer;
@@ -153,9 +174,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
-      onMentionTap: (mention) {
-        // TODO: navigate to user profile
-      },
+      onMentionTap: (mention) => _navigateToMention(mention),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)
@@ -253,6 +272,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                             color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                         ],
+                        if (displayPost.author.isGroup) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.groups,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ],
                         for (final role in displayPost.author.roles)
                           if (role.iconUrl != null) ...[
                             const SizedBox(width: 4),
@@ -314,25 +341,40 @@ class _PostTileState extends ConsumerState<PostTile> {
                     if (displayPost.channelName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.forum,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                displayPost.channelName!,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        child: GestureDetector(
+                          onTap: displayPost.channelId != null
+                              ? () => context.push(
+                                  '/channel/${displayPost.channelId}',
+                                  extra: displayPost.channelName,
+                                )
+                              : null,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.forum,
+                                size: 14,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  displayPost.channelName!,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: displayPost.channelId != null
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : null,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     if (displayPost.inReplyToId != null)
@@ -654,38 +696,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 child: GestureDetector(
                   onTap: () =>
                       context.push('/profile', extra: displayPost.author),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: displayPost.author.avatarUrl != null
-                        ? Image.network(
-                            displayPost.author.avatarUrl!,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              width: 40,
-                              height: 40,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              alignment: Alignment.center,
-                              child: Text(
-                                displayPost.author.username[0].toUpperCase(),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            width: 40,
-                            height: 40,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer,
-                            alignment: Alignment.center,
-                            child: Text(
-                              displayPost.author.username[0].toUpperCase(),
-                            ),
-                          ),
-                  ),
+                  child: UserAvatar(user: displayPost.author, size: 40),
                 ),
               ),
             ],
@@ -798,6 +809,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                   );
                 },
               ),
+            if (!isOwn && adapter is ReportSupport)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text('通報'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmReport(context, targetPost);
+                },
+              ),
             if (isOwn) ...[
               const Divider(),
               if (ref.read(currentMulukhiyaProvider) != null)
@@ -865,6 +885,57 @@ class _PostTileState extends ConsumerState<PostTile> {
               '削除',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmReport(BuildContext context, Post targetPost) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ReportSupport) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('通報'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('この${ref.read(postLabelProvider)}をサーバー管理者に通報しますか？'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                hintText: '理由（任意）',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              final comment = commentController.text.trim();
+              _runVoidAction(
+                messenger,
+                () => (adapter as ReportSupport).reportPost(
+                  targetPost.id,
+                  targetPost.author.id,
+                  comment: comment.isNotEmpty ? comment : null,
+                ),
+                '通報しました',
+              );
+            },
+            child: const Text('通報'),
           ),
         ],
       ),
@@ -986,8 +1057,25 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+      debugPrint('_runVoidAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
     }
+  }
+
+  String _describeError(Object e) {
+    if (e is DioException) {
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 403) {
+        return '権限がありません。再ログインが必要な場合があります';
+      }
+      if (statusCode == 500) {
+        return 'サーバー内部エラーが発生しました。サーバー管理者にお問い合わせください';
+      }
+    }
+    return '操作に失敗しました';
   }
 
   void _showRetagSheet(BuildContext context, Post targetPost) {

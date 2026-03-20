@@ -21,6 +21,24 @@ class UserRole {
   });
 }
 
+class AvatarDecoration {
+  final String id;
+  final String url;
+  final double angle;
+  final bool flipH;
+  final double offsetX;
+  final double offsetY;
+
+  const AvatarDecoration({
+    required this.id,
+    required this.url,
+    this.angle = 0,
+    this.flipH = false,
+    this.offsetX = 0,
+    this.offsetY = 0,
+  });
+}
+
 class User {
   final String id;
   final String username;
@@ -33,9 +51,11 @@ class User {
   final int followingCount;
   final int postCount;
   final bool isBot;
+  final bool isGroup;
   final List<UserRole> roles;
   final List<UserField> fields;
   final Map<String, String> emojis;
+  final List<AvatarDecoration> avatarDecorations;
 
   const User({
     required this.id,
@@ -49,8 +69,10 @@ class User {
     this.followingCount = 0,
     this.postCount = 0,
     this.isBot = false,
+    this.isGroup = false,
     this.roles = const [],
     this.fields = const [],
     this.emojis = const {},
+    this.avatarDecorations = const [],
   });
 }

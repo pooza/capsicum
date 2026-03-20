@@ -4,19 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
-/// Notifier that manages paginated hashtag timeline fetching.
-class HashtagTimelineNotifier
+/// Notifier that manages paginated channel timeline fetching.
+class ChannelTimelineNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, String> {
   static const _pageSize = 20;
 
   @override
   Future<TimelineState> build(String arg) async {
     final adapter = ref.watch(currentAdapterProvider);
-    if (adapter == null || adapter is! HashtagSupport) {
+    if (adapter == null || adapter is! ChannelSupport) {
       return const TimelineState(hasMore: false);
     }
 
-    final posts = await (adapter as HashtagSupport).getPostsByHashtag(
+    final posts = await (adapter as ChannelSupport).getChannelTimeline(
       arg,
       query: const TimelineQuery(limit: _pageSize),
     );
@@ -32,10 +32,10 @@ class HashtagTimelineNotifier
 
     try {
       final adapter = ref.read(currentAdapterProvider);
-      if (adapter == null || adapter is! HashtagSupport) return;
+      if (adapter == null || adapter is! ChannelSupport) return;
 
       final lastId = current.posts.last.id;
-      final older = await (adapter as HashtagSupport).getPostsByHashtag(
+      final older = await (adapter as ChannelSupport).getChannelTimeline(
         arg,
         query: TimelineQuery(maxId: lastId, limit: _pageSize),
       );
@@ -53,7 +53,7 @@ class HashtagTimelineNotifier
   }
 }
 
-final hashtagTimelineProvider = AsyncNotifierProvider.autoDispose
-    .family<HashtagTimelineNotifier, TimelineState, String>(
-      HashtagTimelineNotifier.new,
+final channelTimelineProvider = AsyncNotifierProvider.autoDispose
+    .family<ChannelTimelineNotifier, TimelineState, String>(
+      ChannelTimelineNotifier.new,
     );
