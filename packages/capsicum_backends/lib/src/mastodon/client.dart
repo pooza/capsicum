@@ -623,6 +623,15 @@ class MastodonClient {
     if (notificationLastReadId != null) {
       data['notifications'] = {'last_read_id': notificationLastReadId};
     }
-    await dio.post('/api/v1/markers', data: data);
+    try {
+      await dio.post('/api/v1/markers', data: data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409) {
+        // 409 Conflict is expected when concurrent marker updates race;
+        // the server already has a newer marker, so we can safely ignore.
+        return;
+      }
+      rethrow;
+    }
   }
 }
