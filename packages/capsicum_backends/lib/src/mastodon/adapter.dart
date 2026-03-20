@@ -81,7 +81,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         LoginSupport,
         StreamSupport,
         MarkerSupport,
-        ProfileEditSupport {
+        ProfileEditSupport,
+        ReportSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -728,5 +729,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           .toList(),
     );
     return account.toCapsicum(host);
+  }
+
+  // ReportSupport
+
+  @override
+  Future<void> reportPost(
+    String postId,
+    String authorId, {
+    String? comment,
+  }) async {
+    await client.createReport(authorId, statusIds: [postId], comment: comment);
   }
 }

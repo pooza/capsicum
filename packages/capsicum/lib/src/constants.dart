@@ -5,4 +5,5 @@ class AppConstants {
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');
+  static final termsUrl = Uri.parse('https://capsicum.shrieker.net/terms');
 }

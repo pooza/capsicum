@@ -38,5 +38,6 @@ export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/poll_support.dart';
 export 'src/social/interfaces/profile_edit_support.dart';
 export 'src/social/interfaces/reaction_support.dart';
+export 'src/social/interfaces/report_support.dart';
 export 'src/social/interfaces/search_support.dart';
 export 'src/social/interfaces/stream_support.dart';

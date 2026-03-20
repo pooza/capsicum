@@ -79,7 +79,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         StreamSupport,
         MediaUpdateSupport,
         ProfileEditSupport,
-        ChannelSupport {
+        ChannelSupport,
+        ReportSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -111,6 +112,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:notes',
     'read:reactions',
     'write:reactions',
+    'write:report-abuse',
     'write:votes',
   ];
 
@@ -849,5 +851,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
     );
     return user.toCapsicum(host);
+  }
+
+  // ReportSupport
+
+  @override
+  Future<void> reportPost(
+    String postId,
+    String authorId, {
+    String? comment,
+  }) async {
+    await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
   }
 }

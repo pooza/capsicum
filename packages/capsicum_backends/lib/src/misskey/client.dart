@@ -261,6 +261,14 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/users/report-abuse
+  Future<void> reportAbuse(String userId, {required String comment}) async {
+    await dio.post(
+      '/api/users/report-abuse',
+      data: createBody({'userId': userId, 'comment': comment}),
+    );
+  }
+
   /// POST /api/notes/delete
   Future<void> deleteNote(String noteId) async {
     await dio.post('/api/notes/delete', data: createBody({'noteId': noteId}));

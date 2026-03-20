@@ -1,6 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -838,6 +839,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                   );
                 },
               ),
+            if (!isOwn && adapter is ReportSupport)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text('通報'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmReport(context, targetPost);
+                },
+              ),
             if (isOwn) ...[
               const Divider(),
               if (ref.read(currentMulukhiyaProvider) != null)
@@ -905,6 +915,57 @@ class _PostTileState extends ConsumerState<PostTile> {
               '削除',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmReport(BuildContext context, Post targetPost) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ReportSupport) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('通報'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('この${ref.read(postLabelProvider)}をサーバー管理者に通報しますか？'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                hintText: '理由（任意）',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              final comment = commentController.text.trim();
+              _runVoidAction(
+                messenger,
+                () => (adapter as ReportSupport).reportPost(
+                  targetPost.id,
+                  targetPost.author.id,
+                  comment: comment.isNotEmpty ? comment : null,
+                ),
+                '通報しました',
+              );
+            },
+            child: const Text('通報'),
           ),
         ],
       ),
@@ -1026,8 +1087,25 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+      debugPrint('_runVoidAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
     }
+  }
+
+  String _describeError(Object e) {
+    if (e is DioException) {
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 403) {
+        return '権限がありません。再ログインが必要な場合があります';
+      }
+      if (statusCode == 500) {
+        return 'サーバー内部エラーが発生しました。サーバー管理者にお問い合わせください';
+      }
+    }
+    return '操作に失敗しました';
   }
 
   void _showRetagSheet(BuildContext context, Post targetPost) {

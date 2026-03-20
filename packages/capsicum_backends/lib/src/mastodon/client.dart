@@ -375,6 +375,22 @@ class MastodonClient {
     await dio.delete('/api/v1/statuses/$id');
   }
 
+  /// POST /api/v1/reports
+  Future<void> createReport(
+    String accountId, {
+    List<String>? statusIds,
+    String? comment,
+  }) async {
+    await dio.post(
+      '/api/v1/reports',
+      data: {
+        'account_id': accountId,
+        'status_ids': ?statusIds,
+        'comment': ?comment,
+      },
+    );
+  }
+
   /// GET /api/v1/accounts/search
   Future<List<MastodonAccount>> searchAccounts(
     String query, {
