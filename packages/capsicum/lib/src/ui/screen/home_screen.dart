@@ -18,6 +18,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
@@ -156,19 +157,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         title: Row(
           children: [
-            if (account?.user.avatarUrl != null)
+            if (account != null)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
                   onTap: () => context.push('/profile', extra: account.user),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      account!.user.avatarUrl!,
-                      width: 28,
-                      height: 28,
-                      fit: BoxFit.cover,
-                    ),
+                  child: UserAvatar(
+                    user: account.user,
+                    size: 28,
+                    borderRadius: 4,
                   ),
                 ),
               ),
@@ -488,29 +485,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       context.push('/profile', extra: current.user);
                     }
                   : null,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: current?.user.avatarUrl != null
-                    ? Image.network(
-                        current!.user.avatarUrl!,
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 72,
-                        height: 72,
-                        color: Theme.of(context).colorScheme.primary,
-                        alignment: Alignment.center,
-                        child: Text(
-                          (current?.user.username ?? '?')[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 24,
-                            color: Colors.white,
-                          ),
-                        ),
+              child: current != null
+                  ? UserAvatar(
+                      user: current.user,
+                      size: 72,
+                      borderRadius: 8,
+                    )
+                  : Container(
+                      width: 72,
+                      height: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '?',
+                        style: TextStyle(fontSize: 24, color: Colors.white),
                       ),
-              ),
+                    ),
             ),
             onDetailsPressed: current != null
                 ? () {
@@ -532,22 +522,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) => ListTile(
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: account.user.avatarUrl != null
-                      ? Image.network(
-                          account.user.avatarUrl!,
-                          width: 32,
-                          height: 32,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 32,
-                          height: 32,
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          alignment: Alignment.center,
-                          child: Text(account.user.username[0].toUpperCase()),
-                        ),
+                leading: UserAvatar(
+                  user: account.user,
+                  size: 32,
                 ),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,

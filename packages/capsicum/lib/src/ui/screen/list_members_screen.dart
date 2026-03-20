@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/user_avatar.dart';
 
 class ListMembersScreen extends ConsumerStatefulWidget {
   final PostList postList;
@@ -111,25 +112,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
   }
 
   Widget _buildAvatar(BuildContext context, User user) {
-    final fallback = Container(
-      width: 40,
-      height: 40,
-      color: Theme.of(context).colorScheme.primaryContainer,
-      alignment: Alignment.center,
-      child: Text(user.username[0].toUpperCase()),
-    );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: user.avatarUrl != null
-          ? Image.network(
-              user.avatarUrl!,
-              width: 40,
-              height: 40,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => fallback,
-            )
-          : fallback,
-    );
+    return UserAvatar(user: user, size: 40);
   }
 
   Future<void> _removeMember(User user) async {

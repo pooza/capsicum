@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'content_parser.dart';
 import 'emoji_text.dart';
+import 'user_avatar.dart';
 
 class NotificationTile extends StatefulWidget {
   final Notification notification;
@@ -112,25 +113,10 @@ class _NotificationTileState extends State<NotificationTile> {
         if (user != null) ...[
           GestureDetector(
             onTap: () => context.push('/profile', extra: user),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: user.avatarUrl != null
-                  ? Image.network(
-                      user.avatarUrl!,
-                      width: 24,
-                      height: 24,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      width: 24,
-                      height: 24,
-                      color: theme.colorScheme.primaryContainer,
-                      alignment: Alignment.center,
-                      child: Text(
-                        user.username[0].toUpperCase(),
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                    ),
+            child: UserAvatar(
+              user: user,
+              size: 24,
+              borderRadius: 4,
             ),
           ),
           const SizedBox(width: 8),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/user_avatar.dart';
 
 enum UserListType { followers, following }
 
@@ -125,25 +126,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
                   final user = _users[index];
                   return ListTile(
                     onTap: () => context.push('/profile', extra: user),
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: user.avatarUrl != null
-                          ? Image.network(
-                              user.avatarUrl!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                            )
-                          : Container(
-                              width: 40,
-                              height: 40,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              alignment: Alignment.center,
-                              child: Text(user.username[0].toUpperCase()),
-                            ),
-                    ),
+                    leading: UserAvatar(user: user, size: 40),
                     title: EmojiText(
                       user.displayName ?? user.username,
                       emojis: user.emojis,

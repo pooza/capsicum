@@ -13,6 +13,7 @@ import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import 'emoji_picker.dart';
+import 'user_avatar.dart';
 import 'emoji_text.dart';
 
 class PostTile extends ConsumerStatefulWidget {
@@ -695,37 +696,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                 child: GestureDetector(
                   onTap: () =>
                       context.push('/profile', extra: displayPost.author),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: displayPost.author.avatarUrl != null
-                        ? Image.network(
-                            displayPost.author.avatarUrl!,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              width: 40,
-                              height: 40,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              alignment: Alignment.center,
-                              child: Text(
-                                displayPost.author.username[0].toUpperCase(),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            width: 40,
-                            height: 40,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer,
-                            alignment: Alignment.center,
-                            child: Text(
-                              displayPost.author.username[0].toUpperCase(),
-                            ),
-                          ),
+                  child: UserAvatar(
+                    user: displayPost.author,
+                    size: 40,
                   ),
                 ),
               ),
