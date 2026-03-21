@@ -2,12 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../rate_limit_interceptor.dart';
+
 class MisskeyClient {
   final Dio dio;
   final String host;
   String? _token;
 
-  MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
+  MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host')) {
+    dio.interceptors.add(RateLimitInterceptor(dio));
+  }
 
   String? get accessToken => _token;
 

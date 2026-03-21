@@ -2,12 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../rate_limit_interceptor.dart';
+
 class MastodonClient {
   final Dio dio;
   final String host;
   String? _accessToken;
 
-  MastodonClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
+  MastodonClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host')) {
+    dio.interceptors.add(RateLimitInterceptor(dio));
+  }
 
   String? get accessToken => _accessToken;
 
