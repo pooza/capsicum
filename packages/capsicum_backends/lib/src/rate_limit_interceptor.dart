@@ -74,6 +74,11 @@ class RateLimitInterceptor extends Interceptor {
       return handler.next(err);
     }
 
+    // FormData with files contains consumed streams that cannot be re-read.
+    if (err.requestOptions.data is FormData) {
+      return handler.next(err);
+    }
+
     final delay = _calculateDelay(response!, retryCount);
     _retry(err, handler, retryCount, delay);
   }

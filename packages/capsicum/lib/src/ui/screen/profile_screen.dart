@@ -77,12 +77,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _onPostUpdated(Post updated) {
     setState(() {
       if (updated.pinned) {
-        // ピン留め: リストになければ先頭に追加
+        // ピン留め: リストになければ先頭に追加し、通常リストから除去
         if (!_pinnedPosts.any((p) => p.id == updated.id)) {
           _pinnedPosts = [updated, ..._pinnedPosts];
         }
+        _posts = _posts.where((p) => p.id != updated.id).toList();
       } else {
-        // ピン留め解除: リストから除去
+        // ピン留め解除: ピン留めリストから除去
         _pinnedPosts = _pinnedPosts.where((p) => p.id != updated.id).toList();
       }
     });
@@ -142,12 +143,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _performAction(Future<void> Function() action) async {
-    if (_relationshipLoading) return;
+  Future<bool> _performAction(Future<void> Function() action) async {
+    if (_relationshipLoading) return false;
     setState(() => _relationshipLoading = true);
     try {
       await action();
       await _loadRelationship();
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -155,6 +157,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
       }
       debugPrint('User action error: $e');
+      return false;
     } finally {
       if (mounted) setState(() => _relationshipLoading = false);
     }
@@ -650,9 +653,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      await _performAction(() => adapter.blockUser(widget.user.id));
+      final success =
+          await _performAction(() => adapter.blockUser(widget.user.id));
+      if (!success || !mounted) return;
       ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
-      if (!mounted) return;
       await _showReportToDeveloperDialog();
     }
   }
