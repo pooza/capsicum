@@ -609,17 +609,29 @@ class _PostTileState extends ConsumerState<PostTile> {
                               const SizedBox(width: 12),
                             ],
                             if (displayPost.reblogCount > 0) ...[
-                              Icon(
-                                Icons.repeat,
-                                size: 14,
-                                color: Theme.of(
+                              GestureDetector(
+                                onTap: () => _showRebloggedBy(
                                   context,
-                                ).textTheme.bodySmall?.color,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.reblogCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                  displayPost,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.repeat,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${displayPost.reblogCount}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(width: 12),
                             ],
@@ -639,17 +651,29 @@ class _PostTileState extends ConsumerState<PostTile> {
                               const SizedBox(width: 12),
                             ],
                             if (displayPost.favouriteCount > 0) ...[
-                              Icon(
-                                Icons.star_outline,
-                                size: 14,
-                                color: Theme.of(
+                              GestureDetector(
+                                onTap: () => _showFavouritedBy(
                                   context,
-                                ).textTheme.bodySmall?.color,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.favouriteCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                  displayPost,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.star_outline,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${displayPost.favouriteCount}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ],
@@ -1149,6 +1173,52 @@ class _PostTileState extends ConsumerState<PostTile> {
     final months = diff.inDays ~/ 30;
     if (months < 12) return '$monthsヶ月前';
     return '${diff.inDays ~/ 365}年前';
+  }
+
+  void _showFavouritedBy(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final label = adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
+    if (adapter is MastodonAdapter) {
+      context.push('/users', extra: {
+        'title': label,
+        'fetcher': (String? cursor) => adapter.getFavouritedBy(
+              post.id,
+              query: TimelineQuery(maxId: cursor, limit: 20),
+            ),
+      });
+    } else if (adapter is MisskeyAdapter) {
+      context.push('/users', extra: {
+        'title': label,
+        'fetcher': (String? cursor) => adapter.getReactedBy(
+              post.id,
+              query: TimelineQuery(maxId: cursor, limit: 20),
+            ),
+      });
+    }
+  }
+
+  void _showRebloggedBy(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final label = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+    if (adapter is MastodonAdapter) {
+      context.push('/users', extra: {
+        'title': label,
+        'fetcher': (String? cursor) => adapter.getRebloggedBy(
+              post.id,
+              query: TimelineQuery(maxId: cursor, limit: 20),
+            ),
+      });
+    } else if (adapter is MisskeyAdapter) {
+      context.push('/users', extra: {
+        'title': label,
+        'fetcher': (String? cursor) => adapter.getRenotedBy(
+              post.id,
+              query: TimelineQuery(maxId: cursor, limit: 20),
+            ),
+      });
+    }
   }
 
   List<Widget> _buildRoleIcon(BuildContext context, UserRole role) {

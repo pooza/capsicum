@@ -311,6 +311,40 @@ class MisskeyClient {
     await dio.post('/api/i/unpin', data: createBody({'noteId': noteId}));
   }
 
+  /// POST /api/notes/reactions
+  Future<List<Map<String, dynamic>>> getNoteReactions(
+    String noteId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/reactions',
+      data: createBody({
+        'noteId': noteId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/notes/renotes
+  Future<List<Map<String, dynamic>>> getNoteRenotes(
+    String noteId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/renotes',
+      data: createBody({
+        'noteId': noteId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/notes/favorites/create
   Future<void> favoriteNote(String noteId) async {
     await dio.post(

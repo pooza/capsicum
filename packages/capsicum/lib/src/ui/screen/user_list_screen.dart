@@ -3,17 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../provider/account_manager_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
-enum UserListType { followers, following }
+enum UserListType { followers, following, favouritedBy, rebloggedBy }
+
+typedef UserListFetcher = Future<({List<User> users, String? nextCursor})>
+    Function(String? cursor);
 
 class UserListScreen extends ConsumerStatefulWidget {
-  final User user;
-  final UserListType type;
+  final String title;
+  final UserListFetcher fetcher;
 
-  const UserListScreen({super.key, required this.user, required this.type});
+  const UserListScreen({
+    super.key,
+    required this.title,
+    required this.fetcher,
+  });
 
   @override
   ConsumerState<UserListScreen> createState() => _UserListScreenState();
@@ -49,9 +55,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
   }
 
   Future<void> _loadInitial() async {
-    final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
     try {
-      final result = await _fetch(adapter, null);
+      final result = await widget.fetcher(null);
       if (!mounted) return;
       setState(() {
         _users = result.users;
@@ -70,9 +75,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _users.isEmpty) return;
     setState(() => _loadingMore = true);
-    final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
     try {
-      final result = await _fetch(adapter, _nextCursor);
+      final result = await widget.fetcher(_nextCursor);
       if (!mounted) return;
       setState(() {
         _users = [..._users, ...result.users];
@@ -88,25 +92,14 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     }
   }
 
-  Future<({List<User> users, String? nextCursor})> _fetch(
-    FollowSupport adapter,
-    String? cursor,
-  ) {
-    final query = TimelineQuery(maxId: cursor, limit: _pageSize);
-    return widget.type == UserListType.followers
-        ? adapter.getFollowers(widget.user.id, query: query)
-        : adapter.getFollowing(widget.user.id, query: query);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final title = widget.type == UserListType.followers ? 'フォロワー' : 'フォロー';
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(title: Text(widget.title)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _users.isEmpty
-          ? Center(child: Text('$titleはいません'))
+          ? const Center(child: Text('ユーザーはいません'))
           : RefreshIndicator(
               onRefresh: () async {
                 setState(() => _loading = true);

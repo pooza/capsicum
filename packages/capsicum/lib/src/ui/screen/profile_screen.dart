@@ -383,12 +383,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               _statItem(context, ref.watch(postLabelProvider), user.postCount),
               const SizedBox(width: 24),
               GestureDetector(
-                onTap: () => context.push('/following', extra: user),
+                onTap: () {
+                  final adapter =
+                      ref.read(currentAdapterProvider)! as FollowSupport;
+                  context.push('/users', extra: {
+                    'title': 'フォロー',
+                    'fetcher': (String? cursor) => adapter.getFollowing(
+                          user.id,
+                          query: TimelineQuery(maxId: cursor, limit: 20),
+                        ),
+                  });
+                },
                 child: _statItem(context, 'フォロー', user.followingCount),
               ),
               const SizedBox(width: 24),
               GestureDetector(
-                onTap: () => context.push('/followers', extra: user),
+                onTap: () {
+                  final adapter =
+                      ref.read(currentAdapterProvider)! as FollowSupport;
+                  context.push('/users', extra: {
+                    'title': 'フォロワー',
+                    'fetcher': (String? cursor) => adapter.getFollowers(
+                          user.id,
+                          query: TimelineQuery(maxId: cursor, limit: 20),
+                        ),
+                  });
+                },
                 child: _statItem(context, 'フォロワー', user.followersCount),
               ),
             ],

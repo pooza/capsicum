@@ -559,6 +559,44 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
 
+  Future<({List<User> users, String? nextCursor})> getReactedBy(
+    String noteId, {
+    TimelineQuery? query,
+  }) async {
+    final reactions = await client.getNoteReactions(
+      noteId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    final users = reactions
+        .where((r) => r['user'] is Map<String, dynamic>)
+        .map((r) {
+          final u = MisskeyUser.fromJson(r['user'] as Map<String, dynamic>);
+          return u.toCapsicum(host);
+        })
+        .toList();
+    return (users: users, nextCursor: reactions.lastOrNull?['id'] as String?);
+  }
+
+  Future<({List<User> users, String? nextCursor})> getRenotedBy(
+    String noteId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getNoteRenotes(
+      noteId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    final users = notes
+        .where((n) => n['user'] is Map<String, dynamic>)
+        .map((n) {
+          final u = MisskeyUser.fromJson(n['user'] as Map<String, dynamic>);
+          return u.toCapsicum(host);
+        })
+        .toList();
+    return (users: users, nextCursor: notes.lastOrNull?['id'] as String?);
+  }
+
   // NotificationSupport
 
   @override

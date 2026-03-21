@@ -522,6 +522,36 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
   }
 
+  Future<({List<User> users, String? nextCursor})> getFavouritedBy(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFavouritedBy(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  Future<({List<User> users, String? nextCursor})> getRebloggedBy(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getRebloggedBy(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
   // NotificationSupport
 
   @override
