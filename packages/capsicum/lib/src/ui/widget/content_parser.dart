@@ -735,12 +735,29 @@ class ContentRenderer {
                 color: Colors.grey.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text(
-                node.text,
-                style: style.copyWith(
-                  fontFamily: 'monospace',
-                  fontSize: (style.fontSize ?? 14) * 0.9,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (node.language != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        node.language!,
+                        style: style.copyWith(
+                          fontSize: (style.fontSize ?? 14) * 0.75,
+                          color: Colors.grey,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  Text(
+                    node.text,
+                    style: style.copyWith(
+                      fontFamily: 'monospace',
+                      fontSize: (style.fontSize ?? 14) * 0.9,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
