@@ -87,8 +87,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
-  /// verify_credentials から学習した管理者ロール ID のセット。
+  /// 管理者ロール ID のセット（verify_credentials + モロヘイヤから学習）。
   final Set<String> _adminRoleIds = {};
+
+  /// モロヘイヤの about API から取得した管理者ロール ID をマージする。
+  void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
   @override
   final String host;
