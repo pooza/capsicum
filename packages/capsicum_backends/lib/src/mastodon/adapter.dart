@@ -543,7 +543,19 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // CustomEmojiSupport
 
   @override
-  Future<List<CustomEmoji>> getEmojis() => throw UnimplementedError();
+  Future<List<CustomEmoji>> getEmojis() async {
+    final emojis = await client.getCustomEmojis();
+    return emojis
+        .where((e) => e['visible_in_picker'] != false)
+        .map(
+          (e) => CustomEmoji(
+            shortcode: e['shortcode'] as String,
+            url: (e['static_url'] as String?) ?? (e['url'] as String?) ?? '',
+            category: e['category'] as String?,
+          ),
+        )
+        .toList();
+  }
 
   // ListSupport
 

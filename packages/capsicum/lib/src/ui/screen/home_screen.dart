@@ -478,25 +478,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            currentAccountPicture: GestureDetector(
-              onTap: current != null
-                  ? () {
-                      Navigator.of(context).pop();
-                      context.push('/profile', extra: current.user);
-                    }
-                  : null,
-              child: current != null
-                  ? UserAvatar(user: current.user, size: 72, borderRadius: 8)
-                  : Container(
-                      width: 72,
-                      height: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '?',
-                        style: TextStyle(fontSize: 24, color: Colors.white),
+            currentAccountPicture: Padding(
+              padding: EdgeInsets.only(
+                bottom: (current?.user.avatarDecorations.isNotEmpty ?? false)
+                    ? 8.0
+                    : 0.0,
+              ),
+              child: GestureDetector(
+                onTap: current != null
+                    ? () {
+                        Navigator.of(context).pop();
+                        context.push('/profile', extra: current.user);
+                      }
+                    : null,
+                child: current != null
+                    ? UserAvatar(
+                        user: current.user, size: 72, borderRadius: 8)
+                    : Container(
+                        width: 72,
+                        height: 72,
+                        color: Theme.of(context).colorScheme.primary,
+                        alignment: Alignment.center,
+                        child: const Text(
+                          '?',
+                          style: TextStyle(fontSize: 24, color: Colors.white),
+                        ),
                       ),
-                    ),
+              ),
             ),
             onDetailsPressed: current != null
                 ? () {

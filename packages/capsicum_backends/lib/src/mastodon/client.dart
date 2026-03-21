@@ -425,6 +425,12 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/custom_emojis
+  Future<List<Map<String, dynamic>>> getCustomEmojis() async {
+    final response = await dio.get('/api/v1/custom_emojis');
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// GET /api/v1/timelines/tag/:hashtag
   Future<List<MastodonStatus>> getTagTimeline(
     String hashtag, {
