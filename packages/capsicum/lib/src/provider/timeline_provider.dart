@@ -205,7 +205,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           break;
         }
 
-        hasMore = response.rawCount >= _pageSize;
+        hasMore = response.rawCount > 0;
         maxId = response.posts.last.id;
 
         final visibleOlder = response.posts
