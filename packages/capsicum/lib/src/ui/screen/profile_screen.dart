@@ -653,8 +653,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      final success =
-          await _performAction(() => adapter.blockUser(widget.user.id));
+      final success = await _performAction(
+        () => adapter.blockUser(widget.user.id),
+      );
       if (!success || !mounted) return;
       ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
       await _showReportToDeveloperDialog();
