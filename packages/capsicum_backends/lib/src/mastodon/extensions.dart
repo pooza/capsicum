@@ -20,7 +20,7 @@ const mastodonAttachmentTypeMap = <String, AttachmentType>{
 };
 
 extension CapsicumMastodonAccountExtension on MastodonAccount {
-  User toCapsicum(String localHost) {
+  User toCapsicum(String localHost, {Set<String> adminRoleIds = const {}}) {
     final atHost = acct.contains('@') ? acct.split('@').last : null;
     return User(
       id: id,
@@ -36,12 +36,13 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       isBot: bot ?? false,
       isGroup: actorType == 'Group',
       roles: (roles ?? []).map((r) {
+        final roleId = r['id']?.toString() ?? '';
         final perms = int.tryParse(r['permissions']?.toString() ?? '') ?? 0;
         return UserRole(
-          id: r['id']?.toString() ?? '',
+          id: roleId,
           name: r['name'] as String? ?? '',
           color: r['color'] as String?,
-          isAdmin: (perms & 0x1) != 0,
+          isAdmin: (perms & 0x1) != 0 || adminRoleIds.contains(roleId),
         );
       }).toList(),
       fields: fields
@@ -62,12 +63,16 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
 }
 
 extension CapsicumMastodonStatusExtension on MastodonStatus {
-  Post toCapsicum(String localHost, {bool pinned = false}) {
+  Post toCapsicum(
+    String localHost, {
+    bool pinned = false,
+    Set<String> adminRoleIds = const {},
+  }) {
     final filterResult = _parseFilterResult(filtered);
     return Post(
       id: id,
       postedAt: createdAt,
-      author: account.toCapsicum(localHost),
+      author: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       content: content,
       scope: mastodonVisibilityRosetta[visibility] ?? PostScope.public,
       attachments: mediaAttachments.map((a) => a.toCapsicum()).toList(),
@@ -80,8 +85,8 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       bookmarked: bookmarked ?? false,
       sensitive: sensitive ?? false,
       inReplyToId: inReplyToId,
-      reblog: reblog?.toCapsicum(localHost),
-      quote: _parseQuote(quote, localHost),
+      reblog: reblog?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      quote: _parseQuote(quote, localHost, adminRoleIds: adminRoleIds),
       spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
       emojis: {
         ..._extractHtmlCustomEmojis(content),
@@ -100,7 +105,11 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
   }
 }
 
-Post? _parseQuote(Object? quoteRaw, String localHost) {
+Post? _parseQuote(
+  Object? quoteRaw,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+}) {
   if (quoteRaw == null) return null;
   if (quoteRaw is! Map<String, dynamic>) return null;
   // Mastodon latest: quote is { "state": "...", "quoted_status": {...} }
@@ -242,13 +251,16 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
 };
 
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
-  Notification toCapsicum(String localHost) {
+  Notification toCapsicum(
+    String localHost, {
+    Set<String> adminRoleIds = const {},
+  }) {
     return Notification(
       id: id,
       type: mastodonNotificationTypeMap[type] ?? NotificationType.other,
       createdAt: createdAt,
-      user: account.toCapsicum(localHost),
-      post: status?.toCapsicum(localHost),
+      user: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      post: status?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
     );
   }
 }

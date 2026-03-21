@@ -54,6 +54,7 @@ coverage/
 # Fastlane
 **/fastlane/report.xml
 **/fastlane/README.md
+**/fastlane/Preview.html
 
 # Android signing
 **/android/key.properties

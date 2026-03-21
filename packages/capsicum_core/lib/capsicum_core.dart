@@ -32,6 +32,7 @@ export 'src/social/interfaces/follow_support.dart';
 export 'src/social/interfaces/hashtag_support.dart';
 export 'src/social/interfaces/list_support.dart';
 export 'src/social/interfaces/marker_support.dart';
+export 'src/social/interfaces/pin_support.dart';
 export 'src/social/interfaces/media_update_support.dart';
 export 'src/social/interfaces/login_support.dart';
 export 'src/social/interfaces/notification_support.dart';

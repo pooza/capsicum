@@ -6,6 +6,7 @@ platform :android do
   desc "Deploy to Google Play internal testing"
   lane :internal do
     upload_to_play_store(
+      package_name: 'net.shrieker.capsicum',
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
       json_key: json_key_path,
@@ -15,6 +16,7 @@ platform :android do
   desc "Promote internal to production"
   lane :release do
     upload_to_play_store(
+      package_name: 'net.shrieker.capsicum',
       track: 'internal',
       track_promote_to: 'production',
       json_key: json_key_path,

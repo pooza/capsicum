@@ -82,9 +82,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         StreamSupport,
         MarkerSupport,
         ProfileEditSupport,
-        ReportSupport {
+        ReportSupport,
+        PinSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
+
+  /// 管理者ロール ID のセット（verify_credentials + モロヘイヤから学習）。
+  final Set<String> _adminRoleIds = {};
+
+  /// モロヘイヤの about API から取得した管理者ロール ID をマージする。
+  void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
   @override
   final String host;
@@ -152,23 +159,36 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     client.setAccessToken(userSecret.accessToken);
   }
 
+  /// verify_credentials のレスポンスから管理者ロール ID を学習する。
+  void _learnAdminRoles(MastodonAccount account) {
+    // verify_credentials の role（単数形）に permissions が含まれる。
+    final role = account.role;
+    if (role != null) {
+      final perms = int.tryParse(role['permissions']?.toString() ?? '') ?? 0;
+      if ((perms & 0x1) != 0) {
+        _adminRoleIds.add(role['id']?.toString() ?? '');
+      }
+    }
+  }
+
   @override
   Future<User> getMyself() async {
     final account = await client.verifyCredentials();
-    return account.toCapsicum(host);
+    _learnAdminRoles(account);
+    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<User?> getUser(String username, [String? remoteHost]) async {
     final acct = remoteHost != null ? '$username@$remoteHost' : username;
     final account = await client.lookupAccount(acct);
-    return account?.toCapsicum(host);
+    return account?.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<User> getUserById(String id) async {
     final account = await client.getAccount(id);
-    return account.toCapsicum(host);
+    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
@@ -179,7 +199,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return _safeConvert(
       statuses,
-      (s) => s.toCapsicum(host),
+      (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     ).results;
   }
@@ -199,12 +219,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       status: draft.content ?? '',
       visibility: mastodonVisibilityFromScope(draft.scope),
       inReplyToId: draft.inReplyToId,
+      quoteId: draft.quoteId,
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       sensitive: draft.sensitive ? true : null,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -239,7 +260,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     };
     final converted = _safeConvert(
       statuses,
-      (s) => s.toCapsicum(host),
+      (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     );
     return TimelineResponse(
@@ -253,7 +274,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> getPostById(String id) async {
     final status = await client.getStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -261,16 +282,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final ctx = await client.getStatusContext(postId);
     final target = await client.getStatus(postId);
     return [
-      ...ctx.ancestors.map((s) => s.toCapsicum(host)),
+      ...ctx.ancestors.map(
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      ),
       target.toCapsicum(host),
-      ...ctx.descendants.map((s) => s.toCapsicum(host)),
+      ...ctx.descendants.map(
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      ),
     ];
   }
 
   @override
   Future<Post> repeatPost(String id) async {
     final status = await client.reblogStatus(id);
-    final post = status.toCapsicum(host);
+    final post = status.toCapsicum(host, adminRoleIds: _adminRoleIds);
     // reblog API returns a wrapper post; extract the original with updated counts.
     return post.reblog ?? post;
   }
@@ -278,7 +303,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> unrepeatPost(String id) async {
     final status = await client.unreblogStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -354,6 +379,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
       client.setAccessToken(token.accessToken!);
       final account = await client.verifyCredentials();
+      _learnAdminRoles(account);
 
       return LoginSuccess(
         userSecret: UserSecret(accessToken: token.accessToken!),
@@ -361,7 +387,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           clientId: extra['client_id']!,
           clientSecret: extra['client_secret']!,
         ),
-        user: account.toCapsicum(host),
+        user: account.toCapsicum(host, adminRoleIds: _adminRoleIds),
       );
     } catch (e, s) {
       return LoginFailure(e, s);
@@ -373,13 +399,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> favoritePost(String id) async {
     final status = await client.favouriteStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<Post> unfavoritePost(String id) async {
     final status = await client.unfavouriteStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   // BookmarkSupport
@@ -387,13 +413,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> bookmarkPost(String id) async {
     final status = await client.bookmarkStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<Post> unbookmarkPost(String id) async {
     final status = await client.unbookmarkStatus(id);
-    return status.toCapsicum(host);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  // PinSupport
+
+  @override
+  Future<Post> pinPost(String id) async {
+    final status = await client.pinStatus(id);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<Post> unpinPost(String id) async {
+    final status = await client.unpinStatus(id);
+    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -405,7 +445,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return _safeConvert(
       statuses,
-      (s) => s.toCapsicum(host),
+      (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     ).results;
   }
@@ -466,7 +506,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -482,7 +524,43 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  Future<({List<User> users, String? nextCursor})> getFavouritedBy(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFavouritedBy(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  Future<({List<User> users, String? nextCursor})> getRebloggedBy(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getRebloggedBy(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -496,7 +574,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return notifications.map((n) => n.toCapsicum(host)).toList();
+    return notifications
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -514,11 +594,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     final accounts = (data['accounts'] as List? ?? [])
         .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
-        .map((a) => a.toCapsicum(host))
+        .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
         .toList();
     final statuses = (data['statuses'] as List? ?? [])
         .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
-        .map((s) => s.toCapsicum(host))
+        .map((s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds))
         .toList();
     final hashtags = (data['hashtags'] as List? ?? [])
         .map((e) => (e as Map<String, dynamic>)['name'] as String)
@@ -529,7 +609,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<User>> searchUsers(String query, {int? limit}) async {
     final accounts = await client.searchAccounts(query, limit: limit);
-    return accounts.map((a) => a.toCapsicum(host)).toList();
+    return accounts
+        .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -543,7 +625,19 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // CustomEmojiSupport
 
   @override
-  Future<List<CustomEmoji>> getEmojis() => throw UnimplementedError();
+  Future<List<CustomEmoji>> getEmojis() async {
+    final emojis = await client.getCustomEmojis();
+    return emojis
+        .where((e) => e['visible_in_picker'] != false)
+        .map(
+          (e) => CustomEmoji(
+            shortcode: e['shortcode'] as String,
+            url: (e['static_url'] as String?) ?? (e['url'] as String?) ?? '',
+            category: e['category'] as String?,
+          ),
+        )
+        .toList();
+  }
 
   // ListSupport
 
@@ -566,7 +660,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return _safeConvert(
       statuses,
-      (s) => s.toCapsicum(host),
+      (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     ).results;
   }
@@ -591,7 +685,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<User>> getListAccounts(String listId) async {
     final accounts = await client.getListAccounts(listId);
-    return accounts.map((a) => a.toCapsicum(host)).toList();
+    return accounts
+        .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -668,7 +764,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     return _safeConvert(
       statuses,
-      (s) => s.toCapsicum(host),
+      (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (s) => s.id,
     ).results;
   }
@@ -728,7 +824,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           ?.map((f) => {'name': f.name, 'value': f.value})
           .toList(),
     );
-    return account.toCapsicum(host);
+    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   // ReportSupport

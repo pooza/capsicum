@@ -2,12 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../rate_limit_interceptor.dart';
+
 class MisskeyClient {
   final Dio dio;
   final String host;
   String? _token;
 
-  MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
+  MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host')) {
+    dio.interceptors.add(RateLimitInterceptor(dio));
+  }
 
   String? get accessToken => _token;
 
@@ -236,6 +240,7 @@ class MisskeyClient {
     required String text,
     required String visibility,
     String? replyId,
+    String? renoteId,
     List<String>? fileIds,
     String? cw,
     bool? localOnly,
@@ -248,6 +253,7 @@ class MisskeyClient {
         'text': text,
         'visibility': visibility,
         'replyId': ?replyId,
+        'renoteId': ?renoteId,
         'fileIds': ?fileIds,
         'cw': ?cw,
         'localOnly': ?localOnly,
@@ -295,6 +301,50 @@ class MisskeyClient {
     return (response.data as List)
         .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// POST /api/i/pin
+  Future<void> pinNote(String noteId) async {
+    await dio.post('/api/i/pin', data: createBody({'noteId': noteId}));
+  }
+
+  /// POST /api/i/unpin
+  Future<void> unpinNote(String noteId) async {
+    await dio.post('/api/i/unpin', data: createBody({'noteId': noteId}));
+  }
+
+  /// POST /api/notes/reactions
+  Future<List<Map<String, dynamic>>> getNoteReactions(
+    String noteId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/reactions',
+      data: createBody({
+        'noteId': noteId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/notes/renotes
+  Future<List<Map<String, dynamic>>> getNoteRenotes(
+    String noteId, {
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/notes/renotes',
+      data: createBody({
+        'noteId': noteId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// POST /api/notes/favorites/create

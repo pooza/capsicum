@@ -4,6 +4,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
 
+/// Host → theme color map from all accounts' mulukhiya services.
+final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
+  final accounts = ref.watch(accountManagerProvider).accounts;
+  final map = <String, Color>{};
+  for (final account in accounts) {
+    final hex = account.mulukhiya?.themeColorHex;
+    if (hex != null && hex.startsWith('#') && hex.length >= 7) {
+      try {
+        map[account.key.host] = Color(
+          0xFF000000 | int.parse(hex.substring(1, 7), radix: 16),
+        );
+      } catch (_) {}
+    }
+  }
+  return map;
+});
+
 /// The label to use for "post" actions (e.g. "キュア！" on precure.fun).
 final postLabelProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
@@ -36,6 +53,19 @@ final themeSeedColorProvider = Provider<Color>((ref) {
     } catch (_) {}
   }
   return Colors.green;
+});
+
+/// URL of the :sabacan: custom emoji on the current server (null if unavailable).
+final sabacanUrlProvider = FutureProvider<String?>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! CustomEmojiSupport) return null;
+  try {
+    final emojis = await (adapter as CustomEmojiSupport).getEmojis();
+    final sabacan = emojis.where((e) => e.shortcode == 'sabacan').firstOrNull;
+    return sabacan?.url;
+  } catch (_) {
+    return null;
+  }
 });
 
 /// Local timeline display name: use default hashtag if available.

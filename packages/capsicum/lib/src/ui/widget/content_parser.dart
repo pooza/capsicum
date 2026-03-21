@@ -735,12 +735,29 @@ class ContentRenderer {
                 color: Colors.grey.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text(
-                node.text,
-                style: style.copyWith(
-                  fontFamily: 'monospace',
-                  fontSize: (style.fontSize ?? 14) * 0.9,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (node.language != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        node.language!,
+                        style: style.copyWith(
+                          fontSize: (style.fontSize ?? 14) * 0.75,
+                          color: Colors.grey,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  Text(
+                    node.text,
+                    style: style.copyWith(
+                      fontFamily: 'monospace',
+                      fontSize: (style.fontSize ?? 14) * 0.9,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1003,11 +1020,16 @@ class _RubyWidget extends StatelessWidget {
 
   // Mastodon native: <a class="...hashtag..." href="...">#<span>tag</span></a>
   // Misskey federated: <a href="...">#tag</a> (no class="hashtag")
+  // 最後の <p> ブロックのみを対象にする（URL 段落を跨がないよう制約）。
+  final pBlocks = RegExp(r'<p>.*?</p>').allMatches(bodyHtml).toList();
+  if (pBlocks.isEmpty) return (body: bodyHtml, trailingTags: trailingTags);
+  final lastPMatch = pBlocks.last;
+  final lastBlock = lastPMatch.group(0)!;
   final trailingTagBlock = RegExp(
-    r'<p>\s*((<a[^>]*>.*?</a>\s*)+)</p>\s*$',
+    r'^<p>\s*((<a[^>]*>.*?</a>\s*)+)</p>$',
     caseSensitive: false,
   );
-  final blockMatch = trailingTagBlock.firstMatch(bodyHtml);
+  final blockMatch = trailingTagBlock.firstMatch(lastBlock);
   if (blockMatch != null) {
     final tagBlockHtml = blockMatch.group(1)!;
     // Check that ALL <a> tags in the block are hashtag links.
@@ -1025,7 +1047,7 @@ class _RubyWidget extends StatelessWidget {
       for (final m in hashMatches) {
         trailingTags.add(m.group(1)!);
       }
-      bodyHtml = bodyHtml.substring(0, blockMatch.start).trimRight();
+      bodyHtml = bodyHtml.substring(0, lastPMatch.start).trimRight();
     }
   }
 

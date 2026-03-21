@@ -2,12 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../rate_limit_interceptor.dart';
+
 class MastodonClient {
   final Dio dio;
   final String host;
   String? _accessToken;
 
-  MastodonClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host'));
+  MastodonClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host')) {
+    dio.interceptors.add(RateLimitInterceptor(dio));
+  }
 
   String? get accessToken => _accessToken;
 
@@ -126,6 +130,38 @@ class MastodonClient {
     return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// GET /api/v1/statuses/:id/favourited_by
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getFavouritedBy(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/statuses/$id/favourited_by',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final accounts = (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
+  /// GET /api/v1/statuses/:id/reblogged_by
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getRebloggedBy(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/statuses/$id/reblogged_by',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final accounts = (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
   /// Parse the Link header to extract max_id from rel="next".
   static String? _parseLinkNextMaxId(dynamic response) {
     final link = response.headers.value('link');
@@ -204,6 +240,7 @@ class MastodonClient {
     required String status,
     required String visibility,
     String? inReplyToId,
+    String? quoteId,
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
@@ -215,6 +252,7 @@ class MastodonClient {
         'status': status,
         'visibility': visibility,
         'in_reply_to_id': ?inReplyToId,
+        'quoted_status_id': ?quoteId,
         'spoiler_text': ?spoilerText,
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
@@ -267,6 +305,18 @@ class MastodonClient {
   /// POST /api/v1/statuses/:id/unreblog
   Future<MastodonStatus> unreblogStatus(String id) async {
     final response = await dio.post('/api/v1/statuses/$id/unreblog');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/pin
+  Future<MastodonStatus> pinStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/pin');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unpin
+  Future<MastodonStatus> unpinStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unpin');
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -423,6 +473,12 @@ class MastodonClient {
       },
     );
     return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v1/custom_emojis
+  Future<List<Map<String, dynamic>>> getCustomEmojis() async {
+    final response = await dio.get('/api/v1/custom_emojis');
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// GET /api/v1/timelines/tag/:hashtag

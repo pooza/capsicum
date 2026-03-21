@@ -109,6 +109,7 @@ class MulukhiyaService {
   final String? defaultHashtag;
   final String? reblogLabel;
   final bool annictEnabled;
+  final List<String> adminRoleIds;
 
   MulukhiyaService._({
     required Dio dio,
@@ -121,6 +122,7 @@ class MulukhiyaService {
     this.defaultHashtag,
     this.reblogLabel,
     this.annictEnabled = false,
+    this.adminRoleIds = const [],
   }) : _dio = dio;
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
@@ -149,6 +151,12 @@ class MulukhiyaService {
       final theme = config['theme'] as Map<String, dynamic>?;
       final features = config['features'] as Map<String, dynamic>?;
 
+      final adminRoleIds =
+          (config['admin_role_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [];
+
       return MulukhiyaService._(
         dio: dio,
         baseUrl: 'https://$domain/mulukhiya/api',
@@ -160,6 +168,7 @@ class MulukhiyaService {
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
+        adminRoleIds: adminRoleIds,
       );
     } catch (_) {
       // Not found or connection error — mulukhiya not present

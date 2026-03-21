@@ -22,6 +22,7 @@ class PostTile extends ConsumerStatefulWidget {
   final bool initialExpanded;
   final bool selectable;
   final VoidCallback? onActionCompleted;
+  final ValueChanged<Post>? onPostUpdated;
 
   const PostTile({
     super.key,
@@ -30,6 +31,7 @@ class PostTile extends ConsumerStatefulWidget {
     this.initialExpanded = false,
     this.selectable = false,
     this.onActionCompleted,
+    this.onPostUpdated,
   });
 
   @override
@@ -281,36 +283,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                           ),
                         ],
                         for (final role in displayPost.author.roles)
-                          if (role.iconUrl != null) ...[
-                            const SizedBox(width: 4),
-                            Image.network(
-                              role.iconUrl!,
-                              width: 14,
-                              height: 14,
-                              errorBuilder: (_, _, _) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ] else if (role.isAdmin) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.shield,
-                              size: 14,
-                              color:
-                                  role.color != null &&
-                                      role.color!.startsWith('#') &&
-                                      role.color!.length >= 7
-                                  ? Color(
-                                      0xFF000000 |
-                                          int.parse(
-                                            role.color!.substring(1, 7),
-                                            radix: 16,
-                                          ),
-                                    )
-                                  : Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.color,
-                            ),
-                          ],
+                          ..._buildRoleIcon(context, role),
                         const SizedBox(width: 4),
                         Icon(
                           _scopeIcon(displayPost.scope),
@@ -338,6 +311,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (displayPost.author.host != null)
+                      _buildInstanceTicker(context, displayPost.author.host!),
                     if (displayPost.channelName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -636,17 +611,28 @@ class _PostTileState extends ConsumerState<PostTile> {
                               const SizedBox(width: 12),
                             ],
                             if (displayPost.reblogCount > 0) ...[
-                              Icon(
-                                Icons.repeat,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.reblogCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                              GestureDetector(
+                                onTap: () =>
+                                    _showRebloggedBy(context, displayPost),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.repeat,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${displayPost.reblogCount}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(width: 12),
                             ],
@@ -666,17 +652,28 @@ class _PostTileState extends ConsumerState<PostTile> {
                               const SizedBox(width: 12),
                             ],
                             if (displayPost.favouriteCount > 0) ...[
-                              Icon(
-                                Icons.star_outline,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.favouriteCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                              GestureDetector(
+                                onTap: () =>
+                                    _showFavouritedBy(context, displayPost),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.star_outline,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${displayPost.favouriteCount}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ],
@@ -747,112 +744,153 @@ class _PostTileState extends ConsumerState<PostTile> {
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.reply),
-              title: const Text('リプライ'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                context.push('/compose', extra: {'replyTo': targetPost});
-              },
-            ),
-            if (adapter is FavoriteSupport)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               ListTile(
-                leading: const Icon(Icons.star_outline),
-                title: const Text('お気に入り'),
+                leading: const Icon(Icons.reply),
+                title: const Text('リプライ'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => (adapter as FavoriteSupport).favoritePost(
-                      targetPost.id,
-                    ),
-                    'お気に入りに追加しました',
-                  );
+                  context.push('/compose', extra: {'replyTo': targetPost});
                 },
               ),
-            if (adapter is ReactionSupport)
               ListTile(
-                leading: const Icon(Icons.add_reaction_outlined),
-                title: const Text('リアクション'),
+                leading: const Icon(Icons.format_quote),
+                title: const Text('引用'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _showEmojiPicker(context);
+                  context.push('/compose', extra: {'quoteTo': targetPost});
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.repeat),
-              title: Text(boostLabel),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _runAction(
-                  messenger,
-                  () => adapter.repeatPost(targetPost.id),
-                  '$boostLabelしました',
-                );
-              },
-            ),
-            if (adapter is BookmarkSupport)
-              ListTile(
-                leading: const Icon(Icons.bookmark_outline),
-                title: Text(bookmarkLabel),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => (adapter as BookmarkSupport).bookmarkPost(
-                      targetPost.id,
-                    ),
-                    '$bookmarkLabelに追加しました',
-                  );
-                },
-              ),
-            if (!isOwn && adapter is ReportSupport)
-              ListTile(
-                leading: const Icon(Icons.flag_outlined),
-                title: const Text('通報'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmReport(context, targetPost);
-                },
-              ),
-            if (isOwn) ...[
-              const Divider(),
-              if (ref.read(currentMulukhiyaProvider) != null)
+              if (adapter is FavoriteSupport)
                 ListTile(
-                  leading: const Icon(Icons.sell_outlined),
-                  title: const Text('削除してタグづけ'),
+                  leading: const Icon(Icons.star_outline),
+                  title: const Text('お気に入り'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    _showRetagSheet(context, targetPost);
+                    _runAction(
+                      messenger,
+                      () => (adapter as FavoriteSupport).favoritePost(
+                        targetPost.id,
+                      ),
+                      'お気に入りに追加しました',
+                    );
+                  },
+                ),
+              if (adapter is ReactionSupport)
+                ListTile(
+                  leading: const Icon(Icons.add_reaction_outlined),
+                  title: const Text('リアクション'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showEmojiPicker(context);
                   },
                 ),
               ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('削除して再編集'),
+                leading: const Icon(Icons.repeat),
+                title: Text(boostLabel),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _confirmDeleteAndRedraft(context, targetPost);
+                  _runAction(
+                    messenger,
+                    () => adapter.repeatPost(targetPost.id),
+                    '$boostLabelしました',
+                  );
                 },
               ),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error,
+              if (adapter is BookmarkSupport)
+                ListTile(
+                  leading: const Icon(Icons.bookmark_outline),
+                  title: Text(bookmarkLabel),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _runAction(
+                      messenger,
+                      () => (adapter as BookmarkSupport).bookmarkPost(
+                        targetPost.id,
+                      ),
+                      '$bookmarkLabelに追加しました',
+                    );
+                  },
                 ),
-                title: Text(
-                  '削除',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+              if (!isOwn && adapter is ReportSupport)
+                ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: const Text('通報'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmReport(context, targetPost);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmDelete(context, targetPost);
-                },
-              ),
+              if (isOwn && adapter is PinSupport) ...[
+                const Divider(),
+                ListTile(
+                  leading: Icon(
+                    targetPost.pinned
+                        ? Icons.push_pin
+                        : Icons.push_pin_outlined,
+                  ),
+                  title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final pinAdapter = adapter as PinSupport;
+                    if (targetPost.pinned) {
+                      _runAction(
+                        messenger,
+                        () => pinAdapter.unpinPost(targetPost.id),
+                        'ピン留めを解除しました',
+                      );
+                    } else {
+                      _runAction(
+                        messenger,
+                        () => pinAdapter.pinPost(targetPost.id),
+                        'ピン留めしました',
+                      );
+                    }
+                  },
+                ),
+              ],
+              if (isOwn) ...[
+                const Divider(),
+                if (ref.read(currentMulukhiyaProvider) != null)
+                  ListTile(
+                    leading: const Icon(Icons.sell_outlined),
+                    title: const Text('削除してタグづけ'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showRetagSheet(context, targetPost);
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('削除して再編集'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmDeleteAndRedraft(context, targetPost);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(
+                    '削除',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmDelete(context, targetPost);
+                  },
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1040,6 +1078,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     try {
       final updated = await action();
       ref.read(timelineProvider.notifier).updatePost(updated);
+      widget.onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
@@ -1127,6 +1166,32 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
+  Widget _buildInstanceTicker(BuildContext context, String host) {
+    final themeColors = ref.watch(hostThemeColorProvider);
+    final color =
+        themeColors[host] ??
+        HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.5).toColor();
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(Icons.dns_outlined, size: 12, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              host,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontSize: 11, color: color),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _handleText(User author) {
     final handle = '@${author.username}';
     if (author.host != null) {
@@ -1144,6 +1209,111 @@ class _PostTileState extends ConsumerState<PostTile> {
     final months = diff.inDays ~/ 30;
     if (months < 12) return '$monthsヶ月前';
     return '${diff.inDays ~/ 365}年前';
+  }
+
+  void _showFavouritedBy(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final label = adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
+    if (adapter is MastodonAdapter) {
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getFavouritedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
+    } else if (adapter is MisskeyAdapter) {
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getReactedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
+    }
+  }
+
+  void _showRebloggedBy(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    final label = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+    if (adapter is MastodonAdapter) {
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getRebloggedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
+    } else if (adapter is MisskeyAdapter) {
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getRenotedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
+    }
+  }
+
+  List<Widget> _buildRoleIcon(BuildContext context, UserRole role) {
+    final iconUrl = role.iconUrl;
+    if (iconUrl == null && role.isAdmin) {
+      // 管理者ロール: sabacan があればそれを使い、なければシールドアイコン
+      final sabacanUrl = ref.watch(sabacanUrlProvider).valueOrNull;
+      if (sabacanUrl != null) {
+        return [
+          const SizedBox(width: 4),
+          Image.network(
+            sabacanUrl,
+            width: 14,
+            height: 14,
+            errorBuilder: (_, _, _) => Icon(
+              Icons.shield,
+              size: 14,
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+          ),
+        ];
+      }
+      final color =
+          role.color != null &&
+              role.color!.startsWith('#') &&
+              role.color!.length >= 7
+          ? Color(
+              0xFF000000 | int.parse(role.color!.substring(1, 7), radix: 16),
+            )
+          : Theme.of(context).textTheme.bodySmall?.color;
+      return [
+        const SizedBox(width: 4),
+        Icon(Icons.shield, size: 14, color: color),
+      ];
+    }
+    if (iconUrl != null) {
+      return [
+        const SizedBox(width: 4),
+        Image.network(
+          iconUrl,
+          width: 14,
+          height: 14,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      ];
+    }
+    return [];
   }
 
   IconData _scopeIcon(PostScope scope) {

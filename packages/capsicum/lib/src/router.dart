@@ -118,6 +118,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ComposeScreen(
             redraft: extra?['redraft'] as Post?,
             replyTo: extra?['replyTo'] as Post?,
+            quoteTo: extra?['quoteTo'] as Post?,
             channelId: extra?['channelId'] as String?,
             channelName: extra?['channelName'] as String?,
           );
@@ -158,17 +159,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProfileEditScreen(),
       ),
       GoRoute(
-        path: '/followers',
+        path: '/users',
         builder: (context, state) {
-          final user = state.extra! as User;
-          return UserListScreen(user: user, type: UserListType.followers);
-        },
-      ),
-      GoRoute(
-        path: '/following',
-        builder: (context, state) {
-          final user = state.extra! as User;
-          return UserListScreen(user: user, type: UserListType.following);
+          final extra = state.extra! as Map<String, dynamic>;
+          return UserListScreen(
+            title: extra['title'] as String,
+            fetcher: extra['fetcher'] as UserListFetcher,
+          );
         },
       ),
       GoRoute(

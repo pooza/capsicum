@@ -80,7 +80,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
-        ReportSupport {
+        ReportSupport,
+        PinSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -175,6 +176,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
       replyId: draft.inReplyToId,
+      renoteId: draft.quoteId,
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
@@ -435,6 +437,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
   }
 
+  // PinSupport
+
+  @override
+  Future<Post> pinPost(String id) async {
+    await client.pinNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host, pinned: true);
+  }
+
+  @override
+  Future<Post> unpinPost(String id) async {
+    await client.unpinNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host, pinned: false);
+  }
+
   // BookmarkSupport (Misskey の「お気に入り」= Mastodon のブックマーク相当)
 
   @override
@@ -540,6 +558,42 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       return MisskeyUser.fromJson(userData).toCapsicum(client.host);
     }).toList();
     return (users: users, nextCursor: users.lastOrNull?.id);
+  }
+
+  Future<({List<User> users, String? nextCursor})> getReactedBy(
+    String noteId, {
+    TimelineQuery? query,
+  }) async {
+    final reactions = await client.getNoteReactions(
+      noteId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    final users = reactions.where((r) => r['user'] is Map<String, dynamic>).map(
+      (r) {
+        final u = MisskeyUser.fromJson(r['user'] as Map<String, dynamic>);
+        return u.toCapsicum(host);
+      },
+    ).toList();
+    return (users: users, nextCursor: reactions.lastOrNull?['id'] as String?);
+  }
+
+  Future<({List<User> users, String? nextCursor})> getRenotedBy(
+    String noteId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getNoteRenotes(
+      noteId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    final users = notes.where((n) => n['user'] is Map<String, dynamic>).map((
+      n,
+    ) {
+      final u = MisskeyUser.fromJson(n['user'] as Map<String, dynamic>);
+      return u.toCapsicum(host);
+    }).toList();
+    return (users: users, nextCursor: notes.lastOrNull?['id'] as String?);
   }
 
   // NotificationSupport

@@ -2,9 +2,12 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
@@ -71,6 +74,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  void _onPostUpdated(Post updated) {
+    setState(() {
+      if (updated.pinned) {
+        // ピン留め: リストになければ先頭に追加し、通常リストから除去
+        if (!_pinnedPosts.any((p) => p.id == updated.id)) {
+          _pinnedPosts = [updated, ..._pinnedPosts];
+        }
+        _posts = _posts.where((p) => p.id != updated.id).toList();
+      } else {
+        // ピン留め解除: ピン留めリストから除去
+        _pinnedPosts = _pinnedPosts.where((p) => p.id != updated.id).toList();
+      }
+    });
+  }
+
   Future<void> _loadPosts() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -125,12 +143,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _performAction(Future<void> Function() action) async {
-    if (_relationshipLoading) return;
+  Future<bool> _performAction(Future<void> Function() action) async {
+    if (_relationshipLoading) return false;
     setState(() => _relationshipLoading = true);
     try {
       await action();
       await _loadRelationship();
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -138,6 +157,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
       }
       debugPrint('User action error: $e');
+      return false;
     } finally {
       if (mounted) setState(() => _relationshipLoading = false);
     }
@@ -243,7 +263,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) => Column(
                   children: [
-                    PostTile(post: _pinnedPosts[index]),
+                    PostTile(
+                      post: _pinnedPosts[index],
+                      onPostUpdated: _onPostUpdated,
+                    ),
                     const Divider(height: 1),
                   ],
                 ),
@@ -267,7 +290,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 }
                 return Column(
                   children: [
-                    PostTile(post: _posts[index]),
+                    PostTile(
+                      post: _posts[index],
+                      onPostUpdated: _onPostUpdated,
+                    ),
                     const Divider(height: 1),
                   ],
                 );
@@ -359,12 +385,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               _statItem(context, ref.watch(postLabelProvider), user.postCount),
               const SizedBox(width: 24),
               GestureDetector(
-                onTap: () => context.push('/following', extra: user),
+                onTap: () {
+                  final adapter =
+                      ref.read(currentAdapterProvider)! as FollowSupport;
+                  context.push(
+                    '/users',
+                    extra: {
+                      'title': 'フォロー',
+                      'fetcher': (String? cursor) => adapter.getFollowing(
+                        user.id,
+                        query: TimelineQuery(maxId: cursor, limit: 20),
+                      ),
+                    },
+                  );
+                },
                 child: _statItem(context, 'フォロー', user.followingCount),
               ),
               const SizedBox(width: 24),
               GestureDetector(
-                onTap: () => context.push('/followers', extra: user),
+                onTap: () {
+                  final adapter =
+                      ref.read(currentAdapterProvider)! as FollowSupport;
+                  context.push(
+                    '/users',
+                    extra: {
+                      'title': 'フォロワー',
+                      'fetcher': (String? cursor) => adapter.getFollowers(
+                        user.id,
+                        query: TimelineQuery(maxId: cursor, limit: 20),
+                      ),
+                    },
+                  );
+                },
                 child: _statItem(context, 'フォロワー', user.followersCount),
               ),
             ],
@@ -403,15 +455,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     );
                   } catch (_) {}
                 }
-                return Chip(
-                  avatar: role.iconUrl != null
+                Widget? avatar;
+                if (role.iconUrl != null) {
+                  avatar = Image.network(
+                    role.iconUrl!,
+                    width: 16,
+                    height: 16,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  );
+                } else if (role.isAdmin) {
+                  final sabacanUrl = ref.watch(sabacanUrlProvider).valueOrNull;
+                  avatar = sabacanUrl != null
                       ? Image.network(
-                          role.iconUrl!,
+                          sabacanUrl,
                           width: 16,
                           height: 16,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.shield, size: 16),
                         )
-                      : null,
+                      : const Icon(Icons.shield, size: 16);
+                }
+                return Chip(
+                  avatar: avatar,
                   label: Text(
                     role.name,
                     style: TextStyle(fontSize: 12, color: chipColor),
@@ -490,16 +555,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         const SizedBox(width: 8),
         PopupMenuButton<String>(
-          onSelected: (value) {
+          onSelected: (value) async {
             switch (value) {
               case 'mute':
-                _performAction(() => adapter.muteUser(widget.user.id));
+                await _performAction(() => adapter.muteUser(widget.user.id));
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
               case 'mute_duration':
-                _showMuteDurationPicker(adapter);
+                await _showMuteDurationPicker(adapter);
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
               case 'unmute':
                 _performAction(() => adapter.unmuteUser(widget.user.id));
               case 'block':
-                _confirmAndBlock(adapter);
+                await _confirmAndBlock(adapter);
               case 'unblock':
                 _performAction(() => adapter.unblockUser(widget.user.id));
             }
@@ -582,7 +653,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      _performAction(() => adapter.blockUser(widget.user.id));
+      final success =
+          await _performAction(() => adapter.blockUser(widget.user.id));
+      if (!success || !mounted) return;
+      ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
+      await _showReportToDeveloperDialog();
+    }
+  }
+
+  Future<void> _showReportToDeveloperDialog() async {
+    final shouldReport = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('開発者への報告'),
+        content: const Text('このユーザーをブロックしました。\nこの問題をアプリ開発者にも報告しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('しない'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('報告する'),
+          ),
+        ],
+      ),
+    );
+    if (shouldReport == true) {
+      launchUrl(AppConstants.contactUrl, mode: LaunchMode.externalApplication);
     }
   }
 

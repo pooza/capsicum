@@ -106,25 +106,28 @@ class _NotificationTileState extends State<NotificationTile> {
   Widget _buildHeader(BuildContext context, String label) {
     final theme = Theme.of(context);
     final user = notification.user;
-    final displayName = user?.displayName ?? user?.username ?? '';
+
+    if (user == null) {
+      return Text(label, style: theme.textTheme.bodySmall);
+    }
+
+    final displayName = user.displayName ?? user.username;
 
     return Row(
       children: [
-        if (user != null) ...[
-          GestureDetector(
-            onTap: () => context.push('/profile', extra: user),
-            child: UserAvatar(user: user, size: 24, borderRadius: 4),
-          ),
-          const SizedBox(width: 8),
-        ],
+        GestureDetector(
+          onTap: () => context.push('/profile', extra: user),
+          child: UserAvatar(user: user, size: 24, borderRadius: 4),
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: Row(
             children: [
               Flexible(
                 child: EmojiText(
                   displayName,
-                  emojis: user?.emojis ?? const {},
-                  fallbackHost: user?.host,
+                  emojis: user.emojis,
+                  fallbackHost: user.host,
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

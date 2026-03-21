@@ -49,6 +49,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // Detect mulukhiya on the server (non-blocking — failure is fine).
     final mulukhiya = await _detectMulukhiya(account.key.host);
+    if (mulukhiya != null && account.adapter is MastodonAdapter) {
+      (account.adapter as MastodonAdapter).applyAdminRoleIds(
+        mulukhiya.adminRoleIds,
+      );
+    }
     final enriched = mulukhiya != null
         ? Account(
             key: account.key,
@@ -168,6 +173,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         }
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
+        if (mulukhiya != null && adapter is MastodonAdapter) {
+          adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
+        }
         final softwareVersion = await _detectSoftwareVersion(accountKey.host);
 
         final account = Account(
