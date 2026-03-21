@@ -2,22 +2,66 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 
-/// Dio interceptor that retries requests on 429 (Too Many Requests) responses.
+/// Dio interceptor that handles API rate limiting.
 ///
-/// Uses `Retry-After` header when available, otherwise falls back to
-/// exponential backoff with jitter.
+/// - Parses `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers and
+///   preemptively delays requests when the remaining quota is low.
+/// - Retries on 429 responses using `Retry-After` header or exponential
+///   backoff with jitter.
 class RateLimitInterceptor extends Interceptor {
   static const _maxRetries = 3;
   static const _baseDelay = Duration(seconds: 1);
   static const _retryCountKey = 'rateLimitRetryCount';
 
-  final Dio _dio;
-  final Random _random = Random();
+  /// When remaining requests fall to this threshold or below, preemptively
+  /// wait until the reset time before sending the next request.
+  static const _remainingThreshold = 3;
 
-  RateLimitInterceptor(this._dio);
+  final Dio _dio;
+  final Random _random;
+
+  DateTime? _resetAt;
+  int? _remaining;
+
+  RateLimitInterceptor(this._dio, {Random? random})
+      : _random = random ?? Random();
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    _parseRateLimitHeaders(response.headers);
+    handler.next(response);
+  }
+
+  @override
+  void onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
+    // Skip preemptive wait for retry requests (already delayed).
+    if ((options.extra[_retryCountKey] as int? ?? 0) > 0) {
+      return handler.next(options);
+    }
+
+    final remaining = _remaining;
+    final resetAt = _resetAt;
+    if (remaining != null &&
+        remaining <= _remainingThreshold &&
+        resetAt != null) {
+      final now = DateTime.now();
+      if (resetAt.isAfter(now)) {
+        await Future<void>.delayed(resetAt.difference(now));
+        // Clear after waiting so we don't block subsequent requests.
+        _remaining = null;
+        _resetAt = null;
+      }
+    }
+    handler.next(options);
+  }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response != null) {
+      _parseRateLimitHeaders(err.response!.headers);
+    }
+
     final response = err.response;
     if (response?.statusCode != 429) {
       return handler.next(err);
@@ -30,6 +74,18 @@ class RateLimitInterceptor extends Interceptor {
 
     final delay = _calculateDelay(response!, retryCount);
     _retry(err, handler, retryCount, delay);
+  }
+
+  void _parseRateLimitHeaders(Headers headers) {
+    final remainingStr = headers.value('x-ratelimit-remaining');
+    if (remainingStr != null) {
+      _remaining = int.tryParse(remainingStr);
+    }
+
+    final resetStr = headers.value('x-ratelimit-reset');
+    if (resetStr != null) {
+      _resetAt = DateTime.tryParse(resetStr);
+    }
   }
 
   Duration _calculateDelay(Response response, int retryCount) {
