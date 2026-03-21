@@ -28,7 +28,7 @@ class ListTimelineNotifier
       query: const TimelineQuery(limit: _pageSize),
     );
 
-    return TimelineState(posts: posts, hasMore: posts.length >= _pageSize);
+    return TimelineState(posts: posts, hasMore: posts.isNotEmpty);
   }
 
   Future<void> loadMore() async {
