@@ -311,6 +311,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (displayPost.author.host != null)
+                      _buildInstanceTicker(context, displayPost.author.host!),
                     if (displayPost.channelName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -1163,6 +1165,32 @@ class _PostTileState extends ConsumerState<PostTile> {
             messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
           }
         },
+      ),
+    );
+  }
+
+  Widget _buildInstanceTicker(BuildContext context, String host) {
+    final themeColors = ref.watch(hostThemeColorProvider);
+    final color = themeColors[host] ??
+        HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.5).toColor();
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(Icons.dns_outlined, size: 12, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              host,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontSize: 11, color: color),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
