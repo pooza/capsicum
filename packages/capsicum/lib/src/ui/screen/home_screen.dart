@@ -462,55 +462,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          UserAccountsDrawerHeader(
-            margin: EdgeInsets.only(
-              bottom: (current?.user.avatarDecorations.isNotEmpty ?? false)
-                  ? 16.0
-                  : 8.0,
-            ),
-            accountName: EmojiText(
-              current?.user.displayName ?? current?.user.username ?? '',
-              emojis: current?.user.emojis ?? const {},
-              style: const TextStyle(color: Colors.black),
-            ),
-            accountEmail: Tooltip(
-              message:
-                  '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-              child: Text(
-                '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                style: const TextStyle(color: Colors.black),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            currentAccountPicture: GestureDetector(
-              onTap: current != null
-                  ? () {
-                      Navigator.of(context).pop();
-                      context.push('/profile', extra: current.user);
-                    }
-                  : null,
-              child: current != null
-                  ? UserAvatar(user: current.user, size: 72, borderRadius: 8)
-                  : Container(
-                      width: 72,
-                      height: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '?',
-                        style: TextStyle(fontSize: 24, color: Colors.white),
-                      ),
+          Container(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: current != null
+                        ? () {
+                            Navigator.of(context).pop();
+                            context.push('/profile', extra: current.user);
+                          }
+                        : null,
+                    child: current != null
+                        ? UserAvatar(
+                            user: current.user, size: 72, borderRadius: 8)
+                        : Container(
+                            width: 72,
+                            height: 72,
+                            color: Theme.of(context).colorScheme.primary,
+                            alignment: Alignment.center,
+                            child: const Text(
+                              '?',
+                              style:
+                                  TextStyle(fontSize: 24, color: Colors.white),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: current != null
+                        ? () {
+                            Navigator.of(context).pop();
+                            context.push('/profile', extra: current.user);
+                          }
+                        : null,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        EmojiText(
+                          current?.user.displayName ??
+                              current?.user.username ??
+                              '',
+                          emojis: current?.user.emojis ?? const {},
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Tooltip(
+                          message:
+                              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                          child: Text(
+                            '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                            style: const TextStyle(color: Colors.black),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-            ),
-            onDetailsPressed: current != null
-                ? () {
-                    Navigator.of(context).pop();
-                    context.push('/profile', extra: current.user);
-                  }
-                : null,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
+                  ),
+                ],
+              ),
             ),
           ),
           if (otherAccounts.isNotEmpty) ...[
