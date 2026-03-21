@@ -7,19 +7,22 @@ class UserAvatar extends StatelessWidget {
   final User user;
   final double size;
   final double borderRadius;
+  final bool compact;
 
   const UserAvatar({
     super.key,
     required this.user,
     required this.size,
     this.borderRadius = 6,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final decorations = user.avatarDecorations;
-    // デコレーションがはみ出す分のパディング（アバターサイズの25%）
-    final padding = decorations.isEmpty ? 0.0 : size * 0.25;
+    // compact: デコレーション用パディングを省略しアバターサイズを維持
+    final padding =
+        decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
 
     final avatar = ClipRRect(

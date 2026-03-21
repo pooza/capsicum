@@ -540,7 +540,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) => ListTile(
-                leading: UserAvatar(user: account.user, size: 32),
+                leading: UserAvatar(
+                    user: account.user, size: 32, compact: true),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
                   emojis: account.user.emojis,
