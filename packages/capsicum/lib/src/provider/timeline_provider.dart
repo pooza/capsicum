@@ -72,10 +72,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final visible = response.posts
         .where((p) => p.filterAction != FilterAction.hide)
         .toList();
-    return TimelineState(
-      posts: visible,
-      hasMore: response.rawCount >= _pageSize,
-    );
+    return TimelineState(posts: visible, hasMore: response.rawCount > 0);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -200,7 +197,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         if (response.posts.isEmpty) {
           if (rawLast != null && rawLast != maxId) {
             // Server had data but all conversions failed; advance cursor.
-            hasMore = response.rawCount >= _pageSize;
+            hasMore = response.rawCount > 0;
             maxId = rawLast;
             if (hasMore) continue;
           }
