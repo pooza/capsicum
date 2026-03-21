@@ -82,7 +82,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         StreamSupport,
         MarkerSupport,
         ProfileEditSupport,
-        ReportSupport {
+        ReportSupport,
+        PinSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -393,6 +394,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> unbookmarkPost(String id) async {
     final status = await client.unbookmarkStatus(id);
+    return status.toCapsicum(host);
+  }
+
+  // PinSupport
+
+  @override
+  Future<Post> pinPost(String id) async {
+    final status = await client.pinStatus(id);
+    return status.toCapsicum(host);
+  }
+
+  @override
+  Future<Post> unpinPost(String id) async {
+    final status = await client.unpinStatus(id);
     return status.toCapsicum(host);
   }
 

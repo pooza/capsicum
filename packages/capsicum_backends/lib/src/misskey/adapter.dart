@@ -80,7 +80,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
-        ReportSupport {
+        ReportSupport,
+        PinSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -433,6 +434,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     } catch (e, s) {
       return LoginFailure(e, s);
     }
+  }
+
+  // PinSupport
+
+  @override
+  Future<Post> pinPost(String id) async {
+    await client.pinNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host, pinned: true);
+  }
+
+  @override
+  Future<Post> unpinPost(String id) async {
+    await client.unpinNote(id);
+    final note = await client.getNote(id);
+    return note.toCapsicum(host, pinned: false);
   }
 
   // BookmarkSupport (Misskey の「お気に入り」= Mastodon のブックマーク相当)

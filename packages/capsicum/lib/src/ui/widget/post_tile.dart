@@ -22,6 +22,7 @@ class PostTile extends ConsumerStatefulWidget {
   final bool initialExpanded;
   final bool selectable;
   final VoidCallback? onActionCompleted;
+  final ValueChanged<Post>? onPostUpdated;
 
   const PostTile({
     super.key,
@@ -30,6 +31,7 @@ class PostTile extends ConsumerStatefulWidget {
     this.initialExpanded = false,
     this.selectable = false,
     this.onActionCompleted,
+    this.onPostUpdated,
   });
 
   @override
@@ -747,9 +749,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             ListTile(
               leading: const Icon(Icons.reply),
               title: const Text('リプライ'),
@@ -818,6 +821,35 @@ class _PostTileState extends ConsumerState<PostTile> {
                   _confirmReport(context, targetPost);
                 },
               ),
+            if (isOwn && adapter is PinSupport) ...[
+              const Divider(),
+              ListTile(
+                leading: Icon(
+                  targetPost.pinned
+                      ? Icons.push_pin
+                      : Icons.push_pin_outlined,
+                ),
+                title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  final messenger = ScaffoldMessenger.of(context);
+                  final pinAdapter = adapter as PinSupport;
+                  if (targetPost.pinned) {
+                    _runAction(
+                      messenger,
+                      () => pinAdapter.unpinPost(targetPost.id),
+                      'ピン留めを解除しました',
+                    );
+                  } else {
+                    _runAction(
+                      messenger,
+                      () => pinAdapter.pinPost(targetPost.id),
+                      'ピン留めしました',
+                    );
+                  }
+                },
+              ),
+            ],
             if (isOwn) ...[
               const Divider(),
               if (ref.read(currentMulukhiyaProvider) != null)
@@ -853,6 +885,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             ],
           ],
+        ),
         ),
       ),
     );
@@ -1040,6 +1073,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     try {
       final updated = await action();
       ref.read(timelineProvider.notifier).updatePost(updated);
+      widget.onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {

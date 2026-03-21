@@ -73,6 +73,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  void _onPostUpdated(Post updated) {
+    setState(() {
+      if (updated.pinned) {
+        // ピン留め: リストになければ先頭に追加
+        if (!_pinnedPosts.any((p) => p.id == updated.id)) {
+          _pinnedPosts = [updated, ..._pinnedPosts];
+        }
+      } else {
+        // ピン留め解除: リストから除去
+        _pinnedPosts =
+            _pinnedPosts.where((p) => p.id != updated.id).toList();
+      }
+    });
+  }
+
   Future<void> _loadPosts() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -245,7 +260,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) => Column(
                   children: [
-                    PostTile(post: _pinnedPosts[index]),
+                    PostTile(
+                      post: _pinnedPosts[index],
+                      onPostUpdated: _onPostUpdated,
+                    ),
                     const Divider(height: 1),
                   ],
                 ),
@@ -269,7 +287,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 }
                 return Column(
                   children: [
-                    PostTile(post: _posts[index]),
+                    PostTile(
+                      post: _posts[index],
+                      onPostUpdated: _onPostUpdated,
+                    ),
                     const Divider(height: 1),
                   ],
                 );

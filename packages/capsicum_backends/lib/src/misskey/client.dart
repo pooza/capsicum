@@ -301,6 +301,16 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/i/pin
+  Future<void> pinNote(String noteId) async {
+    await dio.post('/api/i/pin', data: createBody({'noteId': noteId}));
+  }
+
+  /// POST /api/i/unpin
+  Future<void> unpinNote(String noteId) async {
+    await dio.post('/api/i/unpin', data: createBody({'noteId': noteId}));
+  }
+
   /// POST /api/notes/favorites/create
   Future<void> favoriteNote(String noteId) async {
     await dio.post(

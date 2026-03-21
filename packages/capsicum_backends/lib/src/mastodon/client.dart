@@ -274,6 +274,18 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/v1/statuses/:id/pin
+  Future<MastodonStatus> pinStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/pin');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses/:id/unpin
+  Future<MastodonStatus> unpinStatus(String id) async {
+    final response = await dio.post('/api/v1/statuses/$id/unpin');
+    return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/v1/statuses/:id/bookmark
   Future<MastodonStatus> bookmarkStatus(String id) async {
     final response = await dio.post('/api/v1/statuses/$id/bookmark');
