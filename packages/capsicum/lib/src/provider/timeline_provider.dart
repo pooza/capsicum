@@ -72,10 +72,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final visible = response.posts
         .where((p) => p.filterAction != FilterAction.hide)
         .toList();
-    return TimelineState(
-      posts: visible,
-      hasMore: response.rawCount > 0,
-    );
+    return TimelineState(posts: visible, hasMore: response.rawCount > 0);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {

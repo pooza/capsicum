@@ -28,5 +28,5 @@ Note: Occasionally the screen may reload after tapping "承認" instead of retur
 ## 提出手順
 
 1. App Store Connect → Resolution Center → 返信文を貼り付け
-2. App Store Connect → アプリ → v1.2.1 → App Review Information → Notes を上記 Review Notes 全文で**置き換え**（補足1・補足2は削除）
-3. v1.2.1 を再提出
+2. App Store Connect → アプリ → 最新バージョン → App Review Information → Notes を上記 Review Notes 全文で**置き換え**（補足1・補足2は削除）
+3. 最新バージョンを再提出
