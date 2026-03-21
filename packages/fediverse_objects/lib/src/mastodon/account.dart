@@ -16,6 +16,7 @@ class MastodonAccount {
   final int statusesCount;
   final bool? bot;
   final String? actorType;
+  final Map<String, dynamic>? role;
   final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>> fields;
   final List<Map<String, dynamic>>? emojis;
@@ -34,6 +35,7 @@ class MastodonAccount {
     required this.statusesCount,
     this.bot,
     this.actorType,
+    this.role,
     this.roles,
     this.fields = const [],
     this.emojis,

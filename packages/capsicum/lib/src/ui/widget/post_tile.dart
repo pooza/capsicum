@@ -283,36 +283,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                           ),
                         ],
                         for (final role in displayPost.author.roles)
-                          if (role.iconUrl != null) ...[
-                            const SizedBox(width: 4),
-                            Image.network(
-                              role.iconUrl!,
-                              width: 14,
-                              height: 14,
-                              errorBuilder: (_, _, _) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ] else if (role.isAdmin) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.shield,
-                              size: 14,
-                              color:
-                                  role.color != null &&
-                                      role.color!.startsWith('#') &&
-                                      role.color!.length >= 7
-                                  ? Color(
-                                      0xFF000000 |
-                                          int.parse(
-                                            role.color!.substring(1, 7),
-                                            radix: 16,
-                                          ),
-                                    )
-                                  : Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.color,
-                            ),
-                          ],
+                          ..._buildRoleIcon(context, role),
                         const SizedBox(width: 4),
                         Icon(
                           _scopeIcon(displayPost.scope),
@@ -1178,6 +1149,53 @@ class _PostTileState extends ConsumerState<PostTile> {
     final months = diff.inDays ~/ 30;
     if (months < 12) return '$monthsヶ月前';
     return '${diff.inDays ~/ 365}年前';
+  }
+
+  List<Widget> _buildRoleIcon(BuildContext context, UserRole role) {
+    final iconUrl = role.iconUrl;
+    if (iconUrl == null && role.isAdmin) {
+      // 管理者ロール: sabacan があればそれを使い、なければシールドアイコン
+      final sabacanUrl = ref.watch(sabacanUrlProvider).valueOrNull;
+      if (sabacanUrl != null) {
+        return [
+          const SizedBox(width: 4),
+          Image.network(
+            sabacanUrl,
+            width: 14,
+            height: 14,
+            errorBuilder: (_, _, _) => Icon(
+              Icons.shield,
+              size: 14,
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+          ),
+        ];
+      }
+      final color = role.color != null &&
+              role.color!.startsWith('#') &&
+              role.color!.length >= 7
+          ? Color(
+              0xFF000000 |
+                  int.parse(role.color!.substring(1, 7), radix: 16),
+            )
+          : Theme.of(context).textTheme.bodySmall?.color;
+      return [
+        const SizedBox(width: 4),
+        Icon(Icons.shield, size: 14, color: color),
+      ];
+    }
+    if (iconUrl != null) {
+      return [
+        const SizedBox(width: 4),
+        Image.network(
+          iconUrl,
+          width: 14,
+          height: 14,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      ];
+    }
+    return [];
   }
 
   IconData _scopeIcon(PostScope scope) {

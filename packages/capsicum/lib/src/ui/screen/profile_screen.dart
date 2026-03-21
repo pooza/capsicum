@@ -426,15 +426,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     );
                   } catch (_) {}
                 }
-                return Chip(
-                  avatar: role.iconUrl != null
+                Widget? avatar;
+                if (role.iconUrl != null) {
+                  avatar = Image.network(
+                    role.iconUrl!,
+                    width: 16,
+                    height: 16,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  );
+                } else if (role.isAdmin) {
+                  final sabacanUrl =
+                      ref.watch(sabacanUrlProvider).valueOrNull;
+                  avatar = sabacanUrl != null
                       ? Image.network(
-                          role.iconUrl!,
+                          sabacanUrl,
                           width: 16,
                           height: 16,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.shield, size: 16),
                         )
-                      : null,
+                      : const Icon(Icons.shield, size: 16);
+                }
+                return Chip(
+                  avatar: avatar,
                   label: Text(
                     role.name,
                     style: TextStyle(fontSize: 12, color: chipColor),

@@ -38,6 +38,21 @@ final themeSeedColorProvider = Provider<Color>((ref) {
   return Colors.green;
 });
 
+/// URL of the :sabacan: custom emoji on the current server (null if unavailable).
+final sabacanUrlProvider = FutureProvider<String?>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! CustomEmojiSupport) return null;
+  try {
+    final emojis = await (adapter as CustomEmojiSupport).getEmojis();
+    final sabacan = emojis
+        .where((e) => e.shortcode == 'sabacan')
+        .firstOrNull;
+    return sabacan?.url;
+  } catch (_) {
+    return null;
+  }
+});
+
 /// Local timeline display name: use default hashtag if available.
 final localTimelineNameProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
