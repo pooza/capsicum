@@ -610,6 +610,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/announcements');
             },
           ),
+          if (ref.read(currentAdapterProvider) is ListSupport)
+            ListTile(
+              leading: const Icon(Icons.list),
+              title: const Text('リスト'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/lists/manage');
+              },
+            ),
           if (ref.read(currentAdapterProvider) is ChannelSupport)
             ListTile(
               leading: const Icon(Icons.forum),
