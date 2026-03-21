@@ -8,18 +8,14 @@ import '../widget/user_avatar.dart';
 
 enum UserListType { followers, following, favouritedBy, rebloggedBy }
 
-typedef UserListFetcher = Future<({List<User> users, String? nextCursor})>
-    Function(String? cursor);
+typedef UserListFetcher =
+    Future<({List<User> users, String? nextCursor})> Function(String? cursor);
 
 class UserListScreen extends ConsumerStatefulWidget {
   final String title;
   final UserListFetcher fetcher;
 
-  const UserListScreen({
-    super.key,
-    required this.title,
-    required this.fetcher,
-  });
+  const UserListScreen({super.key, required this.title, required this.fetcher});
 
   @override
   ConsumerState<UserListScreen> createState() => _UserListScreenState();

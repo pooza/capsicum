@@ -612,10 +612,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                             ],
                             if (displayPost.reblogCount > 0) ...[
                               GestureDetector(
-                                onTap: () => _showRebloggedBy(
-                                  context,
-                                  displayPost,
-                                ),
+                                onTap: () =>
+                                    _showRebloggedBy(context, displayPost),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -629,8 +627,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     const SizedBox(width: 2),
                                     Text(
                                       '${displayPost.reblogCount}',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ],
                                 ),
@@ -654,10 +653,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                             ],
                             if (displayPost.favouriteCount > 0) ...[
                               GestureDetector(
-                                onTap: () => _showFavouritedBy(
-                                  context,
-                                  displayPost,
-                                ),
+                                onTap: () =>
+                                    _showFavouritedBy(context, displayPost),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -671,8 +668,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     const SizedBox(width: 2),
                                     Text(
                                       '${displayPost.favouriteCount}',
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ],
                                 ),
@@ -750,150 +748,149 @@ class _PostTileState extends ConsumerState<PostTile> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-            ListTile(
-              leading: const Icon(Icons.reply),
-              title: const Text('リプライ'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                context.push('/compose', extra: {'replyTo': targetPost});
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.format_quote),
-              title: const Text('引用'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                context.push(
-                  '/compose',
-                  extra: {'quoteTo': targetPost},
-                );
-              },
-            ),
-            if (adapter is FavoriteSupport)
               ListTile(
-                leading: const Icon(Icons.star_outline),
-                title: const Text('お気に入り'),
+                leading: const Icon(Icons.reply),
+                title: const Text('リプライ'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => (adapter as FavoriteSupport).favoritePost(
-                      targetPost.id,
-                    ),
-                    'お気に入りに追加しました',
-                  );
+                  context.push('/compose', extra: {'replyTo': targetPost});
                 },
               ),
-            if (adapter is ReactionSupport)
               ListTile(
-                leading: const Icon(Icons.add_reaction_outlined),
-                title: const Text('リアクション'),
+                leading: const Icon(Icons.format_quote),
+                title: const Text('引用'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _showEmojiPicker(context);
+                  context.push('/compose', extra: {'quoteTo': targetPost});
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.repeat),
-              title: Text(boostLabel),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _runAction(
-                  messenger,
-                  () => adapter.repeatPost(targetPost.id),
-                  '$boostLabelしました',
-                );
-              },
-            ),
-            if (adapter is BookmarkSupport)
-              ListTile(
-                leading: const Icon(Icons.bookmark_outline),
-                title: Text(bookmarkLabel),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => (adapter as BookmarkSupport).bookmarkPost(
-                      targetPost.id,
-                    ),
-                    '$bookmarkLabelに追加しました',
-                  );
-                },
-              ),
-            if (!isOwn && adapter is ReportSupport)
-              ListTile(
-                leading: const Icon(Icons.flag_outlined),
-                title: const Text('通報'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmReport(context, targetPost);
-                },
-              ),
-            if (isOwn && adapter is PinSupport) ...[
-              const Divider(),
-              ListTile(
-                leading: Icon(
-                  targetPost.pinned
-                      ? Icons.push_pin
-                      : Icons.push_pin_outlined,
-                ),
-                title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final pinAdapter = adapter as PinSupport;
-                  if (targetPost.pinned) {
-                    _runAction(
-                      messenger,
-                      () => pinAdapter.unpinPost(targetPost.id),
-                      'ピン留めを解除しました',
-                    );
-                  } else {
-                    _runAction(
-                      messenger,
-                      () => pinAdapter.pinPost(targetPost.id),
-                      'ピン留めしました',
-                    );
-                  }
-                },
-              ),
-            ],
-            if (isOwn) ...[
-              const Divider(),
-              if (ref.read(currentMulukhiyaProvider) != null)
+              if (adapter is FavoriteSupport)
                 ListTile(
-                  leading: const Icon(Icons.sell_outlined),
-                  title: const Text('削除してタグづけ'),
+                  leading: const Icon(Icons.star_outline),
+                  title: const Text('お気に入り'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    _showRetagSheet(context, targetPost);
+                    _runAction(
+                      messenger,
+                      () => (adapter as FavoriteSupport).favoritePost(
+                        targetPost.id,
+                      ),
+                      'お気に入りに追加しました',
+                    );
+                  },
+                ),
+              if (adapter is ReactionSupport)
+                ListTile(
+                  leading: const Icon(Icons.add_reaction_outlined),
+                  title: const Text('リアクション'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showEmojiPicker(context);
                   },
                 ),
               ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('削除して再編集'),
+                leading: const Icon(Icons.repeat),
+                title: Text(boostLabel),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  _confirmDeleteAndRedraft(context, targetPost);
+                  _runAction(
+                    messenger,
+                    () => adapter.repeatPost(targetPost.id),
+                    '$boostLabelしました',
+                  );
                 },
               ),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error,
+              if (adapter is BookmarkSupport)
+                ListTile(
+                  leading: const Icon(Icons.bookmark_outline),
+                  title: Text(bookmarkLabel),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _runAction(
+                      messenger,
+                      () => (adapter as BookmarkSupport).bookmarkPost(
+                        targetPost.id,
+                      ),
+                      '$bookmarkLabelに追加しました',
+                    );
+                  },
                 ),
-                title: Text(
-                  '削除',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+              if (!isOwn && adapter is ReportSupport)
+                ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: const Text('通報'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmReport(context, targetPost);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmDelete(context, targetPost);
-                },
-              ),
+              if (isOwn && adapter is PinSupport) ...[
+                const Divider(),
+                ListTile(
+                  leading: Icon(
+                    targetPost.pinned
+                        ? Icons.push_pin
+                        : Icons.push_pin_outlined,
+                  ),
+                  title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final pinAdapter = adapter as PinSupport;
+                    if (targetPost.pinned) {
+                      _runAction(
+                        messenger,
+                        () => pinAdapter.unpinPost(targetPost.id),
+                        'ピン留めを解除しました',
+                      );
+                    } else {
+                      _runAction(
+                        messenger,
+                        () => pinAdapter.pinPost(targetPost.id),
+                        'ピン留めしました',
+                      );
+                    }
+                  },
+                ),
+              ],
+              if (isOwn) ...[
+                const Divider(),
+                if (ref.read(currentMulukhiyaProvider) != null)
+                  ListTile(
+                    leading: const Icon(Icons.sell_outlined),
+                    title: const Text('削除してタグづけ'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showRetagSheet(context, targetPost);
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('削除して再編集'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmDeleteAndRedraft(context, targetPost);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(
+                    '削除',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmDelete(context, targetPost);
+                  },
+                ),
+              ],
             ],
-          ],
-        ),
+          ),
         ),
       ),
     );
@@ -1171,7 +1168,8 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Widget _buildInstanceTicker(BuildContext context, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
-    final color = themeColors[host] ??
+    final color =
+        themeColors[host] ??
         HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.5).toColor();
     return Padding(
       padding: const EdgeInsets.only(top: 2),
@@ -1182,10 +1180,9 @@ class _PostTileState extends ConsumerState<PostTile> {
           Expanded(
             child: Text(
               host,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(fontSize: 11, color: color),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontSize: 11, color: color),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1219,21 +1216,27 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final label = adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
     if (adapter is MastodonAdapter) {
-      context.push('/users', extra: {
-        'title': label,
-        'fetcher': (String? cursor) => adapter.getFavouritedBy(
-              post.id,
-              query: TimelineQuery(maxId: cursor, limit: 20),
-            ),
-      });
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getFavouritedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
     } else if (adapter is MisskeyAdapter) {
-      context.push('/users', extra: {
-        'title': label,
-        'fetcher': (String? cursor) => adapter.getReactedBy(
-              post.id,
-              query: TimelineQuery(maxId: cursor, limit: 20),
-            ),
-      });
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getReactedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
     }
   }
 
@@ -1242,21 +1245,27 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final label = adapter is ReactionSupport ? 'リノート' : 'ブースト';
     if (adapter is MastodonAdapter) {
-      context.push('/users', extra: {
-        'title': label,
-        'fetcher': (String? cursor) => adapter.getRebloggedBy(
-              post.id,
-              query: TimelineQuery(maxId: cursor, limit: 20),
-            ),
-      });
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getRebloggedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
     } else if (adapter is MisskeyAdapter) {
-      context.push('/users', extra: {
-        'title': label,
-        'fetcher': (String? cursor) => adapter.getRenotedBy(
-              post.id,
-              query: TimelineQuery(maxId: cursor, limit: 20),
-            ),
-      });
+      context.push(
+        '/users',
+        extra: {
+          'title': label,
+          'fetcher': (String? cursor) => adapter.getRenotedBy(
+            post.id,
+            query: TimelineQuery(maxId: cursor, limit: 20),
+          ),
+        },
+      );
     }
   }
 
@@ -1280,12 +1289,12 @@ class _PostTileState extends ConsumerState<PostTile> {
           ),
         ];
       }
-      final color = role.color != null &&
+      final color =
+          role.color != null &&
               role.color!.startsWith('#') &&
               role.color!.length >= 7
           ? Color(
-              0xFF000000 |
-                  int.parse(role.color!.substring(1, 7), radix: 16),
+              0xFF000000 | int.parse(role.color!.substring(1, 7), radix: 16),
             )
           : Theme.of(context).textTheme.bodySmall?.color;
       return [

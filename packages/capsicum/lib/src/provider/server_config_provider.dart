@@ -12,8 +12,9 @@ final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
     final hex = account.mulukhiya?.themeColorHex;
     if (hex != null && hex.startsWith('#') && hex.length >= 7) {
       try {
-        map[account.key.host] =
-            Color(0xFF000000 | int.parse(hex.substring(1, 7), radix: 16));
+        map[account.key.host] = Color(
+          0xFF000000 | int.parse(hex.substring(1, 7), radix: 16),
+        );
       } catch (_) {}
     }
   }
@@ -60,9 +61,7 @@ final sabacanUrlProvider = FutureProvider<String?>((ref) async {
   if (adapter is! CustomEmojiSupport) return null;
   try {
     final emojis = await (adapter as CustomEmojiSupport).getEmojis();
-    final sabacan = emojis
-        .where((e) => e.shortcode == 'sabacan')
-        .firstOrNull;
+    final sabacan = emojis.where((e) => e.shortcode == 'sabacan').firstOrNull;
     return sabacan?.url;
   } catch (_) {
     return null;

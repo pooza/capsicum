@@ -83,8 +83,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         }
       } else {
         // ピン留め解除: リストから除去
-        _pinnedPosts =
-            _pinnedPosts.where((p) => p.id != updated.id).toList();
+        _pinnedPosts = _pinnedPosts.where((p) => p.id != updated.id).toList();
       }
     });
   }
@@ -386,13 +385,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 onTap: () {
                   final adapter =
                       ref.read(currentAdapterProvider)! as FollowSupport;
-                  context.push('/users', extra: {
-                    'title': 'フォロー',
-                    'fetcher': (String? cursor) => adapter.getFollowing(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                  });
+                  context.push(
+                    '/users',
+                    extra: {
+                      'title': 'フォロー',
+                      'fetcher': (String? cursor) => adapter.getFollowing(
+                        user.id,
+                        query: TimelineQuery(maxId: cursor, limit: 20),
+                      ),
+                    },
+                  );
                 },
                 child: _statItem(context, 'フォロー', user.followingCount),
               ),
@@ -401,13 +403,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 onTap: () {
                   final adapter =
                       ref.read(currentAdapterProvider)! as FollowSupport;
-                  context.push('/users', extra: {
-                    'title': 'フォロワー',
-                    'fetcher': (String? cursor) => adapter.getFollowers(
-                          user.id,
-                          query: TimelineQuery(maxId: cursor, limit: 20),
-                        ),
-                  });
+                  context.push(
+                    '/users',
+                    extra: {
+                      'title': 'フォロワー',
+                      'fetcher': (String? cursor) => adapter.getFollowers(
+                        user.id,
+                        query: TimelineQuery(maxId: cursor, limit: 20),
+                      ),
+                    },
+                  );
                 },
                 child: _statItem(context, 'フォロワー', user.followersCount),
               ),
@@ -456,8 +461,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   );
                 } else if (role.isAdmin) {
-                  final sabacanUrl =
-                      ref.watch(sabacanUrlProvider).valueOrNull;
+                  final sabacanUrl = ref.watch(sabacanUrlProvider).valueOrNull;
                   avatar = sabacanUrl != null
                       ? Image.network(
                           sabacanUrl,
@@ -552,10 +556,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             switch (value) {
               case 'mute':
                 await _performAction(() => adapter.muteUser(widget.user.id));
-                ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
               case 'mute_duration':
                 await _showMuteDurationPicker(adapter);
-                ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
               case 'unmute':
                 _performAction(() => adapter.unmuteUser(widget.user.id));
               case 'block':

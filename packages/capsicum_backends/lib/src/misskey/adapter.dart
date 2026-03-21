@@ -569,13 +569,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    final users = reactions
-        .where((r) => r['user'] is Map<String, dynamic>)
-        .map((r) {
-          final u = MisskeyUser.fromJson(r['user'] as Map<String, dynamic>);
-          return u.toCapsicum(host);
-        })
-        .toList();
+    final users = reactions.where((r) => r['user'] is Map<String, dynamic>).map(
+      (r) {
+        final u = MisskeyUser.fromJson(r['user'] as Map<String, dynamic>);
+        return u.toCapsicum(host);
+      },
+    ).toList();
     return (users: users, nextCursor: reactions.lastOrNull?['id'] as String?);
   }
 
@@ -588,13 +587,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    final users = notes
-        .where((n) => n['user'] is Map<String, dynamic>)
-        .map((n) {
-          final u = MisskeyUser.fromJson(n['user'] as Map<String, dynamic>);
-          return u.toCapsicum(host);
-        })
-        .toList();
+    final users = notes.where((n) => n['user'] is Map<String, dynamic>).map((
+      n,
+    ) {
+      final u = MisskeyUser.fromJson(n['user'] as Map<String, dynamic>);
+      return u.toCapsicum(host);
+    }).toList();
     return (users: users, nextCursor: notes.lastOrNull?['id'] as String?);
   }
 

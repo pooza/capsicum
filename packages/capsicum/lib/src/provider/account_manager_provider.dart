@@ -50,8 +50,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Detect mulukhiya on the server (non-blocking — failure is fine).
     final mulukhiya = await _detectMulukhiya(account.key.host);
     if (mulukhiya != null && account.adapter is MastodonAdapter) {
-      (account.adapter as MastodonAdapter)
-          .applyAdminRoleIds(mulukhiya.adminRoleIds);
+      (account.adapter as MastodonAdapter).applyAdminRoleIds(
+        mulukhiya.adminRoleIds,
+      );
     }
     final enriched = mulukhiya != null
         ? Account(

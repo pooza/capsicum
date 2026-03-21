@@ -151,9 +151,11 @@ class MulukhiyaService {
       final theme = config['theme'] as Map<String, dynamic>?;
       final features = config['features'] as Map<String, dynamic>?;
 
-      final adminRoleIds = (config['admin_role_ids'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList() ?? const [];
+      final adminRoleIds =
+          (config['admin_role_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [];
 
       return MulukhiyaService._(
         dio: dio,

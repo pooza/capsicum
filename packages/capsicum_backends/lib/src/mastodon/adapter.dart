@@ -282,9 +282,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final ctx = await client.getStatusContext(postId);
     final target = await client.getStatus(postId);
     return [
-      ...ctx.ancestors.map((s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds)),
+      ...ctx.ancestors.map(
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      ),
       target.toCapsicum(host),
-      ...ctx.descendants.map((s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds)),
+      ...ctx.descendants.map(
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      ),
     ];
   }
 
@@ -502,7 +506,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -518,7 +524,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -533,7 +541,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -548,7 +558,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return (
-      users: result.accounts.map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds)).toList(),
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
       nextCursor: result.nextMaxId,
     );
   }
@@ -562,7 +574,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return notifications.map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds)).toList();
+    return notifications
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -595,7 +609,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<User>> searchUsers(String query, {int? limit}) async {
     final accounts = await client.searchAccounts(query, limit: limit);
-    return accounts.map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds)).toList();
+    return accounts
+        .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -669,7 +685,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<User>> getListAccounts(String listId) async {
     final accounts = await client.getListAccounts(listId);
-    return accounts.map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds)).toList();
+    return accounts
+        .map((a) => a.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override

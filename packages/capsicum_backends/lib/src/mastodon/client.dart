@@ -131,8 +131,11 @@ class MastodonClient {
   }
 
   /// GET /api/v1/statuses/:id/favourited_by
-  Future<({List<MastodonAccount> accounts, String? nextMaxId})>
-  getFavouritedBy(String id, {String? maxId, int? limit}) async {
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getFavouritedBy(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
     final response = await dio.get(
       '/api/v1/statuses/$id/favourited_by',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},
@@ -144,8 +147,11 @@ class MastodonClient {
   }
 
   /// GET /api/v1/statuses/:id/reblogged_by
-  Future<({List<MastodonAccount> accounts, String? nextMaxId})>
-  getRebloggedBy(String id, {String? maxId, int? limit}) async {
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getRebloggedBy(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
     final response = await dio.get(
       '/api/v1/statuses/$id/reblogged_by',
       queryParameters: {'max_id': ?maxId, 'limit': ?limit},
