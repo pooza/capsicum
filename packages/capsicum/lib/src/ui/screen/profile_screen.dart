@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
@@ -527,16 +528,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         const SizedBox(width: 8),
         PopupMenuButton<String>(
-          onSelected: (value) {
+          onSelected: (value) async {
             switch (value) {
               case 'mute':
-                _performAction(() => adapter.muteUser(widget.user.id));
+                await _performAction(() => adapter.muteUser(widget.user.id));
+                ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
               case 'mute_duration':
-                _showMuteDurationPicker(adapter);
+                await _showMuteDurationPicker(adapter);
+                ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
               case 'unmute':
                 _performAction(() => adapter.unmuteUser(widget.user.id));
               case 'block':
-                _confirmAndBlock(adapter);
+                await _confirmAndBlock(adapter);
               case 'unblock':
                 _performAction(() => adapter.unblockUser(widget.user.id));
             }
@@ -620,6 +623,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
     if (confirmed == true && mounted) {
       await _performAction(() => adapter.blockUser(widget.user.id));
+      ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
       if (!mounted) return;
       await _showReportToDeveloperDialog();
     }
