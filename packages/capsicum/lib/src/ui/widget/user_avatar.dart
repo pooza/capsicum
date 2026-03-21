@@ -21,8 +21,7 @@ class UserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final decorations = user.avatarDecorations;
     // compact: デコレーション用パディングを省略しアバターサイズを維持
-    final padding =
-        decorations.isEmpty || compact ? 0.0 : size * 0.25;
+    final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
 
     final avatar = ClipRRect(

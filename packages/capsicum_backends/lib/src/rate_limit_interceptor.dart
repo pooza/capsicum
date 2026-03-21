@@ -24,7 +24,7 @@ class RateLimitInterceptor extends Interceptor {
   int? _remaining;
 
   RateLimitInterceptor(this._dio, {Random? random})
-      : _random = random ?? Random();
+    : _random = random ?? Random();
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
@@ -34,7 +34,9 @@ class RateLimitInterceptor extends Interceptor {
 
   @override
   void onRequest(
-      RequestOptions options, RequestInterceptorHandler handler) async {
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
     // Skip preemptive wait for retry requests (already delayed).
     if ((options.extra[_retryCountKey] as int? ?? 0) > 0) {
       return handler.next(options);

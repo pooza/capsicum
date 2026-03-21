@@ -595,9 +595,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('開発者への報告'),
-        content: const Text(
-          'このユーザーをブロックしました。\nこの問題をアプリ開発者にも報告しますか？',
-        ),
+        content: const Text('このユーザーをブロックしました。\nこの問題をアプリ開発者にも報告しますか？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

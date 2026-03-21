@@ -74,18 +74,23 @@ void main() {
 
       expect(
         () => dio.get('/test'),
-        throwsA(isA<DioException>().having(
-          (e) => e.response?.statusCode,
-          'statusCode',
-          500,
-        )),
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.response?.statusCode,
+            'statusCode',
+            500,
+          ),
+        ),
       );
     });
 
     test('retries on 429 and succeeds', () async {
-      adapter.enqueue(429, headers: {
-        'retry-after': ['1'],
-      });
+      adapter.enqueue(
+        429,
+        headers: {
+          'retry-after': ['1'],
+        },
+      );
       adapter.enqueue(200);
 
       final response = await dio.get('/test');
@@ -94,9 +99,12 @@ void main() {
     });
 
     test('respects Retry-After header', () async {
-      adapter.enqueue(429, headers: {
-        'retry-after': ['1'],
-      });
+      adapter.enqueue(
+        429,
+        headers: {
+          'retry-after': ['1'],
+        },
+      );
       adapter.enqueue(200);
 
       final stopwatch = Stopwatch()..start();
@@ -114,11 +122,13 @@ void main() {
 
       expect(
         () => dio.get('/test'),
-        throwsA(isA<DioException>().having(
-          (e) => e.response?.statusCode,
-          'statusCode',
-          429,
-        )),
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.response?.statusCode,
+            'statusCode',
+            429,
+          ),
+        ),
       );
     });
 
@@ -135,12 +145,17 @@ void main() {
     });
 
     test('parses X-RateLimit-Remaining and X-RateLimit-Reset', () async {
-      final resetTime =
-          DateTime.now().add(const Duration(seconds: 2)).toUtc().toIso8601String();
-      adapter.enqueue(200, headers: {
-        'x-ratelimit-remaining': ['2'],
-        'x-ratelimit-reset': [resetTime],
-      });
+      final resetTime = DateTime.now()
+          .add(const Duration(seconds: 2))
+          .toUtc()
+          .toIso8601String();
+      adapter.enqueue(
+        200,
+        headers: {
+          'x-ratelimit-remaining': ['2'],
+          'x-ratelimit-reset': [resetTime],
+        },
+      );
       // First request succeeds and populates rate limit state.
       await dio.get('/first');
 
@@ -154,12 +169,17 @@ void main() {
     });
 
     test('does not delay when remaining is above threshold', () async {
-      final resetTime =
-          DateTime.now().add(const Duration(seconds: 5)).toUtc().toIso8601String();
-      adapter.enqueue(200, headers: {
-        'x-ratelimit-remaining': ['100'],
-        'x-ratelimit-reset': [resetTime],
-      });
+      final resetTime = DateTime.now()
+          .add(const Duration(seconds: 5))
+          .toUtc()
+          .toIso8601String();
+      adapter.enqueue(
+        200,
+        headers: {
+          'x-ratelimit-remaining': ['100'],
+          'x-ratelimit-reset': [resetTime],
+        },
+      );
       await dio.get('/first');
 
       adapter.enqueue(200);
