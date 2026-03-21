@@ -27,6 +27,7 @@ class _MediaEntry {
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
   final Post? replyTo;
+  final Post? quoteTo;
   final String? channelId;
   final String? channelName;
 
@@ -34,6 +35,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     super.key,
     this.redraft,
     this.replyTo,
+    this.quoteTo,
     this.channelId,
     this.channelName,
   });
@@ -116,6 +118,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     } else if (replyTo != null) {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
+    } else if (widget.quoteTo != null) {
+      _scope = widget.quoteTo!.scope;
     }
     _controller.addListener(_onTextChanged);
   }
@@ -494,6 +498,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           content: text.isNotEmpty ? text : null,
           scope: _scope,
           inReplyToId: widget.replyTo?.id,
+          quoteId: widget.quoteTo?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
@@ -551,6 +556,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.replyTo != null) _ReplyPreview(post: widget.replyTo!),
+            if (widget.quoteTo != null) _QuotePreview(post: widget.quoteTo!),
             if (_cwEnabled)
               TextField(
                 controller: _cwController,
@@ -864,6 +870,82 @@ class _ReplyPreview extends StatelessWidget {
         children: [
           Icon(
             Icons.reply,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                EmojiText(
+                  displayName,
+                  emojis: post.author.emojis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (preview.isNotEmpty)
+                  Text(
+                    preview,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuotePreview extends StatelessWidget {
+  final Post post;
+
+  const _QuotePreview({required this.post});
+
+  String _extractPlainText(String content) {
+    final isHtml = content.contains('<') && content.contains('>');
+    if (!isHtml) return content;
+    var text = content
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '');
+    text = text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
+    return text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayName = post.author.displayName ?? post.author.username;
+    final preview = _extractPlainText(post.content ?? '');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.format_quote,
             size: 16,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),

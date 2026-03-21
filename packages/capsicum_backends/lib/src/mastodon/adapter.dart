@@ -219,6 +219,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       status: draft.content ?? '',
       visibility: mastodonVisibilityFromScope(draft.scope),
       inReplyToId: draft.inReplyToId,
+      quoteId: draft.quoteId,
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       sensitive: draft.sensitive ? true : null,

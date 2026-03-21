@@ -176,6 +176,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
       replyId: draft.inReplyToId,
+      renoteId: draft.quoteId,
       fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,

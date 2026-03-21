@@ -4,6 +4,7 @@ class PostDraft {
   final String? content;
   final PostScope scope;
   final String? inReplyToId;
+  final String? quoteId;
   final List<String> mediaIds;
   final String? spoilerText;
   final bool sensitive;
@@ -17,6 +18,7 @@ class PostDraft {
     this.content,
     this.scope = PostScope.public,
     this.inReplyToId,
+    this.quoteId,
     this.mediaIds = const [],
     this.spoilerText,
     this.sensitive = false,
