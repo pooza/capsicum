@@ -376,7 +376,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Future<void> _openEpisodeBrowser() async {
     final result = await context.push<String>('/episodes');
     if (result != null && mounted) {
-      _controller.text = result;
+      _controller.text = result.replaceFirst(RegExp(r'^---\n'), '');
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
@@ -443,17 +443,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (program.air) tags.add('エア番組');
       if (program.livecure) tags.add('実況');
       if (program.episode != null) {
-        tags.add('第${program.episode}${program.episodeSuffix ?? '話'}');
+        final suffix = (program.episodeSuffix?.isNotEmpty ?? false)
+            ? program.episodeSuffix!
+            : '話';
+        tags.add('${program.episode}$suffix');
       }
       if (program.subtitle != null) tags.add(program.subtitle!);
       tags.addAll(program.extraTags);
 
-      final yamlTags = tags.map((t) => '    - $t').join('\n');
+      final yamlTags = tags.map((t) => '  - $t').join('\n');
       final lines = ['command: user_config', 'tagging:', '  user_tags:'];
       lines.add(yamlTags);
       if (program.minutes != null) {
-        lines.add('  minutes: ${program.minutes}');
-        lines.add('decoration:');
         lines.add('  minutes: ${program.minutes}');
       }
       yaml = lines.join('\n');

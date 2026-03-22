@@ -196,15 +196,15 @@ class MulukhiyaService {
     for (final entry in data.entries) {
       final v = entry.value;
       if (v is! Map<String, dynamic>) continue;
-      if (v['enable'] != true) continue;
+      if (v['enable'] != true && v['enable'] != 1) continue;
       programs[entry.key] = MulukhiyaProgram(
         name: entry.key,
         series: v['series'] as String?,
         episode: v['episode']?.toString(),
         episodeSuffix: v['episode_suffix'] as String? ?? '話',
         subtitle: v['subtitle'] as String?,
-        air: v['air'] == true,
-        livecure: v['livecure'] == true,
+        air: v['air'] == true || v['air'] == 1,
+        livecure: v['livecure'] == true || v['livecure'] == 1,
         minutes: v['minutes'] as int?,
         extraTags:
             (v['extra_tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
