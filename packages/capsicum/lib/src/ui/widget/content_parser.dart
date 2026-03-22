@@ -651,12 +651,16 @@ typedef LinkTapCallback = void Function(String url);
 typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
 
+/// Synchronous URL resolver: returns the resolved URL or `null`.
+typedef UrlResolver = String? Function(String url);
+
 class ContentRenderer {
   final TextStyle baseStyle;
   final EmojiResolver resolveEmoji;
   final LinkTapCallback? onLinkTap;
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
+  final UrlResolver? resolveUrl;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -665,6 +669,7 @@ class ContentRenderer {
     this.onLinkTap,
     this.onHashtagTap,
     this.onMentionTap,
+    this.resolveUrl,
   });
 
   void dispose() {
@@ -830,8 +835,11 @@ class ContentRenderer {
         ];
 
       case _NodeType.url:
-        final url = node.text;
-        final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
+        final originalUrl = node.text;
+        final resolvedUrl = resolveUrl?.call(originalUrl) ?? originalUrl;
+        final uri =
+            Uri.tryParse(resolvedUrl) ??
+            Uri.tryParse(Uri.encodeFull(resolvedUrl));
         final isSafe =
             uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
         final recognizer = TapGestureRecognizer()
@@ -839,7 +847,7 @@ class ContentRenderer {
         _recognizers.add(recognizer);
         final displayUrl = uri != null
             ? _shortenUrl(Uri.decodeFull(uri.toString()))
-            : url;
+            : resolvedUrl;
         return [
           TextSpan(
             text: displayUrl,

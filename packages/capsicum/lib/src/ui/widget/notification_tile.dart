@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Notification;
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 import 'emoji_text.dart';
 import 'user_avatar.dart';
@@ -28,6 +29,26 @@ class _NotificationTileState extends State<NotificationTile> {
 
   Notification get notification => widget.notification;
 
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTcoUrls();
+  }
+
+  void _resolveTcoUrls() {
+    final content = notification.post?.content;
+    if (content == null) return;
+    for (final match in _tcoPattern.allMatches(content)) {
+      final url = match.group(0)!;
+      if (TcoResolver.getCached(url) != null) continue;
+      TcoResolver.resolve(url).then((resolved) {
+        if (resolved != null && mounted) setState(() {});
+      });
+    }
+  }
+
   @override
   void dispose() {
     _contentRenderer?.dispose();
@@ -47,6 +68,8 @@ class _NotificationTileState extends State<NotificationTile> {
         if (host != null) return 'https://$host/emoji/$shortcode.webp';
         return null;
       },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {

@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 
 class AnnouncementTile extends StatefulWidget {
@@ -25,6 +26,25 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
 
   Announcement get announcement => widget.announcement;
 
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTcoUrls();
+  }
+
+  void _resolveTcoUrls() {
+    final content = announcement.content;
+    for (final match in _tcoPattern.allMatches(content)) {
+      final url = match.group(0)!;
+      if (TcoResolver.getCached(url) != null) continue;
+      TcoResolver.resolve(url).then((resolved) {
+        if (resolved != null && mounted) setState(() {});
+      });
+    }
+  }
+
   @override
   void dispose() {
     _contentRenderer?.dispose();
@@ -41,6 +61,8 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
         }
         return null;
       },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {

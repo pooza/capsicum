@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -52,6 +53,21 @@ class _PostTileState extends ConsumerState<PostTile> {
     super.initState();
     if (widget.initialExpanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
+    }
+    _resolveTcoUrls();
+  }
+
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  void _resolveTcoUrls() {
+    final content = (post.reblog ?? post).content;
+    if (content == null) return;
+    for (final match in _tcoPattern.allMatches(content)) {
+      final url = match.group(0)!;
+      if (TcoResolver.getCached(url) != null) continue;
+      TcoResolver.resolve(url).then((resolved) {
+        if (resolved != null && mounted) setState(() {});
+      });
     }
   }
 
@@ -169,6 +185,8 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
         return null;
       },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
