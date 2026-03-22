@@ -376,7 +376,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Future<void> _openEpisodeBrowser() async {
     final result = await context.push<String>('/episodes');
     if (result != null && mounted) {
-      _controller.text = result;
+      _controller.text = result.replaceFirst(RegExp(r'^---\n'), '');
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
