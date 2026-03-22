@@ -6,11 +6,7 @@ class ServerMetadata {
   final String? iconUrl;
   final String? themeColor;
 
-  const ServerMetadata({
-    required this.name,
-    this.iconUrl,
-    this.themeColor,
-  });
+  const ServerMetadata({required this.name, this.iconUrl, this.themeColor});
 }
 
 class ServerMetadataCache {
@@ -31,12 +27,14 @@ class ServerMetadataCache {
 
   Future<ServerMetadata?> _doFetch(String host) async {
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 5),
-        receiveTimeout: const Duration(seconds: 5),
-      ));
-      final metadata = await _tryMastodon(dio, host) ??
-          await _tryMisskey(dio, host);
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+        ),
+      );
+      final metadata =
+          await _tryMastodon(dio, host) ?? await _tryMisskey(dio, host);
       if (metadata != null) {
         _cache[host] = metadata;
       }

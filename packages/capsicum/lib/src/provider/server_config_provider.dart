@@ -24,6 +24,8 @@ final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
 
 /// Resolve theme color for a host.
 /// Priority: mulukhiya → server API cache → deterministic fallback.
+/// Mulukhiya colors are used as-is (designed as dark backgrounds for white text).
+/// Other sources are adjusted to ensure sufficient contrast with white text.
 Color resolveHostColor(Map<String, Color> mulukhiyaColors, String host) {
   final mulukhiya = mulukhiyaColors[host];
   if (mulukhiya != null) return mulukhiya;
@@ -32,11 +34,20 @@ Color resolveHostColor(Map<String, Color> mulukhiyaColors, String host) {
   final hex = cached?.themeColor;
   if (hex != null) {
     final parsed = _parseHexColor(hex);
-    if (parsed != null) return parsed;
+    if (parsed != null) return _ensureDark(parsed);
   }
 
   // Deterministic fallback based on host hash.
-  return HSLColor.fromAHSL(1, host.hashCode % 360, 0.4, 0.45).toColor();
+  return HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.35).toColor();
+}
+
+/// Darken a color if it is too bright for white text.
+Color _ensureDark(Color color) {
+  final hsl = HSLColor.fromColor(color);
+  if (hsl.lightness > 0.45) {
+    return hsl.withLightness(0.35).toColor();
+  }
+  return color;
 }
 
 Color? _parseHexColor(String hex) {

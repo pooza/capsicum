@@ -1213,17 +1213,16 @@ class _PostTileState extends ConsumerState<PostTile> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
+                color: color,
                 borderRadius: BorderRadius.circular(3),
-                border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
               ),
               child: Text(
                 label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 11,
-                      color: color,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  fontSize: 11,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
