@@ -6,19 +6,19 @@ capsicum
 
 ## 短い説明文（80文字以内）
 
-Mastodon / Misskey 対応の Fediverse クライアント。複数アカウントに対応。
+Fediverse クライアント。複数サーバー・アカウントに対応。
 
 ## App Store サブタイトル（30文字以内）
 
-Mastodon / Misskey クライアント
+Fediverse クライアント
 
 ## App Store プロモーションテキスト
 
-Mastodon も Misskey も、ひとつのアプリで。
+分散型SNSを、ひとつのアプリで。
 
 ## 詳細な説明文
 
-capsicum は、Mastodon と Misskey に対応した Fediverse クライアントアプリです。
+capsicum は、分散型SNS（Fediverse）に対応したサードパーティクライアントアプリです。Mastodon・Misskey などのオープンソース SNS プラットフォームに接続できます。
 
 お好みのサーバーにログインして、タイムラインの閲覧や投稿をお楽しみいただけます。複数のサーバー・アカウントを登録して切り替えることも可能です。
 
