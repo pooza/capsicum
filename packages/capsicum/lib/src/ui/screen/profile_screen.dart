@@ -83,8 +83,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         }
         _posts = _posts.where((p) => p.id != updated.id).toList();
       } else {
-        // ピン留め解除: ピン留めリストから除去
+        // ピン留め解除: ピン留めリストから除去し、通常リストに復元
         _pinnedPosts = _pinnedPosts.where((p) => p.id != updated.id).toList();
+        if (!_posts.any((p) => p.id == updated.id)) {
+          _posts = [updated, ..._posts];
+        }
       }
     });
   }
