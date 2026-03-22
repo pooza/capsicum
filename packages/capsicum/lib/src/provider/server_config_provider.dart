@@ -2,9 +2,10 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
 
-/// Host → theme color map from all accounts' mulukhiya services.
+/// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
   final accounts = ref.watch(accountManagerProvider).accounts;
   final map = <String, Color>{};
@@ -20,6 +21,33 @@ final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
   }
   return map;
 });
+
+/// Resolve theme color for a host.
+/// Priority: mulukhiya → server API cache → deterministic fallback.
+Color resolveHostColor(Map<String, Color> mulukhiyaColors, String host) {
+  final mulukhiya = mulukhiyaColors[host];
+  if (mulukhiya != null) return mulukhiya;
+
+  final cached = ServerMetadataCache.instance.getCached(host);
+  final hex = cached?.themeColor;
+  if (hex != null) {
+    final parsed = _parseHexColor(hex);
+    if (parsed != null) return parsed;
+  }
+
+  // Deterministic fallback based on host hash.
+  return HSLColor.fromAHSL(1, host.hashCode % 360, 0.4, 0.45).toColor();
+}
+
+Color? _parseHexColor(String hex) {
+  final raw = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (raw.length < 6) return null;
+  try {
+    return Color(0xFF000000 | int.parse(raw.substring(0, 6), radix: 16));
+  } catch (_) {
+    return null;
+  }
+}
 
 /// The label to use for "post" actions (e.g. "キュア！" on precure.fun).
 final postLabelProvider = Provider<String>((ref) {

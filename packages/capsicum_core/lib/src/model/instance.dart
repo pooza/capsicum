@@ -3,6 +3,7 @@ class Instance {
   final String? description;
   final String? iconUrl;
   final String? version;
+  final String? themeColor;
   final int? userCount;
   final int? postCount;
 
@@ -11,6 +12,7 @@ class Instance {
     this.description,
     this.iconUrl,
     this.version,
+    this.themeColor,
     this.userCount,
     this.postCount,
   });

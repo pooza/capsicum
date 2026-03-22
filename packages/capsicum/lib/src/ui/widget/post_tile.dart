@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
@@ -1190,23 +1191,42 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Widget _buildInstanceTicker(BuildContext context, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
-    final color =
-        themeColors[host] ??
-        HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.5).toColor();
+    final color = resolveHostColor(themeColors, host);
+    final cached = ServerMetadataCache.instance.getCached(host);
+    final label = cached?.name ?? host;
+
+    if (cached == null) {
+      ServerMetadataCache.instance.fetch(host).then((_) {
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+      });
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Row(
         children: [
-          Icon(Icons.dns_outlined, size: 12, color: color),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              host,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontSize: 11, color: color),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+              ),
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ],

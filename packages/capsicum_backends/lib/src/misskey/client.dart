@@ -719,6 +719,12 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/meta (no authentication required)
+  Future<Map<String, dynamic>> getMeta() async {
+    final response = await dio.post('/api/meta', data: {});
+    return response.data as Map<String, dynamic>;
+  }
+
   /// GET /url
   Future<Map<String, dynamic>> getUrlPreview(String url) async {
     final response = await dio.get('/url', queryParameters: {'url': url});
