@@ -27,25 +27,25 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       isBot: isBot ?? false,
       roles: roles != null
           ? roles!
-              .map(
-                (r) => UserRole(
-                  id: r['id']?.toString() ?? '',
-                  name: r['name'] as String? ?? '',
-                  color: r['color'] as String?,
-                  iconUrl: r['iconUrl'] as String?,
-                  isAdmin: r['isAdministrator'] as bool? ?? false,
-                ),
-              )
-              .toList()
+                .map(
+                  (r) => UserRole(
+                    id: r['id']?.toString() ?? '',
+                    name: r['name'] as String? ?? '',
+                    color: r['color'] as String?,
+                    iconUrl: r['iconUrl'] as String?,
+                    isAdmin: r['isAdministrator'] as bool? ?? false,
+                  ),
+                )
+                .toList()
           : (badgeRoles ?? [])
-              .map(
-                (r) => UserRole(
-                  id: '',
-                  name: r['name'] as String? ?? '',
-                  iconUrl: r['iconUrl'] as String?,
-                ),
-              )
-              .toList(),
+                .map(
+                  (r) => UserRole(
+                    id: '',
+                    name: r['name'] as String? ?? '',
+                    iconUrl: r['iconUrl'] as String?,
+                  ),
+                )
+                .toList(),
       fields: (fields ?? [])
           .map(
             (f) => UserField(
