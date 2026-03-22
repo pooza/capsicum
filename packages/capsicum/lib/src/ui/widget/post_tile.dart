@@ -66,7 +66,11 @@ class _PostTileState extends ConsumerState<PostTile> {
       final url = match.group(0)!;
       if (TcoResolver.getCached(url) != null) continue;
       TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) setState(() {});
+        if (resolved != null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
       });
     }
   }

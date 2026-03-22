@@ -44,7 +44,11 @@ class _NotificationTileState extends State<NotificationTile> {
       final url = match.group(0)!;
       if (TcoResolver.getCached(url) != null) continue;
       TcoResolver.resolve(url).then((resolved) {
-        if (resolved != null && mounted) setState(() {});
+        if (resolved != null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
       });
     }
   }
