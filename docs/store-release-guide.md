@@ -155,6 +155,10 @@ flutter pub upgrade --major-versions
 ```bash
 cd packages/capsicum
 
+# クリーンビルド（シミュレータバイナリ混入防止のため必須）
+flutter clean && flutter pub get
+cd ios && pod install --repo-update && cd ..
+
 # Sentry DSN（全ビルドで常に指定する）
 SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
 
