@@ -18,6 +18,7 @@ const _channelMap = <TimelineType, String>{
 class MisskeyStreaming {
   final String host;
   final String accessToken;
+  final Set<String> adminRoleIds;
 
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
@@ -30,7 +31,11 @@ class MisskeyStreaming {
   static const _baseReconnectDelay = Duration(seconds: 5);
   static const _maxReconnectDelay = Duration(seconds: 300);
 
-  MisskeyStreaming({required this.host, required this.accessToken});
+  MisskeyStreaming({
+    required this.host,
+    required this.accessToken,
+    this.adminRoleIds = const {},
+  });
 
   Stream<Post> connect(TimelineType type) {
     _currentType = type;
@@ -91,7 +96,7 @@ class MisskeyStreaming {
       if (body['type'] != 'note') return;
       final noteJson = body['body'] as Map<String, dynamic>;
       final note = MisskeyNote.fromJson(noteJson);
-      _controller?.add(note.toCapsicum(host));
+      _controller?.add(note.toCapsicum(host, adminRoleIds: adminRoleIds));
     } catch (_) {
       // Ignore malformed messages.
     }

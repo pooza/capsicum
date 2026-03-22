@@ -12,7 +12,7 @@ String misskeyVisibilityFromScope(PostScope scope) =>
     misskeyVisibilityRosetta.entries.firstWhere((e) => e.value == scope).key;
 
 extension CapsicumMisskeyUserExtension on MisskeyUser {
-  User toCapsicum(String localHost) {
+  User toCapsicum(String localHost, {Set<String> adminRoleIds = const {}}) {
     return User(
       id: id,
       username: username,
@@ -33,7 +33,9 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
                     name: r['name'] as String? ?? '',
                     color: r['color'] as String?,
                     iconUrl: r['iconUrl'] as String?,
-                    isAdmin: r['isAdministrator'] as bool? ?? false,
+                    isAdmin:
+                        (r['isAdministrator'] as bool? ?? false) ||
+                        adminRoleIds.contains(r['id']?.toString() ?? ''),
                   ),
                 )
                 .toList()
@@ -73,13 +75,17 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
 }
 
 extension CapsicumMisskeyNoteExtension on MisskeyNote {
-  Post toCapsicum(String localHost, {bool pinned = false}) {
+  Post toCapsicum(
+    String localHost, {
+    bool pinned = false,
+    Set<String> adminRoleIds = const {},
+  }) {
     // Misskey: renote + text = quote, renote without text = simple renote
     final isQuote = renote != null && text != null;
     return Post(
       id: id,
       postedAt: createdAt,
-      author: user.toCapsicum(localHost),
+      author: user.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       content: text,
       scope: misskeyVisibilityRosetta[visibility] ?? PostScope.public,
       attachments: (files ?? []).map((f) => f.toCapsicum()).toList(),
@@ -89,8 +95,12 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       reactions: reactions ?? const {},
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
-      reblog: isQuote ? null : renote?.toCapsicum(localHost),
-      quote: isQuote ? renote?.toCapsicum(localHost) : null,
+      reblog: isQuote
+          ? null
+          : renote?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      quote: isQuote
+          ? renote?.toCapsicum(localHost, adminRoleIds: adminRoleIds)
+          : null,
       poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
       emojis: reactionEmojis ?? const {},
@@ -114,13 +124,16 @@ const misskeyNotificationTypeMap = <String, NotificationType>{
 };
 
 extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
-  Notification toCapsicum(String localHost) {
+  Notification toCapsicum(
+    String localHost, {
+    Set<String> adminRoleIds = const {},
+  }) {
     return Notification(
       id: id,
       type: misskeyNotificationTypeMap[type] ?? NotificationType.other,
       createdAt: createdAt,
-      user: user?.toCapsicum(localHost),
-      post: note?.toCapsicum(localHost),
+      user: user?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      post: note?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
     );
   }
 }

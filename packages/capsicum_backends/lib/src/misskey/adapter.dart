@@ -86,6 +86,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
+  final Set<String> _adminRoleIds = {};
+
+  void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
   @override
   final String host;
@@ -139,24 +142,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final user = await client.getI();
     _mutedWords = user.mutedWords ?? [];
     _hardMutedWords = user.hardMutedWords ?? [];
-    return user.toCapsicum(host);
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<User?> getUser(String username, [String? remoteHost]) async {
     final user = await client.showUserByName(username, remoteHost);
-    return user?.toCapsicum(host);
+    return user?.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<User> getUserById(String id) async {
     final user = await client.showUser(id);
-    return user.toCapsicum(host);
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
     final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
-    return _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id).results;
+    return _safeConvert(
+      notes,
+      (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      (n) => n.id,
+    ).results;
   }
 
   Future<List<Post>> getPinnedPosts(String id) async {
@@ -165,7 +172,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final notes = rawNotes.map((e) => MisskeyNote.fromJson(e)).toList();
     return _safeConvert(
       notes,
-      (n) => n.toCapsicum(host, pinned: true),
+      (n) => n.toCapsicum(host, pinned: true, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     ).results;
   }
@@ -183,7 +190,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       channelId: draft.channelId,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
-    return note.toCapsicum(host);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -221,7 +228,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     };
     final converted = _safeConvert(
       notes,
-      (n) => n.toCapsicum(host),
+      (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     );
     final posts = converted.results.map(_applyWordFilter).toList();
@@ -323,7 +330,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> getPostById(String id) async {
     final note = await client.getNote(id);
-    return note.toCapsicum(host);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -336,21 +343,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     var currentNote = target;
     while (currentNote.replyId != null) {
       final parent = await client.getNote(currentNote.replyId!);
-      ancestors.insert(0, parent.toCapsicum(host));
+      ancestors.insert(0, parent.toCapsicum(host, adminRoleIds: _adminRoleIds));
       currentNote = parent;
     }
 
     return [
       ...ancestors,
-      target.toCapsicum(host),
-      ...children.map((n) => n.toCapsicum(host)),
+      target.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      ...children.map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds)),
     ];
   }
 
   @override
   Future<Post> repeatPost(String id) async {
     final note = await client.renote(id);
-    return note.toCapsicum(host);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -430,7 +437,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
       return LoginSuccess(
         userSecret: UserSecret(accessToken: response.token),
-        user: response.user.toCapsicum(host),
+        user: response.user.toCapsicum(host, adminRoleIds: _adminRoleIds),
       );
     } catch (e, s) {
       return LoginFailure(e, s);
@@ -443,14 +450,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<Post> pinPost(String id) async {
     await client.pinNote(id);
     final note = await client.getNote(id);
-    return note.toCapsicum(host, pinned: true);
+    return note.toCapsicum(host, pinned: true, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<Post> unpinPost(String id) async {
     await client.unpinNote(id);
     final note = await client.getNote(id);
-    return note.toCapsicum(host, pinned: false);
+    return note.toCapsicum(host, pinned: false, adminRoleIds: _adminRoleIds);
   }
 
   // BookmarkSupport (Misskey の「お気に入り」= Mastodon のブックマーク相当)
@@ -459,14 +466,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<Post> bookmarkPost(String id) async {
     await client.favoriteNote(id);
     final note = await client.getNote(id);
-    return note.toCapsicum(host);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
   Future<Post> unbookmarkPost(String id) async {
     await client.unfavoriteNote(id);
     final note = await client.getNote(id);
-    return note.toCapsicum(host);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   @override
@@ -476,7 +483,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(notes, (n) => n.toCapsicum(host), (n) => n.id).results;
+    return _safeConvert(
+      notes,
+      (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      (n) => n.id,
+    ).results;
   }
 
   // AnnouncementSupport
@@ -538,7 +549,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     final users = items.map((item) {
       final userData = item['follower'] as Map<String, dynamic>;
-      return MisskeyUser.fromJson(userData).toCapsicum(client.host);
+      return MisskeyUser.fromJson(
+        userData,
+      ).toCapsicum(client.host, adminRoleIds: _adminRoleIds);
     }).toList();
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
@@ -555,7 +568,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     final users = items.map((item) {
       final userData = item['followee'] as Map<String, dynamic>;
-      return MisskeyUser.fromJson(userData).toCapsicum(client.host);
+      return MisskeyUser.fromJson(
+        userData,
+      ).toCapsicum(client.host, adminRoleIds: _adminRoleIds);
     }).toList();
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
@@ -572,7 +587,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final users = reactions.where((r) => r['user'] is Map<String, dynamic>).map(
       (r) {
         final u = MisskeyUser.fromJson(r['user'] as Map<String, dynamic>);
-        return u.toCapsicum(host);
+        return u.toCapsicum(host, adminRoleIds: _adminRoleIds);
       },
     ).toList();
     return (users: users, nextCursor: reactions.lastOrNull?['id'] as String?);
@@ -591,7 +606,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       n,
     ) {
       final u = MisskeyUser.fromJson(n['user'] as Map<String, dynamic>);
-      return u.toCapsicum(host);
+      return u.toCapsicum(host, adminRoleIds: _adminRoleIds);
     }).toList();
     return (users: users, nextCursor: notes.lastOrNull?['id'] as String?);
   }
@@ -607,7 +622,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return _safeConvert(
       notifications,
-      (n) => n.toCapsicum(host),
+      (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     ).results;
   }
@@ -629,12 +644,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           final note = MisskeyNote.fromJson(
             data['object'] as Map<String, dynamic>,
           );
-          return SearchResults(posts: [note.toCapsicum(host)]);
+          return SearchResults(
+            posts: [note.toCapsicum(host, adminRoleIds: _adminRoleIds)],
+          );
         } else if (type == 'User') {
           final user = MisskeyUser.fromJson(
             data['object'] as Map<String, dynamic>,
           );
-          return SearchResults(users: [user.toCapsicum(host)]);
+          return SearchResults(
+            users: [user.toCapsicum(host, adminRoleIds: _adminRoleIds)],
+          );
         }
       } catch (_) {
         // resolve failed — return empty results.
@@ -647,7 +666,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final seen = <String>{};
     return SearchResults(
       users: users
-          .map((u) => u.toCapsicum(host))
+          .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
           .where((u) => seen.add(u.id))
           .toList(),
       hashtags: hashtags,
@@ -657,7 +676,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<User>> searchUsers(String query, {int? limit}) async {
     final users = await client.searchUsers(query, limit: limit);
-    return users.map((u) => u.toCapsicum(host)).toList();
+    return users
+        .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .toList();
   }
 
   @override
@@ -717,7 +738,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
+        .toList();
   }
 
   @override
@@ -745,7 +769,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final users = <User>[];
     for (final userId in userIds) {
       final misskeyUser = await client.showUser(userId);
-      users.add(misskeyUser.toCapsicum(host));
+      users.add(misskeyUser.toCapsicum(host, adminRoleIds: _adminRoleIds));
     }
     return users;
   }
@@ -786,7 +810,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
+        .toList();
   }
 
   // ChannelSupport
@@ -828,7 +855,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    return notes.map((n) => n.toCapsicum(host)).map(_applyWordFilter).toList();
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
+        .toList();
   }
 
   // PollSupport
@@ -847,7 +877,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _streaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MisskeyStreaming(host: host, accessToken: token);
+    _streaming = MisskeyStreaming(
+      host: host,
+      accessToken: token,
+      adminRoleIds: _adminRoleIds,
+    );
     return _streaming!.connect(type).map(_applyWordFilter);
   }
 
@@ -917,7 +951,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       bannerId: bannerId,
       fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
     );
-    return user.toCapsicum(host);
+    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
   // ReportSupport
