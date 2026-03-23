@@ -1,9 +1,11 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -16,15 +18,47 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
+          _sectionHeader(context, 'アカウント別'),
+          _AccountLabel(ref: ref),
           _ThemeColorTile(ref: ref),
-          const Divider(),
           _TabOrderTile(ref: ref),
-          const Divider(),
+          _sectionHeader(context, '共通'),
           _FontScaleTile(fontScale: fontScale, ref: ref),
         ],
       ),
     );
   }
+}
+
+class _AccountLabel extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _AccountLabel({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final account = ref.watch(currentAccountProvider);
+    if (account == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Text(
+        '@${account.key.username}@${account.key.host}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
+}
+
+Widget _sectionHeader(BuildContext context, String title) {
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    child: Text(
+      title,
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+    ),
+  );
 }
 
 class _ThemeColorTile extends StatelessWidget {
@@ -45,11 +79,6 @@ class _ThemeColorTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('テーマカラー', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            '@${account.key.username}@${account.key.host}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -89,7 +118,13 @@ class _TabOrderTile extends StatelessWidget {
 
   const _TabOrderTile({required this.ref});
 
-  static const _labels = {
+  static const _mastodonLabels = {
+    TimelineType.home: 'ホーム',
+    TimelineType.local: 'ローカル',
+    TimelineType.federated: '連合',
+  };
+
+  static const _misskeyLabels = {
     TimelineType.home: 'ホーム',
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
@@ -101,8 +136,19 @@ class _TabOrderTile extends StatelessWidget {
     final account = ref.watch(currentAccountProvider);
     if (account == null) return const SizedBox.shrink();
 
+    final adapter = ref.watch(currentAdapterProvider);
+    final supported = adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final isMisskey = adapter is ReactionSupport;
+    final labels = isMisskey ? _misskeyLabels : _mastodonLabels;
+
+    // モロヘイヤのデフォルトハッシュタグがあればローカルタブ名に反映
+    final localLabel = ref.watch(localTimelineNameProvider);
+
     final storageKey = account.key.toStorageKey();
     final order = ref.watch(tabOrderProvider(storageKey));
+    // サーバーがサポートするタイムラインのみ表示
+    final visibleOrder = order.where(supported.contains).toList();
     final isCustom = order != defaultTabOrder;
 
     return Padding(
@@ -115,9 +161,9 @@ class _TabOrderTile extends StatelessWidget {
           ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: order.length,
+            itemCount: visibleOrder.length,
             onReorder: (oldIndex, newIndex) {
-              final newOrder = List<TimelineType>.from(order);
+              final newOrder = List<TimelineType>.from(visibleOrder);
               if (newIndex > oldIndex) newIndex--;
               final item = newOrder.removeAt(oldIndex);
               newOrder.insert(newIndex, item);
@@ -126,12 +172,15 @@ class _TabOrderTile extends StatelessWidget {
                   .setOrder(newOrder);
             },
             itemBuilder: (context, index) {
-              final type = order[index];
+              final type = visibleOrder[index];
+              final label = type == TimelineType.local
+                  ? localLabel
+                  : (labels[type] ?? type.name);
               return ListTile(
                 key: ValueKey(type),
                 dense: true,
                 leading: const Icon(Icons.drag_handle),
-                title: Text(_labels[type] ?? type.name),
+                title: Text(label),
               );
             },
           ),
@@ -142,6 +191,23 @@ class _TabOrderTile extends StatelessWidget {
                   ref.read(tabOrderProvider(storageKey).notifier).reset();
                 },
                 child: const Text('デフォルトに戻す'),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'リストのタブはこれらの後に表示されます',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          if (adapter is ListSupport)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: TextButton.icon(
+                icon: const Icon(Icons.edit_note, size: 18),
+                label: const Text('リスト管理'),
+                onPressed: () => context.push('/lists/manage'),
               ),
             ),
         ],
