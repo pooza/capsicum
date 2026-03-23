@@ -646,6 +646,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
           ListTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('設定'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/settings');
+            },
+          ),
+          const Divider(),
+          ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('ログアウト'),
             onTap: () async {

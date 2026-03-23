@@ -20,6 +20,7 @@ import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
+import 'ui/screen/settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/list_members_screen.dart';
@@ -100,6 +101,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
       GoRoute(
         path: '/lists/manage',
         builder: (context, state) => const ListManagementScreen(),
