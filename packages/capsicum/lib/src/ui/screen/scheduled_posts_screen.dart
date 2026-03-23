@@ -78,7 +78,7 @@ class ScheduledPostsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('読み込みに失敗しました: $e')),
+        error: (_, _) => const Center(child: Text('読み込みに失敗しました')),
       ),
     );
   }
