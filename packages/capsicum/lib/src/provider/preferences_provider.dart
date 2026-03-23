@@ -22,8 +22,9 @@ const fontScaleStep = 0.1;
 ///
 /// Reads from SharedPreferences on first access and notifies listeners on
 /// changes, so the entire app rebuilds with the new text size.
-final fontScaleProvider =
-    NotifierProvider<FontScaleNotifier, double>(FontScaleNotifier.new);
+final fontScaleProvider = NotifierProvider<FontScaleNotifier, double>(
+  FontScaleNotifier.new,
+);
 
 /// Preset colors for the theme color picker.
 const themeColorPresets = [
@@ -112,9 +113,8 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
     if (saved != null) {
       final order = saved
           .map(
-            (name) => TimelineType.values
-                .where((t) => t.name == name)
-                .firstOrNull,
+            (name) =>
+                TimelineType.values.where((t) => t.name == name).firstOrNull,
           )
           .whereType<TimelineType>()
           .toList();

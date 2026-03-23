@@ -562,8 +562,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           onSelected: (value) async {
             switch (value) {
               case 'mute':
-                final ok =
-                    await _performAction(() => adapter.muteUser(widget.user.id));
+                final ok = await _performAction(
+                  () => adapter.muteUser(widget.user.id),
+                );
                 if (ok) {
                   ref
                       .read(timelineProvider.notifier)

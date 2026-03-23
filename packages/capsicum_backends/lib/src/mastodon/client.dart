@@ -304,7 +304,8 @@ class MastodonClient {
         content: params['text'] as String?,
         spoilerText: params['spoiler_text'] as String?,
         visibility: params['visibility'] as String?,
-        mediaIds: (json['media_attachments'] as List?)
+        mediaIds:
+            (json['media_attachments'] as List?)
                 ?.map((m) => (m as Map<String, dynamic>)['id'] as String)
                 .toList() ??
             [],

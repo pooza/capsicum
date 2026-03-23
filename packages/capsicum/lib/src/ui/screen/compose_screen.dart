@@ -501,9 +501,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final minTime = DateTime.now().add(const Duration(minutes: 5));
     if (scheduled.isBefore(minTime)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('5分以上先の日時を指定してください')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('5分以上先の日時を指定してください')));
       }
       return;
     }
@@ -552,9 +552,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       );
       if (mounted) {
         if (_scheduledAt != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('予約投稿を設定しました')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('予約投稿を設定しました')));
         } else {
           ref.invalidate(timelineProvider);
           if (widget.channelId != null) {

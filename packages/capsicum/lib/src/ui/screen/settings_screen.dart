@@ -55,8 +55,8 @@ Widget _sectionHeader(BuildContext context, String title) {
     child: Text(
       title,
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        color: Theme.of(context).colorScheme.primary,
+      ),
     ),
   );
 }
@@ -137,7 +137,8 @@ class _TabOrderTile extends StatelessWidget {
     if (account == null) return const SizedBox.shrink();
 
     final adapter = ref.watch(currentAdapterProvider);
-    final supported = adapter?.capabilities.supportedTimelines ??
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final isMisskey = adapter is ReactionSupport;
     final labels = isMisskey ? _misskeyLabels : _mastodonLabels;
@@ -237,9 +238,7 @@ class _ColorCircle extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: selected
-              ? Border.all(color: Colors.white, width: 3)
-              : null,
+          border: selected ? Border.all(color: Colors.white, width: 3) : null,
           boxShadow: selected
               ? [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 4)]
               : null,
@@ -275,8 +274,8 @@ class _FontScaleTile extends StatelessWidget {
                   value: fontScale,
                   min: minFontScale,
                   max: maxFontScale,
-                  divisions:
-                      ((maxFontScale - minFontScale) / fontScaleStep).round(),
+                  divisions: ((maxFontScale - minFontScale) / fontScaleStep)
+                      .round(),
                   label: '${(fontScale * 100).round()}%',
                   onChanged: (value) {
                     ref.read(fontScaleProvider.notifier).setScale(value);

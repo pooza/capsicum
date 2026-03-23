@@ -323,9 +323,8 @@ class MisskeyClient {
         content: json['text'] as String?,
         spoilerText: json['cw'] as String?,
         visibility: json['visibility'] as String?,
-        mediaIds: (json['fileIds'] as List?)
-                ?.map((id) => id as String)
-                .toList() ??
+        mediaIds:
+            (json['fileIds'] as List?)?.map((id) => id as String).toList() ??
             [],
       );
     }).toList();

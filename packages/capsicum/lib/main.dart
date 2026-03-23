@@ -86,9 +86,9 @@ class CapsicumApp extends ConsumerWidget {
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);
         return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(fontScale),
-          ),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(fontScale)),
           child: child!,
         );
       },

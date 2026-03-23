@@ -236,8 +236,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
         sensitive: draft.sensitive ? true : null,
-        extraHeaders:
-            draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
+        extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
       );
       return null;
     }
@@ -401,10 +400,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
     } on DioException catch (e, s) {
       if (e.response?.statusCode == 429) {
-        return LoginFailure(
-          'サーバーのアクセス制限に達しました。しばらく待ってから再試行してください',
-          s,
-        );
+        return LoginFailure('サーバーのアクセス制限に達しました。しばらく待ってから再試行してください', s);
       }
       return LoginFailure(e, s);
     } catch (e, s) {

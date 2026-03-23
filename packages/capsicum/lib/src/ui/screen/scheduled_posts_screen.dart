@@ -4,12 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 
-final _scheduledPostsProvider =
-    FutureProvider.autoDispose<List<ScheduledPost>>((ref) async {
-  final adapter = ref.watch(currentAdapterProvider);
-  if (adapter == null || adapter is! ScheduleSupport) return [];
-  return (adapter as ScheduleSupport).getScheduledPosts();
-});
+final _scheduledPostsProvider = FutureProvider.autoDispose<List<ScheduledPost>>(
+  (ref) async {
+    final adapter = ref.watch(currentAdapterProvider);
+    if (adapter == null || adapter is! ScheduleSupport) return [];
+    return (adapter as ScheduleSupport).getScheduledPosts();
+  },
+);
 
 class ScheduledPostsScreen extends ConsumerWidget {
   const ScheduledPostsScreen({super.key});
@@ -54,8 +55,9 @@ class ScheduledPostsScreen extends ConsumerWidget {
                   final adapter = ref.read(currentAdapterProvider);
                   if (adapter is ScheduleSupport) {
                     try {
-                      await (adapter as ScheduleSupport)
-                          .cancelScheduledPost(post.id);
+                      await (adapter as ScheduleSupport).cancelScheduledPost(
+                        post.id,
+                      );
                       ref.invalidate(_scheduledPostsProvider);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -91,7 +93,8 @@ class _ScheduledPostTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dt = post.scheduledAt.toLocal();
-    final dateStr = '${dt.year}/${dt.month}/${dt.day} '
+    final dateStr =
+        '${dt.year}/${dt.month}/${dt.day} '
         '${dt.hour.toString().padLeft(2, '0')}:'
         '${dt.minute.toString().padLeft(2, '0')}';
 
