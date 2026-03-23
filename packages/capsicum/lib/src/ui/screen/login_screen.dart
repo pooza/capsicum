@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
@@ -31,6 +32,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   static final _redirectUri = '${AppConstants.callbackUrlScheme}://oauth';
 
   bool _isLoggingIn = false;
+  bool _loginCompleted = false;
   String? _error;
 
   // Server info
@@ -99,6 +101,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_loginCompleted) return;
     setState(() {
       _isLoggingIn = true;
       _error = null;
@@ -107,6 +110,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
+
+      // Reuse cached client credentials from an existing account on the same
+      // host to avoid calling POST /api/v1/apps (rate-limit prone).
+      if (adapter is MastodonAdapter) {
+        final accounts = ref.read(accountManagerProvider).accounts;
+        final existing = accounts
+            .where((a) => a.key.host == widget.host && a.clientSecret != null)
+            .firstOrNull;
+        if (existing != null) {
+          adapter.setCachedClientCredentials(existing.clientSecret);
+        }
+      }
 
       final application = ApplicationInfo(
         name: AppConstants.appName,
@@ -122,7 +137,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
-          options: const FlutterWebAuth2Options(preferEphemeral: true),
+          options: const FlutterWebAuth2Options(preferEphemeral: false),
         );
 
         final callbackUri = Uri.parse(resultUrl);
@@ -132,6 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
 
         if (completeResult is LoginSuccess) {
+          _loginCompleted = true;
           final account = Account(
             key: AccountKey(
               type: widget.backendType,
@@ -149,19 +165,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           if (mounted) context.go('/home');
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          Sentry.captureException(
+            completeResult.error,
+            stackTrace: completeResult.stackTrace,
+          );
           setState(() => _error = 'ログインに失敗しました');
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
-        setState(() => _error = 'ログインの開始に失敗しました');
+        Sentry.captureException(
+          startResult.error,
+          stackTrace: startResult.stackTrace,
+        );
+        final errorMsg = startResult.error;
+        setState(
+          () => _error = errorMsg is String ? errorMsg : 'ログインの開始に失敗しました',
+        );
       }
-    } catch (e) {
+    } catch (e, st) {
       // User cancelled the browser — not an error.
       if (e.toString().contains('CANCELED') ||
           e.toString().contains('cancelled')) {
         // Do nothing.
       } else {
         debugPrint('Login error: $e');
+        Sentry.captureException(e, stackTrace: st);
         setState(() => _error = '通信に失敗しました');
       }
     } finally {

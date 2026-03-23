@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 
 import 'dart:developer' as developer;
@@ -83,7 +84,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         MarkerSupport,
         ProfileEditSupport,
         ReportSupport,
-        PinSupport {
+        PinSupport,
+        ScheduleSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -100,6 +102,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   final MastodonCapabilities capabilities = MastodonCapabilities();
 
   static const _scopes = ['read', 'write', 'follow', 'push'];
+
+  /// Cached client credentials to reuse across login attempts.
+  /// Set via [setCachedClientCredentials] before calling [startLogin].
+  ClientSecretData? _cachedClientCredentials;
+
+  /// Pre-set client credentials so [startLogin] can skip `POST /api/v1/apps`.
+  void setCachedClientCredentials(ClientSecretData? credentials) {
+    _cachedClientCredentials = credentials;
+  }
 
   MastodonAdapter._(this.client, this.host);
 
@@ -214,7 +225,21 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> postStatus(PostDraft draft) async {
+  Future<Post?> postStatus(PostDraft draft) async {
+    if (draft.scheduledAt != null) {
+      await client.scheduleStatus(
+        status: draft.content ?? '',
+        visibility: mastodonVisibilityFromScope(draft.scope),
+        scheduledAt: draft.scheduledAt!.toUtc().toIso8601String(),
+        inReplyToId: draft.inReplyToId,
+        quoteId: draft.quoteId,
+        spoilerText: draft.spoilerText,
+        mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+        sensitive: draft.sensitive ? true : null,
+        extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
+      );
+      return null;
+    }
     final status = await client.postStatus(
       status: draft.content ?? '',
       visibility: mastodonVisibilityFromScope(draft.scope),
@@ -226,6 +251,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<List<ScheduledPost>> getScheduledPosts() async {
+    return client.getScheduledStatuses();
+  }
+
+  @override
+  Future<void> cancelScheduledPost(String id) async {
+    await client.deleteScheduledStatus(id);
   }
 
   @override
@@ -329,16 +364,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<LoginResult> startLogin(ApplicationInfo application) async {
     try {
-      final app = await client.createApplication(
-        clientName: application.name,
-        redirectUris: application.redirectUri.toString(),
-        scopes: _scopes.join(' '),
-        website: application.website?.toString(),
-      );
+      String clientId;
+      String clientSecret;
+
+      final cached = _cachedClientCredentials;
+      if (cached != null) {
+        clientId = cached.clientId;
+        clientSecret = cached.clientSecret;
+      } else {
+        final app = await client.createApplication(
+          clientName: application.name,
+          redirectUris: application.redirectUri.toString(),
+          scopes: _scopes.join(' '),
+          website: application.website?.toString(),
+        );
+        clientId = app.clientId!;
+        clientSecret = app.clientSecret!;
+      }
 
       final authUrl = Uri.https(host, '/oauth/authorize', {
         'response_type': 'code',
-        'client_id': app.clientId!,
+        'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
       });
@@ -346,12 +392,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       return LoginNeedsOAuth(
         authorizationUrl: authUrl,
         extra: {
-          'client_id': app.clientId!,
-          'client_secret': app.clientSecret!,
+          'client_id': clientId,
+          'client_secret': clientSecret,
           'redirect_uri': application.redirectUri.toString(),
           'scopes': _scopes.join(' '),
         },
       );
+    } on DioException catch (e, s) {
+      if (e.response?.statusCode == 429) {
+        return LoginFailure('サーバーのアクセス制限に達しました。しばらく待ってから再試行してください', s);
+      }
+      return LoginFailure(e, s);
     } catch (e, s) {
       return LoginFailure(e, s);
     }

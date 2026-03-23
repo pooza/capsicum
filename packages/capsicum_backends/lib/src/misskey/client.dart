@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
@@ -209,7 +210,8 @@ class MisskeyClient {
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
-    final formData = FormData.fromMap({
+
+    Future<FormData> buildFormData() async => FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
         filename: fileName,
@@ -219,7 +221,15 @@ class MisskeyClient {
       'isSensitive': ?isSensitive,
       if (_token != null) 'i': _token,
     });
-    final response = await dio.post('/api/drive/files/create', data: formData);
+
+    final formData = await buildFormData();
+    final response = await dio.post(
+      '/api/drive/files/create',
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
+    );
     return response.data as Map<String, dynamic>;
   }
 
@@ -264,6 +274,67 @@ class MisskeyClient {
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']
           as Map<String, dynamic>,
+    );
+  }
+
+  /// POST /api/notes/drafts/create — create a scheduled note.
+  Future<void> createScheduledNote({
+    required String text,
+    required String visibility,
+    required DateTime scheduledAt,
+    String? replyId,
+    String? renoteId,
+    List<String>? fileIds,
+    String? cw,
+    bool? localOnly,
+    String? channelId,
+  }) async {
+    await dio.post(
+      '/api/notes/drafts/create',
+      data: createBody({
+        'text': text,
+        'visibility': visibility,
+        'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
+        'isActuallyScheduled': true,
+        'replyId': ?replyId,
+        'renoteId': ?renoteId,
+        'fileIds': ?fileIds,
+        'cw': ?cw,
+        'localOnly': ?localOnly,
+        'channelId': ?channelId,
+      }),
+    );
+  }
+
+  /// POST /api/notes/drafts/list — list scheduled notes.
+  Future<List<ScheduledPost>> getScheduledNotes() async {
+    final response = await dio.post(
+      '/api/notes/drafts/list',
+      data: createBody({'scheduled': true}),
+    );
+    return (response.data as List).map((e) {
+      final json = e as Map<String, dynamic>;
+      return ScheduledPost(
+        id: json['id'] as String,
+        scheduledAt: DateTime.fromMillisecondsSinceEpoch(
+          json['scheduledAt'] as int,
+          isUtc: true,
+        ),
+        content: json['text'] as String?,
+        spoilerText: json['cw'] as String?,
+        visibility: json['visibility'] as String?,
+        mediaIds:
+            (json['fileIds'] as List?)?.map((id) => id as String).toList() ??
+            [],
+      );
+    }).toList();
+  }
+
+  /// POST /api/notes/drafts/delete — cancel a scheduled note.
+  Future<void> deleteScheduledNote(String id) async {
+    await dio.post(
+      '/api/notes/drafts/delete',
+      data: createBody({'draftId': id}),
     );
   }
 
@@ -717,6 +788,12 @@ class MisskeyClient {
     }
     final response = await dio.post('/api/i/update', data: createBody(params));
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/meta (no authentication required)
+  Future<Map<String, dynamic>> getMeta() async {
+    final response = await dio.post('/api/meta', data: {});
+    return response.data as Map<String, dynamic>;
   }
 
   /// GET /url

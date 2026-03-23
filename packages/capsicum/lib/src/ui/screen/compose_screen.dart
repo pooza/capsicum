@@ -54,6 +54,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sensitiveEnabled = false;
   bool _sending = false;
   bool _localOnly = false;
+  DateTime? _scheduledAt;
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
@@ -468,6 +469,47 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
 
+  Future<void> _pickScheduleDate() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _scheduledAt ?? now.add(const Duration(hours: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: '予約投稿の日付',
+      confirmText: '次へ（時刻を選択）',
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _scheduledAt != null
+          ? TimeOfDay.fromDateTime(_scheduledAt!)
+          : TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
+      helpText: '予約投稿の時刻',
+    );
+    if (time == null || !mounted) return;
+
+    final scheduled = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    // Mastodon requires at least 5 minutes in the future.
+    final minTime = DateTime.now().add(const Duration(minutes: 5));
+    if (scheduled.isBefore(minTime)) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('5分以上先の日時を指定してください')));
+      }
+      return;
+    }
+    setState(() => _scheduledAt = scheduled);
+  }
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
@@ -505,12 +547,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
           channelId: widget.channelId,
+          scheduledAt: _scheduledAt,
         ),
       );
       if (mounted) {
-        ref.invalidate(timelineProvider);
-        if (widget.channelId != null) {
-          ref.invalidate(channelTimelineProvider(widget.channelId!));
+        if (_scheduledAt != null) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('予約投稿を設定しました')));
+        } else {
+          ref.invalidate(timelineProvider);
+          if (widget.channelId != null) {
+            ref.invalidate(channelTimelineProvider(widget.channelId!));
+          }
         }
         context.pop();
       }
@@ -547,7 +596,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.send),
+                : Icon(_scheduledAt != null ? Icons.schedule_send : Icons.send),
+            tooltip: _scheduledAt != null ? '予約投稿' : null,
           ),
         ],
       ),
@@ -780,35 +830,71 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     icon: const Icon(Icons.live_tv),
                     tooltip: '実況',
                   ),
+                if (ref.watch(currentAdapterProvider) is ScheduleSupport)
+                  IconButton(
+                    onPressed: _sending ? null : _pickScheduleDate,
+                    icon: Icon(
+                      Icons.schedule,
+                      color: _scheduledAt != null
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: '予約投稿',
+                  ),
               ],
             ),
-            Row(
-              children: [
-                DropdownButton<PostScope>(
-                  value: _scope,
-                  underline: const SizedBox.shrink(),
-                  onChanged: _sending
-                      ? null
-                      : (value) {
-                          if (value != null) setState(() => _scope = value);
-                        },
-                  items: _scopeItems(ref),
-                ),
-                if (ref.watch(currentAdapterProvider) is ReactionSupport)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: FilterChip(
-                      label: const Text('ローカルのみ'),
-                      selected: _localOnly,
-                      onSelected: _sending
-                          ? null
-                          : (v) => setState(() => _localOnly = v),
-                      visualDensity: VisualDensity.compact,
-                    ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  DropdownButton<PostScope>(
+                    value: _scope,
+                    underline: const SizedBox.shrink(),
+                    onChanged: _sending
+                        ? null
+                        : (value) {
+                            if (value != null) setState(() => _scope = value);
+                          },
+                    items: _scopeItems(ref),
                   ),
-                const Spacer(),
-                if (maxLength != null)
-                  ValueListenableBuilder<TextEditingValue>(
+                  if (ref.watch(currentAdapterProvider) is ReactionSupport)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: FilterChip(
+                        label: const Text('ローカルのみ'),
+                        selected: _localOnly,
+                        onSelected: _sending
+                            ? null
+                            : (v) => setState(() => _localOnly = v),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  if (_scheduledAt != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Chip(
+                        avatar: const Icon(Icons.schedule, size: 16),
+                        label: Text(
+                          '${_scheduledAt!.month}/${_scheduledAt!.day} '
+                          '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
+                          '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onDeleted: _sending
+                            ? null
+                            : () => setState(() => _scheduledAt = null),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (maxLength != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _controller,
                     builder: (context, value, _) {
                       final len = value.text.length;
@@ -824,8 +910,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       );
                     },
                   ),
-              ],
-            ),
+                ),
+              ),
           ],
         ),
       ),

@@ -2,9 +2,11 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
-/// Host → theme color map from all accounts' mulukhiya services.
+/// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
   final accounts = ref.watch(accountManagerProvider).accounts;
   final map = <String, Color>{};
@@ -21,6 +23,44 @@ final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
   return map;
 });
 
+/// Resolve theme color for a host.
+/// Priority: mulukhiya → server API cache → deterministic fallback.
+/// Mulukhiya colors are used as-is (designed as dark backgrounds for white text).
+/// Other sources are adjusted to ensure sufficient contrast with white text.
+Color resolveHostColor(Map<String, Color> mulukhiyaColors, String host) {
+  final mulukhiya = mulukhiyaColors[host];
+  if (mulukhiya != null) return mulukhiya;
+
+  final cached = ServerMetadataCache.instance.getCached(host);
+  final hex = cached?.themeColor;
+  if (hex != null) {
+    final parsed = _parseHexColor(hex);
+    if (parsed != null) return _ensureDark(parsed);
+  }
+
+  // Deterministic fallback based on host hash.
+  return HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.35).toColor();
+}
+
+/// Darken a color if it is too bright for white text.
+Color _ensureDark(Color color) {
+  final hsl = HSLColor.fromColor(color);
+  if (hsl.lightness > 0.45) {
+    return hsl.withLightness(0.35).toColor();
+  }
+  return color;
+}
+
+Color? _parseHexColor(String hex) {
+  final raw = hex.startsWith('#') ? hex.substring(1) : hex;
+  if (raw.length < 6) return null;
+  try {
+    return Color(0xFF000000 | int.parse(raw.substring(0, 6), radix: 16));
+  } catch (_) {
+    return null;
+  }
+}
+
 /// The label to use for "post" actions (e.g. "キュア！" on precure.fun).
 final postLabelProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
@@ -35,6 +75,12 @@ final reblogLabelProvider = Provider<String>((ref) {
   return adapter is ReactionSupport ? 'リノート' : 'ブースト';
 });
 
+/// The label to use for "favourite/reaction" actions.
+final favouriteLabelProvider = Provider<String>((ref) {
+  final adapter = ref.watch(currentAdapterProvider);
+  return adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
+});
+
 /// Maximum post content length from mulukhiya, falling back to adapter default.
 final maxPostLengthProvider = Provider<int?>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
@@ -42,8 +88,16 @@ final maxPostLengthProvider = Provider<int?>((ref) {
   return mulukhiya?.maxPostLength ?? adapter?.capabilities.maxPostContentLength;
 });
 
-/// Theme seed color from the server's theme configuration.
+/// Theme seed color: user override > mulukhiya > default green.
 final themeSeedColorProvider = Provider<Color>((ref) {
+  final account = ref.watch(currentAccountProvider);
+  if (account != null) {
+    final custom = ref.watch(
+      accountThemeColorProvider(account.key.toStorageKey()),
+    );
+    if (custom != null) return custom;
+  }
+
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
   final hex = mulukhiya?.themeColorHex;
   if (hex != null && hex.startsWith('#') && hex.length >= 7) {

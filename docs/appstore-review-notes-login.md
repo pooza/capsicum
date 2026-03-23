@@ -12,21 +12,10 @@ Capsicum is a client for decentralized social networks (Mastodon / Misskey). Unl
 We have simplified the Review Notes to contain only the login instructions, removing the previous supplementary notes to avoid confusion. Please refer to the updated Review Notes for the step-by-step guide.
 ```
 
-## Review Notes 全文（既存の内容をすべて置き換える）
+## Review Notes 全文
 
-```
-=== How to sign in ===
-
-1. On the login screen, select "デルムリン丼" (mstdn.delmulin.com) from the preset server list.
-2. Tap "ログイン" (Login).
-3. Enter the demo account credentials (email and password) on the browser-based authorization page.
-4. Tap "承認" (Authorize).
-
-Note: Occasionally the screen may reload after tapping "承認" instead of returning to the app. The login has succeeded — simply close the browser view to continue.
-```
+ログイン手順は [appstore-review-notes-ugc.md](appstore-review-notes-ugc.md) の Review Notes に統合済み。そちらを参照。
 
 ## 提出手順
 
-1. App Store Connect → Resolution Center → 返信文を貼り付け
-2. App Store Connect → アプリ → 最新バージョン → App Review Information → Notes を上記 Review Notes 全文で**置き換え**（補足1・補足2は削除）
-3. 最新バージョンを再提出
+[appstore-review-notes-ugc.md](appstore-review-notes-ugc.md) の提出手順に統合済み。

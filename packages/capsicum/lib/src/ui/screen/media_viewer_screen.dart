@@ -116,7 +116,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));
+        ).showSnackBar(const SnackBar(content: Text('更新に失敗しました')));
       }
     }
   }

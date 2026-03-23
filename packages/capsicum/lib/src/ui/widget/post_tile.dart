@@ -9,6 +9,8 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/server_metadata_cache.dart';
+import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -52,6 +54,25 @@ class _PostTileState extends ConsumerState<PostTile> {
     super.initState();
     if (widget.initialExpanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
+    }
+    _resolveTcoUrls();
+  }
+
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+
+  void _resolveTcoUrls() {
+    final content = (post.reblog ?? post).content;
+    if (content == null) return;
+    for (final match in _tcoPattern.allMatches(content)) {
+      final url = match.group(0)!;
+      if (TcoResolver.getCached(url) != null) continue;
+      TcoResolver.resolve(url).then((resolved) {
+        if (resolved != null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+      });
     }
   }
 
@@ -169,6 +190,8 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
         return null;
       },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -596,84 +619,38 @@ class _PostTileState extends ConsumerState<PostTile> {
                         child: Row(
                           children: [
                             if (displayPost.replyCount > 0) ...[
-                              Icon(
-                                Icons.reply,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
+                              _CountChip(
+                                icon: Icons.reply,
+                                label: '返信',
+                                count: displayPost.replyCount,
                               ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.replyCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.reblogCount > 0) ...[
-                              GestureDetector(
+                              _CountChip(
+                                icon: Icons.repeat,
+                                label: ref.watch(reblogLabelProvider),
+                                count: displayPost.reblogCount,
                                 onTap: () =>
                                     _showRebloggedBy(context, displayPost),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.repeat,
-                                      size: 14,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall?.color,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${displayPost.reblogCount}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.quoteCount > 0) ...[
-                              Icon(
-                                Icons.format_quote,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
+                              _CountChip(
+                                icon: Icons.format_quote,
+                                label: '引用',
+                                count: displayPost.quoteCount,
                               ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.quoteCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.favouriteCount > 0) ...[
-                              GestureDetector(
+                              _CountChip(
+                                icon: Icons.star_outline,
+                                label: ref.watch(favouriteLabelProvider),
+                                count: displayPost.favouriteCount,
                                 onTap: () =>
                                     _showFavouritedBy(context, displayPost),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.star_outline,
-                                      size: 14,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall?.color,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${displayPost.favouriteCount}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
                               ),
                             ],
                           ],
@@ -1168,23 +1145,41 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Widget _buildInstanceTicker(BuildContext context, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
-    final color =
-        themeColors[host] ??
-        HSLColor.fromAHSL(1, host.hashCode % 360, 0.5, 0.5).toColor();
+    final color = resolveHostColor(themeColors, host);
+    final cached = ServerMetadataCache.instance.getCached(host);
+    final label = cached?.name ?? host;
+
+    if (cached == null) {
+      ServerMetadataCache.instance.fetch(host).then((_) {
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+      });
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Row(
         children: [
-          Icon(Icons.dns_outlined, size: 12, color: color),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              host,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontSize: 11, color: color),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ],
@@ -1328,6 +1323,48 @@ class _PostTileState extends ConsumerState<PostTile> {
       case PostScope.direct:
         return isMisskey ? Icons.mail_outline : Icons.alternate_email;
     }
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int count;
+  final VoidCallback? onTap;
+
+  const _CountChip({
+    required this.icon,
+    required this.label,
+    required this.count,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    final color = style?.color;
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 3),
+        Text('$label $count', style: style),
+      ],
+    );
+    if (onTap != null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: child,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+      child: child,
+    );
   }
 }
 

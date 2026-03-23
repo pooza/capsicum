@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'src/constants.dart';
+import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
@@ -82,6 +83,15 @@ class CapsicumApp extends ConsumerWidget {
         ),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        final fontScale = ref.watch(fontScaleProvider);
+        return MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(fontScale)),
+          child: child!,
+        );
+      },
       routerConfig: router,
     );
   }

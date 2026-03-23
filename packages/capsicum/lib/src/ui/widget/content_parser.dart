@@ -651,12 +651,16 @@ typedef LinkTapCallback = void Function(String url);
 typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
 
+/// Synchronous URL resolver: returns the resolved URL or `null`.
+typedef UrlResolver = String? Function(String url);
+
 class ContentRenderer {
   final TextStyle baseStyle;
   final EmojiResolver resolveEmoji;
   final LinkTapCallback? onLinkTap;
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
+  final UrlResolver? resolveUrl;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -665,6 +669,7 @@ class ContentRenderer {
     this.onLinkTap,
     this.onHashtagTap,
     this.onMentionTap,
+    this.resolveUrl,
   });
 
   void dispose() {
@@ -830,14 +835,19 @@ class ContentRenderer {
         ];
 
       case _NodeType.url:
-        final url = node.text;
-        final uri = Uri.tryParse(url) ?? Uri.tryParse(Uri.encodeFull(url));
+        final originalUrl = node.text;
+        final resolvedUrl = resolveUrl?.call(originalUrl) ?? originalUrl;
+        final uri =
+            Uri.tryParse(resolvedUrl) ??
+            Uri.tryParse(Uri.encodeFull(resolvedUrl));
         final isSafe =
             uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
         final recognizer = TapGestureRecognizer()
           ..onTap = isSafe ? () => launchUrl(uri) : null;
         _recognizers.add(recognizer);
-        final displayUrl = uri != null ? Uri.decodeFull(uri.toString()) : url;
+        final displayUrl = uri != null
+            ? _shortenUrl(Uri.decodeFull(uri.toString()))
+            : resolvedUrl;
         return [
           TextSpan(
             text: displayUrl,
@@ -957,6 +967,26 @@ class ContentRenderer {
       spans.add(TextSpan(text: text.substring(lastEnd), style: style));
     }
     return spans;
+  }
+
+  static const _maxPathLength = 20;
+
+  /// Shorten a URL for display: strip scheme, truncate path.
+  static String _shortenUrl(String url) {
+    // Remove scheme (https://, http://)
+    var shortened = url.replaceFirst(RegExp(r'^https?://'), '');
+    // Remove trailing slash if it's the only path
+    if (shortened.endsWith('/') &&
+        !shortened.substring(0, shortened.length - 1).contains('/')) {
+      shortened = shortened.substring(0, shortened.length - 1);
+    }
+    // Truncate long path portion
+    final slashIndex = shortened.indexOf('/');
+    if (slashIndex >= 0 && shortened.length - slashIndex > _maxPathLength) {
+      shortened =
+          '${shortened.substring(0, slashIndex + _maxPathLength)}\u2026';
+    }
+    return shortened;
   }
 }
 

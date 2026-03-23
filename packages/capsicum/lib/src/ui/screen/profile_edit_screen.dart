@@ -151,7 +151,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('保存に失敗しました: $e')));
+        ).showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

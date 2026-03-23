@@ -100,7 +100,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final posts = await _fetchUserPosts(adapter);
       if (mounted) {
         setState(() {
-          _posts = posts;
+          final pinnedIds = _pinnedPosts.map((p) => p.id).toSet();
+          _posts = posts.where((p) => !pinnedIds.contains(p.id)).toList();
           _loadingPosts = false;
           _hasMore = posts.length >= 20;
         });
@@ -561,15 +562,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           onSelected: (value) async {
             switch (value) {
               case 'mute':
-                await _performAction(() => adapter.muteUser(widget.user.id));
-                ref
-                    .read(timelineProvider.notifier)
-                    .removePostsByUser(widget.user.id);
+                final ok = await _performAction(
+                  () => adapter.muteUser(widget.user.id),
+                );
+                if (ok) {
+                  ref
+                      .read(timelineProvider.notifier)
+                      .removePostsByUser(widget.user.id);
+                }
               case 'mute_duration':
-                await _showMuteDurationPicker(adapter);
-                ref
-                    .read(timelineProvider.notifier)
-                    .removePostsByUser(widget.user.id);
+                final ok = await _showMuteDurationPicker(adapter);
+                if (ok) {
+                  ref
+                      .read(timelineProvider.notifier)
+                      .removePostsByUser(widget.user.id);
+                }
               case 'unmute':
                 _performAction(() => adapter.unmuteUser(widget.user.id));
               case 'block':
@@ -598,7 +605,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Future<void> _showMuteDurationPicker(FollowSupport adapter) async {
+  Future<bool> _showMuteDurationPicker(FollowSupport adapter) async {
     final durations = <(String, Duration)>[
       ('30分', const Duration(minutes: 30)),
       ('1時間', const Duration(hours: 1)),
@@ -631,10 +638,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (selected != null && mounted) {
-      _performAction(
+      return _performAction(
         () => adapter.muteUser(widget.user.id, duration: selected),
       );
     }
+    return false;
   }
 
   Future<void> _confirmAndBlock(FollowSupport adapter) async {

@@ -21,7 +21,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _restoreSessions() async {
-    await ref.read(accountManagerProvider.notifier).restoreSessions();
+    try {
+      await ref.read(accountManagerProvider.notifier).restoreSessions();
+    } catch (e, st) {
+      debugPrint('capsicum: failed to restore sessions: $e\n$st');
+    }
     if (!mounted) return;
 
     final prefs = await SharedPreferences.getInstance();

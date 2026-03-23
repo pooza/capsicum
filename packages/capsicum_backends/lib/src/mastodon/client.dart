@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
@@ -262,6 +263,61 @@ class MastodonClient {
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/v1/statuses with scheduled_at.
+  /// Returns the raw ScheduledStatus JSON (different from regular Status).
+  Future<void> scheduleStatus({
+    required String status,
+    required String visibility,
+    required String scheduledAt,
+    String? inReplyToId,
+    String? quoteId,
+    String? spoilerText,
+    List<String>? mediaIds,
+    bool? sensitive,
+    Map<String, String>? extraHeaders,
+  }) async {
+    await dio.post(
+      '/api/v1/statuses',
+      data: {
+        'status': status,
+        'visibility': visibility,
+        'scheduled_at': scheduledAt,
+        'in_reply_to_id': ?inReplyToId,
+        'quoted_status_id': ?quoteId,
+        'spoiler_text': ?spoilerText,
+        'media_ids': ?mediaIds,
+        'sensitive': ?sensitive,
+      },
+      options: extraHeaders != null ? Options(headers: extraHeaders) : null,
+    );
+  }
+
+  /// GET /api/v1/scheduled_statuses
+  Future<List<ScheduledPost>> getScheduledStatuses() async {
+    final response = await dio.get('/api/v1/scheduled_statuses');
+    return (response.data as List).map((e) {
+      final json = e as Map<String, dynamic>;
+      final params = json['params'] as Map<String, dynamic>? ?? {};
+      return ScheduledPost(
+        id: json['id'] as String,
+        scheduledAt: DateTime.parse(json['scheduled_at'] as String),
+        content: params['text'] as String?,
+        spoilerText: params['spoiler_text'] as String?,
+        visibility: params['visibility'] as String?,
+        mediaIds:
+            (json['media_attachments'] as List?)
+                ?.map((m) => (m as Map<String, dynamic>)['id'] as String)
+                .toList() ??
+            [],
+      );
+    }).toList();
+  }
+
+  /// DELETE /api/v1/scheduled_statuses/:id
+  Future<void> deleteScheduledStatus(String id) async {
+    await dio.delete('/api/v1/scheduled_statuses/$id');
+  }
+
   /// GET /api/v1/statuses/:id
   Future<MastodonStatus> getStatus(String id) async {
     final response = await dio.get('/api/v1/statuses/$id');
@@ -361,14 +417,23 @@ class MastodonClient {
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
-    final formData = FormData.fromMap({
+
+    Future<FormData> buildFormData() async => FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
         filename: fileName,
         contentType: mediaType,
       ),
     });
-    final response = await dio.post('/api/v1/media', data: formData);
+
+    final formData = await buildFormData();
+    final response = await dio.post(
+      '/api/v1/media',
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
+    );
     return MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );
@@ -644,25 +709,34 @@ class MastodonClient {
     String? headerPath,
     List<Map<String, String>>? fieldsAttributes,
   }) async {
-    final map = <String, dynamic>{};
-    if (displayName != null) map['display_name'] = displayName;
-    if (note != null) map['note'] = note;
-    if (avatarPath != null) {
-      map['avatar'] = await MultipartFile.fromFile(avatarPath);
-    }
-    if (headerPath != null) {
-      map['header'] = await MultipartFile.fromFile(headerPath);
-    }
-    if (fieldsAttributes != null) {
-      for (var i = 0; i < fieldsAttributes.length; i++) {
-        map['fields_attributes[$i][name]'] = fieldsAttributes[i]['name'] ?? '';
-        map['fields_attributes[$i][value]'] =
-            fieldsAttributes[i]['value'] ?? '';
+    Future<FormData> buildFormData() async {
+      final map = <String, dynamic>{};
+      if (displayName != null) map['display_name'] = displayName;
+      if (note != null) map['note'] = note;
+      if (avatarPath != null) {
+        map['avatar'] = await MultipartFile.fromFile(avatarPath);
       }
+      if (headerPath != null) {
+        map['header'] = await MultipartFile.fromFile(headerPath);
+      }
+      if (fieldsAttributes != null) {
+        for (var i = 0; i < fieldsAttributes.length; i++) {
+          map['fields_attributes[$i][name]'] =
+              fieldsAttributes[i]['name'] ?? '';
+          map['fields_attributes[$i][value]'] =
+              fieldsAttributes[i]['value'] ?? '';
+        }
+      }
+      return FormData.fromMap(map);
     }
+
+    final formData = await buildFormData();
     final response = await dio.patch(
       '/api/v1/accounts/update_credentials',
-      data: FormData.fromMap(map),
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
     );
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
