@@ -4,6 +4,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -789,6 +790,18 @@ class _PostTileState extends ConsumerState<PostTile> {
                         targetPost.id,
                       ),
                       '$bookmarkLabelに追加しました',
+                    );
+                  },
+                ),
+              if (targetPost.url != null)
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('URL をコピー'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(ClipboardData(text: targetPost.url!));
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('URL をコピーしました')),
                     );
                   },
                 ),

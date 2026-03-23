@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -561,6 +562,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         PopupMenuButton<String>(
           onSelected: (value) async {
             switch (value) {
+              case 'copy_url':
+                if (widget.user.url != null) {
+                  Clipboard.setData(ClipboardData(text: widget.user.url!));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('URL をコピーしました')),
+                    );
+                  }
+                }
               case 'mute':
                 final ok = await _performAction(
                   () => adapter.muteUser(widget.user.id),
@@ -586,6 +596,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             }
           },
           itemBuilder: (_) => [
+            if (widget.user.url != null)
+              const PopupMenuItem(
+                value: 'copy_url',
+                child: Text('URL をコピー'),
+              ),
             if (rel.muting)
               const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
             else ...[

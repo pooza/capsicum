@@ -70,6 +70,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
           )
           .where((d) => d.url.isNotEmpty)
           .toList(),
+      url: 'https://$localHost/@$username',
     );
   }
 }
@@ -109,6 +110,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       channelId: channel?['id'] as String?,
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
+      url: 'https://$localHost/notes/$id',
     );
   }
 }

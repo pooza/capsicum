@@ -58,6 +58,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
           if (e['shortcode'] is String && e['url'] is String)
             e['shortcode'] as String: e['url'] as String,
       },
+      url: url,
     );
   }
 }
@@ -101,6 +102,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
       pinned: pinned,
+      url: url,
     );
   }
 }

@@ -56,6 +56,7 @@ class User {
   final List<UserField> fields;
   final Map<String, String> emojis;
   final List<AvatarDecoration> avatarDecorations;
+  final String? url;
 
   const User({
     required this.id,
@@ -74,5 +75,6 @@ class User {
     this.fields = const [],
     this.emojis = const {},
     this.avatarDecorations = const [],
+    this.url,
   });
 }
