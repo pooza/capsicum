@@ -1,8 +1,9 @@
 class UserField {
   final String name;
   final String value;
+  final DateTime? verifiedAt;
 
-  const UserField({required this.name, required this.value});
+  const UserField({required this.name, required this.value, this.verifiedAt});
 }
 
 class UserRole {

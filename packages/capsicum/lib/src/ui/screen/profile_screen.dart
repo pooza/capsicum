@@ -9,6 +9,8 @@ import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/tco_resolver.dart';
+import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
@@ -38,6 +40,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return current != null && current.user.id == widget.user.id;
   }
 
+  static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
+  final List<ContentRenderer> _fieldRenderers = [];
+  ContentRenderer? _bioRenderer;
+
   @override
   void initState() {
     super.initState();
@@ -46,12 +52,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadPinnedPosts();
     _loadPosts();
     _loadRelationship();
+    _resolveTcoUrls();
+  }
+
+  void _resolveTcoUrls() {
+    final texts = [
+      if (widget.user.description != null)
+        _stripHtml(widget.user.description!),
+      ...widget.user.fields.map((f) => _stripHtml(f.value)),
+    ];
+    for (final text in texts) {
+      for (final match in _tcoPattern.allMatches(text)) {
+        final url = match.group(0)!;
+        if (TcoResolver.getCached(url) != null) continue;
+        TcoResolver.resolve(url).then((resolved) {
+          if (resolved != null && mounted) setState(() {});
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _bioRenderer?.dispose();
+    for (final r in _fieldRenderers) {
+      r.dispose();
+    }
     super.dispose();
   }
 
@@ -378,11 +406,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           if (user.description != null && user.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
-            EmojiText(
-              _stripHtml(user.description!),
-              emojis: user.emojis,
-              style: theme.textTheme.bodyMedium,
-            ),
+            _buildBio(user, theme),
           ],
           const SizedBox(height: 12),
           Row(
@@ -505,20 +529,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     SizedBox(
                       width: 100,
-                      child: Text(
-                        field.name,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              field.name,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (field.verifiedAt != null) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.green.shade600,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: EmojiText(
-                        _stripHtml(field.value),
-                        emojis: user.emojis,
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      child: _buildFieldValue(field, user.emojis, theme),
                     ),
                   ],
                 ),
@@ -728,6 +762,66 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String _formatCount(int count) {
     if (count >= 10000) return '${(count / 1000).toStringAsFixed(1)}K';
     return count.toString();
+  }
+
+  Future<void> _navigateToMention(String mention) async {
+    final parts = mention.replaceFirst('@', '').split('@');
+    if (parts.isEmpty) return;
+    final username = parts[0];
+    final host = parts.length > 1 ? parts[1] : null;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final user = await adapter.getUser(username, host);
+      if (user != null && mounted) {
+        context.push('/profile', extra: user);
+      }
+    } on Exception catch (e) {
+      debugPrint('Failed to look up mention $mention: $e');
+    }
+  }
+
+  Widget _buildBio(User user, ThemeData theme) {
+    _bioRenderer?.dispose();
+    final stripped = _stripHtml(user.description!);
+    _bioRenderer = ContentRenderer(
+      baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
+      resolveEmoji: (shortcode) => user.emojis[shortcode],
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onMentionTap: (mention) => _navigateToMention(mention),
+    );
+    return RichText(text: _bioRenderer!.renderMfm(stripped));
+  }
+
+  Widget _buildFieldValue(
+    UserField field,
+    Map<String, String> emojis,
+    ThemeData theme,
+  ) {
+    final stripped = _stripHtml(field.value);
+    final renderer = ContentRenderer(
+      baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
+      resolveEmoji: (shortcode) => emojis[shortcode],
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri);
+        }
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+    );
+    _fieldRenderers.add(renderer);
+    return RichText(text: renderer.renderMfm(stripped));
   }
 
   String _stripHtml(String html) {

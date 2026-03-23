@@ -48,14 +48,15 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
                   ),
                 )
                 .toList(),
-      fields: (fields ?? [])
-          .map(
-            (f) => UserField(
-              name: f['name'] as String? ?? '',
-              value: f['value'] as String? ?? '',
-            ),
-          )
-          .toList(),
+      fields: (fields ?? []).map((f) {
+        final value = f['value'] as String? ?? '';
+        final verified = (verifiedLinks ?? []).contains(value);
+        return UserField(
+          name: f['name'] as String? ?? '',
+          value: value,
+          verifiedAt: verified ? DateTime.now() : null,
+        );
+      }).toList(),
       emojis: emojis ?? const {},
       avatarDecorations: (avatarDecorations ?? [])
           .map(

@@ -50,6 +50,9 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
             (f) => UserField(
               name: f['name'] as String? ?? '',
               value: f['value'] as String? ?? '',
+              verifiedAt: f['verified_at'] != null
+                  ? DateTime.tryParse(f['verified_at'] as String)
+                  : null,
             ),
           )
           .toList(),
