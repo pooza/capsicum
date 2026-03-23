@@ -23,7 +23,8 @@ abstract class BackendAdapter {
   Future<User> getMyself();
   Future<User?> getUser(String username, [String? host]);
   Future<User> getUserById(String id);
-  Future<Post> postStatus(PostDraft draft);
+  /// Post a status. Returns null when the post is scheduled for later.
+  Future<Post?> postStatus(PostDraft draft);
   Future<void> deletePost(String id);
   Future<TimelineResponse> getTimeline(
     TimelineType type, {

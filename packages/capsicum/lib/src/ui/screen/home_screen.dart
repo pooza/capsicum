@@ -642,6 +642,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showServerLinks(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is ScheduleSupport)
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: const Text('予約投稿'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/scheduled');
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('設定'),

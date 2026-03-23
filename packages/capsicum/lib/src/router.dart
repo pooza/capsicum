@@ -24,6 +24,7 @@ import 'ui/screen/settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/list_members_screen.dart';
+import 'ui/screen/scheduled_posts_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
 
@@ -128,6 +129,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             channelName: extra?['channelName'] as String?,
           );
         },
+      ),
+      GoRoute(
+        path: '/scheduled',
+        builder: (context, state) => const ScheduledPostsScreen(),
       ),
       GoRoute(
         path: '/search',

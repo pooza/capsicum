@@ -81,7 +81,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ChannelSupport,
         ReportSupport,
-        PinSupport {
+        PinSupport,
+        ScheduleSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -178,7 +179,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> postStatus(PostDraft draft) async {
+  Future<Post?> postStatus(PostDraft draft) async {
+    if (draft.scheduledAt != null) {
+      await client.createScheduledNote(
+        text: draft.content ?? '',
+        visibility: misskeyVisibilityFromScope(draft.scope),
+        scheduledAt: draft.scheduledAt!,
+        replyId: draft.inReplyToId,
+        renoteId: draft.quoteId,
+        fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+        cw: draft.spoilerText,
+        localOnly: draft.localOnly ? true : null,
+        channelId: draft.channelId,
+      );
+      return null;
+    }
     final note = await client.createNote(
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
@@ -191,6 +206,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<List<ScheduledPost>> getScheduledPosts() async {
+    return client.getScheduledNotes();
+  }
+
+  @override
+  Future<void> cancelScheduledPost(String id) async {
+    await client.deleteScheduledNote(id);
   }
 
   @override

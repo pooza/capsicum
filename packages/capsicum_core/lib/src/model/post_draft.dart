@@ -14,6 +14,9 @@ class PostDraft {
   /// When true, adds X-Mulukhiya header to bypass mulukhiya hooks.
   final bool skipMulukhiya;
 
+  /// When set, the post is scheduled for future publication.
+  final DateTime? scheduledAt;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -25,5 +28,6 @@ class PostDraft {
     this.localOnly = false,
     this.channelId,
     this.skipMulukhiya = false,
+    this.scheduledAt,
   });
 }

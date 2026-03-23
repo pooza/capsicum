@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
@@ -260,6 +261,60 @@ class MastodonClient {
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/v1/statuses with scheduled_at.
+  /// Returns the raw ScheduledStatus JSON (different from regular Status).
+  Future<void> scheduleStatus({
+    required String status,
+    required String visibility,
+    required String scheduledAt,
+    String? inReplyToId,
+    String? quoteId,
+    String? spoilerText,
+    List<String>? mediaIds,
+    bool? sensitive,
+    Map<String, String>? extraHeaders,
+  }) async {
+    await dio.post(
+      '/api/v1/statuses',
+      data: {
+        'status': status,
+        'visibility': visibility,
+        'scheduled_at': scheduledAt,
+        'in_reply_to_id': ?inReplyToId,
+        'quoted_status_id': ?quoteId,
+        'spoiler_text': ?spoilerText,
+        'media_ids': ?mediaIds,
+        'sensitive': ?sensitive,
+      },
+      options: extraHeaders != null ? Options(headers: extraHeaders) : null,
+    );
+  }
+
+  /// GET /api/v1/scheduled_statuses
+  Future<List<ScheduledPost>> getScheduledStatuses() async {
+    final response = await dio.get('/api/v1/scheduled_statuses');
+    return (response.data as List).map((e) {
+      final json = e as Map<String, dynamic>;
+      final params = json['params'] as Map<String, dynamic>? ?? {};
+      return ScheduledPost(
+        id: json['id'] as String,
+        scheduledAt: DateTime.parse(json['scheduled_at'] as String),
+        content: params['text'] as String?,
+        spoilerText: params['spoiler_text'] as String?,
+        visibility: params['visibility'] as String?,
+        mediaIds: (json['media_attachments'] as List?)
+                ?.map((m) => (m as Map<String, dynamic>)['id'] as String)
+                .toList() ??
+            [],
+      );
+    }).toList();
+  }
+
+  /// DELETE /api/v1/scheduled_statuses/:id
+  Future<void> deleteScheduledStatus(String id) async {
+    await dio.delete('/api/v1/scheduled_statuses/$id');
   }
 
   /// GET /api/v1/statuses/:id

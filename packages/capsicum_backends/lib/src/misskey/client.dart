@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
@@ -273,6 +274,68 @@ class MisskeyClient {
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']
           as Map<String, dynamic>,
+    );
+  }
+
+  /// POST /api/notes/drafts/create — create a scheduled note.
+  Future<void> createScheduledNote({
+    required String text,
+    required String visibility,
+    required DateTime scheduledAt,
+    String? replyId,
+    String? renoteId,
+    List<String>? fileIds,
+    String? cw,
+    bool? localOnly,
+    String? channelId,
+  }) async {
+    await dio.post(
+      '/api/notes/drafts/create',
+      data: createBody({
+        'text': text,
+        'visibility': visibility,
+        'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
+        'isActuallyScheduled': true,
+        'replyId': ?replyId,
+        'renoteId': ?renoteId,
+        'fileIds': ?fileIds,
+        'cw': ?cw,
+        'localOnly': ?localOnly,
+        'channelId': ?channelId,
+      }),
+    );
+  }
+
+  /// POST /api/notes/drafts/list — list scheduled notes.
+  Future<List<ScheduledPost>> getScheduledNotes() async {
+    final response = await dio.post(
+      '/api/notes/drafts/list',
+      data: createBody({'scheduled': true}),
+    );
+    return (response.data as List).map((e) {
+      final json = e as Map<String, dynamic>;
+      return ScheduledPost(
+        id: json['id'] as String,
+        scheduledAt: DateTime.fromMillisecondsSinceEpoch(
+          json['scheduledAt'] as int,
+          isUtc: true,
+        ),
+        content: json['text'] as String?,
+        spoilerText: json['cw'] as String?,
+        visibility: json['visibility'] as String?,
+        mediaIds: (json['fileIds'] as List?)
+                ?.map((id) => id as String)
+                .toList() ??
+            [],
+      );
+    }).toList();
+  }
+
+  /// POST /api/notes/drafts/delete — cancel a scheduled note.
+  Future<void> deleteScheduledNote(String id) async {
+    await dio.post(
+      '/api/notes/drafts/delete',
+      data: createBody({'draftId': id}),
     );
   }
 

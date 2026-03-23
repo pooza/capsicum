@@ -84,7 +84,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         MarkerSupport,
         ProfileEditSupport,
         ReportSupport,
-        PinSupport {
+        PinSupport,
+        ScheduleSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
 
@@ -224,7 +225,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> postStatus(PostDraft draft) async {
+  Future<Post?> postStatus(PostDraft draft) async {
+    if (draft.scheduledAt != null) {
+      await client.scheduleStatus(
+        status: draft.content ?? '',
+        visibility: mastodonVisibilityFromScope(draft.scope),
+        scheduledAt: draft.scheduledAt!.toUtc().toIso8601String(),
+        inReplyToId: draft.inReplyToId,
+        quoteId: draft.quoteId,
+        spoilerText: draft.spoilerText,
+        mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+        sensitive: draft.sensitive ? true : null,
+        extraHeaders:
+            draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
+      );
+      return null;
+    }
     final status = await client.postStatus(
       status: draft.content ?? '',
       visibility: mastodonVisibilityFromScope(draft.scope),
@@ -236,6 +252,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<List<ScheduledPost>> getScheduledPosts() async {
+    return client.getScheduledStatuses();
+  }
+
+  @override
+  Future<void> cancelScheduledPost(String id) async {
+    await client.deleteScheduledStatus(id);
   }
 
   @override
