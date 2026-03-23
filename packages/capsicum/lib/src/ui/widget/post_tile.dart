@@ -619,84 +619,38 @@ class _PostTileState extends ConsumerState<PostTile> {
                         child: Row(
                           children: [
                             if (displayPost.replyCount > 0) ...[
-                              Icon(
-                                Icons.reply,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
+                              _CountChip(
+                                icon: Icons.reply,
+                                label: '返信',
+                                count: displayPost.replyCount,
                               ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.replyCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.reblogCount > 0) ...[
-                              GestureDetector(
+                              _CountChip(
+                                icon: Icons.repeat,
+                                label: ref.watch(reblogLabelProvider),
+                                count: displayPost.reblogCount,
                                 onTap: () =>
                                     _showRebloggedBy(context, displayPost),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.repeat,
-                                      size: 14,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall?.color,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${displayPost.reblogCount}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.quoteCount > 0) ...[
-                              Icon(
-                                Icons.format_quote,
-                                size: 14,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color,
+                              _CountChip(
+                                icon: Icons.format_quote,
+                                label: '引用',
+                                count: displayPost.quoteCount,
                               ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${displayPost.quoteCount}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                             ],
                             if (displayPost.favouriteCount > 0) ...[
-                              GestureDetector(
+                              _CountChip(
+                                icon: Icons.star_outline,
+                                label: ref.watch(favouriteLabelProvider),
+                                count: displayPost.favouriteCount,
                                 onTap: () =>
                                     _showFavouritedBy(context, displayPost),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.star_outline,
-                                      size: 14,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall?.color,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${displayPost.favouriteCount}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
                               ),
                             ],
                           ],
@@ -1369,6 +1323,48 @@ class _PostTileState extends ConsumerState<PostTile> {
       case PostScope.direct:
         return isMisskey ? Icons.mail_outline : Icons.alternate_email;
     }
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int count;
+  final VoidCallback? onTap;
+
+  const _CountChip({
+    required this.icon,
+    required this.label,
+    required this.count,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    final color = style?.color;
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 3),
+        Text('$label $count', style: style),
+      ],
+    );
+    if (onTap != null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+          child: child,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+      child: child,
+    );
   }
 }
 

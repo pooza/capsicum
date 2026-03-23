@@ -74,6 +74,12 @@ final reblogLabelProvider = Provider<String>((ref) {
   return adapter is ReactionSupport ? 'リノート' : 'ブースト';
 });
 
+/// The label to use for "favourite/reaction" actions.
+final favouriteLabelProvider = Provider<String>((ref) {
+  final adapter = ref.watch(currentAdapterProvider);
+  return adapter is ReactionSupport ? 'リアクション' : 'お気に入り';
+});
+
 /// Maximum post content length from mulukhiya, falling back to adapter default.
 final maxPostLengthProvider = Provider<int?>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
