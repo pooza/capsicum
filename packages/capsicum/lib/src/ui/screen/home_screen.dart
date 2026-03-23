@@ -15,6 +15,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
@@ -310,12 +311,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final supported =
         adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
-    const order = [
-      TimelineType.home,
-      TimelineType.local,
-      TimelineType.social,
-      TimelineType.federated,
-    ];
+    final account = ref.read(currentAccountProvider);
+    final order = account != null
+        ? ref.read(tabOrderProvider(account.key.toStorageKey()))
+        : defaultTabOrder;
     final tabs = order.where(supported.contains).toList();
     final index = tabs.indexOf(current);
     if (index < 0) return;
@@ -361,13 +360,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final isMastodon = !supported.contains(TimelineType.social);
 
-    // Maintain consistent ordering.
-    const order = [
-      TimelineType.home,
-      TimelineType.local,
-      TimelineType.social,
-      TimelineType.federated,
-    ];
+    // Use user-customized tab order if available.
+    final account = ref.watch(currentAccountProvider);
+    final order = account != null
+        ? ref.watch(tabOrderProvider(account.key.toStorageKey()))
+        : defaultTabOrder;
     final tabs = order.where(supported.contains).toList();
 
     // Fetch lists.

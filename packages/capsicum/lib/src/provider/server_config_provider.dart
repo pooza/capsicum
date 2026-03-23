@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
 /// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
@@ -87,8 +88,16 @@ final maxPostLengthProvider = Provider<int?>((ref) {
   return mulukhiya?.maxPostLength ?? adapter?.capabilities.maxPostContentLength;
 });
 
-/// Theme seed color from the server's theme configuration.
+/// Theme seed color: user override > mulukhiya > default green.
 final themeSeedColorProvider = Provider<Color>((ref) {
+  final account = ref.watch(currentAccountProvider);
+  if (account != null) {
+    final custom = ref.watch(
+      accountThemeColorProvider(account.key.toStorageKey()),
+    );
+    if (custom != null) return custom;
+  }
+
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
   final hex = mulukhiya?.themeColorHex;
   if (hex != null && hex.startsWith('#') && hex.length >= 7) {
