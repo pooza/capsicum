@@ -209,7 +209,8 @@ class MisskeyClient {
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
-    final formData = FormData.fromMap({
+
+    Future<FormData> buildFormData() async => FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
         filename: fileName,
@@ -219,7 +220,15 @@ class MisskeyClient {
       'isSensitive': ?isSensitive,
       if (_token != null) 'i': _token,
     });
-    final response = await dio.post('/api/drive/files/create', data: formData);
+
+    final formData = await buildFormData();
+    final response = await dio.post(
+      '/api/drive/files/create',
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
+    );
     return response.data as Map<String, dynamic>;
   }
 

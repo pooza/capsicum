@@ -13,6 +13,11 @@ class RateLimitInterceptor extends Interceptor {
   static const _baseDelay = Duration(seconds: 1);
   static const _retryCountKey = 'rateLimitRetryCount';
 
+  /// Key for a `Future<FormData> Function()` stored in [RequestOptions.extra].
+  /// When present, the interceptor uses this factory to rebuild FormData
+  /// (whose streams are consumed after the first send) before retrying a 429.
+  static const formDataFactoryKey = 'formDataFactory';
+
   /// When remaining requests fall to this threshold or below, preemptively
   /// wait until the reset time before sending the next request.
   static const _remainingThreshold = 3;
@@ -75,7 +80,9 @@ class RateLimitInterceptor extends Interceptor {
     }
 
     // FormData with files contains consumed streams that cannot be re-read.
-    if (err.requestOptions.data is FormData) {
+    // If a factory is provided we can rebuild it; otherwise skip retry.
+    if (err.requestOptions.data is FormData &&
+        err.requestOptions.extra[formDataFactoryKey] == null) {
       return handler.next(err);
     }
 
@@ -120,6 +127,12 @@ class RateLimitInterceptor extends Interceptor {
 
     final options = err.requestOptions;
     options.extra[_retryCountKey] = retryCount + 1;
+
+    // Rebuild FormData from factory so file streams are fresh.
+    final factory = options.extra[formDataFactoryKey];
+    if (factory != null && options.data is FormData) {
+      options.data = await (factory as Future<FormData> Function())();
+    }
 
     try {
       final response = await _dio.fetch(options);

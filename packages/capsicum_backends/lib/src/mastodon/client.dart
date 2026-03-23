@@ -361,14 +361,23 @@ class MastodonClient {
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
-    final formData = FormData.fromMap({
+
+    Future<FormData> buildFormData() async => FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
         filename: fileName,
         contentType: mediaType,
       ),
     });
-    final response = await dio.post('/api/v1/media', data: formData);
+
+    final formData = await buildFormData();
+    final response = await dio.post(
+      '/api/v1/media',
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
+    );
     return MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );
@@ -644,25 +653,34 @@ class MastodonClient {
     String? headerPath,
     List<Map<String, String>>? fieldsAttributes,
   }) async {
-    final map = <String, dynamic>{};
-    if (displayName != null) map['display_name'] = displayName;
-    if (note != null) map['note'] = note;
-    if (avatarPath != null) {
-      map['avatar'] = await MultipartFile.fromFile(avatarPath);
-    }
-    if (headerPath != null) {
-      map['header'] = await MultipartFile.fromFile(headerPath);
-    }
-    if (fieldsAttributes != null) {
-      for (var i = 0; i < fieldsAttributes.length; i++) {
-        map['fields_attributes[$i][name]'] = fieldsAttributes[i]['name'] ?? '';
-        map['fields_attributes[$i][value]'] =
-            fieldsAttributes[i]['value'] ?? '';
+    Future<FormData> buildFormData() async {
+      final map = <String, dynamic>{};
+      if (displayName != null) map['display_name'] = displayName;
+      if (note != null) map['note'] = note;
+      if (avatarPath != null) {
+        map['avatar'] = await MultipartFile.fromFile(avatarPath);
       }
+      if (headerPath != null) {
+        map['header'] = await MultipartFile.fromFile(headerPath);
+      }
+      if (fieldsAttributes != null) {
+        for (var i = 0; i < fieldsAttributes.length; i++) {
+          map['fields_attributes[$i][name]'] =
+              fieldsAttributes[i]['name'] ?? '';
+          map['fields_attributes[$i][value]'] =
+              fieldsAttributes[i]['value'] ?? '';
+        }
+      }
+      return FormData.fromMap(map);
     }
+
+    final formData = await buildFormData();
     final response = await dio.patch(
       '/api/v1/accounts/update_credentials',
-      data: FormData.fromMap(map),
+      data: formData,
+      options: Options(
+        extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+      ),
     );
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }

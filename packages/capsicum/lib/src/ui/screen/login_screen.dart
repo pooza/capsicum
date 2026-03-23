@@ -31,6 +31,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   static final _redirectUri = '${AppConstants.callbackUrlScheme}://oauth';
 
   bool _isLoggingIn = false;
+  bool _loginCompleted = false;
   String? _error;
 
   // Server info
@@ -99,6 +100,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_loginCompleted) return;
     setState(() {
       _isLoggingIn = true;
       _error = null;
@@ -107,6 +109,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
+
+      // Reuse cached client credentials from an existing account on the same
+      // host to avoid calling POST /api/v1/apps (rate-limit prone).
+      if (adapter is MastodonAdapter) {
+        final accounts = ref.read(accountManagerProvider).accounts;
+        final existing = accounts
+            .where((a) => a.key.host == widget.host && a.clientSecret != null)
+            .firstOrNull;
+        if (existing != null) {
+          adapter.setCachedClientCredentials(existing.clientSecret);
+        }
+      }
 
       final application = ApplicationInfo(
         name: AppConstants.appName,
@@ -122,7 +136,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
-          options: const FlutterWebAuth2Options(preferEphemeral: true),
+          options: const FlutterWebAuth2Options(preferEphemeral: false),
         );
 
         final callbackUri = Uri.parse(resultUrl);
@@ -132,6 +146,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
 
         if (completeResult is LoginSuccess) {
+          _loginCompleted = true;
           final account = Account(
             key: AccountKey(
               type: widget.backendType,
@@ -153,7 +168,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
-        setState(() => _error = 'ログインの開始に失敗しました');
+        final errorMsg = startResult.error;
+        setState(
+          () => _error = errorMsg is String ? errorMsg : 'ログインの開始に失敗しました',
+        );
       }
     } catch (e) {
       // User cancelled the browser — not an error.

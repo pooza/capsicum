@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 
 import 'dart:developer' as developer;
@@ -100,6 +101,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   final MastodonCapabilities capabilities = MastodonCapabilities();
 
   static const _scopes = ['read', 'write', 'follow', 'push'];
+
+  /// Cached client credentials to reuse across login attempts.
+  /// Set via [setCachedClientCredentials] before calling [startLogin].
+  ClientSecretData? _cachedClientCredentials;
+
+  /// Pre-set client credentials so [startLogin] can skip `POST /api/v1/apps`.
+  void setCachedClientCredentials(ClientSecretData? credentials) {
+    _cachedClientCredentials = credentials;
+  }
 
   MastodonAdapter._(this.client, this.host);
 
@@ -329,16 +339,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Future<LoginResult> startLogin(ApplicationInfo application) async {
     try {
-      final app = await client.createApplication(
-        clientName: application.name,
-        redirectUris: application.redirectUri.toString(),
-        scopes: _scopes.join(' '),
-        website: application.website?.toString(),
-      );
+      String clientId;
+      String clientSecret;
+
+      final cached = _cachedClientCredentials;
+      if (cached != null) {
+        clientId = cached.clientId;
+        clientSecret = cached.clientSecret;
+      } else {
+        final app = await client.createApplication(
+          clientName: application.name,
+          redirectUris: application.redirectUri.toString(),
+          scopes: _scopes.join(' '),
+          website: application.website?.toString(),
+        );
+        clientId = app.clientId!;
+        clientSecret = app.clientSecret!;
+      }
 
       final authUrl = Uri.https(host, '/oauth/authorize', {
         'response_type': 'code',
-        'client_id': app.clientId!,
+        'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
       });
@@ -346,12 +367,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       return LoginNeedsOAuth(
         authorizationUrl: authUrl,
         extra: {
-          'client_id': app.clientId!,
-          'client_secret': app.clientSecret!,
+          'client_id': clientId,
+          'client_secret': clientSecret,
           'redirect_uri': application.redirectUri.toString(),
           'scopes': _scopes.join(' '),
         },
       );
+    } on DioException catch (e, s) {
+      if (e.response?.statusCode == 429) {
+        return LoginFailure(
+          'サーバーのアクセス制限に達しました。しばらく待ってから再試行してください',
+          s,
+        );
+      }
+      return LoginFailure(e, s);
     } catch (e, s) {
       return LoginFailure(e, s);
     }
