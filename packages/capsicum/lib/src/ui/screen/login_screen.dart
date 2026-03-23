@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
@@ -164,22 +165,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           if (mounted) context.go('/home');
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          Sentry.captureException(
+            completeResult.error,
+            stackTrace: completeResult.stackTrace,
+          );
           setState(() => _error = 'ログインに失敗しました');
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
+        Sentry.captureException(
+          startResult.error,
+          stackTrace: startResult.stackTrace,
+        );
         final errorMsg = startResult.error;
         setState(
           () => _error = errorMsg is String ? errorMsg : 'ログインの開始に失敗しました',
         );
       }
-    } catch (e) {
+    } catch (e, st) {
       // User cancelled the browser — not an error.
       if (e.toString().contains('CANCELED') ||
           e.toString().contains('cancelled')) {
         // Do nothing.
       } else {
         debugPrint('Login error: $e');
+        Sentry.captureException(e, stackTrace: st);
         setState(() => _error = '通信に失敗しました');
       }
     } finally {
