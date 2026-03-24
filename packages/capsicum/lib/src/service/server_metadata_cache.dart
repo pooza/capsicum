@@ -52,10 +52,10 @@ class ServerMetadataCache {
       final res = await dio.get('https://$host/api/v2/instance');
       if (res.statusCode == 200) {
         final data = res.data as Map<String, dynamic>;
-        final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
+        final icon = data['icon'] as Map<String, dynamic>?;
         return ServerMetadata(
           name: data['title'] as String? ?? host,
-          iconUrl: thumbnail?['url'] as String?,
+          iconUrl: icon?['url'] as String? ?? 'https://$host/favicon.ico',
           themeColor: _extractColor(data),
         );
       }
@@ -68,7 +68,7 @@ class ServerMetadataCache {
         final data = res.data as Map<String, dynamic>;
         return ServerMetadata(
           name: data['title'] as String? ?? host,
-          iconUrl: data['thumbnail'] as String?,
+          iconUrl: 'https://$host/favicon.ico',
           themeColor: null,
         );
       }

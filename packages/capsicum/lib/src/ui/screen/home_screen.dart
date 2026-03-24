@@ -186,7 +186,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  _buildServerLabel(context, ref, account),
+                  _buildAcctWithFavicon(context, ref, account),
                 ],
               ),
             ),
@@ -507,8 +507,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        Text(
+                          '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                          style: const TextStyle(color: Colors.black),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         _buildServerLabel(context, ref, current,
-                            color: Colors.black),
+                            color: Colors.black54),
                       ],
                     ),
                   ),
@@ -541,27 +547,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Row(
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (meta?.iconUrl != null)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: Image.network(
-                              meta!.iconUrl!,
-                              width: 14,
-                              height: 14,
-                            ),
-                          ),
-                        ),
-                      Flexible(
-                        child: Text(
-                          meta?.name ?? account.key.host,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Text(
+                        '@${account.user.username}@${account.key.host}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      if (meta != null)
+                        Row(
+                          children: [
+                            if (meta.iconUrl != null)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(3),
+                                  child: Image.network(
+                                    meta.iconUrl!,
+                                    width: 14,
+                                    height: 14,
+                                  ),
+                                ),
+                              ),
+                            Flexible(
+                              child: Text(
+                                meta.name,
+                                style: Theme.of(context).textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   onTap: () {
@@ -913,22 +931,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// AppBar 用: acct の左に favicon を添える。
+  Widget _buildAcctWithFavicon(
+    BuildContext context,
+    WidgetRef ref,
+    Account? account,
+  ) {
+    final host = account?.key.host ?? '';
+    final acct = '@${account?.user.username ?? ""}@$host';
+    final metadata = ref.watch(currentServerMetadataProvider).valueOrNull;
+    final iconUrl = metadata?.iconUrl;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (iconUrl != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Image.network(iconUrl, width: 14, height: 14),
+            ),
+          ),
+        Flexible(
+          child: Text(
+            acct,
+            style: Theme.of(context).textTheme.bodySmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// ドロワーヘッダー用: サーバー名 + favicon の行。
   Widget _buildServerLabel(
     BuildContext context,
     WidgetRef ref,
     Account? account, {
     Color? color,
   }) {
-    final host = account?.key.host ?? '';
     final metadata = ref.watch(currentServerMetadataProvider).valueOrNull;
-    final serverName = metadata?.name ?? host;
-    final iconUrl = metadata?.iconUrl;
+    if (metadata == null) return const SizedBox.shrink();
+
+    final iconUrl = metadata.iconUrl;
     final style = color != null
-        ? TextStyle(color: color)
+        ? TextStyle(color: color, fontSize: 12)
         : Theme.of(context).textTheme.bodySmall;
 
-    return Tooltip(
-      message: '@${account?.user.username ?? ""}@$host',
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -942,7 +995,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           Flexible(
             child: Text(
-              serverName,
+              metadata.name,
               style: style,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
