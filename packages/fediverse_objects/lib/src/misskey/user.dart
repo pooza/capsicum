@@ -24,6 +24,7 @@ class MisskeyUser {
   final List<Map<String, dynamic>>? avatarDecorations;
   final List<Map<String, dynamic>>? badgeRoles;
   final List<String>? verifiedLinks;
+  final DateTime? createdAt;
 
   const MisskeyUser({
     required this.id,
@@ -46,6 +47,7 @@ class MisskeyUser {
     this.avatarDecorations,
     this.badgeRoles,
     this.verifiedLinks,
+    this.createdAt,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>

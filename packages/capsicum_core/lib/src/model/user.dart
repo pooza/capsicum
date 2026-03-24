@@ -58,6 +58,7 @@ class User {
   final Map<String, String> emojis;
   final List<AvatarDecoration> avatarDecorations;
   final String? url;
+  final DateTime? createdAt;
 
   const User({
     required this.id,
@@ -77,5 +78,6 @@ class User {
     this.emojis = const {},
     this.avatarDecorations = const [],
     this.url,
+    this.createdAt,
   });
 }

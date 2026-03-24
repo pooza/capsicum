@@ -62,6 +62,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
             e['shortcode'] as String: e['url'] as String,
       },
       url: url,
+      createdAt: createdAt,
     );
   }
 }

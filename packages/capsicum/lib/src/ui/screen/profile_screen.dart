@@ -450,6 +450,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ],
           ),
+          if (user.createdAt != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_month,
+                  size: 16,
+                  color: theme.colorScheme.outline,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${user.createdAt!.year}年${user.createdAt!.month}月${user.createdAt!.day}日から利用',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (_isOwnProfile) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
