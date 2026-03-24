@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/account_storage.dart';
+import '../service/server_metadata_cache.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -74,6 +75,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     final newAccounts = [enriched, ...state.accounts];
     state = AccountManagerState(accounts: newAccounts, current: enriched);
+
+    // Prefetch server metadata for badge display (non-blocking).
+    ServerMetadataCache.instance.fetch(account.key.host);
   }
 
   void switchAccount(Account account) {
@@ -86,6 +90,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
+
+    // Prefetch server metadata for badge display (non-blocking).
+    ServerMetadataCache.instance.fetch(account.key.host);
   }
 
   void updateCurrentUser(User user) {
@@ -203,6 +210,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           accounts: newAccounts,
           current: state.current ?? account,
         );
+
+        // Prefetch server metadata for badge display (non-blocking).
+        ServerMetadataCache.instance.fetch(accountKey.host);
       } catch (_) {
         // Skip failed restorations
         continue;
