@@ -9,8 +9,8 @@ import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
-import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
+import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
@@ -859,42 +859,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildServerInfo(String host, ThemeData theme) {
-    final cached = ServerMetadataCache.instance.getCached(host);
-    if (cached == null) {
-      ServerMetadataCache.instance.fetch(host).then((_) {
-        if (mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
-          });
-        }
-      });
-      return const SizedBox.shrink();
-    }
+    final themeColors = ref.watch(hostThemeColorProvider);
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (cached.iconUrl != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: Image.network(cached.iconUrl!, width: 14, height: 14),
-              ),
-            ),
-          Flexible(
-            child: Text(
-              cached.name,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.only(top: 4),
+      child: ServerBadge.fromHost(host, themeColors: themeColors),
     );
   }
 }

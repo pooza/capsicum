@@ -17,9 +17,9 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
-import '../../service/server_metadata_cache.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
 
@@ -186,7 +186,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  _buildAcctWithFavicon(context, ref, account),
+                  if (account != null)
+                    _buildServerBadge(context, ref, account.key.host),
                 ],
               ),
             ),
@@ -513,8 +514,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        _buildServerLabel(context, ref, current,
-                            color: Colors.black54),
+                        if (current != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: _buildServerBadge(
+                                context, ref, current.key.host),
+                          ),
                       ],
                     ),
                   ),
@@ -532,9 +537,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map(
               (account) {
-                final meta = ServerMetadataCache.instance.getCached(
-                  account.key.host,
-                );
+                final themeColors = ref.watch(hostThemeColorProvider);
                 return ListTile(
                   leading: UserAvatar(
                     user: account.user,
@@ -555,31 +558,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (meta != null)
-                        Row(
-                          children: [
-                            if (meta.iconUrl != null)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 4),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(3),
-                                  child: Image.network(
-                                    meta.iconUrl!,
-                                    width: 14,
-                                    height: 14,
-                                  ),
-                                ),
-                              ),
-                            Flexible(
-                              child: Text(
-                                meta.name,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: ServerBadge.fromHost(
+                          account.key.host,
+                          themeColors: themeColors,
                         ),
+                      ),
                     ],
                   ),
                   onTap: () {
@@ -931,78 +916,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// AppBar 用: acct の左に favicon を添える。
-  Widget _buildAcctWithFavicon(
-    BuildContext context,
-    WidgetRef ref,
-    Account? account,
-  ) {
-    final host = account?.key.host ?? '';
-    final acct = '@${account?.user.username ?? ""}@$host';
-    final metadata = ref.watch(currentServerMetadataProvider).valueOrNull;
-    final iconUrl = metadata?.iconUrl;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (iconUrl != null)
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: Image.network(iconUrl, width: 14, height: 14),
-            ),
-          ),
-        Flexible(
-          child: Text(
-            acct,
-            style: Theme.of(context).textTheme.bodySmall,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// ドロワーヘッダー用: サーバー名 + favicon の行。
-  Widget _buildServerLabel(
-    BuildContext context,
-    WidgetRef ref,
-    Account? account, {
-    Color? color,
-  }) {
-    final metadata = ref.watch(currentServerMetadataProvider).valueOrNull;
-    if (metadata == null) return const SizedBox.shrink();
-
-    final iconUrl = metadata.iconUrl;
-    final style = color != null
-        ? TextStyle(color: color, fontSize: 12)
-        : Theme.of(context).textTheme.bodySmall;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (iconUrl != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: Image.network(iconUrl, width: 14, height: 14),
-              ),
-            ),
-          Flexible(
-            child: Text(
-              metadata.name,
-              style: style,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
+  Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
+    final themeColors = ref.watch(hostThemeColorProvider);
+    return ServerBadge.fromHost(host, themeColors: themeColors);
   }
 }

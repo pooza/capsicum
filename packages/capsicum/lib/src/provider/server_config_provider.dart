@@ -122,13 +122,6 @@ final sabacanUrlProvider = FutureProvider<String?>((ref) async {
   }
 });
 
-/// Server metadata (name, iconUrl) for the current account's host.
-final currentServerMetadataProvider = FutureProvider<ServerMetadata?>((ref) {
-  final host = ref.watch(currentAccountProvider)?.key.host;
-  if (host == null) return Future.value(null);
-  return ServerMetadataCache.instance.fetch(host);
-});
-
 /// Local timeline display name: use default hashtag if available.
 final localTimelineNameProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
