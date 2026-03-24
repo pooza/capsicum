@@ -284,10 +284,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
     return await (adapter as dynamic).getUserPosts(
-      widget.user.id,
-      maxId: maxId,
-      onlyMedia: onlyMedia,
-    ) as List<Post>;
+          widget.user.id,
+          maxId: maxId,
+          onlyMedia: onlyMedia,
+        )
+        as List<Post>;
   }
 
   @override
@@ -343,7 +344,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             delegate: _TabBarDelegate(
               TabBar(
                 controller: _tabController,
-                tabs: const [Tab(text: '投稿'), Tab(text: 'メディア')],
+                tabs: const [
+                  Tab(text: '投稿'),
+                  Tab(text: 'メディア'),
+                ],
               ),
               colorScheme.surface,
             ),
@@ -367,10 +371,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (_pinnedPosts.isNotEmpty) ...[
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               children: [
                 Icon(
@@ -421,10 +422,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             }
             return Column(
               children: [
-                PostTile(
-                  post: _posts[index],
-                  onPostUpdated: _onPostUpdated,
-                ),
+                PostTile(post: _posts[index], onPostUpdated: _onPostUpdated),
                 const Divider(height: 1),
               ],
             );
@@ -459,10 +457,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           }
           return Column(
             children: [
-              PostTile(
-                post: _mediaPosts[index],
-                onPostUpdated: _onPostUpdated,
-              ),
+              PostTile(post: _mediaPosts[index], onPostUpdated: _onPostUpdated),
               const Divider(height: 1),
             ],
           );

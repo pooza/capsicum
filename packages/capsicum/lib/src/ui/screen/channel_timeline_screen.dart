@@ -59,9 +59,8 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
           ? SimplePostBar(
               channelId: widget.channelId,
               channelName: widget.channelName,
-              onPosted: () => ref.invalidate(
-                channelTimelineProvider(widget.channelId),
-              ),
+              onPosted: () =>
+                  ref.invalidate(channelTimelineProvider(widget.channelId)),
             )
           : null,
       body: timeline.when(

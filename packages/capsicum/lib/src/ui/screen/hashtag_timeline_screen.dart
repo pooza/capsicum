@@ -49,8 +49,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
       ),
       bottomNavigationBar: SimplePostBar(
         hashtag: widget.hashtag,
-        onPosted: () =>
-            ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
+        onPosted: () => ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
       ),
       body: timeline.when(
         data: (state) => state.posts.isEmpty

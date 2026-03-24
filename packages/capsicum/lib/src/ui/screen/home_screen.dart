@@ -819,9 +819,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final tags = await mulukhiya.getFavoriteTags();
       if (tags.isEmpty) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('プロフィールタグはありません')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('プロフィールタグはありません')));
         }
         return;
       }
@@ -860,9 +860,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('プロフィールタグの取得に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('プロフィールタグの取得に失敗しました')));
       }
     }
   }

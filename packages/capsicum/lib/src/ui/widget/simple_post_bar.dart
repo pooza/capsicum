@@ -49,8 +49,9 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
-    final content =
-        widget.hashtag != null ? '$text\n\n#${widget.hashtag}' : text;
+    final content = widget.hashtag != null
+        ? '$text\n\n#${widget.hashtag}'
+        : text;
 
     setState(() => _sending = true);
     try {
