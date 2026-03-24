@@ -110,6 +110,7 @@ class MulukhiyaService {
   final String? reblogLabel;
   final bool annictEnabled;
   final List<String> adminRoleIds;
+  final String? infoBotAcct;
 
   MulukhiyaService._({
     required Dio dio,
@@ -123,6 +124,7 @@ class MulukhiyaService {
     this.reblogLabel,
     this.annictEnabled = false,
     this.adminRoleIds = const [],
+    this.infoBotAcct,
   }) : _dio = dio;
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
@@ -157,6 +159,8 @@ class MulukhiyaService {
               .toList() ??
           const [];
 
+      final infoBot = config['info_bot'] as Map<String, dynamic>?;
+
       return MulukhiyaService._(
         dio: dio,
         baseUrl: 'https://$domain/mulukhiya/api',
@@ -169,6 +173,7 @@ class MulukhiyaService {
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
         adminRoleIds: adminRoleIds,
+        infoBotAcct: infoBot?['acct'] as String?,
       );
     } catch (_) {
       // Not found or connection error — mulukhiya not present
