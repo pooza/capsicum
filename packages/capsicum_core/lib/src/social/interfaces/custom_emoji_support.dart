@@ -14,4 +14,8 @@ class CustomEmoji {
 
 abstract mixin class CustomEmojiSupport {
   Future<List<CustomEmoji>> getEmojis();
+
+  /// Returns the user's pinned emoji palette (e.g. from Misskey's registry).
+  /// Adapters that don't support palettes return an empty list by default.
+  Future<List<String>> getEmojiPalette() async => const [];
 }

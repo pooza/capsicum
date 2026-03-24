@@ -525,6 +525,23 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/i/registry/get
+  ///
+  /// Returns the value stored at [key] under [scope] in the user registry.
+  /// Returns `null` if the key does not exist (404).
+  Future<dynamic> registryGet(String key, List<String> scope) async {
+    try {
+      final response = await dio.post(
+        '/api/i/registry/get',
+        data: createBody({'key': key, 'scope': scope}),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// POST /api/emojis
   Future<List<Map<String, dynamic>>> getEmojis() async {
     final response = await dio.post('/api/emojis', data: {});

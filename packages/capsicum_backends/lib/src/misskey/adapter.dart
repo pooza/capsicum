@@ -754,6 +754,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .toList();
   }
 
+  @override
+  Future<List<String>> getEmojiPalette() async {
+    try {
+      final data = await client.registryGet(
+        'reactions',
+        ['client', 'base'],
+      );
+      if (data is List) {
+        return data.map((e) => e.toString()).toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ListSupport
 
   @override
