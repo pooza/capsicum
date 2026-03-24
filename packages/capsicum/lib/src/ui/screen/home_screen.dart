@@ -22,6 +22,7 @@ import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
+import '../widget/simple_post_bar.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
 final selectedListProvider = StateProvider<PostList?>((ref) => null);
@@ -216,10 +217,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountState,
         unreadAnnouncements,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/compose'),
-        child: const Icon(Icons.edit),
-      ),
+      bottomNavigationBar: const SimplePostBar(),
       body: GestureDetector(
         onHorizontalDragEnd: selectedList == null
             ? (details) => _onSwipe(details, selectedType)

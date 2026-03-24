@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/hashtag_provider.dart';
 import '../widget/post_tile.dart';
+import '../widget/simple_post_bar.dart';
 
 class HashtagTimelineScreen extends ConsumerStatefulWidget {
   final String hashtag;
@@ -45,6 +46,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
       appBar: AppBar(
         title: Text('#${widget.hashtag}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      bottomNavigationBar: SimplePostBar(
+        hashtag: widget.hashtag,
+        onPosted: () =>
+            ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
       ),
       body: timeline.when(
         data: (state) => state.posts.isEmpty
