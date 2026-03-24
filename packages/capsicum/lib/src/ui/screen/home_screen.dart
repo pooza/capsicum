@@ -518,7 +518,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: _buildServerBadge(
-                                context, ref, current.key.host),
+                              context,
+                              ref,
+                              current.key.host,
+                            ),
                           ),
                       ],
                     ),
@@ -535,47 +538,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 style: Theme.of(context).textTheme.labelMedium,
               ),
             ),
-            ...otherAccounts.map(
-              (account) {
-                final themeColors = ref.watch(hostThemeColorProvider);
-                return ListTile(
-                  leading: UserAvatar(
-                    user: account.user,
-                    size: 32,
-                    compact: true,
-                  ),
-                  title: EmojiText(
-                    account.user.displayName ?? account.user.username,
-                    emojis: account.user.emojis,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '@${account.user.username}@${account.key.host}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+            ...otherAccounts.map((account) {
+              final themeColors = ref.watch(hostThemeColorProvider);
+              return ListTile(
+                leading: UserAvatar(
+                  user: account.user,
+                  size: 32,
+                  compact: true,
+                ),
+                title: EmojiText(
+                  account.user.displayName ?? account.user.username,
+                  emojis: account.user.emojis,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '@${account.user.username}@${account.key.host}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: ServerBadge.fromHost(
+                        account.key.host,
+                        themeColors: themeColors,
                       ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: ServerBadge.fromHost(
-                          account.key.host,
-                          themeColors: themeColors,
-                        ),
-                      ),
-                    ],
-                  ),
-                  onTap: () {
-                    ref
-                        .read(accountManagerProvider.notifier)
-                        .switchAccount(account);
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
-            ),
+                    ),
+                  ],
+                ),
+                onTap: () {
+                  ref
+                      .read(accountManagerProvider.notifier)
+                      .switchAccount(account);
+                  Navigator.of(context).pop();
+                },
+              );
+            }),
           ],
           ListTile(
             leading: const Icon(Icons.person_add),

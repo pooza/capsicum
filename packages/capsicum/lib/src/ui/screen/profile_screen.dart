@@ -58,8 +58,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   void _resolveTcoUrls() {
     final texts = [
-      if (widget.user.description != null)
-        _stripHtml(widget.user.description!),
+      if (widget.user.description != null) _stripHtml(widget.user.description!),
       ...widget.user.fields.map((f) => _stripHtml(f.value)),
     ];
     for (final text in texts) {
@@ -652,10 +651,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           },
           itemBuilder: (_) => [
             if (widget.user.url != null)
-              const PopupMenuItem(
-                value: 'copy_url',
-                child: Text('URL をコピー'),
-              ),
+              const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
             if (rel.muting)
               const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
             else ...[
