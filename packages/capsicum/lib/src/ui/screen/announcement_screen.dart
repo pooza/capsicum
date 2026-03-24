@@ -79,8 +79,9 @@ class AnnouncementScreen extends ConsumerWidget {
     final acct = ref.read(currentMulukhiyaProvider)?.infoBotAcct;
     if (adapter == null || acct == null) return;
 
-    // acct is "username@host" format
-    final parts = acct.split('@');
+    // acct may be "@username@host" or "username@host"
+    final normalized = acct.startsWith('@') ? acct.substring(1) : acct;
+    final parts = normalized.split('@');
     if (parts.length != 2) return;
 
     final user = await adapter.getUser(parts[0], parts[1]);
@@ -109,7 +110,7 @@ class _InfoBotBanner extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'お知らせボット (@$acct)',
+                'お知らせボット (${acct.startsWith('@') ? acct : '@$acct'})',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
