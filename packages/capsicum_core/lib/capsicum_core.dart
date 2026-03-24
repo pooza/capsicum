@@ -5,6 +5,7 @@ library;
 export 'src/model/announcement.dart';
 export 'src/model/attachment.dart';
 export 'src/model/channel.dart';
+export 'src/model/clip.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
 export 'src/model/poll.dart';
@@ -26,6 +27,7 @@ export 'src/social/capabilities.dart';
 // Feature interfaces
 export 'src/social/interfaces/announcement_support.dart';
 export 'src/social/interfaces/channel_support.dart';
+export 'src/social/interfaces/clip_support.dart';
 export 'src/social/interfaces/bookmark_support.dart';
 export 'src/social/interfaces/custom_emoji_support.dart';
 export 'src/social/interfaces/favorite_support.dart';

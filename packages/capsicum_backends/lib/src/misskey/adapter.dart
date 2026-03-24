@@ -80,6 +80,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
+        ClipSupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport {
@@ -885,6 +886,39 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }) async {
     final notes = await client.getChannelTimeline(
       channelId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
+        .toList();
+  }
+
+  // ClipSupport
+
+  @override
+  Future<List<NoteClip>> getClips() async {
+    final data = await client.getClips();
+    return data
+        .map(
+          (c) => NoteClip(
+            id: c['id'] as String,
+            name: c['name'] as String? ?? '',
+            description: c['description'] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<Post>> getClipNotes(
+    String clipId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getClipNotes(
+      clipId,
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,

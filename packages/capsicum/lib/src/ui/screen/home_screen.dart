@@ -651,6 +651,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is ClipSupport)
+            ListTile(
+              leading: const Icon(Icons.content_paste),
+              title: const Text('クリップ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showClipList(context, ref);
+              },
+            ),
           if (ref.read(currentMulukhiyaProvider) != null) ...[
             ListTile(
               leading: const Icon(Icons.tag),
@@ -929,6 +938,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showClipList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipSupport) return;
+
+    final List<NoteClip> clips;
+    try {
+      clips = await (adapter as ClipSupport).getClips();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('クリップの取得に失敗しました')),
+        );
+      }
+      return;
+    }
+    if (clips.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('クリップはありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'クリップ',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final clip in clips)
+              ListTile(
+                leading: const Icon(Icons.content_paste, size: 20),
+                title: Text(clip.name),
+                subtitle: clip.description != null && clip.description!.isNotEmpty
+                    ? Text(
+                        clip.description!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : null,
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/clip/${clip.id}', extra: clip.name);
+                },
+              ),
           ],
         ),
       ),

@@ -611,6 +611,36 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/clips/list
+  Future<List<Map<String, dynamic>>> getClips() async {
+    final response = await dio.post(
+      '/api/clips/list',
+      data: createBody({}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/clips/notes
+  Future<List<MisskeyNote>> getClipNotes(
+    String clipId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/clips/notes',
+      data: createBody({
+        'clipId': clipId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/ap/show — resolve a remote URI to a local object.
   Future<Map<String, dynamic>> apShow(String uri) async {
     final response = await dio.post(
