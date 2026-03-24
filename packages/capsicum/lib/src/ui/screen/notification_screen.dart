@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../service/background_notification_service.dart';
 import '../widget/notification_tile.dart';
 
 class NotificationScreen extends ConsumerStatefulWidget {
@@ -28,6 +29,14 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
+
+    // Clear unread notification count for the current account.
+    final account = ref.read(currentAccountProvider);
+    if (account != null) {
+      BackgroundNotificationService.clearUnreadCount(
+        account.key.toStorageKey(),
+      );
+    }
   }
 
   @override

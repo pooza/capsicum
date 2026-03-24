@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/account_storage.dart';
+import '../service/background_notification_service.dart';
 import '../service/server_metadata_cache.dart';
 
 /// State: list of accounts + currently selected account.
@@ -90,6 +91,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
+
+    // Clear unread notification count for the account we're switching to.
+    BackgroundNotificationService.clearUnreadCount(
+      account.key.toStorageKey(),
+    );
 
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);

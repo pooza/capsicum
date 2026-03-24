@@ -12,6 +12,7 @@ import 'account_storage.dart';
 /// workmanager background dispatcher.
 class BackgroundNotificationService {
   static const _lastSeenPrefix = 'capsicum_last_notification_';
+  static const _unreadCountPrefix = 'capsicum_unread_notification_count_';
 
   static Future<void> checkAllAccounts() async {
     final storage = AccountStorage();
@@ -56,6 +57,13 @@ class BackgroundNotificationService {
         await prefs.setString(
           '$_lastSeenPrefix$keyStr',
           notifications.first.id,
+        );
+
+        // Accumulate unread count (adds to any existing unread count).
+        final prevCount = prefs.getInt('$_unreadCountPrefix$keyStr') ?? 0;
+        await prefs.setInt(
+          '$_unreadCountPrefix$keyStr',
+          prevCount + notifications.length,
         );
 
         // Show a local notification for each new item.
@@ -123,4 +131,14 @@ class BackgroundNotificationService {
   /// Key used by both background service and foreground provider.
   static String lastSeenKey(String accountStorageKey) =>
       '$_lastSeenPrefix$accountStorageKey';
+
+  /// Key for unread notification count per account.
+  static String unreadCountKey(String accountStorageKey) =>
+      '$_unreadCountPrefix$accountStorageKey';
+
+  /// Clear unread notification count for the given account.
+  static Future<void> clearUnreadCount(String accountStorageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_unreadCountPrefix$accountStorageKey');
+  }
 }

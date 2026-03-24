@@ -18,6 +18,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../provider/unread_badge_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -538,11 +539,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             ...otherAccounts.map((account) {
               final themeColors = ref.watch(hostThemeColorProvider);
+              final badges = ref.watch(unreadBadgeProvider).valueOrNull;
+              final badge = badges?[account.key.toStorageKey()];
               return ListTile(
-                leading: UserAvatar(
-                  user: account.user,
-                  size: 32,
-                  compact: true,
+                leading: Badge(
+                  isLabelVisible: badge != null && badge.hasUnread,
+                  label: badge != null && badge.hasUnread
+                      ? Text('${badge.total}')
+                      : null,
+                  child: UserAvatar(
+                    user: account.user,
+                    size: 32,
+                    compact: true,
+                  ),
                 ),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
