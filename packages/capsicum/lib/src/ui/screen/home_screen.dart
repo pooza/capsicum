@@ -17,6 +17,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../service/server_metadata_cache.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
@@ -524,30 +525,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
             ...otherAccounts.map(
-              (account) => ListTile(
-                leading: UserAvatar(
-                  user: account.user,
-                  size: 32,
-                  compact: true,
-                ),
-                title: EmojiText(
-                  account.user.displayName ?? account.user.username,
-                  emojis: account.user.emojis,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '@${account.user.username}@${account.key.host}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () {
-                  ref
-                      .read(accountManagerProvider.notifier)
-                      .switchAccount(account);
-                  Navigator.of(context).pop();
-                },
-              ),
+              (account) {
+                final meta = ServerMetadataCache.instance.getCached(
+                  account.key.host,
+                );
+                return ListTile(
+                  leading: UserAvatar(
+                    user: account.user,
+                    size: 32,
+                    compact: true,
+                  ),
+                  title: EmojiText(
+                    account.user.displayName ?? account.user.username,
+                    emojis: account.user.emojis,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Row(
+                    children: [
+                      if (meta?.iconUrl != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: Image.network(
+                              meta!.iconUrl!,
+                              width: 14,
+                              height: 14,
+                            ),
+                          ),
+                        ),
+                      Flexible(
+                        child: Text(
+                          meta?.name ?? account.key.host,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  onTap: () {
+                    ref
+                        .read(accountManagerProvider.notifier)
+                        .switchAccount(account);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
             ),
           ],
           ListTile(

@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
@@ -399,6 +400,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (user.host != null) _buildServerInfo(user.host!, theme),
                   ],
                 ),
               ),
@@ -854,5 +856,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'")
         .replaceAll('&apos;', "'");
+  }
+
+  Widget _buildServerInfo(String host, ThemeData theme) {
+    final cached = ServerMetadataCache.instance.getCached(host);
+    if (cached == null) {
+      ServerMetadataCache.instance.fetch(host).then((_) {
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+      });
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (cached.iconUrl != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Image.network(cached.iconUrl!, width: 14, height: 14),
+              ),
+            ),
+          Flexible(
+            child: Text(
+              cached.name,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
