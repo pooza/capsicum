@@ -185,16 +185,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Tooltip(
-                    message:
-                        '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
-                    child: Text(
-                      '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                  _buildServerLabel(context, ref, account),
                 ],
               ),
             ),
@@ -515,16 +506,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Tooltip(
-                          message:
-                              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                          child: Text(
-                            '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                            style: const TextStyle(color: Colors.black),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                        _buildServerLabel(context, ref, current,
+                            color: Colors.black),
                       ],
                     ),
                   ),
@@ -902,6 +885,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildServerLabel(
+    BuildContext context,
+    WidgetRef ref,
+    Account? account, {
+    Color? color,
+  }) {
+    final host = account?.key.host ?? '';
+    final metadata = ref.watch(currentServerMetadataProvider).valueOrNull;
+    final serverName = metadata?.name ?? host;
+    final iconUrl = metadata?.iconUrl;
+    final style = color != null
+        ? TextStyle(color: color)
+        : Theme.of(context).textTheme.bodySmall;
+
+    return Tooltip(
+      message: '@${account?.user.username ?? ""}@$host',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (iconUrl != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Image.network(iconUrl, width: 14, height: 14),
+              ),
+            ),
+          Flexible(
+            child: Text(
+              serverName,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
