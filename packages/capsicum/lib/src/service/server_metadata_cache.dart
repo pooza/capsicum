@@ -13,7 +13,7 @@ class ServerMetadataCache {
   ServerMetadataCache._();
   static final instance = ServerMetadataCache._();
 
-  final _cache = <String, ServerMetadata>{};
+  final _cache = <String, ServerMetadata?>{};
   final _pending = <String, Future<ServerMetadata?>>{};
 
   ServerMetadata? getCached(String host) => _cache[host];
@@ -35,13 +35,12 @@ class ServerMetadataCache {
       );
       final metadata =
           await _tryMastodon(dio, host) ?? await _tryMisskey(dio, host);
-      if (metadata != null) {
-        _cache[host] = metadata;
-      }
+      _cache[host] = metadata;
       _pending.remove(host);
       return metadata;
     } catch (e) {
       debugPrint('capsicum: failed to fetch server metadata for $host: $e');
+      _cache[host] = null;
       _pending.remove(host);
       return null;
     }
@@ -52,10 +51,9 @@ class ServerMetadataCache {
       final res = await dio.get('https://$host/api/v2/instance');
       if (res.statusCode == 200) {
         final data = res.data as Map<String, dynamic>;
-        final icon = data['icon'] as Map<String, dynamic>?;
         return ServerMetadata(
           name: data['title'] as String? ?? host,
-          iconUrl: icon?['url'] as String? ?? 'https://$host/favicon.ico',
+          iconUrl: _extractIcon(data, host),
           themeColor: _extractColor(data),
         );
       }
@@ -93,6 +91,24 @@ class ServerMetadataCache {
       // Not Misskey.
     }
     return null;
+  }
+
+  String _extractIcon(Map<String, dynamic> v2Data, String host) {
+    // Mastodon 4.3+: icon is an array of {src, sizes}
+    final icon = v2Data['icon'];
+    if (icon is List && icon.isNotEmpty) {
+      final first = icon.first;
+      if (first is Map<String, dynamic>) {
+        final src = first['src'] as String?;
+        if (src != null) return src;
+      }
+    }
+    // Older Mastodon: icon is a map with url
+    if (icon is Map<String, dynamic>) {
+      final url = icon['url'] as String?;
+      if (url != null) return url;
+    }
+    return 'https://$host/favicon.ico';
   }
 
   String? _extractColor(Map<String, dynamic> v2Data) {
