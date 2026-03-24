@@ -181,6 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   EmojiText(
                     account?.user.displayName ?? account?.user.username ?? '',
                     emojis: account?.user.emojis ?? const {},
+                    fallbackHost: account?.user.host,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -502,6 +503,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               current?.user.username ??
                               '',
                           emojis: current?.user.emojis ?? const {},
+                          fallbackHost: current?.user.host,
                           style: const TextStyle(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
@@ -556,6 +558,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
                   emojis: account.user.emojis,
+                  fallbackHost: account.user.host,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

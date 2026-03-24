@@ -968,6 +968,7 @@ class _ReplyPreview extends StatelessWidget {
                 EmojiText(
                   displayName,
                   emojis: post.author.emojis,
+                  fallbackHost: post.emojiHost,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
@@ -1044,6 +1045,7 @@ class _QuotePreview extends StatelessWidget {
                 EmojiText(
                   displayName,
                   emojis: post.author.emojis,
+                  fallbackHost: post.emojiHost,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
