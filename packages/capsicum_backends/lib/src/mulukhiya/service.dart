@@ -98,6 +98,14 @@ class ServerLinkGroup {
   const ServerLinkGroup({this.title, required this.links});
 }
 
+class FavoriteTag {
+  final String name;
+  final String? url;
+  final int count;
+
+  const FavoriteTag({required this.name, this.url, required this.count});
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
@@ -337,6 +345,30 @@ class MulukhiyaService {
       body: m['body'] as String? ?? href,
       icon: m['icon'] as String?,
     );
+  }
+
+  /// Fetch favorite tags (tags found in user profiles) with user counts.
+  /// Requires `/{controller}/data/favorite_tags` to be enabled.
+  /// Returns empty list if the feature is disabled (404).
+  Future<List<FavoriteTag>> getFavoriteTags() async {
+    try {
+      final response = await _dio.get('$baseUrl/tagging/favorites');
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return data.entries.map((e) {
+          final value = e.value as Map<String, dynamic>;
+          return FavoriteTag(
+            name: e.key,
+            url: value['url'] as String?,
+            count: value['count'] as int? ?? 0,
+          );
+        }).toList();
+      }
+      return [];
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return [];
+      rethrow;
+    }
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.

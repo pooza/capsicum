@@ -642,7 +642,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
-          if (ref.read(currentMulukhiyaProvider) != null)
+          if (ref.read(currentMulukhiyaProvider) != null) ...[
+            ListTile(
+              leading: const Icon(Icons.tag),
+              title: const Text('プロフィールタグ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showFavoriteTags(context, ref);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.link),
               title: const Text('リンク'),
@@ -651,6 +659,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showServerLinks(context, ref);
               },
             ),
+          ],
           if (ref.read(currentAdapterProvider) is ScheduleSupport)
             ListTile(
               leading: const Icon(Icons.schedule),
@@ -800,6 +809,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showFavoriteTags(BuildContext context, WidgetRef ref) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    if (mulukhiya == null) return;
+
+    try {
+      final tags = await mulukhiya.getFavoriteTags();
+      if (tags.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('プロフィールタグはありません')),
+          );
+        }
+        return;
+      }
+      if (!context.mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'プロフィールタグ',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              for (final tag in tags)
+                ListTile(
+                  leading: const Icon(Icons.tag, size: 20),
+                  title: Text('#${tag.name}'),
+                  trailing: Text(
+                    '${tag.count}人',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  dense: true,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    context.push('/hashtag/${tag.name}');
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('プロフィールタグの取得に失敗しました')),
+        );
+      }
+    }
   }
 
   Future<void> _showServerLinks(BuildContext context, WidgetRef ref) async {
