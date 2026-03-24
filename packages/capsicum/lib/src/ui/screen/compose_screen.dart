@@ -1126,7 +1126,10 @@ class _TagsetSheetState extends State<_TagsetSheet> {
     final parts = <String>[];
     if (p.series != null) parts.add(p.series!);
     if (p.episode != null) {
-      parts.add('第${p.episode}${p.episodeSuffix ?? '話'}');
+      final suffix = (p.episodeSuffix?.isNotEmpty ?? false)
+          ? p.episodeSuffix!
+          : '話';
+      parts.add('${p.episode}$suffix');
     }
     if (p.subtitle != null) parts.add(p.subtitle!);
     return parts.isNotEmpty ? parts.join(' ') : p.name;
