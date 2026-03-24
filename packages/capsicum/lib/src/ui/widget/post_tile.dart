@@ -1251,7 +1251,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   void _showRebloggedBy(BuildContext context, Post post) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
-    final label = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+    final label = ref.read(reblogLabelProvider);
     if (adapter is MastodonAdapter) {
       context.push(
         '/users',
