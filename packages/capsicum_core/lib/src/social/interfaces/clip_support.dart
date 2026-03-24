@@ -4,8 +4,5 @@ import '../../model/timeline_query.dart';
 
 abstract mixin class ClipSupport {
   Future<List<NoteClip>> getClips();
-  Future<List<Post>> getClipNotes(
-    String clipId, {
-    TimelineQuery? query,
-  });
+  Future<List<Post>> getClipNotes(String clipId, {TimelineQuery? query});
 }

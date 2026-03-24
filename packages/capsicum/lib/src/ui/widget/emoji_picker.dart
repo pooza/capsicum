@@ -313,10 +313,7 @@ class _EmojiPickerState extends State<EmojiPicker>
         if (_palette.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Text(
-              'パレット',
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
+            child: Text('パレット', style: Theme.of(context).textTheme.labelMedium),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),

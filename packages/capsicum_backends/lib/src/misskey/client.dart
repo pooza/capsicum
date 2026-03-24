@@ -630,10 +630,7 @@ class MisskeyClient {
 
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
-    final response = await dio.post(
-      '/api/clips/list',
-      data: createBody({}),
-    );
+    final response = await dio.post('/api/clips/list', data: createBody({}));
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 

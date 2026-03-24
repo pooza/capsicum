@@ -106,10 +106,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
           : null,
       poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
-      emojis: {
-        ...?noteEmojis,
-        ...?reactionEmojis,
-      },
+      emojis: {...?noteEmojis, ...?reactionEmojis},
       emojiHost: localHost,
       pinned: pinned,
       channelId: channel?['id'] as String?,

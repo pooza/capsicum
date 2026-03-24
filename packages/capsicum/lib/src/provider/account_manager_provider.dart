@@ -93,9 +93,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     storage.touchAccount(account.key.toStorageKey()).catchError((_) {});
 
     // Clear unread notification count for the account we're switching to.
-    BackgroundNotificationService.clearUnreadCount(
-      account.key.toStorageKey(),
-    );
+    BackgroundNotificationService.clearUnreadCount(account.key.toStorageKey());
 
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);

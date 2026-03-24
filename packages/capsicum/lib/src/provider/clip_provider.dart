@@ -74,6 +74,4 @@ class ClipNotesNotifier
 }
 
 final clipNotesProvider = AsyncNotifierProvider.autoDispose
-    .family<ClipNotesNotifier, TimelineState, String>(
-      ClipNotesNotifier.new,
-    );
+    .family<ClipNotesNotifier, TimelineState, String>(ClipNotesNotifier.new);

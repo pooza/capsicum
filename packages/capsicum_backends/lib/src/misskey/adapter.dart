@@ -757,10 +757,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<String>> getEmojiPalette() async {
     try {
-      final data = await client.registryGet(
-        'reactions',
-        ['client', 'base'],
-      );
+      final data = await client.registryGet('reactions', ['client', 'base']);
       if (data is List) {
         return data.map((e) => e.toString()).toList();
       }
@@ -929,10 +926,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Post>> getClipNotes(
-    String clipId, {
-    TimelineQuery? query,
-  }) async {
+  Future<List<Post>> getClipNotes(String clipId, {TimelineQuery? query}) async {
     final notes = await client.getClipNotes(
       clipId,
       sinceId: query?.sinceId,

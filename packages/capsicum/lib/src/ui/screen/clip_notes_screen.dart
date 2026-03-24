@@ -8,11 +8,7 @@ class ClipNotesScreen extends ConsumerStatefulWidget {
   final String clipId;
   final String? clipName;
 
-  const ClipNotesScreen({
-    super.key,
-    required this.clipId,
-    this.clipName,
-  });
+  const ClipNotesScreen({super.key, required this.clipId, this.clipName});
 
   @override
   ConsumerState<ClipNotesScreen> createState() => _ClipNotesScreenState();
@@ -54,9 +50,8 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
         data: (state) => state.posts.isEmpty
             ? const Center(child: Text('投稿がありません'))
             : RefreshIndicator(
-                onRefresh: () => ref.refresh(
-                  clipNotesProvider(widget.clipId).future,
-                ),
+                onRefresh: () =>
+                    ref.refresh(clipNotesProvider(widget.clipId).future),
                 child: ListView.separated(
                   controller: _scrollController,
                   itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),

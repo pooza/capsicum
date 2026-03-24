@@ -956,9 +956,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       clips = await (adapter as ClipSupport).getClips();
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('クリップの取得に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('クリップの取得に失敗しました')));
       }
       return;
     }
@@ -989,7 +989,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ListTile(
                 leading: const Icon(Icons.content_paste, size: 20),
                 title: Text(clip.name),
-                subtitle: clip.description != null && clip.description!.isNotEmpty
+                subtitle:
+                    clip.description != null && clip.description!.isNotEmpty
                     ? Text(
                         clip.description!,
                         maxLines: 1,

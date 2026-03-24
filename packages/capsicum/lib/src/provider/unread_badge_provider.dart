@@ -50,17 +50,19 @@ class UnreadBadgeNotifier
       final storageKey = account.key.toStorageKey();
 
       // Notification count from background service.
-      final notifCount = prefs.getInt(
-        BackgroundNotificationService.unreadCountKey(storageKey),
-      ) ?? 0;
+      final notifCount =
+          prefs.getInt(
+            BackgroundNotificationService.unreadCountKey(storageKey),
+          ) ??
+          0;
 
       // Announcement count from server.
       var announcementCount = 0;
       final adapter = account.adapter;
       if (adapter is AnnouncementSupport) {
         try {
-          final announcements =
-              await (adapter as AnnouncementSupport).getAnnouncements();
+          final announcements = await (adapter as AnnouncementSupport)
+              .getAnnouncements();
           announcementCount = announcements.where((a) => !a.read).length;
         } catch (_) {
           // Non-critical — skip on failure.
@@ -79,7 +81,8 @@ class UnreadBadgeNotifier
   }
 }
 
-final unreadBadgeProvider = AsyncNotifierProvider.autoDispose<
-    UnreadBadgeNotifier, Map<String, UnreadBadge>>(
-  UnreadBadgeNotifier.new,
-);
+final unreadBadgeProvider =
+    AsyncNotifierProvider.autoDispose<
+      UnreadBadgeNotifier,
+      Map<String, UnreadBadge>
+    >(UnreadBadgeNotifier.new);
