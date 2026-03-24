@@ -74,6 +74,7 @@ class MisskeyClient {
     String? untilId,
     int? limit,
     bool? pinned,
+    bool? withFiles,
   }) async {
     final response = await dio.post(
       '/api/users/notes',
@@ -82,6 +83,7 @@ class MisskeyClient {
         'untilId': ?untilId,
         'limit': ?limit,
         'pinned': ?pinned,
+        'withFiles': ?withFiles,
       }),
     );
     return (response.data as List)

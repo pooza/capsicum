@@ -158,8 +158,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
-  Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
-    final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
+  Future<List<Post>> getUserPosts(
+    String id, {
+    String? maxId,
+    bool? onlyMedia,
+  }) async {
+    final notes = await client.getUserNotes(
+      id,
+      untilId: maxId,
+      limit: 20,
+      withFiles: onlyMedia,
+    );
     return _safeConvert(
       notes,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),

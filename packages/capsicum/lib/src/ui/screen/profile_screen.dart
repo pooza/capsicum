@@ -25,14 +25,23 @@ class ProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   final _scrollController = ScrollController();
+  late final TabController _tabController;
   late User _user = widget.user;
   List<Post> _pinnedPosts = [];
   List<Post> _posts = [];
   bool _loadingPosts = true;
   bool _loadingMore = false;
   bool _hasMore = true;
+
+  List<Post> _mediaPosts = [];
+  bool _loadingMediaPosts = true;
+  bool _loadingMoreMedia = false;
+  bool _hasMoreMedia = true;
+  bool _mediaTabLoaded = false;
+
   UserRelationship? _relationship;
   bool _relationshipLoading = false;
 
@@ -48,6 +57,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
     _loadPinnedPosts();
@@ -72,8 +83,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  void _onTabChanged() {
+    if (_tabController.index == 1 && !_mediaTabLoaded) {
+      _mediaTabLoaded = true;
+      _loadMediaPosts();
+    }
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bioRenderer?.dispose();
@@ -86,7 +106,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      _loadMorePosts();
+      if (_tabController.index == 0) {
+        _loadMorePosts();
+      } else {
+        _loadMoreMediaPosts();
+      }
     }
   }
 
@@ -162,6 +186,50 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _loadMediaPosts() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+
+    try {
+      final posts = await _fetchUserPosts(adapter, onlyMedia: true);
+      if (mounted) {
+        setState(() {
+          _mediaPosts = posts;
+          _loadingMediaPosts = false;
+          _hasMoreMedia = posts.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMediaPosts = false);
+    }
+  }
+
+  Future<void> _loadMoreMediaPosts() async {
+    if (_loadingMoreMedia || !_hasMoreMedia || _mediaPosts.isEmpty) return;
+
+    setState(() => _loadingMoreMedia = true);
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+
+    try {
+      final older = await _fetchUserPosts(
+        adapter,
+        maxId: _mediaPosts.last.id,
+        onlyMedia: true,
+      );
+      if (mounted) {
+        setState(() {
+          _mediaPosts = [..._mediaPosts, ...older];
+          _loadingMoreMedia = false;
+          _hasMoreMedia = older.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreMedia = false);
+    }
+  }
+
   Future<void> _loadRelationship() async {
     if (_isOwnProfile) return;
     final adapter = ref.read(currentAdapterProvider);
@@ -211,11 +279,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<List<Post>> _fetchUserPosts(
     BackendAdapter adapter, {
     String? maxId,
+    bool? onlyMedia,
   }) async {
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
-    return await (adapter as dynamic).getUserPosts(widget.user.id, maxId: maxId)
-        as List<Post>;
+    return await (adapter as dynamic).getUserPosts(
+      widget.user.id,
+      maxId: maxId,
+      onlyMedia: onlyMedia,
+    ) as List<Post>;
   }
 
   @override
@@ -266,75 +338,137 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
           SliverToBoxAdapter(child: _buildProfileHeader(context, user)),
-          if (_pinnedPosts.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.push_pin,
-                      size: 14,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'ピン留め',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _TabBarDelegate(
+              TabBar(
+                controller: _tabController,
+                tabs: const [Tab(text: '投稿'), Tab(text: 'メディア')],
               ),
+              colorScheme.surface,
             ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => Column(
-                  children: [
-                    PostTile(
-                      post: _pinnedPosts[index],
-                      onPostUpdated: _onPostUpdated,
-                    ),
-                    const Divider(height: 1),
-                  ],
-                ),
-                childCount: _pinnedPosts.length,
-              ),
-            ),
-            const SliverToBoxAdapter(child: Divider(height: 8, thickness: 4)),
-          ],
-          if (_loadingPosts)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else
-            SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                if (index >= _posts.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return Column(
-                  children: [
-                    PostTile(
-                      post: _posts[index],
-                      onPostUpdated: _onPostUpdated,
-                    ),
-                    const Divider(height: 1),
-                  ],
-                );
-              }, childCount: _posts.length + (_loadingMore ? 1 : 0)),
-            ),
+          ),
+          ..._buildTabContent(colorScheme),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildTabContent(ColorScheme colorScheme) {
+    if (_tabController.index == 0) {
+      return _buildPostsTab(colorScheme);
+    } else {
+      return _buildMediaTab();
+    }
+  }
+
+  List<Widget> _buildPostsTab(ColorScheme colorScheme) {
+    return [
+      if (_pinnedPosts.isNotEmpty) ...[
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 6,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.push_pin,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'ピン留め',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => Column(
+              children: [
+                PostTile(
+                  post: _pinnedPosts[index],
+                  onPostUpdated: _onPostUpdated,
+                ),
+                const Divider(height: 1),
+              ],
+            ),
+            childCount: _pinnedPosts.length,
+          ),
+        ),
+        const SliverToBoxAdapter(child: Divider(height: 8, thickness: 4)),
+      ],
+      if (_loadingPosts)
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else
+        SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            if (index >= _posts.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return Column(
+              children: [
+                PostTile(
+                  post: _posts[index],
+                  onPostUpdated: _onPostUpdated,
+                ),
+                const Divider(height: 1),
+              ],
+            );
+          }, childCount: _posts.length + (_loadingMore ? 1 : 0)),
+        ),
+    ];
+  }
+
+  List<Widget> _buildMediaTab() {
+    if (_loadingMediaPosts) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_mediaPosts.isEmpty) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: Text('メディア付きの投稿はありません')),
+        ),
+      ];
+    }
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate((context, index) {
+          if (index >= _mediaPosts.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return Column(
+            children: [
+              PostTile(
+                post: _mediaPosts[index],
+                onPostUpdated: _onPostUpdated,
+              ),
+              const Divider(height: 1),
+            ],
+          );
+        }, childCount: _mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
+      ),
+    ];
   }
 
   Widget _buildProfileHeader(BuildContext context, User user) {
@@ -861,4 +995,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: ServerBadge.fromHost(host, themeColors: themeColors),
     );
   }
+}
+
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+  final Color backgroundColor;
+
+  _TabBarDelegate(this.tabBar, this.backgroundColor);
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return ColoredBox(color: backgroundColor, child: tabBar);
+  }
+
+  @override
+  bool shouldRebuild(_TabBarDelegate oldDelegate) => false;
 }
