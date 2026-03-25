@@ -884,7 +884,6 @@ class _PostTileState extends ConsumerState<PostTile> {
                   !isOwn &&
                   targetPost.scope != PostScope.direct &&
                   post.reblog == null &&
-                  targetPost.language != null &&
                   targetPost.language != 'ja')
                 ListTile(
                   leading: const Icon(Icons.translate),
