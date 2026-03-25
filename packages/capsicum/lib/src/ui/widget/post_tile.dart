@@ -579,6 +579,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: _QuoteCard(quote: displayPost.quote!),
+                        )
+                      else if (displayPost.quoteState != null &&
+                          displayPost.quoteState != QuoteState.accepted)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _QuoteStateCard(
+                            state: displayPost.quoteState!,
+                          ),
                         ),
                       if (displayPost.attachments.isNotEmpty)
                         Padding(
@@ -1809,6 +1817,41 @@ class _QuoteCard extends StatelessWidget {
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'")
         .replaceAll('&apos;', "'");
+  }
+}
+
+class _QuoteStateCard extends StatelessWidget {
+  final QuoteState state;
+
+  const _QuoteStateCard({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (icon, label) = switch (state) {
+      QuoteState.pending => (Icons.hourglass_empty, '引用元の承認待ちです'),
+      QuoteState.rejected => (Icons.block, '引用が拒否されました'),
+      QuoteState.deleted => (Icons.delete_outline, '引用元の投稿が削除されました'),
+      QuoteState.unauthorized => (Icons.lock_outline, '引用元を表示する権限がありません'),
+      QuoteState.accepted => (Icons.format_quote, ''),
+    };
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: theme.hintColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+          ),
+        ],
+      ),
+    );
   }
 }
 

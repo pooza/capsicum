@@ -37,6 +37,15 @@ class AccountStorage {
       Sentry.captureException(e, stackTrace: st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
+    } catch (e, st) {
+      // BadPaddingException etc. may bypass PlatformException wrapping
+      // after app reinstall (encryption key regenerated).
+      debugPrint(
+        'capsicum: unexpected error reading secrets for $accountKey: $e',
+      );
+      Sentry.captureException(e, stackTrace: st);
+      await _storage.delete(key: 'secret_$accountKey');
+      return null;
     }
   }
 
@@ -48,6 +57,11 @@ class AccountStorage {
       return List<String>.from(jsonDecode(raw) as List);
     } on PlatformException catch (e, st) {
       debugPrint('capsicum: failed to read account keys: $e');
+      Sentry.captureException(e, stackTrace: st);
+      await _storage.deleteAll();
+      return [];
+    } catch (e, st) {
+      debugPrint('capsicum: unexpected error reading account keys: $e');
       Sentry.captureException(e, stackTrace: st);
       await _storage.deleteAll();
       return [];
