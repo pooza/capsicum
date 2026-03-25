@@ -4,6 +4,8 @@ import 'post_scope.dart';
 import 'preview_card.dart';
 import 'user.dart';
 
+enum QuoteState { pending, accepted, rejected, deleted, unauthorized }
+
 class Post {
   final String id;
   final DateTime postedAt;
@@ -25,6 +27,7 @@ class Post {
   final String? inReplyToId;
   final Post? reblog;
   final Post? quote;
+  final QuoteState? quoteState;
   final String? spoilerText;
   final Map<String, String> emojis;
   final String? emojiHost;
@@ -36,6 +39,7 @@ class Post {
   final String? channelId;
   final String? channelName;
   final bool localOnly;
+  final bool quotable;
   final String? url;
 
   const Post({
@@ -59,6 +63,7 @@ class Post {
     this.inReplyToId,
     this.reblog,
     this.quote,
+    this.quoteState,
     this.spoilerText,
     this.emojis = const {},
     this.emojiHost,
@@ -70,6 +75,7 @@ class Post {
     this.channelId,
     this.channelName,
     this.localOnly = false,
+    this.quotable = true,
     this.url,
   });
 }

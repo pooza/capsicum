@@ -107,8 +107,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
+    DecentralizedBackendAdapter? adapter;
+    Map<String, String> miAuthExtra = {};
+
     try {
-      final adapter = await widget.backendType.createAdapter(widget.host);
+      adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
 
       // Reuse cached client credentials from an existing account on the same
@@ -133,6 +136,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final startResult = await loginSupport.startLogin(application);
 
       if (startResult is LoginNeedsOAuth) {
+        if (!_isMastodon) miAuthExtra = startResult.extra;
+
         // Open browser and wait for callback redirect.
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
@@ -147,22 +152,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
 
         if (completeResult is LoginSuccess) {
-          _loginCompleted = true;
-          final account = Account(
-            key: AccountKey(
-              type: widget.backendType,
-              host: widget.host,
-              username: completeResult.user.username,
-            ),
-            adapter: adapter,
-            user: completeResult.user,
-            userSecret: completeResult.userSecret,
-            clientSecret: completeResult.clientSecret,
-            softwareVersion: widget.softwareVersion,
-          );
-
-          await ref.read(accountManagerProvider.notifier).addAccount(account);
-          if (mounted) context.go('/home');
+          await _finishLogin(adapter, completeResult);
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
           Sentry.captureException(
@@ -183,10 +173,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
       }
     } catch (e, st) {
-      // User cancelled the browser — not an error.
+      // User cancelled the browser or redirect failed.
+      // For MiAuth, the session may already be approved on the server
+      // even when the redirect back to the app fails (Android 12+ Custom Tab
+      // issues, etc.). Try completing the login as a fallback.
+      if (!_loginCompleted &&
+          !_isMastodon &&
+          adapter != null &&
+          miAuthExtra.isNotEmpty) {
+        final ok = await _tryMiAuthFallback(adapter, miAuthExtra);
+        if (ok) return;
+      }
+
       if (e.toString().contains('CANCELED') ||
           e.toString().contains('cancelled')) {
-        // Do nothing.
+        // User explicitly cancelled — not an error.
       } else {
         debugPrint('Login error: $e');
         Sentry.captureException(e, stackTrace: st);
@@ -195,6 +196,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
     }
+  }
+
+  /// Attempt to complete MiAuth login when the browser redirect failed.
+  /// MiAuth sessions can be checked by session ID alone, so the callback
+  /// URL parameters are not needed.
+  Future<bool> _tryMiAuthFallback(
+    DecentralizedBackendAdapter adapter,
+    Map<String, String> extra,
+  ) async {
+    try {
+      final loginSupport = adapter as LoginSupport;
+      final result = await loginSupport.completeLogin(Uri(), extra);
+      if (result is LoginSuccess) {
+        await _finishLogin(adapter, result);
+        return true;
+      }
+    } catch (_) {
+      // Fallback failed — let the original error handling proceed.
+    }
+    return false;
+  }
+
+  Future<void> _finishLogin(
+    DecentralizedBackendAdapter adapter,
+    LoginSuccess result,
+  ) async {
+    _loginCompleted = true;
+    final account = Account(
+      key: AccountKey(
+        type: widget.backendType,
+        host: widget.host,
+        username: result.user.username,
+      ),
+      adapter: adapter,
+      user: result.user,
+      userSecret: result.userSecret,
+      clientSecret: result.clientSecret,
+      softwareVersion: widget.softwareVersion,
+    );
+
+    await ref.read(accountManagerProvider.notifier).addAccount(account);
+    if (mounted) context.go('/home');
   }
 
   @override

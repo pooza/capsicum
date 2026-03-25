@@ -30,6 +30,7 @@ class MastodonStatus {
   final Map<String, dynamic>? card;
   final Map<String, dynamic>? poll;
   final int? quotesCount;
+  final Map<String, dynamic>? quoteApproval;
   final String? url;
 
   const MastodonStatus({
@@ -55,6 +56,7 @@ class MastodonStatus {
     this.card,
     this.poll,
     this.quotesCount,
+    this.quoteApproval,
     this.url,
   });
 

@@ -74,6 +74,11 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
     Set<String> adminRoleIds = const {},
   }) {
     final filterResult = _parseFilterResult(filtered);
+    final quoteResult = _parseQuoteResult(
+      quote,
+      localHost,
+      adminRoleIds: adminRoleIds,
+    );
     return Post(
       id: id,
       postedAt: createdAt,
@@ -91,7 +96,8 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       sensitive: sensitive ?? false,
       inReplyToId: inReplyToId,
       reblog: reblog?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
-      quote: _parseQuote(quote, localHost, adminRoleIds: adminRoleIds),
+      quote: quoteResult?.post,
+      quoteState: quoteResult?.state,
       spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
       emojis: {
         ..._extractHtmlCustomEmojis(content),
@@ -106,77 +112,99 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
       pinned: pinned,
+      quotable: _isQuotable(quoteApproval),
       url: url,
     );
   }
 }
 
-Post? _parseQuote(
+bool _isQuotable(Map<String, dynamic>? quoteApproval) {
+  if (quoteApproval == null) return true;
+  final currentUser = quoteApproval['current_user'] as String?;
+  return currentUser != 'denied';
+}
+
+({Post? post, QuoteState? state})? _parseQuoteResult(
   Object? quoteRaw,
   String localHost, {
   Set<String> adminRoleIds = const {},
 }) {
   if (quoteRaw == null) return null;
   if (quoteRaw is! Map<String, dynamic>) return null;
+
+  // Parse state from Mastodon 4.5 quote object.
+  final stateStr = quoteRaw['state'] as String?;
+  final quoteState = switch (stateStr) {
+    'pending' => QuoteState.pending,
+    'accepted' => QuoteState.accepted,
+    'rejected' => QuoteState.rejected,
+    'deleted' => QuoteState.deleted,
+    'unauthorized' => QuoteState.unauthorized,
+    _ => null,
+  };
+
   // Mastodon latest: quote is { "state": "...", "quoted_status": {...} }
   // Use quoted_status if present (regardless of state — "pending" also has data).
-  // If the object has a "state" key but no "quoted_status", the quote is unavailable.
+  // If the object has a "state" key but no "quoted_status", return state only.
   // Otherwise treat quoteRaw itself as a status object (older format fallback).
   final Map<String, dynamic>? quote;
   if (quoteRaw.containsKey('quoted_status')) {
     quote = quoteRaw['quoted_status'] as Map<String, dynamic>?;
   } else if (quoteRaw.containsKey('state')) {
-    return null;
+    return (post: null, state: quoteState);
   } else {
     quote = quoteRaw;
   }
-  if (quote == null) return null;
+  if (quote == null) return (post: null, state: quoteState);
   final id = quote['id'] as String?;
   final account = quote['account'] as Map<String, dynamic>?;
-  if (id == null || account == null) return null;
+  if (id == null || account == null) return (post: null, state: quoteState);
   final username = account['username'] as String? ?? '';
   final acct = account['acct'] as String? ?? username;
   final atHost = acct.contains('@') ? acct.split('@').last : null;
   final emojis = account['emojis'] as List<dynamic>? ?? [];
-  return Post(
-    id: id,
-    postedAt:
-        DateTime.tryParse(quote['created_at'] as String? ?? '') ??
-        DateTime.now(),
-    author: User(
-      id: account['id'] as String? ?? '',
-      username: username,
-      displayName: (account['display_name'] as String?)?.isNotEmpty == true
-          ? account['display_name'] as String
-          : null,
-      host: atHost ?? localHost,
-      avatarUrl: account['avatar'] as String?,
-      emojis: {
-        for (final e in emojis)
-          if (e is Map<String, dynamic> &&
-              e['shortcode'] is String &&
-              e['url'] is String)
-            e['shortcode'] as String: e['url'] as String,
-      },
+  return (
+    post: Post(
+      id: id,
+      postedAt:
+          DateTime.tryParse(quote['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      author: User(
+        id: account['id'] as String? ?? '',
+        username: username,
+        displayName: (account['display_name'] as String?)?.isNotEmpty == true
+            ? account['display_name'] as String
+            : null,
+        host: atHost ?? localHost,
+        avatarUrl: account['avatar'] as String?,
+        emojis: {
+          for (final e in emojis)
+            if (e is Map<String, dynamic> &&
+                e['shortcode'] is String &&
+                e['url'] is String)
+              e['shortcode'] as String: e['url'] as String,
+        },
+      ),
+      content: quote['content'] as String? ?? '',
+      scope:
+          mastodonVisibilityRosetta[quote['visibility'] as String?] ??
+          PostScope.public,
+      attachments: ((quote['media_attachments'] as List<dynamic>?) ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (a) => Attachment(
+              id: a['id'] as String? ?? '',
+              type:
+                  mastodonAttachmentTypeMap[a['type'] as String?] ??
+                  AttachmentType.unknown,
+              url: a['url'] as String? ?? '',
+              previewUrl: a['preview_url'] as String?,
+              description: a['description'] as String?,
+            ),
+          )
+          .toList(),
     ),
-    content: quote['content'] as String? ?? '',
-    scope:
-        mastodonVisibilityRosetta[quote['visibility'] as String?] ??
-        PostScope.public,
-    attachments: ((quote['media_attachments'] as List<dynamic>?) ?? [])
-        .whereType<Map<String, dynamic>>()
-        .map(
-          (a) => Attachment(
-            id: a['id'] as String? ?? '',
-            type:
-                mastodonAttachmentTypeMap[a['type'] as String?] ??
-                AttachmentType.unknown,
-            url: a['url'] as String? ?? '',
-            previewUrl: a['preview_url'] as String?,
-            description: a['description'] as String?,
-          ),
-        )
-        .toList(),
+    state: quoteState ?? QuoteState.accepted,
   );
 }
 
