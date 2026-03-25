@@ -881,7 +881,6 @@ class _PostTileState extends ConsumerState<PostTile> {
               if (adapter is TranslationSupport &&
                   (adapter is! MastodonAdapter ||
                       adapter.isTranslationAvailable) &&
-                  !isOwn &&
                   targetPost.scope != PostScope.direct &&
                   post.reblog == null &&
                   targetPost.language != 'ja')
