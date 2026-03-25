@@ -47,49 +47,57 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
         title: Text('#${widget.hashtag}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      bottomNavigationBar: SimplePostBar(
-        hashtag: widget.hashtag,
-        onPosted: () => ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
-      ),
-      body: timeline.when(
-        data: (state) => state.posts.isEmpty
-            ? const Center(child: Text('投稿がありません'))
-            : RefreshIndicator(
-                onRefresh: () =>
-                    ref.refresh(hashtagTimelineProvider(widget.hashtag).future),
-                child: ListView.separated(
-                  controller: _scrollController,
-                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= state.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return PostTile(post: state.posts[index]);
-                  },
+      body: Column(
+        children: [
+          Expanded(
+            child: timeline.when(
+              data: (state) => state.posts.isEmpty
+                  ? const Center(child: Text('投稿がありません'))
+                  : RefreshIndicator(
+                      onRefresh: () => ref
+                          .refresh(hashtagTimelineProvider(widget.hashtag).future),
+                      child: ListView.separated(
+                        controller: _scrollController,
+                        itemCount:
+                            state.posts.length + (state.isLoadingMore ? 1 : 0),
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          if (index >= state.posts.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          return PostTile(post: state.posts[index]);
+                        },
+                      ),
+                    ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stack) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('読み込みに失敗しました', textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref
+                            .invalidate(hashtagTimelineProvider(widget.hashtag)),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
-                  child: const Text('再試行'),
-                ),
-              ],
             ),
           ),
-        ),
+          SimplePostBar(
+            hashtag: widget.hashtag,
+            onPosted: () =>
+                ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
+          ),
+        ],
       ),
     );
   }

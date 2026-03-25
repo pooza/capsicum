@@ -219,12 +219,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountState,
         unreadAnnouncements,
       ),
-      bottomNavigationBar: const SimplePostBar(),
-      body: GestureDetector(
-        onHorizontalDragEnd: selectedList == null
-            ? (details) => _onSwipe(details, selectedType)
-            : null,
-        child: timeline.when(
+      body: Column(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onHorizontalDragEnd: selectedList == null
+                  ? (details) => _onSwipe(details, selectedType)
+                  : null,
+              child: timeline.when(
           data: (tlState) {
             // Restore marker position on first load (home timeline only).
             if (selectedList == null &&
@@ -291,7 +293,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             );
           },
-        ),
+              ),
+            ),
+          ),
+          const SimplePostBar(),
+        ],
       ),
     );
   }
