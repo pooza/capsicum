@@ -883,7 +883,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                       adapter.isTranslationAvailable) &&
                   targetPost.scope != PostScope.direct &&
                   post.reblog == null &&
-                  targetPost.language != 'ja')
+                  targetPost.language !=
+                      Localizations.localeOf(context).languageCode)
                 ListTile(
                   leading: const Icon(Icons.translate),
                   title: const Text('翻訳'),
