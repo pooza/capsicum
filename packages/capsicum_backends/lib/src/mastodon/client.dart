@@ -251,6 +251,7 @@ class MastodonClient {
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
+    String? language,
     Map<String, String>? extraHeaders,
   }) async {
     final response = await dio.post(
@@ -263,6 +264,7 @@ class MastodonClient {
         'spoiler_text': ?spoilerText,
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
+        'language': ?language,
       },
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
@@ -280,6 +282,7 @@ class MastodonClient {
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
+    String? language,
     Map<String, String>? extraHeaders,
   }) async {
     await dio.post(
@@ -293,6 +296,7 @@ class MastodonClient {
         'spoiler_text': ?spoilerText,
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
+        'language': ?language,
       },
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );

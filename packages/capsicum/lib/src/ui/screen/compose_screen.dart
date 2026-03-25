@@ -55,9 +55,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _sending = false;
   bool _localOnly = false;
   DateTime? _scheduledAt;
+  String? _language;
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
+
+  static const _languageOptions = {
+    'ja': '日本語',
+    'en': 'English',
+    'zh': '中文',
+    'ko': '한국어',
+    'fr': 'Français',
+    'de': 'Deutsch',
+    'es': 'Español',
+    'pt': 'Português',
+    'ru': 'Русский',
+  };
 
   static const _mastodonScopeLabels = {
     PostScope.public: '公開',
@@ -123,6 +136,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _scope = widget.quoteTo!.scope;
     }
     _controller.addListener(_onTextChanged);
+    // Mastodon のみ: デフォルト言語をロケールから設定
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final adapter = ref.read(currentAdapterProvider);
+      if (adapter is MastodonAdapter) {
+        setState(() => _language = Localizations.localeOf(context).languageCode);
+      }
+    });
   }
 
   /// Walk backwards from cursor to find [trigger] (`@` or `#`).
@@ -548,6 +568,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           localOnly: _localOnly,
           channelId: widget.channelId,
           scheduledAt: _scheduledAt,
+          language: _language,
         ),
       );
       if (mounted) {
@@ -867,6 +888,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             ? null
                             : (v) => setState(() => _localOnly = v),
                         visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  if (_language != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: DropdownButton<String>(
+                        value: _language,
+                        underline: const SizedBox.shrink(),
+                        isDense: true,
+                        onChanged: _sending
+                            ? null
+                            : (v) {
+                                if (v != null) setState(() => _language = v);
+                              },
+                        items: _languageOptions.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
                   if (_scheduledAt != null)
