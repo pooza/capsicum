@@ -48,6 +48,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
+  bool _deleted = false;
   PreviewCard? _fetchedCard;
 
   @override
@@ -218,6 +219,8 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (_deleted) return const SizedBox.shrink();
+
     final displayPost = post.reblog ?? post;
     final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
 
@@ -925,6 +928,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                if (mounted) setState(() => _deleted = true);
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
@@ -1012,6 +1016,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                if (mounted) setState(() => _deleted = true);
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
@@ -1165,6 +1170,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
+            if (mounted) setState(() => _deleted = true);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
             messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
