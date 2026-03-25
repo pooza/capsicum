@@ -10,6 +10,7 @@ import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
+import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
@@ -191,6 +192,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           final name = state.extra as String?;
           return ChannelTimelineScreen(channelId: id, channelName: name);
+        },
+      ),
+      GoRoute(
+        path: '/clip/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final name = state.extra as String?;
+          return ClipNotesScreen(clipId: id, clipName: name);
         },
       ),
       GoRoute(

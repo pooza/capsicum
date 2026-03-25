@@ -80,6 +80,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
+        ClipSupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport {
@@ -158,8 +159,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
-  Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
-    final notes = await client.getUserNotes(id, untilId: maxId, limit: 20);
+  Future<List<Post>> getUserPosts(
+    String id, {
+    String? maxId,
+    bool? onlyMedia,
+  }) async {
+    final notes = await client.getUserNotes(
+      id,
+      untilId: maxId,
+      limit: 20,
+      withFiles: onlyMedia,
+    );
     return _safeConvert(
       notes,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
@@ -744,6 +754,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .toList();
   }
 
+  @override
+  Future<List<String>> getEmojiPalette() async {
+    try {
+      final data = await client.registryGet('reactions', ['client', 'base']);
+      if (data is List) {
+        return data.map((e) => e.toString()).toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ListSupport
 
   @override
@@ -876,6 +899,36 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }) async {
     final notes = await client.getChannelTimeline(
       channelId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
+        .toList();
+  }
+
+  // ClipSupport
+
+  @override
+  Future<List<NoteClip>> getClips() async {
+    final data = await client.getClips();
+    return data
+        .map(
+          (c) => NoteClip(
+            id: c['id'] as String,
+            name: c['name'] as String? ?? '',
+            description: c['description'] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<Post>> getClipNotes(String clipId, {TimelineQuery? query}) async {
+    final notes = await client.getClipNotes(
+      clipId,
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,

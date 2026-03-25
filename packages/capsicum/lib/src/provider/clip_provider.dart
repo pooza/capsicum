@@ -4,19 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
-/// Notifier that manages paginated channel timeline fetching.
-class ChannelTimelineNotifier
+/// Provider that fetches the user's clips.
+final clipsProvider = FutureProvider.autoDispose<List<NoteClip>>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter == null || adapter is! ClipSupport) return [];
+  return (adapter as ClipSupport).getClips();
+});
+
+/// Notifier that manages paginated clip notes fetching.
+class ClipNotesNotifier
     extends AutoDisposeFamilyAsyncNotifier<TimelineState, String> {
   static const _pageSize = 20;
 
   @override
   Future<TimelineState> build(String arg) async {
     final adapter = ref.watch(currentAdapterProvider);
-    if (adapter == null || adapter is! ChannelSupport) {
+    if (adapter == null || adapter is! ClipSupport) {
       return const TimelineState(hasMore: false);
     }
 
-    final posts = await (adapter as ChannelSupport).getChannelTimeline(
+    final posts = await (adapter as ClipSupport).getClipNotes(
       arg,
       query: const TimelineQuery(limit: _pageSize),
     );
@@ -33,14 +40,14 @@ class ChannelTimelineNotifier
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
         final adapter = ref.read(currentAdapterProvider);
-        if (adapter == null || adapter is! ChannelSupport) {
+        if (adapter == null || adapter is! ClipSupport) {
           state = AsyncData(current.copyWith(isLoadingMore: false));
           return;
         }
 
         final base = state.valueOrNull ?? current;
         final lastId = base.posts.last.id;
-        final older = await (adapter as ChannelSupport).getChannelTimeline(
+        final older = await (adapter as ClipSupport).getClipNotes(
           arg,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
@@ -66,7 +73,5 @@ class ChannelTimelineNotifier
   }
 }
 
-final channelTimelineProvider = AsyncNotifierProvider.autoDispose
-    .family<ChannelTimelineNotifier, TimelineState, String>(
-      ChannelTimelineNotifier.new,
-    );
+final clipNotesProvider = AsyncNotifierProvider.autoDispose
+    .family<ClipNotesNotifier, TimelineState, String>(ClipNotesNotifier.new);

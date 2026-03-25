@@ -21,6 +21,8 @@ class MisskeyNote {
   final int repliesCount;
   final Map<String, int>? reactions;
   final Map<String, String>? reactionEmojis;
+  @JsonKey(name: 'emojis')
+  final Map<String, String>? noteEmojis;
   final String? myReaction;
   final String? cw;
   final Map<String, dynamic>? poll;
@@ -42,6 +44,7 @@ class MisskeyNote {
     required this.repliesCount,
     this.reactions,
     this.reactionEmojis,
+    this.noteEmojis,
     this.myReaction,
     this.cw,
     this.poll,

@@ -50,6 +50,9 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
             (f) => UserField(
               name: f['name'] as String? ?? '',
               value: f['value'] as String? ?? '',
+              verifiedAt: f['verified_at'] != null
+                  ? DateTime.tryParse(f['verified_at'] as String)
+                  : null,
             ),
           )
           .toList(),
@@ -58,6 +61,8 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
           if (e['shortcode'] is String && e['url'] is String)
             e['shortcode'] as String: e['url'] as String,
       },
+      url: url,
+      createdAt: createdAt,
     );
   }
 }
@@ -101,6 +106,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
       pinned: pinned,
+      url: url,
     );
   }
 }

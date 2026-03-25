@@ -127,6 +127,7 @@ class _EmojiPickerState extends State<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   List<CustomEmoji>? _customEmojis;
+  List<String> _palette = const [];
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -144,8 +145,17 @@ class _EmojiPickerState extends State<EmojiPicker>
   Future<void> _loadCustomEmojis() async {
     setState(() => _loadingCustom = true);
     try {
-      final emojis = await (widget.adapter as CustomEmojiSupport).getEmojis();
-      if (mounted) setState(() => _customEmojis = emojis);
+      final support = widget.adapter as CustomEmojiSupport;
+      final results = await Future.wait([
+        support.getEmojis(),
+        support.getEmojiPalette(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _customEmojis = results[0] as List<CustomEmoji>;
+          _palette = results[1] as List<String>;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _customEmojis = []);
     } finally {
@@ -284,6 +294,12 @@ class _EmojiPickerState extends State<EmojiPicker>
   }
 
   Widget _buildCustomCategories(List<CustomEmoji> emojis) {
+    // Index custom emojis by shortcode for palette lookup.
+    final emojiByCode = <String, CustomEmoji>{};
+    for (final e in emojis) {
+      emojiByCode[e.shortcode] = e;
+    }
+
     // Group by category.
     final grouped = <String, List<CustomEmoji>>{};
     for (final emoji in emojis) {
@@ -292,27 +308,59 @@ class _EmojiPickerState extends State<EmojiPicker>
     }
 
     return ListView(
-      children: grouped.entries.map((category) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (category.key.isNotEmpty)
+      children: [
+        // Palette section (user's pinned emojis from server settings).
+        if (_palette.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text('パレット', style: Theme.of(context).textTheme.labelMedium),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Wrap(
+              children: _palette.map((entry) {
+                // Palette entries can be ":shortcode:" (custom) or unicode.
+                final shortcode = entry.replaceAll(':', '');
+                final custom = emojiByCode[shortcode];
+                if (custom != null) {
+                  return _buildCustomEmojiTile(custom);
+                }
+                // Unicode emoji or unresolved — render as text.
+                return InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => widget.onSelected(entry),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(entry, style: const TextStyle(fontSize: 24)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+        // Category sections.
+        ...grouped.entries.map((category) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (category.key.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Text(
+                    category.key,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                child: Text(
-                  category.key,
-                  style: Theme.of(context).textTheme.labelMedium,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Wrap(
+                  children: category.value.map(_buildCustomEmojiTile).toList(),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Wrap(
-                children: category.value.map(_buildCustomEmojiTile).toList(),
-              ),
-            ),
-          ],
-        );
-      }).toList(),
+            ],
+          );
+        }),
+      ],
     );
   }
 

@@ -18,9 +18,12 @@ import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../provider/unread_badge_provider.dart';
 import '../widget/emoji_text.dart';
+import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
+import '../widget/simple_post_bar.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
 final selectedListProvider = StateProvider<PostList?>((ref) => null);
@@ -178,6 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   EmojiText(
                     account?.user.displayName ?? account?.user.username ?? '',
                     emojis: account?.user.emojis ?? const {},
+                    fallbackHost: account?.user.host,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -185,16 +189,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Tooltip(
-                    message:
-                        '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
-                    child: Text(
-                      '@${account?.user.username ?? ""}@${account?.key.host ?? ""}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                  if (account != null)
+                    _buildServerBadge(context, ref, account.key.host),
                 ],
               ),
             ),
@@ -223,10 +219,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountState,
         unreadAnnouncements,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/compose'),
-        child: const Icon(Icons.edit),
-      ),
+      bottomNavigationBar: const SimplePostBar(),
       body: GestureDetector(
         onHorizontalDragEnd: selectedList == null
             ? (details) => _onSwipe(details, selectedType)
@@ -510,21 +503,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               current?.user.username ??
                               '',
                           emojis: current?.user.emojis ?? const {},
+                          fallbackHost: current?.user.host,
                           style: const TextStyle(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Tooltip(
-                          message:
-                              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                          child: Text(
-                            '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                            style: const TextStyle(color: Colors.black),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        Text(
+                          '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                          style: const TextStyle(color: Colors.black),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        if (current != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: _buildServerBadge(
+                              context,
+                              ref,
+                              current.key.host,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -540,23 +539,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 style: Theme.of(context).textTheme.labelMedium,
               ),
             ),
-            ...otherAccounts.map(
-              (account) => ListTile(
-                leading: UserAvatar(
-                  user: account.user,
-                  size: 32,
-                  compact: true,
+            ...otherAccounts.map((account) {
+              final themeColors = ref.watch(hostThemeColorProvider);
+              final badges = ref.watch(unreadBadgeProvider).valueOrNull;
+              final badge = badges?[account.key.toStorageKey()];
+              return ListTile(
+                leading: Badge(
+                  isLabelVisible: badge != null && badge.hasUnread,
+                  label: badge != null && badge.hasUnread
+                      ? Text('${badge.total}')
+                      : null,
+                  child: UserAvatar(
+                    user: account.user,
+                    size: 32,
+                    compact: true,
+                  ),
                 ),
                 title: EmojiText(
                   account.user.displayName ?? account.user.username,
                   emojis: account.user.emojis,
+                  fallbackHost: account.user.host,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: Text(
-                  '@${account.user.username}@${account.key.host}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '@${account.user.username}@${account.key.host}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: ServerBadge.fromHost(
+                        account.key.host,
+                        themeColors: themeColors,
+                      ),
+                    ),
+                  ],
                 ),
                 onTap: () {
                   ref
@@ -564,8 +585,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       .switchAccount(account);
                   Navigator.of(context).pop();
                 },
-              ),
-            ),
+              );
+            }),
           ],
           ListTile(
             leading: const Icon(Icons.person_add),
@@ -633,7 +654,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
-          if (ref.read(currentMulukhiyaProvider) != null)
+          if (ref.read(currentAdapterProvider) is ClipSupport)
+            ListTile(
+              leading: const Icon(Icons.content_paste),
+              title: const Text('クリップ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showClipList(context, ref);
+              },
+            ),
+          if (ref.read(currentMulukhiyaProvider) != null) ...[
+            ListTile(
+              leading: const Icon(Icons.tag),
+              title: const Text('プロフィールタグ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showFavoriteTags(context, ref);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.link),
               title: const Text('リンク'),
@@ -642,6 +680,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showServerLinks(context, ref);
               },
             ),
+          ],
           if (ref.read(currentAdapterProvider) is ScheduleSupport)
             ListTile(
               leading: const Icon(Icons.schedule),
@@ -704,6 +743,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 context: context,
                 applicationName: AppConstants.appName,
                 applicationVersion: 'v${info.version} (${info.buildNumber})',
+                applicationIcon: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 48,
+                    height: 48,
+                  ),
+                ),
                 applicationLegalese: 'Mastodon / Misskey クライアント',
                 children: [
                   const SizedBox(height: 16),
@@ -785,6 +832,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _showFavoriteTags(BuildContext context, WidgetRef ref) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    if (mulukhiya == null) return;
+
+    try {
+      final tags = await mulukhiya.getFavoriteTags();
+      if (tags.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('プロフィールタグはありません')));
+        }
+        return;
+      }
+      if (!context.mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'プロフィールタグ',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              for (final tag in tags)
+                ListTile(
+                  leading: const Icon(Icons.tag, size: 20),
+                  title: Text('#${tag.name}'),
+                  trailing: Text(
+                    '${tag.count}人',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  dense: true,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    context.push('/hashtag/${tag.name}');
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('プロフィールタグの取得に失敗しました')));
+      }
+    }
+  }
+
   Future<void> _showServerLinks(BuildContext context, WidgetRef ref) async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     final account = ref.read(currentAccountProvider);
@@ -844,6 +947,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _showClipList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ClipSupport) return;
+
+    final List<NoteClip> clips;
+    try {
+      clips = await (adapter as ClipSupport).getClips();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('クリップの取得に失敗しました')));
+      }
+      return;
+    }
+    if (clips.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('クリップはありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'クリップ',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final clip in clips)
+              ListTile(
+                leading: const Icon(Icons.content_paste, size: 20),
+                title: Text(clip.name),
+                subtitle:
+                    clip.description != null && clip.description!.isNotEmpty
+                    ? Text(
+                        clip.description!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : null,
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/clip/${clip.id}', extra: clip.name);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showChannelList(BuildContext context, WidgetRef ref) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChannelSupport) return;
@@ -896,5 +1061,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
+    final themeColors = ref.watch(hostThemeColorProvider);
+    return ServerBadge.fromHost(host, themeColors: themeColors);
   }
 }

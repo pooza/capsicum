@@ -4,6 +4,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -792,6 +793,18 @@ class _PostTileState extends ConsumerState<PostTile> {
                     );
                   },
                 ),
+              if (targetPost.url != null)
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('URL をコピー'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(ClipboardData(text: targetPost.url!));
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('URL をコピーしました')),
+                    );
+                  },
+                ),
               if (!isOwn && adapter is ReportSupport)
                 ListTile(
                   leading: const Icon(Icons.flag_outlined),
@@ -1238,7 +1251,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   void _showRebloggedBy(BuildContext context, Post post) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
-    final label = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+    final label = ref.read(reblogLabelProvider);
     if (adapter is MastodonAdapter) {
       context.push(
         '/users',

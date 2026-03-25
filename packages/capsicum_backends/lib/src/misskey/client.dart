@@ -74,6 +74,7 @@ class MisskeyClient {
     String? untilId,
     int? limit,
     bool? pinned,
+    bool? withFiles,
   }) async {
     final response = await dio.post(
       '/api/users/notes',
@@ -82,6 +83,7 @@ class MisskeyClient {
         'untilId': ?untilId,
         'limit': ?limit,
         'pinned': ?pinned,
+        'withFiles': ?withFiles,
       }),
     );
     return (response.data as List)
@@ -523,6 +525,23 @@ class MisskeyClient {
     );
   }
 
+  /// POST /api/i/registry/get
+  ///
+  /// Returns the value stored at [key] under [scope] in the user registry.
+  /// Returns `null` if the key does not exist (404).
+  Future<dynamic> registryGet(String key, List<String> scope) async {
+    try {
+      final response = await dio.post(
+        '/api/i/registry/get',
+        data: createBody({'key': key, 'scope': scope}),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// POST /api/emojis
   Future<List<Map<String, dynamic>>> getEmojis() async {
     final response = await dio.post('/api/emojis', data: {});
@@ -607,6 +626,33 @@ class MisskeyClient {
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/clips/list
+  Future<List<Map<String, dynamic>>> getClips() async {
+    final response = await dio.post('/api/clips/list', data: createBody({}));
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/clips/notes
+  Future<List<MisskeyNote>> getClipNotes(
+    String clipId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/clips/notes',
+      data: createBody({
+        'clipId': clipId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// POST /api/ap/show — resolve a remote URI to a local object.

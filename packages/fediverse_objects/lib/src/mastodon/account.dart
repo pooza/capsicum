@@ -21,6 +21,8 @@ class MastodonAccount {
   final List<Map<String, dynamic>> fields;
   final List<Map<String, dynamic>>? emojis;
   final Map<String, dynamic>? source;
+  final String? url;
+  final DateTime? createdAt;
 
   const MastodonAccount({
     required this.id,
@@ -40,6 +42,8 @@ class MastodonAccount {
     this.fields = const [],
     this.emojis,
     this.source,
+    this.url,
+    this.createdAt,
   });
 
   factory MastodonAccount.fromJson(Map<String, dynamic> json) =>

@@ -1,8 +1,9 @@
 class UserField {
   final String name;
   final String value;
+  final DateTime? verifiedAt;
 
-  const UserField({required this.name, required this.value});
+  const UserField({required this.name, required this.value, this.verifiedAt});
 }
 
 class UserRole {
@@ -56,6 +57,8 @@ class User {
   final List<UserField> fields;
   final Map<String, String> emojis;
   final List<AvatarDecoration> avatarDecorations;
+  final String? url;
+  final DateTime? createdAt;
 
   const User({
     required this.id,
@@ -74,5 +77,7 @@ class User {
     this.fields = const [],
     this.emojis = const {},
     this.avatarDecorations = const [],
+    this.url,
+    this.createdAt,
   });
 }

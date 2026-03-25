@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../provider/hashtag_provider.dart';
+import '../../provider/clip_provider.dart';
 import '../widget/post_tile.dart';
-import '../widget/simple_post_bar.dart';
 
-class HashtagTimelineScreen extends ConsumerStatefulWidget {
-  final String hashtag;
+class ClipNotesScreen extends ConsumerStatefulWidget {
+  final String clipId;
+  final String? clipName;
 
-  const HashtagTimelineScreen({super.key, required this.hashtag});
+  const ClipNotesScreen({super.key, required this.clipId, this.clipName});
 
   @override
-  ConsumerState<HashtagTimelineScreen> createState() =>
-      _HashtagTimelineScreenState();
+  ConsumerState<ClipNotesScreen> createState() => _ClipNotesScreenState();
 }
 
-class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
+class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
   final _scrollController = ScrollController();
 
   @override
@@ -34,29 +33,25 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      ref.read(hashtagTimelineProvider(widget.hashtag).notifier).loadMore();
+      ref.read(clipNotesProvider(widget.clipId).notifier).loadMore();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final timeline = ref.watch(hashtagTimelineProvider(widget.hashtag));
+    final timeline = ref.watch(clipNotesProvider(widget.clipId));
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('#${widget.hashtag}'),
+        title: Text(widget.clipName ?? 'クリップ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      bottomNavigationBar: SimplePostBar(
-        hashtag: widget.hashtag,
-        onPosted: () => ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
       ),
       body: timeline.when(
         data: (state) => state.posts.isEmpty
             ? const Center(child: Text('投稿がありません'))
             : RefreshIndicator(
                 onRefresh: () =>
-                    ref.refresh(hashtagTimelineProvider(widget.hashtag).future),
+                    ref.refresh(clipNotesProvider(widget.clipId).future),
                 child: ListView.separated(
                   controller: _scrollController,
                   itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
@@ -83,7 +78,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () =>
-                      ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
+                      ref.invalidate(clipNotesProvider(widget.clipId)),
                   child: const Text('再試行'),
                 ),
               ],

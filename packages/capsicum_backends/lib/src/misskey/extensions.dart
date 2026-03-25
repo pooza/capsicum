@@ -48,14 +48,15 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
                   ),
                 )
                 .toList(),
-      fields: (fields ?? [])
-          .map(
-            (f) => UserField(
-              name: f['name'] as String? ?? '',
-              value: f['value'] as String? ?? '',
-            ),
-          )
-          .toList(),
+      fields: (fields ?? []).map((f) {
+        final value = f['value'] as String? ?? '';
+        final verified = (verifiedLinks ?? []).contains(value);
+        return UserField(
+          name: f['name'] as String? ?? '',
+          value: value,
+          verifiedAt: verified ? DateTime.now() : null,
+        );
+      }).toList(),
       emojis: emojis ?? const {},
       avatarDecorations: (avatarDecorations ?? [])
           .map(
@@ -70,6 +71,8 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
           )
           .where((d) => d.url.isNotEmpty)
           .toList(),
+      url: 'https://${host ?? localHost}/@$username',
+      createdAt: createdAt,
     );
   }
 }
@@ -103,12 +106,13 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
           : null,
       poll: _parseMisskeyPoll(poll, id),
       spoilerText: cw,
-      emojis: reactionEmojis ?? const {},
+      emojis: {...?noteEmojis, ...?reactionEmojis},
       emojiHost: localHost,
       pinned: pinned,
       channelId: channel?['id'] as String?,
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
+      url: 'https://$localHost/notes/$id',
     );
   }
 }

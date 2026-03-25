@@ -202,11 +202,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
-  Future<List<Post>> getUserPosts(String id, {String? maxId}) async {
+  Future<List<Post>> getUserPosts(
+    String id, {
+    String? maxId,
+    bool? onlyMedia,
+  }) async {
     final statuses = await client.getAccountStatuses(
       id,
       maxId: maxId,
       limit: 20,
+      onlyMedia: onlyMedia,
     );
     return _safeConvert(
       statuses,

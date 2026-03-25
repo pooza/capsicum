@@ -1,11 +1,10 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../widget/post_tile.dart';
+import '../widget/simple_post_bar.dart';
 
 class ChannelTimelineScreen extends ConsumerStatefulWidget {
   final String channelId;
@@ -56,16 +55,12 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
         title: Text(widget.channelName ?? 'チャンネル'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      floatingActionButton: canPost
-          ? FloatingActionButton(
-              onPressed: () => context.push(
-                '/compose',
-                extra: {
-                  'channelId': widget.channelId,
-                  'channelName': widget.channelName,
-                },
-              ),
-              child: const Icon(Icons.edit),
+      bottomNavigationBar: canPost
+          ? SimplePostBar(
+              channelId: widget.channelId,
+              channelName: widget.channelName,
+              onPosted: () =>
+                  ref.invalidate(channelTimelineProvider(widget.channelId)),
             )
           : null,
       body: timeline.when(

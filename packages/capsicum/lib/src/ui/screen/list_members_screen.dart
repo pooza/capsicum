@@ -93,6 +93,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
           title: EmojiText(
             user.displayName ?? user.username,
             emojis: user.emojis,
+            fallbackHost: user.host,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -202,6 +203,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
                         title: EmojiText(
                           user.displayName ?? user.username,
                           emojis: user.emojis,
+                          fallbackHost: user.host,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

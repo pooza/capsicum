@@ -36,6 +36,7 @@ class Post {
   final String? channelId;
   final String? channelName;
   final bool localOnly;
+  final String? url;
 
   const Post({
     required this.id,
@@ -69,6 +70,7 @@ class Post {
     this.channelId,
     this.channelName,
     this.localOnly = false,
+    this.url,
   });
 }
 

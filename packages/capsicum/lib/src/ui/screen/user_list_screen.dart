@@ -119,6 +119,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
                     title: EmojiText(
                       user.displayName ?? user.username,
                       emojis: user.emojis,
+                      fallbackHost: user.host,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

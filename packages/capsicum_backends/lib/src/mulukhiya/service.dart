@@ -98,6 +98,14 @@ class ServerLinkGroup {
   const ServerLinkGroup({this.title, required this.links});
 }
 
+class FavoriteTag {
+  final String name;
+  final String? url;
+  final int count;
+
+  const FavoriteTag({required this.name, this.url, required this.count});
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
@@ -110,6 +118,7 @@ class MulukhiyaService {
   final String? reblogLabel;
   final bool annictEnabled;
   final List<String> adminRoleIds;
+  final String? infoBotAcct;
 
   MulukhiyaService._({
     required Dio dio,
@@ -123,6 +132,7 @@ class MulukhiyaService {
     this.reblogLabel,
     this.annictEnabled = false,
     this.adminRoleIds = const [],
+    this.infoBotAcct,
   }) : _dio = dio;
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
@@ -157,6 +167,8 @@ class MulukhiyaService {
               .toList() ??
           const [];
 
+      final infoBot = config['info_bot'] as Map<String, dynamic>?;
+
       return MulukhiyaService._(
         dio: dio,
         baseUrl: 'https://$domain/mulukhiya/api',
@@ -169,6 +181,7 @@ class MulukhiyaService {
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
         adminRoleIds: adminRoleIds,
+        infoBotAcct: infoBot?['acct'] as String?,
       );
     } catch (_) {
       // Not found or connection error — mulukhiya not present
@@ -332,6 +345,30 @@ class MulukhiyaService {
       body: m['body'] as String? ?? href,
       icon: m['icon'] as String?,
     );
+  }
+
+  /// Fetch favorite tags (tags found in user profiles) with user counts.
+  /// Requires `/{controller}/data/favorite_tags` to be enabled.
+  /// Returns empty list if the feature is disabled (404).
+  Future<List<FavoriteTag>> getFavoriteTags() async {
+    try {
+      final response = await _dio.get('$baseUrl/tagging/favorites');
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return data.entries.map((e) {
+          final value = e.value as Map<String, dynamic>;
+          return FavoriteTag(
+            name: e.key,
+            url: value['url'] as String?,
+            count: value['count'] as int? ?? 0,
+          );
+        }).toList();
+      }
+      return [];
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return [];
+      rethrow;
+    }
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.

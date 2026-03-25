@@ -9,18 +9,38 @@ class ServerMetadata {
   const ServerMetadata({required this.name, this.iconUrl, this.themeColor});
 }
 
+class _CacheEntry {
+  final ServerMetadata? metadata;
+  final DateTime fetchedAt;
+
+  _CacheEntry(this.metadata, this.fetchedAt);
+
+  bool get isExpired {
+    // 成功時は1時間、失敗（null）時は5分で期限切れ
+    final ttl = metadata != null
+        ? const Duration(hours: 1)
+        : const Duration(minutes: 5);
+    return DateTime.now().difference(fetchedAt) > ttl;
+  }
+}
+
 class ServerMetadataCache {
   ServerMetadataCache._();
   static final instance = ServerMetadataCache._();
 
-  final _cache = <String, ServerMetadata>{};
+  final _cache = <String, _CacheEntry>{};
   final _pending = <String, Future<ServerMetadata?>>{};
 
-  ServerMetadata? getCached(String host) => _cache[host];
+  ServerMetadata? getCached(String host) {
+    final entry = _cache[host];
+    if (entry == null || entry.isExpired) return null;
+    return entry.metadata;
+  }
 
   Future<ServerMetadata?> fetch(String host) {
-    if (_cache.containsKey(host)) {
-      return Future.value(_cache[host]);
+    final entry = _cache[host];
+    if (entry != null && !entry.isExpired) {
+      return Future.value(entry.metadata);
     }
     return _pending.putIfAbsent(host, () => _doFetch(host));
   }
@@ -35,13 +55,12 @@ class ServerMetadataCache {
       );
       final metadata =
           await _tryMastodon(dio, host) ?? await _tryMisskey(dio, host);
-      if (metadata != null) {
-        _cache[host] = metadata;
-      }
+      _cache[host] = _CacheEntry(metadata, DateTime.now());
       _pending.remove(host);
       return metadata;
     } catch (e) {
       debugPrint('capsicum: failed to fetch server metadata for $host: $e');
+      _cache[host] = _CacheEntry(null, DateTime.now());
       _pending.remove(host);
       return null;
     }
@@ -52,10 +71,9 @@ class ServerMetadataCache {
       final res = await dio.get('https://$host/api/v2/instance');
       if (res.statusCode == 200) {
         final data = res.data as Map<String, dynamic>;
-        final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
         return ServerMetadata(
           name: data['title'] as String? ?? host,
-          iconUrl: thumbnail?['url'] as String?,
+          iconUrl: _extractIcon(data, host),
           themeColor: _extractColor(data),
         );
       }
@@ -68,7 +86,7 @@ class ServerMetadataCache {
         final data = res.data as Map<String, dynamic>;
         return ServerMetadata(
           name: data['title'] as String? ?? host,
-          iconUrl: data['thumbnail'] as String?,
+          iconUrl: 'https://$host/favicon.ico',
           themeColor: null,
         );
       }
@@ -93,6 +111,24 @@ class ServerMetadataCache {
       // Not Misskey.
     }
     return null;
+  }
+
+  String _extractIcon(Map<String, dynamic> v2Data, String host) {
+    // Mastodon 4.3+: icon is an array of {src, sizes}
+    final icon = v2Data['icon'];
+    if (icon is List && icon.isNotEmpty) {
+      final first = icon.first;
+      if (first is Map<String, dynamic>) {
+        final src = first['src'] as String?;
+        if (src != null) return src;
+      }
+    }
+    // Older Mastodon: icon is a map with url
+    if (icon is Map<String, dynamic>) {
+      final url = icon['url'] as String?;
+      if (url != null) return url;
+    }
+    return 'https://$host/favicon.ico';
   }
 
   String? _extractColor(Map<String, dynamic> v2Data) {
