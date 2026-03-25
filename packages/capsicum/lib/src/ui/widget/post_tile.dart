@@ -880,7 +880,10 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ),
               if (adapter is TranslationSupport &&
                   (adapter is! MastodonAdapter ||
-                      adapter.isTranslationAvailable))
+                      adapter.isTranslationAvailable) &&
+                  !isOwn &&
+                  targetPost.scope != PostScope.direct &&
+                  post.reblog == null)
                 ListTile(
                   leading: const Icon(Icons.translate),
                   title: const Text('翻訳'),
