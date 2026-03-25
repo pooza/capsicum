@@ -669,6 +669,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showClipList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is FlashSupport)
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline),
+              title: const Text('Play'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showFlashList(context, ref);
+              },
+            ),
           if (ref.read(currentMulukhiyaProvider) != null) ...[
             ListTile(
               leading: const Icon(Icons.tag),
@@ -947,6 +956,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFlashList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! FlashSupport) return;
+
+    final List<Flash> flashes;
+    try {
+      flashes = await (adapter as FlashSupport).getFeaturedFlashes();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Play の取得に失敗しました')));
+      }
+      return;
+    }
+    if (flashes.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Play はありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    final account = ref.read(accountManagerProvider).current;
+    final host = account?.key.host;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Play',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final flash in flashes)
+              ListTile(
+                leading: const Icon(Icons.play_circle_outline, size: 20),
+                title: Text(flash.title),
+                subtitle: flash.summary != null && flash.summary!.isNotEmpty
+                    ? Text(
+                        flash.summary!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : null,
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  if (host != null) {
+                    launchUrl(
+                      Uri.parse('https://$host/play/${flash.id}'),
+                      mode: LaunchMode.inAppBrowserView,
+                    );
+                  }
+                },
+              ),
           ],
         ),
       ),

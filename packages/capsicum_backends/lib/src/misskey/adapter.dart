@@ -81,6 +81,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ChannelSupport,
         ClipSupport,
+        FlashSupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport {
@@ -906,6 +907,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return notes
         .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
         .map(_applyWordFilter)
+        .toList();
+  }
+
+  // FlashSupport
+
+  @override
+  Future<List<Flash>> getFeaturedFlashes() async {
+    final data = await client.getFeaturedFlashes();
+    return data
+        .map(
+          (f) => Flash(
+            id: f['id'] as String,
+            title: f['title'] as String? ?? '',
+            summary: f['summary'] as String?,
+            userName: (f['user'] as Map<String, dynamic>?)?['username'] as String?,
+          ),
+        )
         .toList();
   }
 

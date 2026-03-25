@@ -196,6 +196,15 @@ class _PostTileState extends ConsumerState<PostTile> {
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          // Misskey Play リンクをアプリ内ブラウザで開く
+          if (uri.pathSegments.length >= 2 &&
+              uri.pathSegments[0] == 'play') {
+            final account = ref.read(accountManagerProvider).current;
+            if (account != null && uri.host == account.key.host) {
+              launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+              return;
+            }
+          }
           launchUrl(uri);
         }
       },
