@@ -1536,7 +1536,6 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
           widget.poll.id,
           _selected.toList(),
         );
-        widget.onActionCompleted?.call();
       }
     } catch (e) {
       debugPrint('Poll vote error: $e');
@@ -1545,8 +1544,14 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
           context,
         ).showSnackBar(const SnackBar(content: Text('投票に失敗しました')));
       }
+      return;
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+    try {
+      widget.onActionCompleted?.call();
+    } catch (e) {
+      debugPrint('Poll vote onActionCompleted error: $e');
     }
   }
 
