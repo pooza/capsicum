@@ -113,6 +113,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterTitle: filterResult?.title,
       pinned: pinned,
       quotable: _isQuotable(quoteApproval),
+      language: language,
       url: url,
     );
   }
