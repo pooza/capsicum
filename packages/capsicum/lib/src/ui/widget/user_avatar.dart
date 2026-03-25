@@ -93,10 +93,9 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
-    // Misskey API の offsetX/Y は CSS translate のパーセント値
-    // (要素自身のサイズに対する割合) として使われる
-    final offsetX = decoration.offsetX / 100 * decoSize;
-    final offsetY = decoration.offsetY / 100 * decoSize;
+    // Misskey Web では left: (-50 + offsetX)% — 親要素(アバター)サイズに対する割合
+    final offsetX = decoration.offsetX / 100 * avatarSize;
+    final offsetY = decoration.offsetY / 100 * avatarSize;
 
     return Positioned(
       left: padding + (avatarSize - decoSize) / 2 + offsetX,
