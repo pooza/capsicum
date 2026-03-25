@@ -802,10 +802,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // HashtagSupport
 
   @override
-  Future<void> followHashtag(String hashtag) => throw UnimplementedError();
+  Future<bool> isFollowingHashtag(String hashtag) async {
+    final data = await client.getTag(hashtag);
+    return data['following'] as bool? ?? false;
+  }
 
   @override
-  Future<void> unfollowHashtag(String hashtag) => throw UnimplementedError();
+  Future<void> followHashtag(String hashtag) => client.followTag(hashtag);
+
+  @override
+  Future<void> unfollowHashtag(String hashtag) => client.unfollowTag(hashtag);
 
   @override
   Future<List<Post>> getPostsByHashtag(

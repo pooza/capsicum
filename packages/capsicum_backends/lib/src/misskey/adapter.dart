@@ -843,6 +843,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // HashtagSupport
 
   @override
+  Future<bool> isFollowingHashtag(String hashtag) async => false;
+
+  @override
   Future<void> followHashtag(String hashtag) => throw UnimplementedError();
 
   @override
