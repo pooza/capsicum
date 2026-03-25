@@ -112,9 +112,16 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterAction: filterResult?.action,
       filterTitle: filterResult?.title,
       pinned: pinned,
+      quotable: _isQuotable(quoteApproval),
       url: url,
     );
   }
+}
+
+bool _isQuotable(Map<String, dynamic>? quoteApproval) {
+  if (quoteApproval == null) return true;
+  final currentUser = quoteApproval['current_user'] as String?;
+  return currentUser != 'denied';
 }
 
 ({Post? post, QuoteState? state})? _parseQuoteResult(

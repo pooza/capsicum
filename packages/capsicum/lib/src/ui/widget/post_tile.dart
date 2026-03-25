@@ -742,14 +742,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                   context.push('/compose', extra: {'replyTo': targetPost});
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.format_quote),
-                title: const Text('引用'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'quoteTo': targetPost});
-                },
-              ),
+              if (targetPost.quotable)
+                ListTile(
+                  leading: const Icon(Icons.format_quote),
+                  title: const Text('引用'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    context.push('/compose', extra: {'quoteTo': targetPost});
+                  },
+                ),
               if (adapter is FavoriteSupport)
                 ListTile(
                   leading: const Icon(Icons.star_outline),

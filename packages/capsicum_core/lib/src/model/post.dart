@@ -39,6 +39,7 @@ class Post {
   final String? channelId;
   final String? channelName;
   final bool localOnly;
+  final bool quotable;
   final String? url;
 
   const Post({
@@ -74,6 +75,7 @@ class Post {
     this.channelId,
     this.channelName,
     this.localOnly = false,
+    this.quotable = true,
     this.url,
   });
 }
