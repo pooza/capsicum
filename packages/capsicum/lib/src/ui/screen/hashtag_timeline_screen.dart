@@ -1,5 +1,4 @@
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -61,11 +60,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
         await support.followHashtag(hashtag);
       }
       if (mounted) setState(() => _following = !_following!);
-    } catch (e) {
-      debugPrint('Hashtag follow error: $e');
-      if (e is DioException) {
-        debugPrint('Response: ${e.response?.statusCode} ${e.response?.data}');
-      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('操作に失敗しました')),
