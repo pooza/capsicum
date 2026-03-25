@@ -700,6 +700,18 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/v1/statuses/:id/translate
+  Future<Map<String, dynamic>> translateStatus(
+    String statusId, {
+    String? lang,
+  }) async {
+    final response = await dio.post(
+      '/api/v1/statuses/$statusId/translate',
+      data: {'lang': ?lang},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// GET /api/v2/instance
   Future<Map<String, dynamic>> getInstanceV2() async {
     final response = await dio.get('/api/v2/instance');

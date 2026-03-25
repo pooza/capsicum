@@ -85,9 +85,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ReportSupport,
         PinSupport,
-        ScheduleSupport {
+        ScheduleSupport,
+        TranslationSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
+  bool _translationAvailable = false;
 
   /// 管理者ロール ID のセット（verify_credentials + モロヘイヤから学習）。
   final Set<String> _adminRoleIds = {};
@@ -131,6 +133,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       // Try v2 instance API (Mastodon 4.5+).
       final instance = await client.getInstanceV2();
       final config = instance['configuration'] as Map<String, dynamic>?;
+      final translation = config?['translation'] as Map<String, dynamic>?;
+      _translationAvailable = translation?['enabled'] as bool? ?? false;
       final access = config?['timelines_access'] as Map<String, dynamic>?;
       if (access != null) {
         final liveFeeds = access['live_feeds'] as Map<String, dynamic>?;
@@ -898,5 +902,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String? comment,
   }) async {
     await client.createReport(authorId, statusIds: [postId], comment: comment);
+  }
+
+  // TranslationSupport
+
+  bool get isTranslationAvailable => _translationAvailable;
+
+  @override
+  Future<TranslationResult> translatePost(
+    String postId, {
+    String? targetLang,
+  }) async {
+    final data = await client.translateStatus(postId, lang: targetLang);
+    return TranslationResult(
+      content: data['content'] as String? ?? '',
+      detectedLanguage: data['detected_source_language'] as String?,
+      provider: data['provider'] as String?,
+    );
   }
 }

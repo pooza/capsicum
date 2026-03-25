@@ -84,7 +84,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         FlashSupport,
         ReportSupport,
         PinSupport,
-        ScheduleSupport {
+        ScheduleSupport,
+        TranslationSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -1062,5 +1063,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String? comment,
   }) async {
     await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
+  }
+
+  // TranslationSupport
+
+  @override
+  Future<TranslationResult> translatePost(
+    String postId, {
+    String? targetLang,
+  }) async {
+    final data = await client.translateNote(
+      postId,
+      targetLang: targetLang ?? 'ja',
+    );
+    return TranslationResult(
+      content: data['text'] as String? ?? '',
+      detectedLanguage: data['sourceLang'] as String?,
+    );
   }
 }

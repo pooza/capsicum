@@ -50,6 +50,8 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _filterExpanded = false;
   bool _deleted = false;
   PreviewCard? _fetchedCard;
+  TranslationResult? _translation;
+  bool _translating = false;
 
   @override
   void initState() {
@@ -529,6 +531,56 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   );
                                 },
                               ),
+                              if (_translating)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                              if (_translation != null)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        [
+                                          '翻訳',
+                                          if (_translation!.provider != null)
+                                            '(${_translation!.provider})',
+                                        ].join(' '),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        _translation!.content
+                                            .replaceAll(
+                                              RegExp(r'<[^>]*>'),
+                                              '',
+                                            )
+                                            .trim(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               if (parsed.trailingTags.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),
@@ -826,6 +878,17 @@ class _PostTileState extends ConsumerState<PostTile> {
                     );
                   },
                 ),
+              if (adapter is TranslationSupport &&
+                  (adapter is! MastodonAdapter ||
+                      adapter.isTranslationAvailable))
+                ListTile(
+                  leading: const Icon(Icons.translate),
+                  title: const Text('翻訳'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _translatePost(targetPost);
+                  },
+                ),
               if (!isOwn && adapter is ReportSupport)
                 ListTile(
                   leading: const Icon(Icons.flag_outlined),
@@ -905,6 +968,27 @@ class _PostTileState extends ConsumerState<PostTile> {
         ),
       ),
     );
+  }
+
+  Future<void> _translatePost(Post targetPost) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! TranslationSupport) return;
+
+    setState(() => _translating = true);
+    try {
+      final result = await (adapter as TranslationSupport).translatePost(
+        targetPost.id,
+      );
+      if (mounted) setState(() => _translation = result);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('翻訳に失敗しました')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _translating = false);
+    }
   }
 
   void _confirmDelete(BuildContext context, Post targetPost) {
