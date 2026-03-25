@@ -73,7 +73,7 @@ class UserAvatar extends StatelessWidget {
     double avatarSize,
     double padding,
   ) {
-    final decoSize = avatarSize * 1.5;
+    final decoSize = avatarSize * 2.0;
     Widget image = Image.network(
       decoration.url,
       width: decoSize,
@@ -93,8 +93,10 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
-    final offsetX = decoration.offsetX * avatarSize;
-    final offsetY = decoration.offsetY * avatarSize;
+    // Misskey API の offsetX/Y は CSS translate のパーセント値
+    // (要素自身のサイズに対する割合) として使われる
+    final offsetX = decoration.offsetX / 100 * decoSize;
+    final offsetY = decoration.offsetY / 100 * decoSize;
 
     return Positioned(
       left: padding + (avatarSize - decoSize) / 2 + offsetX,
