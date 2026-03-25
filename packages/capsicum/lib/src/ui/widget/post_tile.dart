@@ -984,11 +984,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.id,
       );
       if (mounted) setState(() => _translation = result);
-    } catch (e) {
-      debugPrint('Translate error: $e');
-      if (e is DioException) {
-        debugPrint('Response: ${e.response?.statusCode} ${e.response?.data}');
-      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('翻訳に失敗しました')),
