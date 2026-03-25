@@ -707,7 +707,7 @@ class MastodonClient {
   }) async {
     final response = await dio.post(
       '/api/v1/statuses/$statusId/translate',
-      data: {'lang': ?lang},
+      data: lang != null ? FormData.fromMap({'lang': lang}) : null,
     );
     return response.data as Map<String, dynamic>;
   }
