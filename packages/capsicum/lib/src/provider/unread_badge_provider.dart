@@ -34,10 +34,12 @@ class UnreadBadgeNotifier
         .where((a) => a.key != current?.key)
         .toList();
 
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+
     if (otherAccounts.isEmpty) return const {};
 
     // Set up periodic refresh.
-    _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       ref.invalidateSelf();
     });

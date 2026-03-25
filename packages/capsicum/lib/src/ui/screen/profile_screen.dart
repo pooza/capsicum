@@ -51,7 +51,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
-  final List<ContentRenderer> _fieldRenderers = [];
   ContentRenderer? _bioRenderer;
 
   @override
@@ -85,7 +84,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   void _onTabChanged() {
     if (_tabController.index == 1 && !_mediaTabLoaded) {
-      _mediaTabLoaded = true;
       _loadMediaPosts();
     }
   }
@@ -97,9 +95,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bioRenderer?.dispose();
-    for (final r in _fieldRenderers) {
-      r.dispose();
-    }
     super.dispose();
   }
 
@@ -190,6 +185,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
+    _mediaTabLoaded = true;
     try {
       final posts = await _fetchUserPosts(adapter, onlyMedia: true);
       if (mounted) {
@@ -200,6 +196,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         });
       }
     } catch (e) {
+      _mediaTabLoaded = false;
       if (mounted) setState(() => _loadingMediaPosts = false);
     }
   }
@@ -966,7 +963,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
     );
-    _fieldRenderers.add(renderer);
     return RichText(text: renderer.renderMfm(stripped));
   }
 

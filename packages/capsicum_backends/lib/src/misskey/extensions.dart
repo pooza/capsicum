@@ -71,7 +71,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
           )
           .where((d) => d.url.isNotEmpty)
           .toList(),
-      url: 'https://$localHost/@$username',
+      url: 'https://${host ?? localHost}/@$username',
       createdAt: createdAt,
     );
   }
