@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants.dart';
 import '../../model/account.dart';
@@ -108,14 +109,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     DecentralizedBackendAdapter? adapter;
-    Map<String, String> miAuthExtra = {};
+    Map<String, String> oauthExtra = {};
 
     try {
       adapter = await widget.backendType.createAdapter(widget.host);
       final loginSupport = adapter as LoginSupport;
 
-      // Reuse cached client credentials from an existing account on the same
-      // host to avoid calling POST /api/v1/apps (rate-limit prone).
+      // Reuse cached client credentials to avoid calling POST /api/v1/apps
+      // (rate-limit prone). Check: 1) existing accounts, 2) host-level storage.
       if (adapter is MastodonAdapter) {
         final accounts = ref.read(accountManagerProvider).accounts;
         final existing = accounts
@@ -123,6 +124,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             .firstOrNull;
         if (existing != null) {
           adapter.setCachedClientCredentials(existing.clientSecret);
+        } else {
+          final storage = ref.read(accountStorageProvider);
+          final hostCreds = await storage.getHostClientCredentials(widget.host);
+          if (hostCreds != null) {
+            adapter.setCachedClientCredentials(hostCreds);
+          }
         }
       }
 
@@ -136,13 +143,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final startResult = await loginSupport.startLogin(application);
 
       if (startResult is LoginNeedsOAuth) {
-        if (!_isMastodon) miAuthExtra = startResult.extra;
+        oauthExtra = startResult.extra;
 
         // Open browser and wait for callback redirect.
+        debugPrint('capsicum: OAuth URL: ${startResult.authorizationUrl}');
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
-          options: const FlutterWebAuth2Options(preferEphemeral: false),
+          options: const FlutterWebAuth2Options(preferEphemeral: true),
         );
 
         final callbackUri = Uri.parse(resultUrl);
@@ -174,15 +182,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e, st) {
       // User cancelled the browser or redirect failed.
-      // For MiAuth, the session may already be approved on the server
-      // even when the redirect back to the app fails (Android 12+ Custom Tab
-      // issues, etc.). Try completing the login as a fallback.
-      if (!_loginCompleted &&
-          !_isMastodon &&
-          adapter != null &&
-          miAuthExtra.isNotEmpty) {
-        final ok = await _tryMiAuthFallback(adapter, miAuthExtra);
-        if (ok) return;
+      if (!_loginCompleted && adapter != null && oauthExtra.isNotEmpty) {
+        // For MiAuth, the session may already be approved on the server
+        // even when the redirect back to the app fails (Android 12+ Custom Tab
+        // issues, etc.). Try completing the login as a fallback.
+        if (!_isMastodon) {
+          final ok = await _tryMiAuthFallback(adapter, oauthExtra);
+          if (ok) return;
+        }
+
+        // For Mastodon OAuth, prompt the user to manually enter the
+        // authorization code from the browser URL bar.
+        if (_isMastodon) {
+          final ok = await _tryManualCodeFallback(
+            adapter as LoginSupport,
+            oauthExtra,
+          );
+          if (ok) return;
+        }
       }
 
       if (e.toString().contains('CANCELED') ||
@@ -218,6 +235,175 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return false;
   }
 
+  /// Prompt the user to manually paste the authorization code when the
+  /// browser redirect back to the app failed (Mastodon OAuth only).
+  ///
+  /// Opens a new browser with `urn:ietf:wg:oauth:2.0:oob` as the redirect
+  /// URI so that Mastodon displays the authorization code on screen instead
+  /// of redirecting to the custom scheme.
+  Future<bool> _tryManualCodeFallback(
+    LoginSupport loginSupport,
+    Map<String, String> extra,
+  ) async {
+    if (!mounted) return false;
+
+    const oobRedirect = 'urn:ietf:wg:oauth:2.0:oob';
+    final adapter = loginSupport as MastodonAdapter;
+
+    // Show the dialog immediately; re-register the app (to add OOB support)
+    // only when the user taps the button.
+    var clientId = extra['client_id']!;
+    var clientSecret = extra['client_secret']!;
+    var oobReady = false;
+
+    Future<void> ensureOobRegistration() async {
+      if (oobReady) return;
+      try {
+        final app = await adapter.client.createApplication(
+          clientName: AppConstants.appName,
+          redirectUris: '$_redirectUri\n$oobRedirect',
+          scopes: extra['scopes']!,
+          website: AppConstants.websiteUrl.toString(),
+        );
+        clientId = app.clientId!;
+        clientSecret = app.clientSecret!;
+        adapter.setCachedClientCredentials(
+          ClientSecretData(clientId: clientId, clientSecret: clientSecret),
+        );
+        final storage = ref.read(accountStorageProvider);
+        await storage.saveHostClientCredentials(
+          widget.host,
+          clientId,
+          clientSecret,
+        );
+      } catch (e) {
+        debugPrint('capsicum: OOB app re-registration failed: $e');
+      }
+      oobReady = true;
+    }
+
+    final code = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        var isLoading = false;
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('認証コードの入力'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'ブラウザから戻れない場合は、スワイプで'
+                    '戻ってください。多くの場合、認証は完了'
+                    'しています。\n\n'
+                    'ログインできない場合は、下のボタンで'
+                    '認証コードを取得して貼り付けてください。',
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: isLoading
+                        ? const Center(
+                            child: SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : OutlinedButton.icon(
+                            onPressed: () async {
+                              setDialogState(() => isLoading = true);
+                              await ensureOobRegistration();
+                              setDialogState(() => isLoading = false);
+                              final oobUrl =
+                                  Uri.https(widget.host, '/oauth/authorize', {
+                                    'response_type': 'code',
+                                    'client_id': clientId,
+                                    'redirect_uri': oobRedirect,
+                                    'scope': extra['scopes']!,
+                                    'force_login': 'true',
+                                  });
+                              launchUrl(
+                                oobUrl,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                            icon: const Icon(Icons.open_in_browser),
+                            label: const Text('ブラウザで認証コードを取得'),
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      labelText: '認証コード',
+                      border: OutlineInputBorder(),
+                    ),
+                    autofocus: true,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('キャンセル'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, controller.text.trim()),
+                  child: const Text('ログイン'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (code == null || code.isEmpty) return false;
+
+    try {
+      // Accept either a bare code or a full callback URL.
+      final String extractedCode;
+      if (code.contains('code=')) {
+        final uri = Uri.parse(code);
+        extractedCode = uri.queryParameters['code'] ?? code;
+      } else {
+        extractedCode = code;
+      }
+
+      // Use the OOB redirect URI and (possibly updated) credentials
+      // for token exchange.
+      final oobExtra = Map<String, String>.from(extra);
+      oobExtra['redirect_uri'] = oobRedirect;
+      oobExtra['client_id'] = clientId;
+      oobExtra['client_secret'] = clientSecret;
+      final callbackUri = Uri(queryParameters: {'code': extractedCode});
+      final result = await loginSupport.completeLogin(callbackUri, oobExtra);
+
+      if (result is LoginSuccess) {
+        final adapter = loginSupport as DecentralizedBackendAdapter;
+        await _finishLogin(adapter, result);
+        return true;
+      } else if (result is LoginFailure) {
+        debugPrint('Manual code login failed: ${result.error}');
+        if (mounted) {
+          setState(() => _error = '認証コードが正しくありません');
+        }
+      }
+    } catch (e) {
+      debugPrint('Manual code fallback error: $e');
+      if (mounted) {
+        setState(() => _error = '認証コードが正しくありません');
+      }
+    }
+    return false;
+  }
+
   Future<void> _finishLogin(
     DecentralizedBackendAdapter adapter,
     LoginSuccess result,
@@ -235,6 +421,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       clientSecret: result.clientSecret,
       softwareVersion: widget.softwareVersion,
     );
+
+    // Persist client credentials at the host level so they survive
+    // account deletion (avoids POST /api/v1/apps on re-login).
+    if (result.clientSecret != null) {
+      final storage = ref.read(accountStorageProvider);
+      await storage.saveHostClientCredentials(
+        widget.host,
+        result.clientSecret!.clientId,
+        result.clientSecret!.clientSecret,
+      );
+    }
 
     await ref.read(accountManagerProvider.notifier).addAccount(account);
     if (mounted) context.go('/home');
@@ -305,6 +502,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     icon: const Icon(Icons.open_in_browser),
                     label: const Text('ブラウザでログイン'),
                   ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'ブラウザから自動で戻れない場合は、スワイプで'
+            'アプリに戻ってください。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

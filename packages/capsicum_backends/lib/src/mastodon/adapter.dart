@@ -383,9 +383,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         clientId = cached.clientId;
         clientSecret = cached.clientSecret;
       } else {
+        // Register with both the custom scheme and OOB redirect URIs so
+        // the OOB fallback can reuse the same client credentials.
+        final redirectUris = [
+          application.redirectUri.toString(),
+          'urn:ietf:wg:oauth:2.0:oob',
+        ].join('\n');
         final app = await client.createApplication(
           clientName: application.name,
-          redirectUris: application.redirectUri.toString(),
+          redirectUris: redirectUris,
           scopes: _scopes.join(' '),
           website: application.website?.toString(),
         );
@@ -398,6 +404,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
+        'force_login': 'true',
       });
 
       return LoginNeedsOAuth(
