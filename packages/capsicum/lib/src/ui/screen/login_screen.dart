@@ -335,7 +335,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 mode: LaunchMode.externalApplication,
                               );
                               if (!launched && dialogContext.mounted) {
-                                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                ScaffoldMessenger.of(
+                                  dialogContext,
+                                ).showSnackBar(
                                   const SnackBar(
                                     content: Text('ブラウザを開けませんでした'),
                                   ),

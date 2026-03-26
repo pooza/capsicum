@@ -140,7 +140,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is MastodonAdapter) {
-        setState(() => _language = Localizations.localeOf(context).languageCode);
+        setState(
+          () => _language = Localizations.localeOf(context).languageCode,
+        );
       }
     });
   }
@@ -910,7 +912,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             .map(
                               (e) => DropdownMenuItem(
                                 value: e.key,
-                                child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                                child: Text(
+                                  e.value,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
                               ),
                             )
                             .toList(),

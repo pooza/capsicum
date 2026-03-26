@@ -39,8 +39,9 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! HashtagSupport) return;
     try {
-      final following =
-          await (adapter as HashtagSupport).isFollowingHashtag(widget.hashtag);
+      final following = await (adapter as HashtagSupport).isFollowingHashtag(
+        widget.hashtag,
+      );
       if (mounted) setState(() => _following = following);
     } catch (_) {
       // フォロー状態の取得に失敗しても画面表示は続行
@@ -62,9 +63,9 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
       if (mounted) setState(() => _following = !_following!);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('操作に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
       }
     }
   }
@@ -87,9 +88,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
         actions: [
           if (_following != null)
             IconButton(
-              icon: Icon(
-                _following! ? Icons.bookmark : Icons.bookmark_border,
-              ),
+              icon: Icon(_following! ? Icons.bookmark : Icons.bookmark_border),
               tooltip: _following! ? 'フォロー解除' : 'フォロー',
               onPressed: _toggleFollow,
             ),
@@ -102,8 +101,9 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
               data: (state) => state.posts.isEmpty
                   ? const Center(child: Text('投稿がありません'))
                   : RefreshIndicator(
-                      onRefresh: () => ref
-                          .refresh(hashtagTimelineProvider(widget.hashtag).future),
+                      onRefresh: () => ref.refresh(
+                        hashtagTimelineProvider(widget.hashtag).future,
+                      ),
                       child: ListView.separated(
                         controller: _scrollController,
                         itemCount:
@@ -130,8 +130,9 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
                       const Text('読み込みに失敗しました', textAlign: TextAlign.center),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: () => ref
-                            .invalidate(hashtagTimelineProvider(widget.hashtag)),
+                        onPressed: () => ref.invalidate(
+                          hashtagTimelineProvider(widget.hashtag),
+                        ),
                         child: const Text('再試行'),
                       ),
                     ],

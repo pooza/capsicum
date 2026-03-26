@@ -91,8 +91,9 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
                       const Text('読み込みに失敗しました', textAlign: TextAlign.center),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: () => ref
-                            .invalidate(channelTimelineProvider(widget.channelId)),
+                        onPressed: () => ref.invalidate(
+                          channelTimelineProvider(widget.channelId),
+                        ),
                         child: const Text('再試行'),
                       ),
                     ],

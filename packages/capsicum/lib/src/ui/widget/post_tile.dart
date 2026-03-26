@@ -228,8 +228,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
           // Misskey Play リンクをアプリ内ブラウザで開く
-          if (uri.pathSegments.length >= 2 &&
-              uri.pathSegments[0] == 'play') {
+          if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
             final account = ref.read(accountManagerProvider).current;
             if (account != null && uri.host == account.key.host) {
               launchUrl(uri, mode: LaunchMode.inAppBrowserView);
@@ -575,9 +574,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   margin: const EdgeInsets.only(top: 8),
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Column(
@@ -592,9 +591,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                         ].join(' '),
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -1013,9 +1012,9 @@ class _PostTileState extends ConsumerState<PostTile> {
       if (mounted) setState(() => _translation = result);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('翻訳に失敗しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('翻訳に失敗しました')));
       }
     } finally {
       if (mounted) setState(() => _translating = false);
@@ -1943,7 +1942,6 @@ class _QuoteCard extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _QuoteStateCard extends StatelessWidget {

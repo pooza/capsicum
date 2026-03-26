@@ -315,10 +315,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: Row(
               children: [
-                Text(
-                  'パレット',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
+                Text('パレット', style: Theme.of(context).textTheme.labelMedium),
                 const Spacer(),
                 _buildPaletteMenuButton(),
               ],
@@ -389,14 +386,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
       itemBuilder: (_) => [
-        const PopupMenuItem(
-          value: 'reimport',
-          child: Text('再インポート'),
-        ),
-        const PopupMenuItem(
-          value: 'clear',
-          child: Text('パレットをクリア'),
-        ),
+        const PopupMenuItem(value: 'reimport', child: Text('再インポート')),
+        const PopupMenuItem(value: 'clear', child: Text('パレットをクリア')),
       ],
       onSelected: (value) {
         switch (value) {

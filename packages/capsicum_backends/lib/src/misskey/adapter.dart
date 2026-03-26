@@ -925,7 +925,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             id: f['id'] as String,
             title: f['title'] as String? ?? '',
             summary: f['summary'] as String?,
-            userName: (f['user'] as Map<String, dynamic>?)?['username'] as String?,
+            userName:
+                (f['user'] as Map<String, dynamic>?)?['username'] as String?,
           ),
         )
         .toList();
