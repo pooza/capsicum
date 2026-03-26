@@ -62,6 +62,21 @@ class _PostTileState extends ConsumerState<PostTile> {
     _resolveTcoUrls();
   }
 
+  @override
+  void didUpdateWidget(PostTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _deleted = false;
+      _expanded = widget.initialExpanded;
+      _cwExpanded = widget.initialExpanded;
+      _tagsExpanded = false;
+      _filterExpanded = false;
+      _fetchedCard = null;
+      _translation = null;
+      _translating = false;
+    }
+  }
+
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
 
   void _resolveTcoUrls() {
@@ -978,10 +993,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! TranslationSupport) return;
 
+    final targetLang = Localizations.localeOf(context).languageCode;
     setState(() => _translating = true);
     try {
       final result = await (adapter as TranslationSupport).translatePost(
         targetPost.id,
+        targetLang: targetLang,
       );
       if (mounted) setState(() => _translation = result);
     } catch (_) {
