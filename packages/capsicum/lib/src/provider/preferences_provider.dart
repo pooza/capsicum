@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _fontScaleKey = 'font_scale';
 const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
+const _emojiPalettePrefix = 'emoji_palette_';
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -135,6 +136,63 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
     state = defaultTabOrder;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_tabOrderPrefix$arg');
+  }
+}
+
+/// Per-host emoji palette (imported from Misskey Web UI).
+///
+/// Takes a hostname as the family parameter.
+/// Returns an empty list when no palette has been imported.
+final emojiPaletteProvider =
+    NotifierProvider.family<EmojiPaletteNotifier, List<String>, String>(
+      EmojiPaletteNotifier.new,
+    );
+
+class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
+  @override
+  List<String> build(String arg) {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_emojiPalettePrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> importFromText(String text) async {
+    final shortcodes = _parseShortcodes(text);
+    if (shortcodes.isEmpty) return;
+    state = shortcodes;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_emojiPalettePrefix$arg', shortcodes);
+  }
+
+  Future<void> clear() async {
+    state = const [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_emojiPalettePrefix$arg');
+  }
+
+  /// Parse `:shortcode:` entries and bare unicode emoji from pasted text.
+  static List<String> _parseShortcodes(String text) {
+    final results = <String>[];
+    final pattern = RegExp(r':[a-zA-Z0-9_@.\-]+:');
+    final matches = pattern.allMatches(text);
+    for (final m in matches) {
+      results.add(m.group(0)!);
+    }
+    // If no shortcodes found, try splitting by whitespace (unicode emoji).
+    if (results.isEmpty) {
+      final parts = text.trim().split(RegExp(r'\s+'));
+      for (final p in parts) {
+        if (p.isNotEmpty) results.add(p);
+      }
+    }
+    return results;
   }
 }
 

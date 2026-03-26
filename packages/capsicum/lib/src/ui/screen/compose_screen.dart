@@ -312,7 +312,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   }
 
   void _showEmojiPicker() {
-    final adapter = ref.read(currentAdapterProvider);
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
     if (adapter == null) return;
     showModalBottomSheet(
       context: context,
@@ -321,6 +322,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         height: MediaQuery.of(context).size.height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
+          host: account!.key.host,
           onSelected: (emoji) {
             Navigator.pop(context);
             _insertEmoji(emoji);

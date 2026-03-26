@@ -1121,7 +1121,8 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   void _showEmojiPicker(BuildContext context) {
-    final adapter = ref.read(currentAdapterProvider);
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
     if (adapter is! ReactionSupport) return;
 
     final targetPost = post.reblog ?? post;
@@ -1134,6 +1135,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         height: MediaQuery.of(context).size.height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
+          host: account!.key.host,
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
