@@ -23,6 +23,7 @@ class SettingsScreen extends ConsumerWidget {
           _ThemeColorTile(ref: ref),
           _TabOrderTile(ref: ref),
           _sectionHeader(context, '共通'),
+          _HideLivecureTile(ref: ref),
           _FontScaleTile(fontScale: fontScale, ref: ref),
         ],
       ),
@@ -247,6 +248,23 @@ class _ColorCircle extends StatelessWidget {
             ? const Icon(Icons.check, color: Colors.white, size: 18)
             : null,
       ),
+    );
+  }
+}
+
+class _HideLivecureTile extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _HideLivecureTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final hide = ref.watch(hideLivecureProvider);
+    return SwitchListTile(
+      title: const Text('#実況 タグの投稿を非表示'),
+      subtitle: const Text('実況中の投稿をタイムラインから隠します'),
+      value: hide,
+      onChanged: (_) => ref.read(hideLivecureProvider.notifier).toggle(),
     );
   }
 }

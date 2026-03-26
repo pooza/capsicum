@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
 /// Currently selected timeline type.
 final selectedTimelineTypeProvider = StateProvider<TimelineType>(
@@ -75,8 +76,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
+    final hideLivecure = ref.watch(hideLivecureProvider);
     final visible = response.posts
         .where((p) => p.filterAction != FilterAction.hide)
+        .where((p) => !hideLivecure || !_hasLivecureTag(p))
         .toList();
     return TimelineState(posts: visible, hasMore: response.rawCount > 0);
   }
@@ -88,10 +91,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       final current = state.valueOrNull;
       if (current == null) return;
       if (newPost.filterAction == FilterAction.hide) return;
+      final hideLivecure = ref.read(hideLivecureProvider);
+      if (hideLivecure && _hasLivecureTag(newPost)) return;
       // Prepend new post, avoiding duplicates.
       if (current.posts.any((p) => p.id == newPost.id)) return;
       state = AsyncData(current.copyWith(posts: [newPost, ...current.posts]));
     });
+  }
+
+  static final _livecurePattern = RegExp(r'(#実況[\s<]|#<span>実況</span>)');
+
+  static bool _hasLivecureTag(Post post) {
+    final target = post.reblog ?? post;
+    final content = target.content ?? '';
+    return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
   }
 
   /// Replace a post in the list by ID (e.g. after reacting).
@@ -222,8 +235,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           hasMore = response.rawCount > 0;
           maxId = response.posts.last.id;
 
+          final hideLivecure = ref.read(hideLivecureProvider);
           final visibleOlder = response.posts
               .where((p) => p.filterAction != FilterAction.hide)
+              .where((p) => !hideLivecure || !_hasLivecureTag(p))
               .toList();
           allVisible.addAll(visibleOlder);
 

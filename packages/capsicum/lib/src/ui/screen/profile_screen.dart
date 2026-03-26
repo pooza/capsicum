@@ -955,6 +955,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       resolveEmoji: (shortcode) => emojis[shortcode],
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+      resolveDisplayUrl: _tryResolveAcct,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -964,6 +965,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
     );
     return RichText(text: renderer.renderMfm(stripped));
+  }
+
+  static final _profileUrlPattern = RegExp(
+    r'^https?://([^/]+)/@([a-zA-Z0-9_]+)/?$',
+  );
+
+  String? _tryResolveAcct(String url) {
+    final match = _profileUrlPattern.firstMatch(url);
+    if (match == null) return null;
+    final host = match.group(1)!;
+    final username = match.group(2)!;
+    return '@$username@$host';
   }
 
   String _stripHtml(String html) {

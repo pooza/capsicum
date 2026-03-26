@@ -8,6 +8,7 @@ const _fontScaleKey = 'font_scale';
 const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
 const _emojiPalettePrefix = 'emoji_palette_';
+const _hideLivecureKey = 'hide_livecure';
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -193,6 +194,33 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
       }
     }
     return results;
+  }
+}
+
+/// Whether to hide posts with #実況 hashtag.
+final hideLivecureProvider = NotifierProvider<HideLivecureNotifier, bool>(
+  HideLivecureNotifier.new,
+);
+
+class HideLivecureNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_hideLivecureKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideLivecureKey, state);
   }
 }
 

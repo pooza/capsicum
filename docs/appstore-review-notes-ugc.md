@@ -3,27 +3,66 @@
 ## Resolution Center 返信文（英文）
 
 ```
-Thank you for your feedback regarding Guideline 1.2 (User-Generated Content).
+Thank you for your review. All three required precautions — flagging content, EULA, and blocking users — are already fully implemented. Please see the attached screen recording and the detailed walkthrough below.
 
-We have confirmed that all required precautions are already implemented. We have attached a new screen recording that clearly demonstrates each feature on a physical device.
+IMPORTANT: The report/flag feature is accessed by LONG-PRESSING (tap and hold) on any post. This opens an action menu that includes a "通報" (Report) button. This is a deliberate design choice to prevent accidental taps — the same interaction pattern used by Apple's own Messages app for message reactions.
 
-The recording shows the following flow:
+Here is what the recording demonstrates (in order):
 
-1. **Flagging objectionable content** (0:00–0:30)
-   Long-press any post → action menu appears → tap "通報" (Report) → enter a reason → tap "通報" to submit the report to the server administrator.
+1. EULA / TERMS OF USE
+   - On first launch, a Terms of Use screen is displayed
+   - Users must accept before accessing any content
+   - The agreement explicitly states zero tolerance for inappropriate content and the availability of reporting and blocking features
 
-2. **EULA / Terms of Use agreement** (0:30–0:50)
-   On first launch, users must accept the Terms of Use before accessing any content. The agreement screen explicitly states zero tolerance for inappropriate content and the availability of reporting and blocking features.
+2. FLAG OBJECTIONABLE CONTENT
+   - Long-press (tap and hold) any post in the timeline
+   - An action menu slides up from the bottom
+   - Tap "通報" (Report) — the flag icon
+   - A dialog appears asking for an optional reason
+   - Tap "通報" (Report) to submit
+   - The report is sent directly to the server administrator
 
-3. **Blocking abusive users** (0:50–1:20)
-   Open a user's profile → tap ⋮ menu → "ブロック" (Block) → confirm → the user's content is immediately removed from the timeline. A follow-up dialog asks whether to report the issue to the app developer.
+3. BLOCK ABUSIVE USERS
+   - Open the reported user's profile
+   - Tap the ⋮ menu in the top-right corner
+   - Tap "ブロック" (Block) and confirm
+   - The user's content is immediately removed from all timelines
+   - A follow-up dialog offers to report the issue to the app developer
 
-Please see the attached recording for the complete demonstration.
+All three features are fully functional and demonstrated in the attached recording.
 ```
 
 ## Review Notes（App Store Connect の Notes に貼り付ける英文）
 
-```
+```text
+=== UGC Compliance (Guideline 1.2) — PLEASE READ BEFORE TESTING ===
+
+All three required precautions are implemented. A screen recording demonstrating each feature is attached.
+
+*** HOW TO FLAG OBJECTIONABLE CONTENT ***
+
+The report feature is accessed via LONG-PRESS (tap and hold) on any post:
+
+1. Long-press (tap and hold) any post in the timeline
+2. An action menu slides up from the bottom of the screen
+3. Tap the flag icon labeled "通報" (Report)
+4. Enter an optional reason in the dialog
+5. Tap "通報" (Report) to submit the report to the server administrator
+
+Note: The long-press interaction is intentional to prevent accidental reports — the same pattern used by Apple Messages for reactions.
+
+*** EULA / TERMS OF USE ***
+
+On first launch, users must accept the Terms of Use before accessing any content. The agreement states zero tolerance for inappropriate content and the availability of reporting and blocking features.
+
+*** BLOCKING ABUSIVE USERS ***
+
+1. Open any user's profile
+2. Tap the ⋮ menu (top-right)
+3. Tap "ブロック" (Block) and confirm
+4. The user's content is immediately hidden from all timelines
+5. A follow-up dialog offers to report the issue to the app developer
+
 === How to sign in ===
 
 1. On the login screen, select "デルムリン丼" (mstdn.delmulin.com) from the preset server list.
@@ -32,18 +71,6 @@ Please see the attached recording for the complete demonstration.
 4. Tap "承認" (Authorize).
 
 Note: Occasionally the screen may reload after tapping "承認" instead of returning to the app. The login has succeeded — simply close the browser view to continue.
-
-=== UGC Compliance (Guideline 1.2) ===
-
-This app implements the following precautions for user-generated content:
-
-1. **Flag objectionable content**: Long-press any post → "通報" (Report) in the action menu → enter optional reason → submit. The report is sent to the server administrator.
-
-2. **EULA / Terms of Use**: Displayed on first launch. Users must accept before accessing any content. States zero tolerance for inappropriate content and availability of reporting/blocking.
-
-3. **Block abusive users**: Open user profile → ⋮ menu → "ブロック" (Block). Content is immediately hidden. A follow-up dialog offers to report the issue to the app developer.
-
-See attached screen recording for a demonstration of all three features.
 
 === Third-Party Client (Guideline 4.1(a)) ===
 
@@ -54,8 +81,6 @@ capsicum is an independent, third-party client for open-source decentralized soc
 
 ## 画面録画の撮影手順
 
-録画のポイント: **通報機能を最初にデモする**（今回の指摘の核心）。各セクションの時間配分を意識して、レビュアーが見落とさないようにする。
-
 ### 準備
 
 - 実機（iPhone）で撮影すること（シミュレータ不可）
@@ -63,30 +88,33 @@ capsicum is an independent, third-party client for open-source decentralized soc
 
 ### 撮影手順
 
-1. **通報機能のデモ**（最初に見せる — 最重要）
-   - ログイン済みの状態でタイムラインを表示
-   - 任意の投稿を長押し → アクションメニューが表示される
-   - 「通報」をタップ → 理由入力ダイアログ → 理由を入力 → 「通報」ボタンをタップ
-   - 通報完了のフィードバックを確認
+1. **ログイン**
+   - アプリを起動 → EULA 画面はスキップせずそのまま進む（手順 2 で見せる）
+   - デルムリン丼を選択してログイン
 
 2. **EULA 同意画面のデモ**
-   - アプリをアンインストール → 再インストールして起動
-   - EULA 同意画面が表示される
+   - 初回起動時の EULA 同意画面が表示される
    - 「利用規約を読む」をタップ → 規約を表示 → 戻る
    - 「同意して続ける」をタップ
 
 3. **ブロック機能のデモ**
-   - ログイン後、任意のユーザーのプロフィールを開く
+   - タイムラインから任意のユーザーのプロフィールを開く
    - ⋮ メニュー → 「ブロック」→ 確認ダイアログで「ブロック」
+
+4. **通報機能のデモ**
+   - タイムラインで任意の投稿を長押し → アクションメニューが表示される
+   - 「通報」をタップ → 理由入力ダイアログ → 理由を入力 → 「通報」ボタンをタップ
+   - 通報完了のフィードバックを確認
+
+5. **開発者への問い合わせフォーム**
    - 「開発者への報告」ダイアログが表示される → 「報告する」をタップ
    - お問い合わせフォームが開くことを確認
 
-4. 録画を停止
+6. 録画を停止
 
 ### 注意事項
 
 - 各操作の前に 1〜2 秒の間を置き、レビュアーが操作を追えるようにする
-- 通報→EULA→ブロック の順序を厳守（指摘項目を最初に見せる）
 
 ## 提出手順
 

@@ -62,7 +62,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
   bool _deleted = false;
-  PreviewCard? _fetchedCard;
+  List<PreviewCard> _fetchedCards = [];
   TranslationResult? _translation;
   bool _translating = false;
 
@@ -84,7 +84,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       _cwExpanded = widget.initialExpanded;
       _tagsExpanded = false;
       _filterExpanded = false;
-      _fetchedCard = null;
+      _fetchedCards = [];
       _translation = null;
       _translating = false;
     }
@@ -110,17 +110,40 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Future<void> _maybeFetchCard() async {
     final displayPost = post.reblog ?? post;
-    if (displayPost.card != null || displayPost.attachments.isNotEmpty) return;
+    if (displayPost.attachments.isNotEmpty) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MisskeyAdapter) return;
     final content = displayPost.content ?? '';
-    final urlMatch = RegExp(r'https?://\S+').firstMatch(content);
-    if (urlMatch == null) return;
-    final url = urlMatch.group(0)!;
-    final card = await adapter.fetchUrlPreview(url);
-    if (mounted && card != null) {
-      setState(() => _fetchedCard = card);
+    final urls = RegExp(r'https?://\S+')
+        .allMatches(content)
+        .map((m) => m.group(0)!)
+        .toList();
+    if (urls.isEmpty) return;
+    // Skip the first URL if the API already returned a card for it.
+    final urlsToFetch = displayPost.card != null ? urls.skip(1) : urls;
+    final cards = <PreviewCard>[];
+    for (final url in urlsToFetch) {
+      final card = await adapter.fetchUrlPreview(url);
+      if (card != null) cards.add(card);
     }
+    if (mounted && cards.isNotEmpty) {
+      setState(() => _fetchedCards = cards);
+    }
+  }
+
+  List<Widget> _buildPreviewCards(Post displayPost) {
+    final cards = <PreviewCard>[
+      if (displayPost.card != null) displayPost.card!,
+      ..._fetchedCards,
+    ];
+    if (cards.isEmpty) return [];
+    return [
+      for (final card in cards)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: _PreviewCardWidget(card: card),
+        ),
+    ];
   }
 
   Post get post => widget.post;
@@ -689,14 +712,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                             },
                           ),
                         ),
-                      if ((displayPost.card ?? _fetchedCard) != null &&
-                          displayPost.attachments.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: _PreviewCardWidget(
-                            card: (displayPost.card ?? _fetchedCard)!,
-                          ),
-                        ),
+                      if (displayPost.attachments.isEmpty)
+                        ..._buildPreviewCards(displayPost),
                       if (displayPost.poll != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),

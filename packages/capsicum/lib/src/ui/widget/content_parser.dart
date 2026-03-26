@@ -661,6 +661,7 @@ class ContentRenderer {
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
   final UrlResolver? resolveUrl;
+  final UrlResolver? resolveDisplayUrl;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -670,6 +671,7 @@ class ContentRenderer {
     this.onHashtagTap,
     this.onMentionTap,
     this.resolveUrl,
+    this.resolveDisplayUrl,
   });
 
   void dispose() {
@@ -845,9 +847,11 @@ class ContentRenderer {
         final recognizer = TapGestureRecognizer()
           ..onTap = isSafe ? () => launchUrl(uri) : null;
         _recognizers.add(recognizer);
-        final displayUrl = uri != null
-            ? _shortenUrl(Uri.decodeFull(uri.toString()))
-            : resolvedUrl;
+        final customDisplay = resolveDisplayUrl?.call(originalUrl);
+        final displayUrl = customDisplay ??
+            (uri != null
+                ? _shortenUrl(Uri.decodeFull(uri.toString()))
+                : resolvedUrl);
         return [
           TextSpan(
             text: displayUrl,
