@@ -628,6 +628,27 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/flash/featured
+  Future<List<Map<String, dynamic>>> getFeaturedFlashes() async {
+    final response = await dio.post(
+      '/api/flash/featured',
+      data: createBody({}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/notes/translate
+  Future<Map<String, dynamic>> translateNote(
+    String noteId, {
+    String targetLang = 'ja',
+  }) async {
+    final response = await dio.post(
+      '/api/notes/translate',
+      data: createBody({'noteId': noteId, 'targetLang': targetLang}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));

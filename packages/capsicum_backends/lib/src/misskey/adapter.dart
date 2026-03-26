@@ -81,9 +81,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ChannelSupport,
         ClipSupport,
+        FlashSupport,
         ReportSupport,
         PinSupport,
-        ScheduleSupport {
+        ScheduleSupport,
+        TranslationSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -842,6 +844,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // HashtagSupport
 
   @override
+  Future<bool> isFollowingHashtag(String hashtag) => throw UnimplementedError();
+
+  @override
   Future<void> followHashtag(String hashtag) => throw UnimplementedError();
 
   @override
@@ -906,6 +911,24 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return notes
         .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
         .map(_applyWordFilter)
+        .toList();
+  }
+
+  // FlashSupport
+
+  @override
+  Future<List<Flash>> getFeaturedFlashes() async {
+    final data = await client.getFeaturedFlashes();
+    return data
+        .map(
+          (f) => Flash(
+            id: f['id'] as String,
+            title: f['title'] as String? ?? '',
+            summary: f['summary'] as String?,
+            userName:
+                (f['user'] as Map<String, dynamic>?)?['username'] as String?,
+          ),
+        )
         .toList();
   }
 
@@ -1041,5 +1064,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String? comment,
   }) async {
     await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
+  }
+
+  // TranslationSupport
+
+  @override
+  Future<TranslationResult> translatePost(
+    String postId, {
+    String? targetLang,
+  }) async {
+    final data = await client.translateNote(
+      postId,
+      targetLang: targetLang ?? 'ja',
+    );
+    return TranslationResult(
+      content: data['text'] as String? ?? '',
+      detectedLanguage: data['sourceLang'] as String?,
+    );
   }
 }

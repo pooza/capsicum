@@ -251,6 +251,7 @@ class MastodonClient {
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
+    String? language,
     Map<String, String>? extraHeaders,
   }) async {
     final response = await dio.post(
@@ -263,6 +264,7 @@ class MastodonClient {
         'spoiler_text': ?spoilerText,
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
+        'language': ?language,
       },
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
@@ -280,6 +282,7 @@ class MastodonClient {
     String? spoilerText,
     List<String>? mediaIds,
     bool? sensitive,
+    String? language,
     Map<String, String>? extraHeaders,
   }) async {
     await dio.post(
@@ -293,6 +296,7 @@ class MastodonClient {
         'spoiler_text': ?spoilerText,
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
+        'language': ?language,
       },
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
@@ -665,6 +669,22 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/tags/:name
+  Future<Map<String, dynamic>> getTag(String name) async {
+    final response = await dio.get('/api/v1/tags/$name');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/tags/:name/follow
+  Future<void> followTag(String name) async {
+    await dio.post('/api/v1/tags/$name/follow');
+  }
+
+  /// POST /api/v1/tags/:name/unfollow
+  Future<void> unfollowTag(String name) async {
+    await dio.post('/api/v1/tags/$name/unfollow');
+  }
+
   Future<void> votePoll(String pollId, List<int> choices) async {
     await dio.post('/api/v1/polls/$pollId/votes', data: {'choices': choices});
   }
@@ -681,6 +701,18 @@ class MastodonClient {
   /// GET /api/v1/instance
   Future<Map<String, dynamic>> getInstanceV1() async {
     final response = await dio.get('/api/v1/instance');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/statuses/:id/translate
+  Future<Map<String, dynamic>> translateStatus(
+    String statusId, {
+    String? lang,
+  }) async {
+    final response = await dio.post(
+      '/api/v1/statuses/$statusId/translate',
+      data: lang != null ? FormData.fromMap({'lang': lang}) : null,
+    );
     return response.data as Map<String, dynamic>;
   }
 

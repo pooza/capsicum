@@ -85,9 +85,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ReportSupport,
         PinSupport,
-        ScheduleSupport {
+        ScheduleSupport,
+        TranslationSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
+  bool _translationAvailable = false;
 
   /// 管理者ロール ID のセット（verify_credentials + モロヘイヤから学習）。
   final Set<String> _adminRoleIds = {};
@@ -131,6 +133,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       // Try v2 instance API (Mastodon 4.5+).
       final instance = await client.getInstanceV2();
       final config = instance['configuration'] as Map<String, dynamic>?;
+      final translation = config?['translation'] as Map<String, dynamic>?;
+      _translationAvailable = translation?['enabled'] as bool? ?? false;
       final access = config?['timelines_access'] as Map<String, dynamic>?;
       if (access != null) {
         final liveFeeds = access['live_feeds'] as Map<String, dynamic>?;
@@ -241,6 +245,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         spoilerText: draft.spoilerText,
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
         sensitive: draft.sensitive ? true : null,
+        language: draft.language,
         extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
       );
       return null;
@@ -253,6 +258,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       spoilerText: draft.spoilerText,
       mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
       sensitive: draft.sensitive ? true : null,
+      language: draft.language,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
@@ -377,9 +383,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         clientId = cached.clientId;
         clientSecret = cached.clientSecret;
       } else {
+        // Register with both the custom scheme and OOB redirect URIs so
+        // the OOB fallback can reuse the same client credentials.
+        final redirectUris = [
+          application.redirectUri.toString(),
+          'urn:ietf:wg:oauth:2.0:oob',
+        ].join('\n');
         final app = await client.createApplication(
           clientName: application.name,
-          redirectUris: application.redirectUri.toString(),
+          redirectUris: redirectUris,
           scopes: _scopes.join(' '),
           website: application.website?.toString(),
         );
@@ -392,6 +404,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
+        'force_login': 'true',
       });
 
       return LoginNeedsOAuth(
@@ -802,10 +815,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // HashtagSupport
 
   @override
-  Future<void> followHashtag(String hashtag) => throw UnimplementedError();
+  Future<bool> isFollowingHashtag(String hashtag) async {
+    final data = await client.getTag(hashtag);
+    return data['following'] as bool? ?? false;
+  }
 
   @override
-  Future<void> unfollowHashtag(String hashtag) => throw UnimplementedError();
+  Future<void> followHashtag(String hashtag) => client.followTag(hashtag);
+
+  @override
+  Future<void> unfollowHashtag(String hashtag) => client.unfollowTag(hashtag);
 
   @override
   Future<List<Post>> getPostsByHashtag(
@@ -892,5 +911,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String? comment,
   }) async {
     await client.createReport(authorId, statusIds: [postId], comment: comment);
+  }
+
+  // TranslationSupport
+
+  bool get isTranslationAvailable => _translationAvailable;
+
+  @override
+  Future<TranslationResult> translatePost(
+    String postId, {
+    String? targetLang,
+  }) async {
+    final data = await client.translateStatus(postId, lang: targetLang);
+    return TranslationResult(
+      content: data['content'] as String? ?? '',
+      detectedLanguage: data['detected_source_language'] as String?,
+      provider: data['provider'] as String?,
+    );
   }
 }

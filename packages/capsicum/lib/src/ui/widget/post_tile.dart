@@ -19,6 +19,19 @@ import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 
+String _stripHtml(String html) {
+  return html
+      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+      .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'");
+}
+
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
@@ -48,7 +61,10 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
+  bool _deleted = false;
   PreviewCard? _fetchedCard;
+  TranslationResult? _translation;
+  bool _translating = false;
 
   @override
   void initState() {
@@ -57,6 +73,21 @@ class _PostTileState extends ConsumerState<PostTile> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
     }
     _resolveTcoUrls();
+  }
+
+  @override
+  void didUpdateWidget(PostTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _deleted = false;
+      _expanded = widget.initialExpanded;
+      _cwExpanded = widget.initialExpanded;
+      _tagsExpanded = false;
+      _filterExpanded = false;
+      _fetchedCard = null;
+      _translation = null;
+      _translating = false;
+    }
   }
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
@@ -196,6 +227,14 @@ class _PostTileState extends ConsumerState<PostTile> {
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
         if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          // Misskey Play リンクをアプリ内ブラウザで開く
+          if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
+            final account = ref.read(accountManagerProvider).current;
+            if (account != null && uri.host == account.key.host) {
+              launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+              return;
+            }
+          }
           launchUrl(uri);
         }
       },
@@ -209,6 +248,8 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   @override
   Widget build(BuildContext context) {
+    if (_deleted) return const SizedBox.shrink();
+
     final displayPost = post.reblog ?? post;
     final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
 
@@ -517,6 +558,53 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   );
                                 },
                               ),
+                              if (_translating)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                              if (_translation != null)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        [
+                                          '翻訳',
+                                          if (_translation!.provider != null)
+                                            '(${_translation!.provider})',
+                                        ].join(' '),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        _stripHtml(
+                                          _translation!.content,
+                                        ).trim(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               if (parsed.trailingTags.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),
@@ -814,6 +902,21 @@ class _PostTileState extends ConsumerState<PostTile> {
                     );
                   },
                 ),
+              if (adapter is TranslationSupport &&
+                  (adapter is! MastodonAdapter ||
+                      adapter.isTranslationAvailable) &&
+                  targetPost.scope != PostScope.direct &&
+                  post.reblog == null &&
+                  targetPost.language !=
+                      Localizations.localeOf(context).languageCode)
+                ListTile(
+                  leading: const Icon(Icons.translate),
+                  title: const Text('翻訳'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _translatePost(targetPost);
+                  },
+                ),
               if (!isOwn && adapter is ReportSupport)
                 ListTile(
                   leading: const Icon(Icons.flag_outlined),
@@ -895,6 +998,29 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
+  Future<void> _translatePost(Post targetPost) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! TranslationSupport) return;
+
+    final targetLang = Localizations.localeOf(context).languageCode;
+    setState(() => _translating = true);
+    try {
+      final result = await (adapter as TranslationSupport).translatePost(
+        targetPost.id,
+        targetLang: targetLang,
+      );
+      if (mounted) setState(() => _translation = result);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('翻訳に失敗しました')));
+      }
+    } finally {
+      if (mounted) setState(() => _translating = false);
+    }
+  }
+
   void _confirmDelete(BuildContext context, Post targetPost) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -916,6 +1042,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                if (mounted) setState(() => _deleted = true);
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
@@ -1003,6 +1130,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                if (mounted) setState(() => _deleted = true);
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
@@ -1019,7 +1147,8 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   void _showEmojiPicker(BuildContext context) {
-    final adapter = ref.read(currentAdapterProvider);
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
     if (adapter is! ReactionSupport) return;
 
     final targetPost = post.reblog ?? post;
@@ -1032,6 +1161,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         height: MediaQuery.of(context).size.height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
+          host: account!.key.host,
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
@@ -1156,6 +1286,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
+            if (mounted) setState(() => _deleted = true);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
             messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
@@ -1536,7 +1667,6 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
           widget.poll.id,
           _selected.toList(),
         );
-        widget.onActionCompleted?.call();
       }
     } catch (e) {
       debugPrint('Poll vote error: $e');
@@ -1545,8 +1675,14 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
           context,
         ).showSnackBar(const SnackBar(content: Text('投票に失敗しました')));
       }
+      return;
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+    try {
+      widget.onActionCompleted?.call();
+    } catch (e) {
+      debugPrint('Poll vote onActionCompleted error: $e');
     }
   }
 
@@ -1778,7 +1914,7 @@ class _QuoteCard extends StatelessWidget {
             if (quote.content != null && quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
-                _stripHtmlSimple(quote.content!),
+                _stripHtml(quote.content!),
                 style: theme.textTheme.bodySmall,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
@@ -1805,19 +1941,6 @@ class _QuoteCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _stripHtmlSimple(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
   }
 }
 

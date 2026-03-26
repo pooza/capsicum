@@ -55,54 +55,61 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
         title: Text(widget.channelName ?? 'チャンネル'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      bottomNavigationBar: canPost
-          ? SimplePostBar(
+      body: Column(
+        children: [
+          Expanded(
+            child: timeline.when(
+              data: (state) => state.posts.isEmpty
+                  ? const Center(child: Text('投稿がありません'))
+                  : RefreshIndicator(
+                      onRefresh: () => ref.refresh(
+                        channelTimelineProvider(widget.channelId).future,
+                      ),
+                      child: ListView.separated(
+                        controller: _scrollController,
+                        itemCount:
+                            state.posts.length + (state.isLoadingMore ? 1 : 0),
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          if (index >= state.posts.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          return PostTile(post: state.posts[index]);
+                        },
+                      ),
+                    ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stack) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('読み込みに失敗しました', textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref.invalidate(
+                          channelTimelineProvider(widget.channelId),
+                        ),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (canPost)
+            SimplePostBar(
               channelId: widget.channelId,
               channelName: widget.channelName,
               onPosted: () =>
                   ref.invalidate(channelTimelineProvider(widget.channelId)),
-            )
-          : null,
-      body: timeline.when(
-        data: (state) => state.posts.isEmpty
-            ? const Center(child: Text('投稿がありません'))
-            : RefreshIndicator(
-                onRefresh: () => ref.refresh(
-                  channelTimelineProvider(widget.channelId).future,
-                ),
-                child: ListView.separated(
-                  controller: _scrollController,
-                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= state.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return PostTile(post: state.posts[index]);
-                  },
-                ),
-              ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(channelTimelineProvider(widget.channelId)),
-                  child: const Text('再試行'),
-                ),
-              ],
             ),
-          ),
-        ),
+        ],
       ),
     );
   }

@@ -1,5 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../provider/preferences_provider.dart';
 
 const _unicodeEmojiCategories = <String, List<String>>{
   'よく使う': [
@@ -109,25 +112,26 @@ const _unicodeEmojiCategories = <String, List<String>>{
   ],
 };
 
-class EmojiPicker extends StatefulWidget {
+class EmojiPicker extends ConsumerStatefulWidget {
   final BackendAdapter adapter;
+  final String host;
   final ValueChanged<String> onSelected;
 
   const EmojiPicker({
     super.key,
     required this.adapter,
+    required this.host,
     required this.onSelected,
   });
 
   @override
-  State<EmojiPicker> createState() => _EmojiPickerState();
+  ConsumerState<EmojiPicker> createState() => _EmojiPickerState();
 }
 
-class _EmojiPickerState extends State<EmojiPicker>
+class _EmojiPickerState extends ConsumerState<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   List<CustomEmoji>? _customEmojis;
-  List<String> _palette = const [];
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -146,15 +150,9 @@ class _EmojiPickerState extends State<EmojiPicker>
     setState(() => _loadingCustom = true);
     try {
       final support = widget.adapter as CustomEmojiSupport;
-      final results = await Future.wait([
-        support.getEmojis(),
-        support.getEmojiPalette(),
-      ]);
+      final emojis = await support.getEmojis();
       if (mounted) {
-        setState(() {
-          _customEmojis = results[0] as List<CustomEmoji>;
-          _palette = results[1] as List<String>;
-        });
+        setState(() => _customEmojis = emojis);
       }
     } catch (_) {
       if (mounted) setState(() => _customEmojis = []);
@@ -294,6 +292,8 @@ class _EmojiPickerState extends State<EmojiPicker>
   }
 
   Widget _buildCustomCategories(List<CustomEmoji> emojis) {
+    final palette = ref.watch(emojiPaletteProvider(widget.host));
+
     // Index custom emojis by shortcode for palette lookup.
     final emojiByCode = <String, CustomEmoji>{};
     for (final e in emojis) {
@@ -309,17 +309,23 @@ class _EmojiPickerState extends State<EmojiPicker>
 
     return ListView(
       children: [
-        // Palette section (user's pinned emojis from server settings).
-        if (_palette.isNotEmpty) ...[
+        // Palette section (imported from Web UI or empty).
+        if (palette.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Text('パレット', style: Theme.of(context).textTheme.labelMedium),
+            child: Row(
+              children: [
+                Text('パレット', style: Theme.of(context).textTheme.labelMedium),
+                const Spacer(),
+                _buildPaletteMenuButton(),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Wrap(
-              children: _palette.map((entry) {
-                // Palette entries can be ":shortcode:" (custom) or unicode.
+              children: palette.map((entry) {
+                // Palette entries are ":shortcode:" (custom) or unicode.
                 final shortcode = entry.replaceAll(':', '');
                 final custom = emojiByCode[shortcode];
                 if (custom != null) {
@@ -338,6 +344,16 @@ class _EmojiPickerState extends State<EmojiPicker>
             ),
           ),
         ],
+        // Import button when palette is empty.
+        if (palette.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: OutlinedButton.icon(
+              onPressed: () => _showImportDialog(context),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Web版の絵文字パレットから一括追加'),
+            ),
+          ),
         // Category sections.
         ...grouped.entries.map((category) {
           return Column(
@@ -361,6 +377,89 @@ class _EmojiPickerState extends State<EmojiPicker>
           );
         }),
       ],
+    );
+  }
+
+  Widget _buildPaletteMenuButton() {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_horiz, size: 18),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'reimport', child: Text('再インポート')),
+        const PopupMenuItem(value: 'clear', child: Text('パレットをクリア')),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'reimport':
+            _showImportDialog(context);
+          case 'clear':
+            ref.read(emojiPaletteProvider(widget.host).notifier).clear();
+        }
+      },
+    );
+  }
+
+  void _showImportDialog(BuildContext context) {
+    final textController = TextEditingController();
+    final host = widget.host;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Webからの一括追加'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('1', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('お使いのブラウザでリアクションデッキをコピーしたいアカウントにログインしてください'),
+              const SizedBox(height: 12),
+              const Text('2', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('同じブラウザで以下のURLにアクセスして絵文字パレットをコピーしてください'),
+              const SizedBox(height: 4),
+              SelectableText(
+                'https://$host/settings/emoji-palette',
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.primary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('3', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('コピーしたものを下のテキストボックスに貼り付けてください'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: textController,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  hintText: 'ここに貼り付け',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              final text = textController.text.trim();
+              if (text.isNotEmpty) {
+                ref
+                    .read(emojiPaletteProvider(host).notifier)
+                    .importFromText(text);
+              }
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 

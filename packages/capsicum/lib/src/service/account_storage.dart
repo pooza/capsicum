@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -83,5 +84,34 @@ class AccountStorage {
     final list = await getAccountKeys();
     list.remove(accountKey);
     await _storage.write(key: _accountListKey, value: jsonEncode(list));
+  }
+
+  /// Save OAuth client credentials for a host (survives account deletion).
+  Future<void> saveHostClientCredentials(
+    String host,
+    String clientId,
+    String clientSecret,
+  ) async {
+    final data = jsonEncode({
+      'client_id': clientId,
+      'client_secret': clientSecret,
+    });
+    await _storage.write(key: 'client_creds_$host', value: data);
+  }
+
+  /// Retrieve OAuth client credentials for a host.
+  Future<ClientSecretData?> getHostClientCredentials(String host) async {
+    try {
+      final raw = await _storage.read(key: 'client_creds_$host');
+      if (raw == null) return null;
+      final map = Map<String, String>.from(jsonDecode(raw) as Map);
+      return ClientSecretData(
+        clientId: map['client_id']!,
+        clientSecret: map['client_secret']!,
+      );
+    } catch (e) {
+      debugPrint('capsicum: failed to read client credentials for $host: $e');
+      return null;
+    }
   }
 }

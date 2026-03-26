@@ -12,7 +12,7 @@ void main() {
 
   group('TimelineType', () {
     test('has expected values', () {
-      expect(TimelineType.values, hasLength(4));
+      expect(TimelineType.values, hasLength(5));
       expect(TimelineType.values, contains(TimelineType.home));
       expect(TimelineType.values, contains(TimelineType.federated));
     });

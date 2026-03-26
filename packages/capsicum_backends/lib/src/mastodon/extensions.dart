@@ -113,6 +113,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterTitle: filterResult?.title,
       pinned: pinned,
       quotable: _isQuotable(quoteApproval),
+      language: language,
       url: url,
     );
   }
@@ -121,7 +122,11 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
 bool _isQuotable(Map<String, dynamic>? quoteApproval) {
   if (quoteApproval == null) return true;
   final currentUser = quoteApproval['current_user'] as String?;
-  return currentUser != 'denied';
+  // ホワイトリスト方式: 明示的な許可値のみ引用可能とする
+  // unknown やその他の未知の値は引用不可として扱う (#205)
+  return currentUser == null ||
+      currentUser == 'automatic' ||
+      currentUser == 'manual';
 }
 
 ({Post? post, QuoteState? state})? _parseQuoteResult(

@@ -219,79 +219,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountState,
         unreadAnnouncements,
       ),
-      bottomNavigationBar: const SimplePostBar(),
-      body: GestureDetector(
-        onHorizontalDragEnd: selectedList == null
-            ? (details) => _onSwipe(details, selectedType)
-            : null,
-        child: timeline.when(
-          data: (tlState) {
-            // Restore marker position on first load (home timeline only).
-            if (selectedList == null &&
-                selectedType == TimelineType.home &&
-                tlState.posts.isNotEmpty) {
-              _restoreMarker(tlState.posts);
-            }
-            return RefreshIndicator(
-              onRefresh: () {
-                _markerRestored = false;
-                if (selectedList != null) {
-                  return ref.refresh(
-                    listTimelineProvider(selectedList.id).future,
-                  );
-                }
-                return ref.refresh(timelineProvider.future);
-              },
-              child: ScrollablePositionedList.separated(
-                itemScrollController: _itemScrollController,
-                itemPositionsListener: _itemPositionsListener,
-                itemCount:
-                    tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  if (index >= tlState.posts.length) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
+      body: Column(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onHorizontalDragEnd: selectedList == null
+                  ? (details) => _onSwipe(details, selectedType)
+                  : null,
+              child: timeline.when(
+                data: (tlState) {
+                  // Restore marker position on first load (home timeline only).
+                  if (selectedList == null &&
+                      selectedType == TimelineType.home &&
+                      tlState.posts.isNotEmpty) {
+                    _restoreMarker(tlState.posts);
                   }
-                  return PostTile(post: tlState.posts[index]);
+                  return RefreshIndicator(
+                    onRefresh: () {
+                      _markerRestored = false;
+                      if (selectedList != null) {
+                        return ref.refresh(
+                          listTimelineProvider(selectedList.id).future,
+                        );
+                      }
+                      return ref.refresh(timelineProvider.future);
+                    },
+                    child: ScrollablePositionedList.separated(
+                      itemScrollController: _itemScrollController,
+                      itemPositionsListener: _itemPositionsListener,
+                      itemCount:
+                          tlState.posts.length +
+                          (tlState.isLoadingMore ? 1 : 0),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        if (index >= tlState.posts.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        return PostTile(post: tlState.posts[index]);
+                      },
+                    ),
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) {
+                  final message = _timelineErrorMessage(error);
+                  final canRetry = !_isForbiddenError(error);
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(message, textAlign: TextAlign.center),
+                          if (canRetry) ...[
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () {
+                                if (selectedList != null) {
+                                  ref.invalidate(
+                                    listTimelineProvider(selectedList.id),
+                                  );
+                                } else {
+                                  ref.invalidate(timelineProvider);
+                                }
+                              },
+                              child: const Text('再試行'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
                 },
               ),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) {
-            final message = _timelineErrorMessage(error);
-            final canRetry = !_isForbiddenError(error);
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(message, textAlign: TextAlign.center),
-                    if (canRetry) ...[
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (selectedList != null) {
-                            ref.invalidate(
-                              listTimelineProvider(selectedList.id),
-                            );
-                          } else {
-                            ref.invalidate(timelineProvider);
-                          }
-                        },
-                        child: const Text('再試行'),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
+            ),
+          ),
+          const SimplePostBar(),
+        ],
       ),
     );
   }
@@ -663,6 +670,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showClipList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is FlashSupport)
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline),
+              title: const Text('Play'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showFlashList(context, ref);
+              },
+            ),
           if (ref.read(currentMulukhiyaProvider) != null) ...[
             ListTile(
               leading: const Icon(Icons.tag),
@@ -941,6 +957,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFlashList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! FlashSupport) return;
+
+    final List<Flash> flashes;
+    try {
+      flashes = await (adapter as FlashSupport).getFeaturedFlashes();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Play の取得に失敗しました')));
+      }
+      return;
+    }
+    if (flashes.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Play はありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    final account = ref.read(accountManagerProvider).current;
+    final host = account?.key.host;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Play',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final flash in flashes)
+              ListTile(
+                leading: const Icon(Icons.play_circle_outline, size: 20),
+                title: Text(flash.title),
+                subtitle: flash.summary != null && flash.summary!.isNotEmpty
+                    ? Text(
+                        flash.summary!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : null,
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  if (host != null) {
+                    launchUrl(
+                      Uri.parse('https://$host/play/${flash.id}'),
+                      mode: LaunchMode.inAppBrowserView,
+                    );
+                  }
+                },
+              ),
           ],
         ),
       ),

@@ -17,6 +17,9 @@ class PostDraft {
   /// When set, the post is scheduled for future publication.
   final DateTime? scheduledAt;
 
+  /// ISO 639-1 language code for the post (Mastodon only).
+  final String? language;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -29,5 +32,6 @@ class PostDraft {
     this.channelId,
     this.skipMulukhiya = false,
     this.scheduledAt,
+    this.language,
   });
 }
