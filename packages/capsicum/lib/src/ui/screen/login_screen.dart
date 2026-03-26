@@ -146,7 +146,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         oauthExtra = startResult.extra;
 
         // Open browser and wait for callback redirect.
-        debugPrint('capsicum: OAuth URL: ${startResult.authorizationUrl}');
+        assert(() {
+          debugPrint('capsicum: OAuth URL: ${startResult.authorizationUrl}');
+          return true;
+        }());
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
@@ -327,10 +330,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     'scope': extra['scopes']!,
                                     'force_login': 'true',
                                   });
-                              launchUrl(
+                              final launched = await launchUrl(
                                 oobUrl,
                                 mode: LaunchMode.externalApplication,
                               );
+                              if (!launched && dialogContext.mounted) {
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('ブラウザを開けませんでした'),
+                                  ),
+                                );
+                              }
                             },
                             icon: const Icon(Icons.open_in_browser),
                             label: const Text('ブラウザで認証コードを取得'),

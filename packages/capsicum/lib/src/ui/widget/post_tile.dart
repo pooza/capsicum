@@ -19,6 +19,19 @@ import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 
+String _stripHtml(String html) {
+  return html
+      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+      .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'");
+}
+
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
   final bool tappable;
@@ -586,12 +599,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                       ),
                                       const SizedBox(height: 4),
                                       SelectableText(
-                                        _translation!.content
-                                            .replaceAll(
-                                              RegExp(r'<[^>]*>'),
-                                              '',
-                                            )
-                                            .trim(),
+                                        _stripHtml(
+                                          _translation!.content,
+                                        ).trim(),
                                       ),
                                     ],
                                   ),
@@ -1905,7 +1915,7 @@ class _QuoteCard extends StatelessWidget {
             if (quote.content != null && quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
-                _stripHtmlSimple(quote.content!),
+                _stripHtml(quote.content!),
                 style: theme.textTheme.bodySmall,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
@@ -1934,18 +1944,6 @@ class _QuoteCard extends StatelessWidget {
     );
   }
 
-  static String _stripHtmlSimple(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-  }
 }
 
 class _QuoteStateCard extends StatelessWidget {
