@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/server_metadata_cache.dart';
@@ -148,6 +150,71 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
+
+  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  /// - 本文全体（メンション除去後）が JSON オブジェクト/配列 or YAML マッピングとしてパース可能
+  /// - CW が「実行結果」で本文が YAML としてパース可能
+  /// メンション除去後の本文テキストを返す。
+  static String _stripMentions(String plainText) {
+    return plainText.replaceAll(RegExp(r'@[\w.@-]+\s*'), '').trim();
+  }
+
+  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  bool _isStructuredContent(String plainText, String? spoilerText) {
+    final body = _stripMentions(plainText);
+    if (body.isEmpty) return false;
+
+    // JSON オブジェクト/配列として有効か
+    if (body.startsWith('{') || body.startsWith('[')) {
+      try {
+        final parsed = json.decode(body);
+        if (parsed is Map || parsed is List) return true;
+      } catch (_) {}
+    }
+
+    // YAML として Map/List にパースできるか（--- の有無を問わない）
+    try {
+      final parsed = loadYaml(body);
+      if (parsed is Map || parsed is List) return true;
+    } catch (_) {}
+
+    return false;
+  }
+
+  Widget _buildCodeBlock(String plainText) {
+    final body = _stripMentions(plainText);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              'モロヘイヤ',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade600,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          SelectableText(
+            body,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildContentText(InlineSpan contentSpan) {
     final textWidget = Text.rich(
@@ -523,6 +590,29 @@ class _PostTileState extends ConsumerState<PostTile> {
                             ...displayPost.emojis,
                             ...displayPost.author.emojis,
                           };
+                          // 構造化テキスト判定用のプレーンテキスト
+                          final plainBody = isHtml
+                              ? parsed.body
+                                  .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+                                  .replaceAll(RegExp(r'<[^>]*>'), '')
+                                  .replaceAll('&amp;', '&')
+                                  .replaceAll('&lt;', '<')
+                                  .replaceAll('&gt;', '>')
+                                  .replaceAll('&quot;', '"')
+                                  .replaceAll('&#39;', "'")
+                              : parsed.body;
+                          final isStructured = _isStructuredContent(
+                            plainBody,
+                            displayPost.spoilerText,
+                          );
+                          if (isStructured) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCodeBlock(plainBody),
+                              ],
+                            );
+                          }
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
