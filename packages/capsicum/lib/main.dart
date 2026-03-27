@@ -67,6 +67,8 @@ class CapsicumApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    final seedColor = ref.watch(themeSeedColorProvider);
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: AppConstants.appName,
@@ -78,11 +80,17 @@ class CapsicumApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: ref.watch(themeSeedColorProvider),
+          seedColor: seedColor,
+          brightness: Brightness.dark,
         ),
         useMaterial3: true,
       ),
+      themeMode: themeMode,
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);
         return MediaQuery(

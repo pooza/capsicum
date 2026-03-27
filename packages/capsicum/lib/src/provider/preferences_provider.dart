@@ -9,6 +9,7 @@ const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
 const _emojiPalettePrefix = 'emoji_palette_';
 const _hideLivecureKey = 'hide_livecure';
+const _themeModeKey = 'theme_mode';
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -194,6 +195,34 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
       }
     }
     return results;
+  }
+}
+
+/// App-wide theme mode (light / dark / system).
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
+  ThemeModeNotifier.new,
+);
+
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() {
+    _load();
+    return ThemeMode.system;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_themeModeKey);
+    if (saved != null) {
+      final mode = ThemeMode.values.where((m) => m.name == saved).firstOrNull;
+      if (mode != null) state = mode;
+    }
+  }
+
+  Future<void> setMode(ThemeMode mode) async {
+    state = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeModeKey, mode.name);
   }
 }
 
