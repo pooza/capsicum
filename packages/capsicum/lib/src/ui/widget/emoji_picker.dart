@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/preferences_provider.dart';
 
@@ -417,13 +418,20 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
               const Text('お使いのブラウザでリアクションデッキをコピーしたいアカウントにログインしてください'),
               const SizedBox(height: 12),
               const Text('2', style: TextStyle(fontWeight: FontWeight.bold)),
-              const Text('同じブラウザで以下のURLにアクセスして絵文字パレットをコピーしてください'),
+              const Text('同じブラウザで絵文字パレットの設定画面（設定 > 絵文字パレット）を開き、コピーしてください'),
               const SizedBox(height: 4),
-              SelectableText(
-                'https://$host/settings/emoji-palette',
-                style: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.primary,
-                  fontSize: 13,
+              GestureDetector(
+                onTap: () => launchUrl(
+                  Uri.parse('https://$host/settings/emoji-palette'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Text(
+                  'https://$host/settings/emoji-palette',
+                  style: TextStyle(
+                    color: Theme.of(dialogContext).colorScheme.primary,
+                    fontSize: 13,
+                    decoration: TextDecoration.underline,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
