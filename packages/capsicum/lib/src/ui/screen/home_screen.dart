@@ -680,6 +680,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showFlashList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is GallerySupport)
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('ギャラリー'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/gallery');
+              },
+            ),
           if (ref.read(currentMulukhiyaProvider) != null) ...[
             ListTile(
               leading: const Icon(Icons.tag),

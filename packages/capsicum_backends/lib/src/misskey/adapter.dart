@@ -83,6 +83,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChannelSupport,
         ClipSupport,
         FlashSupport,
+        GallerySupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport,
@@ -931,6 +932,51 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           ),
         )
         .toList();
+  }
+
+  // GallerySupport
+
+  GalleryPost _mapGalleryPost(Map<String, dynamic> g) {
+    final user = MisskeyUser.fromJson(g['user'] as Map<String, dynamic>);
+    final files = (g['files'] as List? ?? [])
+        .map((f) => MisskeyDriveFile.fromJson(f as Map<String, dynamic>))
+        .map((f) => f.toCapsicum())
+        .toList();
+    return GalleryPost(
+      id: g['id'] as String,
+      title: g['title'] as String? ?? '',
+      description: g['description'] as String?,
+      author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      files: files,
+      createdAt:
+          DateTime.parse(g['createdAt'] as String? ?? '1970-01-01T00:00:00Z'),
+      isSensitive: g['isSensitive'] as bool? ?? false,
+      likedCount: g['likedCount'] as int? ?? 0,
+    );
+  }
+
+  @override
+  Future<List<GalleryPost>> getGalleryPosts({TimelineQuery? query}) async {
+    final data = await client.getGalleryFeatured(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
+  }
+
+  @override
+  Future<List<GalleryPost>> getUserGalleryPosts(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getUserGalleryPosts(
+      userId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
   }
 
   // ClipSupport

@@ -42,6 +42,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _hasMoreMedia = true;
   bool _mediaTabLoaded = false;
 
+  List<GalleryPost> _galleryPosts = [];
+  bool _loadingGallery = true;
+  bool _loadingMoreGallery = false;
+  bool _hasMoreGallery = true;
+  bool _galleryTabLoaded = false;
+
+  bool get _hasGalleryTab =>
+      ref.read(currentAdapterProvider) is GallerySupport;
+
   UserRelationship? _relationship;
   bool _relationshipLoading = false;
 
@@ -56,7 +65,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: _hasGalleryTab ? 3 : 2,
+      vsync: this,
+    );
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
@@ -86,6 +98,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (_tabController.index == 1 && !_mediaTabLoaded) {
       _loadMediaPosts();
     }
+    if (_tabController.index == 2 && !_galleryTabLoaded) {
+      _loadGalleryPosts();
+    }
   }
 
   @override
@@ -103,8 +118,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         _scrollController.position.maxScrollExtent - 200) {
       if (_tabController.index == 0) {
         _loadMorePosts();
-      } else {
+      } else if (_tabController.index == 1) {
         _loadMoreMediaPosts();
+      } else if (_tabController.index == 2) {
+        _loadMoreGalleryPosts();
       }
     }
   }
@@ -227,6 +244,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  Future<void> _loadGalleryPosts() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! GallerySupport) return;
+
+    _galleryTabLoaded = true;
+    try {
+      final posts = await (adapter as GallerySupport).getUserGalleryPosts(
+        widget.user.id,
+        query: const TimelineQuery(limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _galleryPosts = posts;
+          _loadingGallery = false;
+          _hasMoreGallery = posts.length >= 20;
+        });
+      }
+    } catch (e) {
+      _galleryTabLoaded = false;
+      if (mounted) setState(() => _loadingGallery = false);
+    }
+  }
+
+  Future<void> _loadMoreGalleryPosts() async {
+    if (_loadingMoreGallery || !_hasMoreGallery || _galleryPosts.isEmpty) return;
+
+    setState(() => _loadingMoreGallery = true);
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null || adapter is! GallerySupport) return;
+
+    try {
+      final older = await (adapter as GallerySupport).getUserGalleryPosts(
+        widget.user.id,
+        query: TimelineQuery(maxId: _galleryPosts.last.id, limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _galleryPosts = [..._galleryPosts, ...older];
+          _loadingMoreGallery = false;
+          _hasMoreGallery = older.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreGallery = false);
+    }
+  }
+
   Future<void> _loadRelationship() async {
     if (_isOwnProfile) return;
     final adapter = ref.read(currentAdapterProvider);
@@ -341,9 +406,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             delegate: _TabBarDelegate(
               TabBar(
                 controller: _tabController,
-                tabs: const [
-                  Tab(text: '投稿'),
-                  Tab(text: 'メディア'),
+                tabs: [
+                  const Tab(text: '投稿'),
+                  const Tab(text: 'メディア'),
+                  if (_hasGalleryTab) const Tab(text: 'ギャラリー'),
                 ],
               ),
               colorScheme.surface,
@@ -358,8 +424,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   List<Widget> _buildTabContent(ColorScheme colorScheme) {
     if (_tabController.index == 0) {
       return _buildPostsTab(colorScheme);
-    } else {
+    } else if (_tabController.index == 1) {
       return _buildMediaTab();
+    } else {
+      return _buildGalleryTab();
     }
   }
 
@@ -459,6 +527,92 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ],
           );
         }, childCount: _mediaPosts.length + (_loadingMoreMedia ? 1 : 0)),
+      ),
+    ];
+  }
+
+  List<Widget> _buildGalleryTab() {
+    if (_loadingGallery) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_galleryPosts.isEmpty) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: Text('ギャラリー投稿はありません')),
+        ),
+      ];
+    }
+    final theme = Theme.of(context);
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.all(8),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            if (index >= _galleryPosts.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final post = _galleryPosts[index];
+            final thumbnail = post.files.isNotEmpty
+                ? post.files.first.previewUrl ?? post.files.first.url
+                : null;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Card(
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () =>
+                      context.push('/gallery/${post.id}', extra: post),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (thumbnail != null)
+                        AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: post.isSensitive
+                              ? Container(
+                                  color: theme
+                                      .colorScheme.surfaceContainerHighest,
+                                  child: const Center(
+                                    child: Icon(Icons.visibility_off),
+                                  ),
+                                )
+                              : Image.network(
+                                  thumbnail,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Container(
+                                    color: theme
+                                        .colorScheme.surfaceContainerHighest,
+                                    child: const Center(
+                                      child: Icon(Icons.broken_image),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          post.title,
+                          style: theme.textTheme.titleMedium,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+              childCount: _galleryPosts.length +
+                  (_loadingMoreGallery ? 1 : 0)),
+        ),
       ),
     ];
   }

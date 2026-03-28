@@ -637,6 +637,42 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/gallery/featured
+  Future<List<Map<String, dynamic>>> getGalleryFeatured({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/gallery/featured',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/users/gallery/posts
+  Future<List<Map<String, dynamic>>> getUserGalleryPosts(
+    String userId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/gallery/posts',
+      data: createBody({
+        'userId': userId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/notes/translate
   Future<Map<String, dynamic>> translateNote(
     String noteId, {
