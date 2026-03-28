@@ -48,8 +48,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _hasMoreGallery = true;
   bool _galleryTabLoaded = false;
 
-  bool get _hasGalleryTab =>
-      ref.read(currentAdapterProvider) is GallerySupport;
+  bool get _hasGalleryTab => ref.read(currentAdapterProvider) is GallerySupport;
 
   UserRelationship? _relationship;
   bool _relationshipLoading = false;
@@ -65,10 +64,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: _hasGalleryTab ? 3 : 2,
-      vsync: this,
-    );
+    _tabController = TabController(length: _hasGalleryTab ? 3 : 2, vsync: this);
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
@@ -268,7 +264,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _loadMoreGalleryPosts() async {
-    if (_loadingMoreGallery || !_hasMoreGallery || _galleryPosts.isEmpty) return;
+    if (_loadingMoreGallery || !_hasMoreGallery || _galleryPosts.isEmpty)
+      return;
 
     setState(() => _loadingMoreGallery = true);
 
@@ -541,9 +538,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
     if (_galleryPosts.isEmpty) {
       return [
-        const SliverFillRemaining(
-          child: Center(child: Text('ギャラリー投稿はありません')),
-        ),
+        const SliverFillRemaining(child: Center(child: Text('ギャラリー投稿はありません'))),
       ];
     }
     final theme = Theme.of(context);
@@ -567,8 +562,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  onTap: () =>
-                      context.push('/gallery/${post.id}', extra: post),
+                  onTap: () => context.push('/gallery/${post.id}', extra: post),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -577,8 +571,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           aspectRatio: 16 / 9,
                           child: post.isSensitive
                               ? Container(
-                                  color: theme
-                                      .colorScheme.surfaceContainerHighest,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
                                   child: const Center(
                                     child: Icon(Icons.visibility_off),
                                   ),
@@ -588,7 +582,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Container(
                                     color: theme
-                                        .colorScheme.surfaceContainerHighest,
+                                        .colorScheme
+                                        .surfaceContainerHighest,
                                     child: const Center(
                                       child: Icon(Icons.broken_image),
                                     ),
@@ -609,9 +604,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
               ),
             );
-          },
-              childCount: _galleryPosts.length +
-                  (_loadingMoreGallery ? 1 : 0)),
+          }, childCount: _galleryPosts.length + (_loadingMoreGallery ? 1 : 0)),
         ),
       ),
     ];

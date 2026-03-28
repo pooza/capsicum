@@ -90,8 +90,7 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
           title: Text(_currentTitle),
           backgroundColor: theme.colorScheme.inversePrimary,
           leading: IconButton(
-            icon: Icon(
-                _folderStack.isEmpty ? Icons.close : Icons.arrow_back),
+            icon: Icon(_folderStack.isEmpty ? Icons.close : Icons.arrow_back),
             onPressed: _goBack,
           ),
           actions: [
@@ -114,14 +113,12 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
             }
 
             return RefreshIndicator(
-              onRefresh: () => ref.refresh(
-                driveContentsProvider(_currentFolderId).future,
-              ),
+              onRefresh: () =>
+                  ref.refresh(driveContentsProvider(_currentFolderId).future),
               child: GridView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(4),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   crossAxisSpacing: 4,
                   mainAxisSpacing: 4,
@@ -136,8 +133,7 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
                   }
                   final fileIndex = index - totalFolders;
                   if (fileIndex >= totalFiles) {
-                    return const Center(
-                        child: CircularProgressIndicator());
+                    return const Center(child: CircularProgressIndicator());
                   }
                   final file = state.files[fileIndex];
                   final selected = _selectedIds.contains(file.id);
@@ -160,9 +156,8 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
                   const Text('読み込みに失敗しました', textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => ref.invalidate(
-                      driveContentsProvider(_currentFolderId),
-                    ),
+                    onPressed: () =>
+                        ref.invalidate(driveContentsProvider(_currentFolderId)),
                     child: const Text('再試行'),
                   ),
                 ],
@@ -200,11 +195,7 @@ class _DriveFolderTile extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.folder,
-              size: 40,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(Icons.folder, size: 40, color: theme.colorScheme.primary),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -265,8 +256,8 @@ class _DriveFileTile extends StatelessWidget {
                         isVideo
                             ? Icons.videocam
                             : file.type == AttachmentType.audio
-                                ? Icons.audio_file
-                                : Icons.insert_drive_file,
+                            ? Icons.audio_file
+                            : Icons.insert_drive_file,
                         size: 32,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -277,10 +268,7 @@ class _DriveFileTile extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: theme.colorScheme.primary,
-                  width: 3,
-                ),
+                border: Border.all(color: theme.colorScheme.primary, width: 3),
                 color: theme.colorScheme.primary.withValues(alpha: 0.2),
               ),
             ),
@@ -305,10 +293,7 @@ class _DriveFileTile extends StatelessWidget {
               bottom: 4,
               left: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(4),

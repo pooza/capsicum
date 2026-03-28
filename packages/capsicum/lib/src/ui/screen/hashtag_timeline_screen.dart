@@ -82,9 +82,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
       icon: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
       tooltip: isPinned ? 'タブから外す' : 'タブに固定',
       onPressed: () {
-        final notifier = ref.read(
-          pinnedHashtagsProvider(storageKey).notifier,
-        );
+        final notifier = ref.read(pinnedHashtagsProvider(storageKey).notifier);
         if (isPinned) {
           notifier.remove(widget.hashtag);
         } else {

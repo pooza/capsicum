@@ -36,8 +36,7 @@ class GalleryDetailScreen extends StatelessWidget {
                     if (post.author.avatarUrl != null) ...[
                       CircleAvatar(
                         radius: 14,
-                        backgroundImage:
-                            NetworkImage(post.author.avatarUrl!),
+                        backgroundImage: NetworkImage(post.author.avatarUrl!),
                       ),
                       const SizedBox(width: 8),
                     ],
@@ -85,10 +84,7 @@ class GalleryDetailScreen extends StatelessWidget {
       onTap: () {
         context.push(
           '/media',
-          extra: {
-            'attachments': post.files,
-            'initialIndex': index,
-          },
+          extra: {'attachments': post.files, 'initialIndex': index},
         );
       },
       child: Padding(
@@ -107,9 +103,7 @@ class GalleryDetailScreen extends StatelessWidget {
                     Positioned.fill(
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                        child: Container(
-                          color: Colors.black.withAlpha(30),
-                        ),
+                        child: Container(color: Colors.black.withAlpha(30)),
                       ),
                     ),
                     const Column(
@@ -117,10 +111,7 @@ class GalleryDetailScreen extends StatelessWidget {
                       children: [
                         Icon(Icons.visibility_off, color: Colors.white),
                         SizedBox(height: 4),
-                        Text(
-                          '閲覧注意',
-                          style: TextStyle(color: Colors.white),
-                        ),
+                        Text('閲覧注意', style: TextStyle(color: Colors.white)),
                       ],
                     ),
                   ],
@@ -131,9 +122,9 @@ class GalleryDetailScreen extends StatelessWidget {
                   width: double.infinity,
                   errorBuilder: (_, _, _) => Container(
                     height: 200,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     child: const Center(child: Icon(Icons.broken_image)),
                   ),
                 ),

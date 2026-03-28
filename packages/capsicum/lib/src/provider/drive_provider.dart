@@ -101,5 +101,5 @@ class DriveContentsNotifier
 
 final driveContentsProvider = AsyncNotifierProvider.autoDispose
     .family<DriveContentsNotifier, DriveState, String?>(
-  DriveContentsNotifier.new,
-);
+      DriveContentsNotifier.new,
+    );

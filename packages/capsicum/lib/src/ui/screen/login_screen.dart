@@ -401,8 +401,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       exchangeExtra['client_id'] = clientId;
       exchangeExtra['client_secret'] = clientSecret;
       final callbackUri = Uri(queryParameters: {'code': extractedCode});
-      final result =
-          await loginSupport.completeLogin(callbackUri, exchangeExtra);
+      final result = await loginSupport.completeLogin(
+        callbackUri,
+        exchangeExtra,
+      );
 
       if (result is LoginSuccess) {
         final adapter = loginSupport as DecentralizedBackendAdapter;

@@ -52,8 +52,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
                 child: ListView.separated(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(8),
-                  itemCount:
-                      state.posts.length + (state.isLoadingMore ? 1 : 0),
+                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     if (index >= state.posts.length) {
@@ -150,8 +149,7 @@ class _GalleryCard extends StatelessWidget {
                       if (post.author.avatarUrl != null) ...[
                         CircleAvatar(
                           radius: 10,
-                          backgroundImage:
-                              NetworkImage(post.author.avatarUrl!),
+                          backgroundImage: NetworkImage(post.author.avatarUrl!),
                         ),
                         const SizedBox(width: 6),
                       ],

@@ -3,9 +3,5 @@ class DriveFolder {
   final String name;
   final String? parentId;
 
-  const DriveFolder({
-    required this.id,
-    required this.name,
-    this.parentId,
-  });
+  const DriveFolder({required this.id, required this.name, this.parentId});
 }

@@ -88,8 +88,8 @@ class GalleryPostsNotifier extends AutoDisposeAsyncNotifier<GalleryState> {
 
 final galleryPostsProvider =
     AsyncNotifierProvider.autoDispose<GalleryPostsNotifier, GalleryState>(
-  GalleryPostsNotifier.new,
-);
+      GalleryPostsNotifier.new,
+    );
 
 /// Gallery posts for a specific user (for profile screen).
 class UserGalleryPostsNotifier
@@ -154,5 +154,5 @@ class UserGalleryPostsNotifier
 
 final userGalleryPostsProvider = AsyncNotifierProvider.autoDispose
     .family<UserGalleryPostsNotifier, GalleryState, String>(
-  UserGalleryPostsNotifier.new,
-);
+      UserGalleryPostsNotifier.new,
+    );

@@ -277,10 +277,7 @@ class _ThemeModeTile extends StatelessWidget {
           SegmentedButton<ThemeMode>(
             segments: [
               for (final entry in _labels.entries)
-                ButtonSegment(
-                  value: entry.key,
-                  label: Text(entry.value),
-                ),
+                ButtonSegment(value: entry.key, label: Text(entry.value)),
             ],
             selected: {current},
             onSelectionChanged: (selected) {

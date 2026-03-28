@@ -959,8 +959,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       description: g['description'] as String?,
       author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
       files: files,
-      createdAt:
-          DateTime.parse(g['createdAt'] as String? ?? '1970-01-01T00:00:00Z'),
+      createdAt: DateTime.parse(
+        g['createdAt'] as String? ?? '1970-01-01T00:00:00Z',
+      ),
       isSensitive: g['isSensitive'] as bool? ?? false,
       likedCount: g['likedCount'] as int? ?? 0,
     );
@@ -1018,11 +1019,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return data
-        .map((f) => DriveFolder(
-              id: f['id'] as String,
-              name: f['name'] as String? ?? '',
-              parentId: f['parentId'] as String?,
-            ))
+        .map(
+          (f) => DriveFolder(
+            id: f['id'] as String,
+            name: f['name'] as String? ?? '',
+            parentId: f['parentId'] as String?,
+          ),
+        )
         .toList();
   }
 
@@ -1169,8 +1172,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }) async {
     final data = await client.translateNote(
       postId,
-      targetLang: targetLang ??
-          PlatformDispatcher.instance.locale.languageCode,
+      targetLang: targetLang ?? PlatformDispatcher.instance.locale.languageCode,
     );
     return TranslationResult(
       content: data['text'] as String? ?? '',

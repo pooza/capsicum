@@ -116,10 +116,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MisskeyAdapter) return;
     final content = displayPost.content ?? '';
-    final urls = RegExp(r'https?://\S+')
-        .allMatches(content)
-        .map((m) => m.group(0)!)
-        .toList();
+    final urls = RegExp(
+      r'https?://\S+',
+    ).allMatches(content).map((m) => m.group(0)!).toList();
     if (urls.isEmpty) return;
     // Skip the first URL if the API already returned a card for it.
     final urlsToFetch = displayPost.card != null ? urls.skip(1) : urls;
@@ -206,10 +205,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           ),
           SelectableText(
             body,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 13,
-            ),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
           ),
         ],
       ),
@@ -593,13 +589,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                           // 構造化テキスト判定用のプレーンテキスト
                           final plainBody = isHtml
                               ? parsed.body
-                                  .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-                                  .replaceAll(RegExp(r'<[^>]*>'), '')
-                                  .replaceAll('&amp;', '&')
-                                  .replaceAll('&lt;', '<')
-                                  .replaceAll('&gt;', '>')
-                                  .replaceAll('&quot;', '"')
-                                  .replaceAll('&#39;', "'")
+                                    .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+                                    .replaceAll(RegExp(r'<[^>]*>'), '')
+                                    .replaceAll('&amp;', '&')
+                                    .replaceAll('&lt;', '<')
+                                    .replaceAll('&gt;', '>')
+                                    .replaceAll('&quot;', '"')
+                                    .replaceAll('&#39;', "'")
                               : parsed.body;
                           final isStructured = _isStructuredContent(
                             plainBody,
@@ -608,9 +604,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                           if (isStructured) {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildCodeBlock(plainBody),
-                              ],
+                              children: [_buildCodeBlock(plainBody)],
                             );
                           }
                           return Column(
@@ -1898,7 +1892,8 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   ) {
     final fraction = totalVotes > 0 ? option.votesCount / totalVotes : 0.0;
     final percentage = (fraction * 100).round();
-    final isOwnVote = widget.poll.ownVotes.contains(index) ||
+    final isOwnVote =
+        widget.poll.ownVotes.contains(index) ||
         (_votedLocally && _selected.contains(index));
 
     if (_showResults) {

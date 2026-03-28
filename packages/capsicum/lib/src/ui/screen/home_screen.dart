@@ -83,7 +83,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .reduce((a, b) => a > b ? a : b);
       if (maxIndex >= timeline.posts.length - 3) {
         if (selectedHashtag != null) {
-          ref.read(hashtagTimelineProvider(selectedHashtag).notifier).loadMore();
+          ref
+              .read(hashtagTimelineProvider(selectedHashtag).notifier)
+              .loadMore();
         } else if (selectedList != null) {
           ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
         } else {
@@ -157,22 +159,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     // Show a SnackBar when loadMore fails.
-    ref.listen(
-      listenTarget,
-      (prev, next) {
-        final error = next.valueOrNull?.loadMoreError;
-        if (error != null && prev?.valueOrNull?.loadMoreError == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('読み込みに失敗しました'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
+    ref.listen(listenTarget, (prev, next) {
+      final error = next.valueOrNull?.loadMoreError;
+      if (error != null && prev?.valueOrNull?.loadMoreError == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('読み込みに失敗しました'),
+              duration: Duration(seconds: 3),
+            ),
+          );
         }
-      },
-    );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -236,7 +235,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
-          child: _buildTimelineTabs(context, selectedType, selectedList, selectedHashtag),
+          child: _buildTimelineTabs(
+            context,
+            selectedType,
+            selectedList,
+            selectedHashtag,
+          ),
         ),
       ),
       drawer: _buildDrawer(
@@ -1325,10 +1329,7 @@ class _HashtagManagementSheetState
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: _addHashtag,
-                ),
+                IconButton(icon: const Icon(Icons.add), onPressed: _addHashtag),
               ],
             ),
           ),
@@ -1345,9 +1346,7 @@ class _HashtagManagementSheetState
               itemCount: tags.length,
               onReorder: (oldIndex, newIndex) {
                 ref
-                    .read(
-                      pinnedHashtagsProvider(widget.storageKey).notifier,
-                    )
+                    .read(pinnedHashtagsProvider(widget.storageKey).notifier)
                     .reorder(oldIndex, newIndex);
               },
               itemBuilder: (context, index) {

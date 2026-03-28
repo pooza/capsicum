@@ -26,9 +26,9 @@ class _MediaEntry {
   _MediaEntry.local(XFile this.file) : driveFile = null;
 
   _MediaEntry.drive(Attachment this.driveFile)
-      : file = null,
-        description = driveFile.description ?? '',
-        sensitive = false;
+    : file = null,
+      description = driveFile.description ?? '',
+      sensitive = false;
 
   bool get isDrive => driveFile != null;
 }
@@ -415,7 +415,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             width: size,
             height: size,
             color: Colors.black87,
-            child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+            child: const Center(
+              child: Icon(Icons.broken_image, color: Colors.white),
+            ),
           ),
         );
       }
@@ -428,8 +430,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             df.type == AttachmentType.video
                 ? Icons.videocam
                 : df.type == AttachmentType.audio
-                    ? Icons.audio_file
-                    : Icons.insert_drive_file,
+                ? Icons.audio_file
+                : Icons.insert_drive_file,
             color: Colors.white,
             size: 36,
           ),
@@ -510,9 +512,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       icon: const Icon(Icons.close, size: 18),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      onPressed: _sending
-                          ? null
-                          : () => _removePollOption(i),
+                      onPressed: _sending ? null : () => _removePollOption(i),
                     ),
                 ],
               ),
@@ -551,10 +551,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       },
                 items: _pollDurationOptions.entries
                     .map(
-                      (e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text(e.value),
-                      ),
+                      (e) =>
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
                     )
                     .toList(),
               ),
@@ -745,9 +743,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           .where((t) => t.isNotEmpty)
           .toList();
       if (filledOptions.length < 2) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('選択肢を2つ以上入力してください')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('選択肢を2つ以上入力してください')));
         return;
       }
     }
@@ -938,10 +936,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   },
                 ),
               ),
-            if (_pollEnabled) ...[
-              const Divider(),
-              _buildPollEditor(),
-            ],
+            if (_pollEnabled) ...[const Divider(), _buildPollEditor()],
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(
@@ -1049,9 +1044,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   IconButton(
                     onPressed: _sending
                         ? null
-                        : () => setState(
-                            () => _pollEnabled = !_pollEnabled,
-                          ),
+                        : () => setState(() => _pollEnabled = !_pollEnabled),
                     icon: Icon(
                       Icons.poll_outlined,
                       color: _pollEnabled

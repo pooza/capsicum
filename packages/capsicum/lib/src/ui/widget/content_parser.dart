@@ -619,8 +619,11 @@ List<_Node> _parseHtml(String html) {
       .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
       // Preserve <pre><code> as code block before handling inline <code>
       .replaceAllMapped(
-        RegExp(r'<pre>(?:<code[^>]*>)?(.*?)(?:</code>)?</pre>',
-            caseSensitive: false, dotAll: true),
+        RegExp(
+          r'<pre>(?:<code[^>]*>)?(.*?)(?:</code>)?</pre>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
         (m) => '\n```\n${m[1]}\n```\n',
       )
       // Preserve inline <code> as backticks before stripping all tags
@@ -854,7 +857,8 @@ class ContentRenderer {
           ..onTap = isSafe ? () => launchUrl(uri) : null;
         _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
-        final displayUrl = customDisplay ??
+        final displayUrl =
+            customDisplay ??
             (uri != null
                 ? _shortenUrl(Uri.decodeFull(uri.toString()))
                 : resolvedUrl);
