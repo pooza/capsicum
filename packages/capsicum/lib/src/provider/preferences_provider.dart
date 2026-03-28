@@ -8,6 +8,7 @@ const _fontScaleKey = 'font_scale';
 const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
 const _emojiPalettePrefix = 'emoji_palette_';
+const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 
@@ -250,6 +251,56 @@ class HideLivecureNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideLivecureKey, state);
+  }
+}
+
+/// Per-account pinned hashtags for home screen tabs.
+///
+/// Takes an account storage key as the family parameter.
+final pinnedHashtagsProvider =
+    NotifierProvider.family<PinnedHashtagsNotifier, List<String>, String>(
+      PinnedHashtagsNotifier.new,
+    );
+
+class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
+  @override
+  List<String> build(String arg) {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_pinnedHashtagsPrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> add(String hashtag) async {
+    final tag = hashtag.replaceFirst(RegExp('^#'), '');
+    if (tag.isEmpty || state.contains(tag)) return;
+    state = [...state, tag];
+    await _save();
+  }
+
+  Future<void> remove(String hashtag) async {
+    state = state.where((t) => t != hashtag).toList();
+    await _save();
+  }
+
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    final list = [...state];
+    final item = list.removeAt(oldIndex);
+    if (newIndex > oldIndex) newIndex--;
+    list.insert(newIndex, item);
+    state = list;
+    await _save();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_pinnedHashtagsPrefix$arg', state);
   }
 }
 
