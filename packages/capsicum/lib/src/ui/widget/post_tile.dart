@@ -171,11 +171,14 @@ class _PostTileState extends ConsumerState<PostTile> {
       } catch (_) {}
     }
 
-    // YAML として Map/List にパースできるか（--- の有無を問わない）
-    try {
-      final parsed = loadYaml(body);
-      if (parsed is Map || parsed is List) return true;
-    } catch (_) {}
+    // YAML として Map/List にパースできるか — CW 付き投稿のみ対象
+    // （CW なしだと `key: value` を含む普通の投稿が誤検知される）
+    if (spoilerText != null && spoilerText.isNotEmpty) {
+      try {
+        final parsed = loadYaml(body);
+        if (parsed is Map || parsed is List) return true;
+      } catch (_) {}
+    }
 
     return false;
   }
@@ -1762,6 +1765,10 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.poll.id != widget.poll.id) {
       _selected = widget.poll.voted ? widget.poll.ownVotes.toSet() : {};
+      _votedLocally = false;
+    } else if (_votedLocally && widget.poll.voted) {
+      // Server-updated data arrived; stop local adjustment.
+      _selected = widget.poll.ownVotes.toSet();
       _votedLocally = false;
     }
   }
