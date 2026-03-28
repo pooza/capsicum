@@ -630,8 +630,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   );
                                   // Use a plain TextSpan for overflow measurement
                                   // because TextPainter cannot measure WidgetSpan.
+                                  // HTML の場合はタグ除去済みテキストで測定する。
                                   final measureSpan = TextSpan(
-                                    text: parsed.body,
+                                    text: isHtml ? plainBody : parsed.body,
                                     style: baseStyle,
                                   );
                                   final textPainter = TextPainter(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
@@ -1075,7 +1076,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }) async {
     final data = await client.translateNote(
       postId,
-      targetLang: targetLang ?? 'ja',
+      targetLang: targetLang ??
+          PlatformDispatcher.instance.locale.languageCode,
     );
     return TranslationResult(
       content: data['text'] as String? ?? '',
