@@ -87,7 +87,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ReportSupport,
         PinSupport,
         ScheduleSupport,
-        TranslationSupport {
+        TranslationSupport,
+        DriveSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -977,6 +978,42 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       limit: query?.limit,
     );
     return data.map(_mapGalleryPost).toList();
+  }
+
+  // DriveSupport
+
+  @override
+  Future<List<Attachment>> getDriveFiles({
+    String? folderId,
+    TimelineQuery? query,
+  }) async {
+    final files = await client.getDriveFiles(
+      folderId: folderId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return files.map((f) => f.toCapsicum()).toList();
+  }
+
+  @override
+  Future<List<DriveFolder>> getDriveFolders({
+    String? folderId,
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getDriveFolders(
+      folderId: folderId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data
+        .map((f) => DriveFolder(
+              id: f['id'] as String,
+              name: f['name'] as String? ?? '',
+              parentId: f['parentId'] as String?,
+            ))
+        .toList();
   }
 
   // ClipSupport

@@ -235,6 +235,48 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/drive/files
+  Future<List<MisskeyDriveFile>> getDriveFiles({
+    String? folderId,
+    String? sinceId,
+    String? untilId,
+    int? limit,
+    String? type,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/files',
+      data: createBody({
+        'folderId': ?folderId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+        'type': ?type,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyDriveFile.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/drive/folders
+  Future<List<Map<String, dynamic>>> getDriveFolders({
+    String? folderId,
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/folders',
+      data: createBody({
+        'folderId': ?folderId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/drive/files/update
   Future<MisskeyDriveFile> updateDriveFile(
     String fileId, {

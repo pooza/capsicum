@@ -15,13 +15,22 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
+import 'drive_picker_screen.dart';
 
 class _MediaEntry {
-  final XFile file;
+  final XFile? file;
+  final Attachment? driveFile;
   String description = '';
   bool sensitive = false;
 
-  _MediaEntry(this.file);
+  _MediaEntry.local(XFile this.file) : driveFile = null;
+
+  _MediaEntry.drive(Attachment this.driveFile)
+      : file = null,
+        description = driveFile.description ?? '',
+        sensitive = false;
+
+  bool get isDrive => driveFile != null;
 }
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -338,7 +347,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final files = await _imagePicker.pickMultipleMedia();
     if (files.isNotEmpty) {
       setState(() {
-        _attachments.addAll(files.map((f) => _MediaEntry(f)));
+        _attachments.addAll(files.map((f) => _MediaEntry.local(f)));
+      });
+    }
+  }
+
+  Future<void> _pickDriveFiles() async {
+    final selected = await Navigator.of(context).push<List<Attachment>>(
+      MaterialPageRoute(builder: (_) => const DrivePickerScreen()),
+    );
+    if (selected != null && selected.isNotEmpty) {
+      setState(() {
+        _attachments.addAll(selected.map((f) => _MediaEntry.drive(f)));
       });
     }
   }
@@ -364,6 +384,64 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       return _videoExtensions.contains(ext);
     }
     return false;
+  }
+
+  Widget _buildThumbnail(_MediaEntry entry) {
+    const size = 100.0;
+    if (entry.isDrive) {
+      final df = entry.driveFile!;
+      final preview = df.previewUrl ?? df.url;
+      final isImage =
+          df.type == AttachmentType.image || df.type == AttachmentType.gifv;
+      if (isImage && preview.isNotEmpty) {
+        return Image.network(
+          preview,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => Container(
+            width: size,
+            height: size,
+            color: Colors.black87,
+            child: const Center(child: Icon(Icons.broken_image, color: Colors.white)),
+          ),
+        );
+      }
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.black87,
+        child: Center(
+          child: Icon(
+            df.type == AttachmentType.video
+                ? Icons.videocam
+                : df.type == AttachmentType.audio
+                    ? Icons.audio_file
+                    : Icons.insert_drive_file,
+            color: Colors.white,
+            size: 36,
+          ),
+        ),
+      );
+    }
+    // Local file
+    final isVideo = _isVideo(entry.file!.mimeType, entry.file!.path);
+    if (isVideo) {
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.black87,
+        child: const Center(
+          child: Icon(Icons.videocam, color: Colors.white, size: 36),
+        ),
+      );
+    }
+    return Image.file(
+      File(entry.file!.path),
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+    );
   }
 
   Future<void> _editDescription(int index) async {
@@ -545,15 +623,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     setState(() => _sending = true);
     try {
-      // Upload attachments in parallel.
+      // Upload local attachments / reuse drive file IDs.
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
+          if (entry.isDrive) {
+            return entry.driveFile!.id;
+          }
           final draft = AttachmentDraft(
-            filePath: entry.file.path,
+            filePath: entry.file!.path,
             description: entry.description.isNotEmpty
                 ? entry.description
                 : null,
-            mimeType: entry.file.mimeType,
+            mimeType: entry.file!.mimeType,
             sensitive: _effectiveSensitive || entry.sensitive,
           );
           final attachment = await adapter.uploadAttachment(draft);
@@ -725,10 +806,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
                     final entry = _attachments[index];
-                    final isVideo = _isVideo(
-                      entry.file.mimeType,
-                      entry.file.path,
-                    );
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: _sending ? null : () => _editDescription(index),
@@ -736,25 +813,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: isVideo
-                                ? Container(
-                                    width: 100,
-                                    height: 100,
-                                    color: Colors.black87,
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.videocam,
-                                        color: Colors.white,
-                                        size: 36,
-                                      ),
-                                    ),
-                                  )
-                                : Image.file(
-                                    File(entry.file.path),
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                  ),
+                            child: _buildThumbnail(entry),
                           ),
                           // ALT badge
                           if (entry.description.isNotEmpty)
@@ -817,6 +876,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   icon: const Icon(Icons.photo),
                   tooltip: 'メディアを添付',
                 ),
+                if (ref.watch(currentAdapterProvider) is DriveSupport)
+                  IconButton(
+                    onPressed: _sending ? null : _pickDriveFiles,
+                    icon: const Icon(Icons.cloud_outlined),
+                    tooltip: 'ドライブ',
+                  ),
                 IconButton(
                   onPressed: _sending ? null : _showEmojiPicker,
                   icon: const Icon(Icons.emoji_emotions_outlined),
