@@ -15,13 +15,22 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
+import 'drive_picker_screen.dart';
 
 class _MediaEntry {
-  final XFile file;
+  final XFile? file;
+  final Attachment? driveFile;
   String description = '';
   bool sensitive = false;
 
-  _MediaEntry(this.file);
+  _MediaEntry.local(XFile this.file) : driveFile = null;
+
+  _MediaEntry.drive(Attachment this.driveFile)
+    : file = null,
+      description = driveFile.description ?? '',
+      sensitive = false;
+
+  bool get isDrive => driveFile != null;
 }
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -59,6 +68,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
+
+  // Poll state
+  bool _pollEnabled = false;
+  final List<TextEditingController> _pollControllers = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  bool _pollMultiple = false;
+  int _pollExpiresIn = 86400; // 1 day in seconds
 
   static const _languageOptions = {
     'ja': '日本語',
@@ -255,6 +273,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
+    for (final c in _pollControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -338,7 +359,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final files = await _imagePicker.pickMultipleMedia();
     if (files.isNotEmpty) {
       setState(() {
-        _attachments.addAll(files.map((f) => _MediaEntry(f)));
+        _attachments.addAll(files.map((f) => _MediaEntry.local(f)));
+      });
+    }
+  }
+
+  Future<void> _pickDriveFiles() async {
+    final selected = await Navigator.of(context).push<List<Attachment>>(
+      MaterialPageRoute(builder: (_) => const DrivePickerScreen()),
+    );
+    if (selected != null && selected.isNotEmpty) {
+      setState(() {
+        _attachments.addAll(selected.map((f) => _MediaEntry.drive(f)));
       });
     }
   }
@@ -364,6 +396,171 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       return _videoExtensions.contains(ext);
     }
     return false;
+  }
+
+  Widget _buildThumbnail(_MediaEntry entry) {
+    const size = 100.0;
+    if (entry.isDrive) {
+      final df = entry.driveFile!;
+      final preview = df.previewUrl ?? df.url;
+      final isImage =
+          df.type == AttachmentType.image || df.type == AttachmentType.gifv;
+      if (isImage && preview.isNotEmpty) {
+        return Image.network(
+          preview,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => Container(
+            width: size,
+            height: size,
+            color: Colors.black87,
+            child: const Center(
+              child: Icon(Icons.broken_image, color: Colors.white),
+            ),
+          ),
+        );
+      }
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.black87,
+        child: Center(
+          child: Icon(
+            df.type == AttachmentType.video
+                ? Icons.videocam
+                : df.type == AttachmentType.audio
+                ? Icons.audio_file
+                : Icons.insert_drive_file,
+            color: Colors.white,
+            size: 36,
+          ),
+        ),
+      );
+    }
+    // Local file
+    final isVideo = _isVideo(entry.file!.mimeType, entry.file!.path);
+    if (isVideo) {
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.black87,
+        child: const Center(
+          child: Icon(Icons.videocam, color: Colors.white, size: 36),
+        ),
+      );
+    }
+    return Image.file(
+      File(entry.file!.path),
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+    );
+  }
+
+  static const _pollDurationOptions = <int, String>{
+    300: '5分',
+    1800: '30分',
+    3600: '1時間',
+    21600: '6時間',
+    43200: '12時間',
+    86400: '1日',
+    259200: '3日',
+    604800: '7日',
+  };
+
+  void _addPollOption() {
+    if (_pollControllers.length >= 10) return;
+    setState(() => _pollControllers.add(TextEditingController()));
+  }
+
+  void _removePollOption(int index) {
+    if (_pollControllers.length <= 2) return;
+    setState(() {
+      _pollControllers[index].dispose();
+      _pollControllers.removeAt(index);
+    });
+  }
+
+  Widget _buildPollEditor() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < _pollControllers.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _pollControllers[i],
+                      decoration: InputDecoration(
+                        hintText: '選択肢 ${i + 1}',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  if (_pollControllers.length > 2)
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: _sending ? null : () => _removePollOption(i),
+                    ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              if (_pollControllers.length < 10)
+                TextButton.icon(
+                  onPressed: _sending ? null : _addPollOption,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('選択肢を追加'),
+                ),
+              const Spacer(),
+              FilterChip(
+                label: const Text('複数選択'),
+                selected: _pollMultiple,
+                onSelected: _sending
+                    ? null
+                    : (v) => setState(() => _pollMultiple = v),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              const Icon(Icons.timer_outlined, size: 16),
+              const SizedBox(width: 4),
+              DropdownButton<int>(
+                value: _pollExpiresIn,
+                underline: const SizedBox.shrink(),
+                isDense: true,
+                onChanged: _sending
+                    ? null
+                    : (v) {
+                        if (v != null) setState(() => _pollExpiresIn = v);
+                      },
+                items: _pollDurationOptions.entries
+                    .map(
+                      (e) =>
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    )
+                    .toList(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _editDescription(int index) async {
@@ -538,22 +735,38 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   Future<void> _submit() async {
     final text = _controller.text.trim();
-    if (text.isEmpty && _attachments.isEmpty) return;
+    if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
+
+    if (_pollEnabled) {
+      final filledOptions = _pollControllers
+          .map((c) => c.text.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      if (filledOptions.length < 2) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('選択肢を2つ以上入力してください')));
+        return;
+      }
+    }
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
     setState(() => _sending = true);
     try {
-      // Upload attachments in parallel.
+      // Upload local attachments / reuse drive file IDs.
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
+          if (entry.isDrive) {
+            return entry.driveFile!.id;
+          }
           final draft = AttachmentDraft(
-            filePath: entry.file.path,
+            filePath: entry.file!.path,
             description: entry.description.isNotEmpty
                 ? entry.description
                 : null,
-            mimeType: entry.file.mimeType,
+            mimeType: entry.file!.mimeType,
             sensitive: _effectiveSensitive || entry.sensitive,
           );
           final attachment = await adapter.uploadAttachment(draft);
@@ -575,6 +788,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           channelId: widget.channelId,
           scheduledAt: _scheduledAt,
           language: _language,
+          pollOptions: _pollEnabled
+              ? _pollControllers
+                    .map((c) => c.text.trim())
+                    .where((t) => t.isNotEmpty)
+                    .toList()
+              : null,
+          pollExpiresIn: _pollEnabled ? _pollExpiresIn : null,
+          pollMultiple: _pollEnabled && _pollMultiple,
         ),
       );
       if (mounted) {
@@ -715,6 +936,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   },
                 ),
               ),
+            if (_pollEnabled) ...[const Divider(), _buildPollEditor()],
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(
@@ -725,10 +947,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
                     final entry = _attachments[index];
-                    final isVideo = _isVideo(
-                      entry.file.mimeType,
-                      entry.file.path,
-                    );
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: _sending ? null : () => _editDescription(index),
@@ -736,25 +954,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: isVideo
-                                ? Container(
-                                    width: 100,
-                                    height: 100,
-                                    color: Colors.black87,
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.videocam,
-                                        color: Colors.white,
-                                        size: 36,
-                                      ),
-                                    ),
-                                  )
-                                : Image.file(
-                                    File(entry.file.path),
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                  ),
+                            child: _buildThumbnail(entry),
                           ),
                           // ALT badge
                           if (entry.description.isNotEmpty)
@@ -817,6 +1017,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   icon: const Icon(Icons.photo),
                   tooltip: 'メディアを添付',
                 ),
+                if (ref.watch(currentAdapterProvider) is DriveSupport)
+                  IconButton(
+                    onPressed: _sending ? null : _pickDriveFiles,
+                    icon: const Icon(Icons.cloud_outlined),
+                    tooltip: 'ドライブ',
+                  ),
                 IconButton(
                   onPressed: _sending ? null : _showEmojiPicker,
                   icon: const Icon(Icons.emoji_emotions_outlined),
@@ -834,6 +1040,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   ),
                   tooltip: '閲覧注意',
                 ),
+                if (ref.watch(currentAdapterProvider) is PollSupport)
+                  IconButton(
+                    onPressed: _sending
+                        ? null
+                        : () => setState(() => _pollEnabled = !_pollEnabled),
+                    icon: Icon(
+                      Icons.poll_outlined,
+                      color: _pollEnabled
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: 'アンケート',
+                  ),
                 if (_attachments.isNotEmpty)
                   IconButton(
                     onPressed: _sending

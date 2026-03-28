@@ -252,20 +252,33 @@ class MastodonClient {
     List<String>? mediaIds,
     bool? sensitive,
     String? language,
+    List<String>? pollOptions,
+    int? pollExpiresIn,
+    bool? pollMultiple,
+    bool? pollHideTotals,
     Map<String, String>? extraHeaders,
   }) async {
+    final data = <String, dynamic>{
+      'status': status,
+      'visibility': visibility,
+      'in_reply_to_id': ?inReplyToId,
+      'quoted_status_id': ?quoteId,
+      'spoiler_text': ?spoilerText,
+      'media_ids': ?mediaIds,
+      'sensitive': ?sensitive,
+      'language': ?language,
+    };
+    if (pollOptions != null && pollOptions.isNotEmpty) {
+      data['poll'] = {
+        'options': pollOptions,
+        'expires_in': pollExpiresIn ?? 86400,
+        'multiple': pollMultiple ?? false,
+        'hide_totals': pollHideTotals ?? false,
+      };
+    }
     final response = await dio.post(
       '/api/v1/statuses',
-      data: {
-        'status': status,
-        'visibility': visibility,
-        'in_reply_to_id': ?inReplyToId,
-        'quoted_status_id': ?quoteId,
-        'spoiler_text': ?spoilerText,
-        'media_ids': ?mediaIds,
-        'sensitive': ?sensitive,
-        'language': ?language,
-      },
+      data: data,
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);

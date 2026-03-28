@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
@@ -82,10 +81,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChannelSupport,
         ClipSupport,
         FlashSupport,
+        GallerySupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport,
-        TranslationSupport {
+        TranslationSupport,
+        DriveSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
@@ -206,6 +207,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       );
       return null;
     }
+    Map<String, dynamic>? poll;
+    if (draft.pollOptions != null && draft.pollOptions!.isNotEmpty) {
+      poll = {
+        'choices': draft.pollOptions,
+        'multiple': draft.pollMultiple,
+        if (draft.pollExpiresIn != null)
+          'expiredAfter': draft.pollExpiresIn! * 1000,
+      };
+    }
     final note = await client.createNote(
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
@@ -215,6 +225,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
+      poll: poll,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
@@ -927,6 +938,90 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             summary: f['summary'] as String?,
             userName:
                 (f['user'] as Map<String, dynamic>?)?['username'] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  // GallerySupport
+
+  GalleryPost _mapGalleryPost(Map<String, dynamic> g) {
+    final user = MisskeyUser.fromJson(g['user'] as Map<String, dynamic>);
+    final files = (g['files'] as List? ?? [])
+        .map((f) => MisskeyDriveFile.fromJson(f as Map<String, dynamic>))
+        .map((f) => f.toCapsicum())
+        .toList();
+    return GalleryPost(
+      id: g['id'] as String,
+      title: g['title'] as String? ?? '',
+      description: g['description'] as String?,
+      author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      files: files,
+      createdAt: DateTime.parse(
+        g['createdAt'] as String? ?? '1970-01-01T00:00:00Z',
+      ),
+      isSensitive: g['isSensitive'] as bool? ?? false,
+      likedCount: g['likedCount'] as int? ?? 0,
+    );
+  }
+
+  @override
+  Future<List<GalleryPost>> getGalleryPosts({TimelineQuery? query}) async {
+    final data = await client.getGalleryFeatured(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
+  }
+
+  @override
+  Future<List<GalleryPost>> getUserGalleryPosts(
+    String userId, {
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getUserGalleryPosts(
+      userId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapGalleryPost).toList();
+  }
+
+  // DriveSupport
+
+  @override
+  Future<List<Attachment>> getDriveFiles({
+    String? folderId,
+    TimelineQuery? query,
+  }) async {
+    final files = await client.getDriveFiles(
+      folderId: folderId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return files.map((f) => f.toCapsicum()).toList();
+  }
+
+  @override
+  Future<List<DriveFolder>> getDriveFolders({
+    String? folderId,
+    TimelineQuery? query,
+  }) async {
+    final data = await client.getDriveFolders(
+      folderId: folderId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data
+        .map(
+          (f) => DriveFolder(
+            id: f['id'] as String,
+            name: f['name'] as String? ?? '',
+            parentId: f['parentId'] as String?,
           ),
         )
         .toList();

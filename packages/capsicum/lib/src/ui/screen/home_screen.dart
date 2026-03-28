@@ -13,6 +13,7 @@ import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
+import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -27,6 +28,9 @@ import '../widget/simple_post_bar.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
 final selectedListProvider = StateProvider<PostList?>((ref) => null);
+
+/// Currently selected pinned hashtag (null = not in hashtag tab mode).
+final selectedHashtagProvider = StateProvider<String?>((ref) => null);
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -63,16 +67,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (positions.isEmpty) return;
 
     // Load more when near the end.
+    final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
-    final timeline = selectedList != null
-        ? ref.read(listTimelineProvider(selectedList.id)).valueOrNull
-        : ref.read(timelineProvider).valueOrNull;
+    final TimelineState? timeline;
+    if (selectedHashtag != null) {
+      timeline = ref.read(hashtagTimelineProvider(selectedHashtag)).valueOrNull;
+    } else if (selectedList != null) {
+      timeline = ref.read(listTimelineProvider(selectedList.id)).valueOrNull;
+    } else {
+      timeline = ref.read(timelineProvider).valueOrNull;
+    }
     if (timeline != null && !timeline.isLoadingMore) {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
       if (maxIndex >= timeline.posts.length - 3) {
-        if (selectedList != null) {
+        if (selectedHashtag != null) {
+          ref
+              .read(hashtagTimelineProvider(selectedHashtag).notifier)
+              .loadMore();
+        } else if (selectedList != null) {
           ref.read(listTimelineProvider(selectedList.id).notifier).loadMore();
         } else {
           ref.read(timelineProvider.notifier).loadMore();
@@ -81,7 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     // Save marker (home timeline only, debounced).
-    if (selectedList == null) {
+    if (selectedList == null && selectedHashtag == null) {
       final selectedType = ref.read(selectedTimelineTypeProvider);
       if (selectedType == TimelineType.home && timeline != null) {
         final minIndex = positions
@@ -121,32 +135,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accountState = ref.watch(accountManagerProvider);
     final selectedType = ref.watch(selectedTimelineTypeProvider);
     final selectedList = ref.watch(selectedListProvider);
+    final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
 
     // Choose which timeline data to display.
-    final timeline = selectedList != null
-        ? ref.watch(listTimelineProvider(selectedList.id))
-        : ref.watch(timelineProvider);
+    final AsyncValue<TimelineState> timeline;
+    if (selectedHashtag != null) {
+      timeline = ref.watch(hashtagTimelineProvider(selectedHashtag));
+    } else if (selectedList != null) {
+      timeline = ref.watch(listTimelineProvider(selectedList.id));
+    } else {
+      timeline = ref.watch(timelineProvider);
+    }
+
+    // Provider to listen for loadMore errors.
+    final ProviderListenable<AsyncValue<TimelineState>> listenTarget;
+    if (selectedHashtag != null) {
+      listenTarget = hashtagTimelineProvider(selectedHashtag);
+    } else if (selectedList != null) {
+      listenTarget = listTimelineProvider(selectedList.id);
+    } else {
+      listenTarget = timelineProvider;
+    }
 
     // Show a SnackBar when loadMore fails.
-    ref.listen(
-      selectedList != null
-          ? listTimelineProvider(selectedList.id)
-          : timelineProvider,
-      (prev, next) {
-        final error = next.valueOrNull?.loadMoreError;
-        if (error != null && prev?.valueOrNull?.loadMoreError == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('読み込みに失敗しました'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
+    ref.listen(listenTarget, (prev, next) {
+      final error = next.valueOrNull?.loadMoreError;
+      if (error != null && prev?.valueOrNull?.loadMoreError == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('読み込みに失敗しました'),
+              duration: Duration(seconds: 3),
+            ),
+          );
         }
-      },
-    );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -198,6 +223,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          _LivecureFilterButton(ref: ref),
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () => context.push('/search'),
@@ -209,7 +235,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
-          child: _buildTimelineTabs(context, selectedType, selectedList),
+          child: _buildTimelineTabs(
+            context,
+            selectedType,
+            selectedList,
+            selectedHashtag,
+          ),
         ),
       ),
       drawer: _buildDrawer(
@@ -237,6 +268,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   return RefreshIndicator(
                     onRefresh: () {
                       _markerRestored = false;
+                      if (selectedHashtag != null) {
+                        return ref.refresh(
+                          hashtagTimelineProvider(selectedHashtag).future,
+                        );
+                      }
                       if (selectedList != null) {
                         return ref.refresh(
                           listTimelineProvider(selectedList.id).future,
@@ -353,6 +389,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     BuildContext context,
     TimelineType selected,
     PostList? selectedList,
+    String? selectedHashtag,
   ) {
     final adapter = ref.watch(currentAdapterProvider);
     final supported =
@@ -371,6 +408,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final listsAsync = ref.watch(listsProvider);
     final lists = listsAsync.valueOrNull ?? [];
 
+    // Pinned hashtags.
+    final pinnedHashtags = account != null
+        ? ref.watch(pinnedHashtagsProvider(account.key.toStorageKey()))
+        : <String>[];
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -384,16 +426,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (type == TimelineType.local) {
               label = ref.watch(localTimelineNameProvider);
             }
-            final isSelected = selectedList == null && type == selected;
+            final isSelected =
+                selectedList == null &&
+                selectedHashtag == null &&
+                type == selected;
             return _tabChip(context, label, isSelected, () {
               ref.read(selectedListProvider.notifier).state = null;
+              ref.read(selectedHashtagProvider.notifier).state = null;
               ref.read(selectedTimelineTypeProvider.notifier).state = type;
             });
           }),
           // List tabs.
           ...lists.map((list) {
-            final isSelected = selectedList?.id == list.id;
+            final isSelected =
+                selectedHashtag == null && selectedList?.id == list.id;
             return _tabChip(context, list.title, isSelected, () {
+              ref.read(selectedHashtagProvider.notifier).state = null;
               ref.read(selectedListProvider.notifier).state = list;
             });
           }),
@@ -406,8 +454,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               constraints: const BoxConstraints(),
               onPressed: () => context.push('/lists/manage'),
             ),
+          // Pinned hashtag tabs.
+          ...pinnedHashtags.map((tag) {
+            final isSelected = selectedHashtag == tag;
+            return _tabChip(context, '#$tag', isSelected, () {
+              ref.read(selectedListProvider.notifier).state = null;
+              ref.read(selectedHashtagProvider.notifier).state = tag;
+            });
+          }),
+          // Hashtag pin management button.
+          if (adapter is HashtagSupport)
+            IconButton(
+              icon: const Icon(Icons.tag, size: 20),
+              tooltip: 'ハッシュタグタブ管理',
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              constraints: const BoxConstraints(),
+              onPressed: () => _showHashtagManagement(context),
+            ),
         ],
       ),
+    );
+  }
+
+  void _showHashtagManagement(BuildContext context) {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return;
+    final storageKey = account.key.toStorageKey();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _HashtagManagementSheet(storageKey: storageKey),
     );
   }
 
@@ -677,6 +754,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onTap: () {
                 Navigator.of(context).pop();
                 _showFlashList(context, ref);
+              },
+            ),
+          if (ref.read(currentAdapterProvider) is GallerySupport)
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('ギャラリー'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/gallery');
               },
             ),
           if (ref.read(currentMulukhiyaProvider) != null) ...[
@@ -1151,5 +1237,143 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
     return ServerBadge.fromHost(host, themeColors: themeColors);
+  }
+}
+
+class _LivecureFilterButton extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _LivecureFilterButton({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final hide = ref.watch(hideLivecureProvider);
+    return IconButton(
+      icon: Icon(
+        hide ? Icons.mic_off : Icons.mic,
+        color: hide ? Theme.of(context).colorScheme.error : null,
+      ),
+      tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
+      onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
+    );
+  }
+}
+
+class _HashtagManagementSheet extends ConsumerStatefulWidget {
+  final String storageKey;
+
+  const _HashtagManagementSheet({required this.storageKey});
+
+  @override
+  ConsumerState<_HashtagManagementSheet> createState() =>
+      _HashtagManagementSheetState();
+}
+
+class _HashtagManagementSheetState
+    extends ConsumerState<_HashtagManagementSheet> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _addHashtag() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    ref.read(pinnedHashtagsProvider(widget.storageKey).notifier).add(text);
+    _controller.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tags = ref.watch(pinnedHashtagsProvider(widget.storageKey));
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Text(
+                  'ハッシュタグタブ',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      hintText: 'ハッシュタグを入力',
+                      prefixText: '#',
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _addHashtag(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(icon: const Icon(Icons.add), onPressed: _addHashtag),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (tags.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('ピン留めされたハッシュタグはありません'),
+            )
+          else
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              buildDefaultDragHandles: false,
+              itemCount: tags.length,
+              onReorder: (oldIndex, newIndex) {
+                ref
+                    .read(pinnedHashtagsProvider(widget.storageKey).notifier)
+                    .reorder(oldIndex, newIndex);
+              },
+              itemBuilder: (context, index) {
+                final tag = tags[index];
+                return ListTile(
+                  key: ValueKey(tag),
+                  leading: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle),
+                  ),
+                  title: Text('#$tag'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () {
+                      ref
+                          .read(
+                            pinnedHashtagsProvider(widget.storageKey).notifier,
+                          )
+                          .remove(tag);
+                    },
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
   }
 }

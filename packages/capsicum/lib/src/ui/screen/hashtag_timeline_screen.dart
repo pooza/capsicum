@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
 
@@ -70,6 +71,27 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
     }
   }
 
+  Widget _buildPinButton() {
+    final account = ref.watch(currentAccountProvider);
+    if (account == null) return const SizedBox.shrink();
+    final storageKey = account.key.toStorageKey();
+    final pinned = ref.watch(pinnedHashtagsProvider(storageKey));
+    final isPinned = pinned.contains(widget.hashtag);
+
+    return IconButton(
+      icon: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+      tooltip: isPinned ? 'タブから外す' : 'タブに固定',
+      onPressed: () {
+        final notifier = ref.read(pinnedHashtagsProvider(storageKey).notifier);
+        if (isPinned) {
+          notifier.remove(widget.hashtag);
+        } else {
+          notifier.add(widget.hashtag);
+        }
+      },
+    );
+  }
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -86,6 +108,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
         title: Text('#${widget.hashtag}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          _buildPinButton(),
           if (_following != null)
             IconButton(
               icon: Icon(_following! ? Icons.bookmark : Icons.bookmark_border),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/server_metadata_cache.dart';
@@ -62,7 +64,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
   bool _deleted = false;
-  PreviewCard? _fetchedCard;
+  List<PreviewCard> _fetchedCards = [];
   TranslationResult? _translation;
   bool _translating = false;
 
@@ -84,7 +86,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       _cwExpanded = widget.initialExpanded;
       _tagsExpanded = false;
       _filterExpanded = false;
-      _fetchedCard = null;
+      _fetchedCards = [];
       _translation = null;
       _translating = false;
     }
@@ -110,21 +112,108 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   Future<void> _maybeFetchCard() async {
     final displayPost = post.reblog ?? post;
-    if (displayPost.card != null || displayPost.attachments.isNotEmpty) return;
+    if (displayPost.attachments.isNotEmpty) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MisskeyAdapter) return;
     final content = displayPost.content ?? '';
-    final urlMatch = RegExp(r'https?://\S+').firstMatch(content);
-    if (urlMatch == null) return;
-    final url = urlMatch.group(0)!;
-    final card = await adapter.fetchUrlPreview(url);
-    if (mounted && card != null) {
-      setState(() => _fetchedCard = card);
+    final urls = RegExp(
+      r'https?://\S+',
+    ).allMatches(content).map((m) => m.group(0)!).toList();
+    if (urls.isEmpty) return;
+    // Skip the first URL if the API already returned a card for it.
+    final urlsToFetch = displayPost.card != null ? urls.skip(1) : urls;
+    final cards = <PreviewCard>[];
+    for (final url in urlsToFetch) {
+      final card = await adapter.fetchUrlPreview(url);
+      if (card != null) cards.add(card);
     }
+    if (mounted && cards.isNotEmpty) {
+      setState(() => _fetchedCards = cards);
+    }
+  }
+
+  List<Widget> _buildPreviewCards(Post displayPost) {
+    final cards = <PreviewCard>[
+      if (displayPost.card != null) displayPost.card!,
+      ..._fetchedCards,
+    ];
+    if (cards.isEmpty) return [];
+    return [
+      for (final card in cards)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: _PreviewCardWidget(card: card),
+        ),
+    ];
   }
 
   Post get post => widget.post;
   VoidCallback? get onActionCompleted => widget.onActionCompleted;
+
+  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  /// - 本文全体（メンション除去後）が JSON オブジェクト/配列 or YAML マッピングとしてパース可能
+  /// - CW が「実行結果」で本文が YAML としてパース可能
+  /// メンション除去後の本文テキストを返す。
+  static String _stripMentions(String plainText) {
+    return plainText.replaceAll(RegExp(r'@[\w.@-]+\s*'), '').trim();
+  }
+
+  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  bool _isStructuredContent(String plainText, String? spoilerText) {
+    final body = _stripMentions(plainText);
+    if (body.isEmpty) return false;
+
+    // JSON オブジェクト/配列として有効か
+    if (body.startsWith('{') || body.startsWith('[')) {
+      try {
+        final parsed = json.decode(body);
+        if (parsed is Map || parsed is List) return true;
+      } catch (_) {}
+    }
+
+    // YAML として Map/List にパースできるか — CW 付き投稿のみ対象
+    // （CW なしだと `key: value` を含む普通の投稿が誤検知される）
+    if (spoilerText != null && spoilerText.isNotEmpty) {
+      try {
+        final parsed = loadYaml(body);
+        if (parsed is Map || parsed is List) return true;
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  Widget _buildCodeBlock(String plainText) {
+    final body = _stripMentions(plainText);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              'モロヘイヤ',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade600,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          SelectableText(
+            body,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildContentText(InlineSpan contentSpan) {
     final textWidget = Text.rich(
@@ -500,6 +589,27 @@ class _PostTileState extends ConsumerState<PostTile> {
                             ...displayPost.emojis,
                             ...displayPost.author.emojis,
                           };
+                          // 構造化テキスト判定用のプレーンテキスト
+                          final plainBody = isHtml
+                              ? parsed.body
+                                    .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+                                    .replaceAll(RegExp(r'<[^>]*>'), '')
+                                    .replaceAll('&amp;', '&')
+                                    .replaceAll('&lt;', '<')
+                                    .replaceAll('&gt;', '>')
+                                    .replaceAll('&quot;', '"')
+                                    .replaceAll('&#39;', "'")
+                              : parsed.body;
+                          final isStructured = _isStructuredContent(
+                            plainBody,
+                            displayPost.spoilerText,
+                          );
+                          if (isStructured) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [_buildCodeBlock(plainBody)],
+                            );
+                          }
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -517,8 +627,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   );
                                   // Use a plain TextSpan for overflow measurement
                                   // because TextPainter cannot measure WidgetSpan.
+                                  // HTML の場合はタグ除去済みテキストで測定する。
                                   final measureSpan = TextSpan(
-                                    text: parsed.body,
+                                    text: isHtml ? plainBody : parsed.body,
                                     style: baseStyle,
                                   );
                                   final textPainter = TextPainter(
@@ -689,14 +800,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                             },
                           ),
                         ),
-                      if ((displayPost.card ?? _fetchedCard) != null &&
-                          displayPost.attachments.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: _PreviewCardWidget(
-                            card: (displayPost.card ?? _fetchedCard)!,
-                          ),
-                        ),
+                      if (displayPost.attachments.isEmpty)
+                        ..._buildPreviewCards(displayPost),
                       if (displayPost.poll != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -1647,14 +1752,28 @@ class _PollWidget extends ConsumerStatefulWidget {
 class _PollWidgetState extends ConsumerState<_PollWidget> {
   late Set<int> _selected;
   bool _submitting = false;
+  bool _votedLocally = false;
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.poll.ownVotes.toSet();
+    _selected = widget.poll.voted ? widget.poll.ownVotes.toSet() : {};
   }
 
-  bool get _hasVoted => widget.poll.voted;
+  @override
+  void didUpdateWidget(covariant _PollWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.poll.id != widget.poll.id) {
+      _selected = widget.poll.voted ? widget.poll.ownVotes.toSet() : {};
+      _votedLocally = false;
+    } else if (_votedLocally && widget.poll.voted) {
+      // Server-updated data arrived; stop local adjustment.
+      _selected = widget.poll.ownVotes.toSet();
+      _votedLocally = false;
+    }
+  }
+
+  bool get _hasVoted => widget.poll.voted || _votedLocally;
   bool get _showResults => _hasVoted || widget.poll.expired;
 
   Future<void> _vote() async {
@@ -1679,6 +1798,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+    if (mounted) setState(() => _votedLocally = true);
     try {
       widget.onActionCompleted?.call();
     } catch (e) {
@@ -1698,20 +1818,38 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     return '残りわずか';
   }
 
+  int _adjustedVoteCount(int index) {
+    final base = widget.poll.options[index].votesCount;
+    if (_votedLocally && _selected.contains(index)) return base + 1;
+    return base;
+  }
+
+  int get _adjustedTotalVotes {
+    final base = widget.poll.options.fold<int>(0, (s, o) => s + o.votesCount);
+    if (_votedLocally) return base + _selected.length;
+    return base;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final poll = widget.poll;
-    final totalVotes = poll.options.fold<int>(
-      0,
-      (sum, o) => sum + o.votesCount,
-    );
+    final totalVotes = _adjustedTotalVotes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < poll.options.length; i++)
-          _buildOption(context, theme, poll.options[i], i, totalVotes),
+          _buildOption(
+            context,
+            theme,
+            PollOption(
+              title: poll.options[i].title,
+              votesCount: _adjustedVoteCount(i),
+            ),
+            i,
+            totalVotes,
+          ),
         const SizedBox(height: 6),
         Row(
           children: [
@@ -1761,7 +1899,9 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   ) {
     final fraction = totalVotes > 0 ? option.votesCount / totalVotes : 0.0;
     final percentage = (fraction * 100).round();
-    final isOwnVote = widget.poll.ownVotes.contains(index);
+    final isOwnVote =
+        widget.poll.ownVotes.contains(index) ||
+        (_votedLocally && _selected.contains(index));
 
     if (_showResults) {
       return Padding(

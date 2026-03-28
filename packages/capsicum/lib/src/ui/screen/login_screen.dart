@@ -381,21 +381,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       // Accept either a bare code or a full callback URL.
       final String extractedCode;
+      final bool codeFromCustomScheme;
       if (code.contains('code=')) {
         final uri = Uri.parse(code);
         extractedCode = uri.queryParameters['code'] ?? code;
+        codeFromCustomScheme = uri.scheme == 'capsicum';
       } else {
         extractedCode = code;
+        codeFromCustomScheme = false;
       }
 
-      // Use the OOB redirect URI and (possibly updated) credentials
-      // for token exchange.
-      final oobExtra = Map<String, String>.from(extra);
-      oobExtra['redirect_uri'] = oobRedirect;
-      oobExtra['client_id'] = clientId;
-      oobExtra['client_secret'] = clientSecret;
+      // If the code came from a capsicum:// URL, it was issued for the
+      // custom-scheme redirect URI — use the original redirect_uri.
+      // Otherwise assume it came from the OOB browser flow.
+      final exchangeExtra = Map<String, String>.from(extra);
+      if (!codeFromCustomScheme) {
+        exchangeExtra['redirect_uri'] = oobRedirect;
+      }
+      exchangeExtra['client_id'] = clientId;
+      exchangeExtra['client_secret'] = clientSecret;
       final callbackUri = Uri(queryParameters: {'code': extractedCode});
-      final result = await loginSupport.completeLogin(callbackUri, oobExtra);
+      final result = await loginSupport.completeLogin(
+        callbackUri,
+        exchangeExtra,
+      );
 
       if (result is LoginSuccess) {
         final adapter = loginSupport as DecentralizedBackendAdapter;

@@ -88,7 +88,7 @@ class UserAvatar extends StatelessWidget {
 
     if (decoration.angle != 0) {
       image = Transform.rotate(
-        angle: decoration.angle * math.pi / 180,
+        angle: decoration.angle * 2 * math.pi,
         child: image,
       );
     }

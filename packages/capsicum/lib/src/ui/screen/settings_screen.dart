@@ -23,6 +23,8 @@ class SettingsScreen extends ConsumerWidget {
           _ThemeColorTile(ref: ref),
           _TabOrderTile(ref: ref),
           _sectionHeader(context, '共通'),
+          _ThemeModeTile(ref: ref),
+          _HideLivecureTile(ref: ref),
           _FontScaleTile(fontScale: fontScale, ref: ref),
         ],
       ),
@@ -247,6 +249,60 @@ class _ColorCircle extends StatelessWidget {
             ? const Icon(Icons.check, color: Colors.white, size: 18)
             : null,
       ),
+    );
+  }
+}
+
+class _ThemeModeTile extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _ThemeModeTile({required this.ref});
+
+  static const _labels = {
+    ThemeMode.system: 'システム設定に従う',
+    ThemeMode.light: 'ライト',
+    ThemeMode.dark: 'ダーク',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final current = ref.watch(themeModeProvider);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('テーマ', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<ThemeMode>(
+            segments: [
+              for (final entry in _labels.entries)
+                ButtonSegment(value: entry.key, label: Text(entry.value)),
+            ],
+            selected: {current},
+            onSelectionChanged: (selected) {
+              ref.read(themeModeProvider.notifier).setMode(selected.first);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HideLivecureTile extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _HideLivecureTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final hide = ref.watch(hideLivecureProvider);
+    return SwitchListTile(
+      title: const Text('#実況 タグの投稿を非表示'),
+      subtitle: const Text('実況中の投稿をタイムラインから隠します'),
+      value: hide,
+      onChanged: (_) => ref.read(hideLivecureProvider.notifier).toggle(),
     );
   }
 }

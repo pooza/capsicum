@@ -20,6 +20,18 @@ class PostDraft {
   /// ISO 639-1 language code for the post (Mastodon only).
   final String? language;
 
+  /// Poll options (choice texts). When non-null, a poll is attached.
+  final List<String>? pollOptions;
+
+  /// Poll expiration duration in seconds.
+  final int? pollExpiresIn;
+
+  /// Whether multiple choices are allowed.
+  final bool pollMultiple;
+
+  /// Hide vote totals until poll ends (Mastodon only).
+  final bool pollHideTotals;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -33,5 +45,9 @@ class PostDraft {
     this.skipMulukhiya = false,
     this.scheduledAt,
     this.language,
+    this.pollOptions,
+    this.pollExpiresIn,
+    this.pollMultiple = false,
+    this.pollHideTotals = false,
   });
 }

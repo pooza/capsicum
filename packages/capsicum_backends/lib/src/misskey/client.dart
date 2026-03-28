@@ -235,6 +235,48 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/drive/files
+  Future<List<MisskeyDriveFile>> getDriveFiles({
+    String? folderId,
+    String? sinceId,
+    String? untilId,
+    int? limit,
+    String? type,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/files',
+      data: createBody({
+        'folderId': ?folderId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+        'type': ?type,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyDriveFile.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/drive/folders
+  Future<List<Map<String, dynamic>>> getDriveFolders({
+    String? folderId,
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/folders',
+      data: createBody({
+        'folderId': ?folderId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/drive/files/update
   Future<MisskeyDriveFile> updateDriveFile(
     String fileId, {
@@ -257,20 +299,23 @@ class MisskeyClient {
     String? cw,
     bool? localOnly,
     String? channelId,
+    Map<String, dynamic>? poll,
     Map<String, String>? extraHeaders,
   }) async {
+    final body = createBody({
+      'text': text,
+      'visibility': visibility,
+      'replyId': ?replyId,
+      'renoteId': ?renoteId,
+      'fileIds': ?fileIds,
+      'cw': ?cw,
+      'localOnly': ?localOnly,
+      'channelId': ?channelId,
+      'poll': ?poll,
+    });
     final response = await dio.post(
       '/api/notes/create',
-      data: createBody({
-        'text': text,
-        'visibility': visibility,
-        'replyId': ?replyId,
-        'renoteId': ?renoteId,
-        'fileIds': ?fileIds,
-        'cw': ?cw,
-        'localOnly': ?localOnly,
-        'channelId': ?channelId,
-      }),
+      data: body,
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MisskeyNote.fromJson(
@@ -633,6 +678,42 @@ class MisskeyClient {
     final response = await dio.post(
       '/api/flash/featured',
       data: createBody({}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/gallery/featured
+  Future<List<Map<String, dynamic>>> getGalleryFeatured({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/gallery/featured',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/users/gallery/posts
+  Future<List<Map<String, dynamic>>> getUserGalleryPosts(
+    String userId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/gallery/posts',
+      data: createBody({
+        'userId': userId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
   }
