@@ -209,6 +209,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       );
       return null;
     }
+    Map<String, dynamic>? poll;
+    if (draft.pollOptions != null && draft.pollOptions!.isNotEmpty) {
+      poll = {
+        'choices': draft.pollOptions,
+        'multiple': draft.pollMultiple,
+        if (draft.pollExpiresIn != null)
+          'expiredAfter': draft.pollExpiresIn! * 1000,
+      };
+    }
     final note = await client.createNote(
       text: draft.content ?? '',
       visibility: misskeyVisibilityFromScope(draft.scope),
@@ -218,6 +227,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       cw: draft.spoilerText,
       localOnly: draft.localOnly ? true : null,
       channelId: draft.channelId,
+      poll: poll,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return note.toCapsicum(host, adminRoleIds: _adminRoleIds);

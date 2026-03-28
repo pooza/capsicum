@@ -299,20 +299,23 @@ class MisskeyClient {
     String? cw,
     bool? localOnly,
     String? channelId,
+    Map<String, dynamic>? poll,
     Map<String, String>? extraHeaders,
   }) async {
+    final body = createBody({
+      'text': text,
+      'visibility': visibility,
+      'replyId': ?replyId,
+      'renoteId': ?renoteId,
+      'fileIds': ?fileIds,
+      'cw': ?cw,
+      'localOnly': ?localOnly,
+      'channelId': ?channelId,
+      'poll': ?poll,
+    });
     final response = await dio.post(
       '/api/notes/create',
-      data: createBody({
-        'text': text,
-        'visibility': visibility,
-        'replyId': ?replyId,
-        'renoteId': ?renoteId,
-        'fileIds': ?fileIds,
-        'cw': ?cw,
-        'localOnly': ?localOnly,
-        'channelId': ?channelId,
-      }),
+      data: body,
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
     return MisskeyNote.fromJson(

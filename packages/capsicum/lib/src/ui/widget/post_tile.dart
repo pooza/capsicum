@@ -1755,14 +1755,24 @@ class _PollWidget extends ConsumerStatefulWidget {
 class _PollWidgetState extends ConsumerState<_PollWidget> {
   late Set<int> _selected;
   bool _submitting = false;
+  bool _votedLocally = false;
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.poll.ownVotes.toSet();
+    _selected = widget.poll.voted ? widget.poll.ownVotes.toSet() : {};
   }
 
-  bool get _hasVoted => widget.poll.voted;
+  @override
+  void didUpdateWidget(covariant _PollWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.poll.id != widget.poll.id) {
+      _selected = widget.poll.voted ? widget.poll.ownVotes.toSet() : {};
+      _votedLocally = false;
+    }
+  }
+
+  bool get _hasVoted => widget.poll.voted || _votedLocally;
   bool get _showResults => _hasVoted || widget.poll.expired;
 
   Future<void> _vote() async {
@@ -1787,6 +1797,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+    if (mounted) setState(() => _votedLocally = true);
     try {
       widget.onActionCompleted?.call();
     } catch (e) {
@@ -1806,20 +1817,38 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     return '残りわずか';
   }
 
+  int _adjustedVoteCount(int index) {
+    final base = widget.poll.options[index].votesCount;
+    if (_votedLocally && _selected.contains(index)) return base + 1;
+    return base;
+  }
+
+  int get _adjustedTotalVotes {
+    final base = widget.poll.options.fold<int>(0, (s, o) => s + o.votesCount);
+    if (_votedLocally) return base + _selected.length;
+    return base;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final poll = widget.poll;
-    final totalVotes = poll.options.fold<int>(
-      0,
-      (sum, o) => sum + o.votesCount,
-    );
+    final totalVotes = _adjustedTotalVotes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < poll.options.length; i++)
-          _buildOption(context, theme, poll.options[i], i, totalVotes),
+          _buildOption(
+            context,
+            theme,
+            PollOption(
+              title: poll.options[i].title,
+              votesCount: _adjustedVoteCount(i),
+            ),
+            i,
+            totalVotes,
+          ),
         const SizedBox(height: 6),
         Row(
           children: [
@@ -1869,7 +1898,8 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   ) {
     final fraction = totalVotes > 0 ? option.votesCount / totalVotes : 0.0;
     final percentage = (fraction * 100).round();
-    final isOwnVote = widget.poll.ownVotes.contains(index);
+    final isOwnVote = widget.poll.ownVotes.contains(index) ||
+        (_votedLocally && _selected.contains(index));
 
     if (_showResults) {
       return Padding(

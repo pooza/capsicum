@@ -69,6 +69,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
 
+  // Poll state
+  bool _pollEnabled = false;
+  final List<TextEditingController> _pollControllers = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  bool _pollMultiple = false;
+  int _pollExpiresIn = 86400; // 1 day in seconds
+
   static const _languageOptions = {
     'ja': '日本語',
     'en': 'English',
@@ -264,6 +273,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
+    for (final c in _pollControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -444,6 +456,115 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
+  static const _pollDurationOptions = <int, String>{
+    300: '5分',
+    1800: '30分',
+    3600: '1時間',
+    21600: '6時間',
+    43200: '12時間',
+    86400: '1日',
+    259200: '3日',
+    604800: '7日',
+  };
+
+  void _addPollOption() {
+    if (_pollControllers.length >= 10) return;
+    setState(() => _pollControllers.add(TextEditingController()));
+  }
+
+  void _removePollOption(int index) {
+    if (_pollControllers.length <= 2) return;
+    setState(() {
+      _pollControllers[index].dispose();
+      _pollControllers.removeAt(index);
+    });
+  }
+
+  Widget _buildPollEditor() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < _pollControllers.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _pollControllers[i],
+                      decoration: InputDecoration(
+                        hintText: '選択肢 ${i + 1}',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  if (_pollControllers.length > 2)
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: _sending
+                          ? null
+                          : () => _removePollOption(i),
+                    ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              if (_pollControllers.length < 10)
+                TextButton.icon(
+                  onPressed: _sending ? null : _addPollOption,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('選択肢を追加'),
+                ),
+              const Spacer(),
+              FilterChip(
+                label: const Text('複数選択'),
+                selected: _pollMultiple,
+                onSelected: _sending
+                    ? null
+                    : (v) => setState(() => _pollMultiple = v),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              const Icon(Icons.timer_outlined, size: 16),
+              const SizedBox(width: 4),
+              DropdownButton<int>(
+                value: _pollExpiresIn,
+                underline: const SizedBox.shrink(),
+                isDense: true,
+                onChanged: _sending
+                    ? null
+                    : (v) {
+                        if (v != null) setState(() => _pollExpiresIn = v);
+                      },
+                items: _pollDurationOptions.entries
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _editDescription(int index) async {
     final entry = _attachments[index];
     final descController = TextEditingController(text: entry.description);
@@ -616,7 +737,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   Future<void> _submit() async {
     final text = _controller.text.trim();
-    if (text.isEmpty && _attachments.isEmpty) return;
+    if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
+
+    if (_pollEnabled) {
+      final filledOptions = _pollControllers
+          .map((c) => c.text.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      if (filledOptions.length < 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('選択肢を2つ以上入力してください')),
+        );
+        return;
+      }
+    }
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -656,6 +790,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           channelId: widget.channelId,
           scheduledAt: _scheduledAt,
           language: _language,
+          pollOptions: _pollEnabled
+              ? _pollControllers
+                    .map((c) => c.text.trim())
+                    .where((t) => t.isNotEmpty)
+                    .toList()
+              : null,
+          pollExpiresIn: _pollEnabled ? _pollExpiresIn : null,
+          pollMultiple: _pollEnabled && _pollMultiple,
         ),
       );
       if (mounted) {
@@ -796,6 +938,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   },
                 ),
               ),
+            if (_pollEnabled) ...[
+              const Divider(),
+              _buildPollEditor(),
+            ],
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(
@@ -899,6 +1045,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   ),
                   tooltip: '閲覧注意',
                 ),
+                if (ref.watch(currentAdapterProvider) is PollSupport)
+                  IconButton(
+                    onPressed: _sending
+                        ? null
+                        : () => setState(
+                            () => _pollEnabled = !_pollEnabled,
+                          ),
+                    icon: Icon(
+                      Icons.poll_outlined,
+                      color: _pollEnabled
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: 'アンケート',
+                  ),
                 if (_attachments.isNotEmpty)
                   IconButton(
                     onPressed: _sending
