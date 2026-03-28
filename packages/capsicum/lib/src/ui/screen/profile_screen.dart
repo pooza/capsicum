@@ -264,8 +264,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _loadMoreGalleryPosts() async {
-    if (_loadingMoreGallery || !_hasMoreGallery || _galleryPosts.isEmpty)
+    if (_loadingMoreGallery || !_hasMoreGallery || _galleryPosts.isEmpty) {
       return;
+    }
 
     setState(() => _loadingMoreGallery = true);
 
