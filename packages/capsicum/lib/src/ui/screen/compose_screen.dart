@@ -153,6 +153,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _initReplyMentions(replyTo);
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
+    } else {
+      final account = ref.read(currentAccountProvider);
+      if (account != null && account.user.defaultScope != null) {
+        _scope = account.user.defaultScope!;
+      }
     }
     _controller.addListener(_onTextChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定

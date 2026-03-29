@@ -1,3 +1,5 @@
+import 'post_scope.dart';
+
 class UserField {
   final String name;
   final String value;
@@ -59,6 +61,7 @@ class User {
   final List<AvatarDecoration> avatarDecorations;
   final String? url;
   final DateTime? createdAt;
+  final PostScope? defaultScope;
 
   const User({
     required this.id,
@@ -79,5 +82,6 @@ class User {
     this.avatarDecorations = const [],
     this.url,
     this.createdAt,
+    this.defaultScope,
   });
 }
