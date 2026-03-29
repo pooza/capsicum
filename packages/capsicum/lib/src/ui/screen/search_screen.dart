@@ -19,8 +19,10 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen>
+    with SingleTickerProviderStateMixin {
   final _controller = TextEditingController();
+  late final TabController _tabController;
   SearchResults? _results;
   _QueryType? _queryType;
   bool _loading = false;
@@ -30,8 +32,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String? _notestockNextUrl;
 
   @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -257,30 +266,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
-    return DefaultTabController(
-      length: 4,
-      child: Column(
-        children: [
-          TabBar(
-            tabs: [
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: [
               const Tab(text: 'アカウント'),
               const Tab(text: 'ハッシュタグ'),
               Tab(text: ref.watch(postLabelProvider)),
               const Tab(text: 'notestock'),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _buildUserList(results.users),
-                _buildHashtagList(results.hashtags),
-                _buildPostList(results.posts),
-                _buildNotestockList(),
-              ],
-            ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildUserList(results.users),
+              _buildHashtagList(results.hashtags),
+              _buildPostList(results.posts),
+              _buildNotestockList(),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
