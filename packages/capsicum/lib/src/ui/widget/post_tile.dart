@@ -21,18 +21,7 @@ import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 
-String _stripHtml(String html) {
-  return html
-      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-      .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'");
-}
+String _stripHtml(String html) => stripHtml(html);
 
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
@@ -591,14 +580,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                           };
                           // 構造化テキスト判定用のプレーンテキスト
                           final plainBody = isHtml
-                              ? parsed.body
-                                    .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-                                    .replaceAll(RegExp(r'<[^>]*>'), '')
-                                    .replaceAll('&amp;', '&')
-                                    .replaceAll('&lt;', '<')
-                                    .replaceAll('&gt;', '>')
-                                    .replaceAll('&quot;', '"')
-                                    .replaceAll('&#39;', "'")
+                              ? stripHtml(parsed.body)
                               : parsed.body;
                           final isStructured = _isStructuredContent(
                             plainBody,

@@ -12,6 +12,7 @@ import '../../constants.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
+import '../widget/content_parser.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   final String host;
@@ -87,19 +88,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .trim();
-  }
+  String _stripHtml(String html) => stripHtml(html).trim();
 
   Future<void> _login() async {
     if (_loginCompleted) return;

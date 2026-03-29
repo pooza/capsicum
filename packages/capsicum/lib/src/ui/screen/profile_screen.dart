@@ -1127,18 +1127,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return '@$username@$host';
   }
 
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-  }
+  String _stripHtml(String html) => stripHtml(html);
 
   Widget _buildServerInfo(String host, ThemeData theme) {
     final themeColors = ref.watch(hostThemeColorProvider);

@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -308,18 +309,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   void _insertEmoji(String emoji) {
@@ -1198,18 +1188,7 @@ class _ReplyPreview extends StatelessWidget {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   @override
@@ -1275,18 +1254,7 @@ class _QuotePreview extends StatelessWidget {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   @override
