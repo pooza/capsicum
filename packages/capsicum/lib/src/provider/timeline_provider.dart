@@ -58,11 +58,41 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
 
-    // Initial REST fetch.
-    final response = await adapter.getTimeline(
-      type,
-      query: const TimelineQuery(limit: _pageSize),
-    );
+    // Initial REST fetch — retry pages until visible posts are found or the
+    // timeline is exhausted (same logic as loadMore).
+    final hideLivecure = ref.watch(hideLivecureProvider);
+    final allVisible = <Post>[];
+    String? maxId;
+    bool hasMore = true;
+
+    while (hasMore) {
+      final response = await adapter.getTimeline(
+        type,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      );
+
+      if (response.posts.isEmpty) {
+        final rawLast = response.rawLastId;
+        if (rawLast != null && rawLast != maxId) {
+          hasMore = response.rawCount > 0;
+          maxId = rawLast;
+          if (hasMore) continue;
+        }
+        hasMore = false;
+        break;
+      }
+
+      hasMore = response.rawCount > 0;
+      maxId = response.posts.last.id;
+
+      final visible = response.posts
+          .where((p) => p.filterAction != FilterAction.hide)
+          .where((p) => !hideLivecure || !_hasLivecureTag(p))
+          .toList();
+      allVisible.addAll(visible);
+
+      if (allVisible.isNotEmpty || !hasMore) break;
+    }
 
     // Start streaming if supported.
     if (adapter is StreamSupport) {
@@ -76,12 +106,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
-    final hideLivecure = ref.watch(hideLivecureProvider);
-    final visible = response.posts
-        .where((p) => p.filterAction != FilterAction.hide)
-        .where((p) => !hideLivecure || !_hasLivecureTag(p))
-        .toList();
-    return TimelineState(posts: visible, hasMore: response.rawCount > 0);
+    return TimelineState(posts: allVisible, hasMore: hasMore);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
