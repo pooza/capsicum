@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
@@ -133,6 +134,38 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 'キーワード  全文検索',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.grey, height: 1.8),
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                '外部の検索サービス',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('notestock'),
+                    onPressed: () => launchUrl(
+                      Uri.parse('https://notestock.osa-p.net'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('Fediver'),
+                    onPressed: () => launchUrl(
+                      Uri.parse('https://f.chomechome.jp'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
