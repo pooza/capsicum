@@ -32,6 +32,10 @@ class PostDraft {
   /// Hide vote totals until poll ends (Mastodon only).
   final bool pollHideTotals;
 
+  /// Quote approval policy (Mastodon 4.5+).
+  /// Values: 'public', 'followers', 'nobody'.
+  final String? quoteApprovalPolicy;
+
   const PostDraft({
     this.content,
     this.scope = PostScope.public,
@@ -49,5 +53,6 @@ class PostDraft {
     this.pollExpiresIn,
     this.pollMultiple = false,
     this.pollHideTotals = false,
+    this.quoteApprovalPolicy,
   });
 }

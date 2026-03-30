@@ -246,6 +246,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
         sensitive: draft.sensitive ? true : null,
         language: draft.language,
+        quoteApprovalPolicy: draft.quoteApprovalPolicy,
         extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
       );
       return null;
@@ -263,6 +264,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       pollExpiresIn: draft.pollExpiresIn,
       pollMultiple: draft.pollMultiple ? true : null,
       pollHideTotals: draft.pollHideTotals ? true : null,
+      quoteApprovalPolicy: draft.quoteApprovalPolicy,
       extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
     );
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);

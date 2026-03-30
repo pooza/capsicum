@@ -70,6 +70,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
 
+  // Quote approval policy (Mastodon 4.5+)
+  String? _quoteApprovalPolicy;
+
   // Poll state
   bool _pollEnabled = false;
   final List<TextEditingController> _pollControllers = [
@@ -78,6 +81,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   ];
   bool _pollMultiple = false;
   int _pollExpiresIn = 86400; // 1 day in seconds
+
+  static const _quoteApprovalLabels = {
+    'public': '誰でも',
+    'followers': 'フォロワーのみ',
+    'nobody': '許可しない',
+  };
+
+  static const _quoteApprovalIcons = {
+    'public': Icons.public,
+    'followers': Icons.lock_outline,
+    'nobody': Icons.block,
+  };
 
   static const _languageOptions = {
     'ja': '日本語',
@@ -791,6 +806,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               : null,
           pollExpiresIn: _pollEnabled ? _pollExpiresIn : null,
           pollMultiple: _pollEnabled && _pollMultiple,
+          quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
       if (mounted) {
@@ -1129,6 +1145,51 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                                 child: Text(
                                   e.value,
                                   style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  if (ref.watch(currentAdapterProvider) is MastodonAdapter)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: DropdownButton<String?>(
+                        value: _quoteApprovalPolicy,
+                        underline: const SizedBox.shrink(),
+                        isDense: true,
+                        hint: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.format_quote, size: 16),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '引用許可',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        onChanged: _sending
+                            ? null
+                            : (v) =>
+                                setState(() => _quoteApprovalPolicy = v),
+                        items: _quoteApprovalLabels.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _quoteApprovalIcons[e.key],
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      e.value,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ],
                                 ),
                               ),
                             )
