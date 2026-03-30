@@ -359,7 +359,74 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Instance> getInstance() => throw UnimplementedError();
+  Future<Instance> getInstance() async {
+    try {
+      return _parseInstanceV2(await client.getInstanceV2());
+    } on DioException {
+      return _parseInstanceV1(await client.getInstanceV1());
+    }
+  }
+
+  Instance _parseInstanceV2(Map<String, dynamic> data) {
+    final contact = data['contact'] as Map<String, dynamic>? ?? {};
+    final config = data['configuration'] as Map<String, dynamic>? ?? {};
+    final accountData = contact['account'] as Map<String, dynamic>?;
+    User? contactAccount;
+    if (accountData != null) {
+      contactAccount = MastodonAccount.fromJson(accountData)
+          .toCapsicum(host, adminRoleIds: _adminRoleIds);
+    }
+    final rulesRaw = data['rules'] as List<dynamic>? ?? [];
+    final rules = rulesRaw
+        .map((r) => (r as Map<String, dynamic>)['text'] as String? ?? '')
+        .where((t) => t.isNotEmpty)
+        .toList();
+    return Instance(
+      name: data['title'] as String? ?? host,
+      description: data['description'] as String?,
+      iconUrl: _extractIconUrl(data),
+      version: data['version'] as String?,
+      themeColor: (config['accent_color'] as String?) ??
+          (data['accent_color'] as String?),
+      contactEmail: contact['email'] as String?,
+      contactAccount: contactAccount,
+      rules: rules,
+      privacyPolicyUrl: 'https://$host/privacy-policy',
+    );
+  }
+
+  Instance _parseInstanceV1(Map<String, dynamic> data) {
+    final contactData = data['contact_account'] as Map<String, dynamic>?;
+    User? contactAccount;
+    if (contactData != null) {
+      contactAccount = MastodonAccount.fromJson(contactData)
+          .toCapsicum(host, adminRoleIds: _adminRoleIds);
+    }
+    final rulesRaw = data['rules'] as List<dynamic>? ?? [];
+    final rules = rulesRaw
+        .map((r) => (r as Map<String, dynamic>)['text'] as String? ?? '')
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    return Instance(
+      name: data['title'] as String? ?? host,
+      description: data['description'] as String?,
+      version: data['version'] as String?,
+      contactEmail: data['email'] as String?,
+      contactAccount: contactAccount,
+      rules: rules,
+      privacyPolicyUrl: 'https://$host/privacy-policy',
+    );
+  }
+
+  String? _extractIconUrl(Map<String, dynamic> v2Data) {
+    final icon = v2Data['icon'] as List<dynamic>?;
+    if (icon != null && icon.isNotEmpty) {
+      return (icon.first as Map<String, dynamic>)['src'] as String?;
+    }
+    final thumbnail = v2Data['thumbnail'] as Map<String, dynamic>?;
+    return thumbnail?['url'] as String?;
+  }
 
   @override
   Future<Attachment> uploadAttachment(AttachmentDraft draft) async {

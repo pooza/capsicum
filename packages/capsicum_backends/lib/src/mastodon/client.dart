@@ -739,6 +739,18 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /health
+  Future<String> checkHealth() async {
+    final response = await dio.get('/health');
+    return response.data.toString().trim();
+  }
+
+  /// GET /api/v1/streaming/health
+  Future<String> checkStreamingHealth() async {
+    final response = await dio.get('/api/v1/streaming/health');
+    return response.data.toString().trim();
+  }
+
   /// Probe whether the public timeline is accessible.
   /// Returns true if accessible, false if 403/401.
   Future<bool> probePublicTimeline({bool? local}) async {

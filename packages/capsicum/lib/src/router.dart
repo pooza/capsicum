@@ -23,6 +23,7 @@ import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
+import 'ui/screen/server_info_screen.dart';
 import 'ui/screen/settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/list_management_screen.dart';
@@ -108,6 +109,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/server-info',
+        builder: (context, state) => const ServerInfoScreen(),
       ),
       GoRoute(
         path: '/lists/manage',

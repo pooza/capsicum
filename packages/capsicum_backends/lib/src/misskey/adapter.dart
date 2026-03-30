@@ -412,7 +412,30 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<Post> unrepeatPost(String id) => throw UnimplementedError();
 
   @override
-  Future<Instance> getInstance() => throw UnimplementedError();
+  Future<Instance> getInstance() async {
+    final data = await client.getMeta();
+    final rulesRaw = data['serverRules'] as List<dynamic>? ?? [];
+    final rules = rulesRaw
+        .map((r) {
+          if (r is Map<String, dynamic>) return r['text'] as String? ?? '';
+          if (r is String) return r;
+          return '';
+        })
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    return Instance(
+      name: data['name'] as String? ?? host,
+      description: data['description'] as String?,
+      iconUrl: data['iconUrl'] as String?,
+      version: data['version'] as String?,
+      themeColor: data['themeColor'] as String?,
+      contactEmail: data['maintainerEmail'] as String?,
+      contactUrl: data['impressumUrl'] as String?,
+      rules: rules,
+      privacyPolicyUrl: data['privacyPolicyUrl'] as String?,
+    );
+  }
 
   @override
   Future<Attachment> uploadAttachment(AttachmentDraft draft) async {

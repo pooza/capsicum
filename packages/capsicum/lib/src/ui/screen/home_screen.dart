@@ -907,6 +907,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
           ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('サーバー情報'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/server-info');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('設定'),
             onTap: () {

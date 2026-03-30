@@ -938,6 +938,12 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/ping
+  Future<Map<String, dynamic>> ping() async {
+    final response = await dio.post('/api/ping', data: {});
+    return response.data as Map<String, dynamic>;
+  }
+
   /// POST /api/meta (no authentication required)
   Future<Map<String, dynamic>> getMeta() async {
     final response = await dio.post('/api/meta', data: {});
