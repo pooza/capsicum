@@ -43,6 +43,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   bool _markerRestored = false;
+  bool _lastTabRestored = false;
+  String? _lastTabRestoredForAccount;
+  String? _pendingListRestore;
   Timer? _throttleTimer;
 
   @override
@@ -137,6 +140,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedList = ref.watch(selectedListProvider);
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
+
+    // Restore last selected tab once the saved value arrives from disk.
+    // Reset when the active account changes so each account gets its own tab.
+    if (account != null) {
+      final storageKey = account.key.toStorageKey();
+      if (_lastTabRestoredForAccount != storageKey) {
+        _lastTabRestored = false;
+        _lastTabRestoredForAccount = storageKey;
+        _pendingListRestore = null;
+        // Clear previous account's selection to avoid referencing
+        // lists/hashtags that don't exist on the new account.
+        ref.read(selectedListProvider.notifier).state = null;
+        ref.read(selectedHashtagProvider.notifier).state = null;
+        ref.read(selectedTimelineTypeProvider.notifier).state =
+            TimelineType.home;
+      }
+      if (!_lastTabRestored) {
+        ref.listen(lastTabProvider(storageKey), (prev, next) {
+          if (!_lastTabRestored && next != null) {
+            _lastTabRestored = true;
+            _applyLastTab(next);
+          }
+        });
+        // Also check synchronously in case the value was already loaded.
+        final saved = ref.read(lastTabProvider(storageKey));
+        if (!_lastTabRestored && saved != null) {
+          _lastTabRestored = true;
+          _applyLastTab(saved);
+        }
+      }
+    }
+
+    // Deferred list tab restore: apply once listsProvider finishes loading.
+    if (_pendingListRestore != null) {
+      ref.listen(listsProvider, (prev, next) {
+        final pendingId = _pendingListRestore;
+        if (pendingId == null) return;
+        final lists = next.valueOrNull ?? [];
+        final list = lists.where((l) => l.id == pendingId).firstOrNull;
+        if (list != null) {
+          _pendingListRestore = null;
+          ref.read(selectedListProvider.notifier).state = list;
+        }
+      });
+    }
 
     // Choose which timeline data to display.
     final AsyncValue<TimelineState> timeline;
@@ -359,6 +407,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (next < 0 || next >= tabs.length) return;
 
     ref.read(selectedTimelineTypeProvider.notifier).state = tabs[next];
+    _saveLastTab();
+  }
+
+  /// Persist the currently selected tab to SharedPreferences.
+  void _saveLastTab() {
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return;
+    final storageKey = account.key.toStorageKey();
+
+    final hashtag = ref.read(selectedHashtagProvider);
+    final list = ref.read(selectedListProvider);
+    final String value;
+    if (hashtag != null) {
+      value = 'hashtag:$hashtag';
+    } else if (list != null) {
+      value = 'list:${list.id}';
+    } else {
+      value = 'timeline:${ref.read(selectedTimelineTypeProvider).name}';
+    }
+    ref.read(lastTabProvider(storageKey).notifier).save(value);
+  }
+
+  /// Apply a saved tab value to the current selection providers.
+  void _applyLastTab(String saved) {
+    final parts = saved.split(':');
+    if (parts.length < 2) return;
+    final kind = parts[0];
+    final value = parts.sublist(1).join(':');
+
+    switch (kind) {
+      case 'timeline':
+        final type = TimelineType.values
+            .where((t) => t.name == value)
+            .firstOrNull;
+        if (type != null) {
+          final adapter = ref.read(currentAdapterProvider);
+          final supported =
+              adapter?.capabilities.supportedTimelines ??
+              {TimelineType.home, TimelineType.local, TimelineType.federated};
+          if (supported.contains(type)) {
+            ref.read(selectedTimelineTypeProvider.notifier).state = type;
+          }
+        }
+      case 'list':
+        final lists = ref.read(listsProvider).valueOrNull ?? [];
+        final list = lists.where((l) => l.id == value).firstOrNull;
+        if (list != null) {
+          ref.read(selectedListProvider.notifier).state = list;
+        } else {
+          // Lists may not be loaded yet — defer until they arrive.
+          _pendingListRestore = value;
+        }
+      case 'hashtag':
+        final account = ref.read(currentAccountProvider);
+        if (account != null) {
+          final pinned = ref.read(
+            pinnedHashtagsProvider(account.key.toStorageKey()),
+          );
+          if (pinned.contains(value)) {
+            ref.read(selectedHashtagProvider.notifier).state = value;
+          }
+        }
+    }
   }
 
   static bool _isForbiddenError(Object error) {
@@ -434,6 +545,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ref.read(selectedListProvider.notifier).state = null;
               ref.read(selectedHashtagProvider.notifier).state = null;
               ref.read(selectedTimelineTypeProvider.notifier).state = type;
+              _saveLastTab();
             });
           }),
           // List tabs.
@@ -443,6 +555,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             return _tabChip(context, list.title, isSelected, () {
               ref.read(selectedHashtagProvider.notifier).state = null;
               ref.read(selectedListProvider.notifier).state = list;
+              _saveLastTab();
             });
           }),
           // List management button.
@@ -460,6 +573,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             return _tabChip(context, '#$tag', isSelected, () {
               ref.read(selectedListProvider.notifier).state = null;
               ref.read(selectedHashtagProvider.notifier).state = tag;
+              _saveLastTab();
             });
           }),
           // Hashtag pin management button.
