@@ -54,8 +54,7 @@ class ServerInfoScreen extends ConsumerWidget {
                     width: 40,
                     height: 40,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Icons.dns, size: 40),
+                    errorBuilder: (_, _, _) => const Icon(Icons.dns, size: 40),
                   ),
                 )
               : const Icon(Icons.dns, size: 40),
