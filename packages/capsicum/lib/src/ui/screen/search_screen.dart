@@ -1,5 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
+
+import '../../constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -113,7 +115,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         response = await dio.get(nextUrl);
       } else {
         response = await dio.get(
-          'https://notestock.osa-p.net/api/v1/search.json',
+          '${AppConstants.notestockBaseUrl}/api/v1/search.json',
           queryParameters: {'acct': acct, 'q': query},
         );
       }
@@ -217,7 +219,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     avatar: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('notestock'),
                     onPressed: () => launchUrl(
-                      Uri.parse('https://notestock.osa-p.net'),
+                      AppConstants.notestockUrl,
                       mode: LaunchMode.externalApplication,
                     ),
                   ),
@@ -225,7 +227,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     avatar: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('Fediver'),
                     onPressed: () => launchUrl(
-                      Uri.parse('https://f.chomechome.jp'),
+                      AppConstants.fediverUrl,
                       mode: LaunchMode.externalApplication,
                     ),
                   ),
@@ -367,7 +369,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => launchUrl(
-                  Uri.parse('https://notestock.osa-p.net/setting/index.html'),
+                  Uri.parse('${AppConstants.notestockBaseUrl}/setting/index.html'),
                   mode: LaunchMode.externalApplication,
                 ),
                 child: const Text('notestock の設定を開く'),

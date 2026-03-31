@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:yaml/yaml.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
@@ -1712,7 +1713,7 @@ class _ReactionChips extends StatelessWidget {
         .where((r) => r != 0xFE0F) // strip variation selectors
         .map((r) => r.toRadixString(16))
         .join('-');
-    return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png';
+    return '${AppConstants.twemojiBaseUrl}/$codepoints.png';
   }
 }
 

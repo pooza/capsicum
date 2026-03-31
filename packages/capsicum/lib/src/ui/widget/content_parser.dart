@@ -1,5 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../../constants.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -968,7 +970,7 @@ class ContentRenderer {
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Image.network(
-            'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png',
+            '${AppConstants.twemojiBaseUrl}/$codepoints.png',
             width: emojiSize,
             height: emojiSize,
             errorBuilder: (_, _, _) => Text(emoji, style: style),
