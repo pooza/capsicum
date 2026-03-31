@@ -180,11 +180,14 @@ class ServerInfoScreen extends ConsumerWidget {
         if (state.healthChecks.isEmpty && !state.isCheckingHealth)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: FilledButton.icon(
-              onPressed: () =>
-                  ref.read(serverInfoProvider.notifier).runHealthChecks(),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('実行'),
+            child: SizedBox(
+              width: _actionButtonWidth,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    ref.read(serverInfoProvider.notifier).runHealthChecks(),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('実行'),
+              ),
             ),
           )
         else if (state.isCheckingHealth)
@@ -225,6 +228,8 @@ class ServerInfoScreen extends ConsumerWidget {
   }
 }
 
+const _actionButtonWidth = 160.0;
+
 class _MulukhiyaSection extends ConsumerStatefulWidget {
   @override
   ConsumerState<_MulukhiyaSection> createState() => _MulukhiyaSectionState();
@@ -253,10 +258,13 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: _detecting
               ? const Center(child: CircularProgressIndicator())
-              : FilledButton.icon(
-                  onPressed: _redetect,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('再検出'),
+              : SizedBox(
+                  width: _actionButtonWidth,
+                  child: FilledButton.icon(
+                    onPressed: _redetect,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('再検出'),
+                  ),
                 ),
         ),
       ],
