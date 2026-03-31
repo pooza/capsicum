@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../provider/account_manager_provider.dart';
+import '../../../provider/list_provider.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../../provider/server_config_provider.dart';
+import '../../widget/tab_management_sheet.dart';
 
 class AccountSettingsScreen extends ConsumerWidget {
   const AccountSettingsScreen({super.key});
@@ -185,6 +187,25 @@ class _TabOrderTile extends StatelessWidget {
                 onPressed: () => context.push('/lists/manage'),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: TextButton.icon(
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('タブ管理'),
+              onPressed: () {
+                final lists =
+                    ref.read(listsProvider).valueOrNull ?? [];
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => TabManagementSheet(
+                    storageKey: storageKey,
+                    allLists: lists,
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
