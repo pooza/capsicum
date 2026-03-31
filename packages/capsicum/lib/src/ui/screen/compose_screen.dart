@@ -633,6 +633,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           onClear: () {
             Navigator.pop(sheetContext);
             _insertTagsetYaml(null);
+            _restoreDecoration();
           },
           onEpisodeBrowser: () {
             Navigator.pop(sheetContext);
@@ -699,6 +700,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
+  }
+
+  Future<void> _restoreDecoration() async {
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+    try {
+      await mulukhiya.restoreDecoration(account.userSecret.accessToken);
+    } catch (_) {
+      // Decoration restore is best-effort; ignore failures.
+    }
   }
 
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
