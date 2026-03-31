@@ -11,6 +11,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
     final hideLivecure = ref.watch(hideLivecureProvider);
     final absoluteTime = ref.watch(absoluteTimeProvider);
     final blurAllImages = ref.watch(blurAllImagesProvider);
+    final previewCardMode = ref.watch(previewCardModeProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -33,12 +34,56 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(blurAllImagesProvider.notifier).toggle(),
           ),
+          ListTile(
+            title: const Text('プレビューカード（OGP）'),
+            subtitle: Text(_previewCardModeLabel(previewCardMode)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showPreviewCardModeDialog(context, ref),
+          ),
           SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
             value: hideLivecure,
             onChanged: (_) =>
                 ref.read(hideLivecureProvider.notifier).toggle(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _previewCardModeLabel(PreviewCardMode mode) {
+    return switch (mode) {
+      PreviewCardMode.show => '表示',
+      PreviewCardMode.blur => '画像をぼかす',
+      PreviewCardMode.hide => '非表示',
+    };
+  }
+
+  void _showPreviewCardModeDialog(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('プレビューカード（OGP）'),
+        children: [
+          RadioGroup<PreviewCardMode>(
+            groupValue: ref.watch(previewCardModeProvider),
+            onChanged: (value) {
+              if (value != null) {
+                ref.read(previewCardModeProvider.notifier).setMode(value);
+                Navigator.pop(context);
+              }
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final mode in PreviewCardMode.values)
+                  RadioListTile<PreviewCardMode>(
+                    title: Text(_previewCardModeLabel(mode)),
+                    value: mode,
+                  ),
+              ],
+            ),
           ),
         ],
       ),

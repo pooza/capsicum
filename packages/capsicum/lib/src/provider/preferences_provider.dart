@@ -14,6 +14,19 @@ const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
+const _previewCardModeKey = 'preview_card_mode';
+
+/// Display mode for OGP preview cards.
+enum PreviewCardMode {
+  /// Show preview cards normally.
+  show,
+
+  /// Blur the preview card image.
+  blur,
+
+  /// Hide preview cards entirely.
+  hide,
+}
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -338,6 +351,36 @@ class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('$_pinnedHashtagsPrefix$arg', state);
+  }
+}
+
+/// Display mode for OGP preview cards.
+final previewCardModeProvider =
+    NotifierProvider<PreviewCardModeNotifier, PreviewCardMode>(
+      PreviewCardModeNotifier.new,
+    );
+
+class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
+  @override
+  PreviewCardMode build() {
+    _load();
+    return PreviewCardMode.show;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_previewCardModeKey);
+    if (saved != null) {
+      final mode =
+          PreviewCardMode.values.where((m) => m.name == saved).firstOrNull;
+      if (mode != null) state = mode;
+    }
+  }
+
+  Future<void> setMode(PreviewCardMode mode) async {
+    state = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_previewCardModeKey, mode.name);
   }
 }
 

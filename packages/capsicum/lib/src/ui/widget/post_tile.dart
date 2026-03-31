@@ -2107,13 +2107,16 @@ class _QuoteStateCard extends StatelessWidget {
   }
 }
 
-class _PreviewCardWidget extends StatelessWidget {
+class _PreviewCardWidget extends ConsumerWidget {
   final PreviewCard card;
 
   const _PreviewCardWidget({required this.card});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(previewCardModeProvider);
+    if (mode == PreviewCardMode.hide) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     return GestureDetector(
       onTap: () {
@@ -2130,13 +2133,26 @@ class _PreviewCardWidget extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (card.imageUrl != null)
-              Image.network(
-                card.imageUrl!,
-                width: double.infinity,
-                height: 160,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
+              mode == PreviewCardMode.blur
+                  ? ClipRect(
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Image.network(
+                          card.imageUrl!,
+                          width: double.infinity,
+                          height: 160,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    )
+                  : Image.network(
+                      card.imageUrl!,
+                      width: double.infinity,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
