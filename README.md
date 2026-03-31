@@ -5,8 +5,7 @@ Mastodon / Misskey 対応の Fediverse クライアントアプリです。iPhon
 ## ダウンロード
 
 <a href="https://play.google.com/store/apps/details?id=net.shrieker.capsicum"><img alt="Google Play で手に入れよう" src="https://play.google.com/intl/ja/badges/static/images/badges/ja_badge_web_generic.png" height="80"></a>
-
-iOS 版は App Store 審査中です。
+<a href="https://apps.apple.com/jp/app/capsicum/id6760206608"><img alt="Download on the App Store" src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54"></a>
 
 ## 特徴
 
