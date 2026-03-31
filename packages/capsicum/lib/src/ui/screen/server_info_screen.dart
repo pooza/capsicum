@@ -180,13 +180,15 @@ class ServerInfoScreen extends ConsumerWidget {
         if (state.healthChecks.isEmpty && !state.isCheckingHealth)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SizedBox(
-              width: _actionButtonWidth,
-              child: FilledButton.icon(
-                onPressed: () =>
-                    ref.read(serverInfoProvider.notifier).runHealthChecks(),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('実行'),
+            child: Center(
+              child: SizedBox(
+                width: _actionButtonWidth,
+                child: FilledButton.icon(
+                  onPressed: () =>
+                      ref.read(serverInfoProvider.notifier).runHealthChecks(),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('実行'),
+                ),
               ),
             ),
           )
