@@ -24,6 +24,7 @@ class MisskeyUser {
   final List<Map<String, dynamic>>? avatarDecorations;
   final List<Map<String, dynamic>>? badgeRoles;
   final List<String>? verifiedLinks;
+  final String? defaultNoteVisibility;
   final DateTime? createdAt;
 
   const MisskeyUser({
@@ -47,6 +48,7 @@ class MisskeyUser {
     this.avatarDecorations,
     this.badgeRoles,
     this.verifiedLinks,
+    this.defaultNoteVisibility,
     this.createdAt,
   });
 

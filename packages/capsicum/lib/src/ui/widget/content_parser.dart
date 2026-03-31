@@ -1,6 +1,21 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+
+import '../../constants.dart';
+import '../../url_helper.dart';
+import 'package:html_unescape/html_unescape.dart';
+
+final _unescape = HtmlUnescape();
+
+/// HTML タグを除去し、文字参照をデコードしてプレーンテキストにする。
+String stripHtml(String html) {
+  return _unescape.convert(
+    html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
+        .replaceAll(RegExp(r'<[^>]*>'), ''),
+  );
+}
 
 /// Parsed content node types.
 enum _NodeType {
@@ -631,21 +646,8 @@ List<_Node> _parseHtml(String html) {
         RegExp(r'<code>([^<]*)</code>', caseSensitive: false),
         (m) => '`${m[1]}`',
       )
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'")
-      .replaceAllMapped(
-        RegExp(r'&#(\d+);'),
-        (m) => String.fromCharCode(int.parse(m[1]!)),
-      )
-      .replaceAllMapped(
-        RegExp(r'&#x([0-9a-fA-F]+);'),
-        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-      );
+      .replaceAll(RegExp(r'<[^>]*>'), '');
+  text = _unescape.convert(text);
   // Re-parse for URLs, emoji, hashtags, mentions using MFM parser
   // (these patterns are shared)
   return _parseMfm(text);
@@ -851,10 +853,8 @@ class ContentRenderer {
         final uri =
             Uri.tryParse(resolvedUrl) ??
             Uri.tryParse(Uri.encodeFull(resolvedUrl));
-        final isSafe =
-            uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
         final recognizer = TapGestureRecognizer()
-          ..onTap = isSafe ? () => launchUrl(uri) : null;
+          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
         _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
         final displayUrl =
@@ -968,7 +968,7 @@ class ContentRenderer {
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Image.network(
-            'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png',
+            '${AppConstants.twemojiBaseUrl}/$codepoints.png',
             width: emojiSize,
             height: emojiSize,
             errorBuilder: (_, _, _) => Text(emoji, style: style),

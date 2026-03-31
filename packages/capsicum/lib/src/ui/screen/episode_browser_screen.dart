@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 
 /// Screen for browsing Annict works and episodes.
@@ -104,7 +104,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     try {
       final oauthUri = await mulukhiya.getAnnictOAuthUri();
       final uri = Uri.parse(oauthUri);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!await launchUrlSafely(uri, mode: LaunchMode.externalApplication)) {
         if (mounted) {
           ScaffoldMessenger.of(
             context,

@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants.dart';
+import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
+import '../widget/content_parser.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   final String host;
@@ -87,19 +89,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .trim();
-  }
+  String _stripHtml(String html) => stripHtml(html).trim();
 
   Future<void> _login() async {
     if (_loginCompleted) return;
@@ -330,7 +320,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     'scope': extra['scopes']!,
                                     'force_login': 'true',
                                   });
-                              final launched = await launchUrl(
+                              final launched = await launchUrlSafely(
                                 oobUrl,
                                 mode: LaunchMode.externalApplication,
                               );
@@ -455,6 +445,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     await ref.read(accountManagerProvider.notifier).addAccount(account);
+
+    // ログイン直後はホームタイムラインを表示する。
+    // 前回のタブ復元が走ると、存在しないリスト/ハッシュタグを参照してエラーになりうる。
+    ref
+        .read(lastTabProvider(account.key.toStorageKey()).notifier)
+        .save('timeline:home');
+
     if (mounted) context.go('/home');
   }
 

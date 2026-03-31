@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../constants.dart';
+import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -1032,7 +1031,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ),
     );
     if (shouldReport == true) {
-      launchUrl(AppConstants.contactUrl, mode: LaunchMode.externalApplication);
+      launchUrlSafely(
+        AppConstants.contactUrl,
+        mode: LaunchMode.externalApplication,
+      );
     }
   }
 
@@ -1082,9 +1084,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
@@ -1106,9 +1106,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       resolveDisplayUrl: _tryResolveAcct,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
     );
@@ -1127,18 +1125,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return '@$username@$host';
   }
 
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-  }
+  String _stripHtml(String html) => stripHtml(html);
 
   Widget _buildServerInfo(String host, ThemeData theme) {
     final themeColors = ref.watch(hostThemeColorProvider);

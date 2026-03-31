@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _fontScaleKey = 'font_scale';
 const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
+const _lastTabPrefix = 'last_tab_';
 const _emojiPalettePrefix = 'emoji_palette_';
 const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
@@ -84,6 +85,40 @@ class AccountThemeColorNotifier extends FamilyNotifier<Color?, String> {
     } else {
       await prefs.remove('$_themeColorPrefix$arg');
     }
+  }
+}
+
+/// Per-account last selected tab persistence.
+///
+/// Stores the tab the user was viewing when the app was last used, so it can
+/// be restored on the next launch.  The value is a single string:
+///   - `timeline:<name>`  (e.g. `timeline:home`)
+///   - `list:<id>`
+///   - `hashtag:<tag>`
+final lastTabProvider =
+    NotifierProvider.family<LastTabNotifier, String?, String>(
+      LastTabNotifier.new,
+    );
+
+class LastTabNotifier extends FamilyNotifier<String?, String> {
+  @override
+  String? build(String arg) {
+    _load();
+    return null;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('$_lastTabPrefix$arg');
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> save(String value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('$_lastTabPrefix$arg', value);
   }
 }
 

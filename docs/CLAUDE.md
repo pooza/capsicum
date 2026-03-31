@@ -149,7 +149,8 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 - Codex（chatgpt-codex-connector[bot]）からのレビューコメントがないか確認する
 - 指摘が未対応なら Issue を起票して修正する
-- 対応済みなら修正コミット/Issue を参照して返信し、+1 リアクションをつける
+- 対応済みなら修正コミット/Issue を参照して返信し、Codex コメントに +1 リアクションをつける
+- **返信とリアクションの両方が揃って「完了」**。片方だけでは同期時に未完了と判定される
 
 ## ディレクトリ構成（予定）
 
@@ -243,7 +244,7 @@ v0.2.0 リリース済み:
 
 ### v1.0 以降のリリース計画
 
-GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8）が正本。個別 Issue の一覧・ステータスはここに複写しない。
+GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
 リリース済み:
 
@@ -272,8 +273,9 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 - **v1.5**（リリース済み）— ユーザー要望の消化（簡易投稿バー・rel=me バッジ・Misskey クリップ/絵文字パレット基盤・メディアタブ・サーバーメタデータキャッシュ・未読バッジ 等）
 - **v1.6**（リリース済み）— ユーザー要望の継続消化（翻訳・ハッシュタグフォロー・Misskey Play・言語選択・絵文字パレットインポート・バグ修正 等）
 - **v1.7**（リリース済み）— 追加機能（Misskey ドライブ・ハッシュタグタブ固定・アンケート作成 等）
-- **v1.8** — UX 改善・Misskey 固有機能（メディアカタログ・isCat・通知統合一覧・DM タイムライン・公開範囲デフォルト・引用許可範囲指定・アンテナ・サーバー情報画面・検索強化・notestock 検索 等）
-- **v1.9** — 表示カスタマイズ + モロヘイヤ連携強化（絶対時間表示・画像非表示/ぼかし・プレビューカード制御・投稿前確認・プレビュー・リスト改善・予約投稿タグ編集 等）
+- **v1.8**（実装完了・リリース待ち）— UX 改善・バグ修正（公開範囲デフォルト・引用許可範囲指定・サーバー情報画面・検索強化・notestock 検索・#実況フィルタ修正・タブ復元・デバッグ版分離 等）
+- **v1.9** — 表示カスタマイズ + モロヘイヤ連携（絶対時間表示・画像非表示/ぼかし・投稿前確認・リスト改善・予約投稿タグ編集・モロヘイヤ再検出 等）
+- **v1.10** — モロヘイヤ連携強化・Misskey 固有機能・大型機能（メディアカタログ・アンテナ・ドライブ管理・通知統合一覧・NowPlaying・Misskey ページ/実績/下書き 等）
 
 運用ルール:
 
@@ -312,19 +314,30 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 - `gh issue list --state closed --limit 10` — 最近クローズされた Issue（前回同期以降の進捗把握）
 - マイルストーン未割り当ての open Issue を一覧として列挙する（割り当てを促す文言は不要）
 
-### 4. マイルストーンの状態確認
+### 4. ユーザーフィードバックの確認（#capsicum タグタイムライン）
+
+- 美食丼の `#capsicum` タグタイムラインを取得: `curl -s "https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20"`
+- バグ報告・機能要望・ユーザーからの質問がないか確認する
+- 未起票のバグ報告があれば GitHub Issue を起票する（報告元の投稿 URL を記載）
+- 好評・感想は報告のみ（Issue 化不要）
+
+### 5. マイルストーンの状態確認
 
 - ステップ 3 で取得した全 Issue をマイルストーン別に集計し、件数の変動を把握する
 - MEMORY.md のマイルストーン構成（件数）が実態と一致しているか確認し、ズレがあれば更新する
 - クローズ済みマイルストーンの残 Issue が 0 であることを確認する
 
-### 5. Codex レビューコメントの確認
+### 6. Codex レビューコメントの確認
 
 - 最近マージされた PR（`gh pr list --state merged --limit 5`）を取得
 - 各 PR に対して `gh api repos/pooza/capsicum/pulls/{number}/comments` で Codex（`chatgpt-codex-connector[bot]`）のコメントを確認
-- 未返信のコメントがあれば内容を確認し、対応が必要か判断
+- 各コメントについて以下を判定する:
+  1. **未返信** → 指摘内容を確認し、対応が必要か判断。必要なら Issue 起票
+  2. **返信済みだがリアクション未付与** → 修正コミットの存在を確認し、+1 リアクションを付与
+  3. **返信済み・リアクション済み** → 完了。報告不要
+- 判定方法: `gh api repos/pooza/capsicum/pulls/{number}/comments --jq` で全コメントを取得し、Codex コメントの `id` に対する `in_reply_to_id` を持つ返信の有無、および Codex コメントへのリアクション（`reactions`）を確認する
 
-### 6. Sentry の新規イシュー確認
+### 7. Sentry の新規イシュー確認
 
 - `sentry-cli --auth-token <調査用トークン> issues list -p capsicum` で未解決イシューを確認（トークンは `~/.sentryclirc` から取得: `awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'`）
 - 各イシューの過去コメント（対応経緯）を確認する: `curl -sH "Authorization: Bearer $TOKEN" https://sentry.io/api/0/issues/{issue_id}/comments/ | python3 -m json.tool`
@@ -333,16 +346,16 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 - `$TOKEN` は `~/.sentryclirc` の `[auth]` セクションから取得する（capsicum では `.sentryclirc` がデプロイ用トークンで占有されているため、`awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'` で調査用トークンを別途取得する）
 - resolved 済みのイシューは報告不要
 
-### 7. 関連リポジトリの同期確認
+### 8. 関連リポジトリの同期確認
 
 - **mulukhiya-toot-proxy**: `cd ~/repos/mulukhiya-toot-proxy && git fetch origin` + `git log HEAD..origin/develop --oneline` でリモートとの差分を確認。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `cd ~/repos/chubo2 && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
 
-### 8. MEMORY.md の更新
+### 9. MEMORY.md の更新
 
 - 上記で検出した差分（Issue 状態、マイルストーン件数のズレ、リリース情報等）を反映
 
-### 9. 同期結果の報告
+### 10. 同期結果の報告
 
 - 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、各確認項目の結果をまとめて報告する
 

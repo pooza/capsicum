@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../constants.dart';
+import '../../url_helper.dart';
 
 /// Key used to persist EULA acceptance state.
 const eulaAcceptedKey = 'eula_accepted';
@@ -50,11 +49,11 @@ class EulaScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               TextButton(
-                onPressed: () => launchUrl(AppConstants.termsUrl),
+                onPressed: () => launchUrlSafely(AppConstants.termsUrl),
                 child: const Text('利用規約を読む'),
               ),
               TextButton(
-                onPressed: () => launchUrl(
+                onPressed: () => launchUrlSafely(
                   AppConstants.websiteUrl.replace(path: '/privacy-policy'),
                 ),
                 child: const Text('プライバシーポリシーを読む'),

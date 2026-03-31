@@ -189,6 +189,12 @@ class MulukhiyaService {
     return null;
   }
 
+  /// GET /mulukhiya/api/health
+  Future<Map<String, dynamic>> checkHealth() async {
+    final response = await _dio.get('$baseUrl/health');
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<MulukhiyaAbout> getAbout() async {
     final response = await _dio.get('$baseUrl/about');
     final data = response.data as Map<String, dynamic>;

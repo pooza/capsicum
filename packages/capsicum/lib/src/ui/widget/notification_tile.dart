@@ -1,9 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
 import 'content_parser.dart';
 import 'emoji_text.dart';
 import 'user_avatar.dart';
@@ -76,9 +76,7 @@ class _NotificationTileState extends State<NotificationTile> {
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
     );

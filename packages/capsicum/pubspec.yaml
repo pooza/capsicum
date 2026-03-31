@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.7.0+26
+version: 1.8.0+27
 
 environment:
   sdk: ^3.11.0
@@ -36,6 +36,7 @@ dependencies:
   sentry_flutter: ^9.14.0
   scrollable_positioned_list: ^0.3.8
   yaml: ^3.1.0
+  html_unescape: ^2.0.0
 
 dev_dependencies:
   flutter_test:

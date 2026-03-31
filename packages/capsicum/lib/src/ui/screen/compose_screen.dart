@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -69,6 +70,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
 
+  // Quote approval policy (Mastodon 4.5+)
+  String? _quoteApprovalPolicy;
+
   // Poll state
   bool _pollEnabled = false;
   final List<TextEditingController> _pollControllers = [
@@ -77,6 +81,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   ];
   bool _pollMultiple = false;
   int _pollExpiresIn = 86400; // 1 day in seconds
+
+  static const _quoteApprovalLabels = {
+    'public': '誰でも',
+    'followers': 'フォロワーのみ',
+    'nobody': '許可しない',
+  };
+
+  static const _quoteApprovalIcons = {
+    'public': Icons.public,
+    'followers': Icons.lock_outline,
+    'nobody': Icons.block,
+  };
 
   static const _languageOptions = {
     'ja': '日本語',
@@ -152,6 +168,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _initReplyMentions(replyTo);
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
+    } else {
+      final account = ref.read(currentAccountProvider);
+      if (account != null && account.user.defaultScope != null) {
+        _scope = account.user.defaultScope!;
+      }
     }
     _controller.addListener(_onTextChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
@@ -308,18 +329,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   void _insertEmoji(String emoji) {
@@ -796,6 +806,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               : null,
           pollExpiresIn: _pollEnabled ? _pollExpiresIn : null,
           pollMultiple: _pollEnabled && _pollMultiple,
+          quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
       if (mounted) {
@@ -1140,6 +1151,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             .toList(),
                       ),
                     ),
+                  if (ref.watch(currentAdapterProvider) is MastodonAdapter)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: DropdownButton<String?>(
+                        value: _quoteApprovalPolicy,
+                        underline: const SizedBox.shrink(),
+                        isDense: true,
+                        hint: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.format_quote, size: 16),
+                            const SizedBox(width: 4),
+                            const Text('引用許可', style: TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                        onChanged: _sending
+                            ? null
+                            : (v) => setState(() => _quoteApprovalPolicy = v),
+                        items: _quoteApprovalLabels.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(_quoteApprovalIcons[e.key], size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      e.value,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
                   if (_scheduledAt != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
@@ -1198,18 +1247,7 @@ class _ReplyPreview extends StatelessWidget {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   @override
@@ -1275,18 +1313,7 @@ class _QuotePreview extends StatelessWidget {
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
-    var text = content
-        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-        .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'");
-    return text;
+    return stripHtml(content);
   }
 
   @override

@@ -256,6 +256,7 @@ class MastodonClient {
     int? pollExpiresIn,
     bool? pollMultiple,
     bool? pollHideTotals,
+    String? quoteApprovalPolicy,
     Map<String, String>? extraHeaders,
   }) async {
     final data = <String, dynamic>{
@@ -267,6 +268,7 @@ class MastodonClient {
       'media_ids': ?mediaIds,
       'sensitive': ?sensitive,
       'language': ?language,
+      'quote_approval_policy': ?quoteApprovalPolicy,
     };
     if (pollOptions != null && pollOptions.isNotEmpty) {
       data['poll'] = {
@@ -296,6 +298,7 @@ class MastodonClient {
     List<String>? mediaIds,
     bool? sensitive,
     String? language,
+    String? quoteApprovalPolicy,
     Map<String, String>? extraHeaders,
   }) async {
     await dio.post(
@@ -310,6 +313,7 @@ class MastodonClient {
         'media_ids': ?mediaIds,
         'sensitive': ?sensitive,
         'language': ?language,
+        'quote_approval_policy': ?quoteApprovalPolicy,
       },
       options: extraHeaders != null ? Options(headers: extraHeaders) : null,
     );
@@ -733,6 +737,18 @@ class MastodonClient {
   Future<Map<String, dynamic>> getInstanceV2() async {
     final response = await dio.get('/api/v2/instance');
     return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /health
+  Future<String> checkHealth() async {
+    final response = await dio.get('/health');
+    return response.data.toString().trim();
+  }
+
+  /// GET /api/v1/streaming/health
+  Future<String> checkStreamingHealth() async {
+    final response = await dio.get('/api/v1/streaming/health');
+    return response.data.toString().trim();
   }
 
   /// Probe whether the public timeline is accessible.

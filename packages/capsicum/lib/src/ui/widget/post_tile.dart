@@ -8,9 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:yaml/yaml.dart';
 
+import '../../constants.dart';
+import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
@@ -21,18 +22,7 @@ import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 
-String _stripHtml(String html) {
-  return html
-      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-      .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'");
-}
+String _stripHtml(String html) => stripHtml(html);
 
 class PostTile extends ConsumerStatefulWidget {
   final Post post;
@@ -315,17 +305,16 @@ class _PostTileState extends ConsumerState<PostTile> {
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          // Misskey Play リンクをアプリ内ブラウザで開く
-          if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
-            final account = ref.read(accountManagerProvider).current;
-            if (account != null && uri.host == account.key.host) {
-              launchUrl(uri, mode: LaunchMode.inAppBrowserView);
-              return;
-            }
+        if (uri == null) return;
+        // Misskey Play リンクをアプリ内ブラウザで開く
+        if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
+          final account = ref.read(accountManagerProvider).current;
+          if (account != null && uri.host == account.key.host) {
+            launchUrlSafely(uri, mode: LaunchMode.inAppBrowserView);
+            return;
           }
-          launchUrl(uri);
         }
+        launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
@@ -591,14 +580,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                           };
                           // 構造化テキスト判定用のプレーンテキスト
                           final plainBody = isHtml
-                              ? parsed.body
-                                    .replaceAll(RegExp(r'<br\s*/?>'), '\n')
-                                    .replaceAll(RegExp(r'<[^>]*>'), '')
-                                    .replaceAll('&amp;', '&')
-                                    .replaceAll('&lt;', '<')
-                                    .replaceAll('&gt;', '>')
-                                    .replaceAll('&quot;', '"')
-                                    .replaceAll('&#39;', "'")
+                              ? stripHtml(parsed.body)
                               : parsed.body;
                           final isStructured = _isStructuredContent(
                             plainBody,
@@ -1730,7 +1712,7 @@ class _ReactionChips extends StatelessWidget {
         .where((r) => r != 0xFE0F) // strip variation selectors
         .map((r) => r.toRadixString(16))
         .join('-');
-    return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/$codepoints.png';
+    return '${AppConstants.twemojiBaseUrl}/$codepoints.png';
   }
 }
 
@@ -2130,9 +2112,7 @@ class _PreviewCardWidget extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
       child: Container(
         decoration: BoxDecoration(

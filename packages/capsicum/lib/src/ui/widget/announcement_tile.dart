@@ -1,8 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
 import 'content_parser.dart';
 
 class AnnouncementTile extends StatefulWidget {
@@ -69,9 +69,7 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
     );
     return announcement.isHtml

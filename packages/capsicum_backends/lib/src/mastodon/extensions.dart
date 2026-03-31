@@ -63,6 +63,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       },
       url: url,
       createdAt: createdAt,
+      defaultScope: mastodonVisibilityRosetta[source?['privacy'] as String?],
     );
   }
 }

@@ -1,9 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../provider/preferences_provider.dart';
+import '../../url_helper.dart';
 
 const _unicodeEmojiCategories = <String, List<String>>{
   'よく使う': [
@@ -421,7 +420,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
               const Text('同じブラウザで絵文字パレットの設定画面（設定 > 絵文字パレット）を開き、コピーしてください'),
               const SizedBox(height: 4),
               GestureDetector(
-                onTap: () => launchUrl(
+                onTap: () => launchUrlSafely(
                   Uri.parse('https://$host/settings/emoji-palette'),
                   mode: LaunchMode.externalApplication,
                 ),
