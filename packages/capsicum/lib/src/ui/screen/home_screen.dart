@@ -609,10 +609,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => TabManagementSheet(
-        storageKey: storageKey,
-        allLists: lists,
-      ),
+      builder: (_) =>
+          TabManagementSheet(storageKey: storageKey, allLists: lists),
     );
   }
 
@@ -1392,4 +1390,3 @@ class _LivecureFilterButton extends StatelessWidget {
     );
   }
 }
-

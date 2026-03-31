@@ -24,15 +24,13 @@ class DisplaySettingsScreen extends ConsumerWidget {
             title: const Text('絶対時間で表示'),
             subtitle: const Text('投稿日時を「3分前」ではなく「2026-03-26 12:34」形式で表示します'),
             value: absoluteTime,
-            onChanged: (_) =>
-                ref.read(absoluteTimeProvider.notifier).toggle(),
+            onChanged: (_) => ref.read(absoluteTimeProvider.notifier).toggle(),
           ),
           SwitchListTile(
             title: const Text('すべての画像をぼかす'),
             subtitle: const Text('NSFW フラグに関係なくすべての画像をぼかし表示にします。タップで個別に表示できます'),
             value: blurAllImages,
-            onChanged: (_) =>
-                ref.read(blurAllImagesProvider.notifier).toggle(),
+            onChanged: (_) => ref.read(blurAllImagesProvider.notifier).toggle(),
           ),
           ListTile(
             title: const Text('プレビューカード（OGP）'),
@@ -51,8 +49,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
             value: hideLivecure,
-            onChanged: (_) =>
-                ref.read(hideLivecureProvider.notifier).toggle(),
+            onChanged: (_) => ref.read(hideLivecureProvider.notifier).toggle(),
           ),
         ],
       ),

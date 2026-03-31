@@ -54,8 +54,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('文字サイズ',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text('文字サイズ', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Row(
                   children: [

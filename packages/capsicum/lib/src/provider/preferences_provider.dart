@@ -374,8 +374,9 @@ class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_previewCardModeKey);
     if (saved != null) {
-      final mode =
-          PreviewCardMode.values.where((m) => m.name == saved).firstOrNull;
+      final mode = PreviewCardMode.values
+          .where((m) => m.name == saved)
+          .firstOrNull;
       if (mode != null) state = mode;
     }
   }

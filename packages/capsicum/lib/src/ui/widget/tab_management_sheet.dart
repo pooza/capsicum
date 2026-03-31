@@ -16,8 +16,7 @@ class TabManagementSheet extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<TabManagementSheet> createState() =>
-      _TabManagementSheetState();
+  ConsumerState<TabManagementSheet> createState() => _TabManagementSheetState();
 }
 
 class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
@@ -138,14 +137,13 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                           ),
                           trailing: IconButton(
                             icon: Icon(
-                              hidden
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
+                              hidden ? Icons.visibility_off : Icons.visibility,
                             ),
                             onPressed: () => ref
                                 .read(
-                                  hiddenListIdsProvider(widget.storageKey)
-                                      .notifier,
+                                  hiddenListIdsProvider(
+                                    widget.storageKey,
+                                  ).notifier,
                                 )
                                 .toggle(list.id),
                           ),
@@ -203,8 +201,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                       onReorder: (oldIndex, newIndex) {
                         ref
                             .read(
-                              pinnedHashtagsProvider(widget.storageKey)
-                                  .notifier,
+                              pinnedHashtagsProvider(
+                                widget.storageKey,
+                              ).notifier,
                             )
                             .reorder(oldIndex, newIndex);
                       },
@@ -222,8 +221,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             onPressed: () {
                               ref
                                   .read(
-                                    pinnedHashtagsProvider(widget.storageKey)
-                                        .notifier,
+                                    pinnedHashtagsProvider(
+                                      widget.storageKey,
+                                    ).notifier,
                                   )
                                   .remove(tag);
                             },

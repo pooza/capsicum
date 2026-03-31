@@ -193,8 +193,7 @@ class _TabOrderTile extends StatelessWidget {
               icon: const Icon(Icons.tune, size: 18),
               label: const Text('タブ管理'),
               onPressed: () {
-                final lists =
-                    ref.read(listsProvider).valueOrNull ?? [];
+                final lists = ref.read(listsProvider).valueOrNull ?? [];
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
