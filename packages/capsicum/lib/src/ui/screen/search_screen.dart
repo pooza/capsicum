@@ -352,7 +352,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   Widget _buildNotestockList() {
-    if (_notestockLoading) {
+    if (_notestockLoading && _notestockResults.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_notestockResults.isEmpty) {
@@ -406,13 +406,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
         final status = _notestockResults[index];
         final content = status['content'] as String? ?? '';
-        final url = status['url'] as String? ?? '';
+        final url = (status['url'] ?? status['id'] ?? '') as String;
         final published = status['published'] as String?;
         final date = published != null ? DateTime.tryParse(published) : null;
 
-        // HTML タグを簡易除去して表示
+        // HTML タグを簡易除去して表示（カスタム絵文字の shortcode は保持）
         final plainText = content
             .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+            .replaceAllMapped(
+              RegExp(r'<img[^>]+alt="(:[\w]+:)"[^>]*>'),
+              (m) => m.group(1)!,
+            )
             .replaceAll(RegExp(r'<[^>]+>'), '')
             .replaceAll('&amp;', '&')
             .replaceAll('&lt;', '<')
