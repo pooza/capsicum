@@ -12,6 +12,7 @@ const _emojiPalettePrefix = 'emoji_palette_';
 const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
+const _absoluteTimeKey = 'absolute_time';
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -336,6 +337,33 @@ class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('$_pinnedHashtagsPrefix$arg', state);
+  }
+}
+
+/// Whether to show absolute timestamps instead of relative ones.
+final absoluteTimeProvider = NotifierProvider<AbsoluteTimeNotifier, bool>(
+  AbsoluteTimeNotifier.new,
+);
+
+class AbsoluteTimeNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_absoluteTimeKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_absoluteTimeKey, state);
   }
 }
 

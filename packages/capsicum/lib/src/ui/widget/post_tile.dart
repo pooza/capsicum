@@ -13,6 +13,7 @@ import 'package:yaml/yaml.dart';
 import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
@@ -443,7 +444,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                         ],
                         const SizedBox(width: 4),
                         Text(
-                          _relativeTime(displayPost.postedAt),
+                          _formatTime(displayPost.postedAt),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1435,7 +1436,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     return handle;
   }
 
-  String _relativeTime(DateTime postedAt) {
+  String _formatTime(DateTime postedAt) {
+    if (ref.watch(absoluteTimeProvider)) {
+      final local = postedAt.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
     final diff = DateTime.now().toUtc().difference(postedAt);
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分前';

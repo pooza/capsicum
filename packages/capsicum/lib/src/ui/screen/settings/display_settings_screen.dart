@@ -9,6 +9,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hideLivecure = ref.watch(hideLivecureProvider);
+    final absoluteTime = ref.watch(absoluteTimeProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -17,6 +18,13 @@ class DisplaySettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          SwitchListTile(
+            title: const Text('絶対時間で表示'),
+            subtitle: const Text('投稿日時を「3分前」ではなく「2026-03-26 12:34」形式で表示します'),
+            value: absoluteTime,
+            onChanged: (_) =>
+                ref.read(absoluteTimeProvider.notifier).toggle(),
+          ),
           SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
