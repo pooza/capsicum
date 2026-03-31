@@ -92,9 +92,9 @@ class AccountThemeColorNotifier extends FamilyNotifier<Color?, String> {
 ///
 /// Stores the tab the user was viewing when the app was last used, so it can
 /// be restored on the next launch.  The value is a single string:
-///   - "timeline:<name>"  (e.g. "timeline:home")
-///   - "list:<id>"
-///   - "hashtag:<tag>"
+///   - `timeline:<name>`  (e.g. `timeline:home`)
+///   - `list:<id>`
+///   - `hashtag:<tag>`
 final lastTabProvider =
     NotifierProvider.family<LastTabNotifier, String?, String>(
       LastTabNotifier.new,
