@@ -34,12 +34,11 @@ class ServerInfoState {
     Instance? instance,
     List<HealthCheckResult>? healthChecks,
     bool? isCheckingHealth,
-  }) =>
-      ServerInfoState(
-        instance: instance ?? this.instance,
-        healthChecks: healthChecks ?? this.healthChecks,
-        isCheckingHealth: isCheckingHealth ?? this.isCheckingHealth,
-      );
+  }) => ServerInfoState(
+    instance: instance ?? this.instance,
+    healthChecks: healthChecks ?? this.healthChecks,
+    isCheckingHealth: isCheckingHealth ?? this.isCheckingHealth,
+  );
 }
 
 class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
@@ -58,8 +57,9 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
         adapter.host,
       );
       if (probe != null) {
-        softwareName =
-            probe.type == BackendType.mastodon ? 'Mastodon' : 'Misskey';
+        softwareName = probe.type == BackendType.mastodon
+            ? 'Mastodon'
+            : 'Misskey';
       }
     } catch (_) {}
 
@@ -84,7 +84,9 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
   Future<void> runHealthChecks() async {
     final current = state.valueOrNull;
     if (current == null) return;
-    state = AsyncData(current.copyWith(isCheckingHealth: true, healthChecks: []));
+    state = AsyncData(
+      current.copyWith(isCheckingHealth: true, healthChecks: []),
+    );
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -93,43 +95,49 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
 
     if (adapter is MastodonAdapter) {
       results.add(await _check('Mastodon', () => adapter.client.checkHealth()));
-      results.add(await _check(
-        'Streaming',
-        () => adapter.client.checkStreamingHealth(),
-      ));
+      results.add(
+        await _check('Streaming', () => adapter.client.checkStreamingHealth()),
+      );
     } else if (adapter is MisskeyAdapter) {
-      results.add(await _check('Misskey Ping', () async {
-        final r = await adapter.client.ping();
-        return r.toString();
-      }));
+      results.add(
+        await _check('Misskey Ping', () async {
+          final r = await adapter.client.ping();
+          return r.toString();
+        }),
+      );
     }
 
     // NodeInfo
-    results.add(await _check('NodeInfo', () async {
-      final dio = Dio(BaseOptions(
-        baseUrl: 'https://${adapter.host}',
-        connectTimeout: const Duration(seconds: 5),
-        receiveTimeout: const Duration(seconds: 5),
-      ));
-      final response = await dio.get('/.well-known/nodeinfo');
-      final data = response.data as Map<String, dynamic>;
-      final links = data['links'] as List<dynamic>;
-      return '${links.length} link(s)';
-    }));
+    results.add(
+      await _check('NodeInfo', () async {
+        final dio = Dio(
+          BaseOptions(
+            baseUrl: 'https://${adapter.host}',
+            connectTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 5),
+          ),
+        );
+        final response = await dio.get('/.well-known/nodeinfo');
+        final data = response.data as Map<String, dynamic>;
+        final links = data['links'] as List<dynamic>;
+        return '${links.length} link(s)';
+      }),
+    );
 
     // Mulukhiya
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya != null) {
-      results.add(await _check('モロヘイヤ', () async {
-        final data = await mulukhiya.checkHealth();
-        return data.toString();
-      }));
+      results.add(
+        await _check('モロヘイヤ', () async {
+          final data = await mulukhiya.checkHealth();
+          return data.toString();
+        }),
+      );
     }
 
-    state = AsyncData(current.copyWith(
-      healthChecks: results,
-      isCheckingHealth: false,
-    ));
+    state = AsyncData(
+      current.copyWith(healthChecks: results, isCheckingHealth: false),
+    );
   }
 
   Future<HealthCheckResult> _check(

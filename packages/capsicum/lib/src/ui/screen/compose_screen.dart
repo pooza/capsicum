@@ -1163,16 +1163,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           children: [
                             Icon(Icons.format_quote, size: 16),
                             const SizedBox(width: 4),
-                            const Text(
-                              '引用許可',
-                              style: TextStyle(fontSize: 13),
-                            ),
+                            const Text('引用許可', style: TextStyle(fontSize: 13)),
                           ],
                         ),
                         onChanged: _sending
                             ? null
-                            : (v) =>
-                                setState(() => _quoteApprovalPolicy = v),
+                            : (v) => setState(() => _quoteApprovalPolicy = v),
                         items: _quoteApprovalLabels.entries
                             .map(
                               (e) => DropdownMenuItem(
@@ -1180,10 +1176,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      _quoteApprovalIcons[e.key],
-                                      size: 16,
-                                    ),
+                                    Icon(_quoteApprovalIcons[e.key], size: 16),
                                     const SizedBox(width: 4),
                                     Text(
                                       e.value,

@@ -12,6 +12,7 @@ import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../widget/content_parser.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -444,6 +445,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     await ref.read(accountManagerProvider.notifier).addAccount(account);
+
+    // ログイン直後はホームタイムラインを表示する。
+    // 前回のタブ復元が走ると、存在しないリスト/ハッシュタグを参照してエラーになりうる。
+    ref
+        .read(lastTabProvider(account.key.toStorageKey()).notifier)
+        .save('timeline:home');
+
     if (mounted) context.go('/home');
   }
 
