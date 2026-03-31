@@ -62,6 +62,21 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
         .setOrder(lists.map((l) => l.id).toList());
   }
 
+  Widget _sectionHeader(ThemeData theme, String title) {
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      margin: const EdgeInsets.only(top: 4),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hiddenIds = ref.watch(hiddenListIdsProvider(widget.storageKey));
@@ -98,13 +113,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                 shrinkWrap: true,
                 children: [
                   // --- Lists section ---
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    child: Text('リスト', style: theme.textTheme.labelLarge),
-                  ),
+                  _sectionHeader(theme, 'リスト'),
                   if (lists.isNotEmpty)
                     ReorderableListView.builder(
                       shrinkWrap: true,
@@ -155,14 +164,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                     ),
                   ),
                   // --- Hashtags section ---
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    child:
-                        Text('ハッシュタグ', style: theme.textTheme.labelLarge),
-                  ),
+                  _sectionHeader(theme, 'ハッシュタグ'),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
