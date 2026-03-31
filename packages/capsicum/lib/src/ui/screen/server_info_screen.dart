@@ -23,9 +23,7 @@ class ServerInfoScreen extends ConsumerWidget {
       ),
       body: asyncState.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Text('読み込みに失敗しました\n$error'),
-        ),
+        error: (error, _) => Center(child: Text('読み込みに失敗しました\n$error')),
         data: (state) => _buildContent(context, ref, state),
       ),
     );
@@ -62,10 +60,12 @@ class ServerInfoScreen extends ConsumerWidget {
                 )
               : const Icon(Icons.dns, size: 40),
           title: Text(instance.name),
-          subtitle: Text([
-            if (instance.softwareName != null) instance.softwareName!,
-            if (instance.version != null) 'v${instance.version}',
-          ].join(' ')),
+          subtitle: Text(
+            [
+              if (instance.softwareName != null) instance.softwareName!,
+              if (instance.version != null) 'v${instance.version}',
+            ].join(' '),
+          ),
         ),
         if (instance.description != null && instance.description!.isNotEmpty)
           Padding(
@@ -87,7 +87,8 @@ class ServerInfoScreen extends ConsumerWidget {
           ),
 
         // Contact
-        if (instance.contactAccount != null || instance.contactEmail != null ||
+        if (instance.contactAccount != null ||
+            instance.contactEmail != null ||
             instance.contactUrl != null) ...[
           _SectionHeader(title: '連絡先'),
           if (instance.contactAccount != null)
@@ -103,10 +104,8 @@ class ServerInfoScreen extends ConsumerWidget {
                 emojis: instance.contactAccount!.emojis,
                 fallbackHost: instance.contactAccount!.host,
               ),
-              onTap: () => context.push(
-                '/profile',
-                extra: instance.contactAccount,
-              ),
+              onTap: () =>
+                  context.push('/profile', extra: instance.contactAccount),
             ),
           if (instance.contactEmail != null)
             ListTile(
@@ -114,9 +113,7 @@ class ServerInfoScreen extends ConsumerWidget {
               title: Text(instance.contactEmail!),
               subtitle: const Text('タップでコピー'),
               onTap: () {
-                Clipboard.setData(
-                  ClipboardData(text: instance.contactEmail!),
-                );
+                Clipboard.setData(ClipboardData(text: instance.contactEmail!));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('メールアドレスをコピーしました'),
@@ -139,26 +136,27 @@ class ServerInfoScreen extends ConsumerWidget {
         // Rules
         if (instance.rules.isNotEmpty) ...[
           _SectionHeader(title: 'ルール'),
-          ...instance.rules.asMap().entries.map((entry) => Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 28,
-                      child: Text(
-                        '${entry.key + 1}.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.primary,
-                        ),
+          ...instance.rules.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '${entry.key + 1}.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
                       ),
                     ),
-                    Expanded(child: _HtmlText(html: entry.value)),
-                  ],
-                ),
-              )),
+                  ),
+                  Expanded(child: _HtmlText(html: entry.value)),
+                ],
+              ),
+            ),
+          ),
         ],
 
         // Links
@@ -195,16 +193,18 @@ class ServerInfoScreen extends ConsumerWidget {
             child: Center(child: CircularProgressIndicator()),
           )
         else ...[
-          ...state.healthChecks.map((check) => ListTile(
-                leading: Icon(
-                  check.ok ? Icons.check_circle : Icons.error,
-                  color: check.ok ? Colors.green : colorScheme.error,
-                ),
-                title: Text(check.name),
-                subtitle: check.responseTime != null
-                    ? Text('${check.responseTime!.inMilliseconds}ms')
-                    : null,
-              )),
+          ...state.healthChecks.map(
+            (check) => ListTile(
+              leading: Icon(
+                check.ok ? Icons.check_circle : Icons.error,
+                color: check.ok ? Colors.green : colorScheme.error,
+              ),
+              title: Text(check.name),
+              subtitle: check.responseTime != null
+                  ? Text('${check.responseTime!.inMilliseconds}ms')
+                  : null,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextButton.icon(
@@ -254,15 +254,20 @@ class _HtmlText extends StatelessWidget {
       // The link itself.
       final url = match.group(1)!;
       final label = _strip(match.group(2)!);
-      spans.add(TextSpan(
-        text: label.isNotEmpty ? label : url,
-        style: TextStyle(color: linkColor, decoration: TextDecoration.underline),
-        recognizer: TapGestureRecognizer()
-          ..onTap = () => launchUrlSafely(
-                Uri.parse(url),
-                mode: LaunchMode.externalApplication,
-              ),
-      ));
+      spans.add(
+        TextSpan(
+          text: label.isNotEmpty ? label : url,
+          style: TextStyle(
+            color: linkColor,
+            decoration: TextDecoration.underline,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () => launchUrlSafely(
+              Uri.parse(url),
+              mode: LaunchMode.externalApplication,
+            ),
+        ),
+      );
       lastEnd = match.end;
     }
     // Remaining text after last link.
@@ -289,8 +294,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }

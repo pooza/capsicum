@@ -1031,7 +1031,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ),
     );
     if (shouldReport == true) {
-      launchUrlSafely(AppConstants.contactUrl, mode: LaunchMode.externalApplication);
+      launchUrlSafely(
+        AppConstants.contactUrl,
+        mode: LaunchMode.externalApplication,
+      );
     }
   }
 

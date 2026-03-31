@@ -373,8 +373,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final accountData = contact['account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (accountData != null) {
-      contactAccount = MastodonAccount.fromJson(accountData)
-          .toCapsicum(host, adminRoleIds: _adminRoleIds);
+      contactAccount = MastodonAccount.fromJson(
+        accountData,
+      ).toCapsicum(host, adminRoleIds: _adminRoleIds);
     }
     final rulesRaw = data['rules'] as List<dynamic>? ?? [];
     final rules = rulesRaw
@@ -386,7 +387,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       description: data['description'] as String?,
       iconUrl: _extractIconUrl(data),
       version: data['version'] as String?,
-      themeColor: (config['accent_color'] as String?) ??
+      themeColor:
+          (config['accent_color'] as String?) ??
           (data['accent_color'] as String?),
       contactEmail: contact['email'] as String?,
       contactAccount: contactAccount,
@@ -399,8 +401,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final contactData = data['contact_account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (contactData != null) {
-      contactAccount = MastodonAccount.fromJson(contactData)
-          .toCapsicum(host, adminRoleIds: _adminRoleIds);
+      contactAccount = MastodonAccount.fromJson(
+        contactData,
+      ).toCapsicum(host, adminRoleIds: _adminRoleIds);
     }
     final rulesRaw = data['rules'] as List<dynamic>? ?? [];
     final rules = rulesRaw

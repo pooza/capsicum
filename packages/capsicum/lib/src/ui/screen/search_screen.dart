@@ -120,8 +120,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         );
       }
       final data = response.data as Map<String, dynamic>;
-      final statuses = (data['statuses'] as List<dynamic>?)
-              ?.cast<Map<String, dynamic>>() ??
+      final statuses =
+          (data['statuses'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
           [];
       final linkHeader = response.headers.value('link');
       String? next;
@@ -273,12 +273,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         TabBar(
           controller: _tabController,
           tabs: [
-              const Tab(text: 'アカウント'),
-              const Tab(text: 'ハッシュタグ'),
-              Tab(text: ref.watch(postLabelProvider)),
-              const Tab(text: 'notestock'),
-            ],
-          ),
+            const Tab(text: 'アカウント'),
+            const Tab(text: 'ハッシュタグ'),
+            Tab(text: ref.watch(postLabelProvider)),
+            const Tab(text: 'notestock'),
+          ],
+        ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -369,7 +369,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => launchUrlSafely(
-                  Uri.parse('${AppConstants.notestockBaseUrl}/setting/index.html'),
+                  Uri.parse(
+                    '${AppConstants.notestockBaseUrl}/setting/index.html',
+                  ),
                   mode: LaunchMode.externalApplication,
                 ),
                 child: const Text('notestock の設定を開く'),
@@ -402,7 +404,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           );
         }
 
-          final status = _notestockResults[index];
+        final status = _notestockResults[index];
         final content = status['content'] as String? ?? '';
         final url = status['url'] as String? ?? '';
         final published = status['published'] as String?;
@@ -421,11 +423,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             .trim();
 
         return ListTile(
-          title: Text(
-            plainText,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(plainText, maxLines: 3, overflow: TextOverflow.ellipsis),
           subtitle: date != null
               ? Text(
                   '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} '
