@@ -19,7 +19,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('外観'),
+        title: const Text('テーマ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: ListView(

@@ -29,8 +29,8 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.palette),
-            title: const Text('外観'),
-            subtitle: const Text('テーマ・文字サイズ'),
+            title: const Text('テーマ'),
+            subtitle: const Text('配色・文字サイズ'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/appearance'),
           ),
