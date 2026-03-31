@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 
@@ -45,6 +46,27 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    if (ref.read(confirmBeforePostProvider)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('確認'),
+          content: const Text('投稿しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('投稿'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
