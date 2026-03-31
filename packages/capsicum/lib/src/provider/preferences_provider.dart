@@ -15,6 +15,8 @@ const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
 const _confirmBeforePostKey = 'confirm_before_post';
+const _hiddenListIdsPrefix = 'hidden_list_ids_';
+const _listOrderPrefix = 'list_order_';
 const _previewCardModeKey = 'preview_card_mode';
 
 /// Display mode for OGP preview cards.
@@ -382,6 +384,70 @@ class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_previewCardModeKey, mode.name);
+  }
+}
+
+/// Per-account hidden list IDs.
+final hiddenListIdsProvider =
+    NotifierProvider.family<HiddenListIdsNotifier, Set<String>, String>(
+      HiddenListIdsNotifier.new,
+    );
+
+class HiddenListIdsNotifier extends FamilyNotifier<Set<String>, String> {
+  @override
+  Set<String> build(String arg) {
+    _load();
+    return const {};
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_hiddenListIdsPrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved.toSet();
+    }
+  }
+
+  Future<void> toggle(String listId) async {
+    if (state.contains(listId)) {
+      state = {...state}..remove(listId);
+    } else {
+      state = {...state, listId};
+    }
+    await _save();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_hiddenListIdsPrefix$arg', state.toList());
+  }
+}
+
+/// Per-account list display order.
+final listOrderProvider =
+    NotifierProvider.family<ListOrderNotifier, List<String>, String>(
+      ListOrderNotifier.new,
+    );
+
+class ListOrderNotifier extends FamilyNotifier<List<String>, String> {
+  @override
+  List<String> build(String arg) {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_listOrderPrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> setOrder(List<String> order) async {
+    state = order;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_listOrderPrefix$arg', order);
   }
 }
 
