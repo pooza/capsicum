@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants.dart';
+import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
@@ -319,7 +319,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     'scope': extra['scopes']!,
                                     'force_login': 'true',
                                   });
-                              final launched = await launchUrl(
+                              final launched = await launchUrlSafely(
                                 oobUrl,
                                 mode: LaunchMode.externalApplication,
                               );

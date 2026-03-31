@@ -7,10 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../constants.dart';
 import '../../model/account.dart';
+import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/hashtag_provider.dart';
@@ -979,7 +978,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 children: [
                   const SizedBox(height: 16),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.websiteUrl),
+                    onTap: () => launchUrlSafely(AppConstants.websiteUrl),
                     child: Text(
                       AppConstants.websiteUrl.toString(),
                       style: TextStyle(
@@ -990,7 +989,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.communityUrl),
+                    onTap: () => launchUrlSafely(AppConstants.communityUrl),
                     child: Text(
                       'コミュニティ（PieFed）',
                       style: TextStyle(
@@ -1001,7 +1000,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => launchUrl(AppConstants.contactUrl),
+                    onTap: () => launchUrlSafely(AppConstants.contactUrl),
                     child: Text(
                       'お問い合わせ',
                       style: TextStyle(
@@ -1159,9 +1158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     final url = link.href.startsWith('/')
                         ? Uri.parse('https://$host${link.href}')
                         : Uri.parse(link.href);
-                    if (url.scheme == 'https' || url.scheme == 'http') {
-                      launchUrl(url);
-                    }
+                    launchUrlSafely(url);
                   },
                 ),
             ],
@@ -1227,7 +1224,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   if (host != null) {
-                    launchUrl(
+                    launchUrlSafely(
                       Uri.parse('https://$host/play/${flash.id}'),
                       mode: LaunchMode.inAppBrowserView,
                     );

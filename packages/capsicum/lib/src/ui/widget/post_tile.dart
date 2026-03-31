@@ -8,10 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
+import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
@@ -305,17 +305,16 @@ class _PostTileState extends ConsumerState<PostTile> {
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
         final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          // Misskey Play リンクをアプリ内ブラウザで開く
-          if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
-            final account = ref.read(accountManagerProvider).current;
-            if (account != null && uri.host == account.key.host) {
-              launchUrl(uri, mode: LaunchMode.inAppBrowserView);
-              return;
-            }
+        if (uri == null) return;
+        // Misskey Play リンクをアプリ内ブラウザで開く
+        if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
+          final account = ref.read(accountManagerProvider).current;
+          if (account != null && uri.host == account.key.host) {
+            launchUrlSafely(uri, mode: LaunchMode.inAppBrowserView);
+            return;
           }
-          launchUrl(uri);
         }
+        launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
@@ -2113,9 +2112,7 @@ class _PreviewCardWidget extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-          launchUrl(uri);
-        }
+        if (uri != null) launchUrlSafely(uri);
       },
       child: Container(
         decoration: BoxDecoration(

@@ -4,9 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../provider/server_info_provider.dart';
+import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -130,7 +129,7 @@ class ServerInfoScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.language),
               title: Text(instance.contactUrl!),
-              onTap: () => launchUrl(
+              onTap: () => launchUrlSafely(
                 Uri.parse(instance.contactUrl!),
                 mode: LaunchMode.externalApplication,
               ),
@@ -171,7 +170,7 @@ class ServerInfoScreen extends ConsumerWidget {
             leading: const Icon(Icons.privacy_tip_outlined),
             title: const Text('プライバシーポリシー'),
             trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrl(
+            onTap: () => launchUrlSafely(
               Uri.parse(instance.privacyPolicyUrl!),
               mode: LaunchMode.externalApplication,
             ),
@@ -259,7 +258,7 @@ class _HtmlText extends StatelessWidget {
         text: label.isNotEmpty ? label : url,
         style: TextStyle(color: linkColor, decoration: TextDecoration.underline),
         recognizer: TapGestureRecognizer()
-          ..onTap = () => launchUrl(
+          ..onTap = () => launchUrlSafely(
                 Uri.parse(url),
                 mode: LaunchMode.externalApplication,
               ),

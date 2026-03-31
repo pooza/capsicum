@@ -2,10 +2,10 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 
 import '../../constants.dart';
+import '../../url_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../widget/emoji_text.dart';
@@ -218,7 +218,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   ActionChip(
                     avatar: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('notestock'),
-                    onPressed: () => launchUrl(
+                    onPressed: () => launchUrlSafely(
                       AppConstants.notestockUrl,
                       mode: LaunchMode.externalApplication,
                     ),
@@ -226,7 +226,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   ActionChip(
                     avatar: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('Fediver'),
-                    onPressed: () => launchUrl(
+                    onPressed: () => launchUrlSafely(
                       AppConstants.fediverUrl,
                       mode: LaunchMode.externalApplication,
                     ),
@@ -368,7 +368,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () => launchUrl(
+                onPressed: () => launchUrlSafely(
                   Uri.parse('${AppConstants.notestockBaseUrl}/setting/index.html'),
                   mode: LaunchMode.externalApplication,
                 ),
@@ -441,7 +441,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   Future<void> _resolveAndOpen(String url) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! SearchSupport) {
-      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      launchUrlSafely(Uri.parse(url), mode: LaunchMode.externalApplication);
       return;
     }
     try {
@@ -453,7 +453,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       }
     } catch (_) {}
     if (mounted) {
-      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      launchUrlSafely(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
   }
 

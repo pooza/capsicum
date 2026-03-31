@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../constants.dart';
+import '../../url_helper.dart';
 import 'package:html_unescape/html_unescape.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 final _unescape = HtmlUnescape();
 
@@ -853,10 +853,8 @@ class ContentRenderer {
         final uri =
             Uri.tryParse(resolvedUrl) ??
             Uri.tryParse(Uri.encodeFull(resolvedUrl));
-        final isSafe =
-            uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
         final recognizer = TapGestureRecognizer()
-          ..onTap = isSafe ? () => launchUrl(uri) : null;
+          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
         _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
         final displayUrl =
