@@ -393,7 +393,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   ? const CircularProgressIndicator()
                   : TextButton(
                       onPressed: () {
-                        _notestockLoading = true;
+                        setState(() => _notestockLoading = true);
                         _searchNotestock('', nextUrl: _notestockNextUrl);
                       },
                       child: const Text('もっと読む'),

@@ -420,9 +420,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   String? _extractIconUrl(Map<String, dynamic> v2Data) {
-    final icon = v2Data['icon'] as List<dynamic>?;
-    if (icon != null && icon.isNotEmpty) {
+    final icon = v2Data['icon'];
+    if (icon is List && icon.isNotEmpty) {
       return (icon.first as Map<String, dynamic>)['src'] as String?;
+    }
+    if (icon is Map<String, dynamic>) {
+      return icon['src'] as String?;
     }
     final thumbnail = v2Data['thumbnail'] as Map<String, dynamic>?;
     return thumbnail?['url'] as String?;
