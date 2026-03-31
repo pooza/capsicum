@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
@@ -746,6 +747,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
+
+    if (ref.read(confirmBeforePostProvider)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('確認'),
+          content: const Text('投稿しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('投稿'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
 
     if (_pollEnabled) {
       final filledOptions = _pollControllers

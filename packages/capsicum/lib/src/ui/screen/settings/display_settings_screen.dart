@@ -41,6 +41,13 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onTap: () => _showPreviewCardModeDialog(context, ref),
           ),
           SwitchListTile(
+            title: const Text('投稿前に確認する'),
+            subtitle: const Text('投稿ボタンを押したときに確認ダイアログを表示します'),
+            value: ref.watch(confirmBeforePostProvider),
+            onChanged: (_) =>
+                ref.read(confirmBeforePostProvider.notifier).toggle(),
+          ),
+          SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
             value: hideLivecure,

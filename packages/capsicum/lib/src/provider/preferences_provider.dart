@@ -14,6 +14,7 @@ const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
+const _confirmBeforePostKey = 'confirm_before_post';
 const _previewCardModeKey = 'preview_card_mode';
 
 /// Display mode for OGP preview cards.
@@ -381,6 +382,34 @@ class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_previewCardModeKey, mode.name);
+  }
+}
+
+/// Whether to show a confirmation dialog before posting.
+final confirmBeforePostProvider =
+    NotifierProvider<ConfirmBeforePostNotifier, bool>(
+      ConfirmBeforePostNotifier.new,
+    );
+
+class ConfirmBeforePostNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_confirmBeforePostKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_confirmBeforePostKey, state);
   }
 }
 
