@@ -98,14 +98,14 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                 shrinkWrap: true,
                 children: [
                   // --- Lists section ---
-                  if (lists.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: Text('リスト', style: theme.textTheme.labelLarge),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
                     ),
+                    child: Text('リスト', style: theme.textTheme.labelLarge),
+                  ),
+                  if (lists.isNotEmpty)
                     ReorderableListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -143,18 +143,17 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         );
                       },
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.edit_note, size: 18),
-                        label: const Text('リスト管理'),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          context.push('/lists/manage');
-                        },
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.edit_note, size: 18),
+                      label: const Text('リスト管理'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        context.push('/lists/manage');
+                      },
                     ),
-                  ],
+                  ),
                   // --- Hashtags section ---
                   Padding(
                     padding: const EdgeInsets.symmetric(
