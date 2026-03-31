@@ -10,6 +10,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hideLivecure = ref.watch(hideLivecureProvider);
     final absoluteTime = ref.watch(absoluteTimeProvider);
+    final blurAllImages = ref.watch(blurAllImagesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -24,6 +25,13 @@ class DisplaySettingsScreen extends ConsumerWidget {
             value: absoluteTime,
             onChanged: (_) =>
                 ref.read(absoluteTimeProvider.notifier).toggle(),
+          ),
+          SwitchListTile(
+            title: const Text('すべての画像をぼかす'),
+            subtitle: const Text('NSFW フラグに関係なくすべての画像をぼかし表示にします。タップで個別に表示できます'),
+            value: blurAllImages,
+            onChanged: (_) =>
+                ref.read(blurAllImagesProvider.notifier).toggle(),
           ),
           SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),

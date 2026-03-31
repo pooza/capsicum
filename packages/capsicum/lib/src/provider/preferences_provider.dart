@@ -13,6 +13,7 @@ const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
+const _blurAllImagesKey = 'blur_all_images';
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -337,6 +338,33 @@ class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('$_pinnedHashtagsPrefix$arg', state);
+  }
+}
+
+/// Whether to blur all images regardless of NSFW flag.
+final blurAllImagesProvider = NotifierProvider<BlurAllImagesNotifier, bool>(
+  BlurAllImagesNotifier.new,
+);
+
+class BlurAllImagesNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_blurAllImagesKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_blurAllImagesKey, state);
   }
 }
 

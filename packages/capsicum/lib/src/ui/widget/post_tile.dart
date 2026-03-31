@@ -2172,7 +2172,7 @@ class _PreviewCardWidget extends StatelessWidget {
   }
 }
 
-class _AttachmentThumbnails extends StatefulWidget {
+class _AttachmentThumbnails extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
   final bool sensitive;
   final String? postAuthorId;
@@ -2188,10 +2188,11 @@ class _AttachmentThumbnails extends StatefulWidget {
   });
 
   @override
-  State<_AttachmentThumbnails> createState() => _AttachmentThumbnailsState();
+  ConsumerState<_AttachmentThumbnails> createState() =>
+      _AttachmentThumbnailsState();
 }
 
-class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
+class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   bool _revealed = false;
 
   Future<void> _openMediaViewer(
@@ -2330,7 +2331,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     BoxFit fit = BoxFit.cover,
   }) {
     final imageUrl = attachment.previewUrl ?? attachment.url;
-    final isSensitive = widget.sensitive && !_revealed;
+    final blurAll = ref.watch(blurAllImagesProvider);
+    final isSensitive = (widget.sensitive || blurAll) && !_revealed;
 
     return GestureDetector(
       onTap: () {
