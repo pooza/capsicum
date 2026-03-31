@@ -32,4 +32,14 @@ class Account {
     mulukhiya: mulukhiya,
     softwareVersion: softwareVersion,
   );
+
+  Account copyWithMulukhiya(MulukhiyaService? mulukhiya) => Account(
+    key: key,
+    adapter: adapter,
+    user: user,
+    userSecret: userSecret,
+    clientSecret: clientSecret,
+    mulukhiya: mulukhiya,
+    softwareVersion: softwareVersion,
+  );
 }

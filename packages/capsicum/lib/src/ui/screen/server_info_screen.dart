@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
+import '../../provider/account_manager_provider.dart';
 import '../../provider/server_info_provider.dart';
 import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
@@ -214,9 +215,71 @@ class ServerInfoScreen extends ConsumerWidget {
             ),
           ),
         ],
+        // Mulukhiya
+        _SectionHeader(title: 'モロヘイヤ'),
+        _MulukhiyaSection(),
+
         const SizedBox(height: 16),
       ],
     );
+  }
+}
+
+class _MulukhiyaSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_MulukhiyaSection> createState() => _MulukhiyaSectionState();
+}
+
+class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
+  bool _detecting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(
+            mulukhiya != null ? Icons.check_circle : Icons.cancel,
+            color: mulukhiya != null ? Colors.green : Colors.grey,
+          ),
+          title: Text(mulukhiya != null ? '検出済み' : '未検出'),
+          subtitle: mulukhiya != null
+              ? Text('${mulukhiya.controllerType} v${mulukhiya.version}')
+              : null,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: _detecting
+              ? const Center(child: CircularProgressIndicator())
+              : FilledButton.icon(
+                  onPressed: _redetect,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('再検出'),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _redetect() async {
+    setState(() => _detecting = true);
+    try {
+      final found = await ref
+          .read(accountManagerProvider.notifier)
+          .redetectMulukhiya();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(found ? 'モロヘイヤを検出しました' : 'モロヘイヤが見つかりませんでした'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
   }
 }
 
