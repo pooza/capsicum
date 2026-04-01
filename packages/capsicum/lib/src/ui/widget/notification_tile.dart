@@ -192,10 +192,8 @@ class _NotificationTileState extends State<NotificationTile> {
           url,
           height: 18,
           fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => Text(
-            reaction,
-            style: const TextStyle(fontSize: 14),
-          ),
+          errorBuilder: (_, _, _) =>
+              Text(reaction, style: const TextStyle(fontSize: 14)),
         ),
       );
     }
@@ -218,8 +216,7 @@ class _NotificationTileState extends State<NotificationTile> {
     // Fallback: construct URL from emoji host.
     final atIndex = stripped.indexOf('@');
     final hostPart = atIndex >= 0 ? stripped.substring(atIndex + 1) : null;
-    final isLocal =
-        hostPart == null || hostPart == '.' || hostPart.isEmpty;
+    final isLocal = hostPart == null || hostPart == '.' || hostPart.isEmpty;
     final emojiHost = isLocal
         ? (post?.emojiHost ?? post?.author.host)
         : hostPart;

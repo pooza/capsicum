@@ -47,10 +47,7 @@ class ScheduledPostsScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(_scheduledPostsProvider),
@@ -108,11 +105,7 @@ class ScheduledPostsScreen extends ConsumerWidget {
     }
   }
 
-  void _showTagEditor(
-    BuildContext context,
-    WidgetRef ref,
-    ScheduledPost post,
-  ) {
+  void _showTagEditor(BuildContext context, WidgetRef ref, ScheduledPost post) {
     final adapter = ref.read(currentAdapterProvider);
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
@@ -173,8 +166,9 @@ class ScheduledPostsScreen extends ConsumerWidget {
             if (e is DioException) {
               final status = e.response?.statusCode;
               final body = e.response?.data;
-              final detail =
-                  body is Map ? body['error'] ?? body.toString() : '$body';
+              final detail = body is Map
+                  ? body['error'] ?? body.toString()
+                  : '$body';
               message = '$message ($status: $detail)';
               debugPrint('Tag update error: $status $detail');
             } else {
@@ -219,7 +213,9 @@ class ScheduledPostsScreen extends ConsumerWidget {
       }
     }
 
-    final bodyEndIndex = lines.length - trailingTagLines.length -
+    final bodyEndIndex =
+        lines.length -
+        trailingTagLines.length -
         // Count trailing empty lines between body and tags
         lines
             .sublist(
@@ -364,20 +360,15 @@ class _TagEditorSheetState extends State<_TagEditorSheet> {
           Wrap(
             spacing: 8,
             runSpacing: 4,
-            children: _tags
-                .map(
-                  (tag) {
-                    final isProtected =
-                        widget.protectedTags.contains(tag);
-                    return Chip(
-                      label: Text('#$tag'),
-                      onDeleted: isProtected
-                          ? null
-                          : () => setState(() => _tags.remove(tag)),
-                    );
-                  },
-                )
-                .toList(),
+            children: _tags.map((tag) {
+              final isProtected = widget.protectedTags.contains(tag);
+              return Chip(
+                label: Text('#$tag'),
+                onDeleted: isProtected
+                    ? null
+                    : () => setState(() => _tags.remove(tag)),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 12),
           Row(
@@ -394,10 +385,7 @@ class _TagEditorSheetState extends State<_TagEditorSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: _addTag,
-              ),
+              IconButton(icon: const Icon(Icons.add), onPressed: _addTag),
             ],
           ),
           const SizedBox(height: 16),
