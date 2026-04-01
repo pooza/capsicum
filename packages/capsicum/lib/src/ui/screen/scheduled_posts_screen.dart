@@ -291,11 +291,30 @@ class _ScheduledPostTile extends StatelessWidget {
   }
 }
 
-/// Extracts hashtags from post content.
+/// Extracts hashtags from the trailing hashtag block of post content.
+/// Only tags in trailing lines (where every word is a hashtag) are extracted,
+/// so inline hashtags in the body are not included.
 List<String> _extractTags(String content) {
+  final lines = content.split('\n');
+  final tagLines = <String>[];
+
+  // Walk from the end to collect trailing hashtag lines.
+  for (int i = lines.length - 1; i >= 0; i--) {
+    final trimmed = lines[i].trim();
+    if (trimmed.isEmpty) continue;
+    final isTagLine = trimmed
+        .split(RegExp(r'\s+'))
+        .every((word) => word.startsWith('#') && word.length > 1);
+    if (isTagLine) {
+      tagLines.add(trimmed);
+    } else {
+      break;
+    }
+  }
+
   final tagPattern = RegExp(r'#(\S+)');
-  return tagPattern
-      .allMatches(content)
+  return tagLines
+      .expand((line) => tagPattern.allMatches(line))
       .map((m) => m.group(1)!)
       .toSet()
       .toList();

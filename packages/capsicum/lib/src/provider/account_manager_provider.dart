@@ -130,23 +130,23 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     if (current == null) return false;
 
     final mulukhiya = await _detectMulukhiya(current.key.host);
-    if (mulukhiya != null) {
-      if (current.adapter is MastodonAdapter) {
-        (current.adapter as MastodonAdapter).applyAdminRoleIds(
-          mulukhiya.adminRoleIds,
-        );
-      } else if (current.adapter is MisskeyAdapter) {
-        (current.adapter as MisskeyAdapter).applyAdminRoleIds(
-          mulukhiya.adminRoleIds,
-        );
-      }
+    if (mulukhiya == null) return false;
+
+    if (current.adapter is MastodonAdapter) {
+      (current.adapter as MastodonAdapter).applyAdminRoleIds(
+        mulukhiya.adminRoleIds,
+      );
+    } else if (current.adapter is MisskeyAdapter) {
+      (current.adapter as MisskeyAdapter).applyAdminRoleIds(
+        mulukhiya.adminRoleIds,
+      );
     }
     final updated = current.copyWithMulukhiya(mulukhiya);
     final accounts = state.accounts
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
     state = AccountManagerState(accounts: accounts, current: updated);
-    return mulukhiya != null;
+    return true;
   }
 
   /// Detect software version via NodeInfo on the given host.
