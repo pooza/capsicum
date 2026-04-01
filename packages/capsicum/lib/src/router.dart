@@ -25,6 +25,9 @@ import 'ui/screen/search_screen.dart';
 import 'ui/screen/server_selection_screen.dart';
 import 'ui/screen/server_info_screen.dart';
 import 'ui/screen/settings_screen.dart';
+import 'ui/screen/settings/account_settings_screen.dart';
+import 'ui/screen/settings/appearance_settings_screen.dart';
+import 'ui/screen/settings/display_settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/list_members_screen.dart';
@@ -109,6 +112,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/account',
+        builder: (context, state) => const AccountSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/appearance',
+        builder: (context, state) => const AppearanceSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/display',
+        builder: (context, state) => const DisplaySettingsScreen(),
       ),
       GoRoute(
         path: '/server-info',

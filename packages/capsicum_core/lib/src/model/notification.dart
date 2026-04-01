@@ -19,6 +19,7 @@ class Notification {
   final DateTime createdAt;
   final User? user;
   final Post? post;
+  final String? reaction;
   final bool unread;
 
   const Notification({
@@ -27,6 +28,7 @@ class Notification {
     required this.createdAt,
     this.user,
     this.post,
+    this.reaction,
     this.unread = true,
   });
 }

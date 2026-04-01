@@ -159,6 +159,11 @@ class _NotificationTileState extends State<NotificationTile> {
                 ),
               ),
               Text(' が$label', style: theme.textTheme.bodySmall),
+              if (notification.type == NotificationType.reaction &&
+                  notification.reaction != null) ...[
+                const SizedBox(width: 4),
+                _buildReactionEmoji(notification.reaction!),
+              ],
             ],
           ),
         ),
@@ -177,4 +182,47 @@ class _NotificationTileState extends State<NotificationTile> {
     NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
+
+  Widget _buildReactionEmoji(String reaction) {
+    final url = _resolveReactionUrl(reaction);
+    if (url != null) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 18, maxWidth: 54),
+        child: Image.network(
+          url,
+          height: 18,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) =>
+              Text(reaction, style: const TextStyle(fontSize: 14)),
+        ),
+      );
+    }
+    return Text(reaction, style: const TextStyle(fontSize: 16));
+  }
+
+  /// Resolve reaction key to an emoji image URL (custom emoji) or null (unicode).
+  String? _resolveReactionUrl(String reaction) {
+    final isCustom = reaction.startsWith(':') && reaction.endsWith(':');
+    if (!isCustom) return null;
+    final stripped = reaction.substring(1, reaction.length - 1);
+    final nameOnly = stripped.contains('@')
+        ? stripped.substring(0, stripped.indexOf('@'))
+        : stripped;
+    // Check reactionEmojis from the post first.
+    final post = notification.post;
+    final url =
+        post?.reactionEmojis[stripped] ?? post?.reactionEmojis[nameOnly];
+    if (url != null) return url;
+    // Fallback: construct URL from emoji host.
+    final atIndex = stripped.indexOf('@');
+    final hostPart = atIndex >= 0 ? stripped.substring(atIndex + 1) : null;
+    final isLocal = hostPart == null || hostPart == '.' || hostPart.isEmpty;
+    final emojiHost = isLocal
+        ? (post?.emojiHost ?? post?.author.host)
+        : hostPart;
+    if (emojiHost != null) {
+      return 'https://$emojiHost/emoji/$nameOnly.webp';
+    }
+    return null;
+  }
 }

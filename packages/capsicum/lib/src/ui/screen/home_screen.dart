@@ -24,6 +24,7 @@ import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
+import '../widget/tab_management_sheet.dart';
 
 /// Currently selected list ID (null = normal timeline mode).
 final selectedListProvider = StateProvider<PostList?>((ref) => null);
@@ -514,13 +515,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         : defaultTabOrder;
     final tabs = order.where(supported.contains).toList();
 
-    // Fetch lists.
+    // Fetch lists (filtered and ordered).
     final listsAsync = ref.watch(listsProvider);
-    final lists = listsAsync.valueOrNull ?? [];
+    final allLists = listsAsync.valueOrNull ?? [];
+    final storageKey = account?.key.toStorageKey();
+    final hiddenIds = storageKey != null
+        ? ref.watch(hiddenListIdsProvider(storageKey))
+        : <String>{};
+    final listOrder = storageKey != null
+        ? ref.watch(listOrderProvider(storageKey))
+        : <String>[];
+    final visibleLists = allLists
+        .where((l) => !hiddenIds.contains(l.id))
+        .toList();
+    if (listOrder.isNotEmpty) {
+      visibleLists.sort((a, b) {
+        final ai = listOrder.indexOf(a.id);
+        final bi = listOrder.indexOf(b.id);
+        if (ai == -1 && bi == -1) return 0;
+        if (ai == -1) return 1;
+        if (bi == -1) return -1;
+        return ai.compareTo(bi);
+      });
+    }
 
     // Pinned hashtags.
-    final pinnedHashtags = account != null
-        ? ref.watch(pinnedHashtagsProvider(account.key.toStorageKey()))
+    final pinnedHashtags = storageKey != null
+        ? ref.watch(pinnedHashtagsProvider(storageKey))
         : <String>[];
 
     return SingleChildScrollView(
@@ -548,7 +569,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             });
           }),
           // List tabs.
-          ...lists.map((list) {
+          ...visibleLists.map((list) {
             final isSelected =
                 selectedHashtag == null && selectedList?.id == list.id;
             return _tabChip(context, list.title, isSelected, () {
@@ -557,15 +578,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               _saveLastTab();
             });
           }),
-          // List management button.
-          if (adapter is ListSupport)
-            IconButton(
-              icon: const Icon(Icons.edit_note, size: 20),
-              tooltip: 'リスト管理',
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              constraints: const BoxConstraints(),
-              onPressed: () => context.push('/lists/manage'),
-            ),
           // Pinned hashtag tabs.
           ...pinnedHashtags.map((tag) {
             final isSelected = selectedHashtag == tag;
@@ -575,29 +587,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               _saveLastTab();
             });
           }),
-          // Hashtag pin management button.
-          if (adapter is HashtagSupport)
-            IconButton(
-              icon: const Icon(Icons.tag, size: 20),
-              tooltip: 'ハッシュタグタブ管理',
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              constraints: const BoxConstraints(),
-              onPressed: () => _showHashtagManagement(context),
-            ),
+          // Tab management button.
+          IconButton(
+            icon: const Icon(Icons.tune, size: 20),
+            tooltip: 'タブ管理',
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            constraints: const BoxConstraints(),
+            onPressed: () => _showTabManagement(context),
+          ),
         ],
       ),
     );
   }
 
-  void _showHashtagManagement(BuildContext context) {
+  void _showTabManagement(BuildContext context) {
     final account = ref.read(currentAccountProvider);
     if (account == null) return;
     final storageKey = account.key.toStorageKey();
+    final lists = ref.read(listsProvider).valueOrNull ?? [];
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _HashtagManagementSheet(storageKey: storageKey),
+      builder: (_) =>
+          TabManagementSheet(storageKey: storageKey, allLists: lists),
     );
   }
 
@@ -1374,125 +1387,6 @@ class _LivecureFilterButton extends StatelessWidget {
       ),
       tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
       onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
-    );
-  }
-}
-
-class _HashtagManagementSheet extends ConsumerStatefulWidget {
-  final String storageKey;
-
-  const _HashtagManagementSheet({required this.storageKey});
-
-  @override
-  ConsumerState<_HashtagManagementSheet> createState() =>
-      _HashtagManagementSheetState();
-}
-
-class _HashtagManagementSheetState
-    extends ConsumerState<_HashtagManagementSheet> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _addHashtag() {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    ref.read(pinnedHashtagsProvider(widget.storageKey).notifier).add(text);
-    _controller.clear();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tags = ref.watch(pinnedHashtagsProvider(widget.storageKey));
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Text(
-                  'ハッシュタグタブ',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'ハッシュタグを入力',
-                      prefixText: '#',
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) => _addHashtag(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(icon: const Icon(Icons.add), onPressed: _addHashtag),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (tags.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('ピン留めされたハッシュタグはありません'),
-            )
-          else
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              buildDefaultDragHandles: false,
-              itemCount: tags.length,
-              onReorder: (oldIndex, newIndex) {
-                ref
-                    .read(pinnedHashtagsProvider(widget.storageKey).notifier)
-                    .reorder(oldIndex, newIndex);
-              },
-              itemBuilder: (context, index) {
-                final tag = tags[index];
-                return ListTile(
-                  key: ValueKey(tag),
-                  leading: ReorderableDragStartListener(
-                    index: index,
-                    child: const Icon(Icons.drag_handle),
-                  ),
-                  title: Text('#$tag'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () {
-                      ref
-                          .read(
-                            pinnedHashtagsProvider(widget.storageKey).notifier,
-                          )
-                          .remove(tag);
-                    },
-                  ),
-                );
-              },
-            ),
-          const SizedBox(height: 16),
-        ],
-      ),
     );
   }
 }

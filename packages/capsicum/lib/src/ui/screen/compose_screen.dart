@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../widget/emoji_picker.dart';
@@ -632,6 +633,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           onClear: () {
             Navigator.pop(sheetContext);
             _insertTagsetYaml(null);
+            _restoreDecoration();
           },
           onEpisodeBrowser: () {
             Navigator.pop(sheetContext);
@@ -700,6 +702,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
+  Future<void> _restoreDecoration() async {
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+    try {
+      await mulukhiya.restoreDecoration(account.userSecret.accessToken);
+    } catch (_) {
+      // Decoration restore is best-effort; ignore failures.
+    }
+  }
+
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
@@ -746,6 +759,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
+
+    if (ref.read(confirmBeforePostProvider)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('確認'),
+          content: const Text('投稿しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('投稿'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
 
     if (_pollEnabled) {
       final filledOptions = _pollControllers
@@ -1021,84 +1055,87 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ],
             const Divider(),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: _sending ? null : _pickMedia,
-                  icon: const Icon(Icons.photo),
-                  tooltip: 'メディアを添付',
-                ),
-                if (ref.watch(currentAdapterProvider) is DriveSupport)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
                   IconButton(
-                    onPressed: _sending ? null : _pickDriveFiles,
-                    icon: const Icon(Icons.cloud_outlined),
-                    tooltip: 'ドライブ',
+                    onPressed: _sending ? null : _pickMedia,
+                    icon: const Icon(Icons.photo),
+                    tooltip: 'メディアを添付',
                   ),
-                IconButton(
-                  onPressed: _sending ? null : _showEmojiPicker,
-                  icon: const Icon(Icons.emoji_emotions_outlined),
-                  tooltip: '絵文字',
-                ),
-                IconButton(
-                  onPressed: _sending
-                      ? null
-                      : () => setState(() => _cwEnabled = !_cwEnabled),
-                  icon: Icon(
-                    Icons.warning_amber,
-                    color: _cwEnabled
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
+                  if (ref.watch(currentAdapterProvider) is DriveSupport)
+                    IconButton(
+                      onPressed: _sending ? null : _pickDriveFiles,
+                      icon: const Icon(Icons.cloud_outlined),
+                      tooltip: 'ドライブ',
+                    ),
+                  IconButton(
+                    onPressed: _sending ? null : _showEmojiPicker,
+                    icon: const Icon(Icons.emoji_emotions_outlined),
+                    tooltip: '絵文字',
                   ),
-                  tooltip: '閲覧注意',
-                ),
-                if (ref.watch(currentAdapterProvider) is PollSupport)
                   IconButton(
                     onPressed: _sending
                         ? null
-                        : () => setState(() => _pollEnabled = !_pollEnabled),
+                        : () => setState(() => _cwEnabled = !_cwEnabled),
                     icon: Icon(
-                      Icons.poll_outlined,
-                      color: _pollEnabled
+                      Icons.warning_amber,
+                      color: _cwEnabled
                           ? Theme.of(context).colorScheme.primary
                           : null,
                     ),
-                    tooltip: 'アンケート',
+                    tooltip: '閲覧注意',
                   ),
-                if (_attachments.isNotEmpty)
-                  IconButton(
-                    onPressed: _sending
-                        ? null
-                        : () => setState(
-                            () => _sensitiveEnabled = !_sensitiveEnabled,
-                          ),
-                    icon: Icon(
-                      _effectiveSensitive
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: _effectiveSensitive
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
+                  if (ref.watch(currentAdapterProvider) is PollSupport)
+                    IconButton(
+                      onPressed: _sending
+                          ? null
+                          : () => setState(() => _pollEnabled = !_pollEnabled),
+                      icon: Icon(
+                        Icons.poll_outlined,
+                        color: _pollEnabled
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      tooltip: 'アンケート',
                     ),
-                    tooltip: '閲覧注意メディア',
-                  ),
-                if (ref.watch(currentMulukhiyaProvider) != null)
-                  IconButton(
-                    onPressed: _sending ? null : _showTagsetSheet,
-                    icon: const Icon(Icons.live_tv),
-                    tooltip: '実況',
-                  ),
-                if (ref.watch(currentAdapterProvider) is ScheduleSupport)
-                  IconButton(
-                    onPressed: _sending ? null : _pickScheduleDate,
-                    icon: Icon(
-                      Icons.schedule,
-                      color: _scheduledAt != null
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
+                  if (_attachments.isNotEmpty)
+                    IconButton(
+                      onPressed: _sending
+                          ? null
+                          : () => setState(
+                              () => _sensitiveEnabled = !_sensitiveEnabled,
+                            ),
+                      icon: Icon(
+                        _effectiveSensitive
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        color: _effectiveSensitive
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      tooltip: '閲覧注意メディア',
                     ),
-                    tooltip: '予約投稿',
-                  ),
-              ],
+                  if (ref.watch(currentMulukhiyaProvider) != null)
+                    IconButton(
+                      onPressed: _sending ? null : _showTagsetSheet,
+                      icon: const Icon(Icons.live_tv),
+                      tooltip: '実況',
+                    ),
+                  if (ref.watch(currentAdapterProvider) is ScheduleSupport)
+                    IconButton(
+                      onPressed: _sending ? null : _pickScheduleDate,
+                      icon: Icon(
+                        Icons.schedule,
+                        color: _scheduledAt != null
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      tooltip: '予約投稿',
+                    ),
+                ],
+              ),
             ),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,

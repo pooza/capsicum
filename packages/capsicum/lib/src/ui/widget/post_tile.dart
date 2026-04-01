@@ -13,6 +13,7 @@ import 'package:yaml/yaml.dart';
 import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
@@ -443,7 +444,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                         ],
                         const SizedBox(width: 4),
                         Text(
-                          _relativeTime(displayPost.postedAt),
+                          _formatTime(displayPost.postedAt),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1435,7 +1436,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     return handle;
   }
 
-  String _relativeTime(DateTime postedAt) {
+  String _formatTime(DateTime postedAt) {
+    if (ref.watch(absoluteTimeProvider)) {
+      final local = postedAt.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
     final diff = DateTime.now().toUtc().difference(postedAt);
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
@@ -2101,13 +2107,16 @@ class _QuoteStateCard extends StatelessWidget {
   }
 }
 
-class _PreviewCardWidget extends StatelessWidget {
+class _PreviewCardWidget extends ConsumerWidget {
   final PreviewCard card;
 
   const _PreviewCardWidget({required this.card});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(previewCardModeProvider);
+    if (mode == PreviewCardMode.hide) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     return GestureDetector(
       onTap: () {
@@ -2124,13 +2133,26 @@ class _PreviewCardWidget extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (card.imageUrl != null)
-              Image.network(
-                card.imageUrl!,
-                width: double.infinity,
-                height: 160,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
+              mode == PreviewCardMode.blur
+                  ? ClipRect(
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Image.network(
+                          card.imageUrl!,
+                          width: double.infinity,
+                          height: 160,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    )
+                  : Image.network(
+                      card.imageUrl!,
+                      width: double.infinity,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -2166,7 +2188,7 @@ class _PreviewCardWidget extends StatelessWidget {
   }
 }
 
-class _AttachmentThumbnails extends StatefulWidget {
+class _AttachmentThumbnails extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
   final bool sensitive;
   final String? postAuthorId;
@@ -2182,10 +2204,11 @@ class _AttachmentThumbnails extends StatefulWidget {
   });
 
   @override
-  State<_AttachmentThumbnails> createState() => _AttachmentThumbnailsState();
+  ConsumerState<_AttachmentThumbnails> createState() =>
+      _AttachmentThumbnailsState();
 }
 
-class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
+class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   bool _revealed = false;
 
   Future<void> _openMediaViewer(
@@ -2324,7 +2347,8 @@ class _AttachmentThumbnailsState extends State<_AttachmentThumbnails> {
     BoxFit fit = BoxFit.cover,
   }) {
     final imageUrl = attachment.previewUrl ?? attachment.url;
-    final isSensitive = widget.sensitive && !_revealed;
+    final blurAll = ref.watch(blurAllImagesProvider);
+    final isSensitive = (widget.sensitive || blurAll) && !_revealed;
 
     return GestureDetector(
       onTap: () {

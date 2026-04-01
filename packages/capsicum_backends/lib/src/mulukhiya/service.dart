@@ -353,6 +353,25 @@ class MulukhiyaService {
     );
   }
 
+  /// Restore avatar decoration to the saved state before tagset was applied.
+  /// Requires the user's SNS access token for authentication.
+  /// Returns true if restoration succeeded, false if not applicable (e.g. no
+  /// saved state or decoration feature not available).
+  Future<bool> restoreDecoration(String accessToken) async {
+    try {
+      await _dio.post(
+        '$baseUrl/decoration/restore',
+        data: {'token': accessToken},
+      );
+      return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 401) {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
   /// Fetch favorite tags (tags found in user profiles) with user counts.
   /// Requires `/{controller}/data/favorite_tags` to be enabled.
   /// Returns empty list if the feature is disabled (404).
@@ -375,6 +394,22 @@ class MulukhiyaService {
       if (e.response?.statusCode == 404) return [];
       rethrow;
     }
+  }
+
+  /// Update tags on a scheduled status (Mastodon only).
+  /// PUT /mulukhiya/api/scheduled_status/:id/tags
+  /// Returns the new scheduled status ID (the server recreates the post).
+  Future<String> updateScheduledStatusTags({
+    required String accessToken,
+    required String id,
+    required List<String> tags,
+  }) async {
+    final response = await _dio.put(
+      '$baseUrl/scheduled_status/$id/tags',
+      data: {'token': accessToken, 'tags': tags},
+    );
+    final data = response.data as Map<String, dynamic>;
+    return data['id'] as String;
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.
