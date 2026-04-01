@@ -34,7 +34,7 @@ class PostDetailScreen extends ConsumerWidget {
                   : null,
               child: PostTile(
                 post: p,
-                tappable: !isTarget,
+                tappable: true,
                 initialExpanded: isTarget,
                 selectable: true,
                 onActionCompleted: () =>

@@ -1079,7 +1079,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final stripped = _stripHtml(user.description!);
     _bioRenderer = ContentRenderer(
       baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
-      resolveEmoji: (shortcode) => user.emojis[shortcode],
+      resolveEmoji: (shortcode) {
+        final url = user.emojis[shortcode];
+        if (url != null) return url;
+        if (user.host != null) {
+          return 'https://${user.host}/emoji/$shortcode.webp';
+        }
+        return null;
+      },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) {
@@ -1100,7 +1107,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final stripped = _stripHtml(field.value);
     final renderer = ContentRenderer(
       baseStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
-      resolveEmoji: (shortcode) => emojis[shortcode],
+      resolveEmoji: (shortcode) {
+        final url = emojis[shortcode];
+        if (url != null) return url;
+        final host = widget.user.host;
+        if (host != null) {
+          return 'https://$host/emoji/$shortcode.webp';
+        }
+        return null;
+      },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       resolveDisplayUrl: _tryResolveAcct,

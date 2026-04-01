@@ -139,6 +139,7 @@ extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
       createdAt: createdAt,
       user: user?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: note?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      reaction: reaction,
     );
   }
 }
