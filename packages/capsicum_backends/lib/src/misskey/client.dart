@@ -359,7 +359,10 @@ class MisskeyClient {
       '/api/notes/drafts/list',
       data: createBody({'scheduled': true}),
     );
-    return (response.data as List).map((e) {
+    return (response.data as List).where((e) {
+      final json = e as Map<String, dynamic>;
+      return json['scheduledAt'] != null;
+    }).map((e) {
       final json = e as Map<String, dynamic>;
       return ScheduledPost(
         id: json['id'] as String,
@@ -375,6 +378,23 @@ class MisskeyClient {
             [],
       );
     }).toList();
+  }
+
+  /// POST /api/notes/drafts/update — update a scheduled note's text.
+  Future<void> updateScheduledNote({
+    required String draftId,
+    required String text,
+    required DateTime scheduledAt,
+  }) async {
+    await dio.post(
+      '/api/notes/drafts/update',
+      data: createBody({
+        'draftId': draftId,
+        'text': text,
+        'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
+        'isActuallyScheduled': true,
+      }),
+    );
   }
 
   /// POST /api/notes/drafts/delete — cancel a scheduled note.
