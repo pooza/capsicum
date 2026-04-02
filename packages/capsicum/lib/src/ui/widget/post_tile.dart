@@ -329,6 +329,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)
@@ -2016,6 +2017,14 @@ class _QuoteCardState extends State<_QuoteCard> {
   Post get quote => widget.quote;
 
   @override
+  void didUpdateWidget(covariant _QuoteCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.quote.id != widget.quote.id) {
+      _cwExpanded = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GestureDetector(
@@ -2308,9 +2317,10 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   }
 
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
+    final thumbScale = ref.watch(thumbnailScaleProvider);
     if (images.length == 1) {
       return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 400),
+        constraints: BoxConstraints(maxHeight: 400 * thumbScale),
         child: _buildThumbnail(
           context,
           images.first,
@@ -2323,7 +2333,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
 
     if (images.length == 2) {
       return SizedBox(
-        height: 160,
+        height: 160 * thumbScale,
         child: Row(
           children: [
             Expanded(child: _buildThumbnail(context, images[0], 0, images)),
@@ -2337,7 +2347,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     // 3+ images: 2x2 grid (with +N overlay if more than 4)
     final extraCount = images.length - 4;
     return SizedBox(
-      height: 320,
+      height: 320 * thumbScale,
       child: Column(
         children: [
           Expanded(
