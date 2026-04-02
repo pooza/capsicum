@@ -169,6 +169,7 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
   final acct = account['acct'] as String? ?? username;
   final atHost = acct.contains('@') ? acct.split('@').last : null;
   final emojis = account['emojis'] as List<dynamic>? ?? [];
+  final postEmojis = quote['emojis'] as List<dynamic>? ?? [];
   return (
     post: Post(
       id: id,
@@ -192,6 +193,9 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
         },
       ),
       content: quote['content'] as String? ?? '',
+      spoilerText: (quote['spoiler_text'] as String?)?.isNotEmpty == true
+          ? quote['spoiler_text'] as String
+          : null,
       scope:
           mastodonVisibilityRosetta[quote['visibility'] as String?] ??
           PostScope.public,
@@ -209,6 +213,13 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
             ),
           )
           .toList(),
+      emojis: {
+        for (final e in postEmojis)
+          if (e is Map<String, dynamic> &&
+              e['shortcode'] is String &&
+              e['url'] is String)
+            e['shortcode'] as String: e['url'] as String,
+      },
     ),
     state: quoteState ?? QuoteState.accepted,
   );

@@ -47,6 +47,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _lastTabRestoredForAccount;
   String? _pendingListRestore;
   Timer? _throttleTimer;
+  bool _showScrollTop = false;
 
   @override
   void initState() {
@@ -97,13 +98,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
 
+    // Show/hide scroll-to-top button.
+    final minIndex = positions
+        .map((p) => p.index)
+        .reduce((a, b) => a < b ? a : b);
+    final shouldShow = minIndex > 3;
+    if (shouldShow != _showScrollTop) {
+      setState(() => _showScrollTop = shouldShow);
+    }
+
     // Save marker (home timeline only, debounced).
     if (selectedList == null && selectedHashtag == null) {
       final selectedType = ref.read(selectedTimelineTypeProvider);
       if (selectedType == TimelineType.home && timeline != null) {
-        final minIndex = positions
-            .map((p) => p.index)
-            .reduce((a, b) => a < b ? a : b);
         if (minIndex < timeline.posts.length) {
           ref.read(homeMarkerSaverProvider).save(timeline.posts[minIndex].id);
         }
@@ -298,6 +305,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountState,
         unreadAnnouncements,
       ),
+      floatingActionButton: _showScrollTop
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 56),
+              child: FloatingActionButton.small(
+                onPressed: () {
+                  if (!_itemScrollController.isAttached) return;
+                  _itemScrollController.scrollTo(
+                    index: 0,
+                    duration: const Duration(milliseconds: 300),
+                  );
+                },
+                tooltip: '先頭へ',
+                child: const Icon(Icons.arrow_upward),
+              ),
+            )
+          : null,
       body: Column(
         children: [
           Expanded(
@@ -347,7 +370,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () {
+                  if (_showScrollTop) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _showScrollTop = false);
+                    });
+                  }
+                  return const Center(child: CircularProgressIndicator());
+                },
                 error: (error, stack) {
                   final message = _timelineErrorMessage(error);
                   final canRetry = !_isForbiddenError(error);

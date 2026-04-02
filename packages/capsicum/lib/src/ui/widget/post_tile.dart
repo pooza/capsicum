@@ -149,27 +149,37 @@ class _PostTileState extends ConsumerState<PostTile> {
     return plainText.replaceAll(RegExp(r'@[\w.@-]+\s*'), '').trim();
   }
 
-  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  /// コマンドトゥート（または実行結果）かどうか判定する。
+  /// - Map にパース可能かつ `command` キーを持つ（コマンドトゥート本体）
+  /// - Map にパース可能かつ CW が「実行結果」（コマンドトゥートの結果）
   bool _isStructuredContent(String plainText, String? spoilerText) {
     final body = _stripMentions(plainText);
     if (body.isEmpty) return false;
 
-    // JSON オブジェクト/配列として有効か
-    if (body.startsWith('{') || body.startsWith('[')) {
+    dynamic parsed;
+
+    // JSON としてパース
+    if (body.startsWith('{')) {
       try {
-        final parsed = json.decode(body);
-        if (parsed is Map || parsed is List) return true;
+        parsed = json.decode(body);
       } catch (_) {}
     }
 
-    // YAML として Map/List にパースできるか — CW 付き投稿のみ対象
-    // （CW なしだと `key: value` を含む普通の投稿が誤検知される）
-    if (spoilerText != null && spoilerText.isNotEmpty) {
+    // YAML としてパース
+    if (parsed == null) {
       try {
-        final parsed = loadYaml(body);
-        if (parsed is Map || parsed is List) return true;
+        final yamlParsed = loadYaml(body);
+        if (yamlParsed is Map) parsed = yamlParsed;
       } catch (_) {}
     }
+
+    if (parsed is! Map) return false;
+
+    // コマンドトゥート本体: `command` キーを持つ
+    if (parsed.containsKey('command')) return true;
+
+    // 実行結果: CW が「実行結果」
+    if (spoilerText == '実行結果') return true;
 
     return false;
   }
@@ -319,6 +329,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)
@@ -1991,10 +2002,27 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   }
 }
 
-class _QuoteCard extends StatelessWidget {
+class _QuoteCard extends StatefulWidget {
   final Post quote;
 
   const _QuoteCard({required this.quote});
+
+  @override
+  State<_QuoteCard> createState() => _QuoteCardState();
+}
+
+class _QuoteCardState extends State<_QuoteCard> {
+  bool _cwExpanded = false;
+
+  Post get quote => widget.quote;
+
+  @override
+  void didUpdateWidget(covariant _QuoteCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.quote.id != widget.quote.id) {
+      _cwExpanded = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2039,10 +2067,42 @@ class _QuoteCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (quote.content != null && quote.content!.isNotEmpty) ...[
+            if (quote.spoilerText != null && quote.spoilerText!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(
+              GestureDetector(
+                onTap: () => setState(() => _cwExpanded = !_cwExpanded),
+                child: Row(
+                  children: [
+                    Icon(
+                      _cwExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 14,
+                      color: theme.textTheme.bodySmall?.color,
+                    ),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: EmojiText(
+                        quote.spoilerText!,
+                        emojis: quote.emojis,
+                        fallbackHost: quote.emojiHost,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if ((quote.spoilerText == null ||
+                    quote.spoilerText!.isEmpty ||
+                    _cwExpanded) &&
+                quote.content != null &&
+                quote.content!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              EmojiText(
                 _stripHtml(quote.content!),
+                emojis: quote.emojis,
+                fallbackHost: quote.emojiHost,
                 style: theme.textTheme.bodySmall,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
@@ -2255,9 +2315,10 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   }
 
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
+    final thumbScale = ref.watch(thumbnailScaleProvider);
     if (images.length == 1) {
       return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 400),
+        constraints: BoxConstraints(maxHeight: 400 * thumbScale),
         child: _buildThumbnail(
           context,
           images.first,
@@ -2270,7 +2331,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
 
     if (images.length == 2) {
       return SizedBox(
-        height: 160,
+        height: 160 * thumbScale,
         child: Row(
           children: [
             Expanded(child: _buildThumbnail(context, images[0], 0, images)),
@@ -2284,7 +2345,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     // 3+ images: 2x2 grid (with +N overlay if more than 4)
     final extraCount = images.length - 4;
     return SizedBox(
-      height: 320,
+      height: 320 * thumbScale,
       child: Column(
         children: [
           Expanded(

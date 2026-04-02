@@ -252,9 +252,7 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
             color: mulukhiya != null ? Colors.green : Colors.grey,
           ),
           title: Text(mulukhiya != null ? '検出済み' : '未検出'),
-          subtitle: mulukhiya != null
-              ? Text('${mulukhiya.controllerType} v${mulukhiya.version}')
-              : null,
+          subtitle: mulukhiya != null ? Text('v${mulukhiya.version}') : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -262,7 +260,7 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
               ? const Center(child: CircularProgressIndicator())
               : SizedBox(
                   width: _actionButtonWidth,
-                  child: FilledButton.icon(
+                  child: TextButton.icon(
                     onPressed: _redetect,
                     icon: const Icon(Icons.refresh),
                     label: const Text('再検出'),

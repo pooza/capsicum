@@ -179,3 +179,12 @@ cd android && fastlane internal && cd ..
 
 - **Google Play**: 内部テストトラックで確認 → `cd android && fastlane release` で製品版に昇格
 - **App Store**: TestFlight でテスト → `cd ios && fastlane release` で審査提出
+
+## 5. 配布方針
+
+- **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
+- **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
+- **Google Play アカウント**: 法人（Google Workspace）アカウントのため、クローズドテスト 12 人要件は免除
+- **ホットフィックス**: Fastfile の構成上 internal → promote の手順が必要（production に直接アップロードは不可）
+- **App Store の説明文更新**: リリース提出時のみ可能。随時更新はできない
+- **Google Play の説明文更新**: 随時更新可能だが審査あり

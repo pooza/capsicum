@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -47,6 +49,9 @@ class _Node {
   final String? url;
   // For codeBlock: language
   final String? language;
+  // For fn: function name and args string (e.g. "fg", "color=ff0000")
+  final String? fnName;
+  final String? fnArgs;
 
   const _Node({
     required this.type,
@@ -55,6 +60,8 @@ class _Node {
     this.rubyReading,
     this.url,
     this.language,
+    this.fnName,
+    this.fnArgs,
   });
 
   const _Node.text(this.text)
@@ -62,7 +69,9 @@ class _Node {
       children = const [],
       rubyReading = null,
       url = null,
-      language = null;
+      language = null,
+      fnName = null,
+      fnArgs = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,11 +368,14 @@ class _MfmParser {
       return null;
     }
     final fnName = nameBuf.toString().toLowerCase();
-    // Skip args (dot-separated)
+    // Parse args (dot-separated, e.g. ".color=ff0000")
+    String? fnArgs;
     if (_pos < input.length && input[_pos] == '.') {
+      final argsStart = _pos + 1; // skip leading dot
       while (_pos < input.length && input[_pos] != ' ' && input[_pos] != ']') {
         _pos++;
       }
+      fnArgs = input.substring(argsStart, _pos);
     }
     // Expect space
     if (_pos >= input.length || input[_pos] != ' ') {
@@ -380,8 +392,12 @@ class _MfmParser {
     final children = _parseInline(']');
     if (_pos < input.length && input[_pos] == ']') {
       _pos++;
-      // For unhandled functions, render children as-is
-      return _Node(type: _NodeType.fn, children: children);
+      return _Node(
+        type: _NodeType.fn,
+        children: children,
+        fnName: fnName,
+        fnArgs: fnArgs,
+      );
     }
     _pos = start;
     return null;
@@ -673,6 +689,7 @@ class ContentRenderer {
   final MentionTapCallback? onMentionTap;
   final UrlResolver? resolveUrl;
   final UrlResolver? resolveDisplayUrl;
+  final double emojiSize;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -683,6 +700,7 @@ class ContentRenderer {
     this.onMentionTap,
     this.resolveUrl,
     this.resolveDisplayUrl,
+    this.emojiSize = 20.0,
   });
 
   void dispose() {
@@ -877,10 +895,13 @@ class ContentRenderer {
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 20, maxWidth: 60),
+                constraints: BoxConstraints(
+                  maxHeight: emojiSize,
+                  maxWidth: emojiSize * 3,
+                ),
                 child: Image.network(
                   emojiUrl,
-                  height: 20,
+                  height: emojiSize,
                   fit: BoxFit.contain,
                   errorBuilder: (_, _, _) => Text(
                     ':${node.text}:',
@@ -921,7 +942,97 @@ class ContentRenderer {
         ];
 
       case _NodeType.fn:
-        // Unhandled $[fn ...] — render children as-is
+        return _renderFn(node, style);
+    }
+  }
+
+  /// Parse a `key=value` arg from the fn args string.
+  static String? _fnArg(String? args, String key) {
+    if (args == null) return null;
+    // Args may be comma-separated: "color=ff0000,size=2x"
+    for (final part in args.split(',')) {
+      final eq = part.indexOf('=');
+      if (eq > 0 && part.substring(0, eq).trim() == key) {
+        return part.substring(eq + 1).trim();
+      }
+    }
+    return null;
+  }
+
+  /// Try to parse a hex color string (with or without leading #).
+  static Color? _parseHexColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 3) {
+      hex = hex.split('').map((c) => '$c$c').join();
+    }
+    if (hex.length == 6) hex = 'FF$hex';
+    if (hex.length != 8) return null;
+    final value = int.tryParse(hex, radix: 16);
+    return value != null ? Color(value) : null;
+  }
+
+  List<InlineSpan> _renderFn(_Node node, TextStyle style) {
+    switch (node.fnName) {
+      case 'fg':
+        final color = _parseHexColor(_fnArg(node.fnArgs, 'color') ?? '');
+        if (color != null) {
+          return _renderNodes(node.children, style.copyWith(color: color));
+        }
+        return _renderNodes(node.children, style);
+
+      case 'bg':
+        final color = _parseHexColor(_fnArg(node.fnArgs, 'color') ?? '');
+        if (color != null) {
+          return _renderNodes(
+            node.children,
+            style.copyWith(backgroundColor: color),
+          );
+        }
+        return _renderNodes(node.children, style);
+
+      case 'font':
+        // $[font.serif ...], $[font.monospace ...], etc.
+        final family = node.fnArgs; // args is the font family name
+        if (family != null && family.isNotEmpty) {
+          return _renderNodes(
+            node.children,
+            style.copyWith(fontFamily: family),
+          );
+        }
+        return _renderNodes(node.children, style);
+
+      case 'blur':
+        return [
+          WidgetSpan(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'x2':
+        return _renderNodes(
+          node.children,
+          style.copyWith(fontSize: (style.fontSize ?? 14) * 2),
+        );
+
+      case 'x3':
+        return _renderNodes(
+          node.children,
+          style.copyWith(fontSize: (style.fontSize ?? 14) * 3),
+        );
+
+      case 'x4':
+        return _renderNodes(
+          node.children,
+          style.copyWith(fontSize: (style.fontSize ?? 14) * 4),
+        );
+
+      default:
+        // Unhandled fn — render children as-is
         return _renderNodes(node.children, style);
     }
   }

@@ -147,9 +147,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icons[scope], size: 18),
+            Icon(icons[scope], size: 16),
             const SizedBox(width: 4),
-            Text(labels[scope]!),
+            Text(labels[scope]!, style: const TextStyle(fontSize: 13)),
           ],
         ),
       );
@@ -899,8 +899,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.replyTo != null) _ReplyPreview(post: widget.replyTo!),
-            if (widget.quoteTo != null) _QuotePreview(post: widget.quoteTo!),
+            if (widget.replyTo != null)
+              _CollapsiblePreview(post: widget.replyTo!, icon: Icons.reply),
+            if (widget.quoteTo != null)
+              _CollapsiblePreview(
+                post: widget.quoteTo!,
+                icon: Icons.format_quote,
+              ),
             if (_cwEnabled)
               TextField(
                 controller: _cwController,
@@ -913,17 +918,48 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             Expanded(
-              child: TextField(
-                controller: _controller,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                autofocus: true,
-                enabled: !_sending,
-                decoration: const InputDecoration(
-                  hintText: '今なにしてる？',
-                  border: InputBorder.none,
-                ),
+              child: Stack(
+                children: [
+                  TextField(
+                    controller: _controller,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    autofocus: true,
+                    enabled: !_sending,
+                    decoration: const InputDecoration(
+                      hintText: '今なにしてる？',
+                      border: InputBorder.none,
+                    ),
+                  ),
+                  if (maxLength != null)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: IgnorePointer(
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _controller,
+                          builder: (context, value, _) {
+                            final len = value.text.length;
+                            return Text(
+                              '$len / $maxLength',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: len > maxLength
+                                    ? Theme.of(context).colorScheme.error
+                                    : len > maxLength * 0.8
+                                    ? Colors.orange
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withValues(alpha: 0.5),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             if (_mentionSuggestions.isNotEmpty)
@@ -985,7 +1021,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             if (_attachments.isNotEmpty) ...[
               const Divider(),
               SizedBox(
-                height: 100,
+                height: 60,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _attachments.length,
@@ -1063,17 +1099,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     onPressed: _sending ? null : _pickMedia,
                     icon: const Icon(Icons.photo),
                     tooltip: 'メディアを添付',
+                    visualDensity: VisualDensity.compact,
                   ),
                   if (ref.watch(currentAdapterProvider) is DriveSupport)
                     IconButton(
                       onPressed: _sending ? null : _pickDriveFiles,
                       icon: const Icon(Icons.cloud_outlined),
                       tooltip: 'ドライブ',
+                      visualDensity: VisualDensity.compact,
                     ),
                   IconButton(
                     onPressed: _sending ? null : _showEmojiPicker,
                     icon: const Icon(Icons.emoji_emotions_outlined),
                     tooltip: '絵文字',
+                    visualDensity: VisualDensity.compact,
                   ),
                   IconButton(
                     onPressed: _sending
@@ -1086,6 +1125,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           : null,
                     ),
                     tooltip: '閲覧注意',
+                    visualDensity: VisualDensity.compact,
                   ),
                   if (ref.watch(currentAdapterProvider) is PollSupport)
                     IconButton(
@@ -1099,6 +1139,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             : null,
                       ),
                       tooltip: 'アンケート',
+                      visualDensity: VisualDensity.compact,
                     ),
                   if (_attachments.isNotEmpty)
                     IconButton(
@@ -1116,12 +1157,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             : null,
                       ),
                       tooltip: '閲覧注意メディア',
+                      visualDensity: VisualDensity.compact,
                     ),
                   if (ref.watch(currentMulukhiyaProvider) != null)
                     IconButton(
                       onPressed: _sending ? null : _showTagsetSheet,
                       icon: const Icon(Icons.live_tv),
                       tooltip: '実況',
+                      visualDensity: VisualDensity.compact,
                     ),
                   if (ref.watch(currentAdapterProvider) is ScheduleSupport)
                     IconButton(
@@ -1133,17 +1176,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             : null,
                       ),
                       tooltip: '予約投稿',
+                      visualDensity: VisualDensity.compact,
                     ),
-                ],
-              ),
-            ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
+                  const VerticalDivider(width: 16),
                   DropdownButton<PostScope>(
                     value: _scope,
                     underline: const SizedBox.shrink(),
+                    isDense: true,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                     onChanged: _sending
                         ? null
                         : (value) {
@@ -1246,29 +1289,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ],
               ),
             ),
-            if (maxLength != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _controller,
-                    builder: (context, value, _) {
-                      final len = value.text.length;
-                      return Text(
-                        '$len / $maxLength',
-                        style: TextStyle(
-                          color: len > maxLength
-                              ? Theme.of(context).colorScheme.error
-                              : len > maxLength * 0.8
-                              ? Colors.orange
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -1276,78 +1296,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   }
 }
 
-class _ReplyPreview extends StatelessWidget {
+class _CollapsiblePreview extends StatefulWidget {
   final Post post;
+  final IconData icon;
 
-  const _ReplyPreview({required this.post});
-
-  String _extractPlainText(String content) {
-    final isHtml = content.contains('<') && content.contains('>');
-    if (!isHtml) return content;
-    return stripHtml(content);
-  }
+  const _CollapsiblePreview({required this.post, required this.icon});
 
   @override
-  Widget build(BuildContext context) {
-    final displayName = post.author.displayName ?? post.author.username;
-    final preview = _extractPlainText(post.content ?? '');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.reply,
-            size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                EmojiText(
-                  displayName,
-                  emojis: post.author.emojis,
-                  fallbackHost: post.emojiHost,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (preview.isNotEmpty)
-                  Text(
-                    preview,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  State<_CollapsiblePreview> createState() => _CollapsiblePreviewState();
 }
 
-class _QuotePreview extends StatelessWidget {
-  final Post post;
+class _CollapsiblePreviewState extends State<_CollapsiblePreview> {
+  bool _expanded = false;
 
-  const _QuotePreview({required this.post});
-
-  String _extractPlainText(String content) {
+  static String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
     if (!isHtml) return content;
     return stripHtml(content);
@@ -1355,54 +1317,65 @@ class _QuotePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final displayName = post.author.displayName ?? post.author.username;
     final preview = _extractPlainText(post.content ?? '');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.format_quote,
-            size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                EmojiText(
-                  displayName,
-                  emojis: post.author.emojis,
-                  fallbackHost: post.emojiHost,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (preview.isNotEmpty)
-                  Text(
-                    preview,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(widget.icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _expanded
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        EmojiText(
+                          displayName,
+                          emojis: post.author.emojis,
+                          fallbackHost: post.emojiHost,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: color,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (preview.isNotEmpty)
+                          Text(
+                            preview,
+                            style: TextStyle(fontSize: 12, color: color),
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    )
+                  : EmojiText(
+                      '$displayName: $preview',
+                      emojis: post.author.emojis,
+                      fallbackHost: post.emojiHost,
+                      style: TextStyle(fontSize: 12, color: color),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-              ],
             ),
-          ),
-        ],
+            Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 14,
+              color: color,
+            ),
+          ],
+        ),
       ),
     );
   }
