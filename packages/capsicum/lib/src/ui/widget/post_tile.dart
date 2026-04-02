@@ -2092,8 +2092,10 @@ class _QuoteCardState extends State<_QuoteCard> {
                 quote.content != null &&
                 quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(
+              EmojiText(
                 _stripHtml(quote.content!),
+                emojis: quote.emojis,
+                fallbackHost: quote.emojiHost,
                 style: theme.textTheme.bodySmall,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
