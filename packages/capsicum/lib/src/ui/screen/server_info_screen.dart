@@ -253,7 +253,7 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
           ),
           title: Text(mulukhiya != null ? '検出済み' : '未検出'),
           subtitle: mulukhiya != null
-              ? Text('${mulukhiya.controllerType} v${mulukhiya.version}')
+              ? Text('v${mulukhiya.version}')
               : null,
         ),
         Padding(
