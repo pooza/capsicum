@@ -310,6 +310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               padding: const EdgeInsets.only(bottom: 56),
               child: FloatingActionButton.small(
                 onPressed: () {
+                  if (!_itemScrollController.isAttached) return;
                   _itemScrollController.scrollTo(
                     index: 0,
                     duration: const Duration(milliseconds: 300),
@@ -369,7 +370,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () {
+                  if (_showScrollTop) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _showScrollTop = false);
+                    });
+                  }
+                  return const Center(child: CircularProgressIndicator());
+                },
                 error: (error, stack) {
                   final message = _timelineErrorMessage(error);
                   final canRetry = !_isForbiddenError(error);
