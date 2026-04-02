@@ -149,27 +149,37 @@ class _PostTileState extends ConsumerState<PostTile> {
     return plainText.replaceAll(RegExp(r'@[\w.@-]+\s*'), '').trim();
   }
 
-  /// コマンドトゥート結果など、コードブロック表示すべき本文かどうか判定する。
+  /// コマンドトゥート（または実行結果）かどうか判定する。
+  /// - Map にパース可能かつ `command` キーを持つ（コマンドトゥート本体）
+  /// - Map にパース可能かつ CW が「実行結果」（コマンドトゥートの結果）
   bool _isStructuredContent(String plainText, String? spoilerText) {
     final body = _stripMentions(plainText);
     if (body.isEmpty) return false;
 
-    // JSON オブジェクト/配列として有効か
-    if (body.startsWith('{') || body.startsWith('[')) {
+    dynamic parsed;
+
+    // JSON としてパース
+    if (body.startsWith('{')) {
       try {
-        final parsed = json.decode(body);
-        if (parsed is Map || parsed is List) return true;
+        parsed = json.decode(body);
       } catch (_) {}
     }
 
-    // YAML として Map/List にパースできるか — CW 付き投稿のみ対象
-    // （CW なしだと `key: value` を含む普通の投稿が誤検知される）
-    if (spoilerText != null && spoilerText.isNotEmpty) {
+    // YAML としてパース
+    if (parsed == null) {
       try {
-        final parsed = loadYaml(body);
-        if (parsed is Map || parsed is List) return true;
+        final yamlParsed = loadYaml(body);
+        if (yamlParsed is Map) parsed = yamlParsed;
       } catch (_) {}
     }
+
+    if (parsed is! Map) return false;
+
+    // コマンドトゥート本体: `command` キーを持つ
+    if (parsed.containsKey('command')) return true;
+
+    // 実行結果: CW が「実行結果」
+    if (spoilerText == '実行結果') return true;
 
     return false;
   }
