@@ -306,15 +306,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         unreadAnnouncements,
       ),
       floatingActionButton: _showScrollTop
-          ? FloatingActionButton.small(
-              onPressed: () {
-                _itemScrollController.scrollTo(
-                  index: 0,
-                  duration: const Duration(milliseconds: 300),
-                );
-              },
-              tooltip: '先頭へ',
-              child: const Icon(Icons.arrow_upward),
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 56),
+              child: FloatingActionButton.small(
+                onPressed: () {
+                  _itemScrollController.scrollTo(
+                    index: 0,
+                    duration: const Duration(milliseconds: 300),
+                  );
+                },
+                tooltip: '先頭へ',
+                child: const Icon(Icons.arrow_upward),
+              ),
             )
           : null,
       body: Column(
