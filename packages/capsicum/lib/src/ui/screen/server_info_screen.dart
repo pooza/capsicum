@@ -262,7 +262,7 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
               ? const Center(child: CircularProgressIndicator())
               : SizedBox(
                   width: _actionButtonWidth,
-                  child: FilledButton.icon(
+                  child: TextButton.icon(
                     onPressed: _redetect,
                     icon: const Icon(Icons.refresh),
                     label: const Text('再検出'),
