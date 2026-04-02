@@ -1,14 +1,16 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart' hide Notification;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import 'content_parser.dart';
 import 'emoji_text.dart';
 import 'user_avatar.dart';
 
-class NotificationTile extends StatefulWidget {
+class NotificationTile extends ConsumerStatefulWidget {
   final Notification notification;
   final String postLabel;
   final String reblogLabel;
@@ -21,10 +23,10 @@ class NotificationTile extends StatefulWidget {
   });
 
   @override
-  State<NotificationTile> createState() => _NotificationTileState();
+  ConsumerState<NotificationTile> createState() => _NotificationTileState();
 }
 
-class _NotificationTileState extends State<NotificationTile> {
+class _NotificationTileState extends ConsumerState<NotificationTile> {
   ContentRenderer? _contentRenderer;
 
   Notification get notification => widget.notification;
@@ -79,6 +81,7 @@ class _NotificationTileState extends State<NotificationTile> {
         if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     final isHtml = content.contains('<p>') || content.contains('<br');
     return isHtml

@@ -1,11 +1,13 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import 'content_parser.dart';
 
-class AnnouncementTile extends StatefulWidget {
+class AnnouncementTile extends ConsumerStatefulWidget {
   final Announcement announcement;
   final String? host;
   final VoidCallback? onDismiss;
@@ -18,10 +20,10 @@ class AnnouncementTile extends StatefulWidget {
   });
 
   @override
-  State<AnnouncementTile> createState() => _AnnouncementTileState();
+  ConsumerState<AnnouncementTile> createState() => _AnnouncementTileState();
 }
 
-class _AnnouncementTileState extends State<AnnouncementTile> {
+class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
   ContentRenderer? _contentRenderer;
 
   Announcement get announcement => widget.announcement;
@@ -71,6 +73,7 @@ class _AnnouncementTileState extends State<AnnouncementTile> {
         final uri = Uri.tryParse(url);
         if (uri != null) launchUrlSafely(uri);
       },
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     return announcement.isHtml
         ? _contentRenderer!.renderHtml(content)

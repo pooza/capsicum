@@ -18,6 +18,8 @@ const _confirmBeforePostKey = 'confirm_before_post';
 const _hiddenListIdsPrefix = 'hidden_list_ids_';
 const _listOrderPrefix = 'list_order_';
 const _previewCardModeKey = 'preview_card_mode';
+const _emojiScaleKey = 'emoji_scale';
+const _thumbnailScaleKey = 'thumbnail_scale';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -47,6 +49,36 @@ const fontScaleStep = 0.1;
 /// changes, so the entire app rebuilds with the new text size.
 final fontScaleProvider = NotifierProvider<FontScaleNotifier, double>(
   FontScaleNotifier.new,
+);
+
+/// Default custom emoji size in logical pixels.
+const defaultEmojiSize = 20.0;
+
+/// Minimum / maximum emoji size.
+const minEmojiSize = 16.0;
+const maxEmojiSize = 40.0;
+
+/// Step size for emoji size slider.
+const emojiSizeStep = 2.0;
+
+/// Provides the current custom emoji size.
+final emojiSizeProvider = NotifierProvider<EmojiSizeNotifier, double>(
+  EmojiSizeNotifier.new,
+);
+
+/// Default thumbnail scale factor (1.0 = original size).
+const defaultThumbnailScale = 1.0;
+
+/// Minimum / maximum thumbnail scale.
+const minThumbnailScale = 0.4;
+const maxThumbnailScale = 1.2;
+
+/// Step size for thumbnail scale slider.
+const thumbnailScaleStep = 0.1;
+
+/// Provides the current thumbnail scale factor.
+final thumbnailScaleProvider = NotifierProvider<ThumbnailScaleNotifier, double>(
+  ThumbnailScaleNotifier.new,
 );
 
 /// Preset colors for the theme color picker.
@@ -554,5 +586,51 @@ class FontScaleNotifier extends Notifier<double> {
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_fontScaleKey, clamped);
+  }
+}
+
+class EmojiSizeNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return defaultEmojiSize;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_emojiScaleKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setSize(double size) async {
+    final clamped = size.clamp(minEmojiSize, maxEmojiSize);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_emojiScaleKey, clamped);
+  }
+}
+
+class ThumbnailScaleNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return defaultThumbnailScale;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_thumbnailScaleKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setScale(double scale) async {
+    final clamped = scale.clamp(minThumbnailScale, maxThumbnailScale);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_thumbnailScaleKey, clamped);
   }
 }

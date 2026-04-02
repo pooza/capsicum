@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../provider/preferences_provider.dart';
 
 /// A [Text]-like widget that replaces `:shortcode:` patterns with inline
 /// custom-emoji images.
 ///
 /// When no shortcodes are found the widget falls back to a plain [Text].
-class EmojiText extends StatelessWidget {
+class EmojiText extends ConsumerWidget {
   final String text;
   final Map<String, String> emojis;
   final TextStyle? style;
@@ -29,7 +32,8 @@ class EmojiText extends StatelessWidget {
   static final _shortcodeRegex = RegExp(r':([a-zA-Z0-9_-]+):');
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final emojiSize = ref.watch(emojiSizeProvider);
     if (emojis.isEmpty && fallbackHost == null) {
       return Text(text, style: style, maxLines: maxLines, overflow: overflow);
     }
@@ -54,10 +58,13 @@ class EmojiText extends StatelessWidget {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 20, maxWidth: 60),
+              constraints: BoxConstraints(
+                maxHeight: emojiSize,
+                maxWidth: emojiSize * 3,
+              ),
               child: Image.network(
                 url,
-                height: 20,
+                height: emojiSize,
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) =>
                     Text(':$shortcode:', style: const TextStyle(fontSize: 14)),

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
@@ -1095,6 +1096,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     return RichText(text: _bioRenderer!.renderMfm(stripped));
   }
@@ -1124,6 +1126,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      emojiSize: ref.watch(emojiSizeProvider),
     );
     return RichText(text: renderer.renderMfm(stripped));
   }
