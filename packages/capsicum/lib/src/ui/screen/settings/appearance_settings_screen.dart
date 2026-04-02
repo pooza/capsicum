@@ -164,9 +164,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                         value: thumbnailScale,
                         min: minThumbnailScale,
                         max: maxThumbnailScale,
-                        divisions: ((maxThumbnailScale - minThumbnailScale) /
-                                thumbnailScaleStep)
-                            .round(),
+                        divisions:
+                            ((maxThumbnailScale - minThumbnailScale) /
+                                    thumbnailScaleStep)
+                                .round(),
                         label: '${(thumbnailScale * 100).round()}%',
                         onChanged: (value) {
                           ref

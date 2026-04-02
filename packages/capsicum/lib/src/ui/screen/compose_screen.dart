@@ -900,10 +900,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.replyTo != null)
-              _CollapsiblePreview(
-                post: widget.replyTo!,
-                icon: Icons.reply,
-              ),
+              _CollapsiblePreview(post: widget.replyTo!, icon: Icons.reply),
             if (widget.quoteTo != null)
               _CollapsiblePreview(
                 post: widget.quoteTo!,
@@ -953,9 +950,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                                     : len > maxLength * 0.8
                                     ? Colors.orange
                                     : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant
-                                        .withValues(alpha: 0.5),
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withValues(alpha: 0.5),
                               ),
                             );
                           },

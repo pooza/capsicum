@@ -2067,17 +2067,14 @@ class _QuoteCardState extends State<_QuoteCard> {
                 ),
               ],
             ),
-            if (quote.spoilerText != null &&
-                quote.spoilerText!.isNotEmpty) ...[
+            if (quote.spoilerText != null && quote.spoilerText!.isNotEmpty) ...[
               const SizedBox(height: 4),
               GestureDetector(
                 onTap: () => setState(() => _cwExpanded = !_cwExpanded),
                 child: Row(
                   children: [
                     Icon(
-                      _cwExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      _cwExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 14,
                       color: theme.textTheme.bodySmall?.color,
                     ),
@@ -2096,7 +2093,8 @@ class _QuoteCardState extends State<_QuoteCard> {
                 ),
               ),
             ],
-            if ((quote.spoilerText == null || quote.spoilerText!.isEmpty ||
+            if ((quote.spoilerText == null ||
+                    quote.spoilerText!.isEmpty ||
                     _cwExpanded) &&
                 quote.content != null &&
                 quote.content!.isNotEmpty) ...[
