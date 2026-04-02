@@ -2001,10 +2001,19 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   }
 }
 
-class _QuoteCard extends StatelessWidget {
+class _QuoteCard extends StatefulWidget {
   final Post quote;
 
   const _QuoteCard({required this.quote});
+
+  @override
+  State<_QuoteCard> createState() => _QuoteCardState();
+}
+
+class _QuoteCardState extends State<_QuoteCard> {
+  bool _cwExpanded = false;
+
+  Post get quote => widget.quote;
 
   @override
   Widget build(BuildContext context) {
@@ -2049,7 +2058,39 @@ class _QuoteCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (quote.content != null && quote.content!.isNotEmpty) ...[
+            if (quote.spoilerText != null &&
+                quote.spoilerText!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => setState(() => _cwExpanded = !_cwExpanded),
+                child: Row(
+                  children: [
+                    Icon(
+                      _cwExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 14,
+                      color: theme.textTheme.bodySmall?.color,
+                    ),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: EmojiText(
+                        quote.spoilerText!,
+                        emojis: quote.emojis,
+                        fallbackHost: quote.emojiHost,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if ((quote.spoilerText == null || quote.spoilerText!.isEmpty ||
+                    _cwExpanded) &&
+                quote.content != null &&
+                quote.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 _stripHtml(quote.content!),
