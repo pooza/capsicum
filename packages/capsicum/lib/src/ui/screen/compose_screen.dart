@@ -147,9 +147,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icons[scope], size: 18),
+            Icon(icons[scope], size: 16),
             const SizedBox(width: 4),
-            Text(labels[scope]!),
+            Text(labels[scope]!, style: const TextStyle(fontSize: 13)),
           ],
         ),
       );
@@ -1186,6 +1186,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     value: _scope,
                     underline: const SizedBox.shrink(),
                     isDense: true,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                     onChanged: _sending
                         ? null
                         : (value) {
