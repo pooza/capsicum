@@ -412,6 +412,18 @@ class MulukhiyaService {
     return data['id'] as String;
   }
 
+  /// DELETE /mulukhiya/api/status/nowplaying
+  /// Removes NowPlaying information from a post and reposts it.
+  Future<void> deleteNowPlaying({
+    required String accessToken,
+    required String id,
+  }) async {
+    await _dio.delete(
+      '$baseUrl/status/nowplaying',
+      data: {'token': accessToken, 'id': id},
+    );
+  }
+
   /// Fetch default hashtags from /mulukhiya/api/about.
   /// The about endpoint is public (no auth required).
   Future<List<String>> getDefaultHashtags() async {
