@@ -194,12 +194,19 @@ class _TabOrderTile extends StatelessWidget {
               label: const Text('タブ管理'),
               onPressed: () {
                 final lists = ref.read(listsProvider).valueOrNull ?? [];
+                final adapter = ref.read(currentAdapterProvider);
+                final supported =
+                    adapter?.capabilities.supportedTimelines ??
+                    {TimelineType.home, TimelineType.local, TimelineType.federated};
+                final isMastodon = !supported.contains(TimelineType.social);
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
                   builder: (_) => TabManagementSheet(
                     storageKey: storageKey,
                     allLists: lists,
+                    supportedTimelines: supported,
+                    isMastodon: isMastodon,
                   ),
                 );
               },

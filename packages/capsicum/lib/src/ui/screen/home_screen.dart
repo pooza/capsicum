@@ -426,10 +426,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final account = ref.read(currentAccountProvider);
+    final storageKey = account?.key.toStorageKey();
     final order = account != null
-        ? ref.read(tabOrderProvider(account.key.toStorageKey()))
+        ? ref.read(tabOrderProvider(storageKey!))
         : defaultTabOrder;
-    final tabs = order.where(supported.contains).toList();
+    final hiddenTypes = storageKey != null
+        ? ref.read(hiddenTimelineTypesProvider(storageKey))
+        : <TimelineType>{};
+    final tabs = order
+        .where((t) => supported.contains(t) && !hiddenTypes.contains(t))
+        .toList();
     final index = tabs.indexOf(current);
     if (index < 0) return;
 
@@ -540,15 +546,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // Use user-customized tab order if available.
     final account = ref.watch(currentAccountProvider);
+    final storageKey = account?.key.toStorageKey();
     final order = account != null
-        ? ref.watch(tabOrderProvider(account.key.toStorageKey()))
+        ? ref.watch(tabOrderProvider(storageKey!))
         : defaultTabOrder;
-    final tabs = order.where(supported.contains).toList();
+    final hiddenTypes = storageKey != null
+        ? ref.watch(hiddenTimelineTypesProvider(storageKey))
+        : <TimelineType>{};
+    final tabs = order
+        .where((t) => supported.contains(t) && !hiddenTypes.contains(t))
+        .toList();
 
     // Fetch lists (filtered and ordered).
     final listsAsync = ref.watch(listsProvider);
     final allLists = listsAsync.valueOrNull ?? [];
-    final storageKey = account?.key.toStorageKey();
     final hiddenIds = storageKey != null
         ? ref.watch(hiddenListIdsProvider(storageKey))
         : <String>{};
@@ -635,12 +646,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (account == null) return;
     final storageKey = account.key.toStorageKey();
     final lists = ref.read(listsProvider).valueOrNull ?? [];
+    final adapter = ref.read(currentAdapterProvider);
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final isMastodon = !supported.contains(TimelineType.social);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) =>
-          TabManagementSheet(storageKey: storageKey, allLists: lists),
+      builder: (_) => TabManagementSheet(
+        storageKey: storageKey,
+        allLists: lists,
+        supportedTimelines: supported,
+        isMastodon: isMastodon,
+      ),
     );
   }
 
@@ -901,6 +921,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onTap: () {
                 Navigator.of(context).pop();
                 _showClipList(context, ref);
+              },
+            ),
+          if (ref.read(currentAdapterProvider) is AntennaSupport)
+            ListTile(
+              leading: const Icon(Icons.settings_input_antenna),
+              title: const Text('アンテナ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showAntennaList(context, ref);
               },
             ),
           if (ref.read(currentAdapterProvider) is FlashSupport)
@@ -1334,6 +1363,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   context.push('/clip/${clip.id}', extra: clip.name);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAntennaList(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! AntennaSupport) return;
+
+    final List<Antenna> antennas;
+    try {
+      antennas = await (adapter as AntennaSupport).getAntennas();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('アンテナの取得に失敗しました')));
+      }
+      return;
+    }
+    if (antennas.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('アンテナはありません')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'アンテナ',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final antenna in antennas)
+              ListTile(
+                leading: const Icon(Icons.settings_input_antenna, size: 20),
+                title: Text(antenna.name),
+                dense: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/antenna/${antenna.id}', extra: antenna.name);
                 },
               ),
           ],

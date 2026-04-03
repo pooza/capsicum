@@ -8,11 +8,15 @@ import '../../provider/preferences_provider.dart';
 class TabManagementSheet extends ConsumerStatefulWidget {
   final String storageKey;
   final List<PostList> allLists;
+  final Set<TimelineType> supportedTimelines;
+  final bool isMastodon;
 
   const TabManagementSheet({
     super.key,
     required this.storageKey,
     required this.allLists,
+    required this.supportedTimelines,
+    this.isMastodon = false,
   });
 
   @override
@@ -76,6 +80,55 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     );
   }
 
+  static const _timelineLabels = {
+    TimelineType.home: 'ホーム',
+    TimelineType.local: 'ローカル',
+    TimelineType.social: 'ソーシャル',
+    TimelineType.federated: 'グローバル',
+  };
+
+  static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
+
+  String _timelineLabel(TimelineType type) {
+    if (widget.isMastodon) {
+      return _mastodonLabelOverrides[type] ?? _timelineLabels[type] ?? type.name;
+    }
+    return _timelineLabels[type] ?? type.name;
+  }
+
+  Widget _buildTimelineTypesSection(ThemeData theme) {
+    final hiddenTypes =
+        ref.watch(hiddenTimelineTypesProvider(widget.storageKey));
+    final order = ref.watch(tabOrderProvider(widget.storageKey));
+    final types = order.where(widget.supportedTimelines.contains).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(theme, '基本タブ'),
+        ...types.map((type) {
+          final hidden = hiddenTypes.contains(type);
+          return ListTile(
+            title: Text(
+              _timelineLabel(type),
+              style: hidden ? TextStyle(color: theme.disabledColor) : null,
+            ),
+            trailing: IconButton(
+              icon: Icon(
+                hidden ? Icons.visibility_off : Icons.visibility,
+              ),
+              onPressed: () => ref
+                  .read(
+                    hiddenTimelineTypesProvider(widget.storageKey).notifier,
+                  )
+                  .toggle(type),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hiddenIds = ref.watch(hiddenListIdsProvider(widget.storageKey));
@@ -111,6 +164,8 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
               child: ListView(
                 shrinkWrap: true,
                 children: [
+                  // --- Timeline types section ---
+                  _buildTimelineTypesSection(theme),
                   // --- Lists section ---
                   _sectionHeader(theme, 'リスト'),
                   if (lists.isNotEmpty)
