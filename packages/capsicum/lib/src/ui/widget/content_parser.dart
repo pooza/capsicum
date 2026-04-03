@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
@@ -679,12 +680,14 @@ typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
 
 /// Synchronous URL resolver: returns the resolved URL or `null`.
+typedef LinkLongPressCallback = void Function(String url);
 typedef UrlResolver = String? Function(String url);
 
 class ContentRenderer {
   final TextStyle baseStyle;
   final EmojiResolver resolveEmoji;
   final LinkTapCallback? onLinkTap;
+  final LinkLongPressCallback? onLinkLongPress;
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
   final UrlResolver? resolveUrl;
@@ -696,6 +699,7 @@ class ContentRenderer {
     required this.baseStyle,
     required this.resolveEmoji,
     this.onLinkTap,
+    this.onLinkLongPress,
     this.onHashtagTap,
     this.onMentionTap,
     this.resolveUrl,
@@ -830,8 +834,22 @@ class ContentRenderer {
         ];
 
       case _NodeType.link:
+        final url = node.url ?? '';
+        if (onLinkLongPress != null) {
+          final recognizer = _TapOrLongPressRecognizer();
+          recognizer.onTap = () => onLinkTap?.call(url);
+          recognizer.onLongPress = () => onLinkLongPress?.call(url);
+          _recognizers.add(recognizer);
+          return [
+            TextSpan(
+              text: node.text,
+              style: style.copyWith(color: Colors.blue),
+              recognizer: recognizer,
+            ),
+          ];
+        }
         final recognizer = TapGestureRecognizer()
-          ..onTap = () => onLinkTap?.call(node.url ?? '');
+          ..onTap = () => onLinkTap?.call(url);
         _recognizers.add(recognizer);
         return [
           TextSpan(
@@ -871,8 +889,16 @@ class ContentRenderer {
         final uri =
             Uri.tryParse(resolvedUrl) ??
             Uri.tryParse(Uri.encodeFull(resolvedUrl));
-        final recognizer = TapGestureRecognizer()
-          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
+        final GestureRecognizer recognizer;
+        if (onLinkLongPress != null && uri != null) {
+          final r = _TapOrLongPressRecognizer();
+          r.onTap = () => launchUrlSafely(uri);
+          r.onLongPress = () => onLinkLongPress!.call(resolvedUrl);
+          recognizer = r;
+        } else {
+          recognizer = TapGestureRecognizer()
+            ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
+        }
         _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
         final displayUrl =
@@ -1113,6 +1139,52 @@ class ContentRenderer {
     }
     return shortened;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tap + LongPress combined recognizer for TextSpan
+// ---------------------------------------------------------------------------
+
+class _TapOrLongPressRecognizer extends GestureRecognizer {
+  VoidCallback? onTap;
+  VoidCallback? onLongPress;
+
+  Timer? _longPressTimer;
+  bool _longPressTriggered = false;
+  static const _longPressDuration = Duration(milliseconds: 500);
+
+  @override
+  void addPointer(PointerDownEvent event) {
+    _longPressTriggered = false;
+    _longPressTimer?.cancel();
+    _longPressTimer = Timer(_longPressDuration, () {
+      _longPressTriggered = true;
+      onLongPress?.call();
+    });
+    GestureBinding.instance.gestureArena.add(event.pointer, this);
+  }
+
+  @override
+  void acceptGesture(int pointer) {
+    if (!_longPressTriggered) {
+      _longPressTimer?.cancel();
+      onTap?.call();
+    }
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    _longPressTimer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  String get debugDescription => '_TapOrLongPressRecognizer';
 }
 
 // ---------------------------------------------------------------------------

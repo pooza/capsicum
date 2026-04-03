@@ -327,6 +327,15 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
         launchUrlSafely(uri);
       },
+      onLinkLongPress: (url) {
+        Clipboard.setData(ClipboardData(text: url));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL をコピーしました'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
       emojiSize: ref.watch(emojiSizeProvider),
