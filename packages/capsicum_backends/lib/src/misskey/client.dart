@@ -782,6 +782,36 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/antennas/list
+  Future<List<Map<String, dynamic>>> getAntennas() async {
+    final response = await dio.post(
+      '/api/antennas/list',
+      data: createBody({}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/antennas/notes
+  Future<List<MisskeyNote>> getAntennaNotes(
+    String antennaId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/antennas/notes',
+      data: createBody({
+        'antennaId': antennaId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /api/ap/show — resolve a remote URI to a local object.
   Future<Map<String, dynamic>> apShow(String uri) async {
     final response = await dio.post(
