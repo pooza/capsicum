@@ -713,6 +713,159 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
   }
 
+  void _showPreview() {
+    final text = _controller.text;
+    if (text.trim().isEmpty && !_pollEnabled) return;
+    final account = ref.read(currentAccountProvider);
+    final user = account?.user;
+    if (user == null) return;
+
+    final emojiSize = ref.read(emojiSizeProvider);
+    final allEmojis = {...user.emojis};
+
+    // Collect poll options if enabled.
+    final pollOptions = _pollEnabled
+        ? _pollControllers
+              .map((c) => c.text.trim())
+              .where((t) => t.isNotEmpty)
+              .toList()
+        : <String>[];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final baseStyle = theme.textTheme.bodyMedium ?? const TextStyle();
+        final renderer = ContentRenderer(
+          baseStyle: baseStyle,
+          resolveEmoji: (shortcode) {
+            final url = allEmojis[shortcode];
+            if (url != null) return url;
+            if (user.host != null) {
+              return 'https://${user.host}/emoji/$shortcode.webp';
+            }
+            return null;
+          },
+          emojiSize: emojiSize,
+        );
+        final contentSpan = renderer.renderMfm(text);
+
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Text('プレビュー', style: theme.textTheme.titleMedium),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(sheetContext),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_cwEnabled && _cwController.text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber,
+                          size: 16,
+                          color: theme.colorScheme.error,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _cwController.text,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (text.trim().isNotEmpty)
+                          SizedBox(
+                            width: double.infinity,
+                            child: RichText(text: contentSpan),
+                          ),
+                        if (pollOptions.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          ...pollOptions.map((option) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: theme.colorScheme.outline,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(option),
+                            ),
+                          )),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '${_pollMultiple ? "複数選択可" : "単一選択"}'
+                              ' · ${_formatPollDuration(_pollExpiresIn)}',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                        if (_attachments.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              '添付メディア: ${_attachments.length}件',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static String _formatPollDuration(int seconds) {
+    if (seconds >= 86400) {
+      final days = seconds ~/ 86400;
+      return '$days日';
+    }
+    if (seconds >= 3600) {
+      final hours = seconds ~/ 3600;
+      return '$hours時間';
+    }
+    return '${seconds ~/ 60}分';
+  }
+
   bool get _effectiveSensitive => _cwEnabled || _sensitiveEnabled;
 
   Future<void> _pickScheduleDate() async {
@@ -881,6 +1034,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            onPressed: _sending ? null : _showPreview,
+            icon: const Icon(Icons.preview_outlined),
+            tooltip: 'プレビュー',
+          ),
           IconButton(
             onPressed: _sending ? null : _submit,
             icon: _sending
