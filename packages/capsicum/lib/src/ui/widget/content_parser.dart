@@ -1,4 +1,3 @@
-import 'dart:async' show Timer;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
@@ -836,15 +835,18 @@ class ContentRenderer {
       case _NodeType.link:
         final url = node.url ?? '';
         if (onLinkLongPress != null) {
-          final recognizer = _TapOrLongPressRecognizer();
-          recognizer.onTap = () => onLinkTap?.call(url);
-          recognizer.onLongPress = () => onLinkLongPress?.call(url);
-          _recognizers.add(recognizer);
           return [
-            TextSpan(
-              text: node.text,
-              style: style.copyWith(color: Colors.blue),
-              recognizer: recognizer,
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => onLinkTap?.call(url),
+                onLongPress: () => onLinkLongPress!.call(url),
+                child: Text(
+                  node.text,
+                  style: style.copyWith(color: Colors.blue),
+                ),
+              ),
             ),
           ];
         }
@@ -889,23 +891,31 @@ class ContentRenderer {
         final uri =
             Uri.tryParse(resolvedUrl) ??
             Uri.tryParse(Uri.encodeFull(resolvedUrl));
-        final GestureRecognizer recognizer;
-        if (onLinkLongPress != null && uri != null) {
-          final r = _TapOrLongPressRecognizer();
-          r.onTap = () => launchUrlSafely(uri);
-          r.onLongPress = () => onLinkLongPress!.call(resolvedUrl);
-          recognizer = r;
-        } else {
-          recognizer = TapGestureRecognizer()
-            ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
-        }
-        _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
         final displayUrl =
             customDisplay ??
             (uri != null
                 ? _shortenUrl(Uri.decodeFull(uri.toString()))
                 : resolvedUrl);
+        if (onLinkLongPress != null && uri != null) {
+          return [
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => launchUrlSafely(uri),
+                onLongPress: () => onLinkLongPress!.call(resolvedUrl),
+                child: Text(
+                  displayUrl,
+                  style: style.copyWith(color: Colors.blue),
+                ),
+              ),
+            ),
+          ];
+        }
+        final recognizer = TapGestureRecognizer()
+          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
+        _recognizers.add(recognizer);
         return [
           TextSpan(
             text: displayUrl,
@@ -1139,52 +1149,6 @@ class ContentRenderer {
     }
     return shortened;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Tap + LongPress combined recognizer for TextSpan
-// ---------------------------------------------------------------------------
-
-class _TapOrLongPressRecognizer extends GestureRecognizer {
-  VoidCallback? onTap;
-  VoidCallback? onLongPress;
-
-  Timer? _longPressTimer;
-  bool _longPressTriggered = false;
-  static const _longPressDuration = Duration(milliseconds: 500);
-
-  @override
-  void addPointer(PointerDownEvent event) {
-    _longPressTriggered = false;
-    _longPressTimer?.cancel();
-    _longPressTimer = Timer(_longPressDuration, () {
-      _longPressTriggered = true;
-      onLongPress?.call();
-    });
-    GestureBinding.instance.gestureArena.add(event.pointer, this);
-  }
-
-  @override
-  void acceptGesture(int pointer) {
-    if (!_longPressTriggered) {
-      _longPressTimer?.cancel();
-      onTap?.call();
-    }
-  }
-
-  @override
-  void rejectGesture(int pointer) {
-    _longPressTimer?.cancel();
-  }
-
-  @override
-  void dispose() {
-    _longPressTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  String get debugDescription => '_TapOrLongPressRecognizer';
 }
 
 // ---------------------------------------------------------------------------
