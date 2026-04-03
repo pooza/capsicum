@@ -160,19 +160,29 @@ class ServerInfoScreen extends ConsumerWidget {
         ],
 
         // Links
-        if (instance.privacyPolicyUrl != null &&
-            Uri.tryParse(instance.privacyPolicyUrl!) != null &&
-            instance.privacyPolicyUrl!.startsWith('http')) ...[
-          _SectionHeader(title: 'ポリシー'),
-          ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined),
-            title: const Text('プライバシーポリシー'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrlSafely(
-              Uri.parse(instance.privacyPolicyUrl!),
-              mode: LaunchMode.externalApplication,
+        if (_hasValidUrl(instance.privacyPolicyUrl) ||
+            _hasValidUrl(instance.statusUrl)) ...[
+          _SectionHeader(title: 'リンク'),
+          if (_hasValidUrl(instance.privacyPolicyUrl))
+            ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('プライバシーポリシー'),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => launchUrlSafely(
+                Uri.parse(instance.privacyPolicyUrl!),
+                mode: LaunchMode.externalApplication,
+              ),
             ),
-          ),
+          if (_hasValidUrl(instance.statusUrl))
+            ListTile(
+              leading: const Icon(Icons.monitor_heart_outlined),
+              title: const Text('ステータスページ'),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => launchUrlSafely(
+                Uri.parse(instance.statusUrl!),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
         ],
 
         // Health checks
@@ -229,6 +239,9 @@ class ServerInfoScreen extends ConsumerWidget {
     );
   }
 }
+
+bool _hasValidUrl(String? url) =>
+    url != null && url.startsWith('http') && Uri.tryParse(url) != null;
 
 const _actionButtonWidth = 160.0;
 

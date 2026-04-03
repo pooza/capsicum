@@ -434,6 +434,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       contactUrl: data['impressumUrl'] as String?,
       rules: rules,
       privacyPolicyUrl: data['privacyPolicyUrl'] as String?,
+      statusUrl: data['statusUrl'] as String?,
     );
   }
 

@@ -370,6 +370,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Instance _parseInstanceV2(Map<String, dynamic> data) {
     final contact = data['contact'] as Map<String, dynamic>? ?? {};
     final config = data['configuration'] as Map<String, dynamic>? ?? {};
+    final urls = config['urls'] as Map<String, dynamic>? ?? {};
     final accountData = contact['account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (accountData != null) {
@@ -394,6 +395,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       contactAccount: contactAccount,
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
+      statusUrl: urls['status'] as String?,
     );
   }
 
