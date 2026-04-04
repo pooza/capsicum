@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'provider/account_manager_provider.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
+import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
@@ -232,6 +233,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           final name = state.extra as String?;
           return AntennaNotesScreen(antennaId: id, antennaName: name);
         },
+      ),
+      GoRoute(
+        path: '/drive',
+        builder: (_, _) => const DriveManagerScreen(),
       ),
       GoRoute(
         path: '/gallery',

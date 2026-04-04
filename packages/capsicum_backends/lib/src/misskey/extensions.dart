@@ -172,6 +172,7 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
       url: url ?? '',
       previewUrl: thumbnailUrl,
       description: comment,
+      name: name,
     );
   }
 }

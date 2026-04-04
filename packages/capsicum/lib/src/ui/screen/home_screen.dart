@@ -932,6 +932,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showAntennaList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is DriveSupport)
+            ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('ドライブ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/drive');
+              },
+            ),
           if (ref.read(currentAdapterProvider) is FlashSupport)
             ListTile(
               leading: const Icon(Icons.play_circle_outline),

@@ -1052,6 +1052,44 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .toList();
   }
 
+  @override
+  Future<void> deleteDriveFile(String fileId) async {
+    await client.deleteDriveFile(fileId);
+  }
+
+  @override
+  Future<void> renameDriveFile(String fileId, String newName) async {
+    await client.updateDriveFile(fileId, name: newName);
+  }
+
+  @override
+  Future<void> moveDriveFile(String fileId, String? folderId) async {
+    await client.updateDriveFile(fileId, folderId: folderId);
+  }
+
+  @override
+  Future<DriveFolder> createDriveFolder(
+    String name, {
+    String? parentId,
+  }) async {
+    final data = await client.createDriveFolder(name, parentId: parentId);
+    return DriveFolder(
+      id: data['id'] as String,
+      name: data['name'] as String? ?? '',
+      parentId: data['parentId'] as String?,
+    );
+  }
+
+  @override
+  Future<void> deleteDriveFolder(String folderId) async {
+    await client.deleteDriveFolder(folderId);
+  }
+
+  @override
+  Future<void> renameDriveFolder(String folderId, String newName) async {
+    await client.updateDriveFolder(folderId, name: newName);
+  }
+
   // AntennaSupport
 
   @override

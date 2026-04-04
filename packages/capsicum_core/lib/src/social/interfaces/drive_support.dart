@@ -11,4 +11,10 @@ abstract mixin class DriveSupport {
     String? folderId,
     TimelineQuery? query,
   });
+  Future<void> deleteDriveFile(String fileId);
+  Future<void> renameDriveFile(String fileId, String newName);
+  Future<void> moveDriveFile(String fileId, String? folderId);
+  Future<DriveFolder> createDriveFolder(String name, {String? parentId});
+  Future<void> deleteDriveFolder(String folderId);
+  Future<void> renameDriveFolder(String folderId, String newName);
 }
