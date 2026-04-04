@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import 'provider/account_manager_provider.dart';
 import 'ui/screen/announcement_screen.dart';
+import 'ui/screen/antenna_notes_screen.dart';
+import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
@@ -150,6 +152,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             quoteTo: extra?['quoteTo'] as Post?,
             channelId: extra?['channelId'] as String?,
             channelName: extra?['channelName'] as String?,
+            sharedText: extra?['sharedText'] as String?,
           );
         },
       ),
@@ -224,6 +227,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ClipNotesScreen(clipId: id, clipName: name);
         },
       ),
+      GoRoute(
+        path: '/antenna/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final name = state.extra as String?;
+          return AntennaNotesScreen(antennaId: id, antennaName: name);
+        },
+      ),
+      GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),
       GoRoute(
         path: '/gallery',
         builder: (context, state) => const GalleryScreen(),

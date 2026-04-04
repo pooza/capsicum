@@ -27,7 +27,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   late final TabController _tabController;
   SearchResults? _results;
   _QueryType? _queryType;
-  bool _loading = false;
+  bool _serverLoading = false;
   String? _error;
   List<Map<String, dynamic>> _notestockResults = [];
   bool _notestockLoading = false;
@@ -75,32 +75,41 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (query.isEmpty) return;
 
     setState(() {
-      _loading = true;
       _error = null;
       _queryType = queryType;
+      _results = SearchResults(users: [], posts: [], hashtags: []);
       _notestockResults = [];
       _notestockLoading = queryType == _QueryType.fulltext;
+      _serverLoading = true;
     });
 
+    // サーバー検索を非同期で開始（レスポンスを待たずに結果UIへ遷移）
+    _searchServer(adapter as SearchSupport, queryType, query, rawQuery);
+
+    // 全文検索時は notestock も並行して呼び出す
+    if (queryType == _QueryType.fulltext) {
+      _searchNotestock(rawQuery);
+    }
+  }
+
+  Future<void> _searchServer(
+    SearchSupport adapter,
+    _QueryType queryType,
+    String query,
+    String rawQuery,
+  ) async {
     try {
-      final searchFuture = (adapter as SearchSupport).search(
+      final results = await adapter.search(
         queryType == _QueryType.account || queryType == _QueryType.hashtag
             ? query
             : rawQuery,
       );
-
-      // 全文検索時は notestock も並行して呼び出す
-      if (queryType == _QueryType.fulltext) {
-        _searchNotestock(rawQuery);
-      }
-
-      final results = await searchFuture;
       if (mounted) setState(() => _results = results);
     } catch (e) {
       debugPrint('Search error: $e');
       if (mounted) setState(() => _error = '検索に失敗しました');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _serverLoading = false);
     }
   }
 
@@ -163,7 +172,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         ),
         actions: [
           IconButton(
-            onPressed: _loading ? null : _search,
+            onPressed: _serverLoading ? null : _search,
             icon: const Icon(Icons.search),
           ),
         ],
@@ -173,10 +182,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
+    if (_error != null && !_serverLoading) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -241,6 +247,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
     final results = _results!;
 
+    if (_serverLoading) {
+      switch (_queryType!) {
+        case _QueryType.fulltext:
+          return _buildFullResults(results);
+        case _QueryType.account:
+        case _QueryType.hashtag:
+        case _QueryType.url:
+          return const Center(child: CircularProgressIndicator());
+      }
+    }
+
     switch (_queryType!) {
       case _QueryType.account:
         return _buildUserList(results.users);
@@ -259,7 +276,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final hasPosts = results.posts.isNotEmpty;
     final hasNotestock = _notestockResults.isNotEmpty || _notestockLoading;
 
-    if (!hasUsers && !hasHashtags && !hasPosts && !hasNotestock) {
+    if (!_serverLoading &&
+        !hasUsers &&
+        !hasHashtags &&
+        !hasPosts &&
+        !hasNotestock) {
       return const Center(
         child: Text(
           'このサーバーは全文検索に対応していないか、\n結果が見つかりませんでした',
@@ -283,9 +304,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildUserList(results.users),
-              _buildHashtagList(results.hashtags),
-              _buildPostList(results.posts),
+              _serverLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildUserList(results.users),
+              _serverLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildHashtagList(results.hashtags),
+              _serverLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildPostList(results.posts),
               _buildNotestockList(),
             ],
           ),

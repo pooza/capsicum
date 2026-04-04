@@ -57,6 +57,88 @@ class DriveContentsNotifier
     );
   }
 
+  void removeFile(String fileId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        files: current.files.where((f) => f.id != fileId).toList(),
+      ),
+    );
+  }
+
+  void renameFile(String fileId, String newName) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        files: current.files
+            .map(
+              (f) => f.id == fileId
+                  ? Attachment(
+                      id: f.id,
+                      type: f.type,
+                      url: f.url,
+                      previewUrl: f.previewUrl,
+                      description: f.description,
+                      name: newName,
+                    )
+                  : f,
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void updateFileDescription(String fileId, String description) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        files: current.files
+            .map(
+              (f) => f.id == fileId
+                  ? Attachment(
+                      id: f.id,
+                      type: f.type,
+                      url: f.url,
+                      previewUrl: f.previewUrl,
+                      description: description.isEmpty ? null : description,
+                      name: f.name,
+                    )
+                  : f,
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void renameFolder(String folderId, String newName) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        folders: current.folders
+            .map(
+              (f) => f.id == folderId
+                  ? DriveFolder(id: f.id, name: newName, parentId: f.parentId)
+                  : f,
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void removeFolder(String folderId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        folders: current.folders.where((f) => f.id != folderId).toList(),
+      ),
+    );
+  }
+
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;

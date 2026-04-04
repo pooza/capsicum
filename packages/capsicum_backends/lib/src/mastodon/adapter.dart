@@ -251,23 +251,31 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
       return null;
     }
-    final status = await client.postStatus(
-      status: draft.content ?? '',
-      visibility: mastodonVisibilityFromScope(draft.scope),
-      inReplyToId: draft.inReplyToId,
-      quoteId: draft.quoteId,
-      spoilerText: draft.spoilerText,
-      mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-      sensitive: draft.sensitive ? true : null,
-      language: draft.language,
-      pollOptions: draft.pollOptions,
-      pollExpiresIn: draft.pollExpiresIn,
-      pollMultiple: draft.pollMultiple ? true : null,
-      pollHideTotals: draft.pollHideTotals ? true : null,
-      quoteApprovalPolicy: draft.quoteApprovalPolicy,
-      extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
-    );
-    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    try {
+      final status = await client.postStatus(
+        status: draft.content ?? '',
+        visibility: mastodonVisibilityFromScope(draft.scope),
+        inReplyToId: draft.inReplyToId,
+        quoteId: draft.quoteId,
+        spoilerText: draft.spoilerText,
+        mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+        sensitive: draft.sensitive ? true : null,
+        language: draft.language,
+        pollOptions: draft.pollOptions,
+        pollExpiresIn: draft.pollExpiresIn,
+        pollMultiple: draft.pollMultiple ? true : null,
+        pollHideTotals: draft.pollHideTotals ? true : null,
+        quoteApprovalPolicy: draft.quoteApprovalPolicy,
+        extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
+      );
+      return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    } on DioException {
+      rethrow;
+    } catch (_) {
+      // The mulukhiya proxy may rewrite the response (e.g. NowPlaying
+      // handler), making it unparseable. The post itself succeeded.
+      return null;
+    }
   }
 
   @override
@@ -370,6 +378,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Instance _parseInstanceV2(Map<String, dynamic> data) {
     final contact = data['contact'] as Map<String, dynamic>? ?? {};
     final config = data['configuration'] as Map<String, dynamic>? ?? {};
+    final urls = config['urls'] as Map<String, dynamic>? ?? {};
     final accountData = contact['account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (accountData != null) {
@@ -394,6 +403,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       contactAccount: contactAccount,
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
+      statusUrl: urls['status'] as String?,
     );
   }
 

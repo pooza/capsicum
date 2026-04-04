@@ -14,6 +14,7 @@ class Instance {
   final String? contactUrl;
   final List<String> rules;
   final String? privacyPolicyUrl;
+  final String? statusUrl;
 
   const Instance({
     required this.name,
@@ -29,5 +30,6 @@ class Instance {
     this.contactUrl,
     this.rules = const [],
     this.privacyPolicyUrl,
+    this.statusUrl,
   });
 }

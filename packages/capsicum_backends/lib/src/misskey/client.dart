@@ -281,12 +281,64 @@ class MisskeyClient {
   Future<MisskeyDriveFile> updateDriveFile(
     String fileId, {
     String? comment,
+    String? name,
+    String? folderId,
   }) async {
     final response = await dio.post(
       '/api/drive/files/update',
-      data: createBody({'fileId': fileId, 'comment': comment}),
+      data: createBody({
+        'fileId': fileId,
+        'comment': ?comment,
+        'name': ?name,
+        'folderId': ?folderId,
+      }),
     );
     return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// POST /api/drive/files/delete
+  Future<void> deleteDriveFile(String fileId) async {
+    await dio.post(
+      '/api/drive/files/delete',
+      data: createBody({'fileId': fileId}),
+    );
+  }
+
+  /// POST /api/drive/folders/create
+  Future<Map<String, dynamic>> createDriveFolder(
+    String name, {
+    String? parentId,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/folders/create',
+      data: createBody({'name': name, 'parentId': ?parentId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/drive/folders/delete
+  Future<void> deleteDriveFolder(String folderId) async {
+    await dio.post(
+      '/api/drive/folders/delete',
+      data: createBody({'folderId': folderId}),
+    );
+  }
+
+  /// POST /api/drive/folders/update
+  Future<Map<String, dynamic>> updateDriveFolder(
+    String folderId, {
+    String? name,
+    String? parentId,
+  }) async {
+    final response = await dio.post(
+      '/api/drive/folders/update',
+      data: createBody({
+        'folderId': folderId,
+        'name': ?name,
+        'parentId': ?parentId,
+      }),
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/notes/create
@@ -772,6 +824,33 @@ class MisskeyClient {
       '/api/clips/notes',
       data: createBody({
         'clipId': clipId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List)
+        .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// POST /api/antennas/list
+  Future<List<Map<String, dynamic>>> getAntennas() async {
+    final response = await dio.post('/api/antennas/list', data: createBody({}));
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/antennas/notes
+  Future<List<MisskeyNote>> getAntennaNotes(
+    String antennaId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/antennas/notes',
+      data: createBody({
+        'antennaId': antennaId,
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,

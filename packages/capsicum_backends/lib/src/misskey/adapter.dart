@@ -82,6 +82,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ClipSupport,
         FlashSupport,
         GallerySupport,
+        AntennaSupport,
         ReportSupport,
         PinSupport,
         ScheduleSupport,
@@ -434,6 +435,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       contactUrl: data['impressumUrl'] as String?,
       rules: rules,
       privacyPolicyUrl: data['privacyPolicyUrl'] as String?,
+      statusUrl: data['statusUrl'] as String?,
     );
   }
 
@@ -1047,6 +1049,71 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             parentId: f['parentId'] as String?,
           ),
         )
+        .toList();
+  }
+
+  @override
+  Future<void> deleteDriveFile(String fileId) async {
+    await client.deleteDriveFile(fileId);
+  }
+
+  @override
+  Future<void> renameDriveFile(String fileId, String newName) async {
+    await client.updateDriveFile(fileId, name: newName);
+  }
+
+  @override
+  Future<void> moveDriveFile(String fileId, String? folderId) async {
+    await client.updateDriveFile(fileId, folderId: folderId);
+  }
+
+  @override
+  Future<DriveFolder> createDriveFolder(String name, {String? parentId}) async {
+    final data = await client.createDriveFolder(name, parentId: parentId);
+    return DriveFolder(
+      id: data['id'] as String,
+      name: data['name'] as String? ?? '',
+      parentId: data['parentId'] as String?,
+    );
+  }
+
+  @override
+  Future<void> deleteDriveFolder(String folderId) async {
+    await client.deleteDriveFolder(folderId);
+  }
+
+  @override
+  Future<void> renameDriveFolder(String folderId, String newName) async {
+    await client.updateDriveFolder(folderId, name: newName);
+  }
+
+  // AntennaSupport
+
+  @override
+  Future<List<Antenna>> getAntennas() async {
+    final data = await client.getAntennas();
+    return data
+        .map(
+          (a) =>
+              Antenna(id: a['id'] as String, name: a['name'] as String? ?? ''),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<Post>> getAntennaNotes(
+    String antennaId, {
+    TimelineQuery? query,
+  }) async {
+    final notes = await client.getAntennaNotes(
+      antennaId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return notes
+        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+        .map(_applyWordFilter)
         .toList();
   }
 

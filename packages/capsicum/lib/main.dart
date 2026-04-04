@@ -11,6 +11,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
+import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,13 +60,70 @@ void _startApp() {
       }
     },
   );
+
+  // Check for shared text from external apps (e.g. Spotify, Apple Music).
+  // The result is stored in pendingSharedText and consumed by SplashScreen
+  // after session restoration completes.
+  shareIntentReady = _consumeSharedText();
 }
 
-class CapsicumApp extends ConsumerWidget {
+/// Shared text received via share intent, waiting to be consumed after login.
+String? pendingSharedText;
+
+/// Completes when the share intent check is done.
+late final Future<void> shareIntentReady;
+
+Future<void> _consumeSharedText() async {
+  final text = await ShareIntentService.consumeSharedText();
+  if (text != null && text.isNotEmpty) {
+    pendingSharedText = text;
+  }
+}
+
+class CapsicumApp extends ConsumerStatefulWidget {
   const CapsicumApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CapsicumApp> createState() => _CapsicumAppState();
+}
+
+class _CapsicumAppState extends ConsumerState<CapsicumApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkSharedText();
+    }
+  }
+
+  Future<void> _checkSharedText() async {
+    final text = await ShareIntentService.consumeSharedText();
+    if (text != null && text.isNotEmpty) {
+      _navigateToCompose(text);
+    }
+  }
+
+  void _navigateToCompose(String sharedText) {
+    final context = rootNavigatorKey.currentContext;
+    if (context != null) {
+      GoRouter.of(context).go('/compose', extra: {'sharedText': sharedText});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final seedColor = ref.watch(themeSeedColorProvider);
     final themeMode = ref.watch(themeModeProvider);

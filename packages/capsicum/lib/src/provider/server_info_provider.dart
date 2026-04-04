@@ -77,6 +77,7 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
       contactUrl: instance.contactUrl,
       rules: instance.rules,
       privacyPolicyUrl: instance.privacyPolicyUrl,
+      statusUrl: instance.statusUrl,
     );
     return ServerInfoState(instance: enriched);
   }

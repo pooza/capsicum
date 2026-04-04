@@ -327,6 +327,15 @@ class _PostTileState extends ConsumerState<PostTile> {
         }
         launchUrlSafely(uri);
       },
+      onLinkLongPress: (url) {
+        Clipboard.setData(ClipboardData(text: url));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL をコピーしました'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
       emojiSize: ref.watch(emojiSizeProvider),
@@ -1056,7 +1065,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ],
               if (isOwn) ...[
                 const Divider(),
-                if (ref.read(currentMulukhiyaProvider) != null)
+                if (ref.read(currentMulukhiyaProvider) != null) ...[
                   ListTile(
                     leading: const Icon(Icons.sell_outlined),
                     title: const Text('削除してタグづけ'),
@@ -1065,6 +1074,17 @@ class _PostTileState extends ConsumerState<PostTile> {
                       _showRetagSheet(context, targetPost);
                     },
                   ),
+                  // TODO(#224): モロヘイヤ側修正後に復活
+                  // if (_hasNowPlayingTag(targetPost))
+                  //   ListTile(
+                  //     leading: const Icon(Icons.music_off_outlined),
+                  //     title: const Text('NowPlaying を削除'),
+                  //     onTap: () {
+                  //       Navigator.pop(sheetContext);
+                  //       _confirmDeleteNowPlaying(context, targetPost);
+                  //     },
+                  //   ),
+                ],
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
                   title: const Text('削除して再編集'),
@@ -1343,6 +1363,57 @@ class _PostTileState extends ConsumerState<PostTile> {
       }
     }
     return '操作に失敗しました';
+  }
+
+  static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
+
+  // ignore: unused_element
+  bool _hasNowPlayingTag(Post post) {
+    final content = post.content;
+    if (content == null) return false;
+    return _nowPlayingPattern.hasMatch(content);
+  }
+
+  // ignore: unused_element
+  void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('NowPlaying を削除'),
+        content: const Text('この投稿の NowPlaying 情報を除去して再投稿します。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              final account = ref.read(currentAccountProvider);
+              final mulukhiya = account?.mulukhiya;
+              if (account == null || mulukhiya == null) return;
+              final messenger = ScaffoldMessenger.of(context);
+              mulukhiya
+                  .deleteNowPlaying(
+                    accessToken: account.userSecret.accessToken,
+                    id: targetPost.id,
+                  )
+                  .then((_) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('NowPlaying を削除しました')),
+                    );
+                  })
+                  .catchError((e) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(_describeError(e))),
+                    );
+                  });
+            },
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showRetagSheet(BuildContext context, Post targetPost) {

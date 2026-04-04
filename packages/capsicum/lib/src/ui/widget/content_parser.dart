@@ -679,12 +679,14 @@ typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
 
 /// Synchronous URL resolver: returns the resolved URL or `null`.
+typedef LinkLongPressCallback = void Function(String url);
 typedef UrlResolver = String? Function(String url);
 
 class ContentRenderer {
   final TextStyle baseStyle;
   final EmojiResolver resolveEmoji;
   final LinkTapCallback? onLinkTap;
+  final LinkLongPressCallback? onLinkLongPress;
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
   final UrlResolver? resolveUrl;
@@ -696,6 +698,7 @@ class ContentRenderer {
     required this.baseStyle,
     required this.resolveEmoji,
     this.onLinkTap,
+    this.onLinkLongPress,
     this.onHashtagTap,
     this.onMentionTap,
     this.resolveUrl,
@@ -830,8 +833,25 @@ class ContentRenderer {
         ];
 
       case _NodeType.link:
+        final url = node.url ?? '';
+        if (onLinkLongPress != null) {
+          return [
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => onLinkTap?.call(url),
+                onLongPress: () => onLinkLongPress!.call(url),
+                child: Text(
+                  node.text,
+                  style: style.copyWith(color: Colors.blue),
+                ),
+              ),
+            ),
+          ];
+        }
         final recognizer = TapGestureRecognizer()
-          ..onTap = () => onLinkTap?.call(node.url ?? '');
+          ..onTap = () => onLinkTap?.call(url);
         _recognizers.add(recognizer);
         return [
           TextSpan(
@@ -871,15 +891,31 @@ class ContentRenderer {
         final uri =
             Uri.tryParse(resolvedUrl) ??
             Uri.tryParse(Uri.encodeFull(resolvedUrl));
-        final recognizer = TapGestureRecognizer()
-          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
-        _recognizers.add(recognizer);
         final customDisplay = resolveDisplayUrl?.call(originalUrl);
         final displayUrl =
             customDisplay ??
             (uri != null
                 ? _shortenUrl(Uri.decodeFull(uri.toString()))
                 : resolvedUrl);
+        if (onLinkLongPress != null && uri != null) {
+          return [
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => launchUrlSafely(uri),
+                onLongPress: () => onLinkLongPress!.call(resolvedUrl),
+                child: Text(
+                  displayUrl,
+                  style: style.copyWith(color: Colors.blue),
+                ),
+              ),
+            ),
+          ];
+        }
+        final recognizer = TapGestureRecognizer()
+          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
+        _recognizers.add(recognizer);
         return [
           TextSpan(
             text: displayUrl,

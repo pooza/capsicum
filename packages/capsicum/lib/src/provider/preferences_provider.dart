@@ -17,6 +17,7 @@ const _blurAllImagesKey = 'blur_all_images';
 const _confirmBeforePostKey = 'confirm_before_post';
 const _hiddenListIdsPrefix = 'hidden_list_ids_';
 const _listOrderPrefix = 'list_order_';
+const _hiddenTimelineTypesPrefix = 'hidden_timeline_types_';
 const _previewCardModeKey = 'preview_card_mode';
 const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
@@ -453,6 +454,54 @@ class HiddenListIdsNotifier extends FamilyNotifier<Set<String>, String> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('$_hiddenListIdsPrefix$arg', state.toList());
+  }
+}
+
+/// Per-account hidden timeline types.
+final hiddenTimelineTypesProvider =
+    NotifierProvider.family<
+      HiddenTimelineTypesNotifier,
+      Set<TimelineType>,
+      String
+    >(HiddenTimelineTypesNotifier.new);
+
+class HiddenTimelineTypesNotifier
+    extends FamilyNotifier<Set<TimelineType>, String> {
+  @override
+  Set<TimelineType> build(String arg) {
+    _load();
+    return const {};
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_hiddenTimelineTypesPrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved
+          .map(
+            (name) =>
+                TimelineType.values.where((t) => t.name == name).firstOrNull,
+          )
+          .whereType<TimelineType>()
+          .toSet();
+    }
+  }
+
+  Future<void> toggle(TimelineType type) async {
+    if (state.contains(type)) {
+      state = {...state}..remove(type);
+    } else {
+      state = {...state, type};
+    }
+    await _save();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      '$_hiddenTimelineTypesPrefix$arg',
+      state.map((t) => t.name).toList(),
+    );
   }
 }
 

@@ -2,6 +2,7 @@
 library;
 
 // Models
+export 'src/model/antenna.dart';
 export 'src/model/announcement.dart';
 export 'src/model/attachment.dart';
 export 'src/model/channel.dart';
@@ -28,6 +29,7 @@ export 'src/social/adapter.dart';
 export 'src/social/capabilities.dart';
 
 // Feature interfaces
+export 'src/social/interfaces/antenna_support.dart';
 export 'src/social/interfaces/announcement_support.dart';
 export 'src/social/interfaces/channel_support.dart';
 export 'src/social/interfaces/clip_support.dart';

@@ -6,6 +6,7 @@ class Attachment {
   final String url;
   final String? previewUrl;
   final String? description;
+  final String? name;
 
   const Attachment({
     required this.id,
@@ -13,6 +14,7 @@ class Attachment {
     required this.url,
     this.previewUrl,
     this.description,
+    this.name,
   });
 }
 
