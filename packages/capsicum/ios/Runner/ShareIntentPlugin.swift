@@ -46,7 +46,6 @@ public class ShareIntentPlugin: NSObject, FlutterPlugin {
       try FileManager.default.removeItem(at: fileURL)
       return text.isEmpty ? nil : text
     } catch {
-      NSLog("capsicum: ShareIntentPlugin failed to read shared text: \(error)")
       return nil
     }
   }

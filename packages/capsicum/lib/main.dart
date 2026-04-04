@@ -80,11 +80,50 @@ Future<void> _consumeSharedText() async {
   }
 }
 
-class CapsicumApp extends ConsumerWidget {
+class CapsicumApp extends ConsumerStatefulWidget {
   const CapsicumApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CapsicumApp> createState() => _CapsicumAppState();
+}
+
+class _CapsicumAppState extends ConsumerState<CapsicumApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkSharedText();
+    }
+  }
+
+  Future<void> _checkSharedText() async {
+    final text = await ShareIntentService.consumeSharedText();
+    if (text != null && text.isNotEmpty) {
+      _navigateToCompose(text);
+    }
+  }
+
+  void _navigateToCompose(String sharedText) {
+    final context = rootNavigatorKey.currentContext;
+    if (context != null) {
+      GoRouter.of(context).go('/compose', extra: {'sharedText': sharedText});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final seedColor = ref.watch(themeSeedColorProvider);
     final themeMode = ref.watch(themeModeProvider);
