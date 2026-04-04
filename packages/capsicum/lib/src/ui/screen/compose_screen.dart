@@ -41,6 +41,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
   final Post? quoteTo;
   final String? channelId;
   final String? channelName;
+  final String? sharedText;
 
   const ComposeScreen({
     super.key,
@@ -49,6 +50,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.quoteTo,
     this.channelId,
     this.channelName,
+    this.sharedText,
   });
 
   @override
@@ -169,6 +171,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _initReplyMentions(replyTo);
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
+    } else if (widget.sharedText != null) {
+      _controller.text = '#nowplaying ${widget.sharedText!}\n';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+      final account = ref.read(currentAccountProvider);
+      if (account != null && account.user.defaultScope != null) {
+        _scope = account.user.defaultScope!;
+      }
     } else {
       final account = ref.read(currentAccountProvider);
       if (account != null && account.user.defaultScope != null) {
@@ -1007,7 +1018,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ref.invalidate(channelTimelineProvider(widget.channelId!));
           }
         }
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
       }
     } catch (e) {
       if (mounted) {

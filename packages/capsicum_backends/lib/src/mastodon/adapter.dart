@@ -251,23 +251,31 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       );
       return null;
     }
-    final status = await client.postStatus(
-      status: draft.content ?? '',
-      visibility: mastodonVisibilityFromScope(draft.scope),
-      inReplyToId: draft.inReplyToId,
-      quoteId: draft.quoteId,
-      spoilerText: draft.spoilerText,
-      mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
-      sensitive: draft.sensitive ? true : null,
-      language: draft.language,
-      pollOptions: draft.pollOptions,
-      pollExpiresIn: draft.pollExpiresIn,
-      pollMultiple: draft.pollMultiple ? true : null,
-      pollHideTotals: draft.pollHideTotals ? true : null,
-      quoteApprovalPolicy: draft.quoteApprovalPolicy,
-      extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
-    );
-    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    try {
+      final status = await client.postStatus(
+        status: draft.content ?? '',
+        visibility: mastodonVisibilityFromScope(draft.scope),
+        inReplyToId: draft.inReplyToId,
+        quoteId: draft.quoteId,
+        spoilerText: draft.spoilerText,
+        mediaIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+        sensitive: draft.sensitive ? true : null,
+        language: draft.language,
+        pollOptions: draft.pollOptions,
+        pollExpiresIn: draft.pollExpiresIn,
+        pollMultiple: draft.pollMultiple ? true : null,
+        pollHideTotals: draft.pollHideTotals ? true : null,
+        quoteApprovalPolicy: draft.quoteApprovalPolicy,
+        extraHeaders: draft.skipMulukhiya ? {'X-Mulukhiya': 'capsicum'} : null,
+      );
+      return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    } on DioException {
+      rethrow;
+    } catch (_) {
+      // The mulukhiya proxy may rewrite the response (e.g. NowPlaying
+      // handler), making it unparseable. The post itself succeeded.
+      return null;
+    }
   }
 
   @override

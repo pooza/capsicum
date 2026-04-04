@@ -11,6 +11,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/notification_init.dart';
+import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,6 +60,24 @@ void _startApp() {
       }
     },
   );
+
+  // Check for shared text from external apps (e.g. Spotify, Apple Music).
+  // The result is stored in pendingSharedText and consumed by SplashScreen
+  // after session restoration completes.
+  shareIntentReady = _consumeSharedText();
+}
+
+/// Shared text received via share intent, waiting to be consumed after login.
+String? pendingSharedText;
+
+/// Completes when the share intent check is done.
+late final Future<void> shareIntentReady;
+
+Future<void> _consumeSharedText() async {
+  final text = await ShareIntentService.consumeSharedText();
+  if (text != null && text.isNotEmpty) {
+    pendingSharedText = text;
+  }
 }
 
 class CapsicumApp extends ConsumerWidget {

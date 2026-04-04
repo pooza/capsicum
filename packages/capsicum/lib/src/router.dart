@@ -152,6 +152,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             quoteTo: extra?['quoteTo'] as Post?,
             channelId: extra?['channelId'] as String?,
             channelName: extra?['channelName'] as String?,
+            sharedText: extra?['sharedText'] as String?,
           );
         },
       ),
