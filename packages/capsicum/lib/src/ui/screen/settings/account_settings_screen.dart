@@ -197,7 +197,11 @@ class _TabOrderTile extends StatelessWidget {
                 final adapter = ref.read(currentAdapterProvider);
                 final supported =
                     adapter?.capabilities.supportedTimelines ??
-                    {TimelineType.home, TimelineType.local, TimelineType.federated};
+                    {
+                      TimelineType.home,
+                      TimelineType.local,
+                      TimelineType.federated,
+                    };
                 final isMastodon = !supported.contains(TimelineType.social);
                 showModalBottomSheet(
                   context: context,

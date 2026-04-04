@@ -54,12 +54,11 @@ class _AntennaNotesScreenState extends ConsumerState<AntennaNotesScreen> {
         data: (state) => state.posts.isEmpty
             ? const Center(child: Text('投稿がありません'))
             : RefreshIndicator(
-                onRefresh: () => ref
-                    .refresh(antennaNotesProvider(widget.antennaId).future),
+                onRefresh: () =>
+                    ref.refresh(antennaNotesProvider(widget.antennaId).future),
                 child: ListView.separated(
                   controller: _scrollController,
-                  itemCount:
-                      state.posts.length + (state.isLoadingMore ? 1 : 0),
+                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     if (index >= state.posts.length) {

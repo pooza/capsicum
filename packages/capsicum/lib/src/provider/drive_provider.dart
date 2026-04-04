@@ -73,16 +73,18 @@ class DriveContentsNotifier
     state = AsyncData(
       current.copyWith(
         files: current.files
-            .map((f) => f.id == fileId
-                ? Attachment(
-                    id: f.id,
-                    type: f.type,
-                    url: f.url,
-                    previewUrl: f.previewUrl,
-                    description: f.description,
-                    name: newName,
-                  )
-                : f)
+            .map(
+              (f) => f.id == fileId
+                  ? Attachment(
+                      id: f.id,
+                      type: f.type,
+                      url: f.url,
+                      previewUrl: f.previewUrl,
+                      description: f.description,
+                      name: newName,
+                    )
+                  : f,
+            )
             .toList(),
       ),
     );
@@ -94,16 +96,18 @@ class DriveContentsNotifier
     state = AsyncData(
       current.copyWith(
         files: current.files
-            .map((f) => f.id == fileId
-                ? Attachment(
-                    id: f.id,
-                    type: f.type,
-                    url: f.url,
-                    previewUrl: f.previewUrl,
-                    description: description.isEmpty ? null : description,
-                    name: f.name,
-                  )
-                : f)
+            .map(
+              (f) => f.id == fileId
+                  ? Attachment(
+                      id: f.id,
+                      type: f.type,
+                      url: f.url,
+                      previewUrl: f.previewUrl,
+                      description: description.isEmpty ? null : description,
+                      name: f.name,
+                    )
+                  : f,
+            )
             .toList(),
       ),
     );
@@ -115,9 +119,11 @@ class DriveContentsNotifier
     state = AsyncData(
       current.copyWith(
         folders: current.folders
-            .map((f) => f.id == folderId
-                ? DriveFolder(id: f.id, name: newName, parentId: f.parentId)
-                : f)
+            .map(
+              (f) => f.id == folderId
+                  ? DriveFolder(id: f.id, name: newName, parentId: f.parentId)
+                  : f,
+            )
             .toList(),
       ),
     );

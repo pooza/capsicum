@@ -1068,10 +1068,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<DriveFolder> createDriveFolder(
-    String name, {
-    String? parentId,
-  }) async {
+  Future<DriveFolder> createDriveFolder(String name, {String? parentId}) async {
     final data = await client.createDriveFolder(name, parentId: parentId);
     return DriveFolder(
       id: data['id'] as String,
@@ -1097,10 +1094,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final data = await client.getAntennas();
     return data
         .map(
-          (a) => Antenna(
-            id: a['id'] as String,
-            name: a['name'] as String? ?? '',
-          ),
+          (a) =>
+              Antenna(id: a['id'] as String, name: a['name'] as String? ?? ''),
         )
         .toList();
   }

@@ -458,11 +458,12 @@ class HiddenListIdsNotifier extends FamilyNotifier<Set<String>, String> {
 }
 
 /// Per-account hidden timeline types.
-final hiddenTimelineTypesProvider = NotifierProvider.family<
-  HiddenTimelineTypesNotifier,
-  Set<TimelineType>,
-  String
->(HiddenTimelineTypesNotifier.new);
+final hiddenTimelineTypesProvider =
+    NotifierProvider.family<
+      HiddenTimelineTypesNotifier,
+      Set<TimelineType>,
+      String
+    >(HiddenTimelineTypesNotifier.new);
 
 class HiddenTimelineTypesNotifier
     extends FamilyNotifier<Set<TimelineType>, String> {

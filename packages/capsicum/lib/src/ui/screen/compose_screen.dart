@@ -819,23 +819,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                           ),
                         if (pollOptions.isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          ...pollOptions.map((option) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: theme.colorScheme.outline,
+                          ...pollOptions.map(
+                            (option) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
                                 ),
-                                borderRadius: BorderRadius.circular(8),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: theme.colorScheme.outline,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(option),
                               ),
-                              child: Text(option),
                             ),
-                          )),
+                          ),
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(

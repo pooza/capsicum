@@ -5,8 +5,7 @@ import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
 /// Provider that fetches the user's antennas.
-final antennasProvider =
-    FutureProvider.autoDispose<List<Antenna>>((ref) async {
+final antennasProvider = FutureProvider.autoDispose<List<Antenna>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null || adapter is! AntennaSupport) return [];
   return (adapter as AntennaSupport).getAntennas();

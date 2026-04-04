@@ -1365,10 +1365,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     return '操作に失敗しました';
   }
 
-  static final _nowPlayingPattern = RegExp(
-    r'nowplaying',
-    caseSensitive: false,
-  );
+  static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
 
   bool _hasNowPlayingTag(Post post) {
     final content = post.content;
@@ -1400,14 +1397,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                     id: targetPost.id,
                   )
                   .then((_) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('NowPlaying を削除しました')),
-                );
-              }).catchError((e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text(_describeError(e))),
-                );
-              });
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('NowPlaying を削除しました')),
+                    );
+                  })
+                  .catchError((e) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(_describeError(e))),
+                    );
+                  });
             },
             child: const Text('削除'),
           ),

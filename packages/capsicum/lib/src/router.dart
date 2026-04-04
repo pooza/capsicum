@@ -235,10 +235,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return AntennaNotesScreen(antennaId: id, antennaName: name);
         },
       ),
-      GoRoute(
-        path: '/drive',
-        builder: (_, _) => const DriveManagerScreen(),
-      ),
+      GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),
       GoRoute(
         path: '/gallery',
         builder: (context, state) => const GalleryScreen(),

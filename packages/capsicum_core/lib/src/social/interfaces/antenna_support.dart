@@ -4,8 +4,5 @@ import '../../model/timeline_query.dart';
 
 abstract mixin class AntennaSupport {
   Future<List<Antenna>> getAntennas();
-  Future<List<Post>> getAntennaNotes(
-    String antennaId, {
-    TimelineQuery? query,
-  });
+  Future<List<Post>> getAntennaNotes(String antennaId, {TimelineQuery? query});
 }

@@ -71,10 +71,8 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   void _openFile(Attachment file, List<Attachment> files, int index) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MediaViewerScreen(
-          attachments: files,
-          initialIndex: index,
-        ),
+        builder: (_) =>
+            MediaViewerScreen(attachments: files, initialIndex: index),
       ),
     );
   }
@@ -242,10 +240,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   }
 
   Future<void> _renameFile(Attachment file) async {
-    final newName = await _showRenameDialog(
-      'ファイル名を変更',
-      file.name ?? file.id,
-    );
+    final newName = await _showRenameDialog('ファイル名を変更', file.name ?? file.id);
     if (newName == null || newName.isEmpty) return;
     try {
       await _drive?.renameDriveFile(file.id, newName);
@@ -450,10 +445,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                 children: [
                   const Text('読み込みに失敗しました', textAlign: TextAlign.center),
                   const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refresh,
-                    child: const Text('再試行'),
-                  ),
+                  ElevatedButton(onPressed: _refresh, child: const Text('再試行')),
                 ],
               ),
             ),
@@ -560,8 +552,8 @@ class _FileTile extends StatelessWidget {
                         isVideo
                             ? Icons.videocam
                             : file.type == AttachmentType.audio
-                                ? Icons.audio_file
-                                : Icons.insert_drive_file,
+                            ? Icons.audio_file
+                            : Icons.insert_drive_file,
                         size: 32,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

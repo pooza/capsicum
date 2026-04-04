@@ -836,10 +836,7 @@ class MisskeyClient {
 
   /// POST /api/antennas/list
   Future<List<Map<String, dynamic>>> getAntennas() async {
-    final response = await dio.post(
-      '/api/antennas/list',
-      data: createBody({}),
-    );
+    final response = await dio.post('/api/antennas/list', data: createBody({}));
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 

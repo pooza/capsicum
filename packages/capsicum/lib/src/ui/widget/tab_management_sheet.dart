@@ -91,14 +91,17 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
 
   String _timelineLabel(TimelineType type) {
     if (widget.isMastodon) {
-      return _mastodonLabelOverrides[type] ?? _timelineLabels[type] ?? type.name;
+      return _mastodonLabelOverrides[type] ??
+          _timelineLabels[type] ??
+          type.name;
     }
     return _timelineLabels[type] ?? type.name;
   }
 
   Widget _buildTimelineTypesSection(ThemeData theme) {
-    final hiddenTypes =
-        ref.watch(hiddenTimelineTypesProvider(widget.storageKey));
+    final hiddenTypes = ref.watch(
+      hiddenTimelineTypesProvider(widget.storageKey),
+    );
     final order = ref.watch(tabOrderProvider(widget.storageKey));
     final types = order.where(widget.supportedTimelines.contains).toList();
 
@@ -114,13 +117,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
               style: hidden ? TextStyle(color: theme.disabledColor) : null,
             ),
             trailing: IconButton(
-              icon: Icon(
-                hidden ? Icons.visibility_off : Icons.visibility,
-              ),
+              icon: Icon(hidden ? Icons.visibility_off : Icons.visibility),
               onPressed: () => ref
-                  .read(
-                    hiddenTimelineTypesProvider(widget.storageKey).notifier,
-                  )
+                  .read(hiddenTimelineTypesProvider(widget.storageKey).notifier)
                   .toggle(type),
             ),
           );
