@@ -1,0 +1,3 @@
+// Minimal config for ShareExtension — only imports Flutter build variables.
+// Does NOT include Pods, so no frameworks are linked.
+#include "Generated.xcconfig"
