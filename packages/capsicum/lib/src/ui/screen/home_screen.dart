@@ -914,6 +914,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is DriveSupport)
+            ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('ドライブ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/drive');
+              },
+            ),
           if (ref.read(currentAdapterProvider) is ClipSupport)
             ListTile(
               leading: const Icon(Icons.content_paste),
@@ -930,15 +939,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onTap: () {
                 Navigator.of(context).pop();
                 _showAntennaList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is DriveSupport)
-            ListTile(
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('ドライブ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/drive');
               },
             ),
           if (ref.read(currentAdapterProvider) is FlashSupport)
