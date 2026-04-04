@@ -1367,12 +1367,14 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
 
+  // ignore: unused_element
   bool _hasNowPlayingTag(Post post) {
     final content = post.content;
     if (content == null) return false;
     return _nowPlayingPattern.hasMatch(content);
   }
 
+  // ignore: unused_element
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
     showDialog(
       context: context,
