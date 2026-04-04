@@ -1074,15 +1074,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                       _showRetagSheet(context, targetPost);
                     },
                   ),
-                  if (_hasNowPlayingTag(targetPost))
-                    ListTile(
-                      leading: const Icon(Icons.music_off_outlined),
-                      title: const Text('NowPlaying を削除'),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _confirmDeleteNowPlaying(context, targetPost);
-                      },
-                    ),
+                  // TODO(#224): モロヘイヤ側修正後に復活
+                  // if (_hasNowPlayingTag(targetPost))
+                  //   ListTile(
+                  //     leading: const Icon(Icons.music_off_outlined),
+                  //     title: const Text('NowPlaying を削除'),
+                  //     onTap: () {
+                  //       Navigator.pop(sheetContext);
+                  //       _confirmDeleteNowPlaying(context, targetPost);
+                  //     },
+                  //   ),
                 ],
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
