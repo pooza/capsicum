@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
 /// Notifier that manages paginated channel timeline fetching.
@@ -16,12 +17,16 @@ class ChannelTimelineNotifier
       return const TimelineState(hasMore: false);
     }
 
+    final hideLivecure = ref.watch(hideLivecureProvider);
     final posts = await (adapter as ChannelSupport).getChannelTimeline(
       arg,
       query: const TimelineQuery(limit: _pageSize),
     );
+    final visible = hideLivecure
+        ? posts.where((p) => !hasLivecureTag(p)).toList()
+        : posts;
 
-    return TimelineState(posts: posts, hasMore: posts.length >= _pageSize);
+    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
   }
 
   Future<void> loadMore() async {
@@ -40,10 +45,14 @@ class ChannelTimelineNotifier
 
         final base = state.valueOrNull ?? current;
         final lastId = base.posts.last.id;
-        final older = await (adapter as ChannelSupport).getChannelTimeline(
+        final hideLivecure = ref.read(hideLivecureProvider);
+        final raw = await (adapter as ChannelSupport).getChannelTimeline(
           arg,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
+        final older = hideLivecure
+            ? raw.where((p) => !hasLivecureTag(p)).toList()
+            : raw;
 
         state = AsyncData(
           base.copyWith(
