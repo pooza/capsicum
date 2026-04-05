@@ -1441,7 +1441,9 @@ class _PostTileState extends ConsumerState<PostTile> {
           try {
             // Build new body: original body + new footer tags.
             final tagLine = tags.map((t) => '#$t').join(' ');
-            final bodyText = stripHtml(parsed.body).trimRight();
+            final bodyText =
+                (retagIsHtml ? stripHtml(parsed.body) : parsed.body)
+                    .trimRight();
             final newContent =
                 bodyText + (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
 
