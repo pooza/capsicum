@@ -1441,9 +1441,9 @@ class _PostTileState extends ConsumerState<PostTile> {
           try {
             // Build new body: original body + new footer tags.
             final tagLine = tags.map((t) => '#$t').join(' ');
+            final bodyText = stripHtml(parsed.body).trimRight();
             final newContent =
-                parsed.body.trimRight() +
-                (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
+                bodyText + (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
 
             // Delete original, then repost with X-Mulukhiya to skip hooks.
             await adapter.deletePost(targetPost.id);
