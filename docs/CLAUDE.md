@@ -6,7 +6,7 @@ Flutter ベースの Mastodon / Misskey クライアント。
 汎用クライアントとして動作しつつ、[mulukhiya-toot-proxy](https://github.com/pooza/mulukhiya-toot-proxy)（通称モロヘイヤ）導入済みサーバーでは拡張機能が利用可能になる。
 
 - **技術スタック**: Flutter / Dart
-- **対象プラットフォーム**: Android / iOS（余力があればタブレット最適化）
+- **対象プラットフォーム**: Android / iOS / iPad
 - **配布**: Google Play / App Store
 - **利用者**: サーバーの一般ユーザー
 
@@ -25,13 +25,12 @@ Flutter ベースの Mastodon / Misskey クライアント。
   - 注意: MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること
 - **モノレポ構成**: core / backends / fediverse_objects / メインアプリの分離
 
-### Kaiteki から変更する点
+### Kaiteki から変更した点
 
 - Flutter SDK を stable channel に固定
-- ストレージ層の刷新（Hive → flutter_secure_storage + shared_preferences）
-- HTTP クライアントの刷新（`http` → dio）
-- 初期スコープは Mastodon + Misskey に絞る（Tumblr 等は除外）
-- Widget テストの追加
+- ストレージ層: Hive → flutter_secure_storage + shared_preferences
+- HTTP クライアント: `http` → dio
+- 対象 SNS を Mastodon + Misskey に限定
 - L10n はサブモジュールでなく直接管理
 
 ## モロヘイヤ連携
@@ -50,19 +49,19 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 `GET /mulukhiya/api/about` にリクエストし、HTTP 200 + JSON レスポンスが返ればモロヘイヤありと判定する。認証不要でバージョン情報・コントローラ種別も取得できる。
 詳細な検出プロトコルや API 仕様の整備依頼はモロヘイヤ側に [capsicum-requirements.md](https://github.com/pooza/mulukhiya-toot-proxy/blob/main/docs/capsicum-requirements.md) として起票済み。
 
-### 対応予定の拡張機能
+### 拡張機能の対応状況
 
-| 機能 | モロヘイヤ側エンドポイント | 優先度 |
-|------|--------------------------|--------|
-| サーバー情報表示 | `GET /mulukhiya/api/about` | P1 |
-| ユーザー設定 | `GET/POST /mulukhiya/api/config` | P2 |
-| タグ付け | `POST /mulukhiya/api/status/tags` | P1 |
-| ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | P2 |
-| お気に入りタグ | `GET /mulukhiya/api/tagging/favorites` | P3 |
-| メディアカタログ | `GET /mulukhiya/api/media` | P3 |
-| 番組情報 | `GET /mulukhiya/api/program` | P2 |
-| エピソードブラウザ | `GET /mulukhiya/api/program/works`, `GET /mulukhiya/api/program/works/:id/episodes` | P2 |
-| Annict OAuth | `GET /mulukhiya/api/annict/oauth_uri`, `POST /mulukhiya/api/annict/auth` | P2 |
+| 機能 | モロヘイヤ側エンドポイント | 状態 |
+|------|--------------------------|------|
+| サーバー情報表示 | `GET /mulukhiya/api/about` | 実装済み |
+| お気に入りタグ | `GET /mulukhiya/api/tagging/favorites` | 実装済み |
+| 番組情報 | `GET /mulukhiya/api/program` | 実装済み |
+| エピソードブラウザ | `GET /mulukhiya/api/program/works`, `.../episodes` | 実装済み |
+| Annict OAuth | `GET /mulukhiya/api/annict/oauth_uri`, `POST /mulukhiya/api/annict/auth` | 実装済み |
+| タグ付け | `POST /mulukhiya/api/status/tags` | v1.12 で移行予定（#269） |
+| ユーザー設定 | `GET/POST /mulukhiya/api/config` | 未実装 |
+| ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | 未実装 |
+| メディアカタログ | `GET /mulukhiya/api/media` | 未実装（#71） |
 
 ## UI 設計方針
 
@@ -177,7 +176,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 - 対応済みなら修正コミット/Issue を参照して返信し、Codex コメントに +1 リアクションをつける
 - **返信とリアクションの両方が揃って「完了」**。片方だけでは同期時に未完了と判定される
 
-## ディレクトリ構成（予定）
+## ディレクトリ構成
 
 ```text
 capsicum/
@@ -220,93 +219,14 @@ capsicum/
 
 ## リリース計画
 
-### v0.1（身内テスト版） — 機能実装完了
-
-[#13](https://github.com/pooza/capsicum/issues/13)・[#18](https://github.com/pooza/capsicum/issues/18) とも対応済み。
-
-v0.1.0 リリース済み:
-
-- Android APK: [GitHub Releases v0.1.0](https://github.com/pooza/capsicum/releases/tag/v0.1.0)
-- iOS: TestFlight にアップロード済み（App Store Connect API Key 方式）
-
-v0.2.0 リリース済み:
-
-- Android APK: [GitHub Releases v0.2.0](https://github.com/pooza/capsicum/releases/tag/v0.2.0)
-- iOS: TestFlight 外部テスター向け Beta App Review 提出済み
-- iPhone のみ（iPad 除外）
-
-配布方法:
-
-- **iOS**: TestFlight 外部テスターのみ（内部テスターは本名が相互に見える問題のため不使用）
-- **Android**: v0.2.0 までは GitHub Releases に APK を添付。v1.0 以降は Google Play 内部テストトラックに移行
-
-リリース手順は [store-release-guide.md](store-release-guide.md) を参照。
-
-各マシン共通の前提（詳細は [store-release-guide.md](store-release-guide.md) を参照）:
-
-- `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置
-- `~/.config/capsicum/google-play-service-account.json` に Google Play サービスアカウント JSON キーを配置
-- Xcode → Settings → Accounts で Apple Distribution 証明書を作成
-- `gem install fastlane`（rbenv の Ruby を使用）
-- Android 署名鍵: `android/key.properties`（git 管理外、手動配置）
-
-### ストアリリース準備（v1.0 公開前）
-
-詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
-
-- [x] Android 署名鍵の生成（keystore・key.properties・build.gradle.kts）
-- [x] iOS App Store Connect でのアプリ作成・証明書設定
-- [x] プライバシーポリシーの作成・公開
-- [x] ストア掲載情報（説明文・カテゴリ・キーワード等）
-- [x] App Store 年齢区分設定（16+）
-- [x] App Store スクリーンショット登録
-- [x] Fastlane セットアップ（ビルド・アップロード自動化）
-- [x] Google Play Developer アカウント登録（$25）・アプリ作成
-- [x] Google Play IARC レーティング回答
-- [x] Google Play フィーチャーグラフィック（1024x500）
-- [x] Google Play スクリーンショット（最低2枚）
-- [x] iPad 対応（[#60](https://github.com/pooza/capsicum/issues/60)）— TARGETED_DEVICE_FAMILY の変更のみ
-
-### v1.0 以降のリリース計画
+リリース手順・ストア設定の詳細は [store-release-guide.md](store-release-guide.md) を参照。
 
 GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10 / v1.11 / v1.12 / v1.13）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
-リリース済み:
+最新リリース: **v1.11.1**（2026-04-05）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
-- **v1.0.0** — 2026-03-14 ストア公開
-- **v1.0.1** — 2026-03-14 パッチリリース
-- **v1.1.0** — 2026-03-17 リリース
-- **v1.2.0** — 2026-03-21 リリース
-- **v1.2.1** — 2026-03-21 App Store Guideline 1.2 対応パッチ
-- **v1.3.0** — 2026-03-22 リリース
-- **v1.3.1** — 2026-03-22 ホームTLページネーション修正パッチ（#89）
-- **v1.3.2** — 2026-03-22 ページネーション早期終了の修正漏れ解消（#89）
-- **v1.3.3** — 2026-03-22 コマンドトゥート修正・Misskey badgeRoles 対応。Google Play 審査再提出予定
-- **v1.4.0** — 2026-03-23 リリース
-- **v1.5.0** — 2026-03-25 リリース
-- **v1.5.1** — 2026-03-25 リリース。引用承認待ち表示・MiAuth フォールバック・セッション復号エラー対策（#197, #195, #199）
-- **v1.6.0** — 2026-03-26 リリース。翻訳・ハッシュタグフォロー・Misskey Play・言語選択・絵文字パレットインポート・バグ修正
-- **v1.7.0** — 2026-03-28 リリース。Misskey ドライブ・ハッシュタグタブ固定・アンケート作成・投票表示バグ修正
-- **v1.8.0** — 2026-03-31 リリース。公開範囲デフォルト・引用許可範囲・サーバー情報画面・notestock 検索・タブ復元・launchUrlSafely 統一・デバッグ版分離
-- **v1.9.0** — 2026-04-01 リリース。設定画面構造整理・表示カスタマイズ（絶対時間・画像/OGPぼかし・投稿前確認）・予約投稿タグ編集・モロヘイヤ再検出・絵文字表示改善
-- **v1.10.0** — 2026-04-03 リリース。絵文字サイズ設定・サムネイルサイズ設定・投稿画面スペース最適化・スクロールトップボタン・MFM 静的装飾・引用カード CW 修正
-- **v1.11.0** — 2026-04-05 リリース。NowPlaying 投稿（Android Share Intent + iOS Share Extension）・ドライブ管理・アンテナ・投稿プレビュー・タイムラインタブ切替・検索非同期表示・App Store 言語修正
-- **v1.11.1** — 2026-04-05 ホットフィックス。「削除してタグづけ」HTML 二重エスケープ修正（#268）
+今後のマイルストーン:
 
-各マイルストーンの方針:
-
-- **v1.0**（リリース済み）— ストアに出せる最低限の品質。テスターFB のバグ修正を含む
-- **v1.1**（リリース済み）— ユーザー体験の向上（プロフィール編集・ピン留め・予約投稿・リスト管理 等）
-- **v1.2**（リリース済み）— Misskey 固有機能の拡充（チャンネル・アバターデコレーション）+ EULA・UGC 対応
-- **v1.3**（リリース済み）— 補完的機能（引用操作・ピン留め・インスタンスティッカー・お気に入りユーザー一覧 等）
-- **v1.4**（リリース済み）— UX 改善（テーマカラー・タブ順序カスタマイズ・予約投稿・フォントサイズ・URL 短縮表示・t.co 展開・ティッカー改善 等）
-- **v1.5**（リリース済み）— ユーザー要望の消化（簡易投稿バー・rel=me バッジ・Misskey クリップ/絵文字パレット基盤・メディアタブ・サーバーメタデータキャッシュ・未読バッジ 等）
-- **v1.6**（リリース済み）— ユーザー要望の継続消化（翻訳・ハッシュタグフォロー・Misskey Play・言語選択・絵文字パレットインポート・バグ修正 等）
-- **v1.7**（リリース済み）— 追加機能（Misskey ドライブ・ハッシュタグタブ固定・アンケート作成 等）
-- **v1.8**（リリース済み）— UX 改善・バグ修正・セキュリティ強化（公開範囲デフォルト・引用許可範囲指定・サーバー情報画面・検索強化・notestock 検索・#実況フィルタ修正・タブ復元・デバッグ版分離・launchUrlSafely 統一 等）
-- **v1.9**（リリース済み）— 設定画面整理 + 表示カスタマイズ + モロヘイヤ連携（設定画面構造整理・notestock 検索修正/改善・絶対時間表示・画像/OGP ぼかし・投稿前確認・リスト/タグTL 表示管理・予約投稿タグ編集・モロヘイヤ再検出）
-- **v1.10**（リリース済み）— ユーザー要望中心（絵文字サイズ設定・サムネイルサイズ設定・投稿画面スペース最適化・スクロールトップボタン・MFM 静的装飾・引用カード CW 修正）
-- **v1.11**（リリース済み）— 機能拡充 + モロヘイヤ連携（NowPlaying 投稿・iOS Share Extension・ナウプレ削除・ドライブ管理・アンテナ・投稿プレビュー・URL コピー・タイムラインタブ切替・ステータスページリンク・検索非同期表示・App Store 言語修正）
 - **v1.12** — Misskey 固有機能 + ユーザー要望（絵文字デッキ・実績・ページ・DM タイムライン・背景画像・ダークモード詳細カスタマイズ・削除してタグづけの mulukhiya API 移行）
 - **v1.13** — 繰り越し分 + 連携（下書き・メッセージ・通知統合一覧・ポイピク連携・メディア API v2）
 
