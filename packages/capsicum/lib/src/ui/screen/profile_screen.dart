@@ -111,7 +111,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       if (_tabController.index == 0) {
         _loadMorePosts();
       } else if (_tabController.index == 1) {

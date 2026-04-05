@@ -45,7 +45,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       _loadMore();
     }
   }

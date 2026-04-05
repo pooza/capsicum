@@ -85,7 +85,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
-      if (maxIndex >= timeline.posts.length - 3) {
+      if (maxIndex >= timeline.posts.length - 8) {
         if (selectedHashtag != null) {
           ref
               .read(hashtagTimelineProvider(selectedHashtag).notifier)

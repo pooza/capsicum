@@ -39,7 +39,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
     }
   }

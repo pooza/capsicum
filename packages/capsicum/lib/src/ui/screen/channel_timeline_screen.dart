@@ -39,7 +39,7 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(channelTimelineProvider(widget.channelId).notifier).loadMore();
     }
   }

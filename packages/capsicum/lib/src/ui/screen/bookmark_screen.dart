@@ -31,7 +31,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(bookmarkProvider.notifier).loadMore();
     }
   }
