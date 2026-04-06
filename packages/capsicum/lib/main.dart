@@ -127,6 +127,24 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     final router = ref.watch(routerProvider);
     final seedColor = ref.watch(themeSeedColorProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final darkVariant = ref.watch(darkSurfaceVariantProvider);
+    final darkSurface = darkSurfaceColor(darkVariant);
+
+    var darkScheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.dark,
+    );
+    if (darkSurface != null) {
+      darkScheme = darkScheme.copyWith(
+        surface: darkSurface,
+        surfaceContainer: darkSurface,
+        surfaceContainerLow: darkSurface,
+        surfaceContainerLowest: darkSurface,
+        surfaceContainerHigh: Color.lerp(darkSurface, Colors.white, 0.05)!,
+        surfaceContainerHighest: Color.lerp(darkSurface, Colors.white, 0.08)!,
+      );
+    }
+
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: AppConstants.appName,
@@ -142,10 +160,7 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.dark,
-        ),
+        colorScheme: darkScheme,
         useMaterial3: true,
       ),
       themeMode: themeMode,

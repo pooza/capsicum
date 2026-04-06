@@ -21,6 +21,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final fontScale = ref.watch(fontScaleProvider);
     final emojiSize = ref.watch(emojiSizeProvider);
     final thumbnailScale = ref.watch(thumbnailScaleProvider);
+    final darkVariant = ref.watch(darkSurfaceVariantProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -52,6 +53,49 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+
+          // Dark surface variant
+          if (themeMode == ThemeMode.dark ||
+              (themeMode == ThemeMode.system &&
+                  MediaQuery.platformBrightnessOf(context) == Brightness.dark))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ダークモードの色合い',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: DarkSurfaceVariant.values.map((v) {
+                      final isSelected = v == darkVariant;
+                      final color = darkSurfaceColor(v) ??
+                          Theme.of(context).colorScheme.surface;
+                      return ChoiceChip(
+                        label: Text(darkSurfaceLabel(v)),
+                        selected: isSelected,
+                        avatar: CircleAvatar(
+                          backgroundColor: color,
+                          radius: 10,
+                          child: isSelected
+                              ? const Icon(Icons.check, size: 12, color: Colors.white)
+                              : null,
+                        ),
+                        onSelected: (_) {
+                          ref
+                              .read(darkSurfaceVariantProvider.notifier)
+                              .setVariant(v);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
 
           // Font scale
           Padding(

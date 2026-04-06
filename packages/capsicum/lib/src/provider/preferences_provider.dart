@@ -26,6 +26,7 @@ const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
+const _darkSurfaceVariantKey = 'dark_surface_variant';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -765,5 +766,75 @@ class BackgroundOpacityNotifier extends Notifier<double> {
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_backgroundOpacityKey, clamped);
+  }
+}
+
+/// Preset dark surface colors.
+enum DarkSurfaceVariant {
+  /// Default (Material 3 generated).
+  standard,
+
+  /// Pure black (OLED).
+  oled,
+
+  /// Dark gray.
+  darkGray,
+
+  /// Warm dark brown.
+  warmDark,
+
+  /// Cool dark blue.
+  coolDark,
+}
+
+const _darkSurfaceColors = {
+  DarkSurfaceVariant.oled: Color(0xFF000000),
+  DarkSurfaceVariant.darkGray: Color(0xFF1E1E1E),
+  DarkSurfaceVariant.warmDark: Color(0xFF1A1512),
+  DarkSurfaceVariant.coolDark: Color(0xFF101820),
+};
+
+const _darkSurfaceLabels = {
+  DarkSurfaceVariant.standard: '標準',
+  DarkSurfaceVariant.oled: 'OLED ブラック',
+  DarkSurfaceVariant.darkGray: 'ダークグレー',
+  DarkSurfaceVariant.warmDark: 'ウォームダーク',
+  DarkSurfaceVariant.coolDark: 'クールダーク',
+};
+
+/// Human-readable label for a [DarkSurfaceVariant].
+String darkSurfaceLabel(DarkSurfaceVariant v) => _darkSurfaceLabels[v] ?? '';
+
+/// Resolve the surface [Color] for a variant, or null for standard.
+Color? darkSurfaceColor(DarkSurfaceVariant v) => _darkSurfaceColors[v];
+
+/// Provides the dark mode surface variant preference.
+final darkSurfaceVariantProvider =
+    NotifierProvider<DarkSurfaceVariantNotifier, DarkSurfaceVariant>(
+      DarkSurfaceVariantNotifier.new,
+    );
+
+class DarkSurfaceVariantNotifier extends Notifier<DarkSurfaceVariant> {
+  @override
+  DarkSurfaceVariant build() {
+    _load();
+    return DarkSurfaceVariant.standard;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_darkSurfaceVariantKey);
+    if (saved != null) {
+      final v = DarkSurfaceVariant.values
+          .where((e) => e.name == saved)
+          .firstOrNull;
+      if (v != null) state = v;
+    }
+  }
+
+  Future<void> setVariant(DarkSurfaceVariant variant) async {
+    state = variant;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_darkSurfaceVariantKey, variant.name);
   }
 }
