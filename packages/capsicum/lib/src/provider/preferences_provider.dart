@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// User preference keys.
@@ -21,6 +24,8 @@ const _hiddenTimelineTypesPrefix = 'hidden_timeline_types_';
 const _previewCardModeKey = 'preview_card_mode';
 const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
+const _backgroundImagePathKey = 'background_image_path';
+const _backgroundOpacityKey = 'background_opacity';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -681,5 +686,84 @@ class ThumbnailScaleNotifier extends Notifier<double> {
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_thumbnailScaleKey, clamped);
+  }
+}
+
+/// Default background opacity.
+const defaultBackgroundOpacity = 0.15;
+const minBackgroundOpacity = 0.05;
+const maxBackgroundOpacity = 0.5;
+const backgroundOpacityStep = 0.05;
+
+/// Provides the saved background image file path (null = no background).
+final backgroundImageProvider =
+    NotifierProvider<BackgroundImageNotifier, String?>(
+      BackgroundImageNotifier.new,
+    );
+
+class BackgroundImageNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    _load();
+    return null;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_backgroundImagePathKey);
+    if (saved != null && File(saved).existsSync()) {
+      state = saved;
+    }
+  }
+
+  /// Copy the picked image to the app support directory and persist its path.
+  Future<void> setImage(String sourcePath) async {
+    final dir = await getApplicationSupportDirectory();
+    final dest = '${dir.path}/background_image.png';
+    await File(sourcePath).copy(dest);
+    state = dest;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_backgroundImagePathKey, dest);
+  }
+
+  Future<void> clear() async {
+    final current = state;
+    state = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_backgroundImagePathKey);
+    if (current != null) {
+      try {
+        await File(current).delete();
+      } catch (_) {}
+    }
+  }
+}
+
+/// Provides the background image opacity.
+final backgroundOpacityProvider =
+    NotifierProvider<BackgroundOpacityNotifier, double>(
+      BackgroundOpacityNotifier.new,
+    );
+
+class BackgroundOpacityNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return defaultBackgroundOpacity;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_backgroundOpacityKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setOpacity(double opacity) async {
+    final clamped = opacity.clamp(minBackgroundOpacity, maxBackgroundOpacity);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_backgroundOpacityKey, clamped);
   }
 }
