@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'provider/account_manager_provider.dart';
+import 'ui/screen/achievement_screen.dart';
 import 'ui/screen/announcement_screen.dart';
 import 'ui/screen/antenna_notes_screen.dart';
 import 'ui/screen/drive_manager_screen.dart';
@@ -171,6 +172,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/bookmarks',
         builder: (context, state) => const BookmarkScreen(),
+      ),
+      GoRoute(
+        path: '/achievements',
+        builder: (context, state) {
+          final extra = state.extra! as Map<String, dynamic>;
+          return AchievementScreen(
+            userId: extra['userId'] as String,
+            displayName: extra['displayName'] as String?,
+          );
+        },
       ),
       GoRoute(
         path: '/announcements',

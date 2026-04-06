@@ -64,6 +64,7 @@ class MisskeyCapabilities extends AdapterCapabilities {
 
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
+        AchievementSupport,
         BookmarkSupport,
         AnnouncementSupport,
         FollowSupport,
@@ -561,6 +562,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     ).results;
+  }
+
+  // AchievementSupport
+
+  @override
+  Future<List<Achievement>> getAchievements(String userId) async {
+    final items = await client.getUserAchievements(userId);
+    return items.map((e) => Achievement(
+      name: e['name'] as String,
+      unlockedAt: DateTime.fromMillisecondsSinceEpoch(e['unlockedAt'] as int),
+    )).toList();
   }
 
   // AnnouncementSupport
