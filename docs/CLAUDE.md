@@ -58,7 +58,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | 番組情報 | `GET /mulukhiya/api/program` | 実装済み |
 | エピソードブラウザ | `GET /mulukhiya/api/program/works`, `.../episodes` | 実装済み |
 | Annict OAuth | `GET /mulukhiya/api/annict/oauth_uri`, `POST /mulukhiya/api/annict/auth` | 実装済み |
-| タグ付け | `POST /mulukhiya/api/status/tags` | v1.12 で移行予定（#269） |
+| タグ付け | `POST /mulukhiya/api/status/tags` | 実装済み |
 | ユーザー設定 | `GET/POST /mulukhiya/api/config` | 未実装 |
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | 未実装 |
 | メディアカタログ | `GET /mulukhiya/api/media` | 未実装（#71） |
@@ -166,8 +166,9 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 ### リリースフロー
 
 1. `develop` で開発・コミット
-2. リリース時に `develop` → `main` へ PR を作成しマージ
-3. `main` でタグを打ちリリース
+2. リリース時に `develop` → `main` へ PR を作成
+3. CI（`dart format`・`dart analyze`）が通ることを確認してからマージ
+4. `main` でタグを打ちリリース
 
 ### PR マージ後の確認事項
 
