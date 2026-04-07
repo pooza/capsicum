@@ -727,10 +727,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
           if (ref.read(currentAdapterProvider) is AchievementSupport)
             OutlinedButton.icon(
-              onPressed: () => context.push('/achievements', extra: {
-                'userId': user.id,
-                'displayName': user.displayName ?? user.username,
-              }),
+              onPressed: () => context.push(
+                '/achievements',
+                extra: {
+                  'userId': user.id,
+                  'displayName': user.displayName ?? user.username,
+                },
+              ),
               icon: const Icon(Icons.emoji_events, size: 16),
               label: const Text('実績'),
             ),

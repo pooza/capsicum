@@ -92,9 +92,7 @@ class MisskeyClient {
   }
 
   /// POST /api/users/achievements
-  Future<List<Map<String, dynamic>>> getUserAchievements(
-    String userId,
-  ) async {
+  Future<List<Map<String, dynamic>>> getUserAchievements(String userId) async {
     final response = await dio.post(
       '/api/users/achievements',
       data: createBody({'userId': userId}),

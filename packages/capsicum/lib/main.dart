@@ -159,10 +159,7 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
         colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
         useMaterial3: true,
       ),
-      darkTheme: ThemeData(
-        colorScheme: darkScheme,
-        useMaterial3: true,
-      ),
+      darkTheme: ThemeData(colorScheme: darkScheme, useMaterial3: true),
       themeMode: themeMode,
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);

@@ -440,9 +440,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       final result = await mulukhiya.getEmojiPalettes(accessToken: token);
       if (!mounted) return;
       if (result.palettes.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('サーバーにパレットが設定されていません')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('サーバーにパレットが設定されていません')));
         return;
       }
       final host = widget.host;
@@ -462,12 +462,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     } on DioException catch (e) {
       if (!mounted) return;
       final status = e.response?.statusCode;
-      final message = status == 404
-          ? 'この機能はサーバーで利用できません'
-          : 'サーバーとの同期に失敗しました';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      final message = status == 404 ? 'この機能はサーバーで利用できません' : 'サーバーとの同期に失敗しました';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

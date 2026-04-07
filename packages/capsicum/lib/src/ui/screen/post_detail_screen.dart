@@ -26,52 +26,55 @@ class PostDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context, WidgetRef ref, AsyncValue<List<Post>> threadFuture) {
+  Widget _buildBody(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<Post>> threadFuture,
+  ) {
     final bgPath = ref.watch(backgroundImageProvider);
     final bgOpacity = ref.watch(backgroundOpacityProvider);
 
     Widget body = threadFuture.when(
-        data: (thread) => ListView.separated(
-          itemCount: thread.length,
-          separatorBuilder: (_, _) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final p = thread[index];
-            final isTarget = p.id == post.id;
-            return Container(
-              color: isTarget
-                  ? Theme.of(
-                      context,
-                    ).colorScheme.primaryContainer.withValues(alpha: 0.3)
-                  : null,
-              child: PostTile(
-                post: p,
-                tappable: !isTarget,
-                initialExpanded: isTarget,
-                selectable: true,
-                onActionCompleted: () =>
-                    ref.invalidate(_threadProvider(post.id)),
-              ),
-            );
-          },
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(_threadProvider(post.id)),
-                  child: const Text('再試行'),
-                ),
-              ],
+      data: (thread) => ListView.separated(
+        itemCount: thread.length,
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          final p = thread[index];
+          final isTarget = p.id == post.id;
+          return Container(
+            color: isTarget
+                ? Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : null,
+            child: PostTile(
+              post: p,
+              tappable: !isTarget,
+              initialExpanded: isTarget,
+              selectable: true,
+              onActionCompleted: () => ref.invalidate(_threadProvider(post.id)),
             ),
+          );
+        },
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(_threadProvider(post.id)),
+                child: const Text('再試行'),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    );
 
     if (bgPath != null) {
       body = Container(

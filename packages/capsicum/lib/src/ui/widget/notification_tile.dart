@@ -109,7 +109,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
               SizedBox(
                 width: 20,
                 height: 20,
-                child: Center(child: _buildReactionEmoji(notification.reaction!)),
+                child: Center(
+                  child: _buildReactionEmoji(notification.reaction!),
+                ),
               )
             else
               Icon(icon, size: 20, color: theme.colorScheme.primary),

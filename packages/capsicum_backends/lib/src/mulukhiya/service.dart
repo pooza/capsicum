@@ -143,9 +143,7 @@ class EmojiPalettesResult {
   /// Get emojis for the main palette (falls back to first palette).
   List<String> get mainEmojis {
     if (paletteForMain != null) {
-      final palette = palettes
-          .where((p) => p.id == paletteForMain)
-          .firstOrNull;
+      final palette = palettes.where((p) => p.id == paletteForMain).firstOrNull;
       if (palette != null) return palette.emojis;
     }
     return palettes.isNotEmpty ? palettes.first.emojis : const [];
@@ -505,11 +503,13 @@ class MulukhiyaService {
           .map((e) => e.toString())
           .where((e) => e.isNotEmpty)
           .toList();
-      parsed.add(EmojiPaletteEntry(
-        id: palette['id'] as String? ?? '',
-        name: palette['name'] as String? ?? '',
-        emojis: emojis,
-      ));
+      parsed.add(
+        EmojiPaletteEntry(
+          id: palette['id'] as String? ?? '',
+          name: palette['name'] as String? ?? '',
+          emojis: emojis,
+        ),
+      );
     }
 
     return EmojiPalettesResult(

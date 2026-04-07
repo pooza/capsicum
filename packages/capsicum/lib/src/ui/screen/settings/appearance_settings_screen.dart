@@ -73,7 +73,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                     runSpacing: 8,
                     children: DarkSurfaceVariant.values.map((v) {
                       final isSelected = v == darkVariant;
-                      final color = darkSurfaceColor(v) ??
+                      final color =
+                          darkSurfaceColor(v) ??
                           Theme.of(context).colorScheme.surface;
                       return ChoiceChip(
                         label: Text(darkSurfaceLabel(v)),
@@ -82,7 +83,11 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                           backgroundColor: color,
                           radius: 10,
                           child: isSelected
-                              ? const Icon(Icons.check, size: 12, color: Colors.white)
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 12,
+                                  color: Colors.white,
+                                )
                               : null,
                         ),
                         onSelected: (_) {
@@ -287,9 +292,10 @@ class _BackgroundImageSection extends ConsumerWidget {
                     value: opacity,
                     min: minBackgroundOpacity,
                     max: maxBackgroundOpacity,
-                    divisions: ((maxBackgroundOpacity - minBackgroundOpacity) /
-                            backgroundOpacityStep)
-                        .round(),
+                    divisions:
+                        ((maxBackgroundOpacity - minBackgroundOpacity) /
+                                backgroundOpacityStep)
+                            .round(),
                     label: '${(opacity * 100).round()}%',
                     onChanged: (value) {
                       ref
