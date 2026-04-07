@@ -880,7 +880,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
               Positioned(
                 right: 0,
-                top: 0,
+                top: 20,
                 child: GestureDetector(
                   onTap: () => _showActionMenu(context),
                   child: Padding(
