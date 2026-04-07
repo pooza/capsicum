@@ -58,7 +58,7 @@ class ChannelTimelineNotifier
           base.copyWith(
             posts: [...base.posts, ...older],
             isLoadingMore: false,
-            hasMore: older.length >= _pageSize,
+            hasMore: raw.length >= _pageSize,
           ),
         );
         return;
