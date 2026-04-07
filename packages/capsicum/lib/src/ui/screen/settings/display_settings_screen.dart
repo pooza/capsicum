@@ -40,7 +40,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             title: const Text('投稿前に確認する'),
-            subtitle: const Text('投稿ボタンを押したときに確認ダイアログを表示します'),
+            subtitle: const Text('すべての投稿操作で送信前に確認ダイアログを表示します'),
             value: ref.watch(confirmBeforePostProvider),
             onChanged: (_) =>
                 ref.read(confirmBeforePostProvider.notifier).toggle(),

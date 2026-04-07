@@ -47,7 +47,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    if (ref.read(confirmBeforePostProvider)) {
+    if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
+      if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(

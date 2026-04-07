@@ -928,7 +928,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
 
-    if (ref.read(confirmBeforePostProvider)) {
+    if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
+      if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(

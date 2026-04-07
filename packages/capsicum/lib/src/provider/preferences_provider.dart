@@ -608,6 +608,17 @@ class ConfirmBeforePostNotifier extends Notifier<bool> {
     }
   }
 
+  /// Returns the persisted value directly from SharedPreferences.
+  ///
+  /// Use this instead of synchronous [state] when the value must reflect
+  /// the saved preference regardless of whether [_load] has completed.
+  Future<bool> readPersisted() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getBool(_confirmBeforePostKey) ?? false;
+    state = value;
+    return value;
+  }
+
   Future<void> toggle() async {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
