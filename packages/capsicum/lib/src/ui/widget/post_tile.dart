@@ -467,6 +467,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                           _formatTime(displayPost.postedAt),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
+                        const SizedBox(width: 4),
+                        GestureDetector(
+                          onTap: () => _showActionMenu(context),
+                          child: Icon(
+                            Icons.more_horiz,
+                            size: 16,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ),
                       ],
                     ),
                     Text(
