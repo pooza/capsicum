@@ -12,6 +12,7 @@ const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
 const _lastTabPrefix = 'last_tab_';
 const _emojiPalettePrefix = 'emoji_palette_';
+const _emojiReactionPalettePrefix = 'emoji_reaction_palette_';
 const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
@@ -234,13 +235,22 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
   }
 }
 
-/// Per-host emoji palette (imported from Misskey Web UI).
+/// Per-host emoji palette for compose (main).
 ///
 /// Takes a hostname as the family parameter.
 /// Returns an empty list when no palette has been imported.
 final emojiPaletteProvider =
     NotifierProvider.family<EmojiPaletteNotifier, List<String>, String>(
       EmojiPaletteNotifier.new,
+    );
+
+/// Per-host emoji palette for reactions.
+///
+/// Takes a hostname as the family parameter.
+/// Falls back to the main palette when no reaction palette is set.
+final emojiReactionPaletteProvider =
+    NotifierProvider.family<EmojiReactionPaletteNotifier, List<String>, String>(
+      EmojiReactionPaletteNotifier.new,
     );
 
 class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
@@ -266,6 +276,14 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
     await prefs.setStringList('$_emojiPalettePrefix$arg', shortcodes);
   }
 
+  /// Replace the palette with server-fetched entries.
+  Future<void> importFromServer(List<String> emojis) async {
+    if (emojis.isEmpty) return;
+    state = emojis;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_emojiPalettePrefix$arg', emojis);
+  }
+
   Future<void> clear() async {
     state = const [];
     final prefs = await SharedPreferences.getInstance();
@@ -288,6 +306,36 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
       }
     }
     return results;
+  }
+}
+
+class EmojiReactionPaletteNotifier
+    extends FamilyNotifier<List<String>, String> {
+  @override
+  List<String> build(String arg) {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_emojiReactionPalettePrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> importFromServer(List<String> emojis) async {
+    if (emojis.isEmpty) return;
+    state = emojis;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_emojiReactionPalettePrefix$arg', emojis);
+  }
+
+  Future<void> clear() async {
+    state = const [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_emojiReactionPalettePrefix$arg');
   }
 }
 

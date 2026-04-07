@@ -368,6 +368,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
           host: account!.key.host,
+          mulukhiya: account.mulukhiya,
+          accessToken: account.userSecret.accessToken,
           onSelected: (emoji) {
             Navigator.pop(context);
             _insertEmoji(emoji);

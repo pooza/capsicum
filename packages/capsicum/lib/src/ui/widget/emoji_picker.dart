@@ -1,4 +1,6 @@
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/preferences_provider.dart';
@@ -116,12 +118,18 @@ class EmojiPicker extends ConsumerStatefulWidget {
   final BackendAdapter adapter;
   final String host;
   final ValueChanged<String> onSelected;
+  final MulukhiyaService? mulukhiya;
+  final String? accessToken;
+  final bool forReaction;
 
   const EmojiPicker({
     super.key,
     required this.adapter,
     required this.host,
     required this.onSelected,
+    this.mulukhiya,
+    this.accessToken,
+    this.forReaction = false,
   });
 
   @override
@@ -292,7 +300,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   Widget _buildCustomCategories(List<CustomEmoji> emojis) {
-    final palette = ref.watch(emojiPaletteProvider(widget.host));
+    final palette = widget.forReaction
+        ? ref.watch(emojiReactionPaletteProvider(widget.host))
+        : ref.watch(emojiPaletteProvider(widget.host));
 
     // Index custom emojis by shortcode for palette lookup.
     final emojiByCode = <String, CustomEmoji>{};
@@ -344,8 +354,17 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             ),
           ),
         ],
-        // Import button when palette is empty.
-        if (palette.isEmpty)
+        // Import buttons when palette is empty.
+        if (palette.isEmpty) ...[
+          if (widget.mulukhiya != null && widget.accessToken != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: OutlinedButton.icon(
+                onPressed: _syncFromServer,
+                icon: const Icon(Icons.sync, size: 18),
+                label: const Text('サーバーから絵文字パレットを同期'),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: OutlinedButton.icon(
@@ -354,6 +373,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
               label: const Text('Web版の絵文字パレットから一括追加'),
             ),
           ),
+        ],
         // Category sections.
         ...grouped.entries.map((category) {
           return Column(
@@ -381,23 +401,74 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   Widget _buildPaletteMenuButton() {
+    final hasSync = widget.mulukhiya != null && widget.accessToken != null;
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_horiz, size: 18),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
       itemBuilder: (_) => [
-        const PopupMenuItem(value: 'reimport', child: Text('再インポート')),
+        if (hasSync)
+          const PopupMenuItem(value: 'sync', child: Text('サーバーから同期')),
+        const PopupMenuItem(value: 'reimport', child: Text('テキストから追加')),
         const PopupMenuItem(value: 'clear', child: Text('パレットをクリア')),
       ],
       onSelected: (value) {
         switch (value) {
+          case 'sync':
+            _syncFromServer();
           case 'reimport':
             _showImportDialog(context);
           case 'clear':
-            ref.read(emojiPaletteProvider(widget.host).notifier).clear();
+            if (widget.forReaction) {
+              ref
+                  .read(emojiReactionPaletteProvider(widget.host).notifier)
+                  .clear();
+            } else {
+              ref.read(emojiPaletteProvider(widget.host).notifier).clear();
+            }
         }
       },
     );
+  }
+
+  Future<void> _syncFromServer() async {
+    final mulukhiya = widget.mulukhiya;
+    final token = widget.accessToken;
+    if (mulukhiya == null || token == null) return;
+
+    try {
+      final result = await mulukhiya.getEmojiPalettes(accessToken: token);
+      if (!mounted) return;
+      if (result.palettes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('サーバーにパレットが設定されていません')),
+        );
+        return;
+      }
+      final host = widget.host;
+      final mainEmojis = result.mainEmojis;
+      final reactionEmojis = result.reactionEmojis;
+      await ref
+          .read(emojiPaletteProvider(host).notifier)
+          .importFromServer(mainEmojis);
+      await ref
+          .read(emojiReactionPaletteProvider(host).notifier)
+          .importFromServer(reactionEmojis);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${mainEmojis.length}件の絵文字を同期しました')),
+        );
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final status = e.response?.statusCode;
+      final message = status == 404
+          ? 'この機能はサーバーで利用できません'
+          : 'サーバーとの同期に失敗しました';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 
   void _showImportDialog(BuildContext context) {

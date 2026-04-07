@@ -1281,6 +1281,9 @@ class _PostTileState extends ConsumerState<PostTile> {
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
           host: account!.key.host,
+          mulukhiya: account.mulukhiya,
+          accessToken: account.userSecret.accessToken,
+          forReaction: true,
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
