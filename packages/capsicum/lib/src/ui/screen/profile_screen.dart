@@ -111,7 +111,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       if (_tabController.index == 0) {
         _loadMorePosts();
       } else if (_tabController.index == 1) {
@@ -725,6 +725,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ],
           ),
+          if (ref.read(currentAdapterProvider) is AchievementSupport)
+            OutlinedButton.icon(
+              onPressed: () => context.push('/achievements', extra: {
+                'userId': user.id,
+                'displayName': user.displayName ?? user.username,
+              }),
+              icon: const Icon(Icons.emoji_events, size: 16),
+              label: const Text('実績'),
+            ),
           if (user.createdAt != null) ...[
             const SizedBox(height: 8),
             Row(

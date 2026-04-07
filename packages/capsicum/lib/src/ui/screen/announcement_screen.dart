@@ -1,3 +1,4 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +6,18 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../widget/announcement_tile.dart';
+
+final _infoBotUserProvider = FutureProvider.autoDispose<User?>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  final acct = ref.watch(currentMulukhiyaProvider)?.infoBotAcct;
+  if (adapter == null || acct == null) return null;
+
+  final normalized = acct.startsWith('@') ? acct.substring(1) : acct;
+  final parts = normalized.split('@');
+  if (parts.length != 2) return null;
+
+  return adapter.getUser(parts[0], parts[1]);
+});
 
 class AnnouncementScreen extends ConsumerWidget {
   const AnnouncementScreen({super.key});
@@ -36,6 +49,7 @@ class AnnouncementScreen extends ConsumerWidget {
                         return _InfoBotBanner(
                           acct: infoBotAcct,
                           onTap: () => _openInfoBotProfile(context, ref),
+                          avatarUrl: ref.watch(_infoBotUserProvider).valueOrNull?.avatarUrl,
                         );
                       }
                       index -= 1;
@@ -75,16 +89,7 @@ class AnnouncementScreen extends ConsumerWidget {
   }
 
   Future<void> _openInfoBotProfile(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    final acct = ref.read(currentMulukhiyaProvider)?.infoBotAcct;
-    if (adapter == null || acct == null) return;
-
-    // acct may be "@username@host" or "username@host"
-    final normalized = acct.startsWith('@') ? acct.substring(1) : acct;
-    final parts = normalized.split('@');
-    if (parts.length != 2) return;
-
-    final user = await adapter.getUser(parts[0], parts[1]);
+    final user = ref.read(_infoBotUserProvider).valueOrNull;
     if (user != null && context.mounted) {
       context.push('/profile', extra: user);
     }
@@ -94,8 +99,9 @@ class AnnouncementScreen extends ConsumerWidget {
 class _InfoBotBanner extends StatelessWidget {
   final String acct;
   final VoidCallback onTap;
+  final String? avatarUrl;
 
-  const _InfoBotBanner({required this.acct, required this.onTap});
+  const _InfoBotBanner({required this.acct, required this.onTap, this.avatarUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +112,19 @@ class _InfoBotBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Icon(Icons.smart_toy, size: 20, color: theme.colorScheme.primary),
+            if (avatarUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.network(
+                  avatarUrl!,
+                  width: 20,
+                  height: 20,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Icon(Icons.smart_toy, size: 20, color: theme.colorScheme.primary),
+                ),
+              )
+            else
+              Icon(Icons.smart_toy, size: 20, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

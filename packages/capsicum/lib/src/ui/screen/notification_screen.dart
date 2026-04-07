@@ -61,7 +61,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
-      if (maxIndex >= state.notifications.length - 3) {
+      if (maxIndex >= state.notifications.length - 8) {
         ref.read(notificationProvider.notifier).loadMore();
       }
     }

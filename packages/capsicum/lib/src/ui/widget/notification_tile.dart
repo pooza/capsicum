@@ -104,7 +104,15 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            if (notification.type == NotificationType.reaction &&
+                notification.reaction != null)
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: Center(child: _buildReactionEmoji(notification.reaction!)),
+              )
+            else
+              Icon(icon, size: 20, color: theme.colorScheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -162,11 +170,6 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 ),
               ),
               Text(' が$label', style: theme.textTheme.bodySmall),
-              if (notification.type == NotificationType.reaction &&
-                  notification.reaction != null) ...[
-                const SizedBox(width: 4),
-                _buildReactionEmoji(notification.reaction!),
-              ],
             ],
           ),
         ),

@@ -36,7 +36,7 @@ class _AntennaNotesScreenState extends ConsumerState<AntennaNotesScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(antennaNotesProvider(widget.antennaId).notifier).loadMore();
     }
   }

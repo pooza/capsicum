@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// User preference keys.
@@ -9,6 +12,7 @@ const _themeColorPrefix = 'theme_color_';
 const _tabOrderPrefix = 'tab_order_';
 const _lastTabPrefix = 'last_tab_';
 const _emojiPalettePrefix = 'emoji_palette_';
+const _emojiReactionPalettePrefix = 'emoji_reaction_palette_';
 const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
@@ -21,6 +25,9 @@ const _hiddenTimelineTypesPrefix = 'hidden_timeline_types_';
 const _previewCardModeKey = 'preview_card_mode';
 const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
+const _backgroundImagePathKey = 'background_image_path';
+const _backgroundOpacityKey = 'background_opacity';
+const _darkSurfaceVariantKey = 'dark_surface_variant';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -228,13 +235,22 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
   }
 }
 
-/// Per-host emoji palette (imported from Misskey Web UI).
+/// Per-host emoji palette for compose (main).
 ///
 /// Takes a hostname as the family parameter.
 /// Returns an empty list when no palette has been imported.
 final emojiPaletteProvider =
     NotifierProvider.family<EmojiPaletteNotifier, List<String>, String>(
       EmojiPaletteNotifier.new,
+    );
+
+/// Per-host emoji palette for reactions.
+///
+/// Takes a hostname as the family parameter.
+/// Falls back to the main palette when no reaction palette is set.
+final emojiReactionPaletteProvider =
+    NotifierProvider.family<EmojiReactionPaletteNotifier, List<String>, String>(
+      EmojiReactionPaletteNotifier.new,
     );
 
 class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
@@ -260,6 +276,14 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
     await prefs.setStringList('$_emojiPalettePrefix$arg', shortcodes);
   }
 
+  /// Replace the palette with server-fetched entries.
+  Future<void> importFromServer(List<String> emojis) async {
+    if (emojis.isEmpty) return;
+    state = emojis;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_emojiPalettePrefix$arg', emojis);
+  }
+
   Future<void> clear() async {
     state = const [];
     final prefs = await SharedPreferences.getInstance();
@@ -282,6 +306,36 @@ class EmojiPaletteNotifier extends FamilyNotifier<List<String>, String> {
       }
     }
     return results;
+  }
+}
+
+class EmojiReactionPaletteNotifier
+    extends FamilyNotifier<List<String>, String> {
+  @override
+  List<String> build(String arg) {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_emojiReactionPalettePrefix$arg');
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> importFromServer(List<String> emojis) async {
+    if (emojis.isEmpty) return;
+    state = emojis;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('$_emojiReactionPalettePrefix$arg', emojis);
+  }
+
+  Future<void> clear() async {
+    state = const [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_emojiReactionPalettePrefix$arg');
   }
 }
 
@@ -681,5 +735,154 @@ class ThumbnailScaleNotifier extends Notifier<double> {
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_thumbnailScaleKey, clamped);
+  }
+}
+
+/// Default background opacity.
+const defaultBackgroundOpacity = 0.15;
+const minBackgroundOpacity = 0.05;
+const maxBackgroundOpacity = 0.5;
+const backgroundOpacityStep = 0.05;
+
+/// Provides the saved background image file path (null = no background).
+final backgroundImageProvider =
+    NotifierProvider<BackgroundImageNotifier, String?>(
+      BackgroundImageNotifier.new,
+    );
+
+class BackgroundImageNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    _load();
+    return null;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_backgroundImagePathKey);
+    if (saved != null && File(saved).existsSync()) {
+      state = saved;
+    }
+  }
+
+  /// Copy the picked image to the app support directory and persist its path.
+  Future<void> setImage(String sourcePath) async {
+    final dir = await getApplicationSupportDirectory();
+    final dest = '${dir.path}/background_image.png';
+    await File(sourcePath).copy(dest);
+    state = dest;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_backgroundImagePathKey, dest);
+  }
+
+  Future<void> clear() async {
+    final current = state;
+    state = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_backgroundImagePathKey);
+    if (current != null) {
+      try {
+        await File(current).delete();
+      } catch (_) {}
+    }
+  }
+}
+
+/// Provides the background image opacity.
+final backgroundOpacityProvider =
+    NotifierProvider<BackgroundOpacityNotifier, double>(
+      BackgroundOpacityNotifier.new,
+    );
+
+class BackgroundOpacityNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return defaultBackgroundOpacity;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_backgroundOpacityKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setOpacity(double opacity) async {
+    final clamped = opacity.clamp(minBackgroundOpacity, maxBackgroundOpacity);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_backgroundOpacityKey, clamped);
+  }
+}
+
+/// Preset dark surface colors.
+enum DarkSurfaceVariant {
+  /// Default (Material 3 generated).
+  standard,
+
+  /// Pure black (OLED).
+  oled,
+
+  /// Dark gray.
+  darkGray,
+
+  /// Warm dark brown.
+  warmDark,
+
+  /// Cool dark blue.
+  coolDark,
+}
+
+const _darkSurfaceColors = {
+  DarkSurfaceVariant.oled: Color(0xFF000000),
+  DarkSurfaceVariant.darkGray: Color(0xFF1E1E1E),
+  DarkSurfaceVariant.warmDark: Color(0xFF1A1512),
+  DarkSurfaceVariant.coolDark: Color(0xFF101820),
+};
+
+const _darkSurfaceLabels = {
+  DarkSurfaceVariant.standard: '標準',
+  DarkSurfaceVariant.oled: 'OLED ブラック',
+  DarkSurfaceVariant.darkGray: 'ダークグレー',
+  DarkSurfaceVariant.warmDark: 'ウォームダーク',
+  DarkSurfaceVariant.coolDark: 'クールダーク',
+};
+
+/// Human-readable label for a [DarkSurfaceVariant].
+String darkSurfaceLabel(DarkSurfaceVariant v) => _darkSurfaceLabels[v] ?? '';
+
+/// Resolve the surface [Color] for a variant, or null for standard.
+Color? darkSurfaceColor(DarkSurfaceVariant v) => _darkSurfaceColors[v];
+
+/// Provides the dark mode surface variant preference.
+final darkSurfaceVariantProvider =
+    NotifierProvider<DarkSurfaceVariantNotifier, DarkSurfaceVariant>(
+      DarkSurfaceVariantNotifier.new,
+    );
+
+class DarkSurfaceVariantNotifier extends Notifier<DarkSurfaceVariant> {
+  @override
+  DarkSurfaceVariant build() {
+    _load();
+    return DarkSurfaceVariant.standard;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_darkSurfaceVariantKey);
+    if (saved != null) {
+      final v = DarkSurfaceVariant.values
+          .where((e) => e.name == saved)
+          .firstOrNull;
+      if (v != null) state = v;
+    }
+  }
+
+  Future<void> setVariant(DarkSurfaceVariant variant) async {
+    state = variant;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_darkSurfaceVariantKey, variant.name);
   }
 }

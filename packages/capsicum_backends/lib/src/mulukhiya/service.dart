@@ -106,6 +106,52 @@ class FavoriteTag {
   const FavoriteTag({required this.name, this.url, required this.count});
 }
 
+class EmojiPaletteEntry {
+  final String id;
+  final String name;
+  final List<String> emojis;
+
+  const EmojiPaletteEntry({
+    required this.id,
+    required this.name,
+    required this.emojis,
+  });
+}
+
+class EmojiPalettesResult {
+  final List<EmojiPaletteEntry> palettes;
+  final String? paletteForReaction;
+  final String? paletteForMain;
+
+  const EmojiPalettesResult({
+    required this.palettes,
+    this.paletteForReaction,
+    this.paletteForMain,
+  });
+
+  /// Get emojis for the reaction palette (falls back to first palette).
+  List<String> get reactionEmojis {
+    if (paletteForReaction != null) {
+      final palette = palettes
+          .where((p) => p.id == paletteForReaction)
+          .firstOrNull;
+      if (palette != null) return palette.emojis;
+    }
+    return palettes.isNotEmpty ? palettes.first.emojis : const [];
+  }
+
+  /// Get emojis for the main palette (falls back to first palette).
+  List<String> get mainEmojis {
+    if (paletteForMain != null) {
+      final palette = palettes
+          .where((p) => p.id == paletteForMain)
+          .firstOrNull;
+      if (palette != null) return palette.emojis;
+    }
+    return palettes.isNotEmpty ? palettes.first.emojis : const [];
+  }
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
@@ -421,6 +467,55 @@ class MulukhiyaService {
     await _dio.delete(
       '$baseUrl/status/nowplaying',
       data: {'token': accessToken, 'id': id},
+    );
+  }
+
+  /// POST /mulukhiya/api/status/tags
+  /// Deletes the post and reposts it with the given tags.
+  Future<void> updateStatusTags({
+    required String accessToken,
+    required String id,
+    required List<String> tags,
+  }) async {
+    await _dio.post(
+      '$baseUrl/status/tags',
+      data: {'token': accessToken, 'id': id, 'tags': tags},
+    );
+  }
+
+  /// Fetch emoji palettes from the server (Misskey only).
+  /// Requires the user's SNS access token for authentication.
+  /// Returns structured palette data with main/reaction assignments.
+  Future<EmojiPalettesResult> getEmojiPalettes({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get(
+      '$baseUrl/emoji/palettes',
+      queryParameters: {'token': accessToken},
+    );
+    final data = response.data as Map<String, dynamic>;
+    final palettes = data['palettes'] as List? ?? [];
+    final reactionId = data['palette_for_reaction'] as String?;
+    final mainId = data['palette_for_main'] as String?;
+
+    final parsed = <EmojiPaletteEntry>[];
+    for (final p in palettes) {
+      final palette = p as Map<String, dynamic>;
+      final emojis = (palette['emojis'] as List? ?? [])
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      parsed.add(EmojiPaletteEntry(
+        id: palette['id'] as String? ?? '',
+        name: palette['name'] as String? ?? '',
+        emojis: emojis,
+      ));
+    }
+
+    return EmojiPalettesResult(
+      palettes: parsed,
+      paletteForReaction: reactionId,
+      paletteForMain: mainId,
     );
   }
 

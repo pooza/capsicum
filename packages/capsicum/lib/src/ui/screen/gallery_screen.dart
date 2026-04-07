@@ -30,7 +30,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(galleryPostsProvider.notifier).loadMore();
     }
   }

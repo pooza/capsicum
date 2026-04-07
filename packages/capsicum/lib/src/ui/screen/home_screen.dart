@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -85,7 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);
-      if (maxIndex >= timeline.posts.length - 3) {
+      if (maxIndex >= timeline.posts.length - 8) {
         if (selectedHashtag != null) {
           ref
               .read(hashtagTimelineProvider(selectedHashtag).notifier)
@@ -321,7 +322,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             )
           : null,
-      body: Column(
+      body: _buildBody(selectedList, selectedType, selectedHashtag, timeline),
+    );
+  }
+
+  Widget _buildBody(
+    PostList? selectedList,
+    TimelineType selectedType,
+    String? selectedHashtag,
+    AsyncValue<dynamic> timeline,
+  ) {
+    final bgPath = ref.watch(backgroundImageProvider);
+    final bgOpacity = ref.watch(backgroundOpacityProvider);
+
+    Widget body = Column(
         children: [
           Expanded(
             child: GestureDetector(
@@ -413,8 +427,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SimplePostBar(),
         ],
-      ),
-    );
+      );
+
+    if (bgPath != null) {
+      body = Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: FileImage(File(bgPath)),
+            fit: BoxFit.cover,
+            opacity: bgOpacity,
+          ),
+        ),
+        child: body,
+      );
+    }
+
+    return body;
   }
 
   void _onSwipe(DragEndDetails details, TimelineType current) {

@@ -94,7 +94,7 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(hashtagTimelineProvider(widget.hashtag).notifier).loadMore();
     }
   }

@@ -64,6 +64,7 @@ class MisskeyCapabilities extends AdapterCapabilities {
 
 class MisskeyAdapter extends DecentralizedBackendAdapter
     with
+        AchievementSupport,
         BookmarkSupport,
         AnnouncementSupport,
         FollowSupport,
@@ -561,6 +562,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     ).results;
+  }
+
+  // AchievementSupport
+
+  @override
+  Future<List<Achievement>> getAchievements(String userId) async {
+    final items = await client.getUserAchievements(userId);
+    return items
+        .map(
+          (e) => Achievement(
+            name: e['name'] as String,
+            unlockedAt: DateTime.fromMillisecondsSinceEpoch(
+              e['unlockedAt'] as int,
+            ),
+          ),
+        )
+        .toList();
   }
 
   // AnnouncementSupport
@@ -1064,7 +1082,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> moveDriveFile(String fileId, String? folderId) async {
-    await client.updateDriveFile(fileId, folderId: folderId);
+    // Misskey API ではキー省略=変更なし、明示的 null=ルートへ移動。
+    // updateDriveFile は null-aware で省略するため、直接 POST する。
+    await client.dio.post(
+      '/api/drive/files/update',
+      data: client.createBody({'fileId': fileId, 'folderId': folderId}),
+    );
   }
 
   @override

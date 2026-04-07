@@ -91,6 +91,17 @@ class MisskeyClient {
         .toList();
   }
 
+  /// POST /api/users/achievements
+  Future<List<Map<String, dynamic>>> getUserAchievements(
+    String userId,
+  ) async {
+    final response = await dio.post(
+      '/api/users/achievements',
+      data: createBody({'userId': userId}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/users/followers
   Future<List<Map<String, dynamic>>> getUserFollowers(
     String userId, {

@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 import 'timeline_provider.dart';
 
 /// Provider that fetches the user's lists.
@@ -23,12 +24,16 @@ class ListTimelineNotifier
       return const TimelineState(hasMore: false);
     }
 
+    final hideLivecure = ref.watch(hideLivecureProvider);
     final posts = await (adapter as ListSupport).getListTimeline(
       arg,
       query: const TimelineQuery(limit: _pageSize),
     );
+    final visible = hideLivecure
+        ? posts.where((p) => !hasLivecureTag(p)).toList()
+        : posts;
 
-    return TimelineState(posts: posts, hasMore: posts.isNotEmpty);
+    return TimelineState(posts: visible, hasMore: posts.isNotEmpty);
   }
 
   Future<void> loadMore() async {
@@ -47,16 +52,20 @@ class ListTimelineNotifier
 
         final base = state.valueOrNull ?? current;
         final lastId = base.posts.last.id;
-        final older = await (adapter as ListSupport).getListTimeline(
+        final hideLivecure = ref.read(hideLivecureProvider);
+        final raw = await (adapter as ListSupport).getListTimeline(
           arg,
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
+        final older = hideLivecure
+            ? raw.where((p) => !hasLivecureTag(p)).toList()
+            : raw;
 
         state = AsyncData(
           base.copyWith(
             posts: [...base.posts, ...older],
             isLoadingMore: false,
-            hasMore: older.length >= _pageSize,
+            hasMore: raw.length >= _pageSize,
             loadMoreError: null,
           ),
         );

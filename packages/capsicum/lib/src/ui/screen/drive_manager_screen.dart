@@ -17,6 +17,7 @@ class DriveManagerScreen extends ConsumerStatefulWidget {
 class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   final _scrollController = ScrollController();
   final List<_FolderEntry> _folderStack = [];
+  bool _isDragging = false;
 
   String? get _currentFolderId =>
       _folderStack.isEmpty ? null : _folderStack.last.id;
@@ -39,7 +40,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+        _scrollController.position.maxScrollExtent - 600) {
       ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
     }
   }
@@ -66,6 +67,26 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   DriveSupport? get _drive {
     final adapter = ref.read(currentAdapterProvider);
     return adapter is DriveSupport ? adapter as DriveSupport : null;
+  }
+
+  Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
+    try {
+      await _drive?.moveDriveFile(file.id, folderId);
+      ref
+          .read(driveContentsProvider(_currentFolderId).notifier)
+          .moveFileOut(file.id);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ファイルを移動しました')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('移動に失敗しました: $e')));
+      }
+    }
   }
 
   void _openFile(Attachment file, List<Attachment> files, int index) {
@@ -371,12 +392,33 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_currentTitle),
+          title: _isDragging && _folderStack.isNotEmpty
+              ? Text(
+                  '← 親フォルダへ移動',
+                  style: TextStyle(color: theme.colorScheme.primary),
+                )
+              : Text(_currentTitle),
           backgroundColor: theme.colorScheme.inversePrimary,
-          leading: IconButton(
-            icon: Icon(_folderStack.isEmpty ? Icons.close : Icons.arrow_back),
-            onPressed: _goBack,
-          ),
+          leading: _folderStack.isEmpty
+              ? IconButton(icon: const Icon(Icons.close), onPressed: _goBack)
+              : DragTarget<Attachment>(
+                  onWillAcceptWithDetails: (_) => true,
+                  onAcceptWithDetails: (details) {
+                    final parentId = _folderStack.length >= 2
+                        ? _folderStack[_folderStack.length - 2].id
+                        : null;
+                    _moveFileToFolder(details.data, parentId);
+                  },
+                  builder: (context, candidateData, _) => IconButton(
+                    icon: Icon(
+                      Icons.arrow_back,
+                      color: candidateData.isNotEmpty || _isDragging
+                          ? theme.colorScheme.primary
+                          : null,
+                    ),
+                    onPressed: _goBack,
+                  ),
+                ),
           actions: [
             IconButton(
               icon: const Icon(Icons.create_new_folder_outlined),
@@ -411,11 +453,19 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                 itemBuilder: (context, index) {
                   if (index < totalFolders) {
                     final folder = state.folders[index];
-                    return _FolderTile(
+                    return DragTarget<Attachment>(
                       key: ValueKey('folder-${folder.id}'),
-                      folder: folder,
-                      onTap: () => _openFolder(folder),
-                      onLongPress: () => _showFolderActions(folder),
+                      onWillAcceptWithDetails: (_) => true,
+                      onAcceptWithDetails: (details) =>
+                          _moveFileToFolder(details.data, folder.id),
+                      builder: (context, candidateData, rejectedData) {
+                        return _FolderTile(
+                          folder: folder,
+                          onTap: () => _openFolder(folder),
+                          onLongPress: () => _showFolderActions(folder),
+                          isHighlighted: candidateData.isNotEmpty,
+                        );
+                      },
                     );
                   }
                   final fileIndex = index - totalFolders;
@@ -426,11 +476,32 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                     );
                   }
                   final file = state.files[fileIndex];
-                  return _FileTile(
+                  return LongPressDraggable<Attachment>(
                     key: ValueKey('file-${file.id}'),
-                    file: file,
-                    onTap: () => _openFile(file, state.files, fileIndex),
-                    onLongPress: () => _showFileActions(file),
+                    data: file,
+                    onDragStarted: () => setState(() => _isDragging = true),
+                    onDragEnd: (_) => setState(() => _isDragging = false),
+                    feedback: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: Opacity(
+                          opacity: 0.8,
+                          child: _FileTile(file: file, onTap: () {}),
+                        ),
+                      ),
+                    ),
+                    childWhenDragging: Opacity(
+                      opacity: 0.3,
+                      child: _FileTile(file: file, onTap: () {}),
+                    ),
+                    child: _FileTile(
+                      file: file,
+                      onTap: () => _openFile(file, state.files, fileIndex),
+                      onMorePressed: () => _showFileActions(file),
+                    ),
                   );
                 },
               ),
@@ -466,12 +537,13 @@ class _FolderTile extends StatelessWidget {
   final DriveFolder folder;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final bool isHighlighted;
 
   const _FolderTile({
-    super.key,
     required this.folder,
     required this.onTap,
     required this.onLongPress,
+    this.isHighlighted = false,
   });
 
   @override
@@ -482,8 +554,13 @@ class _FolderTile extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
+          color: isHighlighted
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(4),
+          border: isHighlighted
+              ? Border.all(color: theme.colorScheme.primary, width: 2)
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -510,14 +587,12 @@ class _FolderTile extends StatelessWidget {
 class _FileTile extends StatelessWidget {
   final Attachment file;
   final VoidCallback onTap;
-
-  final VoidCallback? onLongPress;
+  final VoidCallback? onMorePressed;
 
   const _FileTile({
-    super.key,
     required this.file,
     required this.onTap,
-    this.onLongPress,
+    this.onMorePressed,
   });
 
   @override
@@ -530,7 +605,6 @@ class _FileTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onLongPress,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -576,6 +650,26 @@ class _FileTile extends StatelessWidget {
                     color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          if (onMorePressed != null)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: GestureDetector(
+                onTap: onMorePressed,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.more_horiz,
+                    size: 16,
+                    color: Colors.white,
                   ),
                 ),
               ),

@@ -47,6 +47,15 @@ const loadMoreMaxRetries = 2;
 /// Delay between [loadMore] retry attempts.
 const loadMoreRetryDelay = Duration(seconds: 2);
 
+final _livecurePattern = RegExp(r'(#実況[\s<]|#<span>実況</span>)');
+
+/// Check whether a post contains the livecure (#実況) hashtag.
+bool hasLivecureTag(Post post) {
+  final target = post.reblog ?? post;
+  final content = target.content ?? '';
+  return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
+}
+
 /// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
@@ -124,13 +133,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     });
   }
 
-  static final _livecurePattern = RegExp(r'(#実況[\s<]|#<span>実況</span>)');
-
-  static bool _hasLivecureTag(Post post) {
-    final target = post.reblog ?? post;
-    final content = target.content ?? '';
-    return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
-  }
+  static bool _hasLivecureTag(Post post) => hasLivecureTag(post);
 
   /// Replace a post in the list by ID (e.g. after reacting).
   void updatePost(Post updated) {

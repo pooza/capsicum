@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../widget/post_tile.dart';
 
 class PostDetailScreen extends ConsumerWidget {
@@ -19,7 +22,15 @@ class PostDetailScreen extends ConsumerWidget {
         title: const Text('スレッド'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: threadFuture.when(
+      body: _buildBody(context, ref, threadFuture),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, WidgetRef ref, AsyncValue<List<Post>> threadFuture) {
+    final bgPath = ref.watch(backgroundImageProvider);
+    final bgOpacity = ref.watch(backgroundOpacityProvider);
+
+    Widget body = threadFuture.when(
         data: (thread) => ListView.separated(
           itemCount: thread.length,
           separatorBuilder: (_, _) => const Divider(height: 1),
@@ -60,8 +71,22 @@ class PostDetailScreen extends ConsumerWidget {
             ),
           ),
         ),
-      ),
-    );
+      );
+
+    if (bgPath != null) {
+      body = Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: FileImage(File(bgPath)),
+            fit: BoxFit.cover,
+            opacity: bgOpacity,
+          ),
+        ),
+        child: body,
+      );
+    }
+
+    return body;
   }
 }
 
