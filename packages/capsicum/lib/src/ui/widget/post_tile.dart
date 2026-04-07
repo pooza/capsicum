@@ -467,15 +467,6 @@ class _PostTileState extends ConsumerState<PostTile> {
                           _formatTime(displayPost.postedAt),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () => _showActionMenu(context),
-                          child: Icon(
-                            Icons.more_horiz,
-                            size: 16,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                        ),
                       ],
                     ),
                     Text(
@@ -885,6 +876,21 @@ class _PostTileState extends ConsumerState<PostTile> {
                   onTap: () =>
                       context.push('/profile', extra: displayPost.author),
                   child: UserAvatar(user: displayPost.author, size: 40),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                child: GestureDetector(
+                  onTap: () => _showActionMenu(context),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.more_horiz,
+                      size: 16,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                  ),
                 ),
               ),
             ],
