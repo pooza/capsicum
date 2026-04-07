@@ -1417,10 +1417,9 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   void _showRetagSheet(BuildContext context, Post targetPost) {
-    final mulukhiya = ref.read(currentMulukhiyaProvider);
-    if (mulukhiya == null) return;
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null) return;
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
 
     final retagContent = targetPost.content ?? '';
     final retagIsHtml =
@@ -1439,29 +1438,16 @@ class _PostTileState extends ConsumerState<PostTile> {
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
           try {
-            // Build new body: original body + new footer tags.
-            final tagLine = tags.map((t) => '#$t').join(' ');
-            final bodyText =
-                (retagIsHtml ? stripHtml(parsed.body) : parsed.body)
-                    .trimRight();
-            final newContent =
-                bodyText + (tagLine.isNotEmpty ? '\n\n$tagLine' : '');
-
-            // Delete original, then repost with X-Mulukhiya to skip hooks.
-            await adapter.deletePost(targetPost.id);
-            await adapter.postStatus(
-              PostDraft(
-                content: newContent,
-                scope: targetPost.scope,
-                spoilerText: targetPost.spoilerText,
-                skipMulukhiya: true,
-              ),
+            await mulukhiya.updateStatusTags(
+              accessToken: account.userSecret.accessToken,
+              id: targetPost.id,
+              tags: tags,
             );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
             if (mounted) setState(() => _deleted = true);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
-            messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+            messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
           }
         },
       ),

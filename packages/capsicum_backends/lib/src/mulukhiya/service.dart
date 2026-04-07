@@ -424,6 +424,19 @@ class MulukhiyaService {
     );
   }
 
+  /// POST /mulukhiya/api/status/tags
+  /// Deletes the post and reposts it with the given tags.
+  Future<void> updateStatusTags({
+    required String accessToken,
+    required String id,
+    required List<String> tags,
+  }) async {
+    await _dio.post(
+      '$baseUrl/status/tags',
+      data: {'token': accessToken, 'id': id, 'tags': tags},
+    );
+  }
+
   /// Fetch default hashtags from /mulukhiya/api/about.
   /// The about endpoint is public (no auth required).
   Future<List<String>> getDefaultHashtags() async {
