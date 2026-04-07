@@ -175,10 +175,17 @@ flutter build appbundle --release \
 cd android && fastlane internal && cd ..
 ```
 
-### 4.3 ストアでの確認・審査提出
+### 4.3 製品版昇格・審査提出
 
-- **Google Play**: 内部テストトラックで確認 → `cd android && fastlane release` で製品版に昇格
-- **App Store**: TestFlight でテスト → `cd ios && fastlane release` で審査提出
+```bash
+cd packages/capsicum
+
+# Android: 内部テスト → 製品版に昇格
+cd android && fastlane release && cd ..
+
+# iOS: App Store 審査提出
+cd ios && fastlane release && cd ..
+```
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
