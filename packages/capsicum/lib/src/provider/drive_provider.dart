@@ -129,6 +129,16 @@ class DriveContentsNotifier
     );
   }
 
+  void moveFileOut(String fileId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        files: current.files.where((f) => f.id != fileId).toList(),
+      ),
+    );
+  }
+
   void removeFolder(String folderId) {
     final current = state.valueOrNull;
     if (current == null) return;
