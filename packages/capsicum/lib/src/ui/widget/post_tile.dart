@@ -2750,6 +2750,28 @@ class _RetagSheetState extends State<_RetagSheet> {
                 onPressed: _submitting
                     ? null
                     : () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('削除してタグづけ'),
+                            content: Text(
+                              '元の${widget.postLabel}を削除し、タグを変更して再${widget.postLabel}します。この操作は取り消せません。',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('キャンセル'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('実行'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed != true) return;
                         setState(() => _submitting = true);
                         await widget.onSubmit(_tags);
                         if (context.mounted) Navigator.pop(context);
