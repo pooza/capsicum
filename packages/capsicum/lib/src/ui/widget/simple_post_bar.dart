@@ -99,6 +99,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
 
   void _openCompose() {
     final extra = <String, dynamic>{};
+    final text = _controller.text;
+    if (text.isNotEmpty) {
+      extra['initialText'] = text;
+    }
     if (widget.channelId != null) {
       extra['channelId'] = widget.channelId;
       extra['channelName'] = widget.channelName;

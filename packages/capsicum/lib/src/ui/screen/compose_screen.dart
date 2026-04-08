@@ -42,6 +42,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
   final String? channelId;
   final String? channelName;
   final String? sharedText;
+  final String? initialText;
 
   const ComposeScreen({
     super.key,
@@ -51,6 +52,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.channelId,
     this.channelName,
     this.sharedText,
+    this.initialText,
   });
 
   @override
@@ -173,6 +175,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
       _controller.text = '#nowplaying ${widget.sharedText!}\n';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+      final account = ref.read(currentAccountProvider);
+      if (account != null && account.user.defaultScope != null) {
+        _scope = account.user.defaultScope!;
+      }
+    } else if (widget.initialText != null) {
+      _controller.text = widget.initialText!;
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
