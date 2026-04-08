@@ -103,7 +103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final minIndex = positions
         .map((p) => p.index)
         .reduce((a, b) => a < b ? a : b);
-    final shouldShow = minIndex > 3;
+    final shouldShow = minIndex > 1;
     if (shouldShow != _showScrollTop) {
       setState(() => _showScrollTop = shouldShow);
     }
