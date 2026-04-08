@@ -967,6 +967,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           .where((t) => t.isNotEmpty)
           .toList();
       if (filledOptions.length < 2) {
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('選択肢を2つ以上入力してください')));
