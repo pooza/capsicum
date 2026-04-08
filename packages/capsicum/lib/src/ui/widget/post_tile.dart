@@ -1176,6 +1176,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
+                _popIfInThread(context);
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
@@ -1264,6 +1265,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
+                _popIfInThread(context);
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
@@ -1369,6 +1371,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
+  /// スレッド画面（/post）にいる場合、タイムラインに戻る。
+  void _popIfInThread(BuildContext context) {
+    if (!mounted) return;
+    final location = GoRouterState.of(context).uri.path;
+    if (location == '/post') {
+      context.pop();
+    }
+  }
+
   String _describeError(Object e) {
     if (e is DioException) {
       final statusCode = e.response?.statusCode;
@@ -1418,6 +1429,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                         .read(timelineProvider.notifier)
                         .removePost(targetPost.id);
                     if (mounted) setState(() => _deleted = true);
+                    _popIfInThread(context);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
                     );
@@ -1464,6 +1476,7 @@ class _PostTileState extends ConsumerState<PostTile> {
             );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
             if (mounted) setState(() => _deleted = true);
+            _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
             messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
