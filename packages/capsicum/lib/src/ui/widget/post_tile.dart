@@ -1414,7 +1414,9 @@ class _PostTileState extends ConsumerState<PostTile> {
                     id: targetPost.id,
                   )
                   .then((_) {
-                    ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                    ref
+                        .read(timelineProvider.notifier)
+                        .removePost(targetPost.id);
                     if (mounted) setState(() => _deleted = true);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
