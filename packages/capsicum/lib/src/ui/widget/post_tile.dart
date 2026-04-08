@@ -1089,16 +1089,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                       _showRetagSheet(context, targetPost);
                     },
                   ),
-                  // TODO(#224): モロヘイヤ側修正後に復活
-                  // if (_hasNowPlayingTag(targetPost))
-                  //   ListTile(
-                  //     leading: const Icon(Icons.music_off_outlined),
-                  //     title: const Text('NowPlaying を削除'),
-                  //     onTap: () {
-                  //       Navigator.pop(sheetContext);
-                  //       _confirmDeleteNowPlaying(context, targetPost);
-                  //     },
-                  //   ),
+                  if (_hasNowPlayingTag(targetPost))
+                    ListTile(
+                      leading: const Icon(Icons.music_off_outlined),
+                      title: const Text('NowPlaying を削除'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _confirmDeleteNowPlaying(context, targetPost);
+                      },
+                    ),
                 ],
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
@@ -1385,14 +1384,12 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
 
-  // ignore: unused_element
   bool _hasNowPlayingTag(Post post) {
     final content = post.content;
     if (content == null) return false;
     return _nowPlayingPattern.hasMatch(content);
   }
 
-  // ignore: unused_element
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
     showDialog(
       context: context,
@@ -1417,6 +1414,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                     id: targetPost.id,
                   )
                   .then((_) {
+                    ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                    if (mounted) setState(() => _deleted = true);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
                     );
