@@ -778,12 +778,19 @@ class BackgroundImageNotifier extends Notifier<String?> {
 
   /// Copy the picked image to the app support directory and persist its path.
   Future<void> setImage(String sourcePath) async {
+    final old = state;
     final dir = await getApplicationSupportDirectory();
-    final dest = '${dir.path}/background_image.png';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final dest = '${dir.path}/background_image_$timestamp.png';
     await File(sourcePath).copy(dest);
     state = dest;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_backgroundImagePathKey, dest);
+    if (old != null) {
+      try {
+        await File(old).delete();
+      } catch (_) {}
+    }
   }
 
   Future<void> clear() async {
