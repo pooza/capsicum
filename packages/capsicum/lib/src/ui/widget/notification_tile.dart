@@ -104,8 +104,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       onTap: notification.post != null
           ? () => context.push('/post', extra: notification.post!)
           : null,
-      onLongPress:
-          notification.post != null ? () => _showActionMenu(context) : null,
+      onLongPress: notification.post != null
+          ? () => _showActionMenu(context)
+          : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -158,8 +159,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
-    final bookmarkLabel =
-        adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+    final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
 
     showModalBottomSheet(
       context: context,
