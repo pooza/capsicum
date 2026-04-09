@@ -216,7 +216,7 @@ capsicum/
 
 GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10 / v1.11 / v1.12 / v1.13 / v1.14 / v1.15）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
-最新リリース: **v1.12.0**（2026-04-07）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.13.0**（2026-04-09）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 今後のマイルストーン:
 
