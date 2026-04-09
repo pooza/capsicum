@@ -354,8 +354,9 @@ class MulukhiyaService {
     );
     final data = response.data;
     if (data is! List) return [];
-    return data.map((e) {
-      final m = e as Map<String, dynamic>;
+    return data.whereType<Map<String, dynamic>>().where((m) {
+      return m['annictId'] is int && m['title'] is String;
+    }).map((m) {
       return AnnictWork(
         annictId: m['annictId'] as int,
         title: m['title'] as String,
@@ -372,8 +373,9 @@ class MulukhiyaService {
     final response = await _dio.get('$baseUrl/program/works/$workId/episodes');
     final data = response.data;
     if (data is! List) return [];
-    return data.map((e) {
-      final m = e as Map<String, dynamic>;
+    return data.whereType<Map<String, dynamic>>().where((m) {
+      return m['annictId'] is int;
+    }).map((m) {
       return AnnictEpisode(
         annictId: m['annictId'] as int,
         numberText: m['numberText'] as String?,
