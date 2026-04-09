@@ -554,6 +554,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
+    TimelineType.directMessages: 'DM',
   };
 
   /// Mastodon uses "連合" instead of "グローバル".

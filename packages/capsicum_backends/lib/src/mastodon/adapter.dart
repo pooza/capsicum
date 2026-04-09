@@ -44,6 +44,7 @@ class MastodonCapabilities extends AdapterCapabilities {
     TimelineType.home,
     TimelineType.local,
     TimelineType.federated,
+    TimelineType.directMessages,
   };
 
   @override
@@ -161,6 +162,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       TimelineType.home,
       if (localEnabled) TimelineType.local,
       if (federatedEnabled) TimelineType.federated,
+      TimelineType.directMessages,
     };
   }
 
@@ -312,6 +314,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         limit: query?.limit,
       ),
       TimelineType.federated => await client.getPublicTimeline(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      ),
+      TimelineType.directMessages => await client.getConversations(
         maxId: query?.maxId,
         sinceId: query?.sinceId,
         limit: query?.limit,

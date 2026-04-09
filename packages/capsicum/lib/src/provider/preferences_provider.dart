@@ -186,6 +186,7 @@ const defaultTabOrder = [
   TimelineType.local,
   TimelineType.social,
   TimelineType.federated,
+  TimelineType.directMessages,
 ];
 
 /// Per-account tab order preference.
@@ -215,6 +216,10 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
           )
           .whereType<TimelineType>()
           .toList();
+      // Append any new timeline types that weren't in the saved order.
+      for (final t in defaultTabOrder) {
+        if (!order.contains(t)) order.add(t);
+      }
       if (order.isNotEmpty) state = order;
     }
   }

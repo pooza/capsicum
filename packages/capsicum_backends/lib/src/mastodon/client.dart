@@ -434,6 +434,33 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/conversations
+  /// Returns the last_status from each conversation (DM thread).
+  Future<List<MastodonStatus>> getConversations({
+    String? maxId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/conversations',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
+    );
+    final conversations = response.data as List;
+    return conversations
+        .map((e) {
+          final m = e as Map<String, dynamic>;
+          final lastStatus = m['last_status'];
+          if (lastStatus == null) return null;
+          return MastodonStatus.fromJson(lastStatus as Map<String, dynamic>);
+        })
+        .whereType<MastodonStatus>()
+        .toList();
+  }
+
   /// POST /api/v1/media
   ///
   /// v1 は同期処理で、トランスコード完了後に 200 + 完全な JSON を返す。

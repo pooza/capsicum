@@ -87,9 +87,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                   ? primary
                   : '$primary+${andTags.join('+')}';
               ref
-                  .read(
-                    pinnedHashtagsProvider(widget.storageKey).notifier,
-                  )
+                  .read(pinnedHashtagsProvider(widget.storageKey).notifier)
                   .replace(currentSpec, newSpec);
             },
             child: const Text('OK'),
@@ -145,6 +143,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
+    TimelineType.directMessages: 'DM',
   };
 
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
