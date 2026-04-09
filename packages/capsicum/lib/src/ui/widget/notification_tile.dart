@@ -330,7 +330,17 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final user = notification.user;
 
     if (user == null) {
-      return Text(label, style: theme.textTheme.bodySmall);
+      return Row(
+        children: [
+          Expanded(
+            child: Text(label, style: theme.textTheme.bodySmall),
+          ),
+          Text(
+            _formatTime(notification.createdAt),
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      );
     }
 
     final displayName = user.displayName ?? user.username;
@@ -359,8 +369,29 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
             ],
           ),
         ),
+        const SizedBox(width: 8),
+        Text(
+          _formatTime(notification.createdAt),
+          style: theme.textTheme.bodySmall,
+        ),
       ],
     );
+  }
+
+  String _formatTime(DateTime time) {
+    if (ref.watch(absoluteTimeProvider)) {
+      final local = time.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    final diff = DateTime.now().toUtc().difference(time);
+    if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
+    if (diff.inHours < 24) return '${diff.inHours}時間前';
+    if (diff.inDays < 30) return '${diff.inDays}日前';
+    final months = diff.inDays ~/ 30;
+    if (months < 12) return '$monthsヶ月前';
+    return '${diff.inDays ~/ 365}年前';
   }
 
   (IconData, String) get _iconAndLabel => switch (notification.type) {
