@@ -22,12 +22,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _restoreSessions() async {
+    var skippedAccounts = 0;
     try {
-      await ref.read(accountManagerProvider.notifier).restoreSessions();
+      skippedAccounts =
+          await ref.read(accountManagerProvider.notifier).restoreSessions();
     } catch (e, st) {
       debugPrint('capsicum: failed to restore sessions: $e\n$st');
     }
     if (!mounted) return;
+
+    if (skippedAccounts > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'セキュリティキーの変更により$skippedAccounts件のアカウントで再ログインが必要です',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      });
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final eulaAccepted = prefs.getBool(eulaAcceptedKey) ?? false;
