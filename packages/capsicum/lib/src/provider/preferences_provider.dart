@@ -429,6 +429,12 @@ class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
     await _save();
   }
 
+  Future<void> replace(String oldSpec, String newSpec) async {
+    if (oldSpec == newSpec) return;
+    state = state.map((t) => t == oldSpec ? newSpec : t).toList();
+    await _save();
+  }
+
   Future<void> reorder(int oldIndex, int newIndex) async {
     final list = [...state];
     final item = list.removeAt(oldIndex);

@@ -579,6 +579,7 @@ class MastodonClient {
     String? maxId,
     String? sinceId,
     int? limit,
+    List<String>? all,
   }) async {
     final response = await dio.get(
       '/api/v1/timelines/tag/${Uri.encodeComponent(hashtag)}',
@@ -586,6 +587,7 @@ class MastodonClient {
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,
+        if (all != null && all.isNotEmpty) 'all[]': all,
       },
     );
     return (response.data as List)

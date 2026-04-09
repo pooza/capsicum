@@ -649,7 +649,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Pinned hashtag tabs.
           ...pinnedHashtags.map((tag) {
             final isSelected = selectedHashtag == tag;
-            return _tabChip(context, '#$tag', isSelected, () {
+            return _tabChip(context, hashtagSpecLabel(tag), isSelected, () {
               ref.read(selectedListProvider.notifier).state = null;
               ref.read(selectedHashtagProvider.notifier).state = tag;
               _saveLastTab();
