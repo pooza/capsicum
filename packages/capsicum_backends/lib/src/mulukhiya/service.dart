@@ -354,18 +354,22 @@ class MulukhiyaService {
     );
     final data = response.data;
     if (data is! List) return [];
-    return data.whereType<Map<String, dynamic>>().where((m) {
-      return m['annictId'] is int && m['title'] is String;
-    }).map((m) {
-      return AnnictWork(
-        annictId: m['annictId'] as int,
-        title: m['title'] as String,
-        seasonYear: m['seasonYear'] as int?,
-        officialSiteUrl: m['officialSiteUrl'] as String?,
-        hashtag: m['hashtag'] as String?,
-        commandToot: m['command_toot'] as String?,
-      );
-    }).toList();
+    return data
+        .whereType<Map<String, dynamic>>()
+        .where((m) {
+          return m['annictId'] is int && m['title'] is String;
+        })
+        .map((m) {
+          return AnnictWork(
+            annictId: m['annictId'] as int,
+            title: m['title'] as String,
+            seasonYear: m['seasonYear'] as int?,
+            officialSiteUrl: m['officialSiteUrl'] as String?,
+            hashtag: m['hashtag'] as String?,
+            commandToot: m['command_toot'] as String?,
+          );
+        })
+        .toList();
   }
 
   /// Fetch episodes for a given Annict work ID.
@@ -373,18 +377,22 @@ class MulukhiyaService {
     final response = await _dio.get('$baseUrl/program/works/$workId/episodes');
     final data = response.data;
     if (data is! List) return [];
-    return data.whereType<Map<String, dynamic>>().where((m) {
-      return m['annictId'] is int;
-    }).map((m) {
-      return AnnictEpisode(
-        annictId: m['annictId'] as int,
-        numberText: m['numberText'] as String?,
-        title: m['title'] as String?,
-        hashtag: m['hashtag'] as String?,
-        url: m['url'] as String?,
-        commandToot: m['command_toot'] as String?,
-      );
-    }).toList();
+    return data
+        .whereType<Map<String, dynamic>>()
+        .where((m) {
+          return m['annictId'] is int;
+        })
+        .map((m) {
+          return AnnictEpisode(
+            annictId: m['annictId'] as int,
+            numberText: m['numberText'] as String?,
+            title: m['title'] as String?,
+            hashtag: m['hashtag'] as String?,
+            url: m['url'] as String?,
+            commandToot: m['command_toot'] as String?,
+          );
+        })
+        .toList();
   }
 
   /// Fetch server custom links from /links.json.

@@ -24,8 +24,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Future<void> _restoreSessions() async {
     var skippedAccounts = 0;
     try {
-      skippedAccounts =
-          await ref.read(accountManagerProvider.notifier).restoreSessions();
+      skippedAccounts = await ref
+          .read(accountManagerProvider.notifier)
+          .restoreSessions();
     } catch (e, st) {
       debugPrint('capsicum: failed to restore sessions: $e\n$st');
     }
@@ -36,9 +37,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'セキュリティキーの変更により$skippedAccounts件のアカウントで再ログインが必要です',
-            ),
+            content: Text('セキュリティキーの変更により$skippedAccounts件のアカウントで再ログインが必要です'),
             duration: const Duration(seconds: 5),
           ),
         );

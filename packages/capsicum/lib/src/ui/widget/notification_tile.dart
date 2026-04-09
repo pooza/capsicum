@@ -334,9 +334,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     if (user == null) {
       return Row(
         children: [
-          Expanded(
-            child: Text(label, style: theme.textTheme.bodySmall),
-          ),
+          Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
           Text(
             _formatTime(notification.createdAt),
             style: theme.textTheme.bodySmall,

@@ -438,11 +438,7 @@ class MastodonClient {
   /// Returns the last_status from each conversation (DM thread) along with
   /// the conversation ID of the last entry for cursor-based pagination.
   Future<({List<MastodonStatus> statuses, String? lastConversationId})>
-      getConversations({
-    String? maxId,
-    String? sinceId,
-    int? limit,
-  }) async {
+  getConversations({String? maxId, String? sinceId, int? limit}) async {
     final response = await dio.get(
       '/api/v1/conversations',
       queryParameters: {
