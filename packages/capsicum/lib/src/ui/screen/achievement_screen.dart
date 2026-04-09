@@ -8,11 +8,7 @@ class AchievementScreen extends ConsumerWidget {
   final String userId;
   final String? displayName;
 
-  const AchievementScreen({
-    super.key,
-    required this.userId,
-    this.displayName,
-  });
+  const AchievementScreen({super.key, required this.userId, this.displayName});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -54,14 +50,10 @@ class AchievementScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '実績の読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
-                ),
+                Text('実績の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(achievementProvider(userId)),
+                  onPressed: () => ref.invalidate(achievementProvider(userId)),
                   child: const Text('再試行'),
                 ),
               ],
@@ -144,10 +136,7 @@ class _AchievementTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                date,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(date, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),

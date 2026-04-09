@@ -317,10 +317,12 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       (grouped[cat] ??= []).add(emoji);
     }
 
+    final hasPalette = widget.adapter is ReactionSupport;
+
     return ListView(
       children: [
         // Palette section (imported from Web UI or empty).
-        if (palette.isNotEmpty) ...[
+        if (hasPalette && palette.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: Row(
@@ -354,8 +356,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             ),
           ),
         ],
-        // Import buttons when palette is empty.
-        if (palette.isEmpty) ...[
+        // Import buttons when palette is empty (Misskey only).
+        if (hasPalette && palette.isEmpty) ...[
           if (widget.mulukhiya != null && widget.accessToken != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -440,9 +442,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       final result = await mulukhiya.getEmojiPalettes(accessToken: token);
       if (!mounted) return;
       if (result.palettes.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('サーバーにパレットが設定されていません')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('サーバーにパレットが設定されていません')));
         return;
       }
       final host = widget.host;
@@ -462,12 +464,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     } on DioException catch (e) {
       if (!mounted) return;
       final status = e.response?.statusCode;
-      final message = status == 404
-          ? 'この機能はサーバーで利用できません'
-          : 'サーバーとの同期に失敗しました';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      final message = status == 404 ? 'この機能はサーバーで利用できません' : 'サーバーとの同期に失敗しました';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

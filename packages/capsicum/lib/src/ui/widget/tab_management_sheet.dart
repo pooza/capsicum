@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
@@ -37,6 +38,63 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     if (text.isEmpty) return;
     ref.read(pinnedHashtagsProvider(widget.storageKey).notifier).add(text);
     _controller.clear();
+  }
+
+  void _showAndTagDialog(BuildContext context, String currentSpec) {
+    final (primary, existingAll) = parseHashtagSpec(currentSpec);
+    final andController = TextEditingController(
+      text: existingAll?.join(', ') ?? '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('#$primary のAND条件'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('AND条件で絞り込むタグをカンマ区切りで入力してください。'),
+            const Text('空にするとAND条件を解除します。'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: andController,
+              decoration: const InputDecoration(
+                hintText: '例: nitiasa, precure',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              final input = andController.text.trim();
+              final andTags = input.isEmpty
+                  ? <String>[]
+                  : input
+                        .split(RegExp(r'[,、\s]+'))
+                        .map((t) => t.replaceFirst(RegExp('^#'), '').trim())
+                        .where((t) => t.isNotEmpty)
+                        .toList();
+              final newSpec = andTags.isEmpty
+                  ? primary
+                  : '$primary+${andTags.join('+')}';
+              ref
+                  .read(pinnedHashtagsProvider(widget.storageKey).notifier)
+                  .replace(currentSpec, newSpec);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   List<PostList> _sortedLists() {
@@ -85,6 +143,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
+    TimelineType.directMessages: 'DM',
   };
 
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
@@ -98,6 +157,15 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     return _timelineLabels[type] ?? type.name;
   }
 
+  void _reorderTimelines(int oldIndex, int newIndex) {
+    final order = ref.read(tabOrderProvider(widget.storageKey));
+    final types = order.where(widget.supportedTimelines.contains).toList();
+    if (newIndex > oldIndex) newIndex--;
+    final item = types.removeAt(oldIndex);
+    types.insert(newIndex, item);
+    ref.read(tabOrderProvider(widget.storageKey).notifier).setOrder(types);
+  }
+
   Widget _buildTimelineTypesSection(ThemeData theme) {
     final hiddenTypes = ref.watch(
       hiddenTimelineTypesProvider(widget.storageKey),
@@ -109,21 +177,36 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(theme, '基本タブ'),
-        ...types.map((type) {
-          final hidden = hiddenTypes.contains(type);
-          return ListTile(
-            title: Text(
-              _timelineLabel(type),
-              style: hidden ? TextStyle(color: theme.disabledColor) : null,
-            ),
-            trailing: IconButton(
-              icon: Icon(hidden ? Icons.visibility_off : Icons.visibility),
-              onPressed: () => ref
-                  .read(hiddenTimelineTypesProvider(widget.storageKey).notifier)
-                  .toggle(type),
-            ),
-          );
-        }),
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          itemCount: types.length,
+          onReorder: _reorderTimelines,
+          itemBuilder: (context, index) {
+            final type = types[index];
+            final hidden = hiddenTypes.contains(type);
+            return ListTile(
+              key: ValueKey(type),
+              leading: ReorderableDragStartListener(
+                index: index,
+                child: const Icon(Icons.drag_handle),
+              ),
+              title: Text(
+                _timelineLabel(type),
+                style: hidden ? TextStyle(color: theme.disabledColor) : null,
+              ),
+              trailing: IconButton(
+                icon: Icon(hidden ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => ref
+                    .read(
+                      hiddenTimelineTypesProvider(widget.storageKey).notifier,
+                    )
+                    .toggle(type),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -240,6 +323,14 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                       ],
                     ),
                   ),
+                  if (widget.isMastodon)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'タップでAND条件のタグを追加できます',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   if (tags.isEmpty)
                     const Padding(
@@ -269,7 +360,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             index: index,
                             child: const Icon(Icons.drag_handle),
                           ),
-                          title: Text('#$tag'),
+                          title: Text(hashtagSpecLabel(tag)),
+                          onTap: widget.isMastodon
+                              ? () => _showAndTagDialog(context, tag)
+                              : null,
                           trailing: IconButton(
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () {

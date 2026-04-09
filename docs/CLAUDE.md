@@ -58,10 +58,10 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | 番組情報 | `GET /mulukhiya/api/program` | 実装済み |
 | エピソードブラウザ | `GET /mulukhiya/api/program/works`, `.../episodes` | 実装済み |
 | Annict OAuth | `GET /mulukhiya/api/annict/oauth_uri`, `POST /mulukhiya/api/annict/auth` | 実装済み |
-| タグ付け | `POST /mulukhiya/api/status/tags` | v1.12 で移行予定（#269） |
+| タグ付け | `POST /mulukhiya/api/status/tags` | 実装済み |
 | ユーザー設定 | `GET/POST /mulukhiya/api/config` | 未実装 |
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | 未実装 |
-| メディアカタログ | `GET /mulukhiya/api/media` | 未実装（#71） |
+| メディアカタログ | `GET /mulukhiya/api/media` | 実装済み |
 
 ## UI 設計方針
 
@@ -120,15 +120,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 
 ### プッシュ通知
 
-プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。インフラコストを抑えるため、当面はプッシュ通知を実装せず、通知一覧のポーリング表示から始める。
-
-課金方針（#52）:
-
-- **無償**: プリセットサーバー（自前サーバー）のメンバー
-- **割引**: モロヘイヤ導入サーバーのメンバー
-- **有償**: それ以外の外部ユーザー
-- 判定はアカウントの所属サーバーで行う（プリセットリスト + モロヘイヤ検出）
-- 中継サーバーのアーキテクチャ・コスト構造の調査、課金手段（アプリ内課金等）の検討が必要
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。インフラコストを抑えるため、当面はプッシュ通知を実装せず、通知一覧のポーリング表示から始める。課金方針等の詳細は [#52](https://github.com/pooza/capsicum/issues/52) を参照。
 
 ### サポート優先順位
 
@@ -166,8 +158,9 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 ### リリースフロー
 
 1. `develop` で開発・コミット
-2. リリース時に `develop` → `main` へ PR を作成しマージ
-3. `main` でタグを打ちリリース
+2. リリース時に `develop` → `main` へ PR を作成
+3. CI（`dart format`・`dart analyze`）が通ることを確認してからマージ
+4. `main` でタグを打ちリリース
 
 ### PR マージ後の確認事項
 
@@ -223,14 +216,13 @@ capsicum/
 
 GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10 / v1.11 / v1.12 / v1.13 / v1.14 / v1.15）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
-最新リリース: **v1.11.1**（2026-04-05）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.12.0**（2026-04-07）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 今後のマイルストーン:
 
-- **v1.12** — Misskey 固有機能 + ユーザー要望（ドライブ D&D）。実績表示・背景画像・ダークモード色合い・タグづけ API 移行・絵文字パレットサーバー同期は実装済み
-- **v1.13** — DM・メッセージ + UI 改善 + バグ修正（DM タイムライン・Misskey メッセージ・Misskey ページ・タブ管理統合・確認画面条件・復号エラー対応）
-- **v1.14** — 通知統合 + 下書き + ユーザーフィードバック対応（通知・お知らせ統合一覧・お知らせ/通知タブ化・サーバーサイド下書き・通知欄アクション・ナウプレ削除・Android ログイン調査）
-- **v1.15** — 連携 + Misskey 猫化（ポイピク連携・メディア API v2・isCat 対応）
+- **v1.13** — 全 Issue 消化済み。PR [#284](https://github.com/pooza/capsicum/pull/284) で Codex レビュー待ち → セキュリティレビュー → リリース
+- **v1.14** — 通知統合 + 下書き + ログイン調査（通知・お知らせ統合一覧・お知らせ/通知タブ化・サーバーサイド下書き・Android ログイン調査）
+- **v1.15** — 連携 + 絵文字強化 + Misskey 猫化（ポイピク連携・メディア API v2・isCat 対応・最近使った絵文字・Unicode 絵文字拡充）
 
 運用ルール:
 

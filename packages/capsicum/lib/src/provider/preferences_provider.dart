@@ -186,6 +186,7 @@ const defaultTabOrder = [
   TimelineType.local,
   TimelineType.social,
   TimelineType.federated,
+  TimelineType.directMessages,
 ];
 
 /// Per-account tab order preference.
@@ -215,6 +216,10 @@ class TabOrderNotifier extends FamilyNotifier<List<TimelineType>, String> {
           )
           .whereType<TimelineType>()
           .toList();
+      // Append any new timeline types that weren't in the saved order.
+      for (final t in defaultTabOrder) {
+        if (!order.contains(t)) order.add(t);
+      }
       if (order.isNotEmpty) state = order;
     }
   }
@@ -429,6 +434,12 @@ class PinnedHashtagsNotifier extends FamilyNotifier<List<String>, String> {
     await _save();
   }
 
+  Future<void> replace(String oldSpec, String newSpec) async {
+    if (oldSpec == newSpec) return;
+    state = state.map((t) => t == oldSpec ? newSpec : t).toList();
+    await _save();
+  }
+
   Future<void> reorder(int oldIndex, int newIndex) async {
     final list = [...state];
     final item = list.removeAt(oldIndex);
@@ -608,6 +619,17 @@ class ConfirmBeforePostNotifier extends Notifier<bool> {
     }
   }
 
+  /// Returns the persisted value directly from SharedPreferences.
+  ///
+  /// Use this instead of synchronous [state] when the value must reflect
+  /// the saved preference regardless of whether [_load] has completed.
+  Future<bool> readPersisted() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getBool(_confirmBeforePostKey) ?? false;
+    state = value;
+    return value;
+  }
+
   Future<void> toggle() async {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
@@ -767,12 +789,19 @@ class BackgroundImageNotifier extends Notifier<String?> {
 
   /// Copy the picked image to the app support directory and persist its path.
   Future<void> setImage(String sourcePath) async {
+    final old = state;
     final dir = await getApplicationSupportDirectory();
-    final dest = '${dir.path}/background_image.png';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final dest = '${dir.path}/background_image_$timestamp.png';
     await File(sourcePath).copy(dest);
     state = dest;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_backgroundImagePathKey, dest);
+    if (old != null) {
+      try {
+        await File(old).delete();
+      } catch (_) {}
+    }
   }
 
   Future<void> clear() async {
@@ -884,5 +913,77 @@ class DarkSurfaceVariantNotifier extends Notifier<DarkSurfaceVariant> {
     state = variant;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_darkSurfaceVariantKey, variant.name);
+  }
+}
+
+// --- Dark text color ---
+
+/// Preset text colors for dark mode.
+enum DarkTextColor {
+  /// Default (Material 3 generated).
+  standard,
+
+  /// Pure white.
+  white,
+
+  /// Warm white (slightly yellowish).
+  warmWhite,
+
+  /// Cool white (slightly bluish).
+  coolWhite,
+
+  /// Light gray (reduced brightness).
+  lightGray,
+}
+
+const _darkTextColors = {
+  DarkTextColor.white: Color(0xFFFFFFFF),
+  DarkTextColor.warmWhite: Color(0xFFF5F0E8),
+  DarkTextColor.coolWhite: Color(0xFFE8EEF5),
+  DarkTextColor.lightGray: Color(0xFFCCCCCC),
+};
+
+const _darkTextColorLabels = {
+  DarkTextColor.standard: '標準',
+  DarkTextColor.white: 'ホワイト',
+  DarkTextColor.warmWhite: 'ウォームホワイト',
+  DarkTextColor.coolWhite: 'クールホワイト',
+  DarkTextColor.lightGray: 'ライトグレー',
+};
+
+/// Human-readable label for a [DarkTextColor].
+String darkTextColorLabel(DarkTextColor v) => _darkTextColorLabels[v] ?? '';
+
+/// Resolve the text [Color] for a variant, or null for standard.
+Color? darkTextColor(DarkTextColor v) => _darkTextColors[v];
+
+const _darkTextColorKey = 'dark_text_color';
+
+/// Provides the dark mode text color preference.
+final darkTextColorProvider =
+    NotifierProvider<DarkTextColorNotifier, DarkTextColor>(
+      DarkTextColorNotifier.new,
+    );
+
+class DarkTextColorNotifier extends Notifier<DarkTextColor> {
+  @override
+  DarkTextColor build() {
+    _load();
+    return DarkTextColor.standard;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_darkTextColorKey);
+    if (saved != null) {
+      final v = DarkTextColor.values.where((e) => e.name == saved).firstOrNull;
+      if (v != null) state = v;
+    }
+  }
+
+  Future<void> setColor(DarkTextColor color) async {
+    state = color;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_darkTextColorKey, color.name);
   }
 }

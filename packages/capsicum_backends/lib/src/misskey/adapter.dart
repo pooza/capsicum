@@ -910,6 +910,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
     TimelineQuery? query,
+    List<String>? all,
   }) async {
     final notes = await client.searchByTag(
       hashtag,

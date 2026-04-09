@@ -878,6 +878,21 @@ class _PostTileState extends ConsumerState<PostTile> {
                   child: UserAvatar(user: displayPost.author, size: 40),
                 ),
               ),
+              Positioned(
+                right: 0,
+                top: 20,
+                child: GestureDetector(
+                  onTap: () => _showActionMenu(context),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.more_horiz,
+                      size: 16,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -971,18 +986,20 @@ class _PostTileState extends ConsumerState<PostTile> {
                     _showEmojiPicker(context);
                   },
                 ),
-              ListTile(
-                leading: const Icon(Icons.repeat),
-                title: Text(boostLabel),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => adapter.repeatPost(targetPost.id),
-                    '$boostLabelしました',
-                  );
-                },
-              ),
+              if (targetPost.scope == PostScope.public ||
+                  targetPost.scope == PostScope.unlisted)
+                ListTile(
+                  leading: const Icon(Icons.repeat),
+                  title: Text(boostLabel),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _runAction(
+                      messenger,
+                      () => adapter.repeatPost(targetPost.id),
+                      '$boostLabelしました',
+                    );
+                  },
+                ),
               if (adapter is BookmarkSupport)
                 ListTile(
                   leading: const Icon(Icons.bookmark_outline),
@@ -1074,16 +1091,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                       _showRetagSheet(context, targetPost);
                     },
                   ),
-                  // TODO(#224): モロヘイヤ側修正後に復活
-                  // if (_hasNowPlayingTag(targetPost))
-                  //   ListTile(
-                  //     leading: const Icon(Icons.music_off_outlined),
-                  //     title: const Text('NowPlaying を削除'),
-                  //     onTap: () {
-                  //       Navigator.pop(sheetContext);
-                  //       _confirmDeleteNowPlaying(context, targetPost);
-                  //     },
-                  //   ),
+                  if (_hasNowPlayingTag(targetPost))
+                    ListTile(
+                      leading: const Icon(Icons.music_off_outlined),
+                      title: const Text('NowPlaying を削除'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _confirmDeleteNowPlaying(context, targetPost);
+                      },
+                    ),
                 ],
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
@@ -1162,6 +1178,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
+                if (context.mounted) _popIfInThread(context);
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
             child: Text(
@@ -1250,6 +1267,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 await adapter.deletePost(targetPost.id);
                 ref.read(timelineProvider.notifier).removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
+                if (context.mounted) _popIfInThread(context);
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
@@ -1355,6 +1373,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
+  /// スレッド画面（/post）にいる場合、タイムラインに戻る。
+  void _popIfInThread(BuildContext context) {
+    if (!mounted || !context.mounted) return;
+    final location = GoRouterState.of(context).uri.path;
+    if (location == '/post') {
+      context.pop();
+    }
+  }
+
   String _describeError(Object e) {
     if (e is DioException) {
       final statusCode = e.response?.statusCode;
@@ -1370,14 +1397,12 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
 
-  // ignore: unused_element
   bool _hasNowPlayingTag(Post post) {
     final content = post.content;
     if (content == null) return false;
     return _nowPlayingPattern.hasMatch(content);
   }
 
-  // ignore: unused_element
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
     showDialog(
       context: context,
@@ -1402,6 +1427,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                     id: targetPost.id,
                   )
                   .then((_) {
+                    ref
+                        .read(timelineProvider.notifier)
+                        .removePost(targetPost.id);
+                    if (mounted) setState(() => _deleted = true);
+                    if (context.mounted) _popIfInThread(context);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
                     );
@@ -1448,6 +1478,7 @@ class _PostTileState extends ConsumerState<PostTile> {
             );
             ref.read(timelineProvider.notifier).removePost(targetPost.id);
             if (mounted) setState(() => _deleted = true);
+            if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
             messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
@@ -2721,6 +2752,28 @@ class _RetagSheetState extends State<_RetagSheet> {
                 onPressed: _submitting
                     ? null
                     : () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('削除してタグづけ'),
+                            content: Text(
+                              '元の${widget.postLabel}を削除し、タグを変更して再${widget.postLabel}します。この操作は取り消せません。',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('キャンセル'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('実行'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed != true) return;
                         setState(() => _submitting = true);
                         await widget.onSubmit(_tags);
                         if (context.mounted) Navigator.pop(context);

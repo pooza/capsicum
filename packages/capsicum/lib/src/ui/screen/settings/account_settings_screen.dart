@@ -1,12 +1,10 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/list_provider.dart';
 import '../../../provider/preferences_provider.dart';
-import '../../../provider/server_config_provider.dart';
 import '../../widget/tab_management_sheet.dart';
 
 class AccountSettingsScreen extends ConsumerWidget {
@@ -96,128 +94,35 @@ class _TabOrderTile extends StatelessWidget {
 
   const _TabOrderTile({required this.ref});
 
-  static const _mastodonLabels = {
-    TimelineType.home: 'ホーム',
-    TimelineType.local: 'ローカル',
-    TimelineType.federated: '連合',
-  };
-
-  static const _misskeyLabels = {
-    TimelineType.home: 'ホーム',
-    TimelineType.local: 'ローカル',
-    TimelineType.social: 'ソーシャル',
-    TimelineType.federated: 'グローバル',
-  };
-
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(currentAccountProvider);
     if (account == null) return const SizedBox.shrink();
 
     final adapter = ref.watch(currentAdapterProvider);
-    final supported =
-        adapter?.capabilities.supportedTimelines ??
-        {TimelineType.home, TimelineType.local, TimelineType.federated};
-    final isMisskey = adapter is ReactionSupport;
-    final labels = isMisskey ? _misskeyLabels : _mastodonLabels;
-
-    final localLabel = ref.watch(localTimelineNameProvider);
-
     final storageKey = account.key.toStorageKey();
-    final order = ref.watch(tabOrderProvider(storageKey));
-    final visibleOrder = order.where(supported.contains).toList();
-    final isCustom = order != defaultTabOrder;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('タブの順序', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ReorderableListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: visibleOrder.length,
-            onReorder: (oldIndex, newIndex) {
-              final newOrder = List<TimelineType>.from(visibleOrder);
-              if (newIndex > oldIndex) newIndex--;
-              final item = newOrder.removeAt(oldIndex);
-              newOrder.insert(newIndex, item);
-              ref
-                  .read(tabOrderProvider(storageKey).notifier)
-                  .setOrder(newOrder);
-            },
-            itemBuilder: (context, index) {
-              final type = visibleOrder[index];
-              final label = type == TimelineType.local
-                  ? localLabel
-                  : (labels[type] ?? type.name);
-              return ListTile(
-                key: ValueKey(type),
-                dense: true,
-                leading: const Icon(Icons.drag_handle),
-                title: Text(label),
-              );
-            },
+    return ListTile(
+      leading: const Icon(Icons.tune),
+      title: const Text('タブ管理'),
+      subtitle: const Text('タブの並び替え・表示切替・ハッシュタグ'),
+      onTap: () {
+        final lists = ref.read(listsProvider).valueOrNull ?? [];
+        final supported =
+            adapter?.capabilities.supportedTimelines ??
+            {TimelineType.home, TimelineType.local, TimelineType.federated};
+        final isMastodon = !supported.contains(TimelineType.social);
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => TabManagementSheet(
+            storageKey: storageKey,
+            allLists: lists,
+            supportedTimelines: supported,
+            isMastodon: isMastodon,
           ),
-          if (isCustom)
-            Center(
-              child: TextButton(
-                onPressed: () {
-                  ref.read(tabOrderProvider(storageKey).notifier).reset();
-                },
-                child: const Text('デフォルトに戻す'),
-              ),
-            ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              'リストのタブはこれらの後に表示されます',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          if (adapter is ListSupport)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: TextButton.icon(
-                icon: const Icon(Icons.edit_note, size: 18),
-                label: const Text('リスト管理'),
-                onPressed: () => context.push('/lists/manage'),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: TextButton.icon(
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('タブ管理'),
-              onPressed: () {
-                final lists = ref.read(listsProvider).valueOrNull ?? [];
-                final adapter = ref.read(currentAdapterProvider);
-                final supported =
-                    adapter?.capabilities.supportedTimelines ??
-                    {
-                      TimelineType.home,
-                      TimelineType.local,
-                      TimelineType.federated,
-                    };
-                final isMastodon = !supported.contains(TimelineType.social);
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => TabManagementSheet(
-                    storageKey: storageKey,
-                    allLists: lists,
-                    supportedTimelines: supported,
-                    isMastodon: isMastodon,
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

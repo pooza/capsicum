@@ -181,13 +181,21 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   /// Restore sessions from secure storage on app start.
-  Future<void> restoreSessions() async {
+  ///
+  /// Returns the number of accounts that could not be restored due to
+  /// decryption failure or other errors (e.g. encryption key regenerated
+  /// after OS update / device reset).
+  Future<int> restoreSessions() async {
     final storage = ref.read(accountStorageProvider);
     final keys = await storage.getAccountKeys();
+    var skippedCount = 0;
 
     for (final keyStr in keys) {
       final secrets = await storage.getSecrets(keyStr);
-      if (secrets == null) continue;
+      if (secrets == null) {
+        skippedCount++;
+        continue;
+      }
 
       try {
         final accountKey = AccountKey.fromStorageKey(keyStr);
@@ -243,10 +251,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         // Prefetch server metadata for badge display (non-blocking).
         ServerMetadataCache.instance.fetch(accountKey.host);
       } catch (_) {
-        // Skip failed restorations
+        skippedCount++;
         continue;
       }
     }
+    return skippedCount;
   }
 }
 

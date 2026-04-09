@@ -103,7 +103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final minIndex = positions
         .map((p) => p.index)
         .reduce((a, b) => a < b ? a : b);
-    final shouldShow = minIndex > 3;
+    final shouldShow = minIndex > 1;
     if (shouldShow != _showScrollTop) {
       setState(() => _showScrollTop = shouldShow);
     }
@@ -336,98 +336,97 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bgOpacity = ref.watch(backgroundOpacityProvider);
 
     Widget body = Column(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onHorizontalDragEnd: selectedList == null
-                  ? (details) => _onSwipe(details, selectedType)
-                  : null,
-              child: timeline.when(
-                data: (tlState) {
-                  // Restore marker position on first load (home timeline only).
-                  if (selectedList == null &&
-                      selectedType == TimelineType.home &&
-                      tlState.posts.isNotEmpty) {
-                    _restoreMarker(tlState.posts);
-                  }
-                  return RefreshIndicator(
-                    onRefresh: () {
-                      _markerRestored = false;
-                      if (selectedHashtag != null) {
-                        return ref.refresh(
-                          hashtagTimelineProvider(selectedHashtag).future,
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onHorizontalDragEnd: selectedList == null
+                ? (details) => _onSwipe(details, selectedType)
+                : null,
+            child: timeline.when(
+              data: (tlState) {
+                // Restore marker position on first load (home timeline only).
+                if (selectedList == null &&
+                    selectedType == TimelineType.home &&
+                    tlState.posts.isNotEmpty) {
+                  _restoreMarker(tlState.posts);
+                }
+                return RefreshIndicator(
+                  onRefresh: () {
+                    _markerRestored = false;
+                    if (selectedHashtag != null) {
+                      return ref.refresh(
+                        hashtagTimelineProvider(selectedHashtag).future,
+                      );
+                    }
+                    if (selectedList != null) {
+                      return ref.refresh(
+                        listTimelineProvider(selectedList.id).future,
+                      );
+                    }
+                    return ref.refresh(timelineProvider.future);
+                  },
+                  child: ScrollablePositionedList.separated(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    itemCount:
+                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      if (index >= tlState.posts.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
                         );
                       }
-                      if (selectedList != null) {
-                        return ref.refresh(
-                          listTimelineProvider(selectedList.id).future,
-                        );
-                      }
-                      return ref.refresh(timelineProvider.future);
+                      return PostTile(post: tlState.posts[index]);
                     },
-                    child: ScrollablePositionedList.separated(
-                      itemScrollController: _itemScrollController,
-                      itemPositionsListener: _itemPositionsListener,
-                      itemCount:
-                          tlState.posts.length +
-                          (tlState.isLoadingMore ? 1 : 0),
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        if (index >= tlState.posts.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        return PostTile(post: tlState.posts[index]);
-                      },
-                    ),
-                  );
-                },
-                loading: () {
-                  if (_showScrollTop) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) setState(() => _showScrollTop = false);
-                    });
-                  }
-                  return const Center(child: CircularProgressIndicator());
-                },
-                error: (error, stack) {
-                  final message = _timelineErrorMessage(error);
-                  final canRetry = !_isForbiddenError(error);
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(message, textAlign: TextAlign.center),
-                          if (canRetry) ...[
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () {
-                                if (selectedList != null) {
-                                  ref.invalidate(
-                                    listTimelineProvider(selectedList.id),
-                                  );
-                                } else {
-                                  ref.invalidate(timelineProvider);
-                                }
-                              },
-                              child: const Text('再試行'),
-                            ),
-                          ],
+                  ),
+                );
+              },
+              loading: () {
+                if (_showScrollTop) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _showScrollTop = false);
+                  });
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+              error: (error, stack) {
+                final message = _timelineErrorMessage(error);
+                final canRetry = !_isForbiddenError(error);
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(message, textAlign: TextAlign.center),
+                        if (canRetry) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              if (selectedList != null) {
+                                ref.invalidate(
+                                  listTimelineProvider(selectedList.id),
+                                );
+                              } else {
+                                ref.invalidate(timelineProvider);
+                              }
+                            },
+                            child: const Text('再試行'),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
-          const SimplePostBar(),
-        ],
-      );
+        ),
+        const SimplePostBar(),
+      ],
+    );
 
     if (bgPath != null) {
       body = Container(
@@ -555,6 +554,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
+    TimelineType.directMessages: 'DM',
   };
 
   /// Mastodon uses "連合" instead of "グローバル".
@@ -650,7 +650,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Pinned hashtag tabs.
           ...pinnedHashtags.map((tag) {
             final isSelected = selectedHashtag == tag;
-            return _tabChip(context, '#$tag', isSelected, () {
+            return _tabChip(context, hashtagSpecLabel(tag), isSelected, () {
               ref.read(selectedListProvider.notifier).state = null;
               ref.read(selectedHashtagProvider.notifier).state = tag;
               _saveLastTab();
@@ -1002,6 +1002,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onTap: () {
                 Navigator.of(context).pop();
                 _showServerLinks(context, ref);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('メディアカタログ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/media-catalog');
               },
             ),
           ],

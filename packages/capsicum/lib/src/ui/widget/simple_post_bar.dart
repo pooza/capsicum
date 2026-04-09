@@ -47,7 +47,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    if (ref.read(confirmBeforePostProvider)) {
+    if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
+      if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -98,6 +99,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
 
   void _openCompose() {
     final extra = <String, dynamic>{};
+    final text = _controller.text;
+    if (text.isNotEmpty) {
+      extra['initialText'] = text;
+    }
     if (widget.channelId != null) {
       extra['channelId'] = widget.channelId;
       extra['channelName'] = widget.channelName;

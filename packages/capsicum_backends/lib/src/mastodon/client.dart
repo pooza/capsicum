@@ -434,6 +434,35 @@ class MastodonClient {
         .toList();
   }
 
+  /// GET /api/v1/conversations
+  /// Returns the last_status from each conversation (DM thread) along with
+  /// the conversation ID of the last entry for cursor-based pagination.
+  Future<({List<MastodonStatus> statuses, String? lastConversationId})>
+  getConversations({String? maxId, String? sinceId, int? limit}) async {
+    final response = await dio.get(
+      '/api/v1/conversations',
+      queryParameters: {
+        'max_id': ?maxId,
+        'since_id': ?sinceId,
+        'limit': ?limit,
+      },
+    );
+    final conversations = response.data as List;
+    String? lastConversationId;
+    final statuses = <MastodonStatus>[];
+    for (final e in conversations) {
+      final m = e as Map<String, dynamic>;
+      lastConversationId = m['id']?.toString();
+      final lastStatus = m['last_status'];
+      if (lastStatus != null) {
+        statuses.add(
+          MastodonStatus.fromJson(lastStatus as Map<String, dynamic>),
+        );
+      }
+    }
+    return (statuses: statuses, lastConversationId: lastConversationId);
+  }
+
   /// POST /api/v1/media
   ///
   /// v1 は同期処理で、トランスコード完了後に 200 + 完全な JSON を返す。
@@ -579,6 +608,7 @@ class MastodonClient {
     String? maxId,
     String? sinceId,
     int? limit,
+    List<String>? all,
   }) async {
     final response = await dio.get(
       '/api/v1/timelines/tag/${Uri.encodeComponent(hashtag)}',
@@ -586,6 +616,7 @@ class MastodonClient {
         'max_id': ?maxId,
         'since_id': ?sinceId,
         'limit': ?limit,
+        if (all != null && all.isNotEmpty) 'all[]': all,
       },
     );
     return (response.data as List)

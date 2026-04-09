@@ -49,7 +49,10 @@ class AnnouncementScreen extends ConsumerWidget {
                         return _InfoBotBanner(
                           acct: infoBotAcct,
                           onTap: () => _openInfoBotProfile(context, ref),
-                          avatarUrl: ref.watch(_infoBotUserProvider).valueOrNull?.avatarUrl,
+                          avatarUrl: ref
+                              .watch(_infoBotUserProvider)
+                              .valueOrNull
+                              ?.avatarUrl,
                         );
                       }
                       index -= 1;
@@ -101,7 +104,11 @@ class _InfoBotBanner extends StatelessWidget {
   final VoidCallback onTap;
   final String? avatarUrl;
 
-  const _InfoBotBanner({required this.acct, required this.onTap, this.avatarUrl});
+  const _InfoBotBanner({
+    required this.acct,
+    required this.onTap,
+    this.avatarUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +127,11 @@ class _InfoBotBanner extends StatelessWidget {
                   width: 20,
                   height: 20,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Icon(Icons.smart_toy, size: 20, color: theme.colorScheme.primary),
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.smart_toy,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               )
             else

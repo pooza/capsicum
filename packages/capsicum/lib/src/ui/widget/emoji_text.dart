@@ -94,7 +94,7 @@ class EmojiText extends ConsumerWidget {
     final url = emojis[shortcode];
     if (url != null) return url;
     if (fallbackHost != null) {
-      return 'https://$fallbackHost/emoji/$shortcode.webp';
+      return Uri.https(fallbackHost!, '/emoji/$shortcode.webp').toString();
     }
     return null;
   }
