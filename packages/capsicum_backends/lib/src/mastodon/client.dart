@@ -435,8 +435,10 @@ class MastodonClient {
   }
 
   /// GET /api/v1/conversations
-  /// Returns the last_status from each conversation (DM thread).
-  Future<List<MastodonStatus>> getConversations({
+  /// Returns the last_status from each conversation (DM thread) along with
+  /// the conversation ID of the last entry for cursor-based pagination.
+  Future<({List<MastodonStatus> statuses, String? lastConversationId})>
+      getConversations({
     String? maxId,
     String? sinceId,
     int? limit,
@@ -450,15 +452,19 @@ class MastodonClient {
       },
     );
     final conversations = response.data as List;
-    return conversations
-        .map((e) {
-          final m = e as Map<String, dynamic>;
-          final lastStatus = m['last_status'];
-          if (lastStatus == null) return null;
-          return MastodonStatus.fromJson(lastStatus as Map<String, dynamic>);
-        })
-        .whereType<MastodonStatus>()
-        .toList();
+    String? lastConversationId;
+    final statuses = <MastodonStatus>[];
+    for (final e in conversations) {
+      final m = e as Map<String, dynamic>;
+      lastConversationId = m['id']?.toString();
+      final lastStatus = m['last_status'];
+      if (lastStatus != null) {
+        statuses.add(
+          MastodonStatus.fromJson(lastStatus as Map<String, dynamic>),
+        );
+      }
+    }
+    return (statuses: statuses, lastConversationId: lastConversationId);
   }
 
   /// POST /api/v1/media

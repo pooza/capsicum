@@ -300,6 +300,26 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     TimelineType type, {
     TimelineQuery? query,
   }) async {
+    // DM timeline uses conversation IDs for pagination, not status IDs.
+    if (type == TimelineType.directMessages) {
+      final result = await client.getConversations(
+        maxId: query?.maxId,
+        sinceId: query?.sinceId,
+        limit: query?.limit,
+      );
+      final converted = _safeConvert(
+        result.statuses,
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+        (s) => s.id,
+      );
+      return TimelineResponse(
+        posts: converted.results,
+        rawCount: converted.rawCount,
+        rawLastId: result.lastConversationId,
+        skippedPosts: converted.skipped,
+      );
+    }
+
     final statuses = switch (type) {
       TimelineType.home => await client.getHomeTimeline(
         maxId: query?.maxId,
@@ -314,11 +334,6 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         limit: query?.limit,
       ),
       TimelineType.federated => await client.getPublicTimeline(
-        maxId: query?.maxId,
-        sinceId: query?.sinceId,
-        limit: query?.limit,
-      ),
-      TimelineType.directMessages => await client.getConversations(
         maxId: query?.maxId,
         sinceId: query?.sinceId,
         limit: query?.limit,
@@ -954,6 +969,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   @override
   Stream<Post> streamTimeline(TimelineType type) {
     _streaming?.dispose();
+    // DM timeline has no dedicated stream; avoid falling back to 'user'
+    // which would mix non-DM posts into the DM tab.
+    if (type == TimelineType.directMessages) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
     _streaming = MastodonStreaming(host: host, accessToken: token);
