@@ -317,10 +317,12 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       (grouped[cat] ??= []).add(emoji);
     }
 
+    final hasPalette = widget.adapter is ReactionSupport;
+
     return ListView(
       children: [
         // Palette section (imported from Web UI or empty).
-        if (palette.isNotEmpty) ...[
+        if (hasPalette && palette.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: Row(
@@ -354,8 +356,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             ),
           ),
         ],
-        // Import buttons when palette is empty.
-        if (palette.isEmpty) ...[
+        // Import buttons when palette is empty (Misskey only).
+        if (hasPalette && palette.isEmpty) ...[
           if (widget.mulukhiya != null && widget.accessToken != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
