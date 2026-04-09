@@ -32,6 +32,7 @@ import 'ui/screen/settings/account_settings_screen.dart';
 import 'ui/screen/settings/appearance_settings_screen.dart';
 import 'ui/screen/settings/display_settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
+import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/list_members_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -262,6 +263,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/episodes',
         builder: (context, state) => const EpisodeBrowserScreen(),
+      ),
+      GoRoute(
+        path: '/media-catalog',
+        builder: (context, state) => const MediaCatalogScreen(),
       ),
       GoRoute(
         path: '/media',

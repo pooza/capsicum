@@ -1003,6 +1003,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showServerLinks(context, ref);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('メディアカタログ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/media-catalog');
+              },
+            ),
           ],
           if (ref.read(currentAdapterProvider) is ScheduleSupport)
             ListTile(

@@ -106,6 +106,47 @@ class FavoriteTag {
   const FavoriteTag({required this.name, this.url, required this.count});
 }
 
+class MediaCatalogItem {
+  final String id;
+  final String url;
+  final String? thumbnailUrl;
+  final String? createdAt;
+  final String? fileName;
+  final String? fileSizeStr;
+  final String? type;
+  final String? mediatype;
+  final String? pixelSize;
+  final double? duration;
+  final String? accountUsername;
+  final String? accountDisplayName;
+  final String? statusBody;
+  final String? statusPublicUrl;
+
+  const MediaCatalogItem({
+    required this.id,
+    required this.url,
+    this.thumbnailUrl,
+    this.createdAt,
+    this.fileName,
+    this.fileSizeStr,
+    this.type,
+    this.mediatype,
+    this.pixelSize,
+    this.duration,
+    this.accountUsername,
+    this.accountDisplayName,
+    this.statusBody,
+    this.statusPublicUrl,
+  });
+}
+
+class MediaCatalogResult {
+  final List<MediaCatalogItem> items;
+  final bool hasNext;
+
+  const MediaCatalogResult({required this.items, required this.hasNext});
+}
+
 class EmojiPaletteEntry {
   final String id;
   final String name;
@@ -517,6 +558,58 @@ class MulukhiyaService {
       paletteForReaction: reactionId,
       paletteForMain: mainId,
     );
+  }
+
+  /// Fetch media catalog from /mulukhiya/api/media.
+  /// Returns empty result if the feature is disabled (404).
+  Future<MediaCatalogResult> getMediaCatalog({
+    int page = 1,
+    String? query,
+    bool personOnly = false,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '$baseUrl/media',
+        queryParameters: {
+          'page': page,
+          if (query != null && query.isNotEmpty) 'q': query,
+          if (personOnly) 'only_person': 1,
+        },
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return const MediaCatalogResult(items: [], hasNext: false);
+      }
+      final rawItems = data['items'] as List? ?? [];
+      final hasNext = data['has_next'] as bool? ?? false;
+      final items = rawItems.map((e) {
+        final m = e as Map<String, dynamic>;
+        final account = m['account'] as Map<String, dynamic>?;
+        final status = m['status'] as Map<String, dynamic>?;
+        return MediaCatalogItem(
+          id: m['id']?.toString() ?? '',
+          url: m['url'] as String? ?? '',
+          thumbnailUrl: m['thumbnail_url'] as String?,
+          createdAt: m['created_at'] as String?,
+          fileName: m['file_name'] as String?,
+          fileSizeStr: m['file_size_str'] as String?,
+          type: m['type'] as String?,
+          mediatype: m['mediatype'] as String?,
+          pixelSize: m['pixel_size'] as String?,
+          duration: (m['duration'] as num?)?.toDouble(),
+          accountUsername: account?['username'] as String?,
+          accountDisplayName: account?['display_name'] as String?,
+          statusBody: status?['body'] as String?,
+          statusPublicUrl: status?['public_url'] as String?,
+        );
+      }).toList();
+      return MediaCatalogResult(items: items, hasNext: hasNext);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return const MediaCatalogResult(items: [], hasNext: false);
+      }
+      rethrow;
+    }
   }
 
   /// Fetch default hashtags from /mulukhiya/api/about.
