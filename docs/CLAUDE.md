@@ -61,7 +61,7 @@ capsicum はサーバーが提供する API を検出し、利用可能な機能
 | タグ付け | `POST /mulukhiya/api/status/tags` | 実装済み |
 | ユーザー設定 | `GET/POST /mulukhiya/api/config` | 未実装 |
 | ハンドラー一覧 | `GET /mulukhiya/api/admin/handler/list` | 未実装 |
-| メディアカタログ | `GET /mulukhiya/api/media` | 未実装（#71） |
+| メディアカタログ | `GET /mulukhiya/api/media` | 実装済み |
 
 ## UI 設計方針
 
@@ -220,7 +220,7 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 
 今後のマイルストーン:
 
-- **v1.13** — メディアカタログ + DM + UI 改善 + バグ修正（メディアカタログ・DM タイムライン・タブ管理統合・ハッシュタグ AND 検索・通知欄アクション・ナウプレ削除・ダークモード文字色・確認画面条件・復号エラー対応）
+- **v1.13** — 全 Issue 消化済み。PR [#284](https://github.com/pooza/capsicum/pull/284) で Codex レビュー待ち → セキュリティレビュー → リリース
 - **v1.14** — 通知統合 + 下書き + ログイン調査（通知・お知らせ統合一覧・お知らせ/通知タブ化・サーバーサイド下書き・Android ログイン調査）
 - **v1.15** — 連携 + 絵文字強化 + Misskey 猫化（ポイピク連携・メディア API v2・isCat 対応・最近使った絵文字・Unicode 絵文字拡充）
 
