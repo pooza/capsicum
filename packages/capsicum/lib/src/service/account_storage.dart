@@ -59,12 +59,12 @@ class AccountStorage {
     } on PlatformException catch (e, st) {
       debugPrint('capsicum: failed to read account keys: $e');
       Sentry.captureException(e, stackTrace: st);
-      await _storage.deleteAll();
+      await _storage.delete(key: _accountListKey);
       return [];
     } catch (e, st) {
       debugPrint('capsicum: unexpected error reading account keys: $e');
       Sentry.captureException(e, stackTrace: st);
-      await _storage.deleteAll();
+      await _storage.delete(key: _accountListKey);
       return [];
     }
   }
