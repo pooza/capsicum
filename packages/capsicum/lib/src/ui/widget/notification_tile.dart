@@ -209,18 +209,20 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                     _showEmojiPicker(context);
                   },
                 ),
-              ListTile(
-                leading: const Icon(Icons.repeat),
-                title: Text(boostLabel),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _runAction(
-                    messenger,
-                    () => adapter.repeatPost(targetPost.id),
-                    '$boostLabelしました',
-                  );
-                },
-              ),
+              if (targetPost.scope == PostScope.public ||
+                  targetPost.scope == PostScope.unlisted)
+                ListTile(
+                  leading: const Icon(Icons.repeat),
+                  title: Text(boostLabel),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _runAction(
+                      messenger,
+                      () => adapter.repeatPost(targetPost.id),
+                      '$boostLabelしました',
+                    );
+                  },
+                ),
               if (adapter is BookmarkSupport)
                 ListTile(
                   leading: const Icon(Icons.bookmark_outline),
