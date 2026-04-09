@@ -22,6 +22,11 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final emojiSize = ref.watch(emojiSizeProvider);
     final thumbnailScale = ref.watch(thumbnailScaleProvider);
     final darkVariant = ref.watch(darkSurfaceVariantProvider);
+    final darkText = ref.watch(darkTextColorProvider);
+    final isDark =
+        themeMode == ThemeMode.dark ||
+        (themeMode == ThemeMode.system &&
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark);
 
     return Scaffold(
       appBar: AppBar(
@@ -55,9 +60,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
 
           // Dark surface variant
-          if (themeMode == ThemeMode.dark ||
-              (themeMode == ThemeMode.system &&
-                  MediaQuery.platformBrightnessOf(context) == Brightness.dark))
+          if (isDark)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
@@ -94,6 +97,52 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                           ref
                               .read(darkSurfaceVariantProvider.notifier)
                               .setVariant(v);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+
+          // Dark text color
+          if (isDark)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ダークモードの文字色',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: DarkTextColor.values.map((v) {
+                      final isSelected = v == darkText;
+                      final color =
+                          darkTextColor(v) ??
+                          Theme.of(context).colorScheme.onSurface;
+                      return ChoiceChip(
+                        label: Text(darkTextColorLabel(v)),
+                        selected: isSelected,
+                        avatar: CircleAvatar(
+                          backgroundColor: color,
+                          radius: 10,
+                          child: isSelected
+                              ? Icon(
+                                  Icons.check,
+                                  size: 12,
+                                  color: color.computeLuminance() > 0.5
+                                      ? Colors.black
+                                      : Colors.white,
+                                )
+                              : null,
+                        ),
+                        onSelected: (_) {
+                          ref.read(darkTextColorProvider.notifier).setColor(v);
                         },
                       );
                     }).toList(),

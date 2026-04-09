@@ -910,3 +910,75 @@ class DarkSurfaceVariantNotifier extends Notifier<DarkSurfaceVariant> {
     await prefs.setString(_darkSurfaceVariantKey, variant.name);
   }
 }
+
+// --- Dark text color ---
+
+/// Preset text colors for dark mode.
+enum DarkTextColor {
+  /// Default (Material 3 generated).
+  standard,
+
+  /// Pure white.
+  white,
+
+  /// Warm white (slightly yellowish).
+  warmWhite,
+
+  /// Cool white (slightly bluish).
+  coolWhite,
+
+  /// Light gray (reduced brightness).
+  lightGray,
+}
+
+const _darkTextColors = {
+  DarkTextColor.white: Color(0xFFFFFFFF),
+  DarkTextColor.warmWhite: Color(0xFFF5F0E8),
+  DarkTextColor.coolWhite: Color(0xFFE8EEF5),
+  DarkTextColor.lightGray: Color(0xFFCCCCCC),
+};
+
+const _darkTextColorLabels = {
+  DarkTextColor.standard: '標準',
+  DarkTextColor.white: 'ホワイト',
+  DarkTextColor.warmWhite: 'ウォームホワイト',
+  DarkTextColor.coolWhite: 'クールホワイト',
+  DarkTextColor.lightGray: 'ライトグレー',
+};
+
+/// Human-readable label for a [DarkTextColor].
+String darkTextColorLabel(DarkTextColor v) => _darkTextColorLabels[v] ?? '';
+
+/// Resolve the text [Color] for a variant, or null for standard.
+Color? darkTextColor(DarkTextColor v) => _darkTextColors[v];
+
+const _darkTextColorKey = 'dark_text_color';
+
+/// Provides the dark mode text color preference.
+final darkTextColorProvider =
+    NotifierProvider<DarkTextColorNotifier, DarkTextColor>(
+      DarkTextColorNotifier.new,
+    );
+
+class DarkTextColorNotifier extends Notifier<DarkTextColor> {
+  @override
+  DarkTextColor build() {
+    _load();
+    return DarkTextColor.standard;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_darkTextColorKey);
+    if (saved != null) {
+      final v = DarkTextColor.values.where((e) => e.name == saved).firstOrNull;
+      if (v != null) state = v;
+    }
+  }
+
+  Future<void> setColor(DarkTextColor color) async {
+    state = color;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_darkTextColorKey, color.name);
+  }
+}

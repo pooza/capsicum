@@ -129,6 +129,8 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     final themeMode = ref.watch(themeModeProvider);
     final darkVariant = ref.watch(darkSurfaceVariantProvider);
     final darkSurface = darkSurfaceColor(darkVariant);
+    final darkTextVariant = ref.watch(darkTextColorProvider);
+    final darkText = darkTextColor(darkTextVariant);
 
     var darkScheme = ColorScheme.fromSeed(
       seedColor: seedColor,
@@ -142,6 +144,12 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
         surfaceContainerLowest: darkSurface,
         surfaceContainerHigh: Color.lerp(darkSurface, Colors.white, 0.05)!,
         surfaceContainerHighest: Color.lerp(darkSurface, Colors.white, 0.08)!,
+      );
+    }
+    if (darkText != null) {
+      darkScheme = darkScheme.copyWith(
+        onSurface: darkText,
+        onSurfaceVariant: Color.lerp(darkText, Colors.grey, 0.3)!,
       );
     }
 
