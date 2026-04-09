@@ -108,6 +108,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       setState(() => _showScrollTop = shouldShow);
     }
 
+    // Notify timeline notifier whether the user is near the top so that
+    // streaming posts can be queued while scrolling (#296).
+    if (selectedHashtag == null && selectedList == null) {
+      ref.read(timelineProvider.notifier).setNearTop(minIndex <= 1);
+    }
+
     // Save marker (home timeline only, debounced).
     if (selectedList == null && selectedHashtag == null) {
       final selectedType = ref.read(selectedTimelineTypeProvider);
