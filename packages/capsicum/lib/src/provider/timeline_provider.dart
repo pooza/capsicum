@@ -50,8 +50,10 @@ const loadMoreRetryDelay = Duration(seconds: 2);
 final _livecurePattern = RegExp(r'(#実況[\s<]|#<span>実況</span>)');
 
 /// Check whether a post contains the livecure (#実況) hashtag.
+/// Bot posts are excluded — their #実況 announcements should remain visible.
 bool hasLivecureTag(Post post) {
   final target = post.reblog ?? post;
+  if (target.author.isBot) return false;
   final content = target.content ?? '';
   return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
 }
