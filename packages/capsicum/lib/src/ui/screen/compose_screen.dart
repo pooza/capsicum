@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
@@ -59,7 +60,16 @@ class ComposeScreen extends ConsumerStatefulWidget {
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
 }
 
-class _ComposeScreenState extends ConsumerState<ComposeScreen> {
+/// SharedPreferences keys for the auto-saved compose draft.
+///
+/// Only fresh compose sessions (no reply/quote/redraft/shared/initial text)
+/// participate in auto-save, so a single global slot is sufficient.
+const _draftTextKey = 'compose_draft_text';
+const _draftCwTextKey = 'compose_draft_cw_text';
+const _draftCwEnabledKey = 'compose_draft_cw_enabled';
+
+class _ComposeScreenState extends ConsumerState<ComposeScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _cwController = TextEditingController();
   final _imagePicker = ImagePicker();
@@ -77,6 +87,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   // Quote approval policy (Mastodon 4.5+)
   String? _quoteApprovalPolicy;
+
+  /// Whether this compose session participates in draft auto-save.
+  ///
+  /// True only for fresh compose sessions (no reply/quote/redraft/shared/
+  /// initial text). Replies and quotes are tied to a specific post and
+  /// can't be meaningfully restored from a text-only draft.
+  bool _draftAutoSave = false;
 
   // Poll state
   bool _pollEnabled = false;
@@ -196,7 +213,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       if (account != null && account.user.defaultScope != null) {
         _scope = account.user.defaultScope!;
       }
+      // Fresh compose: enable draft auto-save and try to restore the
+      // previously saved draft (if any).
+      _draftAutoSave = true;
+      _restoreDraft();
     }
+    WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -313,6 +335,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _mentionDebounce?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
@@ -321,6 +344,57 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // The OS may dispose the activity while backgrounded; persist the draft
+    // on every transition out of `resumed` so it survives a cold restart.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _saveDraft();
+    }
+  }
+
+  /// Persist the current draft text and CW state to SharedPreferences.
+  ///
+  /// No-op for reply / quote / redraft / shared / initial-text sessions.
+  Future<void> _saveDraft() async {
+    if (!_draftAutoSave) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_draftTextKey, _controller.text);
+    await prefs.setString(_draftCwTextKey, _cwController.text);
+    await prefs.setBool(_draftCwEnabledKey, _cwEnabled);
+  }
+
+  /// Restore a previously saved draft into the controllers.
+  Future<void> _restoreDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedText = prefs.getString(_draftTextKey);
+    final savedCwText = prefs.getString(_draftCwTextKey);
+    final savedCwEnabled = prefs.getBool(_draftCwEnabledKey) ?? false;
+    if (!mounted) return;
+    if (savedText != null && savedText.isNotEmpty) {
+      _controller.text = savedText;
+      _controller.selection = TextSelection.collapsed(offset: savedText.length);
+    }
+    if (savedCwText != null && savedCwText.isNotEmpty) {
+      _cwController.text = savedCwText;
+    }
+    if (savedCwEnabled) {
+      setState(() => _cwEnabled = true);
+    }
+  }
+
+  /// Remove any persisted draft (called after a successful post).
+  Future<void> _clearDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftTextKey);
+    await prefs.remove(_draftCwTextKey);
+    await prefs.remove(_draftCwEnabledKey);
   }
 
   void _initReplyMentions(Post replyTo) {
@@ -1024,6 +1098,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
+      // Posting succeeded — drop any persisted draft so it doesn't reappear
+      // the next time the user opens compose.
+      await _clearDraft();
       if (mounted) {
         if (_scheduledAt != null) {
           ScaffoldMessenger.of(
