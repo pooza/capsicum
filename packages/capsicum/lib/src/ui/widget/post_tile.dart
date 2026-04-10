@@ -880,14 +880,14 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
               Positioned(
                 right: 0,
-                top: 20,
+                top: 8,
                 child: GestureDetector(
                   onTap: () => _showActionMenu(context),
                   child: Padding(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(12),
                     child: Icon(
                       Icons.more_horiz,
-                      size: 16,
+                      size: 24,
                       color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                   ),
