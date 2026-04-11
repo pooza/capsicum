@@ -1069,8 +1069,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
       );
       // Posting succeeded — drop any persisted draft so it doesn't reappear
-      // the next time the user opens compose.
-      await _clearDraft();
+      // the next time the user opens compose. Only applies to fresh-compose
+      // sessions; reply/quote/redraft/share flows never autosaved and must
+      // not touch an unrelated draft.
+      if (_draftAutoSave) {
+        await _clearDraft();
+      }
       if (mounted) {
         if (_scheduledAt != null) {
           ScaffoldMessenger.of(
