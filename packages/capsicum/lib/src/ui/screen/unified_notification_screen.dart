@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../widget/content_parser.dart';
@@ -90,6 +91,7 @@ class _UnifiedNotificationTile extends ConsumerWidget {
     final user = notification.user;
     final post = notification.post;
     final (icon, label) = _iconAndLabel(notification.type);
+    final useAbsoluteTime = ref.watch(absoluteTimeProvider);
 
     return InkWell(
       onTap: () => _openInOwningAccount(context, ref),
@@ -98,7 +100,17 @@ class _UnifiedNotificationTile extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: Center(
+                child:
+                    notification.type == NotificationType.reaction &&
+                        notification.reaction != null
+                    ? _buildReactionEmoji(notification.reaction!)
+                    : Icon(icon, size: 20, color: theme.colorScheme.primary),
+              ),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -106,7 +118,13 @@ class _UnifiedNotificationTile extends ConsumerWidget {
                 children: [
                   _accountBadge(context, account),
                   const SizedBox(height: 4),
-                  _header(context, user, label, notification.createdAt),
+                  _header(
+                    context,
+                    user,
+                    label,
+                    notification.createdAt,
+                    useAbsoluteTime,
+                  ),
                   if (post?.content != null && post!.content!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -127,6 +145,12 @@ class _UnifiedNotificationTile extends ConsumerWidget {
 
   Widget _accountBadge(BuildContext context, Account account) {
     final theme = Theme.of(context);
+    final displayName = account.user.displayName;
+    final acct = '@${account.user.username}@${account.key.host}';
+    final hasDisplayName = displayName != null && displayName.trim().isNotEmpty;
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
     return Row(
       children: [
         UserAvatar(
@@ -137,14 +161,21 @@ class _UnifiedNotificationTile extends ConsumerWidget {
         ),
         const SizedBox(width: 6),
         Flexible(
-          child: Text(
-            '@${account.user.username}@${account.key.host}',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: hasDisplayName
+              ? EmojiText(
+                  displayName,
+                  emojis: account.user.emojis,
+                  fallbackHost: account.user.host,
+                  style: labelStyle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              : Text(
+                  acct,
+                  style: labelStyle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
         ),
       ],
     );
@@ -155,13 +186,17 @@ class _UnifiedNotificationTile extends ConsumerWidget {
     User? user,
     String label,
     DateTime createdAt,
+    bool useAbsoluteTime,
   ) {
     final theme = Theme.of(context);
     if (user == null) {
       return Row(
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
-          Text(_formatTime(createdAt), style: theme.textTheme.bodySmall),
+          Text(
+            _formatTime(createdAt, useAbsoluteTime),
+            style: theme.textTheme.bodySmall,
+          ),
         ],
       );
     }
@@ -186,9 +221,52 @@ class _UnifiedNotificationTile extends ConsumerWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Text(_formatTime(createdAt), style: theme.textTheme.bodySmall),
+        Text(
+          _formatTime(createdAt, useAbsoluteTime),
+          style: theme.textTheme.bodySmall,
+        ),
       ],
     );
+  }
+
+  Widget _buildReactionEmoji(String reaction) {
+    final url = _resolveReactionUrl(reaction);
+    if (url != null) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 18, maxWidth: 54),
+        child: Image.network(
+          url,
+          height: 18,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) =>
+              Text(reaction, style: const TextStyle(fontSize: 14)),
+        ),
+      );
+    }
+    return Text(reaction, style: const TextStyle(fontSize: 16));
+  }
+
+  String? _resolveReactionUrl(String reaction) {
+    final isCustom = reaction.startsWith(':') && reaction.endsWith(':');
+    if (!isCustom) return null;
+    final stripped = reaction.substring(1, reaction.length - 1);
+    final nameOnly = stripped.contains('@')
+        ? stripped.substring(0, stripped.indexOf('@'))
+        : stripped;
+    final post = item.notification.post;
+    final url =
+        post?.reactionEmojis[stripped] ?? post?.reactionEmojis[nameOnly];
+    if (url != null) return url;
+    final atIndex = stripped.indexOf('@');
+    final hostPart = atIndex >= 0 ? stripped.substring(atIndex + 1) : null;
+    final isLocal = hostPart == null || hostPart == '.' || hostPart.isEmpty;
+    final emojiHost = isLocal
+        ? (post?.emojiHost ?? post?.author.host)
+        : hostPart;
+    if (emojiHost != null) {
+      return 'https://$emojiHost/emoji/$nameOnly.webp';
+    }
+    return null;
   }
 
   void _openInOwningAccount(BuildContext context, WidgetRef ref) {
@@ -218,7 +296,12 @@ class _UnifiedNotificationTile extends ConsumerWidget {
     NotificationType.other => (Icons.notifications, '通知'),
   };
 
-  String _formatTime(DateTime time) {
+  String _formatTime(DateTime time, bool useAbsoluteTime) {
+    if (useAbsoluteTime) {
+      final local = time.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
     final diff = DateTime.now().toUtc().difference(time);
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
