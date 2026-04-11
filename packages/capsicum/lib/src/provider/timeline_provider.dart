@@ -21,11 +21,15 @@ class TimelineState {
   /// successful load so the UI can show a transient error (e.g. SnackBar).
   final Object? loadMoreError;
 
+  /// Number of new posts queued while the user is scrolling.
+  final int pendingCount;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
     this.loadMoreError,
+    this.pendingCount = 0,
   });
 
   TimelineState copyWith({
@@ -33,11 +37,13 @@ class TimelineState {
     bool? isLoadingMore,
     bool? hasMore,
     Object? loadMoreError,
+    int? pendingCount,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
     loadMoreError: loadMoreError,
+    pendingCount: pendingCount ?? this.pendingCount,
   );
 }
 
@@ -50,8 +56,10 @@ const loadMoreRetryDelay = Duration(seconds: 2);
 final _livecurePattern = RegExp(r'(#実況[\s<]|#<span>実況</span>)');
 
 /// Check whether a post contains the livecure (#実況) hashtag.
+/// Bot posts are excluded — their #実況 announcements should remain visible.
 bool hasLivecureTag(Post post) {
   final target = post.reblog ?? post;
+  if (target.author.isBot) return false;
   final content = target.content ?? '';
   return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
 }
@@ -60,9 +68,17 @@ bool hasLivecureTag(Post post) {
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
   StreamSubscription<Post>? _streamSubscription;
+  final List<Post> _pendingPosts = [];
+  bool _isNearTop = true;
 
   @override
   Future<TimelineState> build() async {
+    // build() reruns when adapter / timeline type changes. Reset stream-side
+    // state so queued posts from a previous timeline context cannot leak
+    // into the new one via flushPending().
+    _pendingPosts.clear();
+    _isNearTop = true;
+
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
@@ -127,10 +143,35 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (newPost.filterAction == FilterAction.hide) return;
       final hideLivecure = ref.read(hideLivecureProvider);
       if (hideLivecure && _hasLivecureTag(newPost)) return;
-      // Prepend new post, avoiding duplicates.
+      // Avoid duplicates.
       if (current.posts.any((p) => p.id == newPost.id)) return;
-      state = AsyncData(current.copyWith(posts: [newPost, ...current.posts]));
+      if (_pendingPosts.any((p) => p.id == newPost.id)) return;
+
+      if (_isNearTop) {
+        // User is at or near the top — prepend immediately.
+        state = AsyncData(current.copyWith(posts: [newPost, ...current.posts]));
+      } else {
+        // User is scrolling — queue the post to avoid jumping.
+        _pendingPosts.add(newPost);
+        state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
+      }
     });
+  }
+
+  /// Called by the UI when the user's scroll position changes.
+  void setNearTop(bool nearTop) {
+    _isNearTop = nearTop;
+    if (nearTop) flushPending();
+  }
+
+  /// Flush queued posts into the timeline.
+  void flushPending() {
+    if (_pendingPosts.isEmpty) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final merged = [..._pendingPosts.reversed, ...current.posts];
+    _pendingPosts.clear();
+    state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
   }
 
   static bool _hasLivecureTag(Post post) => hasLivecureTag(post);

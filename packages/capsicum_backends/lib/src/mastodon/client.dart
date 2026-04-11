@@ -380,8 +380,11 @@ class MastodonClient {
   }
 
   /// POST /api/v1/statuses/:id/reblog
-  Future<MastodonStatus> reblogStatus(String id) async {
-    final response = await dio.post('/api/v1/statuses/$id/reblog');
+  Future<MastodonStatus> reblogStatus(String id, {String? visibility}) async {
+    final response = await dio.post(
+      '/api/v1/statuses/$id/reblog',
+      data: visibility != null ? {'visibility': visibility} : null,
+    );
     return MastodonStatus.fromJson(response.data as Map<String, dynamic>);
   }
 

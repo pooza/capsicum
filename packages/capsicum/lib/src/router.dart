@@ -21,6 +21,7 @@ import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
+import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
@@ -170,6 +171,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/notifications',
         builder: (context, state) => const NotificationScreen(),
+      ),
+      GoRoute(
+        path: '/notifications/all',
+        builder: (context, state) => const UnifiedNotificationScreen(),
       ),
       GoRoute(
         path: '/bookmarks',

@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../util/post_scope_display.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
 import 'emoji_text.dart';
@@ -214,6 +215,34 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 ListTile(
                   leading: const Icon(Icons.repeat),
                   title: Text(boostLabel),
+                  subtitle: boostableScopes(targetPost.scope).isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 8,
+                            children: boostableScopes(targetPost.scope).map((
+                              scope,
+                            ) {
+                              final display = postScopeDisplay(scope, adapter);
+                              return ActionChip(
+                                avatar: Icon(display.icon, size: 16),
+                                label: Text(display.label),
+                                onPressed: () {
+                                  Navigator.pop(sheetContext);
+                                  _runAction(
+                                    messenger,
+                                    () => adapter.repeatPost(
+                                      targetPost.id,
+                                      visibility: scope,
+                                    ),
+                                    '$boostLabelしました（${display.label}）',
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        )
+                      : null,
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _runAction(

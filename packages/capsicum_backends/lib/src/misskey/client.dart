@@ -610,10 +610,10 @@ class MisskeyClient {
   }
 
   /// POST /api/notes/create (renote)
-  Future<MisskeyNote> renote(String noteId) async {
+  Future<MisskeyNote> renote(String noteId, {String? visibility}) async {
     final response = await dio.post(
       '/api/notes/create',
-      data: createBody({'renoteId': noteId}),
+      data: createBody({'renoteId': noteId, 'visibility': ?visibility}),
     );
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']

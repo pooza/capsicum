@@ -19,6 +19,7 @@ import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/post_scope_display.dart';
 import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
@@ -880,14 +881,14 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
               Positioned(
                 right: 0,
-                top: 20,
+                top: post.reblog != null ? 28 : 8,
                 child: GestureDetector(
                   onTap: () => _showActionMenu(context),
                   child: Padding(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(12),
                     child: Icon(
                       Icons.more_horiz,
-                      size: 16,
+                      size: 24,
                       color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                   ),
@@ -991,6 +992,34 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ListTile(
                   leading: const Icon(Icons.repeat),
                   title: Text(boostLabel),
+                  subtitle: boostableScopes(targetPost.scope).isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 8,
+                            children: boostableScopes(targetPost.scope).map((
+                              scope,
+                            ) {
+                              final display = postScopeDisplay(scope, adapter);
+                              return ActionChip(
+                                avatar: Icon(display.icon, size: 16),
+                                label: Text(display.label),
+                                onPressed: () {
+                                  Navigator.pop(sheetContext);
+                                  _runAction(
+                                    messenger,
+                                    () => adapter.repeatPost(
+                                      targetPost.id,
+                                      visibility: scope,
+                                    ),
+                                    '$boostLabelしました（${display.label}）',
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        )
+                      : null,
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _runAction(
@@ -1661,19 +1690,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     return [];
   }
 
-  IconData _scopeIcon(PostScope scope) {
-    final isMisskey = ref.read(currentAdapterProvider) is ReactionSupport;
-    switch (scope) {
-      case PostScope.public:
-        return Icons.public;
-      case PostScope.unlisted:
-        return isMisskey ? Icons.home_outlined : Icons.nightlight_outlined;
-      case PostScope.followersOnly:
-        return Icons.lock_outline;
-      case PostScope.direct:
-        return isMisskey ? Icons.mail_outline : Icons.alternate_email;
-    }
-  }
+  IconData _scopeIcon(PostScope scope) =>
+      postScopeIcon(scope, ref.read(currentAdapterProvider));
 }
 
 class _CountChip extends StatelessWidget {

@@ -91,6 +91,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String _stripHtml(String html) => stripHtml(html).trim();
 
+  void _logLoginStep(String step, {Map<String, Object?>? data}) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'login',
+        message: step,
+        level: SentryLevel.info,
+        data: {
+          'host': widget.host,
+          'backend': widget.backendType.name,
+          if (data != null) ...data,
+        },
+      ),
+    );
+  }
+
   Future<void> _login() async {
     if (_loginCompleted) return;
     setState(() {
@@ -100,6 +115,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     DecentralizedBackendAdapter? adapter;
     Map<String, String> oauthExtra = {};
+    var reachedAuthenticate = false;
+    var authenticateReturned = false;
+    var fallbackAttempted = false;
+
+    _logLoginStep('login.start');
 
     try {
       adapter = await widget.backendType.createAdapter(widget.host);
@@ -130,7 +150,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         website: AppConstants.websiteUrl,
       );
 
+      _logLoginStep('startLogin.begin');
       final startResult = await loginSupport.startLogin(application);
+      _logLoginStep(
+        'startLogin.end',
+        data: {'result': startResult.runtimeType.toString()},
+      );
 
       if (startResult is LoginNeedsOAuth) {
         oauthExtra = startResult.extra;
@@ -140,16 +165,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           debugPrint('capsicum: OAuth URL: ${startResult.authorizationUrl}');
           return true;
         }());
+        _logLoginStep('authenticate.begin');
+        reachedAuthenticate = true;
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: AppConstants.callbackUrlScheme,
           options: const FlutterWebAuth2Options(preferEphemeral: true),
         );
+        authenticateReturned = true;
+        _logLoginStep('authenticate.end');
 
         final callbackUri = Uri.parse(resultUrl);
+        _logLoginStep(
+          'completeLogin.begin',
+          data: {
+            'hasCode': callbackUri.queryParameters.containsKey('code'),
+            'scheme': callbackUri.scheme,
+          },
+        );
         final completeResult = await loginSupport.completeLogin(
           callbackUri,
           startResult.extra,
+        );
+        _logLoginStep(
+          'completeLogin.end',
+          data: {'result': completeResult.runtimeType.toString()},
         );
 
         if (completeResult is LoginSuccess) {
@@ -174,30 +214,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
       }
     } catch (e, st) {
+      final isCancelled =
+          e.toString().contains('CANCELED') ||
+          e.toString().contains('cancelled');
+      _logLoginStep(
+        'login.exception',
+        data: {
+          'type': e.runtimeType.toString(),
+          'isCancelled': isCancelled,
+          'reachedAuthenticate': reachedAuthenticate,
+          'authenticateReturned': authenticateReturned,
+        },
+      );
+
       // User cancelled the browser or redirect failed.
+      var fallbackSucceeded = false;
       if (!_loginCompleted && adapter != null && oauthExtra.isNotEmpty) {
+        fallbackAttempted = true;
         // For MiAuth, the session may already be approved on the server
         // even when the redirect back to the app fails (Android 12+ Custom Tab
         // issues, etc.). Try completing the login as a fallback.
         if (!_isMastodon) {
+          _logLoginStep('fallback.miauth.begin');
           final ok = await _tryMiAuthFallback(adapter, oauthExtra);
-          if (ok) return;
+          _logLoginStep('fallback.miauth.end', data: {'ok': ok});
+          if (ok) {
+            fallbackSucceeded = true;
+            return;
+          }
         }
 
         // For Mastodon OAuth, prompt the user to manually enter the
         // authorization code from the browser URL bar.
         if (_isMastodon) {
+          _logLoginStep('fallback.mastodon.begin');
           final ok = await _tryManualCodeFallback(
             adapter as LoginSupport,
             oauthExtra,
           );
-          if (ok) return;
+          _logLoginStep('fallback.mastodon.end', data: {'ok': ok});
+          if (ok) {
+            fallbackSucceeded = true;
+            return;
+          }
         }
       }
 
-      if (e.toString().contains('CANCELED') ||
-          e.toString().contains('cancelled')) {
-        // User explicitly cancelled — not an error.
+      if (isCancelled) {
+        // User cancelled (or redirect failed). Only report to Sentry when a
+        // fallback was attempted and also failed — that is the #276 signal
+        // we actually want to investigate.
+        if (fallbackAttempted && !fallbackSucceeded) {
+          Sentry.captureException(
+            e,
+            stackTrace: st,
+            withScope: (scope) {
+              scope.setTag('login.stage', 'fallback_failed_after_cancel');
+              scope.setTag('login.backend', widget.backendType.name);
+              scope.setTag(
+                'login.reachedAuthenticate',
+                reachedAuthenticate.toString(),
+              );
+            },
+          );
+        }
       } else {
         debugPrint('Login error: $e');
         Sentry.captureException(e, stackTrace: st);
@@ -218,11 +298,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final loginSupport = adapter as LoginSupport;
       final result = await loginSupport.completeLogin(Uri(), extra);
+      _logLoginStep(
+        'fallback.miauth.completeLogin',
+        data: {'result': result.runtimeType.toString()},
+      );
       if (result is LoginSuccess) {
         await _finishLogin(adapter, result);
         return true;
       }
-    } catch (_) {
+    } catch (e) {
+      _logLoginStep(
+        'fallback.miauth.exception',
+        data: {'type': e.runtimeType.toString()},
+      );
       // Fallback failed — let the original error handling proceed.
     }
     return false;
@@ -366,6 +454,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       },
     );
 
+    _logLoginStep(
+      'fallback.mastodon.codeInput',
+      data: {'hasCode': code != null && code.isNotEmpty},
+    );
     if (code == null || code.isEmpty) return false;
 
     try {
@@ -521,14 +613,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'ブラウザから自動で戻れない場合は、スワイプで'
-            'アプリに戻ってください。',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'ブラウザから戻れないとき',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Android ではブラウザから自動でアプリに戻れないことがあります。'
+                    'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
+                    '多くの場合、認証は自動で完了します。\n\n'
+                    '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
+                    '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
+                    'そこからブラウザを開き直して認証コードを取得・貼り付けて'
+                    'ログインできます。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

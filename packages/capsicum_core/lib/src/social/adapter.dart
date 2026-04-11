@@ -4,6 +4,7 @@ import '../model/attachment.dart';
 import '../model/instance.dart';
 import '../model/post.dart';
 import '../model/post_draft.dart';
+import '../model/post_scope.dart';
 import '../model/timeline_query.dart';
 import '../model/timeline_response.dart';
 import '../model/timeline_type.dart';
@@ -33,7 +34,7 @@ abstract class BackendAdapter {
   });
   Future<Post> getPostById(String id);
   Future<List<Post>> getThread(String postId);
-  Future<Post> repeatPost(String id);
+  Future<Post> repeatPost(String id, {PostScope? visibility});
   Future<Post> unrepeatPost(String id);
   Future<Instance> getInstance();
   Future<Attachment> uploadAttachment(AttachmentDraft draft);

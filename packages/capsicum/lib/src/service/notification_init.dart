@@ -4,7 +4,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'background_notification_service.dart';
 
-const _taskName = 'capsicum.backgroundNotificationCheck';
+const _taskName = 'jp.co.b-shock.capsicum.iOSBackgroundAppRefresh';
 
 /// Top-level callback required by workmanager.
 @pragma('vm:entry-point')
