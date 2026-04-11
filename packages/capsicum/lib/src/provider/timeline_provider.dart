@@ -73,6 +73,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   @override
   Future<TimelineState> build() async {
+    // build() reruns when adapter / timeline type changes. Reset stream-side
+    // state so queued posts from a previous timeline context cannot leak
+    // into the new one via flushPending().
+    _pendingPosts.clear();
+    _isNearTop = true;
+
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
@@ -147,9 +153,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       } else {
         // User is scrolling — queue the post to avoid jumping.
         _pendingPosts.add(newPost);
-        state = AsyncData(
-          current.copyWith(pendingCount: _pendingPosts.length),
-        );
+        state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
       }
     });
   }
