@@ -97,7 +97,7 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     }
   }
 
-  void _openCompose() {
+  Future<void> _openCompose() async {
     final extra = <String, dynamic>{};
     final text = _controller.text;
     if (text.isNotEmpty) {
@@ -107,7 +107,13 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
       extra['channelId'] = widget.channelId;
       extra['channelName'] = widget.channelName;
     }
-    context.push('/compose', extra: extra.isNotEmpty ? extra : null);
+    final posted = await context.push<bool>(
+      '/compose',
+      extra: extra.isNotEmpty ? extra : null,
+    );
+    if (posted == true && mounted) {
+      _controller.clear();
+    }
   }
 
   @override

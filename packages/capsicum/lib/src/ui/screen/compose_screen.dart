@@ -1113,7 +1113,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           }
         }
         if (context.canPop()) {
-          context.pop();
+          context.pop(true);
         } else {
           context.go('/home');
         }
