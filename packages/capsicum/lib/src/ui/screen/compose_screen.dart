@@ -16,6 +16,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/post_scope_display.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'drive_picker_screen.dart';
@@ -128,49 +129,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     'ru': 'Русский',
   };
 
-  static const _mastodonScopeLabels = {
-    PostScope.public: '公開',
-    PostScope.unlisted: 'ひかえめな公開',
-    PostScope.followersOnly: 'フォロワー',
-    PostScope.direct: '非公開の返信',
-  };
-
-  static const _misskeyScopeLabels = {
-    PostScope.public: 'パブリック',
-    PostScope.unlisted: 'ホーム',
-    PostScope.followersOnly: 'フォロワー',
-    PostScope.direct: '指名',
-  };
-
-  static const _mastodonScopeIcons = {
-    PostScope.public: Icons.public,
-    PostScope.unlisted: Icons.nightlight_outlined,
-    PostScope.followersOnly: Icons.lock_outline,
-    PostScope.direct: Icons.alternate_email,
-  };
-
-  static const _misskeyScopeIcons = {
-    PostScope.public: Icons.public,
-    PostScope.unlisted: Icons.home_outlined,
-    PostScope.followersOnly: Icons.lock_outline,
-    PostScope.direct: Icons.mail_outline,
-  };
-
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
-    final isMisskey = adapter is ReactionSupport;
-    final labels = isMisskey ? _misskeyScopeLabels : _mastodonScopeLabels;
-    final icons = isMisskey ? _misskeyScopeIcons : _mastodonScopeIcons;
-
     return PostScope.values.map((scope) {
+      final display = postScopeDisplay(scope, adapter);
       return DropdownMenuItem(
         value: scope,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icons[scope], size: 16),
+            Icon(display.icon, size: 16),
             const SizedBox(width: 4),
-            Text(labels[scope]!, style: const TextStyle(fontSize: 13)),
+            Text(display.label, style: const TextStyle(fontSize: 13)),
           ],
         ),
       );

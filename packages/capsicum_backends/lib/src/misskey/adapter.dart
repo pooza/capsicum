@@ -405,8 +405,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> repeatPost(String id) async {
-    final note = await client.renote(id);
+  Future<Post> repeatPost(String id, {PostScope? visibility}) async {
+    final note = await client.renote(
+      id,
+      visibility: visibility != null
+          ? misskeyVisibilityRosetta.entries
+                .firstWhere((e) => e.value == visibility)
+                .key
+          : null,
+    );
     return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
