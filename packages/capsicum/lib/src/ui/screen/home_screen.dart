@@ -907,6 +907,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/notifications');
             },
           ),
+          if (accountState.accounts.length > 1)
+            ListTile(
+              leading: const Icon(Icons.notifications_active_outlined),
+              title: const Text('すべての通知'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/notifications/all');
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.bookmark_outline),
             title: Text(
