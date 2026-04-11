@@ -418,70 +418,57 @@ class _PostTileState extends ConsumerState<PostTile> {
                           fallbackHost: post.emojiHost,
                         ),
                       ),
-                    Padding(
-                      padding: post.reblog != null
-                          ? const EdgeInsets.only(right: 48)
-                          : EdgeInsets.zero,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: EmojiText(
-                              displayPost.author.displayName ??
-                                  displayPost.author.username,
-                              emojis: displayPost.author.emojis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              fallbackHost: displayPost.emojiHost,
-                            ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: EmojiText(
+                            displayPost.author.displayName ??
+                                displayPost.author.username,
+                            emojis: displayPost.author.emojis,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            fallbackHost: displayPost.emojiHost,
                           ),
-                          if (displayPost.author.isBot) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.smart_toy,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                          ],
-                          if (displayPost.author.isGroup) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.groups,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                          ],
-                          for (final role in displayPost.author.roles)
-                            ..._buildRoleIcon(context, role),
+                        ),
+                        if (displayPost.author.isBot) ...[
                           const SizedBox(width: 4),
                           Icon(
-                            _scopeIcon(displayPost.scope),
+                            Icons.smart_toy,
                             size: 14,
                             color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
-                          if (displayPost.localOnly) ...[
-                            const SizedBox(width: 2),
-                            Icon(
-                              Icons.edit_off,
-                              size: 14,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color,
-                            ),
-                          ],
+                        ],
+                        if (displayPost.author.isGroup) ...[
                           const SizedBox(width: 4),
-                          Text(
-                            _formatTime(displayPost.postedAt),
-                            style: Theme.of(context).textTheme.bodySmall,
+                          Icon(
+                            Icons.groups,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                         ],
-                      ),
+                        for (final role in displayPost.author.roles)
+                          ..._buildRoleIcon(context, role),
+                        const SizedBox(width: 4),
+                        Icon(
+                          _scopeIcon(displayPost.scope),
+                          size: 14,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                        if (displayPost.localOnly) ...[
+                          const SizedBox(width: 2),
+                          Icon(
+                            Icons.edit_off,
+                            size: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ],
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatTime(displayPost.postedAt),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
                     Text(
                       _handleText(displayPost.author),
@@ -894,7 +881,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
               Positioned(
                 right: 0,
-                top: 8,
+                top: post.reblog != null ? 28 : 8,
                 child: GestureDetector(
                   onTap: () => _showActionMenu(context),
                   child: Padding(
