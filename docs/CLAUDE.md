@@ -266,8 +266,8 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 
 今後のマイルストーン:
 
-- **v1.15** — 連携 + 絵文字強化 + MFM（ポイピク連携・メディア API v2・isCat 対応・最近使った絵文字・Unicode 絵文字拡充・背景画像サーバー別・Mastodon MFM 部分レンダリング）
-- **v1.16** — Misskey 機能拡充（ページ機能・メッセージ機能）
+- **v1.15** — 観測性 + 絵文字強化 + ポイピク（iOS 通知観測性強化・Unicode 絵文字拡充・最近使った絵文字・サーバー別背景画像・ポイピク連携）
+- **v1.16** — Misskey 拡充 + MFM + API 改善（Misskey ページ機能・メッセージ機能・isCat・Mastodon MFM 部分レンダリング・メディア API v2）
 - **v1.17** — 通知・お知らせのタブ化を中心とした UI 再整理（#281）。他は小粒な改善のみ
 - **v1.18（仮）** — プッシュ通知リレー Stage 1 を想定。プリセットサーバーのユーザー向け Mastodon Web Push リレー実装（[#52](https://github.com/pooza/capsicum/issues/52)）。専用の小規模サーバーを新設し、規模に応じてプランを段階的に引き上げる方針。着手時期は [#293](https://github.com/pooza/capsicum/issues/293) の観測結果を踏まえて確定する
 
