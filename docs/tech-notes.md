@@ -24,6 +24,10 @@
 
 `context.push<T>('/route')` + `context.pop(result)` を使う。`Navigator.pop(context, result)` では `go_router` が戻り値を握りつぶす。`showGeneralDialog` のコールバック方式もリビルドで消失するため不可。
 
+### MFM リンク記法の URL 抽出
+
+MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること。
+
 ## 認証フロー
 
 ### `flutter_web_auth_2` が Android エミュレータで不安定
