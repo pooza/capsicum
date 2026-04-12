@@ -133,6 +133,9 @@ platform :ios do
 end
 ```
 
+> **Fastlane の実行ディレクトリ:**
+> `fastlane beta` / `fastlane internal` / `fastlane release` は **必ず** `packages/capsicum/ios/` または `packages/capsicum/android/` の Fastfile があるディレクトリから実行する。リポジトリルートや別ディレクトリから実行すると ipa / aab の相対パスが解決できず「Could not find ipa/aab file」エラーになり、アップロードが失敗する。v1.11.0 リリース時にこの問題で全アップロードがやり直しになった経緯がある。
+
 ## 4. リリース手順（毎回）
 
 ### 4.1 バージョン更新・依存関係の更新
@@ -188,6 +191,16 @@ cd ios && fastlane release && cd ..
 ```
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
+
+### 4.4 GitHub Release のリリースノート
+
+GitHub Release のリリースノートで「既知の不具合」セクションを作る場合は、ハードコードせず **bug ラベルが付いた open Issue を列挙** する。固定の文言は実態とズレるため、Issue が正本となるように書く。
+
+```bash
+gh issue list --label bug --state open
+```
+
+この結果をもとにリリースノートの「既知の不具合」を構築する。
 
 ## 5. 配布方針
 
