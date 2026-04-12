@@ -186,6 +186,8 @@ capsicum/
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
     architecture.md       # アーキテクチャ設計
+    tech-notes.md         # 実装の落とし穴・API 固有の注意点
+    dev-environment.md    # 開発マシン・検証端末・Sentry 環境
   packages/               # モノレポ構成（Melos）
     capsicum/             # メインアプリ
     capsicum_core/        # ドメインモデル・Adapter インターフェース
@@ -228,6 +230,31 @@ capsicum/
 
 - capsicum → モロヘイヤ: `pooza/mulukhiya-toot-proxy#XXXX`
 - モロヘイヤ → capsicum: `pooza/capsicum#XXXX`
+
+## 運営元
+
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。将来の課金（通知リレーの有償提供）を見据え、商品扱いとする方針。
+
+- 特商法表示・ストア販売者情報・問い合わせ窓口は法人名義
+- 問い合わせは会社サイト経由で Google Workspace 管理のアドレスに届く
+- 「個人開発のアプリ」という表現は矛盾しないので OK。著作権表記は個人名義のままで問題なし
+
+## 自前サーバー
+
+主な動作確認・連携対象。Mastodon / Misskey フォークを運用しており、モロヘイヤ導入済み。
+
+| 呼称 | ドメイン | 種別 | 備考 |
+| --- | --- | --- | --- |
+| 美食丼 | `mstdn.b-shock.org` | Mastodon | メインの運用サーバー。#capsicum タグ TL の集約先 |
+| デルムリン丼 | `mstdn.delmulin.com` | Mastodon | デフォルトハッシュタグ `#delmulin` |
+| キュアスタ！ | `precure.ml` | Mastodon | デフォルトハッシュタグ `#precure_fun` |
+| ダイスキー | `misskey.delmulin.com` | Misskey | デフォルトハッシュタグ `#delmulin` |
+
+上記はログイン画面のプリセットサーバー一覧にも掲載している。デフォルトハッシュタグは、ローカルタイムラインをハッシュタグタイムラインに置換する独自設計で、これらのサーバーでのみ有効。
+
+## 対応対象外のプラットフォーム
+
+- **WSA (Windows Subsystem for Android)**: WSA 自体が不安定で検証環境として成立しない上、Microsoft が 2025-03 にサポート終了済み。テスターからの検証希望報告があっても Issue 化はせず対応対象外とする
 
 ## 関連リポジトリ
 
