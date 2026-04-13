@@ -404,10 +404,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final sel = _controller.selection;
     final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
     final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
-    final newText = text.replaceRange(start, end, emoji);
+
+    // Mastodon ではカスタム絵文字の前後にスペースが必要。
+    final isCustom = emoji.startsWith(':') && emoji.endsWith(':');
+    final prefix =
+        isCustom && start > 0 && text[start - 1] != ' ' ? ' ' : '';
+    final suffix =
+        isCustom && end < text.length && text[end] != ' ' ? ' ' : '';
+    final insertion = '$prefix$emoji$suffix';
+
+    final newText = text.replaceRange(start, end, insertion);
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: start + emoji.length),
+      selection: TextSelection.collapsed(offset: start + insertion.length),
     );
   }
 
