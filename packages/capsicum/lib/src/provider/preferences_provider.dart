@@ -27,6 +27,7 @@ const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
+const _recentEmojisKey = 'recent_emojis';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 
 /// Display mode for OGP preview cards.
@@ -341,6 +342,37 @@ class EmojiReactionPaletteNotifier
     state = const [];
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_emojiReactionPalettePrefix$arg');
+  }
+}
+
+/// Recently used emojis (both custom and unicode, app-wide).
+const _recentEmojisLimit = 30;
+
+final recentEmojisProvider =
+    NotifierProvider<RecentEmojisNotifier, List<String>>(
+      RecentEmojisNotifier.new,
+    );
+
+class RecentEmojisNotifier extends Notifier<List<String>> {
+  @override
+  List<String> build() {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_recentEmojisKey);
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> add(String emoji) async {
+    final updated = [emoji, ...state.where((e) => e != emoji)];
+    state = updated.take(_recentEmojisLimit).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentEmojisKey, state);
   }
 }
 

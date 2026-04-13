@@ -172,8 +172,13 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   Widget _buildUnicodeCategories(List<CategoryEmoji> emojiSet) {
+    final recentEmojis = ref.watch(recentEmojisProvider)
+        .where((e) => !e.startsWith(':'))
+        .toList();
     return ListView(
-      children: emojiSet
+      children: [
+        _buildRecentSection(recentEmojis),
+        ...emojiSet
           .where((c) => _categoryLabels.containsKey(c.category))
           .map((category) {
         return Column(
@@ -195,14 +200,51 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             ),
           ],
         );
-      }).toList(),
+      }),
+      ],
+    );
+  }
+
+  void _selectEmoji(String emoji) {
+    ref.read(recentEmojisProvider.notifier).add(emoji);
+    widget.onSelected(emoji);
+  }
+
+  Widget _buildRecentSection(List<String> recents) {
+    if (recents.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Text(
+            '最近使った',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Wrap(
+            children: recents.map((emoji) {
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _selectEmoji(emoji),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildUnicodeEmojiTile(Emoji emoji) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => widget.onSelected(emoji.emoji),
+      onTap: () => _selectEmoji(emoji.emoji),
       child: Padding(
         padding: const EdgeInsets.all(6),
         child: Text(emoji.emoji, style: const TextStyle(fontSize: 24)),
@@ -297,8 +339,34 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
     final hasPalette = widget.adapter is ReactionSupport;
 
+    // Recent custom emojis.
+    final recentCustom = ref.watch(recentEmojisProvider)
+        .where((e) => e.startsWith(':') && e.endsWith(':'))
+        .toList();
+
     return ListView(
       children: [
+        // Recent custom emojis section.
+        if (recentCustom.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text(
+              '最近使った',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Wrap(
+              children: recentCustom.map((entry) {
+                final shortcode = entry.replaceAll(':', '');
+                final custom = emojiByCode[shortcode];
+                if (custom != null) return _buildCustomEmojiTile(custom);
+                return const SizedBox.shrink();
+              }).toList(),
+            ),
+          ),
+        ],
         // Palette section (imported from Web UI or empty).
         if (hasPalette && palette.isNotEmpty) ...[
           Padding(
@@ -324,7 +392,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
                 // Unicode emoji or unresolved — render as text.
                 return InkWell(
                   borderRadius: BorderRadius.circular(8),
-                  onTap: () => widget.onSelected(entry),
+                  onTap: () => _selectEmoji(entry),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Text(entry, style: const TextStyle(fontSize: 24)),
@@ -522,7 +590,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   Widget _buildCustomEmojiTile(CustomEmoji emoji) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => widget.onSelected(':${emoji.shortcode}:'),
+      onTap: () => _selectEmoji(':${emoji.shortcode}:'),
       child: Tooltip(
         message: ':${emoji.shortcode}:',
         child: Padding(

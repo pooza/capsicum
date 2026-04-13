@@ -405,12 +405,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
     final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
 
-    // Mastodon ではカスタム絵文字の前後にスペースが必要。
+    // Mastodon ではカスタム絵文字の前後にスペースが必要（Misskey は不要）。
+    final isMastodon =
+        ref.read(currentAccountProvider)?.adapter is! ReactionSupport;
     final isCustom = emoji.startsWith(':') && emoji.endsWith(':');
+    final needsSpace = isCustom && isMastodon;
     final prefix =
-        isCustom && start > 0 && text[start - 1] != ' ' ? ' ' : '';
+        needsSpace && start > 0 && text[start - 1] != ' ' ? ' ' : '';
     final suffix =
-        isCustom && end < text.length && text[end] != ' ' ? ' ' : '';
+        needsSpace && end < text.length && text[end] != ' ' ? ' ' : '';
     final insertion = '$prefix$emoji$suffix';
 
     final newText = text.replaceRange(start, end, insertion);
