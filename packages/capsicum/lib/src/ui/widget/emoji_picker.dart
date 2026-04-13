@@ -1,117 +1,22 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart' hide EmojiPicker;
+import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 
-const _unicodeEmojiCategories = <String, List<String>>{
-  'よく使う': [
-    '\u{1F44D}',
-    '\u{2764}\u{FE0F}',
-    '\u{1F602}',
-    '\u{1F60A}',
-    '\u{1F389}',
-    '\u{1F44F}',
-    '\u{1F914}',
-    '\u{1F62D}',
-    '\u{1F631}',
-    '\u{1F525}',
-    '\u{2728}',
-    '\u{1F64F}',
-    '\u{1F60D}',
-    '\u{1F917}',
-    '\u{1F4AA}',
-    '\u{1F44C}',
-    '\u{1F4AF}',
-    '\u{1F3B6}',
-    '\u{2705}',
-    '\u{274C}',
-  ],
-  'スマイリー': [
-    '\u{1F600}',
-    '\u{1F603}',
-    '\u{1F604}',
-    '\u{1F601}',
-    '\u{1F606}',
-    '\u{1F605}',
-    '\u{1F923}',
-    '\u{1F602}',
-    '\u{1F642}',
-    '\u{1F643}',
-    '\u{1F609}',
-    '\u{1F60A}',
-    '\u{1F607}',
-    '\u{1F970}',
-    '\u{1F60D}',
-    '\u{1F929}',
-    '\u{1F618}',
-    '\u{1F617}',
-    '\u{1F61A}',
-    '\u{1F619}',
-    '\u{1F60B}',
-    '\u{1F61B}',
-    '\u{1F61C}',
-    '\u{1F92A}',
-    '\u{1F61D}',
-    '\u{1F911}',
-    '\u{1F917}',
-    '\u{1F92D}',
-    '\u{1F92B}',
-    '\u{1F914}',
-    '\u{1F910}',
-    '\u{1F928}',
-    '\u{1F610}',
-    '\u{1F611}',
-    '\u{1F636}',
-    '\u{1F60F}',
-    '\u{1F612}',
-    '\u{1F644}',
-    '\u{1F62C}',
-    '\u{1F925}',
-  ],
-  'ジェスチャー': [
-    '\u{1F44D}',
-    '\u{1F44E}',
-    '\u{1F44F}',
-    '\u{1F64C}',
-    '\u{1F450}',
-    '\u{1F91D}',
-    '\u{1F64F}',
-    '\u{270D}\u{FE0F}',
-    '\u{1F485}',
-    '\u{1F4AA}',
-    '\u{1F44A}',
-    '\u{270A}',
-    '\u{1F91B}',
-    '\u{1F91C}',
-    '\u{1F44C}',
-    '\u{1F90F}',
-    '\u{270C}\u{FE0F}',
-    '\u{1F91E}',
-    '\u{1F91F}',
-    '\u{1F918}',
-  ],
-  'ハート': [
-    '\u{2764}\u{FE0F}',
-    '\u{1F9E1}',
-    '\u{1F49B}',
-    '\u{1F49A}',
-    '\u{1F499}',
-    '\u{1F49C}',
-    '\u{1F5A4}',
-    '\u{1FA76}',
-    '\u{1F90D}',
-    '\u{1F49D}',
-    '\u{1F49E}',
-    '\u{1F493}',
-    '\u{1F497}',
-    '\u{1F496}',
-    '\u{1F498}',
-    '\u{1F49F}',
-    '\u{1F48C}',
-  ],
+const _categoryLabels = <Category, String>{
+  Category.SMILEYS: 'スマイリー',
+  Category.ANIMALS: '動物・自然',
+  Category.FOODS: '食べ物・飲み物',
+  Category.ACTIVITIES: 'アクティビティ',
+  Category.TRAVEL: '旅行・場所',
+  Category.OBJECTS: 'もの',
+  Category.SYMBOLS: '記号',
+  Category.FLAGS: '旗',
 };
 
 class EmojiPicker extends ConsumerStatefulWidget {
@@ -143,6 +48,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  final _unicodeSearchController = TextEditingController();
+  String _unicodeSearchQuery = '';
 
   @override
   void initState() {
@@ -173,6 +80,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _unicodeSearchController.dispose();
     super.dispose();
   }
 
@@ -199,36 +107,106 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   Widget _buildUnicodeTab() {
+    final emojiSet = getDefaultEmojiLocale(const Locale('ja'));
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _unicodeSearchController,
+            decoration: InputDecoration(
+              hintText: '絵文字を検索…',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _unicodeSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _unicodeSearchController.clear();
+                        setState(() => _unicodeSearchQuery = '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+            ),
+            onChanged: (value) {
+              setState(() => _unicodeSearchQuery = value.toLowerCase());
+            },
+          ),
+        ),
+        Expanded(
+          child: _unicodeSearchQuery.isNotEmpty
+              ? _buildUnicodeSearchResults(emojiSet)
+              : _buildUnicodeCategories(emojiSet),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUnicodeSearchResults(List<CategoryEmoji> emojiSet) {
+    final filtered = <Emoji>[];
+    for (final category in emojiSet) {
+      for (final emoji in category.emoji) {
+        if (emoji.keywords.any(
+          (k) => k.toLowerCase().contains(_unicodeSearchQuery),
+        )) {
+          filtered.add(emoji);
+        }
+      }
+    }
+    if (filtered.isEmpty) {
+      return const Center(child: Text('一致する絵文字がありません'));
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Wrap(
+        children: filtered.map(_buildUnicodeEmojiTile).toList(),
+      ),
+    );
+  }
+
+  Widget _buildUnicodeCategories(List<CategoryEmoji> emojiSet) {
     return ListView(
-      children: _unicodeEmojiCategories.entries.map((category) {
+      children: emojiSet
+          .where((c) => _categoryLabels.containsKey(c.category))
+          .map((category) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
               child: Text(
-                category.key,
+                _categoryLabels[category.category] ?? '',
                 style: Theme.of(context).textTheme.labelMedium,
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Wrap(
-                children: category.value.map((emoji) {
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => widget.onSelected(emoji),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Text(emoji, style: const TextStyle(fontSize: 24)),
-                    ),
-                  );
-                }).toList(),
+                children:
+                    category.emoji.map(_buildUnicodeEmojiTile).toList(),
               ),
             ),
           ],
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildUnicodeEmojiTile(Emoji emoji) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => widget.onSelected(emoji.emoji),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Text(emoji.emoji, style: const TextStyle(fontSize: 24)),
+      ),
     );
   }
 
