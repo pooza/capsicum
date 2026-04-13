@@ -426,7 +426,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           mulukhiya: account.mulukhiya,
           accessToken: account.userSecret.accessToken,
           onSelected: (emoji) {
-            Navigator.pop(context);
             _insertEmoji(emoji);
           },
         ),
