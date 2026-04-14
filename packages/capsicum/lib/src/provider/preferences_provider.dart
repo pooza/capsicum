@@ -794,27 +794,42 @@ class ThumbnailScaleNotifier extends Notifier<double> {
 }
 
 /// Default background opacity.
-const defaultBackgroundOpacity = 0.15;
+const defaultBackgroundOpacity = 0.25;
 const minBackgroundOpacity = 0.05;
 const maxBackgroundOpacity = 0.5;
 const backgroundOpacityStep = 0.05;
 
-/// Provides the saved background image file path (null = no background).
+/// Per-account background image file path (null = no background).
+///
+/// Takes an account storage key as the family parameter.
+/// On first load, migrates the legacy global setting if present.
 final backgroundImageProvider =
-    NotifierProvider<BackgroundImageNotifier, String?>(
+    NotifierProvider.family<BackgroundImageNotifier, String?, String>(
       BackgroundImageNotifier.new,
     );
 
-class BackgroundImageNotifier extends Notifier<String?> {
+class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
   @override
-  String? build() {
+  String? build(String arg) {
     _load();
     return null;
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_backgroundImagePathKey);
+    final key = '${_backgroundImagePathKey}_$arg';
+    var saved = prefs.getString(key);
+
+    // Migrate legacy global setting.
+    if (saved == null) {
+      final legacy = prefs.getString(_backgroundImagePathKey);
+      if (legacy != null && File(legacy).existsSync()) {
+        await prefs.setString(key, legacy);
+        await prefs.remove(_backgroundImagePathKey);
+        saved = legacy;
+      }
+    }
+
     if (saved != null && File(saved).existsSync()) {
       state = saved;
     }
@@ -825,11 +840,12 @@ class BackgroundImageNotifier extends Notifier<String?> {
     final old = state;
     final dir = await getApplicationSupportDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final dest = '${dir.path}/background_image_$timestamp.png';
+    final safeArg = arg.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final dest = '${dir.path}/background_image_${safeArg}_$timestamp.png';
     await File(sourcePath).copy(dest);
     state = dest;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_backgroundImagePathKey, dest);
+    await prefs.setString('${_backgroundImagePathKey}_$arg', dest);
     if (old != null) {
       try {
         await File(old).delete();
@@ -841,7 +857,7 @@ class BackgroundImageNotifier extends Notifier<String?> {
     final current = state;
     state = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_backgroundImagePathKey);
+    await prefs.remove('${_backgroundImagePathKey}_$arg');
     if (current != null) {
       try {
         await File(current).delete();
@@ -850,22 +866,37 @@ class BackgroundImageNotifier extends Notifier<String?> {
   }
 }
 
-/// Provides the background image opacity.
+/// Per-account background image opacity.
+///
+/// Takes an account storage key as the family parameter.
+/// On first load, migrates the legacy global setting if present.
 final backgroundOpacityProvider =
-    NotifierProvider<BackgroundOpacityNotifier, double>(
+    NotifierProvider.family<BackgroundOpacityNotifier, double, String>(
       BackgroundOpacityNotifier.new,
     );
 
-class BackgroundOpacityNotifier extends Notifier<double> {
+class BackgroundOpacityNotifier extends FamilyNotifier<double, String> {
   @override
-  double build() {
+  double build(String arg) {
     _load();
     return defaultBackgroundOpacity;
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_backgroundOpacityKey);
+    final key = '${_backgroundOpacityKey}_$arg';
+    var saved = prefs.getDouble(key);
+
+    // Migrate legacy global setting.
+    if (saved == null) {
+      final legacy = prefs.getDouble(_backgroundOpacityKey);
+      if (legacy != null) {
+        await prefs.setDouble(key, legacy);
+        await prefs.remove(_backgroundOpacityKey);
+        saved = legacy;
+      }
+    }
+
     if (saved != null) {
       state = saved;
     }
@@ -875,7 +906,7 @@ class BackgroundOpacityNotifier extends Notifier<double> {
     final clamped = opacity.clamp(minBackgroundOpacity, maxBackgroundOpacity);
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_backgroundOpacityKey, clamped);
+    await prefs.setDouble('${_backgroundOpacityKey}_$arg', clamped);
   }
 }
 
