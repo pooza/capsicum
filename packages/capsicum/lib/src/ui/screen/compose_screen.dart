@@ -410,10 +410,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ref.read(currentAccountProvider)?.adapter is! ReactionSupport;
     final isCustom = emoji.startsWith(':') && emoji.endsWith(':');
     final needsSpace = isCustom && isMastodon;
+    final useZwsp = ref.read(emojiZeroWidthSpaceProvider);
+    final sep = useZwsp ? '\u200B' : ' ';
     final prefix =
-        needsSpace && start > 0 && text[start - 1] != ' ' ? ' ' : '';
+        needsSpace && start > 0 && text[start - 1] != sep ? sep : '';
     final suffix =
-        needsSpace && end < text.length && text[end] != ' ' ? ' ' : '';
+        needsSpace && end < text.length && text[end] != sep ? sep : '';
     final insertion = '$prefix$emoji$suffix';
 
     final newText = text.replaceRange(start, end, insertion);

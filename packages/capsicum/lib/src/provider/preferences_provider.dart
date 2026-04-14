@@ -28,6 +28,7 @@ const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
 const _recentEmojisKey = 'recent_emojis';
+const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 
 /// Display mode for OGP preview cards.
@@ -875,6 +876,34 @@ class BackgroundOpacityNotifier extends Notifier<double> {
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_backgroundOpacityKey, clamped);
+  }
+}
+
+/// Whether to use zero-width space instead of regular space around custom emoji.
+final emojiZeroWidthSpaceProvider =
+    NotifierProvider<EmojiZeroWidthSpaceNotifier, bool>(
+      EmojiZeroWidthSpaceNotifier.new,
+    );
+
+class EmojiZeroWidthSpaceNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_emojiZeroWidthSpaceKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_emojiZeroWidthSpaceKey, state);
   }
 }
 
