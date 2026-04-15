@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'background_notification_service.dart';
+import 'notification_diagnostics_service.dart';
 
 const _taskName = 'jp.co.b-shock.capsicum.iOSBackgroundAppRefresh';
 
@@ -11,7 +12,14 @@ const _taskName = 'jp.co.b-shock.capsicum.iOSBackgroundAppRefresh';
 void backgroundDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
     if (taskName == _taskName || taskName == Workmanager.iOSBackgroundTask) {
-      await BackgroundNotificationService.checkAllAccounts();
+      await NotificationDiagnosticsService.recordTaskFired();
+      try {
+        await BackgroundNotificationService.checkAllAccounts();
+        await NotificationDiagnosticsService.recordTaskCompleted();
+      } catch (e) {
+        await NotificationDiagnosticsService.recordTaskFailed('$e');
+        rethrow;
+      }
     }
     return true;
   });
