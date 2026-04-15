@@ -339,10 +339,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     AsyncValue<dynamic> timeline,
   ) {
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
-    final bgPath =
-        storageKey != null ? ref.watch(backgroundImageProvider(storageKey)) : null;
-    final bgOpacity =
-        storageKey != null ? ref.watch(backgroundOpacityProvider(storageKey)) : defaultBackgroundOpacity;
+    final bgPath = storageKey != null
+        ? ref.watch(backgroundImageProvider(storageKey))
+        : null;
+    final bgOpacity = storageKey != null
+        ? ref.watch(backgroundOpacityProvider(storageKey))
+        : defaultBackgroundOpacity;
 
     Widget body = Column(
       children: [

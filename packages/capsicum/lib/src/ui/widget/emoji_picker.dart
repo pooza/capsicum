@@ -1,7 +1,8 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart' hide EmojiPicker;
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart'
+    hide EmojiPicker;
 import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -165,42 +166,40 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     }
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Wrap(
-        children: filtered.map(_buildUnicodeEmojiTile).toList(),
-      ),
+      child: Wrap(children: filtered.map(_buildUnicodeEmojiTile).toList()),
     );
   }
 
   Widget _buildUnicodeCategories(List<CategoryEmoji> emojiSet) {
-    final recentEmojis = ref.watch(recentEmojisProvider)
+    final recentEmojis = ref
+        .watch(recentEmojisProvider)
         .where((e) => !e.startsWith(':'))
         .toList();
     return ListView(
       children: [
         _buildRecentSection(recentEmojis),
-        ...emojiSet
-          .where((c) => _categoryLabels.containsKey(c.category))
-          .map((category) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-              child: Text(
-                _categoryLabels[category.category] ?? '',
-                style: Theme.of(context).textTheme.labelMedium,
+        ...emojiSet.where((c) => _categoryLabels.containsKey(c.category)).map((
+          category,
+        ) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                child: Text(
+                  _categoryLabels[category.category] ?? '',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Wrap(
-                children:
-                    category.emoji.map(_buildUnicodeEmojiTile).toList(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Wrap(
+                  children: category.emoji.map(_buildUnicodeEmojiTile).toList(),
+                ),
               ),
-            ),
-          ],
-        );
-      }),
+            ],
+          );
+        }),
       ],
     );
   }
@@ -217,10 +216,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-          child: Text(
-            '最近使った',
-            style: Theme.of(context).textTheme.labelMedium,
-          ),
+          child: Text('最近使った', style: Theme.of(context).textTheme.labelMedium),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -340,7 +336,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     final hasPalette = widget.adapter is ReactionSupport;
 
     // Recent custom emojis.
-    final recentCustom = ref.watch(recentEmojisProvider)
+    final recentCustom = ref
+        .watch(recentEmojisProvider)
         .where((e) => e.startsWith(':') && e.endsWith(':'))
         .toList();
 

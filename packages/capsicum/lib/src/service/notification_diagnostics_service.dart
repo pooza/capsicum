@@ -24,11 +24,13 @@ class NotificationDiagnosticsService {
     await prefs.setInt(_fireCountKey, count + 1);
     await prefs.setString(_lastFireKey, now);
 
-    Sentry.addBreadcrumb(Breadcrumb(
-      message: 'BGTask fired',
-      category: 'notification.background',
-      data: {'fireCount': count + 1},
-    ));
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: 'BGTask fired',
+        category: 'notification.background',
+        data: {'fireCount': count + 1},
+      ),
+    );
 
     // Capture a message on the first ever firing so we know the task works.
     if (count == 0) {
@@ -46,10 +48,12 @@ class NotificationDiagnosticsService {
     await prefs.setString(_lastSuccessKey, now);
     await prefs.remove(_lastFailureReasonKey);
 
-    Sentry.addBreadcrumb(Breadcrumb(
-      message: 'BGTask completed successfully',
-      category: 'notification.background',
-    ));
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: 'BGTask completed successfully',
+        category: 'notification.background',
+      ),
+    );
   }
 
   /// Call when `checkAllAccounts` fails or the task expires.
@@ -57,12 +61,14 @@ class NotificationDiagnosticsService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastFailureReasonKey, reason);
 
-    Sentry.addBreadcrumb(Breadcrumb(
-      message: 'BGTask failed',
-      category: 'notification.background',
-      data: {'reason': reason},
-      level: SentryLevel.warning,
-    ));
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: 'BGTask failed',
+        category: 'notification.background',
+        data: {'reason': reason},
+        level: SentryLevel.warning,
+      ),
+    );
   }
 
   // --- Diagnostic data for the settings UI ---

@@ -61,36 +61,41 @@ class _NotificationDiagnosticsScreenState
     final items = <Widget>[];
 
     items.add(_SectionHeader('タスク実行履歴'));
-    items.add(_DiagnosticTile(
-      label: '累計発火回数',
-      value: '${snap.fireCount} 回',
-    ));
-    items.add(_DiagnosticTile(
-      label: '最後の発火',
-      value: _formatDateTime(snap.lastFireTime),
-    ));
-    items.add(_DiagnosticTile(
-      label: '最後の成功',
-      value: _formatDateTime(snap.lastSuccessTime),
-    ));
+    items.add(_DiagnosticTile(label: '累計発火回数', value: '${snap.fireCount} 回'));
+    items.add(
+      _DiagnosticTile(
+        label: '最後の発火',
+        value: _formatDateTime(snap.lastFireTime),
+      ),
+    );
+    items.add(
+      _DiagnosticTile(
+        label: '最後の成功',
+        value: _formatDateTime(snap.lastSuccessTime),
+      ),
+    );
 
     if (snap.lastFailureReason != null) {
-      items.add(_DiagnosticTile(
-        label: '最後の失敗',
-        value: snap.lastFailureReason!,
-        icon: Icons.error_outline,
-        iconColor: Colors.red,
-      ));
+      items.add(
+        _DiagnosticTile(
+          label: '最後の失敗',
+          value: snap.lastFailureReason!,
+          icon: Icons.error_outline,
+          iconColor: Colors.red,
+        ),
+      );
     }
 
     items.add(const SizedBox(height: 24));
-    items.add(Text(
-      'iOS のバックグラウンドタスクは OS が最適なタイミングで実行します。'
-      '発火間隔は 15 分以上開くことがあります。',
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
+    items.add(
+      Text(
+        'iOS のバックグラウンドタスクは OS が最適なタイミングで実行します。'
+        '発火間隔は 15 分以上開くことがあります。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
-    ));
+    );
 
     return items;
   }
@@ -118,8 +123,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -145,10 +150,7 @@ class _DiagnosticTile extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       leading: icon != null ? Icon(icon, color: iconColor, size: 20) : null,
       title: Text(label),
-      trailing: Text(
-        value,
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
+      trailing: Text(value, style: Theme.of(context).textTheme.bodyMedium),
     );
   }
 }

@@ -32,10 +32,12 @@ class PostDetailScreen extends ConsumerWidget {
     AsyncValue<List<Post>> threadFuture,
   ) {
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
-    final bgPath =
-        storageKey != null ? ref.watch(backgroundImageProvider(storageKey)) : null;
-    final bgOpacity =
-        storageKey != null ? ref.watch(backgroundOpacityProvider(storageKey)) : defaultBackgroundOpacity;
+    final bgPath = storageKey != null
+        ? ref.watch(backgroundImageProvider(storageKey))
+        : null;
+    final bgOpacity = storageKey != null
+        ? ref.watch(backgroundOpacityProvider(storageKey))
+        : defaultBackgroundOpacity;
 
     Widget body = threadFuture.when(
       data: (thread) => ListView.separated(
