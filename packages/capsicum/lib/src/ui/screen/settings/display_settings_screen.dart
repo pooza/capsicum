@@ -46,6 +46,15 @@ class DisplaySettingsScreen extends ConsumerWidget {
                 ref.read(confirmBeforePostProvider.notifier).toggle(),
           ),
           SwitchListTile(
+            title: const Text('カスタム絵文字を隙間なく並べる'),
+            subtitle: const Text(
+              'カスタム絵文字の間に見える余白をなくします（「ゼロ幅スペース」を使用、Mastodon のみ）',
+            ),
+            value: ref.watch(emojiZeroWidthSpaceProvider),
+            onChanged: (_) =>
+                ref.read(emojiZeroWidthSpaceProvider.notifier).toggle(),
+          ),
+          SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
             value: hideLivecure,

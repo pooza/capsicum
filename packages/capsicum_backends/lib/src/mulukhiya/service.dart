@@ -220,6 +220,9 @@ class MulukhiyaService {
     this.infoBotAcct,
   }) : _dio = dio;
 
+  Options _bearerOptions(String token) =>
+      Options(headers: {'Authorization': 'Bearer $token'});
+
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
   /// Returns [MulukhiyaService] if present, null otherwise.
   static Future<MulukhiyaService?> detect(Dio dio, String domain) async {
@@ -341,6 +344,7 @@ class MulukhiyaService {
     await _dio.post(
       '$baseUrl/annict/auth',
       data: {'token': snsToken, 'code': annictCode},
+      options: _bearerOptions(snsToken),
     );
   }
 
@@ -457,6 +461,7 @@ class MulukhiyaService {
       await _dio.post(
         '$baseUrl/decoration/restore',
         data: {'token': accessToken},
+        options: _bearerOptions(accessToken),
       );
       return true;
     } on DioException catch (e) {
@@ -502,6 +507,7 @@ class MulukhiyaService {
     final response = await _dio.put(
       '$baseUrl/scheduled_status/$id/tags',
       data: {'token': accessToken, 'tags': tags},
+      options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
     return data['id'] as String;
@@ -516,6 +522,7 @@ class MulukhiyaService {
     await _dio.delete(
       '$baseUrl/status/nowplaying',
       data: {'token': accessToken, 'id': id},
+      options: _bearerOptions(accessToken),
     );
   }
 
@@ -529,6 +536,7 @@ class MulukhiyaService {
     await _dio.post(
       '$baseUrl/status/tags',
       data: {'token': accessToken, 'id': id, 'tags': tags},
+      options: _bearerOptions(accessToken),
     );
   }
 
@@ -541,6 +549,7 @@ class MulukhiyaService {
     final response = await _dio.get(
       '$baseUrl/emoji/palettes',
       queryParameters: {'token': accessToken},
+      options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
     final palettes = data['palettes'] as List? ?? [];

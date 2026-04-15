@@ -27,6 +27,8 @@ const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
+const _recentEmojisKey = 'recent_emojis';
+const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 
 /// Display mode for OGP preview cards.
@@ -341,6 +343,37 @@ class EmojiReactionPaletteNotifier
     state = const [];
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_emojiReactionPalettePrefix$arg');
+  }
+}
+
+/// Recently used emojis (both custom and unicode, app-wide).
+const _recentEmojisLimit = 30;
+
+final recentEmojisProvider =
+    NotifierProvider<RecentEmojisNotifier, List<String>>(
+      RecentEmojisNotifier.new,
+    );
+
+class RecentEmojisNotifier extends Notifier<List<String>> {
+  @override
+  List<String> build() {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_recentEmojisKey);
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> add(String emoji) async {
+    final updated = [emoji, ...state.where((e) => e != emoji)];
+    state = updated.take(_recentEmojisLimit).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentEmojisKey, state);
   }
 }
 
@@ -761,27 +794,42 @@ class ThumbnailScaleNotifier extends Notifier<double> {
 }
 
 /// Default background opacity.
-const defaultBackgroundOpacity = 0.15;
+const defaultBackgroundOpacity = 0.25;
 const minBackgroundOpacity = 0.05;
 const maxBackgroundOpacity = 0.5;
 const backgroundOpacityStep = 0.05;
 
-/// Provides the saved background image file path (null = no background).
+/// Per-account background image file path (null = no background).
+///
+/// Takes an account storage key as the family parameter.
+/// On first load, migrates the legacy global setting if present.
 final backgroundImageProvider =
-    NotifierProvider<BackgroundImageNotifier, String?>(
+    NotifierProvider.family<BackgroundImageNotifier, String?, String>(
       BackgroundImageNotifier.new,
     );
 
-class BackgroundImageNotifier extends Notifier<String?> {
+class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
   @override
-  String? build() {
+  String? build(String arg) {
     _load();
     return null;
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_backgroundImagePathKey);
+    final key = '${_backgroundImagePathKey}_$arg';
+    var saved = prefs.getString(key);
+
+    // Migrate legacy global setting.
+    // Keep the legacy key so that other accounts can also pick it up.
+    if (saved == null) {
+      final legacy = prefs.getString(_backgroundImagePathKey);
+      if (legacy != null && File(legacy).existsSync()) {
+        await prefs.setString(key, legacy);
+        saved = legacy;
+      }
+    }
+
     if (saved != null && File(saved).existsSync()) {
       state = saved;
     }
@@ -792,11 +840,12 @@ class BackgroundImageNotifier extends Notifier<String?> {
     final old = state;
     final dir = await getApplicationSupportDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final dest = '${dir.path}/background_image_$timestamp.png';
+    final safeArg = arg.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final dest = '${dir.path}/background_image_${safeArg}_$timestamp.png';
     await File(sourcePath).copy(dest);
     state = dest;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_backgroundImagePathKey, dest);
+    await prefs.setString('${_backgroundImagePathKey}_$arg', dest);
     if (old != null) {
       try {
         await File(old).delete();
@@ -808,7 +857,7 @@ class BackgroundImageNotifier extends Notifier<String?> {
     final current = state;
     state = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_backgroundImagePathKey);
+    await prefs.remove('${_backgroundImagePathKey}_$arg');
     if (current != null) {
       try {
         await File(current).delete();
@@ -817,22 +866,37 @@ class BackgroundImageNotifier extends Notifier<String?> {
   }
 }
 
-/// Provides the background image opacity.
+/// Per-account background image opacity.
+///
+/// Takes an account storage key as the family parameter.
+/// On first load, migrates the legacy global setting if present.
 final backgroundOpacityProvider =
-    NotifierProvider<BackgroundOpacityNotifier, double>(
+    NotifierProvider.family<BackgroundOpacityNotifier, double, String>(
       BackgroundOpacityNotifier.new,
     );
 
-class BackgroundOpacityNotifier extends Notifier<double> {
+class BackgroundOpacityNotifier extends FamilyNotifier<double, String> {
   @override
-  double build() {
+  double build(String arg) {
     _load();
     return defaultBackgroundOpacity;
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_backgroundOpacityKey);
+    final key = '${_backgroundOpacityKey}_$arg';
+    var saved = prefs.getDouble(key);
+
+    // Migrate legacy global setting.
+    // Keep the legacy key so that other accounts can also pick it up.
+    if (saved == null) {
+      final legacy = prefs.getDouble(_backgroundOpacityKey);
+      if (legacy != null) {
+        await prefs.setDouble(key, legacy);
+        saved = legacy;
+      }
+    }
+
     if (saved != null) {
       state = saved;
     }
@@ -842,7 +906,35 @@ class BackgroundOpacityNotifier extends Notifier<double> {
     final clamped = opacity.clamp(minBackgroundOpacity, maxBackgroundOpacity);
     state = clamped;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_backgroundOpacityKey, clamped);
+    await prefs.setDouble('${_backgroundOpacityKey}_$arg', clamped);
+  }
+}
+
+/// Whether to use zero-width space instead of regular space around custom emoji.
+final emojiZeroWidthSpaceProvider =
+    NotifierProvider<EmojiZeroWidthSpaceNotifier, bool>(
+      EmojiZeroWidthSpaceNotifier.new,
+    );
+
+class EmojiZeroWidthSpaceNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_emojiZeroWidthSpaceKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_emojiZeroWidthSpaceKey, state);
   }
 }
 
