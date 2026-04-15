@@ -6,13 +6,13 @@ capsicum の iOS 通知は workmanager による BGTaskScheduler ポーリング
 
 iOS でプッシュ通知を提供する Fediverse クライアント（Toot!、Ice Cubes、Ivory、Mona 等）はいずれも独自のリレーサーバーを運営しており、capsicum も同様のアプローチを取る。
 
-## 全体アーキ���クチャ
+## 全体アーキテクチャ
 
 ```
 ┌──────────────┐    Web Push     ┌──────────────┐    APNs/FCM    ┌──────────────┐
 │  Mastodon /  │ ──────────────→ │   リレー     │ ─────────────→ │  capsicum    │
 │  Misskey     │    (VAPID)      │   サーバー   │                │  (iOS/Android)│
-└──────────────┘                 └──────────────┘                └��─────────────┘
+└──────────────┘                 └──────────────┘                └──────────────┘
 ```
 
 ### 通信フロー
@@ -151,9 +151,9 @@ AppDelegate.swift に APNs 関連のコードを追加する必要がある:
 - [ ] 美食丼のプリセット扱い（#52 コメント参照）
 - [ ] workmanager ポーリングの扱い（リレー導入後も残すか）
 
-## 関連 Issue・ドキュ���ント
+## 関連 Issue・ドキュメント
 
 - [#52](https://github.com/pooza/capsicum/issues/52) — プッシュ通知リレー（本体 Issue）
 - [#293](https://github.com/pooza/capsicum/issues/293) — iOS 通知の観測性強化（観測結果: 発火 0回）
-- [CLAUDE.md プッシュ通知セクシ���ン](CLAUDE.md#プッシュ通知)
+- [CLAUDE.md プッシュ通知セクション](CLAUDE.md#プッシュ通知)
 - [release-pipeline.md](release-pipeline.md)
