@@ -821,11 +821,11 @@ class BackgroundImageNotifier extends FamilyNotifier<String?, String> {
     var saved = prefs.getString(key);
 
     // Migrate legacy global setting.
+    // Keep the legacy key so that other accounts can also pick it up.
     if (saved == null) {
       final legacy = prefs.getString(_backgroundImagePathKey);
       if (legacy != null && File(legacy).existsSync()) {
         await prefs.setString(key, legacy);
-        await prefs.remove(_backgroundImagePathKey);
         saved = legacy;
       }
     }
@@ -888,11 +888,11 @@ class BackgroundOpacityNotifier extends FamilyNotifier<double, String> {
     var saved = prefs.getDouble(key);
 
     // Migrate legacy global setting.
+    // Keep the legacy key so that other accounts can also pick it up.
     if (saved == null) {
       final legacy = prefs.getDouble(_backgroundOpacityKey);
       if (legacy != null) {
         await prefs.setDouble(key, legacy);
-        await prefs.remove(_backgroundOpacityKey);
         saved = legacy;
       }
     }
