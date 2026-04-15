@@ -17,7 +17,9 @@ void backgroundDispatcher() {
         await BackgroundNotificationService.checkAllAccounts();
         await NotificationDiagnosticsService.recordTaskCompleted();
       } catch (e) {
-        await NotificationDiagnosticsService.recordTaskFailed('$e');
+        await NotificationDiagnosticsService.recordTaskFailed(
+          e.runtimeType.toString(),
+        );
         rethrow;
       }
     }
