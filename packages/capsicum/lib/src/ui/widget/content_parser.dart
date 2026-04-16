@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:capsicum_core/capsicum_core.dart' show nyaize;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -692,6 +693,7 @@ class ContentRenderer {
   final UrlResolver? resolveUrl;
   final UrlResolver? resolveDisplayUrl;
   final double emojiSize;
+  final bool applyNyaize;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -704,6 +706,7 @@ class ContentRenderer {
     this.resolveUrl,
     this.resolveDisplayUrl,
     this.emojiSize = 20.0,
+    this.applyNyaize = false,
   });
 
   void dispose() {
@@ -736,7 +739,8 @@ class ContentRenderer {
   List<InlineSpan> _renderNode(_Node node, TextStyle style) {
     switch (node.type) {
       case _NodeType.text:
-        return _buildTextWithEmoji(node.text, style);
+        final text = applyNyaize ? nyaize(node.text) : node.text;
+        return _buildTextWithEmoji(text, style);
 
       case _NodeType.bold:
         final boldStyle = style.copyWith(fontWeight: FontWeight.bold);

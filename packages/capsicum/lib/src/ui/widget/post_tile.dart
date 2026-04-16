@@ -301,10 +301,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     Map<String, String> emojis, {
     String? fallbackHost,
     required bool isHtml,
+    bool isCat = false,
   }) {
     _contentRenderer?.dispose();
     _contentRenderer = ContentRenderer(
       baseStyle: baseStyle,
+      applyNyaize: isCat,
       resolveEmoji: (shortcode) {
         final url = emojis[shortcode];
         if (url != null) return url;
@@ -628,6 +630,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     allEmojis,
                                     fallbackHost: displayPost.emojiHost,
                                     isHtml: isHtml,
+                                    isCat: displayPost.author.isCat,
                                   );
                                   // Use a plain TextSpan for overflow measurement
                                   // because TextPainter cannot measure WidgetSpan.

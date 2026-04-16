@@ -29,6 +29,9 @@ export 'src/model/user_relationship.dart';
 export 'src/social/adapter.dart';
 export 'src/social/capabilities.dart';
 
+// Utilities
+export 'src/util/nyaize.dart';
+
 // Feature interfaces
 export 'src/social/interfaces/achievement_support.dart';
 export 'src/social/interfaces/antenna_support.dart';
