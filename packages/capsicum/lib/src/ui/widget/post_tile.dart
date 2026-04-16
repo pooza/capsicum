@@ -2709,7 +2709,8 @@ class _RetagSheetState extends State<_RetagSheet> {
       minChildSize: 0.3,
       maxChildSize: 0.85,
       expand: false,
-      builder: (context, scrollController) => Padding(
+      builder: (context, scrollController) => SingleChildScrollView(
+        controller: scrollController,
         padding: EdgeInsets.only(
           left: 16,
           right: 16,
@@ -2727,23 +2728,18 @@ class _RetagSheetState extends State<_RetagSheet> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _tags.map((tag) {
-                    final locked = _isDefaultTag(tag);
-                    return Chip(
-                      label: Text('#$tag'),
-                      onDeleted: locked
-                          ? null
-                          : () => setState(() => _tags.remove(tag)),
-                    );
-                  }).toList(),
-                ),
-              ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _tags.map((tag) {
+                final locked = _isDefaultTag(tag);
+                return Chip(
+                  label: Text('#$tag'),
+                  onDeleted: locked
+                      ? null
+                      : () => setState(() => _tags.remove(tag)),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 8),
             Row(
