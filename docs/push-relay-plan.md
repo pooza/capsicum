@@ -66,10 +66,18 @@ iOS でプッシュ通知を提供する Fediverse クライアント（Toot!、
 ### リレーサーバー
 
 - **専用の小規模サーバーを新設**する（#52 の方針通り。既存サーバーとの同居はしない）
-- **ホスティング: Linode Nanode**（$5/月、1 vCPU / 1GB RAM / 25GB SSD）
+- **ホスティング: Linode Nanode**（$5/月、1 vCPU / 1GB RAM / 25GB SSD）— **構築済み**
 - 既存サーバー群と同じ VPS 運用の延長で管理できる
 - 規模に応じてプランを段階的に引き上げる
-- 構成: Ruby + systemd + SQLite（デバイストークン永続化��
+- 構成: Ruby + systemd + SQLite（デバイストークン永続化）
+
+| 項目 | 値 |
+|------|-----|
+| ホスト名 | flauros.b-shock.co.jp |
+| 公開ドメイン | relay.capsicum.shrieker.net |
+| OS | Ubuntu 24.04 LTS |
+| SSH | `deploy@flauros.b-shock.co.jp` |
+| スペック | 1 vCPU / 1GB RAM / 25GB SSD |
 
 ### リレーサーバーの箇条設計
 
@@ -167,13 +175,14 @@ AppDelegate.swift に APNs 関連のコードを追加する必要がある:
 - [x] OSS リレー実装の評価 → 既存 OSS は不適。Ruby で自前実装
 - [x] リレーサーバーのホスティング先 → Linode Nanode（$5/月）
 - [x] 実装言語 → Ruby（モロヘイヤとの知見共有）
+- [x] VPS 構築 → flauros.b-shock.co.jp（Ubuntu 24.04 LTS）
+- [x] リレーサーバーのドメイン名 → relay.capsicum.shrieker.net
 
 ## 未決事項
 
 - [ ] v1.15 で発生した Swift ネイティブ層の起動不能問題の原因特定
 - [ ] 美食丼のプリセット扱い（#52 コメント参照）
 - [ ] workmanager ポーリングの扱い（リレー導入後も残すか）
-- [ ] リレーサーバーのドメイン名
 - [ ] Web Push ペイロードの扱い（リレーで復号するか、暗号化のまま転送してクライアントで復号するか）
 
 ## 関連 Issue・ドキュメント
