@@ -399,6 +399,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             onPressed: () async {
                               setDialogState(() => isLoading = true);
                               await ensureOobRegistration();
+                              if (!dialogContext.mounted) return;
                               setDialogState(() => isLoading = false);
                               final oobUrl =
                                   Uri.https(widget.host, '/oauth/authorize', {
