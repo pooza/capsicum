@@ -37,36 +37,55 @@ iOS でプッシュ通知を提供する Fediverse クライアント（Toot!、
 
 ## 既存 OSS リレー実装の評価
 
-### mastodon/webpush-apn-relay（Rust）
+### mastodon/webpush-apn-relay（Go、約250行）
 
-- Mastodon 公式が提供する Web Push → APNs リレー
-- 評価ポイント:
-  - [ ] Misskey の Web Push ペイロードとの互換性（Mastodon 固有の前提がハードコードされていないか）
-  - [ ] FCM 対応の有無（APNs のみの場合、Android 向けに拡張が必要）
-  - [ ] デプロイ・運用の容易さ
-  - [ ] メンテナンス状況
+- Mastodon 公式（元は Toot! 作者）が提供する Web Push → APNs リレー
+- **Misskey 互換性: 低い** — `Content-Encoding: aesgcm` のみ対応。Misskey が使う `aes128gcm`（RFC 8291）は未対応（コード上コメントアウト状態）
+- **FCM 対応: なし** — APNs 専用設計
+- **ペイロード形式が Toot! 固有** — z85 エンコードの独自フォーマット。受信アプリ側も合わせる必要あり
+- **メンテナンス**: 低頻度（最終コミット 2025-03）
+- **運用**: P12 証明書 + 環境変数で起動可能。Docker / Fly.io 対応
 
-### Ice Cubes リレー（公開 OSS）
+### Ice Cubes リレー
 
-- Ice Cubes 開発者が公開しているリレー実装
-- 評価ポイント:
-  - [ ] 実装言語・アーキテクチャ
-  - [ ] Misskey 互換性
-  - [ ] 参考にできる設計パターン
+- **ソースコード非公開**。Fly.io 上で運用（`icecubesrelay.fly.dev`）
+- ベースは上記の webpush-apn-relay と推定
 
-### 評価結果に基づく判断
+### 評価結論
 
-- 既存 OSS をそのまま利用可能 → デプロイして使う
-- Mastodon 固有のハードコードあり → フォークして Misskey 対応を追加
-- どちらも不適 → 自前実装（既存 OSS を参考に）
+**既存 OSS をそのまま使うのは困難**。理由:
+
+1. `aes128gcm` 未対応（Misskey に必要）
+2. FCM 未対応（Android に必要）
+3. ペイロード形式が Toot! 固有
+
+→ **Ruby で自前実装する**。既存 OSS（特に webpush-apn-relay の通信フロー）は参考にしつつ、capsicum の要件（Mastodon + Misskey、APNs + FCM）に最適化した設計で新規に書く。Ruby を選択する理由は、モロヘイヤの運用・デバッグ知見がそのまま使えること、この規模では性能差が問題にならないこと。
 
 ## インフラ設計
 
 ### リレーサーバー
 
 - **専用の小規模サーバーを新設**する（#52 の方針通り。既存サーバーとの同居はしない）
+- **ホスティング: Linode Nanode**（$5/月、1 vCPU / 1GB RAM / 25GB SSD）
+- 既存サーバー群と同じ VPS 運用の延長で管理できる
 - 規模に応じてプランを段階的に引き上げる
-- ホスティング先・OS・ランタイムは OSS 評価後に決定
+- 構成: Ruby + systemd + SQLite（デバイストークン永続化��
+
+### リレーサーバーの箇条設計
+
+- **エンドポイント**:
+  - `POST /register` — デバイストークン + アカウント情報の登録（capsicum → リレー）
+  - `DELETE /register/:id` — 登録解除
+  - `POST /push/:token` — Web Push 受信エンドポイント（Mastodon / Misskey → リレー）
+  - `GET /health` — ヘルスチェック
+- **Web Push 受信フロー**:
+  1. Mastodon / Misskey から Web Push を受信（`aesgcm` / `aes128gcm` 両対応）
+  2. ペイロードはそのまま（復号せず）APNs / FCM に転送。復号はクライアント側で行う
+  3. 転送先はトークンに紐づくデバイス種別（iOS / Android）で振り分け
+- **永続化**: SQLite に登録情報を保存（token, device_type, account, server, created_at）
+- **認証**: capsicum からの登録リクエストはアプリ固有の shared secret で検証
+- **デプロイ**: systemd で常駐。リバースプロキシ（nginx）で HTTPS 終端
+- **監視**: ヘルスチェックエンドポイント + Sentry（エラー通知）
 
 ### 必要なクレデンシャル
 
@@ -143,13 +162,19 @@ AppDelegate.swift に APNs 関連のコードを追加する必要がある:
 
 判定はアカウントの所属サーバーで行う（プリセットリスト照合）。
 
+## 決定済み事項
+
+- [x] OSS リレー実装の評価 → 既存 OSS は不適。Ruby で自前実装
+- [x] リレーサーバーのホスティング先 → Linode Nanode（$5/月）
+- [x] 実装言語 → Ruby（モロヘイヤとの知見共有）
+
 ## 未決事項
 
-- [ ] OSS リレー実装の詳細評価（Misskey 互換性・FCM 対応）
-- [ ] リレーサーバーのホスティング先選定
 - [ ] v1.15 で発生した Swift ネイティブ層の起動不能問題の原因特定
 - [ ] 美食丼のプリセット扱い（#52 コメント参照）
 - [ ] workmanager ポーリングの扱い（リレー導入後も残すか）
+- [ ] リレーサーバーのドメイン名
+- [ ] Web Push ペイロードの扱い（リレーで復号するか、暗号化のまま転送してクライアントで復号するか）
 
 ## 関連 Issue・ドキュメント
 
