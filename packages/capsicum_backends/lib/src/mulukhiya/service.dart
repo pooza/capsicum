@@ -656,4 +656,28 @@ class MulukhiyaService {
       return [];
     }
   }
+
+  /// 複数 acct の isCat フラグを一括取得する。
+  /// モロヘイヤの `POST /account/is_cat` を呼び出し、ActivityPub actor から
+  /// isCat を取得する（Redis キャッシュ付き）。
+  Future<Map<String, bool>> fetchIsCat({
+    required String accessToken,
+    required List<String> accts,
+  }) async {
+    if (accts.isEmpty) return const {};
+    try {
+      final response = await _dio.post(
+        '$baseUrl/account/is_cat',
+        data: {'token': accessToken, 'accts': accts},
+        options: _bearerOptions(accessToken),
+      );
+      final data = response.data as Map<String, dynamic>? ?? {};
+      return {
+        for (final entry in data.entries)
+          entry.key: entry.value == true,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
 }

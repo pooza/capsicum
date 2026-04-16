@@ -20,6 +20,7 @@ class UserAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final decorations = user.avatarDecorations;
+    final showCatEars = user.isCat;
     // compact: デコレーション用パディングを省略しアバターサイズを維持
     final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
@@ -37,7 +38,7 @@ class UserAvatar extends StatelessWidget {
           : _fallback(context),
     );
 
-    if (decorations.isEmpty) {
+    if (decorations.isEmpty && !showCatEars) {
       return avatar;
     }
 
@@ -47,6 +48,9 @@ class UserAvatar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // 猫耳はアバターの後ろに描画（耳の付け根がアバターで隠れる）
+          if (showCatEars)
+            _CatEarWidget(avatarSize: size, padding: padding),
           Positioned(left: padding, top: padding, child: avatar),
           for (final decoration in decorations)
             _buildDecoration(decoration, size, padding),
@@ -103,4 +107,102 @@ class UserAvatar extends StatelessWidget {
       child: IgnorePointer(child: image),
     );
   }
+}
+
+/// Misskey の isCat 猫耳描画。
+///
+/// Misskey Web (MkAvatar.vue) の CSS を Flutter に移植:
+/// - 左耳: rotate(37.5deg) skew(30deg), border-radius: 25% 75% 75%
+/// - 右耳: rotate(-37.5deg) skew(-30deg), border-radius: 75% 25% 75% 75%
+/// - 内側ピンク: 60% サイズ、#df548f
+class _CatEarWidget extends StatelessWidget {
+  final double avatarSize;
+  final double padding;
+
+  const _CatEarWidget({required this.avatarSize, required this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: _CatEarPainter(
+            avatarSize: avatarSize,
+            padding: padding,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CatEarPainter extends CustomPainter {
+  final double avatarSize;
+  final double padding;
+
+  _CatEarPainter({required this.avatarSize, required this.padding});
+
+  static const _outerColor = Color(0xFF9E9E9E);
+  static const _innerColor = Color(0xFFDF548F);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _paintEar(canvas, isLeft: true);
+    _paintEar(canvas, isLeft: false);
+  }
+
+  void _paintEar(Canvas canvas, {required bool isLeft}) {
+    final earW = avatarSize * 0.5;
+    final earH = avatarSize * 0.5;
+
+    // 耳の中心位置（アバター上端の左右 1/4 地点）
+    final cx = padding + (isLeft ? avatarSize * 0.25 : avatarSize * 0.75);
+    final cy = padding + avatarSize * 0.25;
+
+    // CSS: rotate(±37.5deg) skew(±30deg) — rotate を先に適用し、次に skewX
+    final rotAngle = (isLeft ? 37.5 : -37.5) * math.pi / 180;
+    final skewAngle = (isLeft ? 30.0 : -30.0) * math.pi / 180;
+
+    canvas.save();
+    canvas.translate(cx, cy);
+
+    // CSS の transform 順序: skewX * rotateZ（左から適用）
+    final skew = Matrix4.identity()..setEntry(0, 1, math.tan(skewAngle));
+    skew.multiply(Matrix4.rotationZ(rotAngle));
+    canvas.transform(skew.storage);
+
+    // 外側の耳
+    // CSS border-radius: 左耳 25% 75% 75%（tl tr+bl br）、右耳 75% 25% 75% 75%
+    final tl = isLeft ? 0.25 : 0.75;
+    final tr = isLeft ? 0.75 : 0.25;
+    const br = 0.75;
+    final bl = isLeft ? 0.75 : 0.75;
+
+    final outerRect = RRect.fromRectAndCorners(
+      Rect.fromCenter(center: Offset.zero, width: earW, height: earH),
+      topLeft: Radius.circular(earW * tl),
+      topRight: Radius.circular(earW * tr),
+      bottomRight: Radius.circular(earW * br),
+      bottomLeft: Radius.circular(earW * bl),
+    );
+    canvas.drawRRect(outerRect, Paint()..color = _outerColor);
+
+    // 内側の耳（ピンク）— 外側の 60%、中央配置
+    final innerW = earW * 0.6;
+    final innerH = earH * 0.6;
+    final innerRect = RRect.fromRectAndCorners(
+      Rect.fromCenter(center: Offset.zero, width: innerW, height: innerH),
+      topLeft: Radius.circular(innerW * tl),
+      topRight: Radius.circular(innerW * tr),
+      bottomRight: Radius.circular(innerW * br),
+      bottomLeft: Radius.circular(innerW * bl),
+    );
+    canvas.drawRRect(innerRect, Paint()..color = _innerColor);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _CatEarPainter old) =>
+      avatarSize != old.avatarSize || padding != old.padding;
 }

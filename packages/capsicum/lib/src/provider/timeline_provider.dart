@@ -69,6 +69,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
   StreamSubscription<Post>? _streamSubscription;
   final List<Post> _pendingPosts = [];
+  final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
 
   @override
@@ -131,7 +132,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
-    return TimelineState(posts: allVisible, hasMore: hasMore);
+    final enriched = await _enrichIsCat(allVisible);
+    return TimelineState(posts: enriched, hasMore: hasMore);
   }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -315,11 +317,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           if (allVisible.isNotEmpty || !hasMore) break;
         }
 
+        final enrichedMore = await _enrichIsCat(allVisible);
         // Re-read state to preserve posts added by streaming during await.
         final latest = state.valueOrNull ?? current;
         state = AsyncData(
           latest.copyWith(
-            posts: [...latest.posts, ...allVisible],
+            posts: [...latest.posts, ...enrichedMore],
             isLoadingMore: false,
             hasMore: hasMore,
             loadMoreError: null,
@@ -381,6 +384,96 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final latest = state.valueOrNull;
     if (latest == null) return;
     state = AsyncData(latest.copyWith(isLoadingMore: false));
+  }
+
+  /// モロヘイヤの `POST /account/is_cat` を使い、投稿者の isCat フラグを補完する。
+  /// Misskey adapter から取得した投稿は既に isCat が設定されているため、
+  /// ここでは Mastodon adapter 経由の投稿のみを対象とする。
+  Future<List<Post>> _enrichIsCat(List<Post> posts) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    final account = ref.read(currentAccountProvider);
+    if (mulukhiya == null || account == null) return posts;
+
+    // isCat が未設定（false）かつキャッシュにない acct を収集
+    final accts = <String>{};
+    for (final p in posts) {
+      for (final user in [p.author, if (p.reblog != null) p.reblog!.author]) {
+        if (!user.isCat && user.host != null) {
+          final acct = '${user.username}@${user.host}';
+          if (!_isCatCache.containsKey(acct)) accts.add(acct);
+        }
+      }
+    }
+    if (accts.isEmpty) return posts;
+
+    final result = await mulukhiya.fetchIsCat(
+      accessToken: account.userSecret.accessToken,
+      accts: accts.toList(),
+    );
+
+    // キャッシュに格納
+    for (final entry in result.entries) {
+      _isCatCache[entry.key] = entry.value;
+    }
+    // 問い合わせたが結果に含まれなかった acct は false としてキャッシュ
+    for (final acct in accts) {
+      _isCatCache.putIfAbsent(acct, () => false);
+    }
+
+    // isCat == true のユーザーがいなければ再構築不要
+    if (!_isCatCache.values.any((v) => v)) return posts;
+
+    return posts.map((p) => _applyIsCat(p)).toList();
+  }
+
+  Post _applyIsCat(Post p) {
+    final author = _maybeCatUser(p.author);
+    final reblog = p.reblog != null ? _applyIsCat(p.reblog!) : null;
+    if (identical(author, p.author) && identical(reblog, p.reblog)) return p;
+    return Post(
+      id: p.id,
+      postedAt: p.postedAt,
+      author: author,
+      content: p.content,
+      scope: p.scope,
+      attachments: p.attachments,
+      favouriteCount: p.favouriteCount,
+      reblogCount: p.reblogCount,
+      replyCount: p.replyCount,
+      quoteCount: p.quoteCount,
+      favourited: p.favourited,
+      reblogged: p.reblogged,
+      bookmarked: p.bookmarked,
+      sensitive: p.sensitive,
+      reactions: p.reactions,
+      myReaction: p.myReaction,
+      reactionEmojis: p.reactionEmojis,
+      inReplyToId: p.inReplyToId,
+      reblog: reblog,
+      quote: p.quote,
+      quoteState: p.quoteState,
+      spoilerText: p.spoilerText,
+      emojis: p.emojis,
+      emojiHost: p.emojiHost,
+      card: p.card,
+      poll: p.poll,
+      filterAction: p.filterAction,
+      filterTitle: p.filterTitle,
+      pinned: p.pinned,
+      channelId: p.channelId,
+      channelName: p.channelName,
+      localOnly: p.localOnly,
+      quotable: p.quotable,
+      language: p.language,
+      url: p.url,
+    );
+  }
+
+  User _maybeCatUser(User user) {
+    if (user.isCat || user.host == null) return user;
+    final acct = '${user.username}@${user.host}';
+    final isCat = _isCatCache[acct] ?? false;
+    return isCat ? user.copyWithIsCat(true) : user;
   }
 }
 
