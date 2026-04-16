@@ -260,7 +260,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 リリース手順・ストア設定の詳細は [store-release-guide.md](store-release-guide.md) を参照。
 
-GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10 / v1.11 / v1.12 / v1.13 / v1.14 / v1.15 / v1.16 / v1.17）が正本。個別 Issue の一覧・ステータスはここに複写しない。
+GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5 / v1.6 / v1.7 / v1.8 / v1.9 / v1.10 / v1.11 / v1.12 / v1.13 / v1.14 / v1.15 / v1.16 / v1.17 / v1.18）が正本。個別 Issue の一覧・ステータスはここに複写しない。
 
 最新リリース: **v1.15.0**（2026-04-15、App Store / Google Play 両ストア公開済み）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
@@ -268,7 +268,7 @@ GitHub Issues のマイルストーン（v1.0 / v1.1 / v1.2 / v1.3 / v1.4 / v1.5
 
 - **v1.16** — Misskey 拡充 + MFM + API 改善 + モロヘイヤ連携（Misskey ページ機能・メッセージ機能・isCat・リアクションチップ・Mastodon MFM 部分レンダリング・メディア API v2・ポイピク連携）
 - **v1.17** — 通知・お知らせのタブ化を中心とした UI 再整理（#281）。他は小粒な改善のみ
-- **v1.18（仮）** — プッシュ通知リレー Stage 1 を想定。プリセットサーバーのユーザー向け Mastodon Web Push リレー実装（[#52](https://github.com/pooza/capsicum/issues/52)）。専用の小規模サーバーを新設し、規模に応じてプランを段階的に引き上げる方針。着手時期は [#293](https://github.com/pooza/capsicum/issues/293) の観測結果を踏まえて確定する
+- **v1.18** — プッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）。Ruby 自前実装のリレーサーバー（Linode）+ capsicum 側の APNs / FCM 対応。Stage 1 で Mastodon、Stage 2 で Misskey 対応。詳細は [push-relay-plan.md](push-relay-plan.md) を参照
 
 ### 長期構想: デスクトップ対応
 
