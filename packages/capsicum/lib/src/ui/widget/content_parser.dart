@@ -672,7 +672,9 @@ List<_Node> _parseHtml(String html) {
           r'<ruby>(.*?)(?:<rp>[^<]*</rp>)?<rt>(.*?)</rt>(?:<rp>[^<]*</rp>)?</ruby>',
           caseSensitive: false,
         ),
-        (m) => r'$[ruby ' '${m[1]} ${m[2]}]',
+        (m) =>
+            r'$[ruby '
+            '${m[1]} ${m[2]}]',
       )
       // <del>text</del> → <s>text</s> (MFM parser handles <s>)
       .replaceAllMapped(
@@ -700,10 +702,7 @@ List<_Node> _parseHtml(String html) {
           final inner = m[1]!
               .replaceAll(RegExp(r'<br\s*/?>'), '\n')
               .replaceAll(RegExp(r'<[^>]*>'), '');
-          final quoted = inner
-              .split('\n')
-              .map((line) => '> $line')
-              .join('\n');
+          final quoted = inner.split('\n').map((line) => '> $line').join('\n');
           return '\n$quoted\n';
         },
       )
@@ -714,7 +713,9 @@ List<_Node> _parseHtml(String html) {
           caseSensitive: false,
           dotAll: true,
         ),
-        (m) => r'$[fg.color=' '${m[1]} ${m[2]}]',
+        (m) =>
+            r'$[fg.color='
+            '${m[1]} ${m[2]}]',
       )
       // <span style="font-size: N%"> → $[x2/x3/x4 ...]
       .replaceAllMapped(
@@ -728,10 +729,10 @@ List<_Node> _parseHtml(String html) {
           final fn = pct >= 400
               ? 'x4'
               : pct >= 300
-                  ? 'x3'
-                  : pct >= 200
-                      ? 'x2'
-                      : null;
+              ? 'x3'
+              : pct >= 200
+              ? 'x2'
+              : null;
           return fn != null ? '\$[$fn ${m[2]}]' : m[2]!;
         },
       )
@@ -744,10 +745,10 @@ List<_Node> _parseHtml(String html) {
         ),
         (m) => '<center>${m[1]}</center>',
       )
-      // Preserve tags the MFM parser understands: <b>, <i>, <s>, <small>,
-      // <center>. Strip only their closing/opening from the "remove all" regex
-      // by converting them to placeholders, then restoring after strip.
-      ;
+  // Preserve tags the MFM parser understands: <b>, <i>, <s>, <small>,
+  // <center>. Strip only their closing/opening from the "remove all" regex
+  // by converting them to placeholders, then restoring after strip.
+  ;
   // Protect MFM-compatible tags from the blanket strip.
   const mfmTags = ['b', 'i', 's', 'small', 'center'];
   for (final tag in mfmTags) {

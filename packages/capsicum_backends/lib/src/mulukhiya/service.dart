@@ -672,10 +672,7 @@ class MulukhiyaService {
         options: _bearerOptions(accessToken),
       );
       final data = response.data as Map<String, dynamic>? ?? {};
-      return {
-        for (final entry in data.entries)
-          entry.key: entry.value == true,
-      };
+      return {for (final entry in data.entries) entry.key: entry.value == true};
     } catch (_) {
       return const {};
     }

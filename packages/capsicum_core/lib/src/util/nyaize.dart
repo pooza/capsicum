@@ -23,14 +23,11 @@ String nyaize(String text) {
   );
 
   // ko-KR
-  result = result.replaceAllMapped(
-    RegExp(r'[나-낳]'),
-    (m) {
-      final code = m.group(0)!.codeUnitAt(0);
-      const offset = 0xB0C4 - 0xB098; // '냐' - '나'
-      return String.fromCharCode(code + offset);
-    },
-  );
+  result = result.replaceAllMapped(RegExp(r'[나-낳]'), (m) {
+    final code = m.group(0)!.codeUnitAt(0);
+    const offset = 0xB0C4 - 0xB098; // '냐' - '나'
+    return String.fromCharCode(code + offset);
+  });
   result = result.replaceAllMapped(
     RegExp(r'(다$)|(다(?=\.))|(다(?= ))|(다(?=!))|(다(?=\?))', multiLine: true),
     (_) => '다냥',

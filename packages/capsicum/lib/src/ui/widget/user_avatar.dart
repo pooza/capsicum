@@ -49,8 +49,7 @@ class UserAvatar extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           // 猫耳はアバターの後ろに描画（耳の付け根がアバターで隠れる）
-          if (showCatEars)
-            _CatEarWidget(avatarSize: size, padding: padding),
+          if (showCatEars) _CatEarWidget(avatarSize: size, padding: padding),
           Positioned(left: padding, top: padding, child: avatar),
           for (final decoration in decorations)
             _buildDecoration(decoration, size, padding),
@@ -126,10 +125,7 @@ class _CatEarWidget extends StatelessWidget {
     return Positioned.fill(
       child: IgnorePointer(
         child: CustomPaint(
-          painter: _CatEarPainter(
-            avatarSize: avatarSize,
-            padding: padding,
-          ),
+          painter: _CatEarPainter(avatarSize: avatarSize, padding: padding),
         ),
       ),
     );
