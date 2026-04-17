@@ -10,6 +10,7 @@ import 'src/constants.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
+import 'src/service/apns_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/share_intent_service.dart';
 
@@ -60,6 +61,9 @@ void _startApp() {
       }
     },
   );
+
+  // Start listening for APNs device token from the iOS native layer.
+  ApnsService.initialize();
 
   // Check for shared text from external apps (e.g. Spotify, Apple Music).
   // The result is stored in pendingSharedText and consumed by SplashScreen
