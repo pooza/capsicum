@@ -10,11 +10,16 @@ import 'src/constants.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
+import 'src/service/apns_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Register the APNs MethodChannel handler before runApp() so that
+  // tokens arriving during engine initialization are not dropped.
+  ApnsService.initialize();
 
   const dsn = String.fromEnvironment('SENTRY_DSN');
 

@@ -794,7 +794,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  void _showPreview() {
+  Future<void> _showPreview() async {
     final text = _controller.text;
     if (text.trim().isEmpty && !_pollEnabled) return;
     final account = ref.read(currentAccountProvider);
@@ -803,6 +803,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     final emojiSize = ref.read(emojiSizeProvider);
     final allEmojis = {...user.emojis};
+
+    // サーバーのカスタム絵文字を取得してマップに追加
+    final adapter = account?.adapter;
+    if (adapter != null && adapter is CustomEmojiSupport) {
+      try {
+        final serverEmojis = await (adapter as CustomEmojiSupport).getEmojis();
+        for (final e in serverEmojis) {
+          allEmojis.putIfAbsent(e.shortcode, () => e.url);
+        }
+      } catch (_) {
+        // 取得失敗時はユーザー絵文字のみでフォールバック
+      }
+    }
+    if (!mounted) return;
 
     // Collect poll options if enabled.
     final pollOptions = _pollEnabled

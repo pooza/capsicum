@@ -25,6 +25,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       followingCount: followingCount ?? 0,
       postCount: notesCount ?? 0,
       isBot: isBot ?? false,
+      isCat: isCat ?? false,
       roles: roles != null
           ? roles!
                 .map(

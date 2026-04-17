@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:capsicum_core/capsicum_core.dart' show nyaize;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -644,7 +645,9 @@ class _MfmParser {
 // ---------------------------------------------------------------------------
 
 List<_Node> _parseHtml(String html) {
-  // Decode to intermediate text, preserving structure
+  // Decode to intermediate text, preserving structure.
+  // Order matters: convert MFM-origin HTML elements to MFM syntax BEFORE
+  // stripping remaining tags, so the MFM parser can render them.
   var text = html
       .replaceAll(RegExp(r'<br\s*/?>'), '\n')
       .replaceAll(RegExp(r'</p>\s*<p>'), '\n\n')
@@ -662,7 +665,105 @@ List<_Node> _parseHtml(String html) {
         RegExp(r'<code>([^<]*)</code>', caseSensitive: false),
         (m) => '`${m[1]}`',
       )
-      .replaceAll(RegExp(r'<[^>]*>'), '');
+      // --- MFM-origin HTML → MFM syntax (before tag stripping) ---
+      // <ruby>base<rp>…</rp><rt>reading</rt><rp>…</rp></ruby>
+      .replaceAllMapped(
+        RegExp(
+          r'<ruby>(.*?)(?:<rp>[^<]*</rp>)?<rt>(.*?)</rt>(?:<rp>[^<]*</rp>)?</ruby>',
+          caseSensitive: false,
+        ),
+        (m) =>
+            r'$[ruby '
+            '${m[1]} ${m[2]}]',
+      )
+      // <del>text</del> → <s>text</s> (MFM parser handles <s>)
+      .replaceAllMapped(
+        RegExp(r'<del>(.*?)</del>', caseSensitive: false, dotAll: true),
+        (m) => '<s>${m[1]}</s>',
+      )
+      // <strong>text</strong> → <b>text</b>
+      .replaceAllMapped(
+        RegExp(r'<strong>(.*?)</strong>', caseSensitive: false, dotAll: true),
+        (m) => '<b>${m[1]}</b>',
+      )
+      // <em>text</em> → <i>text</i>
+      .replaceAllMapped(
+        RegExp(r'<em>(.*?)</em>', caseSensitive: false, dotAll: true),
+        (m) => '<i>${m[1]}</i>',
+      )
+      // <blockquote>text</blockquote> → > quoted lines
+      .replaceAllMapped(
+        RegExp(
+          r'<blockquote>(.*?)</blockquote>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) {
+          final inner = m[1]!
+              .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+              .replaceAll(RegExp(r'<[^>]*>'), '');
+          final quoted = inner.split('\n').map((line) => '> $line').join('\n');
+          return '\n$quoted\n';
+        },
+      )
+      // <span style="color: #hex"> → $[fg.color=hex ...]
+      .replaceAllMapped(
+        RegExp(
+          r'<span\s+style="color:\s*#?([0-9a-fA-F]{3,8})\s*;?\s*">(.*?)</span>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) =>
+            r'$[fg.color='
+            '${m[1]} ${m[2]}]',
+      )
+      // <span style="font-size: N%"> → $[x2/x3/x4 ...]
+      .replaceAllMapped(
+        RegExp(
+          r'<span\s+style="font-size:\s*(\d+)%\s*;?\s*">(.*?)</span>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) {
+          final pct = int.tryParse(m[1]!) ?? 100;
+          final fn = pct >= 400
+              ? 'x4'
+              : pct >= 300
+              ? 'x3'
+              : pct >= 200
+              ? 'x2'
+              : null;
+          return fn != null ? '\$[$fn ${m[2]}]' : m[2]!;
+        },
+      )
+      // <div style="text-align: center"> → <center> (Misskey AP output)
+      .replaceAllMapped(
+        RegExp(
+          r'<div\s+style="text-align:\s*center\s*;?\s*">(.*?)</div>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) => '<center>${m[1]}</center>',
+      )
+  // Preserve tags the MFM parser understands: <b>, <i>, <s>, <small>,
+  // <center>. Strip only their closing/opening from the "remove all" regex
+  // by converting them to placeholders, then restoring after strip.
+  ;
+  // Protect MFM-compatible tags from the blanket strip.
+  const mfmTags = ['b', 'i', 's', 'small', 'center'];
+  for (final tag in mfmTags) {
+    text = text
+        .replaceAll('<$tag>', '\x00$tag\x01')
+        .replaceAll('</$tag>', '\x00/$tag\x01');
+  }
+  // Strip remaining HTML tags
+  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+  // Restore MFM-compatible tags
+  for (final tag in mfmTags) {
+    text = text
+        .replaceAll('\x00$tag\x01', '<$tag>')
+        .replaceAll('\x00/$tag\x01', '</$tag>');
+  }
   text = _unescape.convert(text);
   // Re-parse for URLs, emoji, hashtags, mentions using MFM parser
   // (these patterns are shared)
@@ -692,6 +793,7 @@ class ContentRenderer {
   final UrlResolver? resolveUrl;
   final UrlResolver? resolveDisplayUrl;
   final double emojiSize;
+  final bool applyNyaize;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -704,6 +806,7 @@ class ContentRenderer {
     this.resolveUrl,
     this.resolveDisplayUrl,
     this.emojiSize = 20.0,
+    this.applyNyaize = false,
   });
 
   void dispose() {
@@ -736,7 +839,8 @@ class ContentRenderer {
   List<InlineSpan> _renderNode(_Node node, TextStyle style) {
     switch (node.type) {
       case _NodeType.text:
-        return _buildTextWithEmoji(node.text, style);
+        final text = applyNyaize ? nyaize(node.text) : node.text;
+        return _buildTextWithEmoji(text, style);
 
       case _NodeType.bold:
         final boldStyle = style.copyWith(fontWeight: FontWeight.bold);

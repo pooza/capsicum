@@ -18,6 +18,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../widget/emoji_text.dart';
@@ -565,7 +566,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
-    TimelineType.directMessages: 'DM',
   };
 
   /// Mastodon uses "連合" instead of "グローバル".
@@ -633,7 +633,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             var label =
                 (isMastodon ? _mastodonLabelOverrides[type] : null) ??
                 _timelineLabels[type] ??
-                type.name;
+                (type == TimelineType.directMessages
+                    ? postScopeLabel(PostScope.direct, adapter)
+                    : type.name);
             if (type == TimelineType.local) {
               label = ref.watch(localTimelineNameProvider);
             }

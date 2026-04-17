@@ -54,6 +54,7 @@ class User {
   final int followingCount;
   final int postCount;
   final bool isBot;
+  final bool isCat;
   final bool isGroup;
   final List<UserRole> roles;
   final List<UserField> fields;
@@ -75,6 +76,7 @@ class User {
     this.followingCount = 0,
     this.postCount = 0,
     this.isBot = false,
+    this.isCat = false,
     this.isGroup = false,
     this.roles = const [],
     this.fields = const [],
@@ -84,4 +86,27 @@ class User {
     this.createdAt,
     this.defaultScope,
   });
+
+  User copyWithIsCat(bool isCat) => User(
+    id: id,
+    username: username,
+    displayName: displayName,
+    host: host,
+    avatarUrl: avatarUrl,
+    bannerUrl: bannerUrl,
+    description: description,
+    followersCount: followersCount,
+    followingCount: followingCount,
+    postCount: postCount,
+    isBot: isBot,
+    isCat: isCat,
+    isGroup: isGroup,
+    roles: roles,
+    fields: fields,
+    emojis: emojis,
+    avatarDecorations: avatarDecorations,
+    url: url,
+    createdAt: createdAt,
+    defaultScope: defaultScope,
+  );
 }

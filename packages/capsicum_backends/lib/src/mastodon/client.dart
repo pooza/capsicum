@@ -487,15 +487,54 @@ class MastodonClient {
 
     final formData = await buildFormData();
     final response = await dio.post(
-      '/api/v1/media',
+      '/api/v2/media',
       data: formData,
       options: Options(
         extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
       ),
     );
-    return MastodonMediaAttachment.fromJson(
+    final media = MastodonMediaAttachment.fromJson(
       response.data as Map<String, dynamic>,
     );
+
+    // v2 は大きいファイルに対して 202 を返し、url が null になる。
+    // 処理完了まで GET /api/v1/media/:id でポーリングする。
+    if (response.statusCode == 202) {
+      return _waitForMediaProcessing(media.id);
+    }
+    return media;
+  }
+
+  /// メディア処理の完了をポーリングで待つ。
+  /// 206（処理中）→ リトライ、200（完了）→ 返却。
+  Future<MastodonMediaAttachment> _waitForMediaProcessing(
+    String id, {
+    int maxAttempts = 30,
+    Duration interval = const Duration(seconds: 1),
+  }) async {
+    for (var i = 0; i < maxAttempts; i++) {
+      await Future<void>.delayed(interval);
+      try {
+        final response = await dio.get(
+          '/api/v1/media/$id',
+          options: Options(
+            validateStatus: (status) =>
+                status != null && (status == 200 || status == 206),
+          ),
+        );
+        if (response.statusCode == 200) {
+          return MastodonMediaAttachment.fromJson(
+            response.data as Map<String, dynamic>,
+          );
+        }
+        // 206: まだ処理中 → 次のループで再試行
+      } on DioException {
+        // ネットワークエラー等 → 次のループで再試行
+      }
+    }
+    throw StateError('Media processing timed out for $id');
   }
 
   /// PUT /api/v1/media/:id

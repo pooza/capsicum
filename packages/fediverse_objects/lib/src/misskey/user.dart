@@ -15,6 +15,7 @@ class MisskeyUser {
   final int? followingCount;
   final int? notesCount;
   final bool? isBot;
+  final bool? isCat;
   final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>>? fields;
   final Map<String, String>? emojis;
@@ -39,6 +40,7 @@ class MisskeyUser {
     this.followingCount,
     this.notesCount,
     this.isBot,
+    this.isCat,
     this.roles,
     this.fields,
     this.emojis,
