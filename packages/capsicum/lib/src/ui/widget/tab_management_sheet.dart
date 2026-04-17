@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/post_scope_display.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
   final String storageKey;
@@ -143,12 +144,14 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     TimelineType.local: 'ローカル',
     TimelineType.social: 'ソーシャル',
     TimelineType.federated: 'グローバル',
-    TimelineType.directMessages: 'DM',
   };
 
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
 
   String _timelineLabel(TimelineType type) {
+    if (type == TimelineType.directMessages) {
+      return postScopeLabel(PostScope.direct, null);
+    }
     if (widget.isMastodon) {
       return _mastodonLabelOverrides[type] ??
           _timelineLabels[type] ??
