@@ -432,6 +432,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
     NotificationType.poll => (Icons.poll, 'アンケート終了'),
     NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
+    NotificationType.login => (Icons.login, 'ログイン'),
+    NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
 

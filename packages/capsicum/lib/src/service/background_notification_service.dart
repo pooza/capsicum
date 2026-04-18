@@ -100,6 +100,8 @@ class BackgroundNotificationService {
       NotificationType.reaction => '$name さんがリアクションしました',
       NotificationType.poll => '投票が終了しました',
       NotificationType.update => '$name さんが投稿を編集しました',
+      NotificationType.login => '${key.host} にログインがありました',
+      NotificationType.createToken => '${key.host} でアクセストークンが作成されました',
       NotificationType.other => '${key.host} からの通知',
     };
   }
