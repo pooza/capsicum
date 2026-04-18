@@ -460,7 +460,6 @@ class MulukhiyaService {
     try {
       await _dio.post(
         '$baseUrl/decoration/restore',
-        data: {'token': accessToken},
         options: _bearerOptions(accessToken),
       );
       return true;
@@ -506,7 +505,7 @@ class MulukhiyaService {
   }) async {
     final response = await _dio.put(
       '$baseUrl/scheduled_status/$id/tags',
-      data: {'token': accessToken, 'tags': tags},
+      data: {'tags': tags},
       options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
@@ -521,7 +520,7 @@ class MulukhiyaService {
   }) async {
     await _dio.delete(
       '$baseUrl/status/nowplaying',
-      data: {'token': accessToken, 'id': id},
+      data: {'id': id},
       options: _bearerOptions(accessToken),
     );
   }
@@ -535,7 +534,7 @@ class MulukhiyaService {
   }) async {
     await _dio.post(
       '$baseUrl/status/tags',
-      data: {'token': accessToken, 'id': id, 'tags': tags},
+      data: {'id': id, 'tags': tags},
       options: _bearerOptions(accessToken),
     );
   }
@@ -548,7 +547,6 @@ class MulukhiyaService {
   }) async {
     final response = await _dio.get(
       '$baseUrl/emoji/palettes',
-      queryParameters: {'token': accessToken},
       options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
@@ -671,7 +669,7 @@ class MulukhiyaService {
     try {
       final response = await _dio.post(
         '$baseUrl/account/is_cat',
-        data: {'token': accessToken, 'accts': accts},
+        data: {'accts': accts},
         options: _bearerOptions(accessToken),
       );
       final data = response.data as Map<String, dynamic>? ?? {};
