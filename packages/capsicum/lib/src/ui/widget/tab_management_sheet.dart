@@ -121,12 +121,52 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   }
 
   void _reorderEntries(int oldIndex, int newIndex) {
-    final entries = ref.read(tabConfigProvider(widget.storageKey));
-    final list = [...entries];
+    // The UI shows a filtered list, so we need to map the filtered indices
+    // back to the full config list for reordering.
+    final all = ref.read(tabConfigProvider(widget.storageKey));
+    final filtered = _filteredEntries();
+    if (oldIndex >= filtered.length) return;
+
     if (newIndex > oldIndex) newIndex--;
-    final item = list.removeAt(oldIndex);
-    list.insert(newIndex, item);
-    _notifier.setOrder(list);
+    if (newIndex >= filtered.length) newIndex = filtered.length - 1;
+
+    final movedEntry = filtered[oldIndex];
+    final targetEntry = filtered[newIndex];
+
+    // Find positions in the full list.
+    final fullOld = all.indexOf(movedEntry);
+    final fullNew = all.indexOf(targetEntry);
+    if (fullOld < 0 || fullNew < 0) return;
+
+    final result = [...all];
+    result.removeAt(fullOld);
+    // After removal, adjust target index if it was after the removed item.
+    final adjustedNew = fullNew > fullOld ? fullNew - 1 : fullNew;
+    // Insert after or at the target depending on direction.
+    final insertAt = newIndex >= oldIndex ? adjustedNew + 1 : adjustedNew;
+    result.insert(insertAt.clamp(0, result.length), movedEntry);
+    _notifier.setOrder(result);
+  }
+
+  /// Returns the filtered entries matching what the UI displays.
+  List<TabConfigEntry> _filteredEntries() {
+    final adapter = ref.read(currentAdapterProvider);
+    final supported = adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final allLists = ref.read(listsProvider).valueOrNull ?? [];
+    final serverListIds = allLists.map((l) => l.id).toSet();
+    return ref
+        .read(tabConfigProvider(widget.storageKey))
+        .where((e) {
+          if (e.tab is TimelineTab) {
+            return supported.contains((e.tab as TimelineTab).type);
+          }
+          if (e.tab is ListTab) {
+            return serverListIds.contains((e.tab as ListTab).id);
+          }
+          return true;
+        })
+        .toList();
   }
 
   Widget _sectionHeader(ThemeData theme, String title) {
