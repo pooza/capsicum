@@ -52,8 +52,7 @@ class AnnouncementView extends ConsumerWidget {
               onRefresh: () => ref.refresh(announcementProvider.future),
               child: ListView.separated(
                 itemCount:
-                    state.announcements.length +
-                    (infoBotAcct != null ? 1 : 0),
+                    state.announcements.length + (infoBotAcct != null ? 1 : 0),
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   if (infoBotAcct != null) {

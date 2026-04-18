@@ -198,10 +198,7 @@ const defaultTabConfig = [
   TabConfigEntry(tab: TimelineTab(TimelineType.local), visible: true),
   TabConfigEntry(tab: TimelineTab(TimelineType.social), visible: true),
   TabConfigEntry(tab: TimelineTab(TimelineType.federated), visible: true),
-  TabConfigEntry(
-    tab: TimelineTab(TimelineType.directMessages),
-    visible: true,
-  ),
+  TabConfigEntry(tab: TimelineTab(TimelineType.directMessages), visible: true),
   TabConfigEntry(tab: NotificationsTab(), visible: false),
   TabConfigEntry(tab: AnnouncementsTab(), visible: false),
 ];
@@ -225,8 +222,7 @@ final tabConfigProvider =
       TabConfigNotifier.new,
     );
 
-class TabConfigNotifier
-    extends FamilyNotifier<List<TabConfigEntry>, String> {
+class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
   @override
   List<TabConfigEntry> build(String arg) {
     _load();
@@ -267,10 +263,12 @@ class TabConfigNotifier
       if (!timelineOrder.contains(t)) timelineOrder.add(t);
     }
     for (final t in timelineOrder) {
-      entries.add(TabConfigEntry(
-        tab: TimelineTab(t),
-        visible: !savedHidden.contains(t.name),
-      ));
+      entries.add(
+        TabConfigEntry(
+          tab: TimelineTab(t),
+          visible: !savedHidden.contains(t.name),
+        ),
+      );
     }
 
     // 2. List tabs (order + hidden).
@@ -280,10 +278,12 @@ class TabConfigNotifier
         const <String>{};
     if (savedListOrder != null) {
       for (final id in savedListOrder) {
-        entries.add(TabConfigEntry(
-          tab: ListTab(id: id),
-          visible: !savedHiddenLists.contains(id),
-        ));
+        entries.add(
+          TabConfigEntry(
+            tab: ListTab(id: id),
+            visible: !savedHiddenLists.contains(id),
+          ),
+        );
       }
     }
 
@@ -296,12 +296,8 @@ class TabConfigNotifier
     }
 
     // 4. Notifications & announcements (default hidden for existing users).
-    entries.add(
-      const TabConfigEntry(tab: NotificationsTab(), visible: false),
-    );
-    entries.add(
-      const TabConfigEntry(tab: AnnouncementsTab(), visible: false),
-    );
+    entries.add(const TabConfigEntry(tab: NotificationsTab(), visible: false));
+    entries.add(const TabConfigEntry(tab: AnnouncementsTab(), visible: false));
 
     // Persist the migrated config.
     await _save(entries, prefs);
@@ -321,8 +317,9 @@ class TabConfigNotifier
     return entries;
   }
 
-  static List<String> _serialize(List<TabConfigEntry> entries) =>
-      entries.map((e) => e.visible ? e.tab.toKey() : '!${e.tab.toKey()}').toList();
+  static List<String> _serialize(List<TabConfigEntry> entries) => entries
+      .map((e) => e.visible ? e.tab.toKey() : '!${e.tab.toKey()}')
+      .toList();
 
   Future<void> _save(
     List<TabConfigEntry> entries, [
@@ -365,8 +362,10 @@ class TabConfigNotifier
   Future<void> replaceTab(TabType oldTab, TabType newTab) async {
     state = [
       for (final e in state)
-        if (e.tab == oldTab) TabConfigEntry(tab: newTab, visible: e.visible)
-        else e,
+        if (e.tab == oldTab)
+          TabConfigEntry(tab: newTab, visible: e.visible)
+        else
+          e,
     ];
     await _save(state);
   }
@@ -396,24 +395,23 @@ class TabConfigNotifier
 /// (e.g. social on Mastodon, directMessages on Misskey) are excluded.
 /// List tabs whose list no longer exists on the server are also excluded.
 /// Server lists not yet in the config are appended automatically.
-final visibleTabsProvider =
-    Provider.family<List<TabType>, String>((ref, storageKey) {
+final visibleTabsProvider = Provider.family<List<TabType>, String>((
+  ref,
+  storageKey,
+) {
   final adapter = ref.watch(currentAdapterProvider);
-  final supported = adapter?.capabilities.supportedTimelines ??
+  final supported =
+      adapter?.capabilities.supportedTimelines ??
       {TimelineType.home, TimelineType.local, TimelineType.federated};
   final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
   final serverListIds = serverLists.map((l) => l.id).toSet();
   final config = ref.watch(tabConfigProvider(storageKey));
 
-  final tabs = config
-      .where((e) => e.visible)
-      .map((e) => e.tab)
-      .where((tab) {
-        if (tab is TimelineTab) return supported.contains(tab.type);
-        if (tab is ListTab) return serverListIds.contains(tab.id);
-        return true;
-      })
-      .toList();
+  final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
+    if (tab is TimelineTab) return supported.contains(tab.type);
+    if (tab is ListTab) return serverListIds.contains(tab.id);
+    return true;
+  }).toList();
 
   // Append server lists not yet tracked in the config.
   final configListIds = config
@@ -432,10 +430,10 @@ final visibleTabsProvider =
 /// Whether a specific tab type is currently visible.
 final isTabVisibleProvider =
     Provider.family<bool, ({String storageKey, TabType tab})>((ref, args) {
-  return ref
-      .watch(tabConfigProvider(args.storageKey))
-      .any((e) => e.tab == args.tab && e.visible);
-});
+      return ref
+          .watch(tabConfigProvider(args.storageKey))
+          .any((e) => e.tab == args.tab && e.visible);
+    });
 
 // ---------------------------------------------------------------------------
 // Legacy tab providers (kept for migration; new code should use

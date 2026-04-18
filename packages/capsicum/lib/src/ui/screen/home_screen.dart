@@ -177,8 +177,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _pendingListRestore = null;
         // Clear previous account's selection to avoid referencing
         // lists/hashtags that don't exist on the new account.
-        ref.read(selectedTabProvider.notifier).state =
-            const TimelineTab(TimelineType.home);
+        ref.read(selectedTabProvider.notifier).state = const TimelineTab(
+          TimelineType.home,
+        );
       }
       if (!_lastTabRestored) {
         ref.listen(lastTabProvider(storageKey), (prev, next) {
@@ -205,8 +206,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final list = lists.where((l) => l.id == pendingId).firstOrNull;
         if (list != null) {
           _pendingListRestore = null;
-          ref.read(selectedTabProvider.notifier).state =
-              ListTab(id: list.id, name: list.title);
+          ref.read(selectedTabProvider.notifier).state = ListTab(
+            id: list.id,
+            name: list.title,
+          );
         }
       });
     }
@@ -303,10 +306,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           // Hide notification bell when notifications tab is visible.
           if (account == null ||
-              !ref.watch(isTabVisibleProvider((
-                storageKey: account.key.toStorageKey(),
-                tab: const NotificationsTab(),
-              ))))
+              !ref.watch(
+                isTabVisibleProvider((
+                  storageKey: account.key.toStorageKey(),
+                  tab: const NotificationsTab(),
+                )),
+              ))
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () => context.push('/notifications'),
@@ -570,9 +575,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildTimelineTabs(BuildContext context) {
     final adapter = ref.watch(currentAdapterProvider);
-    final isMastodon = adapter != null &&
-        !(adapter.capabilities.supportedTimelines
-            .contains(TimelineType.social));
+    final isMastodon =
+        adapter != null &&
+        !(adapter.capabilities.supportedTimelines.contains(
+          TimelineType.social,
+        ));
 
     final account = ref.watch(currentAccountProvider);
     final storageKey = account?.key.toStorageKey();
@@ -627,7 +634,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 : type.name);
       }(),
       ListTab(:final id, :final name) =>
-          name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
+        name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
       HashtagTab(:final tag) => hashtagSpecLabel(tag),
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
@@ -639,17 +646,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (account == null) return;
     final storageKey = account.key.toStorageKey();
     final adapter = ref.read(currentAdapterProvider);
-    final isMastodon = adapter != null &&
-        !(adapter.capabilities.supportedTimelines
-            .contains(TimelineType.social));
+    final isMastodon =
+        adapter != null &&
+        !(adapter.capabilities.supportedTimelines.contains(
+          TimelineType.social,
+        ));
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => TabManagementSheet(
-        storageKey: storageKey,
-        isMastodon: isMastodon,
-      ),
+      builder: (_) =>
+          TabManagementSheet(storageKey: storageKey, isMastodon: isMastodon),
     );
   }
 
@@ -885,10 +892,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           // Hide drawer item when announcements tab is visible.
           if (current == null ||
-              !ref.watch(isTabVisibleProvider((
-                storageKey: current.key.toStorageKey(),
-                tab: const AnnouncementsTab(),
-              ))))
+              !ref.watch(
+                isTabVisibleProvider((
+                  storageKey: current.key.toStorageKey(),
+                  tab: const AnnouncementsTab(),
+                )),
+              ))
             ListTile(
               leading: const Icon(Icons.campaign_outlined),
               title: const Text('お知らせ'),

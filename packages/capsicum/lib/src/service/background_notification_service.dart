@@ -75,11 +75,11 @@ class BackgroundNotificationService {
             Dio(),
             accountKey.host,
           );
-          reblogLabel = mulukhiya?.reblogLabel ??
+          reblogLabel =
+              mulukhiya?.reblogLabel ??
               (adapter is ReactionSupport ? 'リノート' : 'ブースト');
         } catch (_) {
-          reblogLabel =
-              adapter is ReactionSupport ? 'リノート' : 'ブースト';
+          reblogLabel = adapter is ReactionSupport ? 'リノート' : 'ブースト';
         }
         for (final n in notifications) {
           await plugin.show(

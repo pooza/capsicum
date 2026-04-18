@@ -32,10 +32,11 @@ sealed class TabType {
     if (value.isEmpty) return null;
 
     return switch (prefix) {
-      'timeline' => TimelineType.values
-          .where((t) => t.name == value)
-          .firstOrNull
-          ?.let((t) => TimelineTab(t)),
+      'timeline' =>
+        TimelineType.values
+            .where((t) => t.name == value)
+            .firstOrNull
+            ?.let((t) => TimelineTab(t)),
       'list' => _parseListTab(value),
       'hashtag' => HashtagTab(value),
       _ => null,
@@ -60,8 +61,7 @@ class TimelineTab extends TabType {
   String toKey() => 'timeline:${type.name}';
 
   @override
-  bool operator ==(Object other) =>
-      other is TimelineTab && type == other.type;
+  bool operator ==(Object other) => other is TimelineTab && type == other.type;
 
   @override
   int get hashCode => type.hashCode;
@@ -76,8 +76,7 @@ class ListTab extends TabType {
   String toKey() => name != null ? 'list:$id:$name' : 'list:$id';
 
   @override
-  bool operator ==(Object other) =>
-      other is ListTab && id == other.id;
+  bool operator ==(Object other) => other is ListTab && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -91,8 +90,7 @@ class HashtagTab extends TabType {
   String toKey() => 'hashtag:$tag';
 
   @override
-  bool operator ==(Object other) =>
-      other is HashtagTab && tag == other.tag;
+  bool operator ==(Object other) => other is HashtagTab && tag == other.tag;
 
   @override
   int get hashCode => tag.hashCode;

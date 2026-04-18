@@ -158,22 +158,20 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   /// Returns the filtered entries matching what the UI displays.
   List<TabConfigEntry> _filteredEntries() {
     final adapter = ref.read(currentAdapterProvider);
-    final supported = adapter?.capabilities.supportedTimelines ??
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final allLists = ref.read(listsProvider).valueOrNull ?? [];
     final serverListIds = allLists.map((l) => l.id).toSet();
-    return ref
-        .read(tabConfigProvider(widget.storageKey))
-        .where((e) {
-          if (e.tab is TimelineTab) {
-            return supported.contains((e.tab as TimelineTab).type);
-          }
-          if (e.tab is ListTab) {
-            return serverListIds.contains((e.tab as ListTab).id);
-          }
-          return true;
-        })
-        .toList();
+    return ref.read(tabConfigProvider(widget.storageKey)).where((e) {
+      if (e.tab is TimelineTab) {
+        return supported.contains((e.tab as TimelineTab).type);
+      }
+      if (e.tab is ListTab) {
+        return serverListIds.contains((e.tab as ListTab).id);
+      }
+      return true;
+    }).toList();
   }
 
   Widget _sectionHeader(ThemeData theme, String title) {
@@ -233,24 +231,23 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   @override
   Widget build(BuildContext context) {
     final adapter = ref.watch(currentAdapterProvider);
-    final supported = adapter?.capabilities.supportedTimelines ??
+    final supported =
+        adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final allEntries = ref.watch(tabConfigProvider(widget.storageKey));
     final allLists = ref.watch(listsProvider).valueOrNull ?? [];
     final serverListIds = allLists.map((l) => l.id).toSet();
 
     // Filter out unsupported timeline types and deleted lists.
-    final entries = allEntries
-        .where((e) {
-          if (e.tab is TimelineTab) {
-            return supported.contains((e.tab as TimelineTab).type);
-          }
-          if (e.tab is ListTab) {
-            return serverListIds.contains((e.tab as ListTab).id);
-          }
-          return true;
-        })
-        .toList();
+    final entries = allEntries.where((e) {
+      if (e.tab is TimelineTab) {
+        return supported.contains((e.tab as TimelineTab).type);
+      }
+      if (e.tab is ListTab) {
+        return serverListIds.contains((e.tab as ListTab).id);
+      }
+      return true;
+    }).toList();
     final theme = Theme.of(context);
 
     // Split hashtag entries for the add-hashtag input section.
@@ -305,9 +302,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                             Icon(
                               _tabEntryIcon(tab),
                               size: 18,
-                              color: entry.visible
-                                  ? null
-                                  : theme.disabledColor,
+                              color: entry.visible ? null : theme.disabledColor,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -339,8 +334,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                                     ? Icons.visibility
                                     : Icons.visibility_off,
                               ),
-                              onPressed: () =>
-                                  _notifier.toggleVisibility(tab),
+                              onPressed: () => _notifier.toggleVisibility(tab),
                             ),
                           ],
                         ),
