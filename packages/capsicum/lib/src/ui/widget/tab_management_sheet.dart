@@ -27,6 +27,26 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Sync server lists into tab config after the current frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncLists());
+  }
+
+  void _syncLists() {
+    final allEntries = ref.read(tabConfigProvider(widget.storageKey));
+    final allLists = ref.read(listsProvider).valueOrNull ?? [];
+    final notifier = _notifier;
+    for (final list in allLists) {
+      final tab = ListTab(id: list.id, name: list.title);
+      if (!allEntries.any((e) => e.tab == tab)) {
+        notifier.addTab(tab);
+      }
+      notifier.syncListName(list.id, list.title);
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -171,16 +191,6 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     final allEntries = ref.watch(tabConfigProvider(widget.storageKey));
     final allLists = ref.watch(listsProvider).valueOrNull ?? [];
     final serverListIds = allLists.map((l) => l.id).toSet();
-
-    // Sync server lists into tab config: add new lists, remove deleted ones.
-    final notifier = ref.read(tabConfigProvider(widget.storageKey).notifier);
-    for (final list in allLists) {
-      final tab = ListTab(id: list.id, name: list.title);
-      if (!allEntries.any((e) => e.tab == tab)) {
-        notifier.addTab(tab);
-      }
-      notifier.syncListName(list.id, list.title);
-    }
 
     // Filter out unsupported timeline types and deleted lists.
     final entries = allEntries
