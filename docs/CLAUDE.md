@@ -263,7 +263,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.16.0**（2026-04-17、両ストア公開済み）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.17.0**（2026-04-18、両ストア公開済み）。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### 長期構想: デスクトップ対応
 
