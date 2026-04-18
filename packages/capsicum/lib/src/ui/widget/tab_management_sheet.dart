@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
+import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/post_scope_display.dart';
 
@@ -168,10 +169,30 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     final supported = adapter?.capabilities.supportedTimelines ??
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final allEntries = ref.watch(tabConfigProvider(widget.storageKey));
-    // Filter out timeline types not supported by the adapter.
+    final allLists = ref.watch(listsProvider).valueOrNull ?? [];
+    final serverListIds = allLists.map((l) => l.id).toSet();
+
+    // Sync server lists into tab config: add new lists, remove deleted ones.
+    final notifier = ref.read(tabConfigProvider(widget.storageKey).notifier);
+    for (final list in allLists) {
+      final tab = ListTab(id: list.id, name: list.title);
+      if (!allEntries.any((e) => e.tab == tab)) {
+        notifier.addTab(tab);
+      }
+      notifier.syncListName(list.id, list.title);
+    }
+
+    // Filter out unsupported timeline types and deleted lists.
     final entries = allEntries
-        .where((e) =>
-            e.tab is! TimelineTab || supported.contains((e.tab as TimelineTab).type))
+        .where((e) {
+          if (e.tab is TimelineTab) {
+            return supported.contains((e.tab as TimelineTab).type);
+          }
+          if (e.tab is ListTab) {
+            return serverListIds.contains((e.tab as ListTab).id);
+          }
+          return true;
+        })
         .toList();
     final theme = Theme.of(context);
 

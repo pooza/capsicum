@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'account_manager_provider.dart';
+import 'list_provider.dart';
 
 /// User preference keys.
 const _fontScaleKey = 'font_scale';
@@ -393,16 +394,24 @@ class TabConfigNotifier
 ///
 /// Timeline tabs whose type is not supported by the current adapter
 /// (e.g. social on Mastodon, directMessages on Misskey) are excluded.
+/// List tabs whose list no longer exists on the server are also excluded.
 final visibleTabsProvider =
     Provider.family<List<TabType>, String>((ref, storageKey) {
   final adapter = ref.watch(currentAdapterProvider);
   final supported = adapter?.capabilities.supportedTimelines ??
       {TimelineType.home, TimelineType.local, TimelineType.federated};
+  final serverListIds = (ref.watch(listsProvider).valueOrNull ?? [])
+      .map((l) => l.id)
+      .toSet();
   return ref
       .watch(tabConfigProvider(storageKey))
       .where((e) => e.visible)
       .map((e) => e.tab)
-      .where((tab) => tab is! TimelineTab || supported.contains(tab.type))
+      .where((tab) {
+        if (tab is TimelineTab) return supported.contains(tab.type);
+        if (tab is ListTab) return serverListIds.contains(tab.id);
+        return true;
+      })
       .toList();
 });
 
