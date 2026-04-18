@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/post_scope_display.dart';
@@ -163,7 +164,15 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = ref.watch(tabConfigProvider(widget.storageKey));
+    final adapter = ref.watch(currentAdapterProvider);
+    final supported = adapter?.capabilities.supportedTimelines ??
+        {TimelineType.home, TimelineType.local, TimelineType.federated};
+    final allEntries = ref.watch(tabConfigProvider(widget.storageKey));
+    // Filter out timeline types not supported by the adapter.
+    final entries = allEntries
+        .where((e) =>
+            e.tab is! TimelineTab || supported.contains((e.tab as TimelineTab).type))
+        .toList();
     final theme = Theme.of(context);
 
     // Split hashtag entries for the add-hashtag input section.
