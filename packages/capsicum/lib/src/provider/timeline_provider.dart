@@ -411,13 +411,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       accts: accts.toList(),
     );
 
-    // キャッシュに格納
+    // 通信エラー時はキャッシュせず、次回再問い合わせ
+    if (result == null) return posts;
+
+    // 確定した結果のみキャッシュ（null = 取得失敗はキャッシュしない）
     for (final entry in result.entries) {
-      _isCatCache[entry.key] = entry.value;
-    }
-    // 問い合わせたが結果に含まれなかった acct は false としてキャッシュ
-    for (final acct in accts) {
-      _isCatCache.putIfAbsent(acct, () => false);
+      if (entry.value != null) {
+        _isCatCache[entry.key] = entry.value!;
+      }
     }
 
     // isCat == true のユーザーがいなければ再構築不要

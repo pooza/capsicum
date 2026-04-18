@@ -660,7 +660,10 @@ class MulukhiyaService {
   /// 複数 acct の isCat フラグを一括取得する。
   /// モロヘイヤの `POST /account/is_cat` を呼び出し、ActivityPub actor から
   /// isCat を取得する（Redis キャッシュ付き）。
-  Future<Map<String, bool>> fetchIsCat({
+  ///
+  /// 戻り値は3値: `true`（猫）/ `false`（猫でない）/ `null`（取得失敗・不明）。
+  /// 通信エラー時は `null` を返す（空 Map と区別するため）。
+  Future<Map<String, bool?>?> fetchIsCat({
     required String accessToken,
     required List<String> accts,
   }) async {
@@ -672,9 +675,12 @@ class MulukhiyaService {
         options: _bearerOptions(accessToken),
       );
       final data = response.data as Map<String, dynamic>? ?? {};
-      return {for (final entry in data.entries) entry.key: entry.value == true};
+      return {
+        for (final entry in data.entries)
+          entry.key: entry.value == null ? null : entry.value == true,
+      };
     } catch (_) {
-      return const {};
+      return null;
     }
   }
 }
