@@ -9,15 +9,11 @@ import '../util/post_scope_display.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
   final String storageKey;
-  final List<PostList> allLists;
-  final Set<TimelineType> supportedTimelines;
   final bool isMastodon;
 
   const TabManagementSheet({
     super.key,
     required this.storageKey,
-    required this.allLists,
-    required this.supportedTimelines,
     this.isMastodon = false,
   });
 
@@ -34,10 +30,13 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     super.dispose();
   }
 
+  TabConfigNotifier get _notifier =>
+      ref.read(tabConfigProvider(widget.storageKey).notifier);
+
   void _addHashtag() {
-    final text = _controller.text.trim();
+    final text = _controller.text.trim().replaceFirst(RegExp('^#'), '');
     if (text.isEmpty) return;
-    ref.read(pinnedHashtagsProvider(widget.storageKey).notifier).add(text);
+    _notifier.addTab(HashtagTab(text));
     _controller.clear();
   }
 
@@ -87,9 +86,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
               final newSpec = andTags.isEmpty
                   ? primary
                   : '$primary+${andTags.join('+')}';
-              ref
-                  .read(pinnedHashtagsProvider(widget.storageKey).notifier)
-                  .replace(currentSpec, newSpec);
+              _notifier.replaceTab(
+                HashtagTab(currentSpec),
+                HashtagTab(newSpec),
+              );
             },
             child: const Text('OK'),
           ),
@@ -98,30 +98,13 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     );
   }
 
-  List<PostList> _sortedLists() {
-    final order = ref.watch(listOrderProvider(widget.storageKey));
-    final sorted = [...widget.allLists];
-    if (order.isNotEmpty) {
-      sorted.sort((a, b) {
-        final ai = order.indexOf(a.id);
-        final bi = order.indexOf(b.id);
-        if (ai == -1 && bi == -1) return 0;
-        if (ai == -1) return 1;
-        if (bi == -1) return -1;
-        return ai.compareTo(bi);
-      });
-    }
-    return sorted;
-  }
-
-  void _reorderLists(int oldIndex, int newIndex) {
-    final lists = _sortedLists();
+  void _reorderEntries(int oldIndex, int newIndex) {
+    final entries = ref.read(tabConfigProvider(widget.storageKey));
+    final list = [...entries];
     if (newIndex > oldIndex) newIndex--;
-    final item = lists.removeAt(oldIndex);
-    lists.insert(newIndex, item);
-    ref
-        .read(listOrderProvider(widget.storageKey).notifier)
-        .setOrder(lists.map((l) => l.id).toList());
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    _notifier.setOrder(list);
   }
 
   Widget _sectionHeader(ThemeData theme, String title) {
@@ -148,78 +131,43 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
 
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
 
-  String _timelineLabel(TimelineType type) {
-    if (type == TimelineType.directMessages) {
-      return postScopeLabel(PostScope.direct, null);
-    }
-    if (widget.isMastodon) {
-      return _mastodonLabelOverrides[type] ??
-          _timelineLabels[type] ??
-          type.name;
-    }
-    return _timelineLabels[type] ?? type.name;
+  String _tabEntryLabel(TabType tab) {
+    return switch (tab) {
+      TimelineTab(:final type) => () {
+        if (type == TimelineType.directMessages) {
+          return postScopeLabel(PostScope.direct, null);
+        }
+        if (widget.isMastodon) {
+          return _mastodonLabelOverrides[type] ??
+              _timelineLabels[type] ??
+              type.name;
+        }
+        return _timelineLabels[type] ?? type.name;
+      }(),
+      ListTab(:final name, :final id) => name ?? id,
+      HashtagTab(:final tag) => hashtagSpecLabel(tag),
+      NotificationsTab() => '通知',
+      AnnouncementsTab() => 'お知らせ',
+    };
   }
 
-  void _reorderTimelines(int oldIndex, int newIndex) {
-    final order = ref.read(tabOrderProvider(widget.storageKey));
-    final types = order.where(widget.supportedTimelines.contains).toList();
-    if (newIndex > oldIndex) newIndex--;
-    final item = types.removeAt(oldIndex);
-    types.insert(newIndex, item);
-    ref.read(tabOrderProvider(widget.storageKey).notifier).setOrder(types);
-  }
-
-  Widget _buildTimelineTypesSection(ThemeData theme) {
-    final hiddenTypes = ref.watch(
-      hiddenTimelineTypesProvider(widget.storageKey),
-    );
-    final order = ref.watch(tabOrderProvider(widget.storageKey));
-    final types = order.where(widget.supportedTimelines.contains).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(theme, '基本タブ'),
-        ReorderableListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          buildDefaultDragHandles: false,
-          itemCount: types.length,
-          onReorder: _reorderTimelines,
-          itemBuilder: (context, index) {
-            final type = types[index];
-            final hidden = hiddenTypes.contains(type);
-            return ListTile(
-              key: ValueKey(type),
-              leading: ReorderableDragStartListener(
-                index: index,
-                child: const Icon(Icons.drag_handle),
-              ),
-              title: Text(
-                _timelineLabel(type),
-                style: hidden ? TextStyle(color: theme.disabledColor) : null,
-              ),
-              trailing: IconButton(
-                icon: Icon(hidden ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => ref
-                    .read(
-                      hiddenTimelineTypesProvider(widget.storageKey).notifier,
-                    )
-                    .toggle(type),
-              ),
-            );
-          },
-        ),
-      ],
-    );
+  IconData _tabEntryIcon(TabType tab) {
+    return switch (tab) {
+      TimelineTab() => Icons.forum_outlined,
+      ListTab() => Icons.list,
+      HashtagTab() => Icons.tag,
+      NotificationsTab() => Icons.notifications_outlined,
+      AnnouncementsTab() => Icons.campaign_outlined,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
-    final hiddenIds = ref.watch(hiddenListIdsProvider(widget.storageKey));
-    final lists = _sortedLists();
-    final tags = ref.watch(pinnedHashtagsProvider(widget.storageKey));
+    final entries = ref.watch(tabConfigProvider(widget.storageKey));
     final theme = Theme.of(context);
+
+    // Split hashtag entries for the add-hashtag input section.
+    final hasHashtags = entries.any((e) => e.tab is HashtagTab);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -249,60 +197,71 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  // --- Timeline types section ---
-                  _buildTimelineTypesSection(theme),
-                  // --- Lists section ---
-                  _sectionHeader(theme, 'リスト'),
-                  if (lists.isNotEmpty)
-                    ReorderableListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      itemCount: lists.length,
-                      onReorder: _reorderLists,
-                      itemBuilder: (context, index) {
-                        final list = lists[index];
-                        final hidden = hiddenIds.contains(list.id);
-                        return ListTile(
-                          key: ValueKey('list-${list.id}'),
-                          leading: ReorderableDragStartListener(
-                            index: index,
-                            child: const Icon(Icons.drag_handle),
-                          ),
-                          title: Text(
-                            list.title,
-                            style: hidden
-                                ? TextStyle(color: theme.disabledColor)
-                                : null,
-                          ),
-                          trailing: IconButton(
-                            icon: Icon(
-                              hidden ? Icons.visibility_off : Icons.visibility,
+                  _sectionHeader(theme, 'タブ'),
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    itemCount: entries.length,
+                    onReorder: _reorderEntries,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final tab = entry.tab;
+                      return ListTile(
+                        key: ValueKey(tab.toKey()),
+                        leading: ReorderableDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
+                        title: Row(
+                          children: [
+                            Icon(
+                              _tabEntryIcon(tab),
+                              size: 18,
+                              color: entry.visible
+                                  ? null
+                                  : theme.disabledColor,
                             ),
-                            onPressed: () => ref
-                                .read(
-                                  hiddenListIdsProvider(
-                                    widget.storageKey,
-                                  ).notifier,
-                                )
-                                .toggle(list.id),
-                          ),
-                        );
-                      },
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.edit_note, size: 18),
-                      label: const Text('リスト管理'),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        context.push('/lists/manage');
-                      },
-                    ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _tabEntryLabel(tab),
+                                style: entry.visible
+                                    ? null
+                                    : TextStyle(color: theme.disabledColor),
+                              ),
+                            ),
+                          ],
+                        ),
+                        onTap: tab is HashtagTab && widget.isMastodon
+                            ? () => _showAndTagDialog(context, tab.tag)
+                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Delete button for removable tabs (hashtags).
+                            if (tab is HashtagTab)
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _notifier.removeTab(tab),
+                              ),
+                            // Visibility toggle.
+                            IconButton(
+                              icon: Icon(
+                                entry.visible
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                              onPressed: () =>
+                                  _notifier.toggleVisibility(tab),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  // --- Hashtags section ---
-                  _sectionHeader(theme, 'ハッシュタグ'),
+                  // --- Add hashtag ---
+                  _sectionHeader(theme, 'ハッシュタグを追加'),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
@@ -334,54 +293,24 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
-                  const SizedBox(height: 8),
-                  if (tags.isEmpty)
+                  if (!hasHashtags)
                     const Padding(
                       padding: EdgeInsets.all(16),
                       child: Text('ピン留めされたハッシュタグはありません'),
-                    )
-                  else
-                    ReorderableListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      itemCount: tags.length,
-                      onReorder: (oldIndex, newIndex) {
-                        ref
-                            .read(
-                              pinnedHashtagsProvider(
-                                widget.storageKey,
-                              ).notifier,
-                            )
-                            .reorder(oldIndex, newIndex);
-                      },
-                      itemBuilder: (context, index) {
-                        final tag = tags[index];
-                        return ListTile(
-                          key: ValueKey('tag-$tag'),
-                          leading: ReorderableDragStartListener(
-                            index: index,
-                            child: const Icon(Icons.drag_handle),
-                          ),
-                          title: Text(hashtagSpecLabel(tag)),
-                          onTap: widget.isMastodon
-                              ? () => _showAndTagDialog(context, tag)
-                              : null,
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () {
-                              ref
-                                  .read(
-                                    pinnedHashtagsProvider(
-                                      widget.storageKey,
-                                    ).notifier,
-                                  )
-                                  .remove(tag);
-                            },
-                          ),
-                        );
+                    ),
+                  // --- List management link ---
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.edit_note, size: 18),
+                      label: const Text('リスト管理'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        context.push('/lists/manage');
                       },
                     ),
+                  ),
                 ],
               ),
             ),

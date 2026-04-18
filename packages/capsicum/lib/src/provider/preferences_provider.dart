@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'account_manager_provider.dart';
+
 /// User preference keys.
 const _fontScaleKey = 'font_scale';
 const _themeColorPrefix = 'theme_color_';
@@ -30,6 +32,7 @@ const _backgroundOpacityKey = 'background_opacity';
 const _recentEmojisKey = 'recent_emojis';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
+const _tabConfigPrefix = 'tab_config_';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -181,6 +184,240 @@ class LastTabNotifier extends FamilyNotifier<String?, String> {
     await prefs.setString('$_lastTabPrefix$arg', value);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Unified tab configuration (order + visibility for all tab types).
+// ---------------------------------------------------------------------------
+
+/// Default tab entries for a fresh install.
+///
+/// Notifications and announcements are hidden by default (Issue #281).
+const defaultTabConfig = [
+  TabConfigEntry(tab: TimelineTab(TimelineType.home), visible: true),
+  TabConfigEntry(tab: TimelineTab(TimelineType.local), visible: true),
+  TabConfigEntry(tab: TimelineTab(TimelineType.social), visible: true),
+  TabConfigEntry(tab: TimelineTab(TimelineType.federated), visible: true),
+  TabConfigEntry(
+    tab: TimelineTab(TimelineType.directMessages),
+    visible: true,
+  ),
+  TabConfigEntry(tab: NotificationsTab(), visible: false),
+  TabConfigEntry(tab: AnnouncementsTab(), visible: false),
+];
+
+/// A single entry in the tab configuration: a tab and its visibility.
+class TabConfigEntry {
+  final TabType tab;
+  final bool visible;
+  const TabConfigEntry({required this.tab, required this.visible});
+
+  TabConfigEntry copyWith({bool? visible}) =>
+      TabConfigEntry(tab: tab, visible: visible ?? this.visible);
+}
+
+/// Per-account unified tab configuration.
+///
+/// Takes an account storage key as the family parameter.
+/// Handles migration from the legacy per-type providers on first load.
+final tabConfigProvider =
+    NotifierProvider.family<TabConfigNotifier, List<TabConfigEntry>, String>(
+      TabConfigNotifier.new,
+    );
+
+class TabConfigNotifier
+    extends FamilyNotifier<List<TabConfigEntry>, String> {
+  @override
+  List<TabConfigEntry> build(String arg) {
+    _load();
+    return defaultTabConfig;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('$_tabConfigPrefix$arg');
+    if (saved != null) {
+      state = _deserialize(saved);
+      return;
+    }
+    // Migrate from legacy providers.
+    state = await _migrate(prefs);
+  }
+
+  /// Migrate from the legacy per-type preferences into the unified format.
+  Future<List<TabConfigEntry>> _migrate(SharedPreferences prefs) async {
+    final entries = <TabConfigEntry>[];
+
+    // 1. Timeline tabs (order + hidden).
+    final savedOrder = prefs.getStringList('$_tabOrderPrefix$arg');
+    final savedHidden =
+        prefs.getStringList('$_hiddenTimelineTypesPrefix$arg')?.toSet() ??
+        const <String>{};
+    final timelineOrder = savedOrder != null
+        ? savedOrder
+              .map(
+                (n) =>
+                    TimelineType.values.where((t) => t.name == n).firstOrNull,
+              )
+              .whereType<TimelineType>()
+              .toList()
+        : List<TimelineType>.from(defaultTabOrder);
+    // Append any timeline types missing from the saved order.
+    for (final t in defaultTabOrder) {
+      if (!timelineOrder.contains(t)) timelineOrder.add(t);
+    }
+    for (final t in timelineOrder) {
+      entries.add(TabConfigEntry(
+        tab: TimelineTab(t),
+        visible: !savedHidden.contains(t.name),
+      ));
+    }
+
+    // 2. List tabs (order + hidden).
+    final savedListOrder = prefs.getStringList('$_listOrderPrefix$arg');
+    final savedHiddenLists =
+        prefs.getStringList('$_hiddenListIdsPrefix$arg')?.toSet() ??
+        const <String>{};
+    if (savedListOrder != null) {
+      for (final id in savedListOrder) {
+        entries.add(TabConfigEntry(
+          tab: ListTab(id: id),
+          visible: !savedHiddenLists.contains(id),
+        ));
+      }
+    }
+
+    // 3. Hashtag tabs (pinned = always visible).
+    final savedHashtags = prefs.getStringList('$_pinnedHashtagsPrefix$arg');
+    if (savedHashtags != null) {
+      for (final tag in savedHashtags) {
+        entries.add(TabConfigEntry(tab: HashtagTab(tag), visible: true));
+      }
+    }
+
+    // 4. Notifications & announcements (default hidden for existing users).
+    entries.add(
+      const TabConfigEntry(tab: NotificationsTab(), visible: false),
+    );
+    entries.add(
+      const TabConfigEntry(tab: AnnouncementsTab(), visible: false),
+    );
+
+    // Persist the migrated config.
+    await _save(entries, prefs);
+    return entries;
+  }
+
+  static List<TabConfigEntry> _deserialize(List<String> raw) {
+    final entries = <TabConfigEntry>[];
+    for (final s in raw) {
+      final hidden = s.startsWith('!');
+      final key = hidden ? s.substring(1) : s;
+      final tab = TabType.fromKey(key);
+      if (tab != null) {
+        entries.add(TabConfigEntry(tab: tab, visible: !hidden));
+      }
+    }
+    return entries;
+  }
+
+  static List<String> _serialize(List<TabConfigEntry> entries) =>
+      entries.map((e) => e.visible ? e.tab.toKey() : '!${e.tab.toKey()}').toList();
+
+  Future<void> _save(
+    List<TabConfigEntry> entries, [
+    SharedPreferences? prefs,
+  ]) async {
+    prefs ??= await SharedPreferences.getInstance();
+    await prefs.setStringList('$_tabConfigPrefix$arg', _serialize(entries));
+  }
+
+  /// Toggle visibility of a tab.
+  Future<void> toggleVisibility(TabType tab) async {
+    state = [
+      for (final e in state)
+        if (e.tab == tab) e.copyWith(visible: !e.visible) else e,
+    ];
+    await _save(state);
+  }
+
+  /// Reorder all entries.
+  Future<void> setOrder(List<TabConfigEntry> entries) async {
+    state = entries;
+    await _save(entries);
+  }
+
+  /// Add a new tab (e.g., a newly pinned hashtag or a new list).
+  /// Appended at the end, visible by default.
+  Future<void> addTab(TabType tab, {bool visible = true}) async {
+    if (state.any((e) => e.tab == tab)) return;
+    state = [...state, TabConfigEntry(tab: tab, visible: visible)];
+    await _save(state);
+  }
+
+  /// Remove a tab (e.g., unpinning a hashtag or deleting a list).
+  Future<void> removeTab(TabType tab) async {
+    state = state.where((e) => e.tab != tab).toList();
+    await _save(state);
+  }
+
+  /// Replace a tab entry (e.g., renaming a hashtag AND condition).
+  Future<void> replaceTab(TabType oldTab, TabType newTab) async {
+    state = [
+      for (final e in state)
+        if (e.tab == oldTab) TabConfigEntry(tab: newTab, visible: e.visible)
+        else e,
+    ];
+    await _save(state);
+  }
+
+  /// Update the name cached in a [ListTab] entry.
+  void syncListName(String listId, String name) {
+    final updated = [
+      for (final e in state)
+        if (e.tab is ListTab && (e.tab as ListTab).id == listId)
+          TabConfigEntry(
+            tab: ListTab(id: listId, name: name),
+            visible: e.visible,
+          )
+        else
+          e,
+    ];
+    if (updated != state) {
+      state = updated;
+      _save(updated);
+    }
+  }
+}
+
+/// Visible tabs in display order, derived from [tabConfigProvider].
+///
+/// Timeline tabs whose type is not supported by the current adapter
+/// (e.g. social on Mastodon, directMessages on Misskey) are excluded.
+final visibleTabsProvider =
+    Provider.family<List<TabType>, String>((ref, storageKey) {
+  final adapter = ref.watch(currentAdapterProvider);
+  final supported = adapter?.capabilities.supportedTimelines ??
+      {TimelineType.home, TimelineType.local, TimelineType.federated};
+  return ref
+      .watch(tabConfigProvider(storageKey))
+      .where((e) => e.visible)
+      .map((e) => e.tab)
+      .where((tab) => tab is! TimelineTab || supported.contains(tab.type))
+      .toList();
+});
+
+/// Whether a specific tab type is currently visible.
+final isTabVisibleProvider =
+    Provider.family<bool, ({String storageKey, TabType tab})>((ref, args) {
+  return ref
+      .watch(tabConfigProvider(args.storageKey))
+      .any((e) => e.tab == args.tab && e.visible);
+});
+
+// ---------------------------------------------------------------------------
+// Legacy tab providers (kept for migration; new code should use
+// tabConfigProvider).
+// ---------------------------------------------------------------------------
 
 /// Default tab order for timelines.
 const defaultTabOrder = [

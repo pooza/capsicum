@@ -27,12 +27,23 @@ import '../widget/user_avatar.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
+import 'announcement_screen.dart';
+import 'notification_screen.dart';
 
-/// Currently selected list ID (null = normal timeline mode).
-final selectedListProvider = StateProvider<PostList?>((ref) => null);
+/// Convenience providers derived from [selectedTabProvider] for backward
+/// compatibility with widgets that only need to know the selected list or
+/// hashtag.
+final selectedListProvider = Provider<PostList?>((ref) {
+  final tab = ref.watch(selectedTabProvider);
+  if (tab is! ListTab) return null;
+  final lists = ref.watch(listsProvider).valueOrNull ?? [];
+  return lists.where((l) => l.id == tab.id).firstOrNull;
+});
 
-/// Currently selected pinned hashtag (null = not in hashtag tab mode).
-final selectedHashtagProvider = StateProvider<String?>((ref) => null);
+final selectedHashtagProvider = Provider<String?>((ref) {
+  final tab = ref.watch(selectedTabProvider);
+  return tab is HashtagTab ? tab.tag : null;
+});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -166,10 +177,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _pendingListRestore = null;
         // Clear previous account's selection to avoid referencing
         // lists/hashtags that don't exist on the new account.
-        ref.read(selectedListProvider.notifier).state = null;
-        ref.read(selectedHashtagProvider.notifier).state = null;
-        ref.read(selectedTimelineTypeProvider.notifier).state =
-            TimelineType.home;
+        ref.read(selectedTabProvider.notifier).state =
+            const TimelineTab(TimelineType.home);
       }
       if (!_lastTabRestored) {
         ref.listen(lastTabProvider(storageKey), (prev, next) {
@@ -196,7 +205,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final list = lists.where((l) => l.id == pendingId).firstOrNull;
         if (list != null) {
           _pendingListRestore = null;
-          ref.read(selectedListProvider.notifier).state = list;
+          ref.read(selectedTabProvider.notifier).state =
+              ListTab(id: list.id, name: list.title);
         }
       });
     }
@@ -291,19 +301,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: const Icon(Icons.search),
             onPressed: () => context.push('/search'),
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () => context.push('/notifications'),
-          ),
+          // Hide notification bell when notifications tab is visible.
+          if (account == null ||
+              !ref.watch(isTabVisibleProvider((
+                storageKey: account.key.toStorageKey(),
+                tab: const NotificationsTab(),
+              ))))
+            IconButton(
+              icon: const Icon(Icons.notifications_outlined),
+              onPressed: () => context.push('/notifications'),
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
-          child: _buildTimelineTabs(
-            context,
-            selectedType,
-            selectedList,
-            selectedHashtag,
-          ),
+          child: _buildTimelineTabs(context),
         ),
       ),
       drawer: _buildDrawer(
@@ -329,16 +340,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             )
           : null,
-      body: _buildBody(selectedList, selectedType, selectedHashtag, timeline),
+      body: _buildBody(
+        ref.watch(selectedTabProvider),
+        selectedList,
+        selectedType,
+        selectedHashtag,
+        timeline,
+      ),
     );
   }
 
   Widget _buildBody(
+    TabType currentTab,
     PostList? selectedList,
     TimelineType selectedType,
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    // Non-timeline tabs: render their dedicated views.
+    if (currentTab is NotificationsTab) return const NotificationView();
+    if (currentTab is AnnouncementsTab) return const AnnouncementView();
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
@@ -352,7 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         Expanded(
           child: GestureDetector(
             onHorizontalDragEnd: selectedList == null
-                ? (details) => _onSwipe(details, selectedType)
+                ? (details) => _onSwipe(details)
                 : null,
             child: timeline.when(
               data: (tlState) {
@@ -456,32 +477,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return body;
   }
 
-  void _onSwipe(DragEndDetails details, TimelineType current) {
+  void _onSwipe(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
     if (velocity.abs() < 300) return;
 
-    final adapter = ref.read(currentAdapterProvider);
-    final supported =
-        adapter?.capabilities.supportedTimelines ??
-        {TimelineType.home, TimelineType.local, TimelineType.federated};
     final account = ref.read(currentAccountProvider);
-    final storageKey = account?.key.toStorageKey();
-    final order = account != null
-        ? ref.read(tabOrderProvider(storageKey!))
-        : defaultTabOrder;
-    final hiddenTypes = storageKey != null
-        ? ref.read(hiddenTimelineTypesProvider(storageKey))
-        : <TimelineType>{};
-    final tabs = order
-        .where((t) => supported.contains(t) && !hiddenTypes.contains(t))
-        .toList();
-    final index = tabs.indexOf(current);
+    if (account == null) return;
+    final storageKey = account.key.toStorageKey();
+    final visible = ref.read(visibleTabsProvider(storageKey));
+    final currentTab = ref.read(selectedTabProvider);
+    final index = visible.indexOf(currentTab);
     if (index < 0) return;
 
     final next = velocity < 0 ? index + 1 : index - 1;
-    if (next < 0 || next >= tabs.length) return;
+    if (next < 0 || next >= visible.length) return;
 
-    ref.read(selectedTimelineTypeProvider.notifier).state = tabs[next];
+    ref.read(selectedTabProvider.notifier).state = visible[next];
     _saveLastTab();
   }
 
@@ -490,60 +501,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final account = ref.read(currentAccountProvider);
     if (account == null) return;
     final storageKey = account.key.toStorageKey();
-
-    final hashtag = ref.read(selectedHashtagProvider);
-    final list = ref.read(selectedListProvider);
-    final String value;
-    if (hashtag != null) {
-      value = 'hashtag:$hashtag';
-    } else if (list != null) {
-      value = 'list:${list.id}';
-    } else {
-      value = 'timeline:${ref.read(selectedTimelineTypeProvider).name}';
-    }
-    ref.read(lastTabProvider(storageKey).notifier).save(value);
+    final tab = ref.read(selectedTabProvider);
+    ref.read(lastTabProvider(storageKey).notifier).save(tab.toKey());
   }
 
   /// Apply a saved tab value to the current selection providers.
   void _applyLastTab(String saved) {
-    final parts = saved.split(':');
-    if (parts.length < 2) return;
-    final kind = parts[0];
-    final value = parts.sublist(1).join(':');
+    final tab = TabType.fromKey(saved);
+    if (tab == null) return;
 
-    switch (kind) {
-      case 'timeline':
-        final type = TimelineType.values
-            .where((t) => t.name == value)
-            .firstOrNull;
-        if (type != null) {
-          final adapter = ref.read(currentAdapterProvider);
-          final supported =
-              adapter?.capabilities.supportedTimelines ??
-              {TimelineType.home, TimelineType.local, TimelineType.federated};
-          if (supported.contains(type)) {
-            ref.read(selectedTimelineTypeProvider.notifier).state = type;
-          }
+    switch (tab) {
+      case TimelineTab(:final type):
+        final adapter = ref.read(currentAdapterProvider);
+        final supported =
+            adapter?.capabilities.supportedTimelines ??
+            {TimelineType.home, TimelineType.local, TimelineType.federated};
+        if (supported.contains(type)) {
+          ref.read(selectedTabProvider.notifier).state = tab;
         }
-      case 'list':
+      case ListTab(:final id):
         final lists = ref.read(listsProvider).valueOrNull ?? [];
-        final list = lists.where((l) => l.id == value).firstOrNull;
-        if (list != null) {
-          ref.read(selectedListProvider.notifier).state = list;
+        if (lists.any((l) => l.id == id)) {
+          ref.read(selectedTabProvider.notifier).state = tab;
         } else {
-          // Lists may not be loaded yet — defer until they arrive.
-          _pendingListRestore = value;
+          _pendingListRestore = id;
         }
-      case 'hashtag':
+      case HashtagTab(:final tag):
         final account = ref.read(currentAccountProvider);
         if (account != null) {
-          final pinned = ref.read(
-            pinnedHashtagsProvider(account.key.toStorageKey()),
+          final config = ref.read(
+            tabConfigProvider(account.key.toStorageKey()),
           );
-          if (pinned.contains(value)) {
-            ref.read(selectedHashtagProvider.notifier).state = value;
+          if (config.any(
+            (e) => e.tab is HashtagTab && (e.tab as HashtagTab).tag == tag,
+          )) {
+            ref.read(selectedTabProvider.notifier).state = tab;
           }
         }
+      case NotificationsTab():
+      case AnnouncementsTab():
+        ref.read(selectedTabProvider.notifier).state = tab;
     }
   }
 
@@ -571,101 +568,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Mastodon uses "連合" instead of "グローバル".
   static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
 
-  Widget _buildTimelineTabs(
-    BuildContext context,
-    TimelineType selected,
-    PostList? selectedList,
-    String? selectedHashtag,
-  ) {
+  Widget _buildTimelineTabs(BuildContext context) {
     final adapter = ref.watch(currentAdapterProvider);
-    final supported =
-        adapter?.capabilities.supportedTimelines ??
-        {TimelineType.home, TimelineType.local, TimelineType.federated};
-    final isMastodon = !supported.contains(TimelineType.social);
+    final isMastodon = adapter != null &&
+        !(adapter.capabilities.supportedTimelines
+            .contains(TimelineType.social));
 
-    // Use user-customized tab order if available.
     final account = ref.watch(currentAccountProvider);
     final storageKey = account?.key.toStorageKey();
-    final order = account != null
-        ? ref.watch(tabOrderProvider(storageKey!))
-        : defaultTabOrder;
-    final hiddenTypes = storageKey != null
-        ? ref.watch(hiddenTimelineTypesProvider(storageKey))
-        : <TimelineType>{};
-    final tabs = order
-        .where((t) => supported.contains(t) && !hiddenTypes.contains(t))
-        .toList();
+    final visible = storageKey != null
+        ? ref.watch(visibleTabsProvider(storageKey))
+        : <TabType>[const TimelineTab(TimelineType.home)];
+    final currentTab = ref.watch(selectedTabProvider);
 
-    // Fetch lists (filtered and ordered).
-    final listsAsync = ref.watch(listsProvider);
-    final allLists = listsAsync.valueOrNull ?? [];
-    final hiddenIds = storageKey != null
-        ? ref.watch(hiddenListIdsProvider(storageKey))
-        : <String>{};
-    final listOrder = storageKey != null
-        ? ref.watch(listOrderProvider(storageKey))
-        : <String>[];
-    final visibleLists = allLists
-        .where((l) => !hiddenIds.contains(l.id))
-        .toList();
-    if (listOrder.isNotEmpty) {
-      visibleLists.sort((a, b) {
-        final ai = listOrder.indexOf(a.id);
-        final bi = listOrder.indexOf(b.id);
-        if (ai == -1 && bi == -1) return 0;
-        if (ai == -1) return 1;
-        if (bi == -1) return -1;
-        return ai.compareTo(bi);
-      });
-    }
-
-    // Pinned hashtags.
-    final pinnedHashtags = storageKey != null
-        ? ref.watch(pinnedHashtagsProvider(storageKey))
-        : <String>[];
+    // Resolve list names for ListTab entries.
+    final allLists = ref.watch(listsProvider).valueOrNull ?? [];
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          // Timeline type tabs.
-          ...tabs.map((type) {
-            var label =
-                (isMastodon ? _mastodonLabelOverrides[type] : null) ??
-                _timelineLabels[type] ??
-                (type == TimelineType.directMessages
-                    ? postScopeLabel(PostScope.direct, adapter)
-                    : type.name);
-            if (type == TimelineType.local) {
-              label = ref.watch(localTimelineNameProvider);
-            }
-            final isSelected =
-                selectedList == null &&
-                selectedHashtag == null &&
-                type == selected;
+          ...visible.map((tab) {
+            final label = _tabLabel(tab, isMastodon, adapter, allLists);
+            final isSelected = tab == currentTab;
             return _tabChip(context, label, isSelected, () {
-              ref.read(selectedListProvider.notifier).state = null;
-              ref.read(selectedHashtagProvider.notifier).state = null;
-              ref.read(selectedTimelineTypeProvider.notifier).state = type;
-              _saveLastTab();
-            });
-          }),
-          // List tabs.
-          ...visibleLists.map((list) {
-            final isSelected =
-                selectedHashtag == null && selectedList?.id == list.id;
-            return _tabChip(context, list.title, isSelected, () {
-              ref.read(selectedHashtagProvider.notifier).state = null;
-              ref.read(selectedListProvider.notifier).state = list;
-              _saveLastTab();
-            });
-          }),
-          // Pinned hashtag tabs.
-          ...pinnedHashtags.map((tag) {
-            final isSelected = selectedHashtag == tag;
-            return _tabChip(context, hashtagSpecLabel(tag), isSelected, () {
-              ref.read(selectedListProvider.notifier).state = null;
-              ref.read(selectedHashtagProvider.notifier).state = tag;
+              ref.read(selectedTabProvider.notifier).state = tab;
               _saveLastTab();
             });
           }),
@@ -682,24 +609,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  String _tabLabel(
+    TabType tab,
+    bool isMastodon,
+    DecentralizedBackendAdapter? adapter,
+    List<PostList> allLists,
+  ) {
+    return switch (tab) {
+      TimelineTab(:final type) => () {
+        if (type == TimelineType.local) {
+          return ref.watch(localTimelineNameProvider);
+        }
+        return (isMastodon ? _mastodonLabelOverrides[type] : null) ??
+            _timelineLabels[type] ??
+            (type == TimelineType.directMessages
+                ? postScopeLabel(PostScope.direct, adapter)
+                : type.name);
+      }(),
+      ListTab(:final id, :final name) =>
+          name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
+      HashtagTab(:final tag) => hashtagSpecLabel(tag),
+      NotificationsTab() => '通知',
+      AnnouncementsTab() => 'お知らせ',
+    };
+  }
+
   void _showTabManagement(BuildContext context) {
     final account = ref.read(currentAccountProvider);
     if (account == null) return;
     final storageKey = account.key.toStorageKey();
-    final lists = ref.read(listsProvider).valueOrNull ?? [];
     final adapter = ref.read(currentAdapterProvider);
-    final supported =
-        adapter?.capabilities.supportedTimelines ??
-        {TimelineType.home, TimelineType.local, TimelineType.federated};
-    final isMastodon = !supported.contains(TimelineType.social);
+    final isMastodon = adapter != null &&
+        !(adapter.capabilities.supportedTimelines
+            .contains(TimelineType.social));
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => TabManagementSheet(
         storageKey: storageKey,
-        allLists: lists,
-        supportedTimelines: supported,
         isMastodon: isMastodon,
       ),
     );
@@ -935,17 +883,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               context.push('/bookmarks');
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.campaign_outlined),
-            title: const Text('お知らせ'),
-            trailing: unreadAnnouncements > 0
-                ? Badge(label: Text('$unreadAnnouncements'))
-                : null,
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/announcements');
-            },
-          ),
+          // Hide drawer item when announcements tab is visible.
+          if (current == null ||
+              !ref.watch(isTabVisibleProvider((
+                storageKey: current.key.toStorageKey(),
+                tab: const AnnouncementsTab(),
+              ))))
+            ListTile(
+              leading: const Icon(Icons.campaign_outlined),
+              title: const Text('お知らせ'),
+              trailing: unreadAnnouncements > 0
+                  ? Badge(label: Text('$unreadAnnouncements'))
+                  : null,
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/announcements');
+              },
+            ),
           if (ref.read(currentAdapterProvider) is ListSupport)
             ListTile(
               leading: const Icon(Icons.list),

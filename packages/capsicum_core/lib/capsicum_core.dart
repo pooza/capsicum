@@ -21,6 +21,7 @@ export 'src/model/post_scope.dart';
 export 'src/model/scheduled_post.dart';
 export 'src/model/timeline_query.dart';
 export 'src/model/timeline_response.dart';
+export 'src/model/tab_type.dart';
 export 'src/model/timeline_type.dart';
 export 'src/model/user.dart';
 export 'src/model/user_relationship.dart';

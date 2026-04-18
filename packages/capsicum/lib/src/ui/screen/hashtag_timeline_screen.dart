@@ -75,18 +75,19 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
     final account = ref.watch(currentAccountProvider);
     if (account == null) return const SizedBox.shrink();
     final storageKey = account.key.toStorageKey();
-    final pinned = ref.watch(pinnedHashtagsProvider(storageKey));
-    final isPinned = pinned.contains(widget.hashtag);
+    final config = ref.watch(tabConfigProvider(storageKey));
+    final tab = HashtagTab(widget.hashtag);
+    final isPinned = config.any((e) => e.tab == tab);
 
     return IconButton(
       icon: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
       tooltip: isPinned ? 'タブから外す' : 'タブに固定',
       onPressed: () {
-        final notifier = ref.read(pinnedHashtagsProvider(storageKey).notifier);
+        final notifier = ref.read(tabConfigProvider(storageKey).notifier);
         if (isPinned) {
-          notifier.remove(widget.hashtag);
+          notifier.removeTab(tab);
         } else {
-          notifier.add(widget.hashtag);
+          notifier.addTab(tab);
         }
       },
     );
