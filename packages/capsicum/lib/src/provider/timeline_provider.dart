@@ -6,10 +6,20 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 
-/// Currently selected timeline type.
-final selectedTimelineTypeProvider = StateProvider<TimelineType>(
-  (ref) => TimelineType.home,
+/// Currently selected tab (unified across all tab types).
+final selectedTabProvider = StateProvider<TabType>(
+  (ref) => const TimelineTab(TimelineType.home),
 );
+
+/// Currently selected timeline type, derived from [selectedTabProvider].
+///
+/// Returns [TimelineType.home] when the active tab is not a timeline.
+/// Kept for backward-compatibility with [TimelineNotifier] and other
+/// providers that watch only the timeline type.
+final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
+  final tab = ref.watch(selectedTabProvider);
+  return tab is TimelineTab ? tab.type : TimelineType.home;
+});
 
 /// Paginated timeline state.
 class TimelineState {
@@ -411,13 +421,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       accts: accts.toList(),
     );
 
-    // キャッシュに格納
+    // 通信エラー時はキャッシュせず、次回再問い合わせ
+    if (result == null) return posts;
+
+    // 確定した結果のみキャッシュ（null = 取得失敗はキャッシュしない）
     for (final entry in result.entries) {
-      _isCatCache[entry.key] = entry.value;
-    }
-    // 問い合わせたが結果に含まれなかった acct は false としてキャッシュ
-    for (final acct in accts) {
-      _isCatCache.putIfAbsent(acct, () => false);
+      if (entry.value != null) {
+        _isCatCache[entry.key] = entry.value!;
+      }
     }
 
     // isCat == true のユーザーがいなければ再構築不要

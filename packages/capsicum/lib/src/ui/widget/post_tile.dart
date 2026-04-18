@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
@@ -1500,6 +1501,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       builder: (_) => _RetagSheet(
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
+        adapter: ref.read(currentAdapterProvider)!,
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
           try {
@@ -2657,12 +2659,14 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
 class _RetagSheet extends StatefulWidget {
   final List<String> initialTags;
   final MulukhiyaService mulukhiya;
+  final DecentralizedBackendAdapter adapter;
   final String postLabel;
   final Future<void> Function(List<String> tags) onSubmit;
 
   const _RetagSheet({
     required this.initialTags,
     required this.mulukhiya,
+    required this.adapter,
     required this.postLabel,
     required this.onSubmit,
   });
@@ -2676,12 +2680,17 @@ class _RetagSheetState extends State<_RetagSheet> {
   final _controller = TextEditingController();
   bool _submitting = false;
   List<String> _defaultTags = [];
+  List<FavoriteTag> _favoriteTags = [];
+  List<String> _suggestions = [];
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _tags = List.of(widget.initialTags);
     _loadDefaultTags();
+    _loadFavoriteTags();
+    _controller.addListener(_onTextChanged);
   }
 
   Future<void> _loadDefaultTags() async {
@@ -2689,8 +2698,62 @@ class _RetagSheetState extends State<_RetagSheet> {
     if (mounted) setState(() => _defaultTags = tags);
   }
 
+  Future<void> _loadFavoriteTags() async {
+    try {
+      final tags = await widget.mulukhiya.getFavoriteTags();
+      if (mounted) setState(() => _favoriteTags = tags);
+    } catch (_) {}
+  }
+
+  void _onTextChanged() {
+    _debounce?.cancel();
+    final query = _controller.text.trim().replaceAll('#', '');
+    if (query.isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _fetchSuggestions(query);
+    });
+  }
+
+  Future<void> _fetchSuggestions(String query) async {
+    final lowerQuery = query.toLowerCase();
+
+    // Client-side filter on favorite tags.
+    final fromFavorites = _favoriteTags
+        .where((t) => t.name.toLowerCase().contains(lowerQuery))
+        .map((t) => t.name)
+        .toList();
+
+    // Remote search via SNS API.
+    List<String> fromSearch = [];
+    final adapter = widget.adapter;
+    if (adapter is SearchSupport) {
+      try {
+        fromSearch = await (adapter as SearchSupport).searchHashtags(
+          query,
+          limit: 5,
+        );
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    // Merge: favorites first, then remote results, deduplicated.
+    final seen = <String>{..._tags};
+    final merged = <String>[];
+    for (final tag in [...fromFavorites, ...fromSearch]) {
+      if (seen.add(tag)) merged.add(tag);
+    }
+
+    setState(() => _suggestions = merged);
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -2699,6 +2762,12 @@ class _RetagSheetState extends State<_RetagSheet> {
     final text = _controller.text.trim().replaceAll('#', '');
     if (text.isEmpty || _tags.contains(text)) return;
     setState(() => _tags.add(text));
+    _controller.clear();
+  }
+
+  void _addSuggestedTag(String tag) {
+    if (_tags.contains(tag)) return;
+    setState(() => _tags.add(tag));
     _controller.clear();
   }
 
@@ -2762,6 +2831,26 @@ class _RetagSheetState extends State<_RetagSheet> {
                 IconButton(onPressed: _addTag, icon: const Icon(Icons.add)),
               ],
             ),
+            if (_suggestions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 4),
+                    itemBuilder: (context, index) {
+                      final tag = _suggestions[index];
+                      return ActionChip(
+                        avatar: const Icon(Icons.tag, size: 18),
+                        label: Text('#$tag', overflow: TextOverflow.ellipsis),
+                        onPressed: () => _addSuggestedTag(tag),
+                      );
+                    },
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

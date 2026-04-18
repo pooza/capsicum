@@ -12,18 +12,39 @@ import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
 import '../widget/notification_tile.dart';
 
-class NotificationScreen extends ConsumerStatefulWidget {
+/// Standalone screen with AppBar.
+class NotificationScreen extends ConsumerWidget {
   const NotificationScreen({super.key});
 
   @override
-  ConsumerState<NotificationScreen> createState() => _NotificationScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('通知'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: const NotificationView(),
+    );
+  }
 }
 
-class _NotificationScreenState extends ConsumerState<NotificationScreen> {
+/// Reusable body widget for embedding as a home-screen tab.
+class NotificationView extends ConsumerStatefulWidget {
+  const NotificationView({super.key});
+
+  @override
+  ConsumerState<NotificationView> createState() => _NotificationViewState();
+}
+
+class _NotificationViewState extends ConsumerState<NotificationView>
+    with AutomaticKeepAliveClientMixin {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   bool _markerRestored = false;
   Timer? _throttleTimer;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -103,61 +124,56 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final notifications = ref.watch(notificationProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('通知'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: notifications.when(
-        data: (state) {
-          if (state.notifications.isEmpty) {
-            return const Center(child: Text('通知はありません'));
-          }
-          _restoreMarker(state.notifications);
-          return RefreshIndicator(
-            onRefresh: () {
-              _markerRestored = false;
-              return ref.refresh(notificationProvider.future);
-            },
-            child: ScrollablePositionedList.separated(
-              itemScrollController: _itemScrollController,
-              itemPositionsListener: _itemPositionsListener,
-              itemCount:
-                  state.notifications.length + (state.isLoadingMore ? 1 : 0),
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                if (index >= state.notifications.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return NotificationTile(
-                  notification: state.notifications[index],
-                  postLabel: ref.watch(postLabelProvider),
-                  reblogLabel: ref.watch(reblogLabelProvider),
+    return notifications.when(
+      data: (state) {
+        if (state.notifications.isEmpty) {
+          return const Center(child: Text('通知はありません'));
+        }
+        _restoreMarker(state.notifications);
+        return RefreshIndicator(
+          onRefresh: () {
+            _markerRestored = false;
+            return ref.refresh(notificationProvider.future);
+          },
+          child: ScrollablePositionedList.separated(
+            itemScrollController: _itemScrollController,
+            itemPositionsListener: _itemPositionsListener,
+            itemCount:
+                state.notifications.length + (state.isLoadingMore ? 1 : 0),
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              if (index >= state.notifications.length) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
                 );
-              },
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('通知の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(notificationProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
+              }
+              return NotificationTile(
+                notification: state.notifications[index],
+                postLabel: ref.watch(postLabelProvider),
+                reblogLabel: ref.watch(reblogLabelProvider),
+              );
+            },
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('通知の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(notificationProvider),
+                child: const Text('再試行'),
+              ),
+            ],
           ),
         ),
       ),

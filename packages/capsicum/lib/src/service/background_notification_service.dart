@@ -1,4 +1,6 @@
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,8 +68,19 @@ class BackgroundNotificationService {
           prevCount + notifications.length,
         );
 
-        // Show a local notification for each new item.
-        final reblogLabel = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+        // Resolve reblog label from mulukhiya, then adapter type.
+        String reblogLabel;
+        try {
+          final mulukhiya = await MulukhiyaService.detect(
+            Dio(),
+            accountKey.host,
+          );
+          reblogLabel =
+              mulukhiya?.reblogLabel ??
+              (adapter is ReactionSupport ? 'リノート' : 'ブースト');
+        } catch (_) {
+          reblogLabel = adapter is ReactionSupport ? 'リノート' : 'ブースト';
+        }
         for (final n in notifications) {
           await plugin.show(
             notificationId++,
@@ -100,6 +113,8 @@ class BackgroundNotificationService {
       NotificationType.reaction => '$name さんがリアクションしました',
       NotificationType.poll => '投票が終了しました',
       NotificationType.update => '$name さんが投稿を編集しました',
+      NotificationType.login => '${key.host} にログインがありました',
+      NotificationType.createToken => '${key.host} でアクセストークンが作成されました',
       NotificationType.other => '${key.host} からの通知',
     };
   }

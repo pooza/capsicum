@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../provider/account_manager_provider.dart';
-import '../../../provider/list_provider.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../widget/tab_management_sheet.dart';
 
@@ -111,7 +110,6 @@ class _TabOrderTile extends StatelessWidget {
       title: const Text('タブ管理'),
       subtitle: const Text('タブの並び替え・表示切替・ハッシュタグ'),
       onTap: () {
-        final lists = ref.read(listsProvider).valueOrNull ?? [];
         final supported =
             adapter?.capabilities.supportedTimelines ??
             {TimelineType.home, TimelineType.local, TimelineType.federated};
@@ -121,8 +119,6 @@ class _TabOrderTile extends StatelessWidget {
           isScrollControlled: true,
           builder: (_) => TabManagementSheet(
             storageKey: storageKey,
-            allLists: lists,
-            supportedTimelines: supported,
             isMastodon: isMastodon,
           ),
         );

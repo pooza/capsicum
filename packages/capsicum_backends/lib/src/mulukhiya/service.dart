@@ -460,7 +460,6 @@ class MulukhiyaService {
     try {
       await _dio.post(
         '$baseUrl/decoration/restore',
-        data: {'token': accessToken},
         options: _bearerOptions(accessToken),
       );
       return true;
@@ -506,7 +505,7 @@ class MulukhiyaService {
   }) async {
     final response = await _dio.put(
       '$baseUrl/scheduled_status/$id/tags',
-      data: {'token': accessToken, 'tags': tags},
+      data: {'tags': tags},
       options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
@@ -521,7 +520,7 @@ class MulukhiyaService {
   }) async {
     await _dio.delete(
       '$baseUrl/status/nowplaying',
-      data: {'token': accessToken, 'id': id},
+      data: {'id': id},
       options: _bearerOptions(accessToken),
     );
   }
@@ -535,7 +534,7 @@ class MulukhiyaService {
   }) async {
     await _dio.post(
       '$baseUrl/status/tags',
-      data: {'token': accessToken, 'id': id, 'tags': tags},
+      data: {'id': id, 'tags': tags},
       options: _bearerOptions(accessToken),
     );
   }
@@ -548,7 +547,6 @@ class MulukhiyaService {
   }) async {
     final response = await _dio.get(
       '$baseUrl/emoji/palettes',
-      queryParameters: {'token': accessToken},
       options: _bearerOptions(accessToken),
     );
     final data = response.data as Map<String, dynamic>;
@@ -660,7 +658,10 @@ class MulukhiyaService {
   /// 複数 acct の isCat フラグを一括取得する。
   /// モロヘイヤの `POST /account/is_cat` を呼び出し、ActivityPub actor から
   /// isCat を取得する（Redis キャッシュ付き）。
-  Future<Map<String, bool>> fetchIsCat({
+  ///
+  /// 戻り値は3値: `true`（猫）/ `false`（猫でない）/ `null`（取得失敗・不明）。
+  /// 通信エラー時は `null` を返す（空 Map と区別するため）。
+  Future<Map<String, bool?>?> fetchIsCat({
     required String accessToken,
     required List<String> accts,
   }) async {
@@ -668,13 +669,16 @@ class MulukhiyaService {
     try {
       final response = await _dio.post(
         '$baseUrl/account/is_cat',
-        data: {'token': accessToken, 'accts': accts},
+        data: {'accts': accts},
         options: _bearerOptions(accessToken),
       );
       final data = response.data as Map<String, dynamic>? ?? {};
-      return {for (final entry in data.entries) entry.key: entry.value == true};
+      return {
+        for (final entry in data.entries)
+          entry.key: entry.value == null ? null : entry.value == true,
+      };
     } catch (_) {
-      return const {};
+      return null;
     }
   }
 }

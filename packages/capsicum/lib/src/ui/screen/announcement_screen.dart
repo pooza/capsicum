@@ -19,8 +19,25 @@ final _infoBotUserProvider = FutureProvider.autoDispose<User?>((ref) async {
   return adapter.getUser(parts[0], parts[1]);
 });
 
+/// Standalone screen with AppBar.
 class AnnouncementScreen extends ConsumerWidget {
   const AnnouncementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('お知らせ'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: const AnnouncementView(),
+    );
+  }
+}
+
+/// Reusable body widget for embedding as a home-screen tab.
+class AnnouncementView extends ConsumerWidget {
+  const AnnouncementView({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,63 +45,56 @@ class AnnouncementScreen extends ConsumerWidget {
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
     final infoBotAcct = mulukhiya?.infoBotAcct;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('お知らせ'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: announcements.when(
-        data: (state) => state.announcements.isEmpty && infoBotAcct == null
-            ? const Center(child: Text('お知らせはありません'))
-            : RefreshIndicator(
-                onRefresh: () => ref.refresh(announcementProvider.future),
-                child: ListView.separated(
-                  itemCount:
-                      state.announcements.length +
-                      (infoBotAcct != null ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (infoBotAcct != null) {
-                      if (index == 0) {
-                        return _InfoBotBanner(
-                          acct: infoBotAcct,
-                          onTap: () => _openInfoBotProfile(context, ref),
-                          avatarUrl: ref
-                              .watch(_infoBotUserProvider)
-                              .valueOrNull
-                              ?.avatarUrl,
-                        );
-                      }
-                      index -= 1;
+    return announcements.when(
+      data: (state) => state.announcements.isEmpty && infoBotAcct == null
+          ? const Center(child: Text('お知らせはありません'))
+          : RefreshIndicator(
+              onRefresh: () => ref.refresh(announcementProvider.future),
+              child: ListView.separated(
+                itemCount:
+                    state.announcements.length + (infoBotAcct != null ? 1 : 0),
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (infoBotAcct != null) {
+                    if (index == 0) {
+                      return _InfoBotBanner(
+                        acct: infoBotAcct,
+                        onTap: () => _openInfoBotProfile(context, ref),
+                        avatarUrl: ref
+                            .watch(_infoBotUserProvider)
+                            .valueOrNull
+                            ?.avatarUrl,
+                      );
                     }
-                    final announcement = state.announcements[index];
-                    return AnnouncementTile(
-                      announcement: announcement,
-                      host: ref.read(currentAccountProvider)?.key.host,
-                      onDismiss: announcement.read
-                          ? null
-                          : () => ref
-                                .read(announcementProvider.notifier)
-                                .dismiss(announcement.id),
-                    );
-                  },
-                ),
+                    index -= 1;
+                  }
+                  final announcement = state.announcements[index];
+                  return AnnouncementTile(
+                    announcement: announcement,
+                    host: ref.read(currentAccountProvider)?.key.host,
+                    onDismiss: announcement.read
+                        ? null
+                        : () => ref
+                              .read(announcementProvider.notifier)
+                              .dismiss(announcement.id),
+                  );
+                },
               ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('お知らせの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(announcementProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
             ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('お知らせの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(announcementProvider),
+                child: const Text('再試行'),
+              ),
+            ],
           ),
         ),
       ),

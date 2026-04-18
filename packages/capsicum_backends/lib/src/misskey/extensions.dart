@@ -127,6 +127,8 @@ const misskeyNotificationTypeMap = <String, NotificationType>{
   'receiveFollowRequest': NotificationType.followRequest,
   'reaction': NotificationType.reaction,
   'pollEnded': NotificationType.poll,
+  'login': NotificationType.login,
+  'createToken': NotificationType.createToken,
 };
 
 extension CapsicumMisskeyNotificationExtension on MisskeyNotification {

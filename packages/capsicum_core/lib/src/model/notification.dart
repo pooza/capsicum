@@ -10,6 +10,8 @@ enum NotificationType {
   reaction,
   poll,
   update,
+  login,
+  createToken,
   other,
 }
 
