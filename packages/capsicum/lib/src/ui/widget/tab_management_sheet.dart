@@ -29,11 +29,18 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   @override
   void initState() {
     super.initState();
-    // Sync server lists into tab config after the current frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncLists());
+    // Sync server lists into tab config after the current frame,
+    // and again whenever the server list set changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncLists();
+      ref.listenManual(listsProvider, (_, _) {
+        _syncLists();
+      });
+    });
   }
 
   void _syncLists() {
+    if (!mounted) return;
     final allEntries = ref.read(tabConfigProvider(widget.storageKey));
     final allLists = ref.read(listsProvider).valueOrNull ?? [];
     final notifier = _notifier;

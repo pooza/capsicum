@@ -395,16 +395,17 @@ class TabConfigNotifier
 /// Timeline tabs whose type is not supported by the current adapter
 /// (e.g. social on Mastodon, directMessages on Misskey) are excluded.
 /// List tabs whose list no longer exists on the server are also excluded.
+/// Server lists not yet in the config are appended automatically.
 final visibleTabsProvider =
     Provider.family<List<TabType>, String>((ref, storageKey) {
   final adapter = ref.watch(currentAdapterProvider);
   final supported = adapter?.capabilities.supportedTimelines ??
       {TimelineType.home, TimelineType.local, TimelineType.federated};
-  final serverListIds = (ref.watch(listsProvider).valueOrNull ?? [])
-      .map((l) => l.id)
-      .toSet();
-  return ref
-      .watch(tabConfigProvider(storageKey))
+  final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
+  final serverListIds = serverLists.map((l) => l.id).toSet();
+  final config = ref.watch(tabConfigProvider(storageKey));
+
+  final tabs = config
       .where((e) => e.visible)
       .map((e) => e.tab)
       .where((tab) {
@@ -413,6 +414,19 @@ final visibleTabsProvider =
         return true;
       })
       .toList();
+
+  // Append server lists not yet tracked in the config.
+  final configListIds = config
+      .where((e) => e.tab is ListTab)
+      .map((e) => (e.tab as ListTab).id)
+      .toSet();
+  for (final list in serverLists) {
+    if (!configListIds.contains(list.id)) {
+      tabs.add(ListTab(id: list.id, name: list.title));
+    }
+  }
+
+  return tabs;
 });
 
 /// Whether a specific tab type is currently visible.
