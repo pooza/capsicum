@@ -329,11 +329,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (adapter == null) return;
 
     try {
-      final fullUser = await adapter.getUserById(widget.user.id);
+      var fullUser = await adapter.getUserById(widget.user.id);
+      fullUser = await _enrichUserIsCat(fullUser);
       if (mounted) setState(() => _user = fullUser);
     } catch (_) {
       // Keep the original user data if full fetch fails.
     }
+  }
+
+  /// リモートユーザーの isCat をモロヘイヤ経由で補完する。
+  Future<User> _enrichUserIsCat(User user) async {
+    if (user.isCat || user.host == null) return user;
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    final account = ref.read(currentAccountProvider);
+    if (mulukhiya == null || account == null) return user;
+
+    try {
+      final acct = '${user.username}@${user.host}';
+      final result = await mulukhiya.fetchIsCat(
+        accessToken: account.userSecret.accessToken,
+        accts: [acct],
+      );
+      if (result != null && result[acct] == true) {
+        return user.copyWithIsCat(true);
+      }
+    } catch (_) {
+      // フォールバック: 元のユーザー情報を維持
+    }
+    return user;
   }
 
   Future<List<Post>> _fetchUserPosts(
