@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -330,33 +331,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     try {
       var fullUser = await adapter.getUserById(widget.user.id);
-      fullUser = await _enrichUserIsCat(fullUser);
+      fullUser = await ref.read(isCatEnricherProvider).enrichUser(fullUser);
       if (mounted) setState(() => _user = fullUser);
     } catch (_) {
       // Keep the original user data if full fetch fails.
     }
-  }
-
-  /// リモートユーザーの isCat をモロヘイヤ経由で補完する。
-  Future<User> _enrichUserIsCat(User user) async {
-    if (user.isCat || user.host == null) return user;
-    final mulukhiya = ref.read(currentMulukhiyaProvider);
-    final account = ref.read(currentAccountProvider);
-    if (mulukhiya == null || account == null) return user;
-
-    try {
-      final acct = '${user.username}@${user.host}';
-      final result = await mulukhiya.fetchIsCat(
-        accessToken: account.userSecret.accessToken,
-        accts: [acct],
-      );
-      if (result != null && result[acct] == true) {
-        return user.copyWithIsCat(true);
-      }
-    } catch (_) {
-      // フォールバック: 元のユーザー情報を維持
-    }
-    return user;
   }
 
   Future<List<Post>> _fetchUserPosts(

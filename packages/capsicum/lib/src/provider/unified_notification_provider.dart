@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
 import 'account_manager_provider.dart';
+import 'is_cat_provider.dart';
 
 /// A notification paired with the account it belongs to.
 class UnifiedNotification {
@@ -68,8 +69,13 @@ class UnifiedNotificationNotifier
 
   Future<_FetchResult> _fetchFor(Account account) async {
     try {
-      final notifications = await (account.adapter as NotificationSupport)
+      var notifications = await (account.adapter as NotificationSupport)
           .getNotifications(query: const TimelineQuery(limit: _pageSize));
+      final enricher = IsCatEnricher(
+        mulukhiya: account.mulukhiya,
+        accessToken: account.userSecret.accessToken,
+      );
+      notifications = await enricher.enrichNotifications(notifications);
       return _FetchResult(account: account, notifications: notifications);
     } catch (e) {
       return _FetchResult(account: account, notifications: const [], error: e);

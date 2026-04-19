@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
 import 'account_manager_provider.dart';
+import 'is_cat_provider.dart';
 import 'timeline_provider.dart';
 
 /// Paginated notification state.
@@ -40,8 +41,10 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       return const NotificationState(hasMore: false);
     }
 
-    final notifications = await (adapter as NotificationSupport)
+    var notifications = await (adapter as NotificationSupport)
         .getNotifications(query: const TimelineQuery(limit: _pageSize));
+    notifications = await ref.read(isCatEnricherProvider)
+        .enrichNotifications(notifications);
     // Update last-seen ID so background polling skips already-seen items.
     if (notifications.isNotEmpty) {
       _updateLastSeen(notifications.first.id);
@@ -81,9 +84,11 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
 
         final base = state.valueOrNull ?? current;
         final lastId = base.notifications.last.id;
-        final older = await (adapter as NotificationSupport).getNotifications(
+        var older = await (adapter as NotificationSupport).getNotifications(
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
+        older = await ref.read(isCatEnricherProvider)
+            .enrichNotifications(older);
 
         state = AsyncData(
           base.copyWith(
