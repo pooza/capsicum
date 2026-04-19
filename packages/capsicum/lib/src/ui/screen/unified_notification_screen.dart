@@ -128,7 +128,9 @@ class _UnifiedNotificationTile extends ConsumerWidget {
                   if (post?.content != null && post!.content!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
-                      stripHtml(post.content!),
+                      post.author.isCat
+                          ? nyaize(stripHtml(post.content!))
+                          : stripHtml(post.content!),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium,

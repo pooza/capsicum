@@ -88,6 +88,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       emojiSize: ref.watch(emojiSizeProvider),
+      applyNyaize: post?.author.isCat ?? false,
     );
     final isHtml = content.contains('<p>') || content.contains('<br');
     return isHtml
