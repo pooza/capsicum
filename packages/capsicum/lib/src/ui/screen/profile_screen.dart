@@ -345,12 +345,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }) async {
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
-    return await (adapter as dynamic).getUserPosts(
+    final posts = await (adapter as dynamic).getUserPosts(
           widget.user.id,
           maxId: maxId,
           onlyMedia: onlyMedia,
         )
         as List<Post>;
+    return ref.read(isCatEnricherProvider).enrichPosts(posts);
   }
 
   @override
