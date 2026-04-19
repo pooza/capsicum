@@ -81,6 +81,21 @@ class IsCatEnricher {
     }).toList();
   }
 
+  /// 投稿リストの投稿者の isCat を一括で補完する。
+  Future<List<Post>> enrichPosts(List<Post> posts) async {
+    final accts = <String>{};
+    for (final p in posts) {
+      _collectAcct(p.author, accts);
+      if (p.reblog != null) _collectAcct(p.reblog!.author, accts);
+    }
+
+    if (accts.isNotEmpty) await _fetchAndCache(accts.toList());
+
+    if (!_cache.values.any((v) => v)) return posts;
+
+    return posts.map((p) => _enrichPost(p)).toList();
+  }
+
   void _collectAcct(User? user, Set<String> accts) {
     if (user == null || user.isCat || user.host == null) return;
     final acct = '${user.username}@${user.host}';
