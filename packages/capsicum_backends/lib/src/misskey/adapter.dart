@@ -86,6 +86,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         AntennaSupport,
         ReportSupport,
         PinSupport,
+        PushSubscriptionSupport,
         ScheduleSupport,
         TranslationSupport,
         DriveSupport {
@@ -1297,5 +1298,41 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       content: data['text'] as String? ?? '',
       detectedLanguage: data['sourceLang'] as String?,
     );
+  }
+
+  // -- PushSubscriptionSupport --
+
+  String? _lastPushEndpoint;
+
+  @override
+  Future<String?> getVapidPublicKey() async {
+    try {
+      final data = await client.getMeta();
+      return data['swPublickey'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> subscribePush({
+    required String endpoint,
+    required String p256dh,
+    required String auth,
+  }) async {
+    _lastPushEndpoint = endpoint;
+    return client.registerServiceWorker(
+      endpoint: endpoint,
+      publickey: p256dh,
+      auth: auth,
+    );
+  }
+
+  @override
+  Future<void> unsubscribePush() async {
+    final endpoint = _lastPushEndpoint;
+    if (endpoint == null) return;
+    await client.unregisterServiceWorker(endpoint: endpoint);
+    _lastPushEndpoint = null;
   }
 }

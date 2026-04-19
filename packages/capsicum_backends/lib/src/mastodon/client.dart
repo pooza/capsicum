@@ -904,4 +904,33 @@ class MastodonClient {
       rethrow;
     }
   }
+
+  /// POST /api/v1/push/subscription
+  Future<Map<String, dynamic>> createPushSubscription({
+    required String endpoint,
+    required String p256dh,
+    required String auth,
+  }) async {
+    final response = await dio.post(
+      '/api/v1/push/subscription',
+      data: FormData.fromMap({
+        'subscription[endpoint]': endpoint,
+        'subscription[keys][p256dh]': p256dh,
+        'subscription[keys][auth]': auth,
+        'data[alerts][mention]': 'true',
+        'data[alerts][favourite]': 'true',
+        'data[alerts][reblog]': 'true',
+        'data[alerts][follow]': 'true',
+        'data[alerts][poll]': 'true',
+        'data[alerts][status]': 'true',
+        'data[alerts][update]': 'true',
+      }),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// DELETE /api/v1/push/subscription
+  Future<void> deletePushSubscription() async {
+    await dio.delete('/api/v1/push/subscription');
+  }
 }

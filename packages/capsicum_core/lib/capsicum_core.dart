@@ -55,6 +55,7 @@ export 'src/social/interfaces/login_support.dart';
 export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/poll_support.dart';
 export 'src/social/interfaces/profile_edit_support.dart';
+export 'src/social/interfaces/push_subscription_support.dart';
 export 'src/social/interfaces/reaction_support.dart';
 export 'src/social/interfaces/report_support.dart';
 export 'src/social/interfaces/schedule_support.dart';

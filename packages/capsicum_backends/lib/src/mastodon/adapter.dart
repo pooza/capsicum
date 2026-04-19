@@ -86,6 +86,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ProfileEditSupport,
         ReportSupport,
         PinSupport,
+        PushSubscriptionSupport,
         ScheduleSupport,
         TranslationSupport {
   final MastodonClient client;
@@ -1050,5 +1051,41 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       detectedLanguage: data['detected_source_language'] as String?,
       provider: data['provider'] as String?,
     );
+  }
+
+  // -- PushSubscriptionSupport --
+
+  @override
+  Future<String?> getVapidPublicKey() async {
+    try {
+      final data = await client.getInstanceV2();
+      return (data['configuration'] as Map?)?['vapid']?['public_key'] as String?;
+    } catch (_) {
+      // v2 未対応の場合は v1 にフォールバック
+      try {
+        final data = await client.getInstanceV1();
+        return data['vapid_public_key'] as String?;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> subscribePush({
+    required String endpoint,
+    required String p256dh,
+    required String auth,
+  }) async {
+    return client.createPushSubscription(
+      endpoint: endpoint,
+      p256dh: p256dh,
+      auth: auth,
+    );
+  }
+
+  @override
+  Future<void> unsubscribePush() async {
+    await client.deletePushSubscription();
   }
 }
