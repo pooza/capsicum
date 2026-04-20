@@ -1075,18 +1075,22 @@ class MisskeyClient {
     required String publickey,
     required String auth,
   }) async {
-    final response = await dio.post('/api/sw/register', data: createBody({
-      'endpoint': endpoint,
-      'publickey': publickey,
-      'auth': auth,
-    }));
+    final response = await dio.post(
+      '/api/sw/register',
+      data: createBody({
+        'endpoint': endpoint,
+        'publickey': publickey,
+        'auth': auth,
+      }),
+    );
     return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/sw/unregister
   Future<void> unregisterServiceWorker({required String endpoint}) async {
-    await dio.post('/api/sw/unregister', data: createBody({
-      'endpoint': endpoint,
-    }));
+    await dio.post(
+      '/api/sw/unregister',
+      data: createBody({'endpoint': endpoint}),
+    );
   }
 }

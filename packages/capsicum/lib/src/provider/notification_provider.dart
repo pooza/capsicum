@@ -41,9 +41,11 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       return const NotificationState(hasMore: false);
     }
 
-    var notifications = await (adapter as NotificationSupport)
-        .getNotifications(query: const TimelineQuery(limit: _pageSize));
-    notifications = await ref.read(isCatEnricherProvider)
+    var notifications = await (adapter as NotificationSupport).getNotifications(
+      query: const TimelineQuery(limit: _pageSize),
+    );
+    notifications = await ref
+        .read(isCatEnricherProvider)
         .enrichNotifications(notifications);
     // Update last-seen ID so background polling skips already-seen items.
     if (notifications.isNotEmpty) {
@@ -87,7 +89,8 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
         var older = await (adapter as NotificationSupport).getNotifications(
           query: TimelineQuery(maxId: lastId, limit: _pageSize),
         );
-        older = await ref.read(isCatEnricherProvider)
+        older = await ref
+            .read(isCatEnricherProvider)
             .enrichNotifications(older);
 
         state = AsyncData(

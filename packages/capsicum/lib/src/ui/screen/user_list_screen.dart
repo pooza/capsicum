@@ -55,7 +55,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     try {
       final result = await widget.fetcher(null);
       if (!mounted) return;
-      final enriched = await ref.read(isCatEnricherProvider)
+      final enriched = await ref
+          .read(isCatEnricherProvider)
           .enrichUsers(result.users);
       if (!mounted) return;
       setState(() {
@@ -78,7 +79,8 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     try {
       final result = await widget.fetcher(_nextCursor);
       if (!mounted) return;
-      final enriched = await ref.read(isCatEnricherProvider)
+      final enriched = await ref
+          .read(isCatEnricherProvider)
           .enrichUsers(result.users);
       if (!mounted) return;
       setState(() {
