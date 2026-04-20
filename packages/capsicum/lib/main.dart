@@ -71,7 +71,7 @@ FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
 void _startApp() {
   runApp(const ProviderScope(child: CapsicumApp()));
 
-  // Firebase / FCM 初��化（Android）。スプラッシュ画面でプッシュ登録前に await する。
+  // Firebase / FCM 初期化（Android）。スプラッシュ画面でプッシュ登録前に await する。
   firebaseReady = _initFirebase();
 
   // Initialize notifications after the widget tree is built so that
