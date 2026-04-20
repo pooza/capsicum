@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/apns_service.dart';
+import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/share_intent_service.dart';
 
@@ -55,6 +58,9 @@ FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
 void _startApp() {
   runApp(const ProviderScope(child: CapsicumApp()));
 
+  // Firebase / FCM 初��化（Android）。スプラッシュ画面でプッシュ登録前に await する。
+  firebaseReady = _initFirebase();
+
   // Initialize notifications after the widget tree is built so that
   // the permission dialog on iOS does not block rendering.
   NotificationInit.initialize(
@@ -77,6 +83,26 @@ String? pendingSharedText;
 
 /// Completes when the share intent check is done.
 late final Future<void> shareIntentReady;
+
+/// Completes when Firebase / FCM initialization is done (Android only).
+late final Future<void> firebaseReady;
+
+Future<void> _initFirebase() async {
+  if (!Platform.isAndroid) return;
+  try {
+    // ignore: avoid_print
+    print('capsicum: Firebase.initializeApp starting');
+    await Firebase.initializeApp();
+    // ignore: avoid_print
+    print('capsicum: Firebase.initializeApp done, starting FCM');
+    await FcmService.initialize();
+    // ignore: avoid_print
+    print('capsicum: FCM init done');
+  } catch (e) {
+    // ignore: avoid_print
+    print('capsicum: Firebase initialization failed: $e');
+  }
+}
 
 Future<void> _consumeSharedText() async {
   final text = await ShareIntentService.consumeSharedText();

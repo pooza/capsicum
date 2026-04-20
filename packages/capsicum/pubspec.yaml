@@ -40,6 +40,8 @@ dependencies:
   html_unescape: ^2.0.0
   emoji_picker_flutter: ^4.3.0
   pointycastle: ^3.9.1
+  firebase_core: ^3.13.0
+  firebase_messaging: ^15.2.4
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../model/account.dart';
 import 'apns_service.dart';
+import 'fcm_service.dart';
 import 'push_key_store.dart';
 import 'push_relay_client.dart';
 
@@ -123,7 +124,19 @@ class PushRegistrationService {
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
   ///
   /// プリセットサーバーのアカウントが1つでもあれば、全アカウントを登録対象とする。
+  /// デバイストークンが未取得の場合は到着を待ってから登録する。
   static Future<void> registerAllAccounts(List<Account> accounts) async {
+    if (accounts.isEmpty) return;
+
+    // デバイストークンが未取得なら到着を待つ（最大 10 秒）
+    if (_getDeviceToken() == null) {
+      final token = await _waitForDeviceToken();
+      if (token == null) {
+        debugPrint('PushRegistration: device token not available, skipping');
+        return;
+      }
+    }
+
     final hasPreset = accounts.any(
       (a) => _presetServers.contains(a.key.host),
     );
@@ -132,9 +145,26 @@ class PushRegistrationService {
     }
   }
 
+  /// デバイストークンの到着を最大 10 秒待つ。
+  static Future<String?> _waitForDeviceToken() async {
+    if (Platform.isIOS) {
+      return ApnsService.onTokenChanged.first.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => '',
+      ).then((t) => t.isEmpty ? null : t);
+    }
+    if (Platform.isAndroid) {
+      return FcmService.onTokenChanged.first.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => '',
+      ).then((t) => t.isEmpty ? null : t);
+    }
+    return null;
+  }
+
   static String? _getDeviceToken() {
     if (Platform.isIOS) return ApnsService.deviceToken;
-    // Android: FCM トークン取得は #315 で実装
+    if (Platform.isAndroid) return FcmService.deviceToken;
     return null;
   }
 }

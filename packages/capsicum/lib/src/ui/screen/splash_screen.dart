@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../main.dart' show pendingSharedText, shareIntentReady;
+import '../../../main.dart' show firebaseReady, pendingSharedText, shareIntentReady;
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
 import 'eula_screen.dart';
@@ -33,10 +33,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     }
     if (!mounted) return;
 
-    // プッシュ通知登録（ベストエフォート、バックグラウンドで実行）
+    // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）
     final accounts = ref.read(accountManagerProvider).accounts;
     if (accounts.isNotEmpty) {
-      PushRegistrationService.registerAllAccounts(accounts);
+      firebaseReady.then((_) {
+        PushRegistrationService.registerAllAccounts(accounts);
+      });
     }
 
     if (skippedAccounts > 0) {
