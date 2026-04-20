@@ -12,7 +12,7 @@ abstract mixin class PushSubscriptionSupport {
 
   /// Web Push サブスクリプションを登録する。
   ///
-  /// [endpoint] リレーサーバーの受信 URL（例: https://relay.capsicum.shrieker.net/push/<token>）
+  /// [endpoint] リレーサーバーの受信 URL（例: `https://relay.capsicum.shrieker.net/push/<token>`）
   /// [p256dh] クライアント公開鍵（Base64URL エンコード）
   /// [auth] 認証シークレット（Base64URL エンコード）
   ///
@@ -24,5 +24,9 @@ abstract mixin class PushSubscriptionSupport {
   });
 
   /// Web Push サブスクリプションを解除する。
-  Future<void> unsubscribePush();
+  ///
+  /// [endpoint] Misskey の `/api/sw/unregister` は endpoint 必須のため呼び出し
+  /// 側が保存済みの URL を渡す。Mastodon は `DELETE` エンドポイントが現在の
+  /// OAuth トークンのサブスクリプションを対象とするため無視してよい。
+  Future<void> unsubscribePush({String? endpoint});
 }

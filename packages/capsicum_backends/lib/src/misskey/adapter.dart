@@ -1302,8 +1302,6 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // -- PushSubscriptionSupport --
 
-  String? _lastPushEndpoint;
-
   @override
   Future<String?> getVapidPublicKey() async {
     try {
@@ -1320,7 +1318,6 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String p256dh,
     required String auth,
   }) async {
-    _lastPushEndpoint = endpoint;
     return client.registerServiceWorker(
       endpoint: endpoint,
       publickey: p256dh,
@@ -1329,10 +1326,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> unsubscribePush() async {
-    final endpoint = _lastPushEndpoint;
+  Future<void> unsubscribePush({String? endpoint}) async {
     if (endpoint == null) return;
     await client.unregisterServiceWorker(endpoint: endpoint);
-    _lastPushEndpoint = null;
   }
 }

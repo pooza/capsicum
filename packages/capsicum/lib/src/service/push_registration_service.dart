@@ -88,6 +88,9 @@ class PushRegistrationService {
 
       // Mastodon / Misskey に Web Push サブスクリプション登録
       final endpoint = '${PushRelayClient.relayBaseUrl}/push/$pushToken';
+      // endpoint を先に永続化しておくことで、subscribePush が 4xx で失敗した
+      // 場合でも unregisterAccount で Misskey 側の掃除を試みられる。
+      await PushKeyStore.saveEndpoint(accountKey, endpoint);
       await (account.adapter as PushSubscriptionSupport).subscribePush(
         endpoint: endpoint,
         p256dh: keys.p256dh,
@@ -104,12 +107,16 @@ class PushRegistrationService {
 
   /// 単一アカウントのプッシュ通知登録を解除する。
   static Future<void> unregisterAccount(Account account) async {
+    final accountKey = account.key.toStorageKey();
     try {
       if (account.adapter is PushSubscriptionSupport) {
-        await (account.adapter as PushSubscriptionSupport).unsubscribePush();
+        // Misskey では endpoint が必須。再起動後でも PushKeyStore から復元する。
+        final endpoint = await PushKeyStore.getEndpoint(accountKey);
+        await (account.adapter as PushSubscriptionSupport).unsubscribePush(
+          endpoint: endpoint,
+        );
       }
 
-      final accountKey = account.key.toStorageKey();
       final relayId = await PushKeyStore.getRelayId(accountKey);
       if (relayId != null) {
         await _client.unregister(relayId);
@@ -137,9 +144,7 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = accounts.any(
-      (a) => _presetServers.contains(a.key.host),
-    );
+    final hasPreset = accounts.any((a) => _presetServers.contains(a.key.host));
     for (final account in accounts) {
       await registerAccount(account, eligible: hasPreset);
     }
@@ -148,16 +153,14 @@ class PushRegistrationService {
   /// デバイストークンの到着を最大 10 秒待つ。
   static Future<String?> _waitForDeviceToken() async {
     if (Platform.isIOS) {
-      return ApnsService.onTokenChanged.first.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => '',
-      ).then((t) => t.isEmpty ? null : t);
+      return ApnsService.onTokenChanged.first
+          .timeout(const Duration(seconds: 10), onTimeout: () => '')
+          .then((t) => t.isEmpty ? null : t);
     }
     if (Platform.isAndroid) {
-      return FcmService.onTokenChanged.first.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => '',
-      ).then((t) => t.isEmpty ? null : t);
+      return FcmService.onTokenChanged.first
+          .timeout(const Duration(seconds: 10), onTimeout: () => '')
+          .then((t) => t.isEmpty ? null : t);
     }
     return null;
   }

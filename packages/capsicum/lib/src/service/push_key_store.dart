@@ -33,14 +33,37 @@ class PushKeyStore {
 
   /// リレーサーバーの subscription ID を取得する。
   static Future<int?> getRelayId(String accountStorageKey) async {
-    final v =
-        await _storage.read(key: '${_prefix}relay_id_$accountStorageKey');
+    final v = await _storage.read(key: '${_prefix}relay_id_$accountStorageKey');
     return v != null ? int.tryParse(v) : null;
+  }
+
+  /// Web Push サブスクリプションのエンドポイント URL を保存する。
+  /// Misskey の unregister には endpoint が必須だが、再起動後はアダプター
+  /// インスタンスが新規作成され in-memory の値が失われるため永続化する。
+  static Future<void> saveEndpoint(
+    String accountStorageKey,
+    String endpoint,
+  ) async {
+    await _storage.write(
+      key: '${_prefix}endpoint_$accountStorageKey',
+      value: endpoint,
+    );
+  }
+
+  /// 保存済みの Web Push エンドポイント URL を取得する。
+  static Future<String?> getEndpoint(String accountStorageKey) async {
+    return _storage.read(key: '${_prefix}endpoint_$accountStorageKey');
   }
 
   /// 指定アカウントの鍵・登録情報をすべて削除する。
   static Future<void> delete(String accountStorageKey) async {
-    for (final suffix in ['p256dh', 'auth', 'private', 'relay_id']) {
+    for (final suffix in [
+      'p256dh',
+      'auth',
+      'private',
+      'relay_id',
+      'endpoint',
+    ]) {
       await _storage.delete(key: '$_prefix${suffix}_$accountStorageKey');
     }
   }
