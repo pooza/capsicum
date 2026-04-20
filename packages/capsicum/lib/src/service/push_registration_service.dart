@@ -18,8 +18,8 @@ import 'push_relay_client.dart';
 /// 4. Mastodon / Misskey に Web Push サブスクリプションを登録
 ///    （エンドポイント = リレーサーバーの /push/{push_token}）
 ///
-/// プリセットサーバーのアカウントのみ登録する。失敗してもアプリの動作には
-/// 影響しない（ベストエフォート）。
+/// プリセットサーバーのアカウントを1つでも持っていれば、全アカウントを
+/// 登録対象とする。失敗してもアプリの動作には影響しない（ベストエフォート）。
 class PushRegistrationService {
   static const _presetServers = {
     'mstdn.b-shock.org',
@@ -27,15 +27,34 @@ class PushRegistrationService {
     'precure.ml',
     'mk.precure.fun',
     'misskey.delmulin.com',
+    // ステージング
+    'st.mstdn.b-shock.org',
+    'st2.mstdn.delmulin.com',
+    'st.precure.ml',
+    'st.misskey.delmulin.com',
   };
+
+  /// 指定ホストがプリセットサーバーかどうかを判定する。
+  static bool isPresetServer(String host) => _presetServers.contains(host);
 
   static final _client = PushRelayClient();
 
   /// 単一アカウントのプッシュ通知登録を行う。
-  static Future<void> registerAccount(Account account) async {
+  ///
+  /// [eligible] が true の場合、プリセット判定をスキップして登録する。
+  /// [registerAllAccounts] から呼ばれるときに使用。
+  static Future<void> registerAccount(
+    Account account, {
+    bool eligible = false,
+  }) async {
     try {
       if (account.adapter is! PushSubscriptionSupport) return;
-      if (!_presetServers.contains(account.key.host)) return;
+      if (!eligible && !_presetServers.contains(account.key.host)) {
+        debugPrint(
+          'PushRegistration: skipped (not preset): ${account.key.host}',
+        );
+        return;
+      }
 
       final deviceToken = _getDeviceToken();
       if (deviceToken == null) {
@@ -77,8 +96,8 @@ class PushRegistrationService {
       debugPrint(
         'PushRegistration: registered ${account.key.username}@${account.key.host}',
       );
-    } catch (e) {
-      debugPrint('PushRegistration: failed for ${account.key.host}: $e');
+    } catch (e, st) {
+      debugPrint('PushRegistration: failed for ${account.key.host}: $e\n$st');
     }
   }
 
@@ -102,9 +121,14 @@ class PushRegistrationService {
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
+  ///
+  /// プリセットサーバーのアカウントが1つでもあれば、全アカウントを登録対象とする。
   static Future<void> registerAllAccounts(List<Account> accounts) async {
+    final hasPreset = accounts.any(
+      (a) => _presetServers.contains(a.key.host),
+    );
     for (final account in accounts) {
-      await registerAccount(account);
+      await registerAccount(account, eligible: hasPreset);
     }
   }
 

@@ -39,7 +39,7 @@ dependencies:
   yaml: ^3.1.0
   html_unescape: ^2.0.0
   emoji_picker_flutter: ^4.3.0
-  cryptography: ^2.7.0
+  pointycastle: ^3.9.1
 
 dev_dependencies:
   flutter_test:

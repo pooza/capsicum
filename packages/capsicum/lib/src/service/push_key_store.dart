@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pointycastle/export.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
 ///
@@ -18,7 +18,7 @@ class PushKeyStore {
     final existing = await _load(accountStorageKey);
     if (existing != null) return existing;
 
-    final keys = await _generate();
+    final keys = _generate();
     await _save(accountStorageKey, keys);
     return keys;
   }
@@ -33,7 +33,8 @@ class PushKeyStore {
 
   /// リレーサーバーの subscription ID を取得する。
   static Future<int?> getRelayId(String accountStorageKey) async {
-    final v = await _storage.read(key: '${_prefix}relay_id_$accountStorageKey');
+    final v =
+        await _storage.read(key: '${_prefix}relay_id_$accountStorageKey');
     return v != null ? int.tryParse(v) : null;
   }
 
@@ -52,35 +53,56 @@ class PushKeyStore {
     return PushKeys(p256dh: p256dh, auth: auth, privateKeyBase64: privateKey);
   }
 
-  static Future<PushKeys> _generate() async {
-    final algorithm = Ecdh.p256(length: 32);
-    final keyPair = await algorithm.newKeyPair();
-    final publicKey = await keyPair.extractPublicKey();
+  static PushKeys _generate() {
+    final secureRandom = FortunaRandom();
+    final seed = Uint8List(32);
+    final dartRandom = Random.secure();
+    for (var i = 0; i < 32; i++) {
+      seed[i] = dartRandom.nextInt(256);
+    }
+    secureRandom.seed(KeyParameter(seed));
+
+    // P-256 (secp256r1) 鍵ペア生成
+    final keyGen = ECKeyGenerator()
+      ..init(
+        ParametersWithRandom(
+          ECKeyGeneratorParameters(ECCurve_secp256r1()),
+          secureRandom,
+        ),
+      );
+    final pair = keyGen.generateKeyPair();
+    final publicKey = pair.publicKey as ECPublicKey;
+    final privateKey = pair.privateKey as ECPrivateKey;
 
     // Uncompressed point format: [0x04] || X (32 bytes) || Y (32 bytes)
-    final uncompressed = Uint8List(65);
-    uncompressed[0] = 0x04;
-    uncompressed.setRange(1, 33, publicKey.x);
-    uncompressed.setRange(33, 65, publicKey.y);
+    final uncompressed = publicKey.Q!.getEncoded(false);
     final p256dh = base64Url.encode(uncompressed);
 
     // 16-byte random auth secret
-    final random = Random.secure();
     final authBytes = Uint8List(16);
     for (var i = 0; i < 16; i++) {
-      authBytes[i] = random.nextInt(256);
+      authBytes[i] = dartRandom.nextInt(256);
     }
     final auth = base64Url.encode(authBytes);
 
     // Private key D value（復号に必要、Stage 2 で使用）
-    final data = await keyPair.extract();
-    final privateKeyBase64 = base64Url.encode(Uint8List.fromList(data.d));
+    final dBytes = _bigIntToBytes(privateKey.d!, 32);
+    final privateKeyBase64 = base64Url.encode(dBytes);
 
     return PushKeys(
       p256dh: p256dh,
       auth: auth,
       privateKeyBase64: privateKeyBase64,
     );
+  }
+
+  static Uint8List _bigIntToBytes(BigInt value, int length) {
+    final hex = value.toRadixString(16).padLeft(length * 2, '0');
+    final bytes = Uint8List(length);
+    for (var i = 0; i < length; i++) {
+      bytes[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return bytes;
   }
 
   static Future<void> _save(String key, PushKeys keys) async {
