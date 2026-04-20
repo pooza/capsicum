@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
 import 'apns_service.dart';
@@ -74,10 +77,14 @@ class PushRegistrationService {
         server: account.key.host,
       );
 
-      final relayId = sub['id'] as int;
+      final relayId = _parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
-      if (pushToken == null) {
-        debugPrint('PushRegistration: relay returned no push_token');
+      if (relayId == null || pushToken == null) {
+        debugPrint('PushRegistration: relay response missing fields: $sub');
+        _captureContractViolation(
+          'relay register response missing id/push_token',
+          account.key.host,
+        );
         return;
       }
 
@@ -102,6 +109,16 @@ class PushRegistrationService {
       );
     } catch (e, st) {
       debugPrint('PushRegistration: failed for ${account.key.host}: $e\n$st');
+      if (!_isTransient(e)) {
+        Sentry.captureException(
+          _scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('service', 'push_registration');
+            scope.setTag('host', account.key.host);
+          },
+        );
+      }
     }
   }
 
@@ -123,8 +140,19 @@ class PushRegistrationService {
       }
 
       await PushKeyStore.delete(accountKey);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('PushRegistration: unregister failed: $e');
+      if (!_isTransient(e)) {
+        Sentry.captureException(
+          _scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('service', 'push_registration');
+            scope.setTag('phase', 'unregister');
+            scope.setTag('host', account.key.host);
+          },
+        );
+      }
     }
   }
 
@@ -169,5 +197,53 @@ class PushRegistrationService {
     if (Platform.isIOS) return ApnsService.deviceToken;
     if (Platform.isAndroid) return FcmService.deviceToken;
     return null;
+  }
+
+  /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
+  /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
+  static int? _parseRelayId(Object? raw) {
+    if (raw is int) return raw;
+    if (raw == null) return null;
+    return int.tryParse(raw.toString());
+  }
+
+  /// ネットワーク瞬断など通常の運用で発生しうる一過性エラーかどうか。
+  /// 一過性は Sentry に送らず、バグや契約違反のみに集中する。
+  static bool _isTransient(Object e) {
+    if (e is SocketException) return true;
+    if (e is TimeoutException) return true;
+    if (e is DioException) {
+      return e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError;
+    }
+    return false;
+  }
+
+  /// DioException は `requestOptions.headers` に `X-Relay-Secret` や
+  /// body に token を抱えており、そのまま Sentry に投げると漏洩する。
+  /// メタ情報のみを抜き出した安全な例外に詰め替える。
+  static Object _scrubException(Object e) {
+    if (e is DioException) {
+      return StateError(
+        'DioException ${e.type.name} '
+        'status=${e.response?.statusCode ?? '-'} '
+        'message=${e.message ?? '-'}',
+      );
+    }
+    return e;
+  }
+
+  /// リレー応答がスキーマを満たさないなど、サーバー契約違反を Sentry に記録する。
+  static void _captureContractViolation(String message, String host) {
+    Sentry.captureException(
+      StateError(message),
+      withScope: (scope) {
+        scope.setTag('service', 'push_registration');
+        scope.setTag('type', 'contract_violation');
+        scope.setTag('host', host);
+      },
+    );
   }
 }

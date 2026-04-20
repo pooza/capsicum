@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// FCM デバイストークンを取得・管理するサービス。
 ///
@@ -23,19 +25,16 @@ class FcmService {
 
       // 通知権限のリクエスト（Android 13+ で必要）
       final settings = await messaging.requestPermission();
-      // ignore: avoid_print
-      print('capsicum: FCM permission: ${settings.authorizationStatus}');
+      debugPrint('capsicum: FCM permission: ${settings.authorizationStatus}');
 
       // トークン取得
       final token = await messaging.getToken();
       if (token != null) {
         _deviceToken = token;
         _tokenController.add(token);
-        // ignore: avoid_print
-        print('capsicum: FCM token received (${token.length} chars)');
+        debugPrint('capsicum: FCM token received (${token.length} chars)');
       } else {
-        // ignore: avoid_print
-        print('capsicum: FCM getToken returned null');
+        debugPrint('capsicum: FCM getToken returned null');
       }
 
       // トークン更新の監視
@@ -43,9 +42,15 @@ class FcmService {
         _deviceToken = token;
         _tokenController.add(token);
       });
-    } catch (e) {
-      // ignore: avoid_print
-      print('capsicum: FCM initialization failed: $e');
+    } catch (e, st) {
+      debugPrint('capsicum: FCM initialization failed: $e');
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('service', 'fcm_init');
+        },
+      );
     }
   }
 }

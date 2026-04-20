@@ -44,12 +44,25 @@ Future<void> main() async {
 FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
   final request = event.request;
   if (request != null) {
-    if (request.headers.containsKey('Authorization')) {
-      request.headers['Authorization'] = '[Filtered]';
+    const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
+    for (final name in sensitiveHeaders) {
+      if (request.headers.containsKey(name)) {
+        request.headers[name] = '[Filtered]';
+      }
     }
     final data = request.data;
-    if (data is Map && data.containsKey('i')) {
-      data['i'] = '[Filtered]';
+    if (data is Map) {
+      const sensitiveFields = [
+        'i', // Misskey access token
+        'access_token',
+        'refresh_token',
+        'token', // FCM / APNs device token in relay register
+      ];
+      for (final key in sensitiveFields) {
+        if (data.containsKey(key)) {
+          data[key] = '[Filtered]';
+        }
+      }
     }
   }
   return event;
@@ -90,17 +103,20 @@ late final Future<void> firebaseReady;
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
   try {
-    // ignore: avoid_print
-    print('capsicum: Firebase.initializeApp starting');
+    debugPrint('capsicum: Firebase.initializeApp starting');
     await Firebase.initializeApp();
-    // ignore: avoid_print
-    print('capsicum: Firebase.initializeApp done, starting FCM');
+    debugPrint('capsicum: Firebase.initializeApp done, starting FCM');
     await FcmService.initialize();
-    // ignore: avoid_print
-    print('capsicum: FCM init done');
-  } catch (e) {
-    // ignore: avoid_print
-    print('capsicum: Firebase initialization failed: $e');
+    debugPrint('capsicum: FCM init done');
+  } catch (e, st) {
+    debugPrint('capsicum: Firebase initialization failed: $e');
+    Sentry.captureException(
+      e,
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('service', 'firebase_init');
+      },
+    );
   }
 }
 
