@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -329,7 +330,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (adapter == null) return;
 
     try {
-      final fullUser = await adapter.getUserById(widget.user.id);
+      var fullUser = await adapter.getUserById(widget.user.id);
+      fullUser = await ref.read(isCatEnricherProvider).enrichUser(fullUser);
       if (mounted) setState(() => _user = fullUser);
     } catch (_) {
       // Keep the original user data if full fetch fails.
@@ -343,12 +345,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }) async {
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
-    return await (adapter as dynamic).getUserPosts(
-          widget.user.id,
-          maxId: maxId,
-          onlyMedia: onlyMedia,
-        )
-        as List<Post>;
+    final posts =
+        await (adapter as dynamic).getUserPosts(
+              widget.user.id,
+              maxId: maxId,
+              onlyMedia: onlyMedia,
+            )
+            as List<Post>;
+    return ref.read(isCatEnricherProvider).enrichPosts(posts);
   }
 
   @override

@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../util/post_scope_display.dart';
 
 class TabManagementSheet extends ConsumerStatefulWidget {
@@ -201,6 +202,9 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   String _tabEntryLabel(TabType tab) {
     return switch (tab) {
       TimelineTab(:final type) => () {
+        if (type == TimelineType.local) {
+          return ref.watch(localTimelineNameProvider);
+        }
         if (type == TimelineType.directMessages) {
           return postScopeLabel(PostScope.direct, null);
         }

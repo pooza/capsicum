@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../provider/is_cat_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -54,8 +55,12 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     try {
       final result = await widget.fetcher(null);
       if (!mounted) return;
+      final enriched = await ref
+          .read(isCatEnricherProvider)
+          .enrichUsers(result.users);
+      if (!mounted) return;
       setState(() {
-        _users = result.users;
+        _users = enriched;
         _nextCursor = result.nextCursor;
         _loading = false;
         _hasMore =
@@ -74,8 +79,12 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     try {
       final result = await widget.fetcher(_nextCursor);
       if (!mounted) return;
+      final enriched = await ref
+          .read(isCatEnricherProvider)
+          .enrichUsers(result.users);
+      if (!mounted) return;
       setState(() {
-        _users = [..._users, ...result.users];
+        _users = [..._users, ...enriched];
         _nextCursor = result.nextCursor;
         _loadingMore = false;
         _hasMore =

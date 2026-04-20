@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.17.0+37
+version: 1.18.0+38
 
 environment:
   sdk: ^3.11.0
@@ -39,6 +39,9 @@ dependencies:
   yaml: ^3.1.0
   html_unescape: ^2.0.0
   emoji_picker_flutter: ^4.3.0
+  pointycastle: ^3.9.1
+  firebase_core: ^3.13.0
+  firebase_messaging: ^15.2.4
 
 dev_dependencies:
   flutter_test:

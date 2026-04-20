@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../widget/post_tile.dart';
 
@@ -104,5 +105,6 @@ final _threadProvider = FutureProvider.autoDispose.family<List<Post>, String>((
 ) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter == null) return [];
-  return adapter.getThread(postId);
+  final thread = await adapter.getThread(postId);
+  return ref.read(isCatEnricherProvider).enrichPosts(thread);
 });

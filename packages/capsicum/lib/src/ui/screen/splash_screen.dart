@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../main.dart' show pendingSharedText, shareIntentReady;
+import '../../../main.dart'
+    show firebaseReady, pendingSharedText, shareIntentReady;
 import '../../provider/account_manager_provider.dart';
+import '../../service/push_registration_service.dart';
 import 'eula_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -31,6 +33,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       debugPrint('capsicum: failed to restore sessions: $e\n$st');
     }
     if (!mounted) return;
+
+    // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）。
+    // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
+    // にユーザーがログアウトしたアカウントまで再登録してしまうため、登録
+    // 実行時に最新状態を ProviderContainer 経由で再取得する。
+    if (ref.read(accountManagerProvider).accounts.isNotEmpty) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      firebaseReady.then((_) {
+        final latest = container.read(accountManagerProvider).accounts;
+        if (latest.isNotEmpty) {
+          PushRegistrationService.registerAllAccounts(latest);
+        }
+      });
+    }
 
     if (skippedAccounts > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

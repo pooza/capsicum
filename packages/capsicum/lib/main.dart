@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/router.dart';
 import 'src/service/apns_service.dart';
+import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/share_intent_service.dart';
 
@@ -41,12 +44,25 @@ Future<void> main() async {
 FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
   final request = event.request;
   if (request != null) {
-    if (request.headers.containsKey('Authorization')) {
-      request.headers['Authorization'] = '[Filtered]';
+    const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
+    for (final name in sensitiveHeaders) {
+      if (request.headers.containsKey(name)) {
+        request.headers[name] = '[Filtered]';
+      }
     }
     final data = request.data;
-    if (data is Map && data.containsKey('i')) {
-      data['i'] = '[Filtered]';
+    if (data is Map) {
+      const sensitiveFields = [
+        'i', // Misskey access token
+        'access_token',
+        'refresh_token',
+        'token', // FCM / APNs device token in relay register
+      ];
+      for (final key in sensitiveFields) {
+        if (data.containsKey(key)) {
+          data[key] = '[Filtered]';
+        }
+      }
     }
   }
   return event;
@@ -54,6 +70,9 @@ FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
 
 void _startApp() {
   runApp(const ProviderScope(child: CapsicumApp()));
+
+  // Firebase / FCM 初期化（Android）。スプラッシュ画面でプッシュ登録前に await する。
+  firebaseReady = _initFirebase();
 
   // Initialize notifications after the widget tree is built so that
   // the permission dialog on iOS does not block rendering.
@@ -77,6 +96,29 @@ String? pendingSharedText;
 
 /// Completes when the share intent check is done.
 late final Future<void> shareIntentReady;
+
+/// Completes when Firebase / FCM initialization is done (Android only).
+late final Future<void> firebaseReady;
+
+Future<void> _initFirebase() async {
+  if (!Platform.isAndroid) return;
+  try {
+    debugPrint('capsicum: Firebase.initializeApp starting');
+    await Firebase.initializeApp();
+    debugPrint('capsicum: Firebase.initializeApp done, starting FCM');
+    await FcmService.initialize();
+    debugPrint('capsicum: FCM init done');
+  } catch (e, st) {
+    debugPrint('capsicum: Firebase initialization failed: $e');
+    Sentry.captureException(
+      e,
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('service', 'firebase_init');
+      },
+    );
+  }
+}
 
 Future<void> _consumeSharedText() async {
   final text = await ShareIntentService.consumeSharedText();

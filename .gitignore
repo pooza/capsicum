@@ -63,5 +63,8 @@ coverage/
 # Sentry
 .sentryclirc
 
+# Firebase
+google-services.json
+
 # Claude Code
 .claude/

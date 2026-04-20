@@ -8,6 +8,7 @@ import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
+import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
 
 /// State: list of accounts + currently selected account.
@@ -79,6 +80,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);
+
+    // プッシュ通知登録（ベストエフォート）。
+    // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
+    final hasPreset = newAccounts.any(
+      (a) => PushRegistrationService.isPresetServer(a.key.host),
+    );
+    PushRegistrationService.registerAccount(enriched, eligible: hasPreset);
   }
 
   void switchAccount(Account account) {
@@ -110,6 +118,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   Future<void> logout(Account account) async {
+    // プッシュ通知登録解除（ベストエフォート）。
+    PushRegistrationService.unregisterAccount(account);
+
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
 
