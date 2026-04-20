@@ -292,7 +292,12 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 
 運用ルール:
 
-- セキュリティレビュー（[#27](https://github.com/pooza/capsicum/issues/27)）は各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する
+- リリース前レビューは各マイルストーンの Issue をすべて消化した後、リリース直前に毎度実施する。[#27](https://github.com/pooza/capsicum/issues/27) の「セキュリティレビュー」だけでは実害バグを取りこぼすため、以下 5 観点をサブエージェントで並列に走らせる（詳細は [store-release-guide.md](store-release-guide.md) の「リリース前レビュー」節）:
+  - セキュリティ（`/security-review` スキル）
+  - API 契約（Mastodon / Misskey / モロヘイヤの REST 正確性、アダプター interface 整合）
+  - 並行性・ライフサイクル（async 連鎖、Riverpod provider 寿命、dispose、race）
+  - エラー処理・観測性（try/catch カバレッジ、Sentry 計装、secrets scrub、UX）
+  - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 

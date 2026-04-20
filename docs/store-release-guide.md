@@ -138,6 +138,28 @@ end
 
 ## 4. リリース手順（毎回）
 
+### 4.0 リリース前レビュー
+
+各マイルストーンの Issue が消化済みになった後、ビルドに入る前に実施する。**単一のセキュリティレビューだけでは実用上の問題が取りこぼされる**ため、以下 5 観点を独立したサブエージェントで並列に走らせ、指摘を合流させる。
+
+| 観点 | 焦点 |
+| --- | --- |
+| セキュリティ | `/security-review` スキル。認証・暗号・シークレット管理・入力検証 |
+| API 契約 | Mastodon / Misskey / モロヘイヤの REST 正確性、アダプター interface の整合 |
+| 並行性・ライフサイクル | async 連鎖、Riverpod provider 寿命、dispose / cancellation、race |
+| エラー処理・観測性 | try/catch カバレッジ、Sentry 計装、例外の scrub、UX の可視化 |
+| コーディングスタイル・規約整合性 | 用語統一（廃止語）、ハードコーディング、命名の揺れ、重複ロジック、規約違反（UI 層の Platform 分岐など） |
+
+対象範囲は `v前リリース..HEAD` の差分。Codex（`chatgpt-codex-connector[bot]`）は PR ready 時に走るので併走させ、重複しない指摘だけを拾う。
+
+指摘は以下の基準で分類し、必要最小限のみリリース前に対応、残りは Issue 起票して次リリース以降に送る:
+
+- **赤（必修）**: データ破損・セキュリティ・ユーザー可視の機能不全
+- **黄（余力があれば）**: 単一の edge case、観測性ギャップ
+- **緑（送り）**: 将来の拡張時に顕在化しうる構造改善
+
+v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
+
 ### 4.1 バージョン更新・依存関係の更新
 
 ```bash
