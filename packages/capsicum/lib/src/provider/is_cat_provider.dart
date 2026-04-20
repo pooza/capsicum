@@ -4,20 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
 
+/// isCat の判定結果はユーザー（ActivityPub actor）に紐づく静的な事実で、
+/// 閲覧中のアカウントや Riverpod の再構築によって変わらない。キャッシュを
+/// モジュールスコープに置き、currentAccountProvider の変化で Enricher が
+/// 再生成されても結果を使い回す。
+final Map<String, bool> _globalIsCatCache = {};
+
 /// isCat エンリッチのキャッシュ付きユーティリティ。
 ///
 /// モロヘイヤの `POST /account/is_cat` を使い、リモートユーザーの
-/// isCat フラグを補完する。結果はセッション内でキャッシュされる。
+/// isCat フラグを補完する。結果はプロセス寿命の間キャッシュされる。
 class IsCatEnricher {
   final MulukhiyaService? _mulukhiya;
   final String? _accessToken;
-  final Map<String, bool> _cache = {};
+  final Map<String, bool> _cache;
 
   IsCatEnricher({
     required MulukhiyaService? mulukhiya,
     required String? accessToken,
-  })  : _mulukhiya = mulukhiya,
-        _accessToken = accessToken;
+    Map<String, bool>? cache,
+  }) : _mulukhiya = mulukhiya,
+       _accessToken = accessToken,
+       _cache = cache ?? _globalIsCatCache;
 
   /// 単一ユーザーの isCat を補完する。
   Future<User> enrichUser(User user) async {
