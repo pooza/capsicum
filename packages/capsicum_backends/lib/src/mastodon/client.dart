@@ -930,7 +930,15 @@ class MastodonClient {
   }
 
   /// DELETE /api/v1/push/subscription
+  ///
+  /// サーバー側に subscription が既に存在しない場合は 404 が返るが、
+  /// 掃除としては成功扱いで構わないため no-op とする。
   Future<void> deletePushSubscription() async {
-    await dio.delete('/api/v1/push/subscription');
+    try {
+      await dio.delete('/api/v1/push/subscription');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return;
+      rethrow;
+    }
   }
 }

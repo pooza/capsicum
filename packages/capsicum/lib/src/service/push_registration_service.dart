@@ -123,37 +123,60 @@ class PushRegistrationService {
   }
 
   /// 単一アカウントのプッシュ通知登録を解除する。
+  ///
+  /// 各段階（SNS サーバーの unsubscribe / リレー unregister / ローカル鍵削除）
+  /// は独立に try する。上流の段階が失敗しても後続の掃除を止めないことで、
+  /// 孤立サブスクリプション・鍵残留を最小化する。
   static Future<void> unregisterAccount(Account account) async {
     final accountKey = account.key.toStorageKey();
-    try {
-      if (account.adapter is PushSubscriptionSupport) {
-        // Misskey では endpoint が必須。再起動後でも PushKeyStore から復元する。
+
+    if (account.adapter is PushSubscriptionSupport) {
+      try {
         final endpoint = await PushKeyStore.getEndpoint(accountKey);
         await (account.adapter as PushSubscriptionSupport).unsubscribePush(
           endpoint: endpoint,
         );
+      } catch (e, st) {
+        debugPrint('PushRegistration: adapter unsubscribe failed: $e');
+        _reportUnregisterFailure(e, st, account.key.host, 'adapter');
       }
+    }
 
+    try {
       final relayId = await PushKeyStore.getRelayId(accountKey);
       if (relayId != null) {
         await _client.unregister(relayId);
       }
+    } catch (e, st) {
+      debugPrint('PushRegistration: relay unregister failed: $e');
+      _reportUnregisterFailure(e, st, account.key.host, 'relay');
+    }
 
+    try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
-      debugPrint('PushRegistration: unregister failed: $e');
-      if (!_isTransient(e)) {
-        Sentry.captureException(
-          _scrubException(e),
-          stackTrace: st,
-          withScope: (scope) {
-            scope.setTag('service', 'push_registration');
-            scope.setTag('phase', 'unregister');
-            scope.setTag('host', account.key.host);
-          },
-        );
-      }
+      debugPrint('PushRegistration: keystore delete failed: $e');
+      _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
+  }
+
+  static void _reportUnregisterFailure(
+    Object e,
+    StackTrace st,
+    String host,
+    String stage,
+  ) {
+    if (_isTransient(e)) return;
+    Sentry.captureException(
+      _scrubException(e),
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('service', 'push_registration');
+        scope.setTag('phase', 'unregister');
+        scope.setTag('stage', stage);
+        scope.setTag('host', host);
+      },
+    );
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
@@ -224,12 +247,18 @@ class PushRegistrationService {
   /// DioException は `requestOptions.headers` に `X-Relay-Secret` や
   /// body に token を抱えており、そのまま Sentry に投げると漏洩する。
   /// メタ情報のみを抜き出した安全な例外に詰め替える。
+  ///
+  /// `message` は Dio の版次第で requestOptions.uri を埋め込むケースがあり、
+  /// リレー URL には push_token が含まれるため使わず、type とステータス
+  /// コードとパスのみを出力する（クエリ文字列はクライアント側で付けて
+  /// いないが念のため削ぎ落とす）。
   static Object _scrubException(Object e) {
     if (e is DioException) {
+      final path = e.requestOptions.path.split('?').first;
       return StateError(
         'DioException ${e.type.name} '
         'status=${e.response?.statusCode ?? '-'} '
-        'message=${e.message ?? '-'}',
+        'path=$path',
       );
     }
     return e;
