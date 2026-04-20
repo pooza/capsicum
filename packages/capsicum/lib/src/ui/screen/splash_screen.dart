@@ -33,11 +33,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     }
     if (!mounted) return;
 
-    // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）
-    final accounts = ref.read(accountManagerProvider).accounts;
-    if (accounts.isNotEmpty) {
+    // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）。
+    // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
+    // にユーザーがログアウトしたアカウントまで再登録してしまうため、登録
+    // 実行時に最新状態を ProviderContainer 経由で再取得する。
+    if (ref.read(accountManagerProvider).accounts.isNotEmpty) {
+      final container = ProviderScope.containerOf(context, listen: false);
       firebaseReady.then((_) {
-        PushRegistrationService.registerAllAccounts(accounts);
+        final latest = container.read(accountManagerProvider).accounts;
+        if (latest.isNotEmpty) {
+          PushRegistrationService.registerAllAccounts(latest);
+        }
       });
     }
 
