@@ -85,6 +85,7 @@ class IsCatEnricher {
         user: user,
         post: post,
         reaction: n.reaction,
+        unread: n.unread,
       );
     }).toList();
   }
