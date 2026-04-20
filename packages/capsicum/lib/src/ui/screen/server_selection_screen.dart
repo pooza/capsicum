@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 const _presetServers = [
+  ('mstdn.b-shock.org', '美食丼'),
   ('precure.ml', 'キュアスタ！'),
   ('mk.precure.fun', 'きゅあすきー'),
   ('mstdn.delmulin.com', 'デルムリン丼'),
