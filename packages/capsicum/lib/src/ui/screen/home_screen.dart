@@ -186,20 +186,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (account != null) {
       final storageKey = account.key.toStorageKey();
       if (_lastTabRestoredForAccount != storageKey) {
-        _lastTabRestored = false;
         _lastTabRestoredForAccount = storageKey;
         _pendingListRestore = null;
-        // Clear previous account's selection to avoid referencing
-        // lists/hashtags that don't exist on the new account.
-        // build の最中に provider を変更すると Riverpod の
-        // `_debugCanModifyProviders` assertion で例外になるので、
-        // 次フレームで反映する。
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ref.read(selectedTabProvider.notifier).state = const TimelineTab(
-            TimelineType.home,
-          );
-        });
+        // 外部経路で pendingTab が要求されている場合（通知タップ等）は
+        // そちらを優先する。_lastTabRestored は pendingTab 分岐で既に true。
+        // そうでないケースだけ「home へリセット」のフォールバックを走らせる
+        // が、その後到着する lastTab（sync / async 双方）が先に走っていたら
+        // スキップする guard を postFrame 側に入れる。
+        if (pendingTab == null) {
+          _lastTabRestored = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            // lastTab が sync/async で復元されていれば home にリセットしない
+            // （アカウント間往復時に保存タブを失わないため）。
+            if (_lastTabRestored) return;
+            ref.read(selectedTabProvider.notifier).state = const TimelineTab(
+              TimelineType.home,
+            );
+          });
+        }
       }
       if (!_lastTabRestored) {
         ref.listen(lastTabProvider(storageKey), (prev, next) {

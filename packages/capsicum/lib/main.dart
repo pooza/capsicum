@@ -170,9 +170,12 @@ void _startApp() {
 /// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
 /// 正規ルーティングが空振り、ユーザーがサーバー選択画面に取り残される。
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
-  // 上限: Navigator 0.5 秒＋ session restore 数秒を許容する 180 フレーム（≒ 3 秒 @60fps）。
-  // 通常 Navigator は 1〜2 フレーム、restore は長くても 1〜2 秒で完了する。
-  const maxAttempts = 180;
+  // 上限: restoreSessions は 1 アカウントあたり getMyself + mulukhiya probe
+  // + timeline availability probe を走らせるため、低速回線 + 多アカウント
+  // 環境では 10〜30 秒かかりうる。3600 フレーム（≒ 60 秒 @60fps）を上限に
+  // 設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
+  // Navigator 未確立ケースの暴走も防ぐ。
+  const maxAttempts = 3600;
 
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
