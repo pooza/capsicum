@@ -2,6 +2,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account.dart';
 import 'account_manager_provider.dart';
 
 /// isCat の判定結果はユーザー（ActivityPub actor）に紐づくほぼ静的な
@@ -31,6 +32,13 @@ class IsCatEnricher {
   }) : _mulukhiya = mulukhiya,
        _accessToken = accessToken,
        _cache = cache ?? _globalIsCatCache;
+
+  /// アカウントから IsCatEnricher を生成する。Provider からの生成と
+  /// ad-hoc な生成（unified notification 等）で構成ミスを防ぐためのファクトリ。
+  factory IsCatEnricher.forAccount(Account account) => IsCatEnricher(
+    mulukhiya: account.mulukhiya,
+    accessToken: account.userSecret.accessToken,
+  );
 
   /// 単一ユーザーの isCat を補完する。
   Future<User> enrichUser(User user) async {
@@ -198,8 +206,7 @@ class IsCatEnricher {
 /// アカウント単位で IsCatEnricher を提供する。
 final isCatEnricherProvider = Provider<IsCatEnricher>((ref) {
   final account = ref.watch(currentAccountProvider);
-  return IsCatEnricher(
-    mulukhiya: account?.mulukhiya,
-    accessToken: account?.userSecret.accessToken,
-  );
+  return account != null
+      ? IsCatEnricher.forAccount(account)
+      : IsCatEnricher(mulukhiya: null, accessToken: null);
 });

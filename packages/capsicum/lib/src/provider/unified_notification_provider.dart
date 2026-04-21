@@ -71,10 +71,7 @@ class UnifiedNotificationNotifier
     try {
       var notifications = await (account.adapter as NotificationSupport)
           .getNotifications(query: const TimelineQuery(limit: _pageSize));
-      final enricher = IsCatEnricher(
-        mulukhiya: account.mulukhiya,
-        accessToken: account.userSecret.accessToken,
-      );
+      final enricher = IsCatEnricher.forAccount(account);
       notifications = await enricher.enrichNotifications(notifications);
       return _FetchResult(account: account, notifications: notifications);
     } catch (e) {
