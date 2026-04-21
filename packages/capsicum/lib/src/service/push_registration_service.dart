@@ -11,6 +11,7 @@ import '../preset_servers.dart';
 import 'apns_service.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
+import 'push_registration_status.dart';
 import 'push_relay_client.dart';
 
 /// プッシュ通知のリレーサーバー登録と Web Push サブスクリプション登録を
@@ -63,19 +64,35 @@ class PushRegistrationService {
     required bool eligible,
   }) async {
     final accountKey = account.key.toStorageKey();
+    final store = PushRegistrationStatusStore.instance;
     int? relayId;
+    // subscribePush が走り始めたことを示すフラグ。catch 節で「失敗の内訳が
+    // リレー段か SNS サブスクリプション段か」の判定に使う。
+    var subscribePhase = false;
     try {
-      if (account.adapter is! PushSubscriptionSupport) return;
+      if (account.adapter is! PushSubscriptionSupport) {
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
       if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
+        store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
+
+      store.update(accountKey, PushRegistrationState.registering);
 
       final deviceToken = _getDeviceToken();
       if (deviceToken == null) {
         debugPrint('capsicum: push.registration: no device token available');
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: PushRegistrationFailureReason.noDeviceToken,
+          errorMessage: 'デバイストークンを取得できませんでした',
+        );
         return;
       }
 
@@ -99,6 +116,12 @@ class PushRegistrationService {
           'relay register response missing id/push_token',
           account.key.host,
         );
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: PushRegistrationFailureReason.relayFailed,
+          errorMessage: 'リレーサーバー応答に id / push_token が含まれていません',
+        );
         return;
       }
 
@@ -112,6 +135,7 @@ class PushRegistrationService {
       // endpoint を先に永続化しておくことで、subscribePush が 4xx で失敗した
       // 場合でも unregisterAccount で Misskey 側の掃除を試みられる。
       await PushKeyStore.saveEndpoint(accountKey, endpoint);
+      subscribePhase = true;
       await (account.adapter as PushSubscriptionSupport).subscribePush(
         endpoint: endpoint,
         p256dh: keys.p256dh,
@@ -121,6 +145,7 @@ class PushRegistrationService {
       debugPrint(
         'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
       );
+      store.update(accountKey, PushRegistrationState.registered);
     } catch (e, st) {
       debugPrint(
         'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
@@ -137,6 +162,24 @@ class PushRegistrationService {
       try {
         await PushKeyStore.delete(accountKey);
       } catch (_) {}
+
+      if (e is PushRegistrationNotSupportedException) {
+        store.update(
+          accountKey,
+          PushRegistrationState.notSupported,
+          errorMessage: e.message,
+        );
+      } else {
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: subscribePhase
+              ? PushRegistrationFailureReason.subscribeFailed
+              : PushRegistrationFailureReason.relayFailed,
+          errorMessage: _shortMessage(e),
+        );
+      }
+
       if (!_isTransient(e) && e is! PushRegistrationNotSupportedException) {
         Sentry.captureException(
           _scrubException(e),
@@ -150,6 +193,18 @@ class PushRegistrationService {
     }
   }
 
+  /// Sentry 用の長大な message / StackTrace ではなく、UI 表示用に短縮した
+  /// メッセージを作る。DioException は種別・ステータスコードに寄せ、他は
+  /// runtimeType + toString を 200 文字まで。
+  static String _shortMessage(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode?.toString() ?? '-';
+      return 'ネットワークエラー (${e.type.name} / status=$code)';
+    }
+    final text = e.toString();
+    return text.length > 200 ? '${text.substring(0, 200)}…' : text;
+  }
+
   /// 単一アカウントのプッシュ通知登録を解除する。
   ///
   /// 各段階（SNS サーバーの unsubscribe / リレー unregister / ローカル鍵削除）
@@ -157,6 +212,7 @@ class PushRegistrationService {
   /// 孤立サブスクリプション・鍵残留を最小化する。
   static Future<void> unregisterAccount(Account account) async {
     final accountKey = account.key.toStorageKey();
+    PushRegistrationStatusStore.instance.remove(accountKey);
 
     if (account.adapter is PushSubscriptionSupport) {
       try {

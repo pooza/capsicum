@@ -41,6 +41,13 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/display'),
           ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('プッシュ通知'),
+            subtitle: const Text('アカウント別の登録状況・再試行'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/push'),
+          ),
         ],
       ),
     );
