@@ -133,7 +133,7 @@ class PushRegistrationService {
       try {
         await PushKeyStore.delete(accountKey);
       } catch (_) {}
-      if (!_isTransient(e)) {
+      if (!_isTransient(e) && e is! PushRegistrationNotSupportedException) {
         Sentry.captureException(
           _scrubException(e),
           stackTrace: st,
