@@ -156,15 +156,16 @@ class PushRegistrationService {
       debugPrint(
         'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
       );
-      // 部分成功をロールバック。リレーに row ができた後で subscribePush が
-      // 失敗すると、SNS 側サブスクリプションなしの孤立レコードが残るため、
-      // 取得済みの relayId を基に unregister を試みる。各段階は独立 try
-      // なので途中失敗しても次の掃除は進む。
-      if (relayId != null) {
-        try {
-          await _client.unregister(relayId);
-        } catch (_) {}
-      }
+      // NB: 以前はここで `_client.unregister(relayId)` を呼んで relay row を
+      // 掃除していたが、これは重大なバグだった。relay schema は UNIQUE(token)
+      // で **1 デバイス = 1 row** のため、N アカウントを同時登録すると
+      // 全員が同じ relay row (同じ relayId / push_token) を共有する。
+      // 1 アカウントの subscribePush が失敗したときに unregister すると、
+      // **他の全アカウントが使っている endpoint を巻き添えで破壊** し、
+      // Mastodon から push が来ても relay が 404 を返し、subscription が
+      // destroy される連鎖が起きる。relay row の寿命は device-scoped なので、
+      // 登録フェーズの失敗では触らない。掃除は unregisterAccount 経由の
+      // 明示的なログアウト時のみに任せる。
       // PushKeyStore は今回の attempt で書き換えた場合のみ delete する。
       // 書き換える前（_client.register の早期失敗など）の catch では
       // 既存 working state を残す（wipe すると古いサーバー側 subscription が
@@ -217,11 +218,17 @@ class PushRegistrationService {
     return text.length > 200 ? '${text.substring(0, 200)}…' : text;
   }
 
-  /// 単一アカウントのプッシュ通知登録を解除する。
+  /// 単一アカウントのプッシュ通知登録を解除する（ログアウト経路）。
   ///
-  /// 各段階（SNS サーバーの unsubscribe / リレー unregister / ローカル鍵削除）
-  /// は独立に try する。上流の段階が失敗しても後続の掃除を止めないことで、
-  /// 孤立サブスクリプション・鍵残留を最小化する。
+  /// **relay row は削除しない**。capsicum-relay は UNIQUE(token) で 1 デバイス
+  /// = 1 row 設計のため、複数アカウントが同じ row を共有している。ここで
+  /// `_client.unregister` を呼ぶと他のアカウントの endpoint を巻き添えで
+  /// 破壊し、Mastodon 側の subscription が 404 で destroy される連鎖が起きる。
+  /// 同一デバイスの全アカウントを同時に掃除したいときは
+  /// [unregisterDevice] を別途呼び出す（例：token rotation）。
+  ///
+  /// SNS 側サブスクリプションの解除とローカル鍵削除は独立に try。
+  /// 上流の段階が失敗しても後続の掃除を止めない。
   static Future<void> unregisterAccount(Account account) async {
     final accountKey = account.key.toStorageKey();
     PushRegistrationStatusStore.instance.remove(accountKey);
@@ -241,20 +248,29 @@ class PushRegistrationService {
     }
 
     try {
-      final relayId = await PushKeyStore.getRelayId(accountKey);
-      if (relayId != null) {
-        await _client.unregister(relayId);
-      }
-    } catch (e, st) {
-      debugPrint('capsicum: push.registration: relay unregister failed: $e');
-      _reportUnregisterFailure(e, st, account.key.host, 'relay');
-    }
-
-    try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
       debugPrint('capsicum: push.registration: keystore delete failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
+    }
+  }
+
+  /// デバイスの relay row を削除する。token rotation 時など、共有 row を
+  /// 確実に掃除したい場合に呼ぶ。いずれかのアカウントの保存済み relayId
+  /// を 1 つ選んで DELETE /register/:id を叩けば、row は UNIQUE なので
+  /// デバイス全体の relay 登録が消える。
+  static Future<void> unregisterDevice(List<Account> accounts) async {
+    int? relayId;
+    for (final a in accounts) {
+      relayId = await PushKeyStore.getRelayId(a.key.toStorageKey());
+      if (relayId != null) break;
+    }
+    if (relayId == null) return;
+    try {
+      await _client.unregister(relayId);
+    } catch (e, st) {
+      debugPrint('capsicum: push.registration: relay unregister failed: $e');
+      _reportUnregisterFailure(e, st, '(device)', 'relay');
     }
   }
 
@@ -334,12 +350,14 @@ class PushRegistrationService {
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
     // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
-    // 新しいトークンで POST /register すると、そのままではリレー DB に
-    // 孤立レコードと古い SNS サブスクリプションが残るため unregister を
-    // 先に流す。unregister は各段階が独立なので部分失敗しても問題ない。
+    // relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
+    // unregisterAccount では削除せず、最後に unregisterDevice で 1 回だけ
+    // 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
+    // ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
     for (final account in accounts) {
       await unregisterAccount(account);
     }
+    await unregisterDevice(accounts);
     await registerAllAccounts(accounts);
   }
 
