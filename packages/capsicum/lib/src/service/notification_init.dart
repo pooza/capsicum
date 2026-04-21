@@ -1,33 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:workmanager/workmanager.dart';
 
-import 'background_notification_service.dart';
-import 'notification_diagnostics_service.dart';
-
-const _taskName = 'jp.co.b-shock.capsicum.iOSBackgroundAppRefresh';
-
-/// Top-level callback required by workmanager.
-@pragma('vm:entry-point')
-void backgroundDispatcher() {
-  Workmanager().executeTask((taskName, inputData) async {
-    if (taskName == _taskName || taskName == Workmanager.iOSBackgroundTask) {
-      await NotificationDiagnosticsService.recordTaskFired();
-      try {
-        await BackgroundNotificationService.checkAllAccounts();
-        await NotificationDiagnosticsService.recordTaskCompleted();
-      } catch (e) {
-        await NotificationDiagnosticsService.recordTaskFailed(
-          e.runtimeType.toString(),
-        );
-        rethrow;
-      }
-    }
-    return true;
-  });
-}
-
-/// Initialises local notifications and background polling.
+/// Initialises local notifications for push-driven delivery.
 class NotificationInit {
   static final plugin = FlutterLocalNotificationsPlugin();
 
@@ -35,7 +9,6 @@ class NotificationInit {
     required void Function(NotificationResponse) onTap,
   }) async {
     try {
-      // Local notifications.
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
@@ -58,16 +31,6 @@ class NotificationInit {
             AndroidFlutterLocalNotificationsPlugin
           >();
       await androidPlugin?.requestNotificationsPermission();
-
-      // Background polling.
-      await Workmanager().initialize(backgroundDispatcher);
-      await Workmanager().registerPeriodicTask(
-        _taskName,
-        _taskName,
-        frequency: const Duration(minutes: 15),
-        constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-      );
     } catch (e) {
       debugPrint('NotificationInit failed: $e');
     }

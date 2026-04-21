@@ -1,7 +1,6 @@
 import Flutter
 import UIKit
 import UserNotifications
-import workmanager_apple
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -12,15 +11,6 @@ import workmanager_apple
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Register the BGTaskScheduler launch handler before the app finishes
-    // launching. iOS requires all identifiers in BGTaskSchedulerPermittedIdentifiers
-    // to have a registered handler at launch time; otherwise submitting a
-    // matching task crashes with NSInternalInconsistencyException.
-    WorkmanagerPlugin.registerPeriodicTask(
-      withIdentifier: "jp.co.b-shock.capsicum.iOSBackgroundAppRefresh",
-      frequency: nil
-    )
-
     // Request APNs device token. This does not trigger a user-facing
     // permission dialog; it only asks iOS for the token.
     application.registerForRemoteNotifications()

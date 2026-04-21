@@ -40,16 +40,16 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 | プラグイン | 用途 | 問題 | 対応案 |
 | --- | --- | --- | --- |
-| **workmanager** | バックグラウンドポーリング | **モバイル専用**。macOS / Linux / Windows は非対応 | `BackgroundTaskScheduler` インターフェースで抽象化。デスクトップ実装は Dart `Timer` + 常駐前提。通知リレー（#52）移行後はモバイル側でも不要になる見込み |
+| ~~workmanager~~ | ~~バックグラウンドポーリング~~ | v1.19 (#348) で撤去済み。通知リレー（#52）への完全移行に伴いモバイル側も不要になった | デスクトップ対応でバックグラウンド相当の仕組みが要る場合は `BackgroundTaskScheduler` 抽象層（#328）の実装として Dart `Timer` + 常駐で組む |
 | **video_player** | 動画再生 | macOS は公式対応だが、**Linux / Windows は非対応** | `media_kit` への置き換えを検討。libmpv ベースで全プラットフォーム対応。影響範囲が大きいため事前調査が必要 |
 
 ## 影響度の大きい順と対応タイミング
 
-### 1. workmanager（第2段階で対応）
+### 1. BackgroundTaskScheduler 抽象化（第2段階で対応）
 
-`BackgroundTaskScheduler` 抽象化は [CLAUDE.md の長期構想](CLAUDE.md#長期構想-デスクトップ対応) 第2段階（バックグラウンド/通知モデルの再設計）の主題と一致する。[#293](https://github.com/pooza/capsicum/issues/293) の観測性強化作業で既存構造のまま計装する方針のため、抽象化はその次のフェーズに回す。
+モバイル側の workmanager 依存は v1.19 (#348) で撤去済み。プッシュ通知は APNs / FCM リレー ([#52](https://github.com/pooza/capsicum/issues/52)) に一本化されており、モバイルでバックグラウンドポーリングを復活させる予定はない。
 
-通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）Stage 1 が実装されれば、モバイル側も workmanager への依存度が下がるため、抽象化と同時にモバイル側も整理できる可能性がある。
+ただしデスクトップは push 受信経路がないため、[#328](https://github.com/pooza/capsicum/issues/328) の `BackgroundTaskScheduler` 抽象層を第2段階で導入し、デスクトップ実装としては Dart `Timer` + アプリ常駐前提の軽量ポーリングを入れる。モバイル側は抽象層の no-op 実装で十分。
 
 ### 2. video_player → media_kit 移行
 
