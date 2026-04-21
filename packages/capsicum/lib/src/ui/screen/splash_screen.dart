@@ -34,21 +34,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     }
     if (!mounted) return;
 
+    // restoreSessions() が完走した。通知タップ routing が accounts の
+    // インクリメンタル更新と race しないよう、完了 signal を立てる。
+    ref.read(sessionsRestoredProvider.notifier).state = true;
+
     // Firebase 初期化を待ってからプッシュ通知登録（ベストエフォート）。
     // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
     // にユーザーがログアウトしたアカウントまで再登録してしまうため、登録
     // 実行時に最新状態を ProviderContainer 経由で再取得する。
     //
-    // トークン refresh リスナーは accounts 数に関わらず登録する。未ログインで
-    // 起動 → 同セッション中にログイン、という導線では registerAllAccounts は
-    // 空振りするが、その後のトークンローテーションで再登録を発火させるには
-    // listener の事前登録が必須（broadcast stream は過去 emit を配信しないので
-    // 事後の emit を拾うにはこのタイミングで listen しておく必要がある）。
+    // registerAllAccounts を await してから startTokenRefreshListener を
+    // 起動する：初回登録の途中でトークン rotation が発火すると、in-flight
+    // ガードに引っかかった未完 Future が古いトークンの結果を成功と
+    // 報告してしまう race を避ける。
+    //
+    // listener は accounts 数に関わらず登録する。未ログインで起動 → 同セッ
+    // ション中にログイン、の導線でも以降のトークン rotation で再登録が
+    // 発火するようにするため（broadcast stream は過去 emit を配信しない）。
     final container = ProviderScope.containerOf(context, listen: false);
-    firebaseReady.then((_) {
+    firebaseReady.then((_) async {
       final latest = container.read(accountManagerProvider).accounts;
       if (latest.isNotEmpty) {
-        PushRegistrationService.registerAllAccounts(latest);
+        await PushRegistrationService.registerAllAccounts(latest);
       }
       PushRegistrationService.startTokenRefreshListener(
         () => container.read(accountManagerProvider).accounts,

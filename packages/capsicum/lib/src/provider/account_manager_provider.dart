@@ -275,6 +275,15 @@ final accountManagerProvider =
       AccountManagerNotifier.new,
     );
 
+/// SplashScreen の `_restoreSessions()` が完走したかどうか。
+///
+/// 通知タップ routing（[main._routeToNotificationsTab]）が
+/// 「accounts に 1 件あれば restore 完了」と誤判定しないための明示的な
+/// signal。restoreSessions は 1 アカウントずつ state を更新しながら進む
+/// ため、途中で通知 routing を走らせると宛先アカウントがまだ未登録で
+/// 取りこぼす。
+final sessionsRestoredProvider = StateProvider<bool>((ref) => false);
+
 final accountStorageProvider = Provider<AccountStorage>(
   (ref) => AccountStorage(),
 );

@@ -162,7 +162,9 @@ void _startApp() {
 ///
 /// cold-start 通知タップでは以下の 2 段待ちを行ってから go('/home') する：
 /// 1. Navigator が立ち上がるまで（rootNavigatorKey.currentContext）
-/// 2. SplashScreen の session restore が完了するまで（accounts が空でない）
+/// 2. [sessionsRestoredProvider] が true になるまで（restoreSessions は
+///    1 アカウントずつ state 更新するため、単に accounts.isNotEmpty では
+///    途中 state を拾って宛先アカウントを取りこぼす可能性がある）
 ///
 /// この 2 段待ちがないと、restore 中に go('/home') → 認証 redirect で /server
 /// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
@@ -178,13 +180,14 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
     return;
   }
   final container = ProviderScope.containerOf(context);
-  final accounts = container.read(accountManagerProvider).accounts;
-  // session restore 未完了 → auth redirect を待つ
-  if (accounts.isEmpty) {
+  // restore 完了までは accounts.isNotEmpty でも宛先が見つからない可能性が
+  // ある。sessionsRestoredProvider が true になるまで待つ。
+  if (!container.read(sessionsRestoredProvider)) {
     _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
     return;
   }
 
+  final accounts = container.read(accountManagerProvider).accounts;
   if (accountString != null) {
     final matched = _findAccountByString(accounts, accountString);
     if (matched != null) {
