@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -27,8 +28,10 @@ class FcmService {
       final settings = await messaging.requestPermission();
       debugPrint('capsicum: FCM permission: ${settings.authorizationStatus}');
 
-      // トークン取得
-      final token = await messaging.getToken();
+      // トークン取得。TOO_MANY_REGISTRATIONS は FCM の device-level state で、
+      // 端末に紐付く古い registration を掃除すれば再取得できるため、
+      // deleteToken + getToken で 1 回だけリカバーを試みる。
+      final token = await _getTokenWithRecovery(messaging);
       if (token != null) {
         _deviceToken = token;
         _tokenController.add(token);
@@ -49,8 +52,39 @@ class FcmService {
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('service', 'fcm_init');
+          if (_isTooManyRegistrations(e)) {
+            scope.setTag('fcm.error', 'too_many_registrations');
+          }
         },
       );
     }
+  }
+
+  static Future<String?> _getTokenWithRecovery(
+    FirebaseMessaging messaging,
+  ) async {
+    try {
+      return await messaging.getToken();
+    } on FirebaseException catch (e) {
+      if (!_isTooManyRegistrations(e)) rethrow;
+      debugPrint('capsicum: FCM TOO_MANY_REGISTRATIONS; deleteToken + retry');
+      try {
+        await messaging.deleteToken();
+      } catch (deleteErr) {
+        debugPrint('capsicum: FCM deleteToken failed: $deleteErr');
+        // delete 失敗は rethrow せず getToken リトライに進む。ベースの状態が
+        // 既に壊れているケースでも、新規トークン発行は試す価値がある。
+      }
+      return await messaging.getToken();
+    }
+  }
+
+  /// FCM の `TOO_MANY_REGISTRATIONS` エラーかどうかを判定。
+  ///
+  /// firebase_messaging plugin は code を `firebase_messaging/unknown` で
+  /// 丸めてしまうため、message に頼ってマッチさせる。
+  static bool _isTooManyRegistrations(Object e) {
+    if (e is! FirebaseException) return false;
+    return e.message?.contains('TOO_MANY_REGISTRATIONS') ?? false;
   }
 }
