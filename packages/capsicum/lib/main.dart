@@ -50,28 +50,88 @@ Future<void> main() async {
 
 FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
   final request = event.request;
-  if (request == null) return event;
+  if (request != null) {
+    final headers = Map<String, String>.from(request.headers);
+    for (final name in _sensitiveHeaderNames) {
+      if (headers.containsKey(name)) headers[name] = '[Filtered]';
+    }
 
-  final headers = Map<String, String>.from(request.headers);
-  const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
-  for (final name in sensitiveHeaders) {
-    if (headers.containsKey(name)) headers[name] = '[Filtered]';
+    // SentryRequest.data は getter-only のため、scrub 後の値を差し替えるには
+    // 新しい SentryRequest で request ごと置き換える（copyWith は deprecated）。
+    event.request = SentryRequest(
+      url: request.url,
+      method: request.method,
+      queryString: request.queryString,
+      cookies: request.cookies,
+      fragment: request.fragment,
+      apiTarget: request.apiTarget,
+      data: _scrubRequestData(request.data),
+      headers: headers,
+      env: request.env,
+    );
   }
 
-  // SentryRequest.data は getter-only のため、scrub 後の値を差し替えるには
-  // 新しい SentryRequest で request ごと置き換える（copyWith は deprecated）。
-  event.request = SentryRequest(
-    url: request.url,
-    method: request.method,
-    queryString: request.queryString,
-    cookies: request.cookies,
-    fragment: request.fragment,
-    apiTarget: request.apiTarget,
-    data: _scrubRequestData(request.data),
-    headers: headers,
-    env: request.env,
-  );
+  // SentryDio（将来有効化時）は breadcrumb.data に http.request_headers /
+  // http.request_body を載せる。request / response の両側からクレデンシャル
+  // が漏れないよう、同じキーセットで scrub する。
+  final breadcrumbs = event.breadcrumbs;
+  if (breadcrumbs != null && breadcrumbs.isNotEmpty) {
+    event.breadcrumbs = breadcrumbs.map(_scrubBreadcrumb).toList();
+  }
+
   return event;
+}
+
+const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];
+
+Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
+  final data = b.data;
+  if (data == null || data.isEmpty) return b;
+
+  final copy = Map<String, dynamic>.from(data);
+  var changed = false;
+  for (final entry in copy.entries.toList()) {
+    final key = entry.key;
+    final value = entry.value;
+    // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
+    if (key.toLowerCase().contains('header') && value is Map) {
+      final headerCopy = Map<String, dynamic>.from(value);
+      var headerChanged = false;
+      for (final name in _sensitiveHeaderNames) {
+        for (final hk in headerCopy.keys.toList()) {
+          if (hk.toString().toLowerCase() == name.toLowerCase()) {
+            headerCopy[hk] = '[Filtered]';
+            headerChanged = true;
+          }
+        }
+      }
+      if (headerChanged) {
+        copy[key] = headerCopy;
+        changed = true;
+      }
+    }
+    // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
+    if (key.toLowerCase().contains('body') ||
+        key.toLowerCase().contains('data')) {
+      final scrubbed = _scrubRequestData(value);
+      if (!identical(scrubbed, value)) {
+        copy[key] = scrubbed;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) return b;
+  // Breadcrumb.copyWith は deprecated のため、新しいインスタンスを構築する
+  // （SentryRequest と同じ扱い）。
+  return Breadcrumb(
+    message: b.message,
+    timestamp: b.timestamp,
+    category: b.category,
+    data: copy,
+    level: b.level,
+    type: b.type,
+  );
 }
 
 /// Mastodon の `subscribePush` は FormData を渡すため、キーが
