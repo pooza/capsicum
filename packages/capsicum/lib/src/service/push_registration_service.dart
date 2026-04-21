@@ -43,6 +43,8 @@ class PushRegistrationService {
 
   static final _client = PushRelayClient();
 
+  static StreamSubscription<String>? _tokenRefreshSub;
+
   /// 単一アカウントのプッシュ通知登録を行う。
   ///
   /// [eligible] が true の場合、プリセット判定をスキップして登録する。
@@ -177,6 +179,41 @@ class PushRegistrationService {
         scope.setTag('host', host);
       },
     );
+  }
+
+  /// デバイストークンのローテーションを監視し、検知したら全アカウントを
+  /// 再登録する。
+  ///
+  /// アプリ起動時に1度呼ぶ。ストリームはブロードキャストで過去の emit を
+  /// 配信しないため、初回登録（[registerAllAccounts]）と重複して発火する
+  /// ことはなく、以降の本物のローテーションのみに反応する。
+  ///
+  /// [getAccounts] は発火時点の最新アカウント一覧を返す。起動時点の値で
+  /// 固定するとログアウト済みアカウントまで再登録する事故になるため、
+  /// コールバックを渡す設計にしている。
+  static void startTokenRefreshListener(List<Account> Function() getAccounts) {
+    _tokenRefreshSub?.cancel();
+    final Stream<String>? stream;
+    if (Platform.isIOS) {
+      stream = ApnsService.onTokenChanged;
+    } else if (Platform.isAndroid) {
+      stream = FcmService.onTokenChanged;
+    } else {
+      return;
+    }
+    _tokenRefreshSub = stream.listen((_) async {
+      debugPrint('PushRegistration: device token rotated, re-registering');
+      final accounts = getAccounts();
+      if (accounts.isEmpty) return;
+      // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
+      // 新しいトークンで POST /register すると、そのままではリレー DB に
+      // 孤立レコードと古い SNS サブスクリプションが残るため unregister を
+      // 先に流す。unregister は各段階が独立なので部分失敗しても問題ない。
+      for (final account in accounts) {
+        await unregisterAccount(account);
+      }
+      await registerAllAccounts(accounts);
+    });
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。

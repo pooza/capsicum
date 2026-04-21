@@ -45,6 +45,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         if (latest.isNotEmpty) {
           PushRegistrationService.registerAllAccounts(latest);
         }
+        // トークンローテーション時に自動再登録するリスナーを起動しておく。
+        // 初回トークンはすでに registerAllAccounts で処理済みであり、
+        // broadcast stream は過去の emit を再配信しないため二重発火しない。
+        PushRegistrationService.startTokenRefreshListener(
+          () => container.read(accountManagerProvider).accounts,
+        );
       });
     }
 
