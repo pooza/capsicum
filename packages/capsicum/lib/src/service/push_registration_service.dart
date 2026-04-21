@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
+import '../preset_servers.dart';
 import 'apns_service.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
@@ -25,21 +26,8 @@ import 'push_relay_client.dart';
 /// プリセットサーバーのアカウントを1つでも持っていれば、全アカウントを
 /// 登録対象とする。失敗してもアプリの動作には影響しない（ベストエフォート）。
 class PushRegistrationService {
-  static const _presetServers = {
-    'mstdn.b-shock.org',
-    'mstdn.delmulin.com',
-    'precure.ml',
-    'mk.precure.fun',
-    'misskey.delmulin.com',
-    // ステージング
-    'st.mstdn.b-shock.org',
-    'st2.mstdn.delmulin.com',
-    'st.precure.ml',
-    'st.misskey.delmulin.com',
-  };
-
   /// 指定ホストがプリセットサーバーかどうかを判定する。
-  static bool isPresetServer(String host) => _presetServers.contains(host);
+  static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
 
   static final _client = PushRelayClient();
 
@@ -78,7 +66,7 @@ class PushRegistrationService {
     int? relayId;
     try {
       if (account.adapter is! PushSubscriptionSupport) return;
-      if (!eligible && !_presetServers.contains(account.key.host)) {
+      if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
         debugPrint(
           'PushRegistration: skipped (not preset): ${account.key.host}',
         );
@@ -266,10 +254,15 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = accounts.any((a) => _presetServers.contains(a.key.host));
-    for (final account in accounts) {
-      await registerAccount(account, eligible: hasPreset);
-    }
+    final hasPreset = accounts.any(
+      (a) => kPresetServerHosts.contains(a.key.host),
+    );
+    // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
+    // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
+    // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
+    await Future.wait(
+      accounts.map((a) => registerAccount(a, eligible: hasPreset)),
+    );
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。
