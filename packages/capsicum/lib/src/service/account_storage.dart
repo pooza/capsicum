@@ -168,7 +168,13 @@ class AccountStorage {
 
   Future<void> _writeIndex(List<String> keys) async {
     final prefs = await _prefs();
-    await prefs.setString(_accountListKey, jsonEncode(keys));
+    // SharedPreferences.setString は失敗時に `false` を返す（throw しない）。
+    // 戻り値を無視すると失敗が成功扱いになり、legacy 移行側で legacy を
+    // delete → 全アカウントインデックス永久消失、となる（Codex 指摘）。
+    final ok = await prefs.setString(_accountListKey, jsonEncode(keys));
+    if (!ok) {
+      throw StateError('prefs.setString returned false for $_accountListKey');
+    }
   }
 
   static void _reportOnce(String stage, Object error, StackTrace st) {

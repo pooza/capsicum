@@ -287,6 +287,13 @@ class PushRegistrationService {
   /// [getAccounts] は発火時点の最新アカウント一覧を返す。起動時点の値で
   /// 固定するとログアウト済みアカウントまで再登録する事故になるため、
   /// コールバックを渡す設計にしている。
+  /// トークン refresh を直列化するためのチェーン。Stream.listen は onData
+  /// が async でも前回の完了を待たずに次を配信するため、複数回の rotation
+  /// が短時間に重なると unregisterAccount / registerAllAccounts が交錯して
+  /// key / relay state が不整合になる。各 emit をこの Future にチェイン
+  /// することで厳密に one-at-a-time 化する。
+  static Future<void> _tokenRefreshChain = Future<void>.value();
+
   static void startTokenRefreshListener(List<Account> Function() getAccounts) {
     _tokenRefreshSub?.cancel();
     final Stream<String>? stream;
@@ -297,21 +304,30 @@ class PushRegistrationService {
     } else {
       return;
     }
-    _tokenRefreshSub = stream.listen((_) async {
-      debugPrint(
-        'capsicum: push.registration: device token rotated, re-registering',
+    _tokenRefreshSub = stream.listen((_) {
+      // 前回の refresh を待ってから新しい refresh を走らせる（直列化）。
+      _tokenRefreshChain = _tokenRefreshChain.then(
+        (_) => _runTokenRefresh(getAccounts),
       );
-      final accounts = getAccounts();
-      if (accounts.isEmpty) return;
-      // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
-      // 新しいトークンで POST /register すると、そのままではリレー DB に
-      // 孤立レコードと古い SNS サブスクリプションが残るため unregister を
-      // 先に流す。unregister は各段階が独立なので部分失敗しても問題ない。
-      for (final account in accounts) {
-        await unregisterAccount(account);
-      }
-      await registerAllAccounts(accounts);
     });
+  }
+
+  static Future<void> _runTokenRefresh(
+    List<Account> Function() getAccounts,
+  ) async {
+    debugPrint(
+      'capsicum: push.registration: device token rotated, re-registering',
+    );
+    final accounts = getAccounts();
+    if (accounts.isEmpty) return;
+    // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
+    // 新しいトークンで POST /register すると、そのままではリレー DB に
+    // 孤立レコードと古い SNS サブスクリプションが残るため unregister を
+    // 先に流す。unregister は各段階が独立なので部分失敗しても問題ない。
+    for (final account in accounts) {
+      await unregisterAccount(account);
+    }
+    await registerAllAccounts(accounts);
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
