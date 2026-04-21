@@ -191,6 +191,16 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   }
 
   final accounts = container.read(accountManagerProvider).accounts;
+  if (accounts.isEmpty) {
+    // sessions restore は完了したが有効アカウントなし（全アカウントが
+    // ログアウト済み、または初回起動後にプッシュ通知だけ残っていた stale
+    // タップ等）。ここで pendingInitialTabProvider を設定して go('/home')
+    // を呼ぶと auth redirect で /server に飛ばされた後も pendingTab が
+    // 残留し、次回のログイン後に意図せず通知タブが開かれてしまう。
+    debugPrint('capsicum: notification: routing dropped — no active accounts');
+    return;
+  }
+
   if (accountString != null) {
     final matched = _findAccountByString(accounts, accountString);
     if (matched != null) {
