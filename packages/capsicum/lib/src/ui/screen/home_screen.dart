@@ -1574,7 +1574,10 @@ class _NotificationBellButton extends StatelessWidget {
       onLongPress: hasMultipleAccounts ? () => _showMenu(context) : null,
       child: IconButton(
         icon: const Icon(Icons.notifications_outlined),
-        tooltip: hasMultipleAccounts ? 'すべての通知（長押しで選択）' : '通知',
+        // 複数アカウント時は長押しメニューを自前で出すため IconButton の
+        // tooltip は付けない。built-in tooltip が long-press gesture を
+        // 横取りして、外側の GestureDetector.onLongPress が発火しない。
+        tooltip: hasMultipleAccounts ? null : '通知',
         onPressed: () => context.push(
           hasMultipleAccounts ? '/notifications/all' : '/notifications',
         ),
