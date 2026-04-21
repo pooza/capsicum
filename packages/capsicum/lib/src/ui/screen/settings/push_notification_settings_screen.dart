@@ -11,10 +11,10 @@ import '../../../service/push_registration_status.dart';
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
 /// 再試行できる設定画面（#340）。
 ///
-/// 非表示化の基準:
-/// - プリセットサーバー以外のアカウントは「登録対象外」として小さく表示
-/// - [PushRegistrationState.notSupported]（Misskey upstream 制約など）は
-///   サーバー側の仕様制約として明示。リトライ不可
+/// 「eligible」の解釈は [PushRegistrationService.registerAllAccounts] と
+/// 揃える — プリセットサーバーのアカウントが 1 つでもあれば、非プリセット
+/// アカウントも登録対象になる。UI 側もこの eligibility に従って表示・
+/// リトライ可否を出し分ける。
 class PushNotificationSettingsScreen extends ConsumerWidget {
   const PushNotificationSettingsScreen({super.key});
 
@@ -24,6 +24,9 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     final statusMap =
         ref.watch(pushRegistrationStatusProvider).valueOrNull ??
         const <String, PushRegistrationSnapshot>{};
+    final hasPreset = accounts.any(
+      (a) => kPresetServerHosts.contains(a.key.host),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -32,18 +35,23 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              'プッシュ通知はプリセットサーバーのアカウントで利用できます。'
-              '登録に失敗した場合は、各アカウントの行から再試行できます。',
-              style: TextStyle(fontSize: 13),
+              hasPreset
+                  ? 'プリセットサーバーのアカウントが登録されているため、'
+                        'すべてのアカウントでプッシュ通知が利用できます。'
+                        '登録に失敗した場合は、各アカウントの行から再試行できます。'
+                  : 'プッシュ通知はプリセットサーバーのアカウントが '
+                        '1 つ以上登録されている場合に利用できます。',
+              style: const TextStyle(fontSize: 13),
             ),
           ),
           ...accounts.map(
             (account) => _AccountStatusTile(
               account: account,
               snapshot: statusMap[account.key.toStorageKey()],
+              hasPreset: hasPreset,
             ),
           ),
         ],
@@ -53,21 +61,27 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
 }
 
 class _AccountStatusTile extends ConsumerWidget {
-  const _AccountStatusTile({required this.account, required this.snapshot});
+  const _AccountStatusTile({
+    required this.account,
+    required this.snapshot,
+    required this.hasPreset,
+  });
 
   final Account account;
   final PushRegistrationSnapshot? snapshot;
+  final bool hasPreset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isPreset = kPresetServerHosts.contains(account.key.host);
     final label = '@${account.key.username}@${account.key.host}';
     final state = snapshot?.state ?? PushRegistrationState.idle;
+    // プリセットサーバー本体か、プリセットがあって「連れて登録」される側か
+    final eligible = hasPreset || kPresetServerHosts.contains(account.key.host);
 
     final (statusText, statusColor, statusIcon) = _describeState(
       context,
       state,
-      isPreset,
+      eligible,
     );
 
     return ListTile(
@@ -80,7 +94,7 @@ class _AccountStatusTile extends ConsumerWidget {
         ].join('\n'),
       ),
       isThreeLine: snapshot?.errorMessage != null,
-      trailing: _isRetryable(state, isPreset)
+      trailing: _isRetryable(state, eligible)
           ? TextButton(
               onPressed: () => _retry(ref, account),
               child: const Text('再試行'),
@@ -92,12 +106,12 @@ class _AccountStatusTile extends ConsumerWidget {
   (String, Color, IconData) _describeState(
     BuildContext context,
     PushRegistrationState state,
-    bool isPreset,
+    bool eligible,
   ) {
     final theme = Theme.of(context);
-    if (!isPreset) {
+    if (!eligible) {
       return (
-        '登録対象外（プリセットサーバー以外）',
+        '登録対象外（プリセットサーバーのアカウントが未登録）',
         theme.colorScheme.outline,
         Icons.remove_circle_outline,
       );
@@ -136,10 +150,11 @@ class _AccountStatusTile extends ConsumerWidget {
     };
   }
 
-  bool _isRetryable(PushRegistrationState state, bool isPreset) {
-    if (!isPreset) return false;
+  bool _isRetryable(PushRegistrationState state, bool eligible) {
+    if (!eligible) return false;
     return state == PushRegistrationState.failed ||
-        state == PushRegistrationState.idle;
+        state == PushRegistrationState.idle ||
+        state == PushRegistrationState.skipped;
   }
 
   void _retry(WidgetRef ref, Account account) {
