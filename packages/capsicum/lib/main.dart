@@ -208,13 +208,23 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
     }
   }
 
-  // Land on the notifications tab inside HomeScreen so the Drawer and other
-  // tabs remain reachable. Staying on HomeScreen also keeps the route stack
-  // intact, unlike `go('/notifications')` which would leave the user
-  // stranded on a standalone screen.
+  // pendingInitialTabProvider は常に立てる。HomeScreen が mount 済みなら
+  // rebuild で拾われ、/splash や /eula 経由の導線では遷移完了後の
+  // HomeScreen build 時に拾われる。
   container.read(pendingInitialTabProvider.notifier).state =
       const NotificationsTab();
-  GoRouter.of(context).go('/home');
+
+  // 現在 /splash や /eula にいる場合、go('/home') すると EULA 承認チェック
+  // や splash の通常導線を飛ばしてしまう。これらのフローは自前で /home に
+  // 到達するので、通知ルーティング側で navigate せず pendingTab の設定だけ
+  // に留める（後から到達した HomeScreen が pendingTab を拾う）。
+  final router = GoRouter.of(context);
+  final currentLocation = router.state.matchedLocation;
+  if (currentLocation != '/home' &&
+      currentLocation != '/splash' &&
+      currentLocation != '/eula') {
+    router.go('/home');
+  }
 }
 
 /// [_routeToNotificationsTab] の再スケジュール。attempt 上限超過で諦める。
