@@ -3,7 +3,10 @@ import UIKit
 import UserNotifications
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UNUserNotificationCenterDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  // UNUserNotificationCenterDelegate は FlutterAppDelegate が既に準拠済み
+  // （Xcode 26 / Flutter SDK 3.32+）。このため、ここで再宣言する必要はなく、
+  // userNotificationCenter(_:didReceive:) は override する。
   private var apnsChannel: FlutterMethodChannel?
   private var pendingDeviceToken: String?
   // Notification tapped before the Flutter engine was ready — deliver once
@@ -80,7 +83,11 @@ import UserNotifications
   // User tapped a notification (either while the app was running or via cold
   // start). Forward the userInfo to Dart so account-aware routing can pick
   // the matching account before navigating to the notifications tab.
-  func userNotificationCenter(
+  //
+  // Flutter の各種プラグイン（flutter_local_notifications 等）は同じデリゲート
+  // メソッドを swizzling で拾うため、super を呼んでチェーンを維持する。
+  // completionHandler は super に委ねて一度だけ呼ばせる。
+  override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
@@ -92,7 +99,7 @@ import UserNotifications
       // Buffer until the Flutter engine finishes initializing.
       pendingNotificationTap = userInfo
     }
-    completionHandler()
+    super.userNotificationCenter(center, didReceive: response, withCompletionHandler: completionHandler)
   }
 
   // UNNotificationResponse.userInfo is [AnyHashable: Any], but the Flutter
