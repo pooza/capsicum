@@ -905,8 +905,11 @@ class MastodonClient {
     }
   }
 
-  /// POST /api/v1/push/subscription
-  Future<Map<String, dynamic>> createPushSubscription({
+  /// Web Push サブスクリプション登録。POST /api/v1/push/subscription
+  ///
+  /// Misskey 側の [MisskeyClient.subscribePush] と対で、3 層（interface /
+  /// adapter / client）で同一名に統一している。
+  Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String p256dh,
     required String auth,
@@ -929,11 +932,11 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
-  /// DELETE /api/v1/push/subscription
+  /// Web Push サブスクリプション解除。DELETE /api/v1/push/subscription
   ///
   /// サーバー側に subscription が既に存在しない場合は 404 が返るが、
   /// 掃除としては成功扱いで構わないため no-op とする。
-  Future<void> deletePushSubscription() async {
+  Future<void> unsubscribePush() async {
     try {
       await dio.delete('/api/v1/push/subscription');
     } on DioException catch (e) {

@@ -1320,7 +1320,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String auth,
   }) async {
     try {
-      return await client.registerServiceWorker(
+      return await client.subscribePush(
         endpoint: endpoint,
         publickey: p256dh,
         auth: auth,
@@ -1352,6 +1352,6 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> unsubscribePush({String? endpoint}) async {
     if (endpoint == null) return;
-    await client.unregisterServiceWorker(endpoint: endpoint);
+    await client.unsubscribePush(endpoint: endpoint);
   }
 }

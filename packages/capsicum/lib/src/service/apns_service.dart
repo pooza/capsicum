@@ -41,10 +41,12 @@ class ApnsService {
         final token = call.arguments as String;
         _deviceToken = token;
         _tokenController.add(token);
-        debugPrint('APNs device token received (${token.length} chars)');
+        debugPrint(
+          'capsicum: push.apns: device token received (${token.length} chars)',
+        );
       case 'onDeviceTokenError':
         final error = call.arguments as String;
-        debugPrint('APNs registration failed: $error');
+        debugPrint('capsicum: push.apns: registration failed: $error');
       case 'onNotificationTap':
         // iOS が起動 / 復帰時に通知タップを通知してくる。引数は userInfo
         // （NSDictionary<String, Any>）で、capsicum リレーが仕込む custom

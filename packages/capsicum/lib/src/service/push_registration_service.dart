@@ -68,14 +68,14 @@ class PushRegistrationService {
       if (account.adapter is! PushSubscriptionSupport) return;
       if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
         debugPrint(
-          'PushRegistration: skipped (not preset): ${account.key.host}',
+          'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
         return;
       }
 
       final deviceToken = _getDeviceToken();
       if (deviceToken == null) {
-        debugPrint('PushRegistration: no device token available');
+        debugPrint('capsicum: push.registration: no device token available');
         return;
       }
 
@@ -92,7 +92,9 @@ class PushRegistrationService {
       relayId = _parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
-        debugPrint('PushRegistration: relay response missing fields: $sub');
+        debugPrint(
+          'capsicum: push.registration: relay response missing fields: $sub',
+        );
         _captureContractViolation(
           'relay register response missing id/push_token',
           account.key.host,
@@ -117,10 +119,12 @@ class PushRegistrationService {
       );
 
       debugPrint(
-        'PushRegistration: registered ${account.key.username}@${account.key.host}',
+        'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
       );
     } catch (e, st) {
-      debugPrint('PushRegistration: failed for ${account.key.host}: $e\n$st');
+      debugPrint(
+        'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
+      );
       // 部分成功をロールバック。リレーに row ができた後で subscribePush が
       // 失敗すると、SNS 側サブスクリプションなしの孤立レコードが残るため、
       // 取得済みの relayId を基に unregister を試みる。各段階は独立 try
@@ -161,7 +165,9 @@ class PushRegistrationService {
           endpoint: endpoint,
         );
       } catch (e, st) {
-        debugPrint('PushRegistration: adapter unsubscribe failed: $e');
+        debugPrint(
+          'capsicum: push.registration: adapter unsubscribe failed: $e',
+        );
         _reportUnregisterFailure(e, st, account.key.host, 'adapter');
       }
     }
@@ -172,14 +178,14 @@ class PushRegistrationService {
         await _client.unregister(relayId);
       }
     } catch (e, st) {
-      debugPrint('PushRegistration: relay unregister failed: $e');
+      debugPrint('capsicum: push.registration: relay unregister failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'relay');
     }
 
     try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
-      debugPrint('PushRegistration: keystore delete failed: $e');
+      debugPrint('capsicum: push.registration: keystore delete failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
   }
@@ -224,7 +230,9 @@ class PushRegistrationService {
       return;
     }
     _tokenRefreshSub = stream.listen((_) async {
-      debugPrint('PushRegistration: device token rotated, re-registering');
+      debugPrint(
+        'capsicum: push.registration: device token rotated, re-registering',
+      );
       final accounts = getAccounts();
       if (accounts.isEmpty) return;
       // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
@@ -249,7 +257,9 @@ class PushRegistrationService {
     if (_getDeviceToken() == null) {
       final token = await _waitForDeviceToken();
       if (token == null) {
-        debugPrint('PushRegistration: device token not available, skipping');
+        debugPrint(
+          'capsicum: push.registration: device token not available, skipping',
+        );
         return;
       }
     }

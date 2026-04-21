@@ -32,7 +32,7 @@ class NotificationInit {
           >();
       await androidPlugin?.requestNotificationsPermission();
     } catch (e) {
-      debugPrint('NotificationInit failed: $e');
+      debugPrint('capsicum: notification: init failed: $e');
     }
   }
 }

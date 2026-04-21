@@ -26,7 +26,9 @@ class FcmService {
 
       // 通知権限のリクエスト（Android 13+ で必要）
       final settings = await messaging.requestPermission();
-      debugPrint('capsicum: FCM permission: ${settings.authorizationStatus}');
+      debugPrint(
+        'capsicum: push.fcm: permission ${settings.authorizationStatus}',
+      );
 
       // トークン取得。TOO_MANY_REGISTRATIONS は FCM の device-level state で、
       // 端末に紐付く古い registration を掃除すれば再取得できるため、
@@ -35,9 +37,11 @@ class FcmService {
       if (token != null) {
         _deviceToken = token;
         _tokenController.add(token);
-        debugPrint('capsicum: FCM token received (${token.length} chars)');
+        debugPrint(
+          'capsicum: push.fcm: token received (${token.length} chars)',
+        );
       } else {
-        debugPrint('capsicum: FCM getToken returned null');
+        debugPrint('capsicum: push.fcm: getToken returned null');
       }
 
       // トークン更新の監視
@@ -46,7 +50,7 @@ class FcmService {
         _tokenController.add(token);
       });
     } catch (e, st) {
-      debugPrint('capsicum: FCM initialization failed: $e');
+      debugPrint('capsicum: push.fcm: initialization failed: $e');
       Sentry.captureException(
         e,
         stackTrace: st,
@@ -67,11 +71,13 @@ class FcmService {
       return await messaging.getToken();
     } on FirebaseException catch (e) {
       if (!_isTooManyRegistrations(e)) rethrow;
-      debugPrint('capsicum: FCM TOO_MANY_REGISTRATIONS; deleteToken + retry');
+      debugPrint(
+        'capsicum: push.fcm: TOO_MANY_REGISTRATIONS; deleteToken + retry',
+      );
       try {
         await messaging.deleteToken();
       } catch (deleteErr) {
-        debugPrint('capsicum: FCM deleteToken failed: $deleteErr');
+        debugPrint('capsicum: push.fcm: deleteToken failed: $deleteErr');
         // delete 失敗は rethrow せず getToken リトライに進む。ベースの状態が
         // 既に壊れているケースでも、新規トークン発行は試す価値がある。
       }

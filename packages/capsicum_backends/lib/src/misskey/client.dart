@@ -1069,8 +1069,11 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
-  /// POST /api/sw/register
-  Future<Map<String, dynamic>> registerServiceWorker({
+  /// Web Push サブスクリプション登録。POST /api/sw/register
+  ///
+  /// Mastodon 側の [MastodonClient.subscribePush] と対で、3 層（interface /
+  /// adapter / client）で同一名に統一している。
+  Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String publickey,
     required String auth,
@@ -1086,8 +1089,8 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
-  /// POST /api/sw/unregister
-  Future<void> unregisterServiceWorker({required String endpoint}) async {
+  /// Web Push サブスクリプション解除。POST /api/sw/unregister
+  Future<void> unsubscribePush({required String endpoint}) async {
     await dio.post(
       '/api/sw/unregister',
       data: createBody({'endpoint': endpoint}),
