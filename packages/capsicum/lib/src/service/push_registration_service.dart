@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
 import 'apns_service.dart';
@@ -420,7 +421,7 @@ class PushRegistrationService {
       completer.complete(cached);
     }
 
-    final timer = Timer(const Duration(seconds: 10), () {
+    final timer = Timer(kDeviceTokenWait, () {
       if (!completer.isCompleted) completer.complete(null);
     });
 

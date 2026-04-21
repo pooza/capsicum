@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../constants.dart';
+
 /// capsicum-relay サーバーとの通信クライアント。
 ///
 /// リレーサーバーにデバイストークンを登録し、Web Push の受信エンドポイントを
@@ -11,8 +13,8 @@ class PushRelayClient {
   final _dio = Dio(
     BaseOptions(
       baseUrl: relayBaseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      connectTimeout: kPushRelayConnectTimeout,
+      receiveTimeout: kPushRelayReceiveTimeout,
     ),
   );
 

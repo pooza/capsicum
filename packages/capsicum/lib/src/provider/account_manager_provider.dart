@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../constants.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/account_storage.dart';
@@ -163,7 +164,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// Detect software version via NodeInfo on the given host.
   Future<String?> _detectSoftwareVersion(String host) async {
     try {
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
+      final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
       final probe = await probeInstance(dio, host);
       return probe?.softwareVersion;
     } catch (_) {
@@ -174,7 +175,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// Detect mulukhiya on the given host.
   Future<MulukhiyaService?> _detectMulukhiya(String host) async {
     try {
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
+      final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
       final mulukhiya = await MulukhiyaService.detect(dio, host);
       if (mulukhiya != null) {
         debugPrint(

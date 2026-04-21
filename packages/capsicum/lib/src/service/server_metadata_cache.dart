@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../constants.dart';
+
 class ServerMetadata {
   final String name;
   final String? iconUrl;
@@ -49,8 +51,8 @@ class ServerMetadataCache {
     try {
       final dio = Dio(
         BaseOptions(
-          connectTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
+          connectTimeout: kNetworkConnectTimeout,
+          receiveTimeout: kNetworkReceiveTimeout,
         ),
       );
       final metadata =

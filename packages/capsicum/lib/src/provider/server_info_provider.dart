@@ -3,6 +3,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../constants.dart';
 import 'account_manager_provider.dart';
 
 class HealthCheckResult {
@@ -53,7 +54,7 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
     String? softwareName;
     try {
       final probe = await probeInstance(
-        Dio(BaseOptions(connectTimeout: const Duration(seconds: 5))),
+        Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout)),
         adapter.host,
       );
       if (probe != null) {
@@ -114,8 +115,8 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
         final dio = Dio(
           BaseOptions(
             baseUrl: 'https://${adapter.host}',
-            connectTimeout: const Duration(seconds: 5),
-            receiveTimeout: const Duration(seconds: 5),
+            connectTimeout: kNetworkConnectTimeout,
+            receiveTimeout: kNetworkReceiveTimeout,
           ),
         );
         final response = await dio.get('/.well-known/nodeinfo');
