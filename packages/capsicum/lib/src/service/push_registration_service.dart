@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -97,11 +98,16 @@ class PushRegistrationService {
       final deviceToken = _getDeviceToken();
       if (deviceToken == null) {
         debugPrint('capsicum: push.registration: no device token available');
+        final isPermissionDenied = _isNotificationPermissionDenied();
         store.update(
           accountKey,
           PushRegistrationState.failed,
-          reason: PushRegistrationFailureReason.noDeviceToken,
-          errorMessage: 'デバイストークンを取得できませんでした',
+          reason: isPermissionDenied
+              ? PushRegistrationFailureReason.permissionDenied
+              : PushRegistrationFailureReason.noDeviceToken,
+          errorMessage: isPermissionDenied
+              ? '通知の権限が許可されていません'
+              : 'デバイストークンを取得できませんでした',
         );
         return;
       }
@@ -440,6 +446,19 @@ class PushRegistrationService {
     if (Platform.isIOS) return ApnsService.deviceToken;
     if (Platform.isAndroid) return FcmService.deviceToken;
     return null;
+  }
+
+  /// OS の通知権限が明示的に拒否されているかを判定する。
+  /// 現状は Android のみ判定可能（FcmService が requestPermission の結果を
+  /// 保持）。iOS は APNs の権限 API をネイティブ側で公開していないため、
+  /// deviceToken が null のまま判定不能で false を返す（= noDeviceToken 扱い）。
+  static bool _isNotificationPermissionDenied() {
+    if (Platform.isAndroid) {
+      final status = FcmService.lastAuthStatus;
+      return status == AuthorizationStatus.denied ||
+          status == AuthorizationStatus.notDetermined;
+    }
+    return false;
   }
 
   /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、

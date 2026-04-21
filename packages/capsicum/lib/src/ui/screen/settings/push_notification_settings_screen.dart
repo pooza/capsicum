@@ -80,6 +80,7 @@ class _AccountStatusTile extends ConsumerWidget {
       context,
       state,
       eligible,
+      snapshot?.reason,
     );
 
     return ListTile(
@@ -105,6 +106,7 @@ class _AccountStatusTile extends ConsumerWidget {
     BuildContext context,
     PushRegistrationState state,
     bool eligible,
+    PushRegistrationFailureReason? reason,
   ) {
     final theme = Theme.of(context);
     if (!eligible) {
@@ -130,11 +132,14 @@ class _AccountStatusTile extends ConsumerWidget {
         Colors.green,
         Icons.check_circle,
       ),
-      PushRegistrationState.failed => (
-        '登録に失敗しました',
-        theme.colorScheme.error,
-        Icons.error_outline,
-      ),
+      PushRegistrationState.failed =>
+        reason == PushRegistrationFailureReason.permissionDenied
+            ? (
+                '通知の権限が許可されていません',
+                theme.colorScheme.error,
+                Icons.notifications_off_outlined,
+              )
+            : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
       PushRegistrationState.notSupported => (
         'このサーバーでは対応していません',
         theme.colorScheme.outline,
