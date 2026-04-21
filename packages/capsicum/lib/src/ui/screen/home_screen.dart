@@ -191,9 +191,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _pendingListRestore = null;
         // Clear previous account's selection to avoid referencing
         // lists/hashtags that don't exist on the new account.
-        ref.read(selectedTabProvider.notifier).state = const TimelineTab(
-          TimelineType.home,
-        );
+        // build の最中に provider を変更すると Riverpod の
+        // `_debugCanModifyProviders` assertion で例外になるので、
+        // 次フレームで反映する。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(selectedTabProvider.notifier).state = const TimelineTab(
+            TimelineType.home,
+          );
+        });
       }
       if (!_lastTabRestored) {
         ref.listen(lastTabProvider(storageKey), (prev, next) {
