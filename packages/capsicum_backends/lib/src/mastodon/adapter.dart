@@ -1062,13 +1062,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       return (data['configuration'] as Map?)?['vapid']?['public_key']
           as String?;
     } catch (_) {
-      // v2 未対応の場合は v1 にフォールバック
-      try {
-        final data = await client.getInstanceV1();
-        return data['vapid_public_key'] as String?;
-      } catch (_) {
-        return null;
-      }
+      return null;
     }
   }
 
@@ -1078,16 +1072,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     required String p256dh,
     required String auth,
   }) async {
-    return client.createPushSubscription(
-      endpoint: endpoint,
-      p256dh: p256dh,
-      auth: auth,
-    );
+    return client.subscribePush(endpoint: endpoint, p256dh: p256dh, auth: auth);
   }
 
   @override
   Future<void> unsubscribePush({String? endpoint}) async {
     // endpoint は Misskey 用。Mastodon は現 OAuth トークン対象で不要。
-    await client.deletePushSubscription();
+    await client.unsubscribePush();
   }
 }

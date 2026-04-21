@@ -32,7 +32,7 @@ import 'ui/screen/settings_screen.dart';
 import 'ui/screen/settings/account_settings_screen.dart';
 import 'ui/screen/settings/appearance_settings_screen.dart';
 import 'ui/screen/settings/display_settings_screen.dart';
-import 'ui/screen/settings/notification_diagnostics_screen.dart';
+import 'ui/screen/settings/push_notification_settings_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/list_management_screen.dart';
@@ -132,8 +132,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const DisplaySettingsScreen(),
       ),
       GoRoute(
-        path: '/settings/notification-diagnostics',
-        builder: (context, state) => const NotificationDiagnosticsScreen(),
+        path: '/settings/push',
+        builder: (context, state) => const PushNotificationSettingsScreen(),
       ),
       GoRoute(
         path: '/server-info',

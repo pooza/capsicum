@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../service/background_notification_service.dart';
 import 'account_manager_provider.dart';
 
 /// Unread badge counts for a single account.
@@ -22,6 +20,11 @@ class UnreadBadge {
 ///
 /// Returns a map from account storage key to [UnreadBadge].
 /// Refreshes periodically (every 30 seconds) so the drawer stays current.
+///
+/// v1.19 現在、[UnreadBadge.notifications] は常に 0。#348 で workmanager /
+/// iOS BGTask 経路を撤去した時点で unread_count を書き込む経路も消えたため。
+/// プッシュペイロード復号実装（#336）でリレー経由の受信時に値を書く経路が
+/// 整ったら再有効化する。現状はアナウンス未読のみ反映する。
 class UnreadBadgeNotifier
     extends AutoDisposeAsyncNotifier<Map<String, UnreadBadge>> {
   Timer? _refreshTimer;
@@ -45,18 +48,10 @@ class UnreadBadgeNotifier
     });
     ref.onDispose(() => _refreshTimer?.cancel());
 
-    final prefs = await SharedPreferences.getInstance();
     final badges = <String, UnreadBadge>{};
 
     for (final account in otherAccounts) {
       final storageKey = account.key.toStorageKey();
-
-      // Notification count from background service.
-      final notifCount =
-          prefs.getInt(
-            BackgroundNotificationService.unreadCountKey(storageKey),
-          ) ??
-          0;
 
       // Announcement count from server.
       var announcementCount = 0;
@@ -71,11 +66,8 @@ class UnreadBadgeNotifier
         }
       }
 
-      if (notifCount > 0 || announcementCount > 0) {
-        badges[storageKey] = UnreadBadge(
-          notifications: notifCount,
-          announcements: announcementCount,
-        );
+      if (announcementCount > 0) {
+        badges[storageKey] = UnreadBadge(announcements: announcementCount);
       }
     }
 

@@ -26,14 +26,14 @@ class PushKeyStore {
   /// リレーサーバーの subscription ID を保存する。
   static Future<void> saveRelayId(String accountStorageKey, int id) async {
     await _storage.write(
-      key: '${_prefix}relay_id_$accountStorageKey',
+      key: _key(_Slot.relayId, accountStorageKey),
       value: '$id',
     );
   }
 
   /// リレーサーバーの subscription ID を取得する。
   static Future<int?> getRelayId(String accountStorageKey) async {
-    final v = await _storage.read(key: '${_prefix}relay_id_$accountStorageKey');
+    final v = await _storage.read(key: _key(_Slot.relayId, accountStorageKey));
     return v != null ? int.tryParse(v) : null;
   }
 
@@ -45,33 +45,30 @@ class PushKeyStore {
     String endpoint,
   ) async {
     await _storage.write(
-      key: '${_prefix}endpoint_$accountStorageKey',
+      key: _key(_Slot.endpoint, accountStorageKey),
       value: endpoint,
     );
   }
 
   /// 保存済みの Web Push エンドポイント URL を取得する。
   static Future<String?> getEndpoint(String accountStorageKey) async {
-    return _storage.read(key: '${_prefix}endpoint_$accountStorageKey');
+    return _storage.read(key: _key(_Slot.endpoint, accountStorageKey));
   }
 
   /// 指定アカウントの鍵・登録情報をすべて削除する。
   static Future<void> delete(String accountStorageKey) async {
-    for (final suffix in [
-      'p256dh',
-      'auth',
-      'private',
-      'relay_id',
-      'endpoint',
-    ]) {
-      await _storage.delete(key: '$_prefix${suffix}_$accountStorageKey');
+    for (final slot in _Slot.values) {
+      await _storage.delete(key: _key(slot, accountStorageKey));
     }
   }
 
+  static String _key(_Slot slot, String accountStorageKey) =>
+      '$_prefix${slot.fragment}_$accountStorageKey';
+
   static Future<PushKeys?> _load(String key) async {
-    final p256dh = await _storage.read(key: '${_prefix}p256dh_$key');
-    final auth = await _storage.read(key: '${_prefix}auth_$key');
-    final privateKey = await _storage.read(key: '${_prefix}private_$key');
+    final p256dh = await _storage.read(key: _key(_Slot.p256dh, key));
+    final auth = await _storage.read(key: _key(_Slot.auth, key));
+    final privateKey = await _storage.read(key: _key(_Slot.privateKey, key));
     if (p256dh == null || auth == null || privateKey == null) return null;
     return PushKeys(p256dh: p256dh, auth: auth, privateKeyBase64: privateKey);
   }
@@ -129,13 +126,26 @@ class PushKeyStore {
   }
 
   static Future<void> _save(String key, PushKeys keys) async {
-    await _storage.write(key: '${_prefix}p256dh_$key', value: keys.p256dh);
-    await _storage.write(key: '${_prefix}auth_$key', value: keys.auth);
+    await _storage.write(key: _key(_Slot.p256dh, key), value: keys.p256dh);
+    await _storage.write(key: _key(_Slot.auth, key), value: keys.auth);
     await _storage.write(
-      key: '${_prefix}private_$key',
+      key: _key(_Slot.privateKey, key),
       value: keys.privateKeyBase64,
     );
   }
+}
+
+/// 永続化する要素種別。enum に集約することで `delete()` 側の列挙忘れや
+/// サフィックス文字列のタイポを排除する。
+enum _Slot {
+  p256dh('p256dh'),
+  auth('auth'),
+  privateKey('private'),
+  relayId('relay_id'),
+  endpoint('endpoint');
+
+  final String fragment;
+  const _Slot(this.fragment);
 }
 
 /// アカウントに紐づく Web Push 鍵セット。

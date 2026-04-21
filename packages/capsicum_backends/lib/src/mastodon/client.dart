@@ -905,8 +905,18 @@ class MastodonClient {
     }
   }
 
-  /// POST /api/v1/push/subscription
-  Future<Map<String, dynamic>> createPushSubscription({
+  /// Web Push サブスクリプション登録。POST /api/v1/push/subscription
+  ///
+  /// Misskey 側の [MisskeyClient.subscribePush] と対で、3 層（interface /
+  /// adapter / client）で同一名に統一している。
+  ///
+  /// `subscription[standard]=true` を付与して aes128gcm (RFC 8291) を選択。
+  /// 未指定だと Mastodon は legacy aesgcm にフォールバックし、復号に
+  /// `Encryption` / `Crypto-Key` HTTP ヘッダが必要になる。capsicum-relay は
+  /// これらヘッダを転送していないため、legacy 経路ではクライアント側復号
+  /// （#336）が不可能。modern 経路ならペイロード本体に salt / keyid が
+  /// 含まれるので Base64 の body 単体で復号できる。
+  Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String p256dh,
     required String auth,
@@ -915,6 +925,7 @@ class MastodonClient {
       '/api/v1/push/subscription',
       data: FormData.fromMap({
         'subscription[endpoint]': endpoint,
+        'subscription[standard]': 'true',
         'subscription[keys][p256dh]': p256dh,
         'subscription[keys][auth]': auth,
         'data[alerts][mention]': 'true',
@@ -929,11 +940,11 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
-  /// DELETE /api/v1/push/subscription
+  /// Web Push サブスクリプション解除。DELETE /api/v1/push/subscription
   ///
   /// サーバー側に subscription が既に存在しない場合は 404 が返るが、
   /// 掃除としては成功扱いで構わないため no-op とする。
-  Future<void> deletePushSubscription() async {
+  Future<void> unsubscribePush() async {
     try {
       await dio.delete('/api/v1/push/subscription');
     } on DioException catch (e) {

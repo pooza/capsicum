@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 
@@ -1318,16 +1319,39 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String p256dh,
     required String auth,
   }) async {
-    return client.registerServiceWorker(
-      endpoint: endpoint,
-      publickey: p256dh,
-      auth: auth,
-    );
+    try {
+      return await client.subscribePush(
+        endpoint: endpoint,
+        publickey: p256dh,
+        auth: auth,
+      );
+    } on DioException catch (e) {
+      // Misskey upstream は /api/sw/register を `secure: true` で制限しており
+      // （GHSA-7pxq-6xx9-xpgm, 2023-12）、サードパーティアプリのアクセストークン
+      // では HTTP 400 + `{error: {code: 'ACCESS_DENIED'}}` を返す。再試行しても
+      // 成功しない既知の仕様制約なので、型付き例外に詰め替えて呼び出し側で
+      // Sentry 転送を抑制できるようにする。
+      if (_isAccessDenied(e)) {
+        throw PushRegistrationNotSupportedException(
+          'Misskey upstream blocks third-party Web Push registration '
+          '(/api/sw/register requires secure session; see GHSA-7pxq-6xx9-xpgm)',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  bool _isAccessDenied(DioException e) {
+    if (e.response?.statusCode != 400) return false;
+    final data = e.response?.data;
+    if (data is! Map) return false;
+    final error = data['error'];
+    return error is Map && error['code'] == 'ACCESS_DENIED';
   }
 
   @override
   Future<void> unsubscribePush({String? endpoint}) async {
     if (endpoint == null) return;
-    await client.unregisterServiceWorker(endpoint: endpoint);
+    await client.unsubscribePush(endpoint: endpoint);
   }
 }

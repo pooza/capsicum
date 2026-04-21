@@ -8,8 +8,11 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
+import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 
 class UnifiedNotificationScreen extends ConsumerWidget {
@@ -72,7 +75,7 @@ class UnifiedNotificationScreen extends ConsumerWidget {
   }
 }
 
-class _UnifiedNotificationTile extends ConsumerWidget {
+class _UnifiedNotificationTile extends ConsumerStatefulWidget {
   final UnifiedNotification item;
   final String reblogLabel;
   final String postLabel;
@@ -84,7 +87,55 @@ class _UnifiedNotificationTile extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_UnifiedNotificationTile> createState() =>
+      _UnifiedNotificationTileState();
+}
+
+class _UnifiedNotificationTileState
+    extends ConsumerState<_UnifiedNotificationTile> {
+  ContentRenderer? _contentRenderer;
+
+  UnifiedNotification get item => widget.item;
+
+  @override
+  void dispose() {
+    _contentRenderer?.dispose();
+    super.dispose();
+  }
+
+  /// 通知画面 (NotificationTile) と同じロジックで本文をレンダリング。
+  /// カスタム絵文字・MFM / HTML の両対応、`@cat` の場合 nyaize を適用する。
+  TextSpan _renderContent(String content, TextStyle baseStyle) {
+    _contentRenderer?.dispose();
+    final post = item.notification.post;
+    final allEmojis = {...?post?.emojis, ...?post?.author.emojis};
+    final host = post?.author.host;
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        final url = allEmojis[shortcode];
+        if (url != null) return url;
+        if (host != null) return 'https://$host/emoji/$shortcode.webp';
+        return null;
+      },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null) launchUrlSafely(uri);
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      emojiSize: ref.watch(emojiSizeProvider),
+      applyNyaize: post?.author.isCat ?? false,
+    );
+    final isHtml = content.contains('<p>') || content.contains('<br');
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final notification = item.notification;
     final account = item.account;
@@ -127,13 +178,13 @@ class _UnifiedNotificationTile extends ConsumerWidget {
                   ),
                   if (post?.content != null && post!.content!.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(
-                      post.author.isCat
-                          ? nyaize(stripHtml(post.content!))
-                          : stripHtml(post.content!),
+                    Text.rich(
+                      _renderContent(
+                        post.content!,
+                        theme.textTheme.bodyMedium ?? const TextStyle(),
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium,
                     ),
                   ],
                 ],
@@ -153,6 +204,7 @@ class _UnifiedNotificationTile extends ConsumerWidget {
     final labelStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
+    final themeColors = ref.watch(hostThemeColorProvider);
     return Row(
       children: [
         UserAvatar(
@@ -179,6 +231,9 @@ class _UnifiedNotificationTile extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
         ),
+        const SizedBox(width: 6),
+        // 通知宛先アカウントのサーバーを示すインスタンスティッカー。
+        ServerBadge.fromHost(account.key.host, themeColors: themeColors),
       ],
     );
   }
@@ -288,13 +343,13 @@ class _UnifiedNotificationTile extends ConsumerWidget {
 
   (IconData, String) _iconAndLabel(NotificationType type) => switch (type) {
     NotificationType.mention => (Icons.alternate_email, 'メンション'),
-    NotificationType.reblog => (Icons.repeat, reblogLabel),
+    NotificationType.reblog => (Icons.repeat, widget.reblogLabel),
     NotificationType.favourite => (Icons.star, 'お気に入り'),
     NotificationType.follow => (Icons.person_add, 'フォロー'),
     NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
     NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
     NotificationType.poll => (Icons.poll, 'アンケート終了'),
-    NotificationType.update => (Icons.edit, '$postLabelを編集'),
+    NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
     NotificationType.login => (Icons.login, 'ログイン'),
     NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
     NotificationType.other => (Icons.notifications, '通知'),

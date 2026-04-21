@@ -4,11 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
 
-/// isCat の判定結果はユーザー（ActivityPub actor）に紐づく静的な事実で、
-/// 閲覧中のアカウントや Riverpod の再構築によって変わらない。キャッシュを
-/// モジュールスコープに置き、currentAccountProvider の変化で Enricher が
-/// 再生成されても結果を使い回す。
+/// isCat の判定結果はユーザー（ActivityPub actor）に紐づくほぼ静的な
+/// 事実で、閲覧中のアカウントや Riverpod の再構築によって変わらない。
+/// キャッシュをモジュールスコープに置き、currentAccountProvider の変化で
+/// Enricher が再生成されても結果を使い回す。
+///
+/// 容量は [_maxCacheSize] で丸める（FIFO eviction）。プロセス寿命で無制限
+/// に肥大化させず、かつ Misskey 側で isCat を後からトグルしたユーザーの
+/// 鮮度管理にも効く。
 final Map<String, bool> _globalIsCatCache = {};
+const int _maxCacheSize = 2000;
 
 /// isCat エンリッチのキャッシュ付きユーティリティ。
 ///
@@ -170,7 +175,18 @@ class IsCatEnricher {
       if (result == null) return;
       for (final entry in result.entries) {
         if (entry.value != null) {
+          // LinkedHashMap の挿入順を維持しつつ最新エントリを末尾へ送るため
+          // remove → 再 put する。FIFO の先頭（= 最古エントリ）が evict
+          // 対象になる。
+          _cache.remove(entry.key);
           _cache[entry.key] = entry.value!;
+        }
+      }
+      if (_cache.length > _maxCacheSize) {
+        final evict = _cache.length - _maxCacheSize;
+        final victims = _cache.keys.take(evict).toList();
+        for (final k in victims) {
+          _cache.remove(k);
         }
       }
     } catch (_) {

@@ -167,19 +167,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
 
+    // External entry points (notification taps etc.) may request a specific
+    // initial tab. Applying it suppresses the saved last-tab restore on cold
+    // start so the requested focus does not get overwritten, and also works
+    // when HomeScreen is already mounted.
+    final pendingTab = ref.watch(pendingInitialTabProvider);
+    if (pendingTab != null) {
+      _lastTabRestored = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(selectedTabProvider.notifier).state = pendingTab;
+        ref.read(pendingInitialTabProvider.notifier).state = null;
+      });
+    }
+
     // Restore last selected tab once the saved value arrives from disk.
     // Reset when the active account changes so each account gets its own tab.
     if (account != null) {
       final storageKey = account.key.toStorageKey();
       if (_lastTabRestoredForAccount != storageKey) {
-        _lastTabRestored = false;
         _lastTabRestoredForAccount = storageKey;
         _pendingListRestore = null;
-        // Clear previous account's selection to avoid referencing
-        // lists/hashtags that don't exist on the new account.
-        ref.read(selectedTabProvider.notifier).state = const TimelineTab(
-          TimelineType.home,
-        );
+        // 外部経路で pendingTab が要求されている場合（通知タップ等）は
+        // そちらを優先する。_lastTabRestored は pendingTab 分岐で既に true。
+        // そうでないケースだけ「home へリセット」のフォールバックを走らせる
+        // が、その後到着する lastTab（sync / async 双方）が先に走っていたら
+        // スキップする guard を postFrame 側に入れる。
+        if (pendingTab == null) {
+          _lastTabRestored = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            // lastTab が sync/async で復元されていれば home にリセットしない
+            // （アカウント間往復時に保存タブを失わないため）。
+            if (_lastTabRestored) return;
+            ref.read(selectedTabProvider.notifier).state = const TimelineTab(
+              TimelineType.home,
+            );
+          });
+        }
       }
       if (!_lastTabRestored) {
         ref.listen(lastTabProvider(storageKey), (prev, next) {
@@ -312,9 +337,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   tab: const NotificationsTab(),
                 )),
               ))
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              onPressed: () => context.push('/notifications'),
+            _NotificationBellButton(
+              hasMultipleAccounts: accountState.accounts.length > 1,
             ),
         ],
         bottom: PreferredSize(
@@ -1531,5 +1555,78 @@ class _LivecureFilterButton extends StatelessWidget {
       tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
       onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
     );
+  }
+}
+
+/// AppBar 右上の通知ベル。
+///
+/// - 単一アカウント: タップで現在アカウントの通知画面（/notifications）
+/// - 複数アカウント: タップでまとめ画面（/notifications/all）— #345 で変更
+/// - 長押しでポップアップメニューから明示選択も可能
+class _NotificationBellButton extends StatelessWidget {
+  final bool hasMultipleAccounts;
+
+  const _NotificationBellButton({required this.hasMultipleAccounts});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: hasMultipleAccounts ? () => _showMenu(context) : null,
+      child: IconButton(
+        icon: const Icon(Icons.notifications_outlined),
+        // 複数アカウント時は長押しメニューを自前で出すため IconButton の
+        // tooltip は付けない。built-in tooltip が long-press gesture を
+        // 横取りして、外側の GestureDetector.onLongPress が発火しない。
+        tooltip: hasMultipleAccounts ? null : '通知',
+        onPressed: () => context.push(
+          hasMultipleAccounts ? '/notifications/all' : '/notifications',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMenu(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+    // PopupMenuItem + ListTile は default height 制約（48dp）と ListTile の
+    // 推奨高（56dp+）がぶつかって 2 つ目以降が見切れる事象があったため、
+    // Row ベースのコンパクトなレイアウトに変更している。
+    final selection = await showMenu<String>(
+      context: context,
+      position: position,
+      items: const [
+        PopupMenuItem(
+          value: '/notifications/all',
+          child: Row(
+            children: [
+              Icon(Icons.notifications_active_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('すべての通知'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: '/notifications',
+          child: Row(
+            children: [
+              Icon(Icons.notifications_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('このアカウントの通知'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (selection != null && context.mounted) context.push(selection);
   }
 }

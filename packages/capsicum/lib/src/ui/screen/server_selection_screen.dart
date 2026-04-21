@@ -4,13 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-const _presetServers = [
-  ('mstdn.b-shock.org', '美食丼'),
-  ('precure.ml', 'キュアスタ！'),
-  ('mk.precure.fun', 'きゅあすきー'),
-  ('mstdn.delmulin.com', 'デルムリン丼'),
-  ('misskey.delmulin.com', 'ダイスキー'),
-];
+import '../../preset_servers.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key});
@@ -94,16 +88,15 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                ..._presetServers.map((entry) {
-                  final (host, name) = entry;
+                ...visiblePresetServers().map((server) {
                   return ListTile(
                     leading: const Icon(Icons.dns),
-                    title: Text(name),
-                    subtitle: Text(host),
+                    title: Text(server.displayName),
+                    subtitle: Text(server.host),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    onTap: () => _connectTo(host),
+                    onTap: () => _connectTo(server.host),
                   );
                 }),
                 const Divider(height: 32),

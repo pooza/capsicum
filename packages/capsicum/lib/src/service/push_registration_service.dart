@@ -7,9 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
+import '../preset_servers.dart';
 import 'apns_service.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
+import 'push_registration_status.dart';
 import 'push_relay_client.dart';
 
 /// プッシュ通知のリレーサーバー登録と Web Push サブスクリプション登録を
@@ -25,49 +27,80 @@ import 'push_relay_client.dart';
 /// プリセットサーバーのアカウントを1つでも持っていれば、全アカウントを
 /// 登録対象とする。失敗してもアプリの動作には影響しない（ベストエフォート）。
 class PushRegistrationService {
-  static const _presetServers = {
-    'mstdn.b-shock.org',
-    'mstdn.delmulin.com',
-    'precure.ml',
-    'mk.precure.fun',
-    'misskey.delmulin.com',
-    // ステージング
-    'st.mstdn.b-shock.org',
-    'st2.mstdn.delmulin.com',
-    'st.precure.ml',
-    'st.misskey.delmulin.com',
-  };
-
   /// 指定ホストがプリセットサーバーかどうかを判定する。
-  static bool isPresetServer(String host) => _presetServers.contains(host);
+  static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
 
   static final _client = PushRelayClient();
+
+  static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// アカウント単位の登録処理を排他するための in-flight ガード。
+  ///
+  /// splash の [registerAllAccounts] ループと `AccountManagerNotifier` 経由の
+  /// ログイン時 [registerAccount] 呼び出しが並走した場合に、同一アカウントを
+  /// 二重登録してリレー DB に孤立 row を作ってしまう race を避ける。
+  static final Map<String, Future<void>> _inFlight = {};
 
   /// 単一アカウントのプッシュ通知登録を行う。
   ///
   /// [eligible] が true の場合、プリセット判定をスキップして登録する。
   /// [registerAllAccounts] から呼ばれるときに使用。
+  ///
+  /// 同一アカウントへの並走呼び出しは in-flight ガードで直列化する。
   static Future<void> registerAccount(
     Account account, {
     bool eligible = false,
+  }) {
+    final key = account.key.toStorageKey();
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+    final future = _registerAccountImpl(account, eligible: eligible);
+    _inFlight[key] = future;
+    return future.whenComplete(() => _inFlight.remove(key));
+  }
+
+  static Future<void> _registerAccountImpl(
+    Account account, {
+    required bool eligible,
   }) async {
+    final accountKey = account.key.toStorageKey();
+    final store = PushRegistrationStatusStore.instance;
+    int? relayId;
+    // subscribePush が走り始めたことを示すフラグ。catch 節で「失敗の内訳が
+    // リレー段か SNS サブスクリプション段か」の判定に使う。
+    var subscribePhase = false;
+    // PushKeyStore を今回の attempt で書き換えたかどうか。書き換える前の
+    // 早期失敗（リレー接続エラー等）では、既存の working state を残しておく
+    // 必要がある（wipe すると古いサーバー側サブスクリプションが orphan 化）。
+    var localStateModified = false;
     try {
-      if (account.adapter is! PushSubscriptionSupport) return;
-      if (!eligible && !_presetServers.contains(account.key.host)) {
+      if (account.adapter is! PushSubscriptionSupport) {
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
+      if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
         debugPrint(
-          'PushRegistration: skipped (not preset): ${account.key.host}',
+          'capsicum: push.registration: skipped (not preset): ${account.key.host}',
+        );
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
+
+      store.update(accountKey, PushRegistrationState.registering);
+
+      final deviceToken = _getDeviceToken();
+      if (deviceToken == null) {
+        debugPrint('capsicum: push.registration: no device token available');
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: PushRegistrationFailureReason.noDeviceToken,
+          errorMessage: 'デバイストークンを取得できませんでした',
         );
         return;
       }
 
-      final deviceToken = _getDeviceToken();
-      if (deviceToken == null) {
-        debugPrint('PushRegistration: no device token available');
-        return;
-      }
-
       final deviceType = Platform.isIOS ? 'ios' : 'android';
-      final accountKey = account.key.toStorageKey();
 
       // リレーサーバーに登録
       final sub = await _client.register(
@@ -77,20 +110,30 @@ class PushRegistrationService {
         server: account.key.host,
       );
 
-      final relayId = _parseRelayId(sub['id']);
+      relayId = _parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
-        debugPrint('PushRegistration: relay response missing fields: $sub');
+        debugPrint(
+          'capsicum: push.registration: relay response missing fields: $sub',
+        );
         _captureContractViolation(
           'relay register response missing id/push_token',
           account.key.host,
         );
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: PushRegistrationFailureReason.relayFailed,
+          errorMessage: 'リレーサーバー応答に id / push_token が含まれていません',
+        );
         return;
       }
 
+      // ここから PushKeyStore を書き換える。失敗時は rollback 対象になる。
       await PushKeyStore.saveRelayId(accountKey, relayId);
+      localStateModified = true;
 
-      // ECDH 鍵の生成またはロード
+      // ECDH 鍵の生成またはロード（既存鍵があれば再利用）
       final keys = await PushKeyStore.getOrCreate(accountKey);
 
       // Mastodon / Misskey に Web Push サブスクリプション登録
@@ -98,6 +141,7 @@ class PushRegistrationService {
       // endpoint を先に永続化しておくことで、subscribePush が 4xx で失敗した
       // 場合でも unregisterAccount で Misskey 側の掃除を試みられる。
       await PushKeyStore.saveEndpoint(accountKey, endpoint);
+      subscribePhase = true;
       await (account.adapter as PushSubscriptionSupport).subscribePush(
         endpoint: endpoint,
         p256dh: keys.p256dh,
@@ -105,11 +149,50 @@ class PushRegistrationService {
       );
 
       debugPrint(
-        'PushRegistration: registered ${account.key.username}@${account.key.host}',
+        'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
       );
+      store.update(accountKey, PushRegistrationState.registered);
     } catch (e, st) {
-      debugPrint('PushRegistration: failed for ${account.key.host}: $e\n$st');
-      if (!_isTransient(e)) {
+      debugPrint(
+        'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
+      );
+      // 部分成功をロールバック。リレーに row ができた後で subscribePush が
+      // 失敗すると、SNS 側サブスクリプションなしの孤立レコードが残るため、
+      // 取得済みの relayId を基に unregister を試みる。各段階は独立 try
+      // なので途中失敗しても次の掃除は進む。
+      if (relayId != null) {
+        try {
+          await _client.unregister(relayId);
+        } catch (_) {}
+      }
+      // PushKeyStore は今回の attempt で書き換えた場合のみ delete する。
+      // 書き換える前（_client.register の早期失敗など）の catch では
+      // 既存 working state を残す（wipe すると古いサーバー側 subscription が
+      // orphan 化して掃除できなくなる — Codex 指摘）。
+      if (localStateModified) {
+        try {
+          await PushKeyStore.delete(accountKey);
+        } catch (_) {}
+      }
+
+      if (e is PushRegistrationNotSupportedException) {
+        store.update(
+          accountKey,
+          PushRegistrationState.notSupported,
+          errorMessage: e.message,
+        );
+      } else {
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: subscribePhase
+              ? PushRegistrationFailureReason.subscribeFailed
+              : PushRegistrationFailureReason.relayFailed,
+          errorMessage: _shortMessage(e),
+        );
+      }
+
+      if (!_isTransient(e) && e is! PushRegistrationNotSupportedException) {
         Sentry.captureException(
           _scrubException(e),
           stackTrace: st,
@@ -122,6 +205,18 @@ class PushRegistrationService {
     }
   }
 
+  /// Sentry 用の長大な message / StackTrace ではなく、UI 表示用に短縮した
+  /// メッセージを作る。DioException は種別・ステータスコードに寄せ、他は
+  /// runtimeType + toString を 200 文字まで。
+  static String _shortMessage(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode?.toString() ?? '-';
+      return 'ネットワークエラー (${e.type.name} / status=$code)';
+    }
+    final text = e.toString();
+    return text.length > 200 ? '${text.substring(0, 200)}…' : text;
+  }
+
   /// 単一アカウントのプッシュ通知登録を解除する。
   ///
   /// 各段階（SNS サーバーの unsubscribe / リレー unregister / ローカル鍵削除）
@@ -129,6 +224,7 @@ class PushRegistrationService {
   /// 孤立サブスクリプション・鍵残留を最小化する。
   static Future<void> unregisterAccount(Account account) async {
     final accountKey = account.key.toStorageKey();
+    PushRegistrationStatusStore.instance.remove(accountKey);
 
     if (account.adapter is PushSubscriptionSupport) {
       try {
@@ -137,7 +233,9 @@ class PushRegistrationService {
           endpoint: endpoint,
         );
       } catch (e, st) {
-        debugPrint('PushRegistration: adapter unsubscribe failed: $e');
+        debugPrint(
+          'capsicum: push.registration: adapter unsubscribe failed: $e',
+        );
         _reportUnregisterFailure(e, st, account.key.host, 'adapter');
       }
     }
@@ -148,14 +246,14 @@ class PushRegistrationService {
         await _client.unregister(relayId);
       }
     } catch (e, st) {
-      debugPrint('PushRegistration: relay unregister failed: $e');
+      debugPrint('capsicum: push.registration: relay unregister failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'relay');
     }
 
     try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
-      debugPrint('PushRegistration: keystore delete failed: $e');
+      debugPrint('capsicum: push.registration: keystore delete failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
   }
@@ -179,6 +277,72 @@ class PushRegistrationService {
     );
   }
 
+  /// デバイストークンのローテーションを監視し、検知したら全アカウントを
+  /// 再登録する。
+  ///
+  /// アプリ起動時に1度呼ぶ。ストリームはブロードキャストで過去の emit を
+  /// 配信しないため、初回登録（[registerAllAccounts]）と重複して発火する
+  /// ことはなく、以降の本物のローテーションのみに反応する。
+  ///
+  /// [getAccounts] は発火時点の最新アカウント一覧を返す。起動時点の値で
+  /// 固定するとログアウト済みアカウントまで再登録する事故になるため、
+  /// コールバックを渡す設計にしている。
+  /// トークン refresh を直列化するためのチェーン。Stream.listen は onData
+  /// が async でも前回の完了を待たずに次を配信するため、複数回の rotation
+  /// が短時間に重なると unregisterAccount / registerAllAccounts が交錯して
+  /// key / relay state が不整合になる。各 emit をこの Future にチェイン
+  /// することで厳密に one-at-a-time 化する。
+  static Future<void> _tokenRefreshChain = Future<void>.value();
+
+  static void startTokenRefreshListener(List<Account> Function() getAccounts) {
+    _tokenRefreshSub?.cancel();
+    final Stream<String>? stream;
+    if (Platform.isIOS) {
+      stream = ApnsService.onTokenChanged;
+    } else if (Platform.isAndroid) {
+      stream = FcmService.onTokenChanged;
+    } else {
+      return;
+    }
+    _tokenRefreshSub = stream.listen((_) {
+      // 前回の refresh を待ってから新しい refresh を走らせる（直列化）。
+      // catchError で chain 自体を生かしておかないと、1 回例外が出たら
+      // chain が failed future になり以降すべての emit が握り潰されて
+      // プロセス終了までトークンローテーションが機能しなくなる。
+      _tokenRefreshChain = _tokenRefreshChain
+          .then((_) => _runTokenRefresh(getAccounts))
+          .catchError((Object e, StackTrace st) {
+            debugPrint('capsicum: push.registration: token refresh failed: $e');
+            Sentry.captureException(
+              e,
+              stackTrace: st,
+              withScope: (scope) {
+                scope.setTag('service', 'push_registration');
+                scope.setTag('phase', 'token_refresh');
+              },
+            );
+          });
+    });
+  }
+
+  static Future<void> _runTokenRefresh(
+    List<Account> Function() getAccounts,
+  ) async {
+    debugPrint(
+      'capsicum: push.registration: device token rotated, re-registering',
+    );
+    final accounts = getAccounts();
+    if (accounts.isEmpty) return;
+    // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
+    // 新しいトークンで POST /register すると、そのままではリレー DB に
+    // 孤立レコードと古い SNS サブスクリプションが残るため unregister を
+    // 先に流す。unregister は各段階が独立なので部分失敗しても問題ない。
+    for (final account in accounts) {
+      await unregisterAccount(account);
+    }
+    await registerAllAccounts(accounts);
+  }
+
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
   ///
   /// プリセットサーバーのアカウントが1つでもあれば、全アカウントを登録対象とする。
@@ -190,30 +354,64 @@ class PushRegistrationService {
     if (_getDeviceToken() == null) {
       final token = await _waitForDeviceToken();
       if (token == null) {
-        debugPrint('PushRegistration: device token not available, skipping');
+        debugPrint(
+          'capsicum: push.registration: device token not available, skipping',
+        );
         return;
       }
     }
 
-    final hasPreset = accounts.any((a) => _presetServers.contains(a.key.host));
-    for (final account in accounts) {
-      await registerAccount(account, eligible: hasPreset);
-    }
+    final hasPreset = accounts.any(
+      (a) => kPresetServerHosts.contains(a.key.host),
+    );
+    // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
+    // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
+    // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
+    await Future.wait(
+      accounts.map((a) => registerAccount(a, eligible: hasPreset)),
+    );
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。
+  ///
+  /// 呼び出し元の null チェック直後に別 microtask で `_deviceToken` が
+  /// セットされた場合、素朴に `stream.first` を await するとブロードキャスト
+  /// ストリームは過去 emit を再配信しないためタイムアウトまで空待ちに
+  /// なる。subscribe 後に `_getDeviceToken` を再チェックすることで、Dart
+  /// の単一スレッドセマンティクス上 race ウィンドウをゼロにする。
   static Future<String?> _waitForDeviceToken() async {
+    final Stream<String>? stream;
     if (Platform.isIOS) {
-      return ApnsService.onTokenChanged.first
-          .timeout(const Duration(seconds: 10), onTimeout: () => '')
-          .then((t) => t.isEmpty ? null : t);
+      stream = ApnsService.onTokenChanged;
+    } else if (Platform.isAndroid) {
+      stream = FcmService.onTokenChanged;
+    } else {
+      return null;
     }
-    if (Platform.isAndroid) {
-      return FcmService.onTokenChanged.first
-          .timeout(const Duration(seconds: 10), onTimeout: () => '')
-          .then((t) => t.isEmpty ? null : t);
+
+    final completer = Completer<String?>();
+    final sub = stream.listen((token) {
+      if (!completer.isCompleted) completer.complete(token);
+    });
+
+    // subscribe 直後の同期コンテキストでキャッシュを再確認。listen() は
+    // 同期的にサブスクリプションを確立するので、ここより前に emit されて
+    // いれば必ず `_deviceToken` に反映されている。
+    final cached = _getDeviceToken();
+    if (cached != null && !completer.isCompleted) {
+      completer.complete(cached);
     }
-    return null;
+
+    final timer = Timer(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+
+    try {
+      return await completer.future;
+    } finally {
+      timer.cancel();
+      await sub.cancel();
+    }
   }
 
   static String? _getDeviceToken() {
