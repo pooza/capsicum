@@ -80,6 +80,47 @@ class Post {
     this.language,
     this.url,
   });
+
+  /// 派生オブジェクトを生成する。現状は enrich パイプライン（IsCatEnricher 等）
+  /// で author / reblog だけを差し替える用途で使用。フィールド追加時の
+  /// 取りこぼし防止のため、新フィールドの追加はここに追従する。
+  Post copyWith({User? author, Post? reblog}) => Post(
+    id: id,
+    postedAt: postedAt,
+    author: author ?? this.author,
+    content: content,
+    scope: scope,
+    attachments: attachments,
+    favouriteCount: favouriteCount,
+    reblogCount: reblogCount,
+    replyCount: replyCount,
+    quoteCount: quoteCount,
+    favourited: favourited,
+    reblogged: reblogged,
+    bookmarked: bookmarked,
+    sensitive: sensitive,
+    reactions: reactions,
+    myReaction: myReaction,
+    reactionEmojis: reactionEmojis,
+    inReplyToId: inReplyToId,
+    reblog: reblog ?? this.reblog,
+    quote: quote,
+    quoteState: quoteState,
+    spoilerText: spoilerText,
+    emojis: emojis,
+    emojiHost: emojiHost,
+    card: card,
+    poll: poll,
+    filterAction: filterAction,
+    filterTitle: filterTitle,
+    pinned: pinned,
+    channelId: channelId,
+    channelName: channelName,
+    localOnly: localOnly,
+    quotable: quotable,
+    language: language,
+    url: url,
+  );
 }
 
 enum FilterAction { hide, warn }

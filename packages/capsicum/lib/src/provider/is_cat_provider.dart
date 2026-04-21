@@ -134,43 +134,7 @@ class IsCatEnricher {
     final author = _maybeCatUser(p.author);
     final reblog = p.reblog != null ? _enrichPost(p.reblog!) : null;
     if (identical(author, p.author) && identical(reblog, p.reblog)) return p;
-    return Post(
-      id: p.id,
-      postedAt: p.postedAt,
-      author: author!,
-      content: p.content,
-      scope: p.scope,
-      attachments: p.attachments,
-      favouriteCount: p.favouriteCount,
-      reblogCount: p.reblogCount,
-      replyCount: p.replyCount,
-      quoteCount: p.quoteCount,
-      favourited: p.favourited,
-      reblogged: p.reblogged,
-      bookmarked: p.bookmarked,
-      sensitive: p.sensitive,
-      reactions: p.reactions,
-      myReaction: p.myReaction,
-      reactionEmojis: p.reactionEmojis,
-      inReplyToId: p.inReplyToId,
-      reblog: reblog,
-      quote: p.quote,
-      quoteState: p.quoteState,
-      spoilerText: p.spoilerText,
-      emojis: p.emojis,
-      emojiHost: p.emojiHost,
-      card: p.card,
-      poll: p.poll,
-      filterAction: p.filterAction,
-      filterTitle: p.filterTitle,
-      pinned: p.pinned,
-      channelId: p.channelId,
-      channelName: p.channelName,
-      localOnly: p.localOnly,
-      quotable: p.quotable,
-      language: p.language,
-      url: p.url,
-    );
+    return p.copyWith(author: author, reblog: reblog);
   }
 
   Future<void> _fetchAndCache(List<String> accts) async {
