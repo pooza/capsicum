@@ -12,8 +12,24 @@ class ApnsService {
 
   static String? _deviceToken;
   static final _tokenController = StreamController<String>.broadcast();
-  static final _notificationTapController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  // AppDelegate 側で cold-start にバッファされたタップが、Flutter 側の
+  // listener 登録前に吐き出されうる。broadcast stream は過去 emit を
+  // 再配信しないため、listener 登録までの間は _pendingTap にキャッシュし、
+  // 新規 listener が subscribe した時点で replay する。
+  static Map<String, dynamic>? _pendingTap;
+  static final StreamController<Map<String, dynamic>>
+  _notificationTapController = StreamController<Map<String, dynamic>>.broadcast(
+    onListen: () {
+      final pending = _pendingTap;
+      if (pending != null) {
+        _pendingTap = null;
+        // onListen の中から add すると再帰呼び出しになりうるので
+        // microtask にずらす。subscribe は既に確立しているので
+        // 次の microtask で届く。
+        scheduleMicrotask(() => _notificationTapController.add(pending));
+      }
+    },
+  );
 
   /// The most recently received APNs device token, or `null` if unavailable.
   static String? get deviceToken => _deviceToken;
@@ -26,6 +42,9 @@ class ApnsService {
   /// Payload is the `userInfo` dictionary from the iOS notification response,
   /// which for capsicum contains the relay's custom payload (including the
   /// `account` field used for account-aware routing).
+  ///
+  /// Cold-start タップは listener 登録までバッファされ、初回 subscribe 時に
+  /// 1 度だけ replay される（[_pendingTap]）。
   static Stream<Map<String, dynamic>> get onNotificationTap =>
       _notificationTapController.stream;
 
@@ -53,7 +72,13 @@ class ApnsService {
         // payload（account / server / body 等）を含む。
         final args = call.arguments;
         if (args is Map) {
-          _notificationTapController.add(Map<String, dynamic>.from(args));
+          final userInfo = Map<String, dynamic>.from(args);
+          if (_notificationTapController.hasListener) {
+            _notificationTapController.add(userInfo);
+          } else {
+            // listener 未登録（engine init 中の早期タップ）。バッファする。
+            _pendingTap = userInfo;
+          }
         }
     }
   }
