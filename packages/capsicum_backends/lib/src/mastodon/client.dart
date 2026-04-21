@@ -909,6 +909,13 @@ class MastodonClient {
   ///
   /// Misskey 側の [MisskeyClient.subscribePush] と対で、3 層（interface /
   /// adapter / client）で同一名に統一している。
+  ///
+  /// `subscription[standard]=true` を付与して aes128gcm (RFC 8291) を選択。
+  /// 未指定だと Mastodon は legacy aesgcm にフォールバックし、復号に
+  /// `Encryption` / `Crypto-Key` HTTP ヘッダが必要になる。capsicum-relay は
+  /// これらヘッダを転送していないため、legacy 経路ではクライアント側復号
+  /// （#336）が不可能。modern 経路ならペイロード本体に salt / keyid が
+  /// 含まれるので Base64 の body 単体で復号できる。
   Future<Map<String, dynamic>> subscribePush({
     required String endpoint,
     required String p256dh,
@@ -918,6 +925,7 @@ class MastodonClient {
       '/api/v1/push/subscription',
       data: FormData.fromMap({
         'subscription[endpoint]': endpoint,
+        'subscription[standard]': 'true',
         'subscription[keys][p256dh]': p256dh,
         'subscription[keys][auth]': auth,
         'data[alerts][mention]': 'true',
