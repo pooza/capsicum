@@ -273,18 +273,45 @@ class PushRegistrationService {
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。
+  ///
+  /// 呼び出し元の null チェック直後に別 microtask で `_deviceToken` が
+  /// セットされた場合、素朴に `stream.first` を await するとブロードキャスト
+  /// ストリームは過去 emit を再配信しないためタイムアウトまで空待ちに
+  /// なる。subscribe 後に `_getDeviceToken` を再チェックすることで、Dart
+  /// の単一スレッドセマンティクス上 race ウィンドウをゼロにする。
   static Future<String?> _waitForDeviceToken() async {
+    final Stream<String>? stream;
     if (Platform.isIOS) {
-      return ApnsService.onTokenChanged.first
-          .timeout(const Duration(seconds: 10), onTimeout: () => '')
-          .then((t) => t.isEmpty ? null : t);
+      stream = ApnsService.onTokenChanged;
+    } else if (Platform.isAndroid) {
+      stream = FcmService.onTokenChanged;
+    } else {
+      return null;
     }
-    if (Platform.isAndroid) {
-      return FcmService.onTokenChanged.first
-          .timeout(const Duration(seconds: 10), onTimeout: () => '')
-          .then((t) => t.isEmpty ? null : t);
+
+    final completer = Completer<String?>();
+    final sub = stream.listen((token) {
+      if (!completer.isCompleted) completer.complete(token);
+    });
+
+    // subscribe 直後の同期コンテキストでキャッシュを再確認。listen() は
+    // 同期的にサブスクリプションを確立するので、ここより前に emit されて
+    // いれば必ず `_deviceToken` に反映されている。
+    final cached = _getDeviceToken();
+    if (cached != null && !completer.isCompleted) {
+      completer.complete(cached);
     }
-    return null;
+
+    final timer = Timer(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+
+    try {
+      return await completer.future;
+    } finally {
+      timer.cancel();
+      await sub.cancel();
+    }
   }
 
   static String? _getDeviceToken() {
