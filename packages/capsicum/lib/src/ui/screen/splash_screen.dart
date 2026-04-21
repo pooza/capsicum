@@ -38,21 +38,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     // 起動時点のアカウント一覧をクロージャーで固定すると、Firebase 初期化中
     // にユーザーがログアウトしたアカウントまで再登録してしまうため、登録
     // 実行時に最新状態を ProviderContainer 経由で再取得する。
-    if (ref.read(accountManagerProvider).accounts.isNotEmpty) {
-      final container = ProviderScope.containerOf(context, listen: false);
-      firebaseReady.then((_) {
-        final latest = container.read(accountManagerProvider).accounts;
-        if (latest.isNotEmpty) {
-          PushRegistrationService.registerAllAccounts(latest);
-        }
-        // トークンローテーション時に自動再登録するリスナーを起動しておく。
-        // 初回トークンはすでに registerAllAccounts で処理済みであり、
-        // broadcast stream は過去の emit を再配信しないため二重発火しない。
-        PushRegistrationService.startTokenRefreshListener(
-          () => container.read(accountManagerProvider).accounts,
-        );
-      });
-    }
+    //
+    // トークン refresh リスナーは accounts 数に関わらず登録する。未ログインで
+    // 起動 → 同セッション中にログイン、という導線では registerAllAccounts は
+    // 空振りするが、その後のトークンローテーションで再登録を発火させるには
+    // listener の事前登録が必須（broadcast stream は過去 emit を配信しないので
+    // 事後の emit を拾うにはこのタイミングで listen しておく必要がある）。
+    final container = ProviderScope.containerOf(context, listen: false);
+    firebaseReady.then((_) {
+      final latest = container.read(accountManagerProvider).accounts;
+      if (latest.isNotEmpty) {
+        PushRegistrationService.registerAllAccounts(latest);
+      }
+      PushRegistrationService.startTokenRefreshListener(
+        () => container.read(accountManagerProvider).accounts,
+      );
+    });
 
     if (skippedAccounts > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

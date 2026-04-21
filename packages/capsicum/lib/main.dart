@@ -159,33 +159,34 @@ void _startApp() {
 /// 通知タップで通知タブへ遷移する共通経路。[accountString] は `username@host`
 /// 形式で、該当するサインイン済みアカウントがあれば遷移前に切り替える。
 /// 一致しない（ログアウト済み等）場合は現在アカウントのままタブ遷移のみ行う。
+///
+/// cold-start 通知タップでは以下の 2 段待ちを行ってから go('/home') する：
+/// 1. Navigator が立ち上がるまで（rootNavigatorKey.currentContext）
+/// 2. SplashScreen の session restore が完了するまで（accounts が空でない）
+///
+/// この 2 段待ちがないと、restore 中に go('/home') → 認証 redirect で /server
+/// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
+/// 正規ルーティングが空振り、ユーザーがサーバー選択画面に取り残される。
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
+  // 上限: Navigator 0.5 秒＋ session restore 数秒を許容する 180 フレーム（≒ 3 秒 @60fps）。
+  // 通常 Navigator は 1〜2 フレーム、restore は長くても 1〜2 秒で完了する。
+  const maxAttempts = 180;
+
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
-    // Navigator がまだ立ち上がっていない（cold start で直後にタップを消費した
-    // ケース）。次フレームで再試行するが、EULA / splash のみで Navigator が
-    // 永久に確立しない導線（Sentry 初期化失敗等）に迷い込んだ場合の暴走を
-    // 防ぐため、回数上限を設ける。通常 1〜2 フレームで解消するので 30
-    // フレーム（≒ 0.5 秒 @60fps）もあれば十分すぎる。
-    const maxAttempts = 30;
-    if (attempt >= maxAttempts) {
-      debugPrint(
-        'capsicum: notification: routing gave up after $maxAttempts frames',
-      );
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _routeToNotificationsTab(accountString, attempt: attempt + 1),
-    );
+    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
     return;
   }
   final container = ProviderScope.containerOf(context);
+  final accounts = container.read(accountManagerProvider).accounts;
+  // session restore 未完了 → auth redirect を待つ
+  if (accounts.isEmpty) {
+    _rescheduleNotificationRoute(accountString, attempt, maxAttempts);
+    return;
+  }
 
   if (accountString != null) {
-    final matched = _findAccountByString(
-      container.read(accountManagerProvider).accounts,
-      accountString,
-    );
+    final matched = _findAccountByString(accounts, accountString);
     if (matched != null) {
       container.read(accountManagerProvider.notifier).switchAccount(matched);
     }
@@ -198,6 +199,23 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   container.read(pendingInitialTabProvider.notifier).state =
       const NotificationsTab();
   GoRouter.of(context).go('/home');
+}
+
+/// [_routeToNotificationsTab] の再スケジュール。attempt 上限超過で諦める。
+void _rescheduleNotificationRoute(
+  String? accountString,
+  int attempt,
+  int maxAttempts,
+) {
+  if (attempt >= maxAttempts) {
+    debugPrint(
+      'capsicum: notification: routing gave up after $maxAttempts frames',
+    );
+    return;
+  }
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => _routeToNotificationsTab(accountString, attempt: attempt + 1),
+  );
 }
 
 Account? _findAccountByString(List<Account> accounts, String accountString) {
