@@ -303,7 +303,7 @@ sequenceDiagram
         Relay->>OS: FCM push<br/>data に base64 body
     end
     OS-->>App: プッシュ配信
-    Note over App: Notification Service Extension /<br/>BackgroundNotificationService が<br/>ECDH 鍵で body を復号して表示
+    Note over App: iOS: Notification Service Extension<br/>Android: FirebaseMessagingService<br/>が ECDH 鍵で body を復号して表示
 ```
 
 ### 登録解除フロー
