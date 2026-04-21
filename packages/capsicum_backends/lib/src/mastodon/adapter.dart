@@ -1077,7 +1077,16 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unsubscribePush({String? endpoint}) async {
-    // endpoint は Misskey 用。Mastodon は現 OAuth トークン対象で不要。
+    // endpoint は Misskey 用。Mastodon の DELETE /api/v1/push/subscription は
+    // 現 OAuth トークンのサブスクリプションを対象とするため引数では絞れない。
+    // 将来 endpoint を使いたくなった際に「実は無視していた」ことを失念しない
+    // よう、非 null が来たら開発ビルドで気付けるよう debugPrint で警告する。
+    if (endpoint != null) {
+      developer.log(
+        'MastodonAdapter.unsubscribePush ignores endpoint: $endpoint',
+        name: 'capsicum',
+      );
+    }
     await client.unsubscribePush();
   }
 }
