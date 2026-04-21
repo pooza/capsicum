@@ -87,25 +87,37 @@ class AccountStorage {
       }
     }
 
-    // legacy: secure_storage から 1 度だけ移行。失敗時はインデックスだけ
-    // 諦めて空にし、個別の secret_<key> はそのまま残す（アカウント
-    // 再ログインで復元できる）。
+    // legacy: secure_storage から 1 度だけ移行。shared_preferences への
+    // 書き込みが成功して初めて legacy key を削除する。write 側で失敗した
+    // ときまで legacy を消すと、transient な prefs 書き込みエラーで
+    // 全アカウントインデックスを永久に失う（Codex 指摘）。write 成功前の
+    // 失敗時は legacy をそのまま残し、次回起動で自動リトライされるように
+    // する。parse 失敗は legacy データ自体が壊れているので削除してよい。
+    List<String> list;
     try {
       final raw = await _storage.read(key: _legacyAccountListKey);
       if (raw == null) return [];
-      final list = List<String>.from(jsonDecode(raw) as List);
-      await _writeIndex(list);
-      await _storage.delete(key: _legacyAccountListKey);
-      return list;
+      list = List<String>.from(jsonDecode(raw) as List);
     } on PlatformException catch (e, st) {
+      // secure_storage 読み込み失敗。legacy は残して次回リトライ。
       _reportOnce('index', e, st);
-      await _storage.delete(key: _legacyAccountListKey);
       return [];
     } catch (e, st) {
+      // JSON parse 失敗等。legacy データ自体が壊れているので削除。
       _reportOnce('index', e, st);
       await _storage.delete(key: _legacyAccountListKey);
       return [];
     }
+    try {
+      await _writeIndex(list);
+    } catch (e, st) {
+      // shared_preferences 書き込み失敗。legacy を残して次回再試行。
+      _reportOnce('index', e, st);
+      return list;
+    }
+    // ここまで来たら新 index への書き込みが完了している。legacy を削除。
+    await _storage.delete(key: _legacyAccountListKey);
+    return list;
   }
 
   /// Move an account key to the front of the list (MRU tracking).
