@@ -84,9 +84,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
-    final hasPreset = newAccounts.any(
-      (a) => PushRegistrationService.isPresetServer(a.key.host),
-    );
+    final hasPreset = PushRegistrationService.hasPresetAmong(newAccounts);
     PushRegistrationService.registerAccount(enriched, eligible: hasPreset);
   }
 

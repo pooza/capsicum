@@ -31,6 +31,11 @@ class PushRegistrationService {
   /// 指定ホストがプリセットサーバーかどうかを判定する。
   static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
 
+  /// アカウント群の中にプリセットサーバーのアカウントが 1 件以上あるか判定する。
+  /// eligible 判定（「連れて登録」判定）の中央集約。
+  static bool hasPresetAmong(Iterable<Account> accounts) =>
+      accounts.any((a) => isPresetServer(a.key.host));
+
   static final _client = PushRelayClient();
 
   static StreamSubscription<String>? _tokenRefreshSub;
@@ -79,7 +84,7 @@ class PushRegistrationService {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
-      if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
+      if (!eligible && !isPresetServer(account.key.host)) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
@@ -380,9 +385,7 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = accounts.any(
-      (a) => kPresetServerHosts.contains(a.key.host),
-    );
+    final hasPreset = hasPresetAmong(accounts);
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
