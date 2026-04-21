@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -49,29 +50,83 @@ Future<void> main() async {
 
 FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
   final request = event.request;
-  if (request != null) {
-    const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
-    for (final name in sensitiveHeaders) {
-      if (request.headers.containsKey(name)) {
-        request.headers[name] = '[Filtered]';
-      }
-    }
-    final data = request.data;
-    if (data is Map) {
-      const sensitiveFields = [
-        'i', // Misskey access token
-        'access_token',
-        'refresh_token',
-        'token', // FCM / APNs device token in relay register
-      ];
-      for (final key in sensitiveFields) {
-        if (data.containsKey(key)) {
-          data[key] = '[Filtered]';
-        }
-      }
-    }
+  if (request == null) return event;
+
+  final headers = Map<String, String>.from(request.headers);
+  const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
+  for (final name in sensitiveHeaders) {
+    if (headers.containsKey(name)) headers[name] = '[Filtered]';
   }
+
+  // SentryRequest.data は getter-only のため、scrub 後の値を差し替えるには
+  // 新しい SentryRequest で request ごと置き換える（copyWith は deprecated）。
+  event.request = SentryRequest(
+    url: request.url,
+    method: request.method,
+    queryString: request.queryString,
+    cookies: request.cookies,
+    fragment: request.fragment,
+    apiTarget: request.apiTarget,
+    data: _scrubRequestData(request.data),
+    headers: headers,
+    env: request.env,
+  );
   return event;
+}
+
+/// Mastodon の `subscribePush` は FormData を渡すため、キーが
+/// `subscription[keys][p256dh]` のようにブラケット表記になる。Misskey は
+/// JSON body（`i`）、relay は JSON body（`token`）。いずれも substring
+/// マッチで拾えるよう名前リストとパターンマッチの二段構えにする。
+///
+/// 返り値は新しい値（Sentry request data は immutable なので元を直接
+/// 書き換えられない）。該当なしの場合は受け取った値をそのまま返す。
+Object? _scrubRequestData(Object? data) {
+  if (data is Map) {
+    final copy = Map<String, dynamic>.from(data);
+    for (final key in copy.keys.toList()) {
+      if (_isSensitiveFieldName(key.toString())) copy[key] = '[Filtered]';
+    }
+    return copy;
+  }
+  if (data is String) {
+    // 文字列 body は JSON 化された relay / Misskey リクエストの可能性。
+    // パースできれば scrub して再シリアライズ、できなければそのまま。
+    try {
+      final parsed = jsonDecode(data);
+      if (parsed is Map) {
+        final copy = Map<String, dynamic>.from(parsed);
+        var changed = false;
+        for (final key in copy.keys.toList()) {
+          if (_isSensitiveFieldName(key)) {
+            copy[key] = '[Filtered]';
+            changed = true;
+          }
+        }
+        if (changed) return jsonEncode(copy);
+      }
+    } catch (_) {}
+  }
+  return data;
+}
+
+bool _isSensitiveFieldName(String key) {
+  const names = [
+    'i', // Misskey access token
+    'access_token',
+    'refresh_token',
+    'token', // FCM / APNs device token in relay register
+    'p256dh', // Web Push ECDH public key
+    'auth', // Web Push auth secret
+    'endpoint', // push_token が URL に埋め込まれた relay endpoint
+    'publickey', // Misskey sw/register (VAPID / subscription 公開鍵)
+    'privatekey', // 万一リクエストに載った場合の保険
+  ];
+  final lower = key.toLowerCase();
+  // 完全一致または末尾一致（FormData の subscription[keys][p256dh] 等）
+  return names.any(
+    (n) => lower == n || lower.endsWith('[$n]') || lower.endsWith('.$n'),
+  );
 }
 
 void _startApp() {
@@ -104,14 +159,23 @@ void _startApp() {
 /// 通知タップで通知タブへ遷移する共通経路。[accountString] は `username@host`
 /// 形式で、該当するサインイン済みアカウントがあれば遷移前に切り替える。
 /// 一致しない（ログアウト済み等）場合は現在アカウントのままタブ遷移のみ行う。
-void _routeToNotificationsTab(String? accountString) {
+void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   final context = rootNavigatorKey.currentContext;
   if (context == null) {
     // Navigator がまだ立ち上がっていない（cold start で直後にタップを消費した
-    // ケース）。次フレームで再試行する。ポスト frame callback は
-    // runApp の first frame が出るまで間借りしてくれる。
+    // ケース）。次フレームで再試行するが、EULA / splash のみで Navigator が
+    // 永久に確立しない導線（Sentry 初期化失敗等）に迷い込んだ場合の暴走を
+    // 防ぐため、回数上限を設ける。通常 1〜2 フレームで解消するので 30
+    // フレーム（≒ 0.5 秒 @60fps）もあれば十分すぎる。
+    const maxAttempts = 30;
+    if (attempt >= maxAttempts) {
+      debugPrint(
+        'capsicum: notification: routing gave up after $maxAttempts frames',
+      );
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _routeToNotificationsTab(accountString),
+      (_) => _routeToNotificationsTab(accountString, attempt: attempt + 1),
     );
     return;
   }
