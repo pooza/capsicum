@@ -167,6 +167,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
 
+    // External entry points (notification taps etc.) may request a specific
+    // initial tab. Applying it suppresses the saved last-tab restore on cold
+    // start so the requested focus does not get overwritten, and also works
+    // when HomeScreen is already mounted.
+    final pendingTab = ref.watch(pendingInitialTabProvider);
+    if (pendingTab != null) {
+      _lastTabRestored = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(selectedTabProvider.notifier).state = pendingTab;
+        ref.read(pendingInitialTabProvider.notifier).state = null;
+      });
+    }
+
     // Restore last selected tab once the saved value arrives from disk.
     // Reset when the active account changes so each account gets its own tab.
     if (account != null) {

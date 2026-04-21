@@ -8,9 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import 'package:capsicum_core/capsicum_core.dart';
+
 import 'src/constants.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
+import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
@@ -79,9 +82,16 @@ void _startApp() {
   NotificationInit.initialize(
     onTap: (response) {
       final context = rootNavigatorKey.currentContext;
-      if (context != null) {
-        GoRouter.of(context).go('/notifications');
-      }
+      if (context == null) return;
+      // Land on the notifications tab inside HomeScreen so the Drawer and
+      // other tabs remain reachable. Staying on HomeScreen also keeps the
+      // route stack intact, unlike `go('/notifications')` which would leave
+      // the user stranded on a standalone screen.
+      ProviderScope.containerOf(
+            context,
+          ).read(pendingInitialTabProvider.notifier).state =
+          const NotificationsTab();
+      GoRouter.of(context).go('/home');
     },
   );
 

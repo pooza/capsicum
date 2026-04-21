@@ -11,6 +11,14 @@ final selectedTabProvider = StateProvider<TabType>(
   (ref) => const TimelineTab(TimelineType.home),
 );
 
+/// Tab that HomeScreen should focus on its next build.
+///
+/// Set by external entry points (notification taps, share intents) that want
+/// to land the user on a specific tab. HomeScreen consumes and clears the
+/// value after applying it, and in doing so short-circuits the last-tab
+/// restore so the saved tab does not overwrite the requested focus.
+final pendingInitialTabProvider = StateProvider<TabType?>((ref) => null);
+
 /// Currently selected timeline type, derived from [selectedTabProvider].
 ///
 /// Returns [TimelineType.home] when the active tab is not a timeline.
