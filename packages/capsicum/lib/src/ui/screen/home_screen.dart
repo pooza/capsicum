@@ -1595,22 +1595,31 @@ class _NotificationBellButton extends StatelessWidget {
       ),
       Offset.zero & overlay.size,
     );
+    // PopupMenuItem + ListTile は default height 制約（48dp）と ListTile の
+    // 推奨高（56dp+）がぶつかって 2 つ目以降が見切れる事象があったため、
+    // Row ベースのコンパクトなレイアウトに変更している。
     final selection = await showMenu<String>(
       context: context,
       position: position,
       items: const [
         PopupMenuItem(
           value: '/notifications/all',
-          child: ListTile(
-            leading: Icon(Icons.notifications_active_outlined),
-            title: Text('すべての通知'),
+          child: Row(
+            children: [
+              Icon(Icons.notifications_active_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('すべての通知'),
+            ],
           ),
         ),
         PopupMenuItem(
           value: '/notifications',
-          child: ListTile(
-            leading: Icon(Icons.notifications_outlined),
-            title: Text('このアカウントの通知'),
+          child: Row(
+            children: [
+              Icon(Icons.notifications_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('このアカウントの通知'),
+            ],
           ),
         ),
       ],
