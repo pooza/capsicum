@@ -475,10 +475,19 @@ class PushRegistrationService {
     if (e is SocketException) return true;
     if (e is TimeoutException) return true;
     if (e is DioException) {
-      return e.type == DioExceptionType.connectionTimeout ||
+      if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.sendTimeout ||
           e.type == DioExceptionType.receiveTimeout ||
-          e.type == DioExceptionType.connectionError;
+          e.type == DioExceptionType.connectionError) {
+        return true;
+      }
+      // リレー / Mastodon / Misskey の一時障害・過負荷で 5xx や 429 が返る
+      // ケースは transient として扱う。Sentry に送っても原因追跡に寄与せず
+      // ノイズになるだけで、次回起動や再試行で解消する。
+      if (e.type == DioExceptionType.badResponse) {
+        final status = e.response?.statusCode ?? 0;
+        if (status == 429 || (status >= 500 && status < 600)) return true;
+      }
     }
     return false;
   }
