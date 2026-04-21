@@ -306,9 +306,22 @@ class PushRegistrationService {
     }
     _tokenRefreshSub = stream.listen((_) {
       // 前回の refresh を待ってから新しい refresh を走らせる（直列化）。
-      _tokenRefreshChain = _tokenRefreshChain.then(
-        (_) => _runTokenRefresh(getAccounts),
-      );
+      // catchError で chain 自体を生かしておかないと、1 回例外が出たら
+      // chain が failed future になり以降すべての emit が握り潰されて
+      // プロセス終了までトークンローテーションが機能しなくなる。
+      _tokenRefreshChain = _tokenRefreshChain
+          .then((_) => _runTokenRefresh(getAccounts))
+          .catchError((Object e, StackTrace st) {
+            debugPrint('capsicum: push.registration: token refresh failed: $e');
+            Sentry.captureException(
+              e,
+              stackTrace: st,
+              withScope: (scope) {
+                scope.setTag('service', 'push_registration');
+                scope.setTag('phase', 'token_refresh');
+              },
+            );
+          });
     });
   }
 
