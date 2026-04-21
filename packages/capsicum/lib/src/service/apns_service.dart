@@ -12,6 +12,8 @@ class ApnsService {
 
   static String? _deviceToken;
   static final _tokenController = StreamController<String>.broadcast();
+  static final _notificationTapController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// The most recently received APNs device token, or `null` if unavailable.
   static String? get deviceToken => _deviceToken;
@@ -19,6 +21,13 @@ class ApnsService {
   /// A broadcast stream that emits whenever a new device token is received.
   /// Useful for reacting to token refreshes.
   static Stream<String> get onTokenChanged => _tokenController.stream;
+
+  /// A broadcast stream that emits when the user taps an APNs notification.
+  /// Payload is the `userInfo` dictionary from the iOS notification response,
+  /// which for capsicum contains the relay's custom payload (including the
+  /// `account` field used for account-aware routing).
+  static Stream<Map<String, dynamic>> get onNotificationTap =>
+      _notificationTapController.stream;
 
   /// Starts listening for token events from the native layer.
   /// Call once at app startup.
@@ -36,6 +45,14 @@ class ApnsService {
       case 'onDeviceTokenError':
         final error = call.arguments as String;
         debugPrint('APNs registration failed: $error');
+      case 'onNotificationTap':
+        // iOS が起動 / 復帰時に通知タップを通知してくる。引数は userInfo
+        // （NSDictionary<String, Any>）で、capsicum リレーが仕込む custom
+        // payload（account / server / body 等）を含む。
+        final args = call.arguments;
+        if (args is Map) {
+          _notificationTapController.add(Map<String, dynamic>.from(args));
+        }
     }
   }
 }

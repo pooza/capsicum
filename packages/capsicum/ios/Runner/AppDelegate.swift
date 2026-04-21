@@ -3,9 +3,12 @@ import UIKit
 import UserNotifications
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UNUserNotificationCenterDelegate {
   private var apnsChannel: FlutterMethodChannel?
   private var pendingDeviceToken: String?
+  // Notification tapped before the Flutter engine was ready — deliver once
+  // the channel becomes available (see didInitializeImplicitFlutterEngine).
+  private var pendingNotificationTap: [AnyHashable: Any]?
 
   override func application(
     _ application: UIApplication,
@@ -14,6 +17,10 @@ import UserNotifications
     // Request APNs device token. This does not trigger a user-facing
     // permission dialog; it only asks iOS for the token.
     application.registerForRemoteNotifications()
+
+    // Become the UNUserNotificationCenter delegate so we can route taps
+    // through the APNs MethodChannel to Dart (account-aware routing).
+    UNUserNotificationCenter.current().delegate = self
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -34,6 +41,12 @@ import UserNotifications
       if let token = pendingDeviceToken {
         apnsChannel?.invokeMethod("onDeviceToken", arguments: token)
         pendingDeviceToken = nil
+      }
+      // If a notification was tapped during cold start (before the engine
+      // came up), deliver it now so Dart can route to the correct account.
+      if let userInfo = pendingNotificationTap {
+        apnsChannel?.invokeMethod("onNotificationTap", arguments: sanitize(userInfo))
+        pendingNotificationTap = nil
       }
     }
   }
@@ -60,5 +73,38 @@ import UserNotifications
   ) {
     apnsChannel?.invokeMethod("onDeviceTokenError", arguments: error.localizedDescription)
     super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
+  }
+
+  // MARK: - UNUserNotificationCenterDelegate
+
+  // User tapped a notification (either while the app was running or via cold
+  // start). Forward the userInfo to Dart so account-aware routing can pick
+  // the matching account before navigating to the notifications tab.
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let userInfo = response.notification.request.content.userInfo
+    if let channel = apnsChannel {
+      channel.invokeMethod("onNotificationTap", arguments: sanitize(userInfo))
+    } else {
+      // Buffer until the Flutter engine finishes initializing.
+      pendingNotificationTap = userInfo
+    }
+    completionHandler()
+  }
+
+  // UNNotificationResponse.userInfo is [AnyHashable: Any], but the Flutter
+  // method channel marshaller only handles [String: Any]. Convert keys and
+  // drop non-string-keyed entries (there shouldn't be any, but be defensive).
+  private func sanitize(_ userInfo: [AnyHashable: Any]) -> [String: Any] {
+    var out: [String: Any] = [:]
+    for (key, value) in userInfo {
+      if let k = key as? String {
+        out[k] = value
+      }
+    }
+    return out
   }
 }

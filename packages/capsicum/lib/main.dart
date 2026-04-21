@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,8 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 
 import 'src/constants.dart';
+import 'src/model/account.dart';
+import 'src/provider/account_manager_provider.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
@@ -79,26 +82,70 @@ void _startApp() {
 
   // Initialize notifications after the widget tree is built so that
   // the permission dialog on iOS does not block rendering.
+  // `response.payload` は将来通知ごとにアカウントを埋める可能性があるため、
+  // 受けた文字列をそのまま account-aware routing に委譲する（現状は null）。
   NotificationInit.initialize(
-    onTap: (response) {
-      final context = rootNavigatorKey.currentContext;
-      if (context == null) return;
-      // Land on the notifications tab inside HomeScreen so the Drawer and
-      // other tabs remain reachable. Staying on HomeScreen also keeps the
-      // route stack intact, unlike `go('/notifications')` which would leave
-      // the user stranded on a standalone screen.
-      ProviderScope.containerOf(
-            context,
-          ).read(pendingInitialTabProvider.notifier).state =
-          const NotificationsTab();
-      GoRouter.of(context).go('/home');
-    },
+    onTap: (response) => _routeToNotificationsTab(response.payload),
+  );
+
+  // iOS: APNs タップはネイティブ側で userInfo を乗せて送ってくる。Dart 側では
+  // ストリーム経由で account-aware routing に委譲する。cold start 時は
+  // AppDelegate 側でバッファされ、engine 起動後に発火する。
+  ApnsService.onNotificationTap.listen(
+    (userInfo) => _routeToNotificationsTab(userInfo['account'] as String?),
   );
 
   // Check for shared text from external apps (e.g. Spotify, Apple Music).
   // The result is stored in pendingSharedText and consumed by SplashScreen
   // after session restoration completes.
   shareIntentReady = _consumeSharedText();
+}
+
+/// 通知タップで通知タブへ遷移する共通経路。[accountString] は `username@host`
+/// 形式で、該当するサインイン済みアカウントがあれば遷移前に切り替える。
+/// 一致しない（ログアウト済み等）場合は現在アカウントのままタブ遷移のみ行う。
+void _routeToNotificationsTab(String? accountString) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    // Navigator がまだ立ち上がっていない（cold start で直後にタップを消費した
+    // ケース）。次フレームで再試行する。ポスト frame callback は
+    // runApp の first frame が出るまで間借りしてくれる。
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _routeToNotificationsTab(accountString),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+
+  if (accountString != null) {
+    final matched = _findAccountByString(
+      container.read(accountManagerProvider).accounts,
+      accountString,
+    );
+    if (matched != null) {
+      container.read(accountManagerProvider.notifier).switchAccount(matched);
+    }
+  }
+
+  // Land on the notifications tab inside HomeScreen so the Drawer and other
+  // tabs remain reachable. Staying on HomeScreen also keeps the route stack
+  // intact, unlike `go('/notifications')` which would leave the user
+  // stranded on a standalone screen.
+  container.read(pendingInitialTabProvider.notifier).state =
+      const NotificationsTab();
+  GoRouter.of(context).go('/home');
+}
+
+Account? _findAccountByString(List<Account> accounts, String accountString) {
+  // 'username@host' 形式。capsicum-relay の sub['account'] と同じ。
+  final idx = accountString.indexOf('@');
+  if (idx <= 0) return null;
+  final username = accountString.substring(0, idx);
+  final host = accountString.substring(idx + 1);
+  for (final a in accounts) {
+    if (a.key.username == username && a.key.host == host) return a;
+  }
+  return null;
 }
 
 /// Shared text received via share intent, waiting to be consumed after login.
@@ -118,6 +165,18 @@ Future<void> _initFirebase() async {
     debugPrint('capsicum: Firebase.initializeApp done, starting FCM');
     await FcmService.initialize();
     debugPrint('capsicum: FCM init done');
+
+    // Android: FCM の system-tray 通知タップは flutter_local_notifications の
+    // onTap を経由しない（OS が直接表示するため）。
+    // onMessageOpenedApp は background / foreground 状態でのタップ、
+    // getInitialMessage は terminated 状態からの cold start タップを拾う。
+    FirebaseMessaging.onMessageOpenedApp.listen(
+      (message) => _routeToNotificationsTab(message.data['account'] as String?),
+    );
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null) {
+      _routeToNotificationsTab(initial.data['account'] as String?);
+    }
   } catch (e, st) {
     debugPrint('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(
