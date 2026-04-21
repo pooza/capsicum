@@ -5,8 +5,7 @@
 abstract mixin class PushSubscriptionSupport {
   /// サーバーの VAPID 公開鍵を取得する。
   ///
-  /// Mastodon: GET /api/v1/instance → configuration.vapid.public_key
-  ///           または GET /api/v2/instance → configuration.vapid.public_key
+  /// Mastodon: GET /api/v2/instance → configuration.vapid.public_key
   /// Misskey: POST /api/meta → swPublickey
   Future<String?> getVapidPublicKey();
 

@@ -1062,13 +1062,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       return (data['configuration'] as Map?)?['vapid']?['public_key']
           as String?;
     } catch (_) {
-      // v2 未対応の場合は v1 にフォールバック
-      try {
-        final data = await client.getInstanceV1();
-        return data['vapid_public_key'] as String?;
-      } catch (_) {
-        return null;
-      }
+      return null;
     }
   }
 
