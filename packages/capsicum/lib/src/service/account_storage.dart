@@ -5,14 +5,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persists account secrets to flutter_secure_storage.
+/// Persists account secrets.
+///
+/// Secrets (`secret_<key>`, `client_creds_<host>`) live in
+/// flutter_secure_storage. The list of account keys itself is non-sensitive
+/// (host + username) and lives in shared_preferences. Splitting the index out
+/// prevents "single point of failure" behaviour where a corrupted Keystore
+/// entry for the index wipes every account.
 class AccountStorage {
-  static const _accountListKey = 'capsicum_account_keys';
+  static const _legacyAccountListKey = 'capsicum_account_keys';
+  static const _accountListKey = 'capsicum_account_keys_v2';
+
   final FlutterSecureStorage _storage;
+
+  /// Deduplicates Sentry reports within the process so the same Keystore
+  /// breakage isn't reported once per account × app launch. Keyed by
+  /// `(stage, runtimeType)` where stage is `index` or `secret:<account>`.
+  static final Set<String> _reportedErrors = {};
 
   AccountStorage([FlutterSecureStorage? storage])
     : _storage = storage ?? const FlutterSecureStorage();
+
+  Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
   /// Save access token and optional client credentials for an account.
   Future<void> saveAccount(
@@ -23,7 +39,7 @@ class AccountStorage {
     final list = await getAccountKeys();
     if (!list.contains(accountKey)) {
       list.add(accountKey);
-      await _storage.write(key: _accountListKey, value: jsonEncode(list));
+      await _writeIndex(list);
     }
   }
 
@@ -35,7 +51,7 @@ class AccountStorage {
       return Map<String, String>.from(jsonDecode(raw) as Map);
     } on PlatformException catch (e, st) {
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
-      Sentry.captureException(e, stackTrace: st);
+      _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
     } catch (e, st) {
@@ -44,27 +60,50 @@ class AccountStorage {
       debugPrint(
         'capsicum: unexpected error reading secrets for $accountKey: $e',
       );
-      Sentry.captureException(e, stackTrace: st);
+      _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
     }
   }
 
   /// Get all stored account keys.
+  ///
+  /// Reads from shared_preferences. On first run after upgrading from
+  /// pre-v1.19 the index lived in secure storage; a one-time migration
+  /// copies it over so existing users don't lose their account list.
   Future<List<String>> getAccountKeys() async {
+    final prefs = await _prefs();
+    final encoded = prefs.getString(_accountListKey);
+    if (encoded != null) {
+      try {
+        return List<String>.from(jsonDecode(encoded) as List);
+      } catch (e) {
+        // shared_preferences 上での JSON 破損は極めて稀だが、出たら空に
+        // して前進する（Sentry には出さない。secure_storage ほどの信号
+        // 価値がないため）。
+        debugPrint('capsicum: failed to parse account keys: $e');
+        await prefs.remove(_accountListKey);
+        return [];
+      }
+    }
+
+    // legacy: secure_storage から 1 度だけ移行。失敗時はインデックスだけ
+    // 諦めて空にし、個別の secret_<key> はそのまま残す（アカウント
+    // 再ログインで復元できる）。
     try {
-      final raw = await _storage.read(key: _accountListKey);
+      final raw = await _storage.read(key: _legacyAccountListKey);
       if (raw == null) return [];
-      return List<String>.from(jsonDecode(raw) as List);
+      final list = List<String>.from(jsonDecode(raw) as List);
+      await _writeIndex(list);
+      await _storage.delete(key: _legacyAccountListKey);
+      return list;
     } on PlatformException catch (e, st) {
-      debugPrint('capsicum: failed to read account keys: $e');
-      Sentry.captureException(e, stackTrace: st);
-      await _storage.delete(key: _accountListKey);
+      _reportOnce('index', e, st);
+      await _storage.delete(key: _legacyAccountListKey);
       return [];
     } catch (e, st) {
-      debugPrint('capsicum: unexpected error reading account keys: $e');
-      Sentry.captureException(e, stackTrace: st);
-      await _storage.delete(key: _accountListKey);
+      _reportOnce('index', e, st);
+      await _storage.delete(key: _legacyAccountListKey);
       return [];
     }
   }
@@ -75,7 +114,7 @@ class AccountStorage {
     if (!list.contains(accountKey)) return;
     list.remove(accountKey);
     list.insert(0, accountKey);
-    await _storage.write(key: _accountListKey, value: jsonEncode(list));
+    await _writeIndex(list);
   }
 
   /// Remove an account.
@@ -83,7 +122,7 @@ class AccountStorage {
     await _storage.delete(key: 'secret_$accountKey');
     final list = await getAccountKeys();
     list.remove(accountKey);
-    await _storage.write(key: _accountListKey, value: jsonEncode(list));
+    await _writeIndex(list);
   }
 
   /// Save OAuth client credentials for a host (survives account deletion).
@@ -113,5 +152,16 @@ class AccountStorage {
       debugPrint('capsicum: failed to read client credentials for $host: $e');
       return null;
     }
+  }
+
+  Future<void> _writeIndex(List<String> keys) async {
+    final prefs = await _prefs();
+    await prefs.setString(_accountListKey, jsonEncode(keys));
+  }
+
+  static void _reportOnce(String stage, Object error, StackTrace st) {
+    final key = '$stage:${error.runtimeType}';
+    if (!_reportedErrors.add(key)) return;
+    Sentry.captureException(error, stackTrace: st);
   }
 }
