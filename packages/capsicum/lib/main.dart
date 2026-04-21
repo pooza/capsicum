@@ -265,6 +265,21 @@ late final Future<void> shareIntentReady;
 /// Completes when Firebase / FCM initialization is done (Android only).
 late final Future<void> firebaseReady;
 
+/// FCM onMessageOpenedApp / getInitialMessage の二重発火を抑止する。
+/// 端末・ディストリビューションによっては terminated から復帰した場合に
+/// 両方が同じ RemoteMessage を配信することがあるため、messageId で dedup。
+String? _lastFcmMessageId;
+
+void _handleFcmMessage(RemoteMessage message) {
+  final messageId = message.messageId;
+  if (messageId != null && messageId == _lastFcmMessageId) {
+    debugPrint('capsicum: FCM message dedup hit: $messageId');
+    return;
+  }
+  _lastFcmMessageId = messageId;
+  _routeToNotificationsTab(message.data['account'] as String?);
+}
+
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
   try {
@@ -278,12 +293,10 @@ Future<void> _initFirebase() async {
     // onTap を経由しない（OS が直接表示するため）。
     // onMessageOpenedApp は background / foreground 状態でのタップ、
     // getInitialMessage は terminated 状態からの cold start タップを拾う。
-    FirebaseMessaging.onMessageOpenedApp.listen(
-      (message) => _routeToNotificationsTab(message.data['account'] as String?),
-    );
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleFcmMessage);
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
-      _routeToNotificationsTab(initial.data['account'] as String?);
+      _handleFcmMessage(initial);
     }
   } catch (e, st) {
     debugPrint('capsicum: Firebase initialization failed: $e');
