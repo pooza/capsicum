@@ -45,14 +45,37 @@ class PushRegistrationService {
 
   static StreamSubscription<String>? _tokenRefreshSub;
 
+  /// アカウント単位の登録処理を排他するための in-flight ガード。
+  ///
+  /// splash の [registerAllAccounts] ループと `AccountManagerNotifier` 経由の
+  /// ログイン時 [registerAccount] 呼び出しが並走した場合に、同一アカウントを
+  /// 二重登録してリレー DB に孤立 row を作ってしまう race を避ける。
+  static final Map<String, Future<void>> _inFlight = {};
+
   /// 単一アカウントのプッシュ通知登録を行う。
   ///
   /// [eligible] が true の場合、プリセット判定をスキップして登録する。
   /// [registerAllAccounts] から呼ばれるときに使用。
+  ///
+  /// 同一アカウントへの並走呼び出しは in-flight ガードで直列化する。
   static Future<void> registerAccount(
     Account account, {
     bool eligible = false,
+  }) {
+    final key = account.key.toStorageKey();
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+    final future = _registerAccountImpl(account, eligible: eligible);
+    _inFlight[key] = future;
+    return future.whenComplete(() => _inFlight.remove(key));
+  }
+
+  static Future<void> _registerAccountImpl(
+    Account account, {
+    required bool eligible,
   }) async {
+    final accountKey = account.key.toStorageKey();
+    int? relayId;
     try {
       if (account.adapter is! PushSubscriptionSupport) return;
       if (!eligible && !_presetServers.contains(account.key.host)) {
@@ -69,7 +92,6 @@ class PushRegistrationService {
       }
 
       final deviceType = Platform.isIOS ? 'ios' : 'android';
-      final accountKey = account.key.toStorageKey();
 
       // リレーサーバーに登録
       final sub = await _client.register(
@@ -79,7 +101,7 @@ class PushRegistrationService {
         server: account.key.host,
       );
 
-      final relayId = _parseRelayId(sub['id']);
+      relayId = _parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
         debugPrint('PushRegistration: relay response missing fields: $sub');
@@ -111,6 +133,18 @@ class PushRegistrationService {
       );
     } catch (e, st) {
       debugPrint('PushRegistration: failed for ${account.key.host}: $e\n$st');
+      // 部分成功をロールバック。リレーに row ができた後で subscribePush が
+      // 失敗すると、SNS 側サブスクリプションなしの孤立レコードが残るため、
+      // 取得済みの relayId を基に unregister を試みる。各段階は独立 try
+      // なので途中失敗しても次の掃除は進む。
+      if (relayId != null) {
+        try {
+          await _client.unregister(relayId);
+        } catch (_) {}
+      }
+      try {
+        await PushKeyStore.delete(accountKey);
+      } catch (_) {}
       if (!_isTransient(e)) {
         Sentry.captureException(
           _scrubException(e),
