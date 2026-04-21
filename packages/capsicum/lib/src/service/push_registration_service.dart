@@ -69,6 +69,10 @@ class PushRegistrationService {
     // subscribePush が走り始めたことを示すフラグ。catch 節で「失敗の内訳が
     // リレー段か SNS サブスクリプション段か」の判定に使う。
     var subscribePhase = false;
+    // PushKeyStore を今回の attempt で書き換えたかどうか。書き換える前の
+    // 早期失敗（リレー接続エラー等）では、既存の working state を残しておく
+    // 必要がある（wipe すると古いサーバー側サブスクリプションが orphan 化）。
+    var localStateModified = false;
     try {
       if (account.adapter is! PushSubscriptionSupport) {
         store.update(accountKey, PushRegistrationState.skipped);
@@ -125,9 +129,11 @@ class PushRegistrationService {
         return;
       }
 
+      // ここから PushKeyStore を書き換える。失敗時は rollback 対象になる。
       await PushKeyStore.saveRelayId(accountKey, relayId);
+      localStateModified = true;
 
-      // ECDH 鍵の生成またはロード
+      // ECDH 鍵の生成またはロード（既存鍵があれば再利用）
       final keys = await PushKeyStore.getOrCreate(accountKey);
 
       // Mastodon / Misskey に Web Push サブスクリプション登録
@@ -159,9 +165,15 @@ class PushRegistrationService {
           await _client.unregister(relayId);
         } catch (_) {}
       }
-      try {
-        await PushKeyStore.delete(accountKey);
-      } catch (_) {}
+      // PushKeyStore は今回の attempt で書き換えた場合のみ delete する。
+      // 書き換える前（_client.register の早期失敗など）の catch では
+      // 既存 working state を残す（wipe すると古いサーバー側 subscription が
+      // orphan 化して掃除できなくなる — Codex 指摘）。
+      if (localStateModified) {
+        try {
+          await PushKeyStore.delete(accountKey);
+        } catch (_) {}
+      }
 
       if (e is PushRegistrationNotSupportedException) {
         store.update(
