@@ -326,9 +326,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   tab: const NotificationsTab(),
                 )),
               ))
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              onPressed: () => context.push('/notifications'),
+            _NotificationBellButton(
+              hasMultipleAccounts: accountState.accounts.length > 1,
             ),
         ],
         bottom: PreferredSize(
@@ -1545,5 +1544,66 @@ class _LivecureFilterButton extends StatelessWidget {
       tooltip: hide ? '#実況 非表示中' : '#実況 表示中',
       onPressed: () => ref.read(hideLivecureProvider.notifier).toggle(),
     );
+  }
+}
+
+/// AppBar 右上の通知ベル。
+///
+/// - 単一アカウント: タップで現在アカウントの通知画面（/notifications）
+/// - 複数アカウント: タップでまとめ画面（/notifications/all）— #345 で変更
+/// - 長押しでポップアップメニューから明示選択も可能
+class _NotificationBellButton extends StatelessWidget {
+  final bool hasMultipleAccounts;
+
+  const _NotificationBellButton({required this.hasMultipleAccounts});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: hasMultipleAccounts ? () => _showMenu(context) : null,
+      child: IconButton(
+        icon: const Icon(Icons.notifications_outlined),
+        tooltip: hasMultipleAccounts ? 'すべての通知（長押しで選択）' : '通知',
+        onPressed: () => context.push(
+          hasMultipleAccounts ? '/notifications/all' : '/notifications',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMenu(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final selection = await showMenu<String>(
+      context: context,
+      position: position,
+      items: const [
+        PopupMenuItem(
+          value: '/notifications/all',
+          child: ListTile(
+            leading: Icon(Icons.notifications_active_outlined),
+            title: Text('すべての通知'),
+          ),
+        ),
+        PopupMenuItem(
+          value: '/notifications',
+          child: ListTile(
+            leading: Icon(Icons.notifications_outlined),
+            title: Text('このアカウントの通知'),
+          ),
+        ),
+      ],
+    );
+    if (selection != null && context.mounted) context.push(selection);
   }
 }
