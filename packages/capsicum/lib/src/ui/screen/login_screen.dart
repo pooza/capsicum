@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -614,44 +616,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'ブラウザから戻れないとき',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Android ではブラウザから自動でアプリに戻れないことがあります。'
-                    'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
-                    '多くの場合、認証は自動で完了します。\n\n'
-                    '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
-                    '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
-                    'そこからブラウザを開き直して認証コードを取得・貼り付けて'
-                    'ログインできます。',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+          if (Platform.isAndroid) ...[
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'ブラウザから戻れないとき',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Android ではブラウザから自動でアプリに戻れないことがあります。'
+                      'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
+                      '多くの場合、認証は自動で完了します。\n\n'
+                      '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
+                      '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
+                      'そこからブラウザを開き直して認証コードを取得・貼り付けて'
+                      'ログインできます。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
