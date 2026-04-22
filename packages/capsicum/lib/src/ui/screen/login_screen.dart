@@ -375,70 +375,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
               title: const Text('認証コードの入力'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'ブラウザから戻れない場合は、スワイプで'
-                    '戻ってください。多くの場合、認証は完了'
-                    'しています。\n\n'
-                    'ログインできない場合は、下のボタンで'
-                    '認証コードを取得して貼り付けてください。',
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: isLoading
-                        ? const Center(
-                            child: SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : OutlinedButton.icon(
-                            onPressed: () async {
-                              setDialogState(() => isLoading = true);
-                              await ensureOobRegistration();
-                              if (!dialogContext.mounted) return;
-                              setDialogState(() => isLoading = false);
-                              final oobUrl =
-                                  Uri.https(widget.host, '/oauth/authorize', {
-                                    'response_type': 'code',
-                                    'client_id': clientId,
-                                    'redirect_uri': oobRedirect,
-                                    'scope': extra['scopes']!,
-                                    'force_login': 'true',
-                                  });
-                              final launched = await launchUrlSafely(
-                                oobUrl,
-                                mode: LaunchMode.externalApplication,
-                              );
-                              if (!launched && dialogContext.mounted) {
-                                ScaffoldMessenger.of(
-                                  dialogContext,
-                                ).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('ブラウザを開けませんでした'),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.open_in_browser),
-                            label: const Text('ブラウザで認証コードを取得'),
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: '認証コード',
-                      border: OutlineInputBorder(),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ブラウザから戻れない場合は、スワイプで'
+                      '戻ってください。多くの場合、認証は完了'
+                      'しています。\n\n'
+                      'ログインできない場合は、下のボタンで'
+                      '認証コードを取得して貼り付けてください。',
                     ),
-                    autofocus: true,
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: isLoading
+                          ? const Center(
+                              child: SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: () async {
+                                setDialogState(() => isLoading = true);
+                                await ensureOobRegistration();
+                                if (!dialogContext.mounted) return;
+                                setDialogState(() => isLoading = false);
+                                final oobUrl =
+                                    Uri.https(widget.host, '/oauth/authorize', {
+                                      'response_type': 'code',
+                                      'client_id': clientId,
+                                      'redirect_uri': oobRedirect,
+                                      'scope': extra['scopes']!,
+                                      'force_login': 'true',
+                                    });
+                                final launched = await launchUrlSafely(
+                                  oobUrl,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                                if (!launched && dialogContext.mounted) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('ブラウザを開けませんでした'),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.open_in_browser),
+                              label: const Text('ブラウザで認証コードを取得'),
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        labelText: '認証コード',
+                        border: OutlineInputBorder(),
+                      ),
+                      autofocus: true,
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
