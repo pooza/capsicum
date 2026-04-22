@@ -22,6 +22,7 @@ import 'src/router.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
+import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
@@ -358,6 +359,14 @@ Future<void> _initFirebase() async {
     if (initial != null) {
       _handleFcmMessage(initial);
     }
+
+    // フォアグラウンド配信: FCM は notification ブロック付きでも foreground
+    // では system tray を出さないので、ここで復号して flutter_local_notifications
+    // 経由の local 通知を出す (#336 Phase 2)。background 対応は Phase 3 で
+    // relay が notification ブロックを落とす変更と合わせて投入する。
+    FirebaseMessaging.onMessage.listen((message) {
+      unawaited(PushMessageDispatcher.dispatch(message));
+    });
   } catch (e, st) {
     debugPrint('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(
