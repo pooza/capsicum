@@ -23,6 +23,12 @@ class PushKeyStore {
     return keys;
   }
 
+  /// 既存の鍵を読み出す。未生成なら null を返す（副作用なし）。
+  /// unregister 経路のように「既存鍵が無ければスキップしたい」ケースで使う。
+  static Future<PushKeys?> read(String accountStorageKey) async {
+    return _load(accountStorageKey);
+  }
+
   /// リレーサーバーの subscription ID を保存する。
   static Future<void> saveRelayId(String accountStorageKey, int id) async {
     await _storage.write(

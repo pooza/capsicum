@@ -154,11 +154,25 @@ class PushRegistrationService {
       // 場合でも unregisterAccount で Misskey 側の掃除を試みられる。
       await PushKeyStore.saveEndpoint(accountKey, endpoint);
       subscribePhase = true;
-      await (account.adapter as PushSubscriptionSupport).subscribePush(
-        endpoint: endpoint,
-        p256dh: keys.p256dh,
-        auth: keys.auth,
-      );
+      // Misskey 本家は GHSA-7pxq-6xx9-xpgm 対策で /api/sw/register を
+      // secure: true にしており、MiAuth / OAuth トークンからは叩けない。
+      // モロヘイヤ導入済み Misskey サーバーでは /mulukhiya/api/sw/register
+      // を proxy 経由で呼び、境界を張り直す (#355)。
+      final mulukhiya = account.mulukhiya;
+      if (mulukhiya != null && mulukhiya.controllerType == 'misskey') {
+        await mulukhiya.subscribePushViaProxy(
+          accessToken: account.userSecret.accessToken,
+          endpoint: endpoint,
+          publickey: keys.p256dh,
+          auth: keys.auth,
+        );
+      } else {
+        await (account.adapter as PushSubscriptionSupport).subscribePush(
+          endpoint: endpoint,
+          p256dh: keys.p256dh,
+          auth: keys.auth,
+        );
+      }
 
       debugPrint(
         'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
@@ -248,9 +262,28 @@ class PushRegistrationService {
     if (account.adapter is PushSubscriptionSupport) {
       try {
         final endpoint = await PushKeyStore.getEndpoint(accountKey);
-        await (account.adapter as PushSubscriptionSupport).unsubscribePush(
-          endpoint: endpoint,
-        );
+        final mulukhiya = account.mulukhiya;
+        if (endpoint != null &&
+            mulukhiya != null &&
+            mulukhiya.controllerType == 'misskey') {
+          // subscribe と同じ proxy 経路で解除する (#355)。mulukhiya 側の
+          // SwSubscriptionContract は endpoint/publickey/auth の 3 フィールド
+          // 必須なので、既存鍵を読み出せない場合は proxy 呼び出しをスキップ
+          // する（サーバー側に該当 row は無いはず）。
+          final keys = await PushKeyStore.read(accountKey);
+          if (keys != null) {
+            await mulukhiya.unsubscribePushViaProxy(
+              accessToken: account.userSecret.accessToken,
+              endpoint: endpoint,
+              publickey: keys.p256dh,
+              auth: keys.auth,
+            );
+          }
+        } else {
+          await (account.adapter as PushSubscriptionSupport).unsubscribePush(
+            endpoint: endpoint,
+          );
+        }
       } catch (e, st) {
         debugPrint(
           'capsicum: push.registration: adapter unsubscribe failed: $e',
