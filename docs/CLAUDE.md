@@ -264,7 +264,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.20.0**（2026-04-23、ストア公開作業中）。Misskey ネイティブ push ペイロード対応、バックグラウンド / キル状態での通知内容の個別表示（Android: `FirebaseMessaging.onBackgroundMessage` で RFC 8291 (aes128gcm) 復号 / iOS: Notification Service Extension `CapsicumNotificationService` を新設して CryptoKit で復号）、Misskey サードパーティ制約をモロヘイヤ側プロキシ（`/mulukhiya/api/sw/register`, モロヘイヤ v5.19.1+）経由で解消。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.20.0**（2026-04-23 リリース、ストア公開済み）。Misskey ネイティブ push ペイロード対応、バックグラウンド / キル状態での通知内容の個別表示（Android: `FirebaseMessaging.onBackgroundMessage` で RFC 8291 (aes128gcm) 復号 / iOS: Notification Service Extension `CapsicumNotificationService` を新設して CryptoKit で復号）、Misskey サードパーティ制約をモロヘイヤ側プロキシ（`/mulukhiya/api/sw/register`, モロヘイヤ v5.19.1+）経由で解消。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 
