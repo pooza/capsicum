@@ -6,14 +6,6 @@
 	<array>
 		<string>group.jp.co.b-shock.capsicum</string>
 	</array>
-	<key>aps-environment</key>
-	<string>development</string>
-	<!--
-	  Keychain Access Group を Runner と NSE で共有することで、
-	  PushKeyStore が書き込む p256dh / auth / privateKey を NSE から
-	  読み出せるようにする (#336 Phase 3(b))。エントリの groupId は
-	  App Group と同じ文字列にする。
-	-->
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)group.jp.co.b-shock.capsicum</string>

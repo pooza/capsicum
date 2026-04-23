@@ -655,6 +655,54 @@ class MulukhiyaService {
     }
   }
 
+  /// Misskey Web Push サブスクリプションをモロヘイヤ経由で登録する。
+  /// POST /mulukhiya/api/sw/register
+  ///
+  /// Misskey 本家は GHSA-7pxq-6xx9-xpgm 対策で `/api/sw/register` を
+  /// `secure: true` で制限しており、MiAuth / OAuth トークンからは叩けない。
+  /// モロヘイヤ導入済みサーバーでのみ使える代替経路。
+  ///
+  /// [accessToken] は `write:account` スコープを持つ SNS アクセストークン。
+  Future<Map<String, dynamic>> subscribePushViaProxy({
+    required String accessToken,
+    required String endpoint,
+    required String publickey,
+    required String auth,
+  }) async {
+    final response = await _dio.post(
+      '$baseUrl/sw/register',
+      data: {
+        'endpoint': endpoint,
+        'publickey': publickey,
+        'auth': auth,
+        'sendReadMessage': false,
+      },
+      options: _bearerOptions(accessToken),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Misskey Web Push サブスクリプションをモロヘイヤ経由で解除する。
+  /// POST /mulukhiya/api/sw/unregister
+  Future<Map<String, dynamic>> unsubscribePushViaProxy({
+    required String accessToken,
+    required String endpoint,
+    required String publickey,
+    required String auth,
+  }) async {
+    final response = await _dio.post(
+      '$baseUrl/sw/unregister',
+      data: {
+        'endpoint': endpoint,
+        'publickey': publickey,
+        'auth': auth,
+        'sendReadMessage': false,
+      },
+      options: _bearerOptions(accessToken),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// 複数 acct の isCat フラグを一括取得する。
   /// モロヘイヤの `POST /account/is_cat` を呼び出し、ActivityPub actor から
   /// isCat を取得する（Redis キャッシュ付き）。

@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../constants.dart';
+
 /// Resolves t.co short URLs to their actual destination URLs.
 ///
 /// Results are cached in memory to avoid repeated HTTP requests.
@@ -12,8 +14,8 @@ class TcoResolver {
     BaseOptions(
       followRedirects: false,
       validateStatus: (status) => status != null && status < 400,
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 5),
+      connectTimeout: kNetworkConnectTimeout,
+      receiveTimeout: kNetworkReceiveTimeout,
     ),
   );
 

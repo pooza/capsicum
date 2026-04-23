@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../util/notification_type_display.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
@@ -424,19 +425,14 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     return '${diff.inDays ~/ 365}年前';
   }
 
-  (IconData, String) get _iconAndLabel => switch (notification.type) {
-    NotificationType.mention => (Icons.alternate_email, 'メンション'),
-    NotificationType.reblog => (Icons.repeat, widget.reblogLabel),
-    NotificationType.favourite => (Icons.star, 'お気に入り'),
-    NotificationType.follow => (Icons.person_add, 'フォロー'),
-    NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
-    NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
-    NotificationType.poll => (Icons.poll, 'アンケート終了'),
-    NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
-    NotificationType.login => (Icons.login, 'ログイン'),
-    NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
-    NotificationType.other => (Icons.notifications, '通知'),
-  };
+  (IconData, String) get _iconAndLabel {
+    final display = notificationTypeDisplay(
+      notification.type,
+      reblogLabel: widget.reblogLabel,
+      postLabel: widget.postLabel,
+    );
+    return (display.icon, display.label);
+  }
 
   Widget _buildReactionEmoji(String reaction) {
     final url = _resolveReactionUrl(reaction);

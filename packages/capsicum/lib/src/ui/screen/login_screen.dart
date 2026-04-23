@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -373,70 +375,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
               title: const Text('認証コードの入力'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'ブラウザから戻れない場合は、スワイプで'
-                    '戻ってください。多くの場合、認証は完了'
-                    'しています。\n\n'
-                    'ログインできない場合は、下のボタンで'
-                    '認証コードを取得して貼り付けてください。',
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: isLoading
-                        ? const Center(
-                            child: SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : OutlinedButton.icon(
-                            onPressed: () async {
-                              setDialogState(() => isLoading = true);
-                              await ensureOobRegistration();
-                              if (!dialogContext.mounted) return;
-                              setDialogState(() => isLoading = false);
-                              final oobUrl =
-                                  Uri.https(widget.host, '/oauth/authorize', {
-                                    'response_type': 'code',
-                                    'client_id': clientId,
-                                    'redirect_uri': oobRedirect,
-                                    'scope': extra['scopes']!,
-                                    'force_login': 'true',
-                                  });
-                              final launched = await launchUrlSafely(
-                                oobUrl,
-                                mode: LaunchMode.externalApplication,
-                              );
-                              if (!launched && dialogContext.mounted) {
-                                ScaffoldMessenger.of(
-                                  dialogContext,
-                                ).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('ブラウザを開けませんでした'),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.open_in_browser),
-                            label: const Text('ブラウザで認証コードを取得'),
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: '認証コード',
-                      border: OutlineInputBorder(),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ブラウザから戻れない場合は、スワイプで'
+                      '戻ってください。多くの場合、認証は完了'
+                      'しています。\n\n'
+                      'ログインできない場合は、下のボタンで'
+                      '認証コードを取得して貼り付けてください。',
                     ),
-                    autofocus: true,
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: isLoading
+                          ? const Center(
+                              child: SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: () async {
+                                setDialogState(() => isLoading = true);
+                                await ensureOobRegistration();
+                                if (!dialogContext.mounted) return;
+                                setDialogState(() => isLoading = false);
+                                final oobUrl =
+                                    Uri.https(widget.host, '/oauth/authorize', {
+                                      'response_type': 'code',
+                                      'client_id': clientId,
+                                      'redirect_uri': oobRedirect,
+                                      'scope': extra['scopes']!,
+                                      'force_login': 'true',
+                                    });
+                                final launched = await launchUrlSafely(
+                                  oobUrl,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                                if (!launched && dialogContext.mounted) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('ブラウザを開けませんでした'),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.open_in_browser),
+                              label: const Text('ブラウザで認証コードを取得'),
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        labelText: '認証コード',
+                        border: OutlineInputBorder(),
+                      ),
+                      autofocus: true,
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -614,44 +620,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'ブラウザから戻れないとき',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Android ではブラウザから自動でアプリに戻れないことがあります。'
-                    'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
-                    '多くの場合、認証は自動で完了します。\n\n'
-                    '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
-                    '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
-                    'そこからブラウザを開き直して認証コードを取得・貼り付けて'
-                    'ログインできます。',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+          if (Platform.isAndroid) ...[
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'ブラウザから戻れないとき',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Android ではブラウザから自動でアプリに戻れないことがあります。'
+                      'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
+                      '多くの場合、認証は自動で完了します。\n\n'
+                      '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
+                      '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
+                      'そこからブラウザを開き直して認証コードを取得・貼り付けて'
+                      'ログインできます。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

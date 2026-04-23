@@ -2,6 +2,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account.dart';
 import 'account_manager_provider.dart';
 
 /// isCat の判定結果はユーザー（ActivityPub actor）に紐づくほぼ静的な
@@ -31,6 +32,13 @@ class IsCatEnricher {
   }) : _mulukhiya = mulukhiya,
        _accessToken = accessToken,
        _cache = cache ?? _globalIsCatCache;
+
+  /// アカウントから IsCatEnricher を生成する。Provider からの生成と
+  /// ad-hoc な生成（unified notification 等）で構成ミスを防ぐためのファクトリ。
+  factory IsCatEnricher.forAccount(Account account) => IsCatEnricher(
+    mulukhiya: account.mulukhiya,
+    accessToken: account.userSecret.accessToken,
+  );
 
   /// 単一ユーザーの isCat を補完する。
   Future<User> enrichUser(User user) async {
@@ -126,43 +134,7 @@ class IsCatEnricher {
     final author = _maybeCatUser(p.author);
     final reblog = p.reblog != null ? _enrichPost(p.reblog!) : null;
     if (identical(author, p.author) && identical(reblog, p.reblog)) return p;
-    return Post(
-      id: p.id,
-      postedAt: p.postedAt,
-      author: author!,
-      content: p.content,
-      scope: p.scope,
-      attachments: p.attachments,
-      favouriteCount: p.favouriteCount,
-      reblogCount: p.reblogCount,
-      replyCount: p.replyCount,
-      quoteCount: p.quoteCount,
-      favourited: p.favourited,
-      reblogged: p.reblogged,
-      bookmarked: p.bookmarked,
-      sensitive: p.sensitive,
-      reactions: p.reactions,
-      myReaction: p.myReaction,
-      reactionEmojis: p.reactionEmojis,
-      inReplyToId: p.inReplyToId,
-      reblog: reblog,
-      quote: p.quote,
-      quoteState: p.quoteState,
-      spoilerText: p.spoilerText,
-      emojis: p.emojis,
-      emojiHost: p.emojiHost,
-      card: p.card,
-      poll: p.poll,
-      filterAction: p.filterAction,
-      filterTitle: p.filterTitle,
-      pinned: p.pinned,
-      channelId: p.channelId,
-      channelName: p.channelName,
-      localOnly: p.localOnly,
-      quotable: p.quotable,
-      language: p.language,
-      url: p.url,
-    );
+    return p.copyWith(author: author, reblog: reblog);
   }
 
   Future<void> _fetchAndCache(List<String> accts) async {
@@ -198,8 +170,7 @@ class IsCatEnricher {
 /// アカウント単位で IsCatEnricher を提供する。
 final isCatEnricherProvider = Provider<IsCatEnricher>((ref) {
   final account = ref.watch(currentAccountProvider);
-  return IsCatEnricher(
-    mulukhiya: account?.mulukhiya,
-    accessToken: account?.userSecret.accessToken,
-  );
+  return account != null
+      ? IsCatEnricher.forAccount(account)
+      : IsCatEnricher(mulukhiya: null, accessToken: null);
 });

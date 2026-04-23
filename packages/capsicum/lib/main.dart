@@ -22,6 +22,8 @@ import 'src/router.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
+import 'src/service/notification_label_cache.dart';
+import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
@@ -30,6 +32,20 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // FCM バックグラウンド / キル状態で data-only メッセージを受けた際に、
+  // 復号 + ローカル通知を走らせるための top-level ハンドラ登録。
+  //
+  // onBackgroundMessage は **top-level / static の関数 & @pragma('vm:entry-point')**
+  // 必須（firebase_messaging が別 isolate から再エントリするため）。クラス
+  // メソッドや匿名関数では silent fail する。
+  //
+  // 登録は WidgetsFlutterBinding 確立後、runApp() より前の単一ポイントで
+  // 行うこと。_initFirebase() は await が入って後段で走るため、その中で
+  // 登録するとキル状態からの cold start イベントを拾えない。
+  if (Platform.isAndroid) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundMessageHandler);
+  }
 
   const dsn = String.fromEnvironment('SENTRY_DSN');
 
@@ -50,28 +66,88 @@ Future<void> main() async {
 
 FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
   final request = event.request;
-  if (request == null) return event;
+  if (request != null) {
+    final headers = Map<String, String>.from(request.headers);
+    for (final name in _sensitiveHeaderNames) {
+      if (headers.containsKey(name)) headers[name] = '[Filtered]';
+    }
 
-  final headers = Map<String, String>.from(request.headers);
-  const sensitiveHeaders = ['Authorization', 'X-Relay-Secret'];
-  for (final name in sensitiveHeaders) {
-    if (headers.containsKey(name)) headers[name] = '[Filtered]';
+    // SentryRequest.data は getter-only のため、scrub 後の値を差し替えるには
+    // 新しい SentryRequest で request ごと置き換える（copyWith は deprecated）。
+    event.request = SentryRequest(
+      url: request.url,
+      method: request.method,
+      queryString: request.queryString,
+      cookies: request.cookies,
+      fragment: request.fragment,
+      apiTarget: request.apiTarget,
+      data: _scrubRequestData(request.data),
+      headers: headers,
+      env: request.env,
+    );
   }
 
-  // SentryRequest.data は getter-only のため、scrub 後の値を差し替えるには
-  // 新しい SentryRequest で request ごと置き換える（copyWith は deprecated）。
-  event.request = SentryRequest(
-    url: request.url,
-    method: request.method,
-    queryString: request.queryString,
-    cookies: request.cookies,
-    fragment: request.fragment,
-    apiTarget: request.apiTarget,
-    data: _scrubRequestData(request.data),
-    headers: headers,
-    env: request.env,
-  );
+  // SentryDio（将来有効化時）は breadcrumb.data に http.request_headers /
+  // http.request_body を載せる。request / response の両側からクレデンシャル
+  // が漏れないよう、同じキーセットで scrub する。
+  final breadcrumbs = event.breadcrumbs;
+  if (breadcrumbs != null && breadcrumbs.isNotEmpty) {
+    event.breadcrumbs = breadcrumbs.map(_scrubBreadcrumb).toList();
+  }
+
   return event;
+}
+
+const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];
+
+Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
+  final data = b.data;
+  if (data == null || data.isEmpty) return b;
+
+  final copy = Map<String, dynamic>.from(data);
+  var changed = false;
+  for (final entry in copy.entries.toList()) {
+    final key = entry.key;
+    final value = entry.value;
+    // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
+    if (key.toLowerCase().contains('header') && value is Map) {
+      final headerCopy = Map<String, dynamic>.from(value);
+      var headerChanged = false;
+      for (final name in _sensitiveHeaderNames) {
+        for (final hk in headerCopy.keys.toList()) {
+          if (hk.toString().toLowerCase() == name.toLowerCase()) {
+            headerCopy[hk] = '[Filtered]';
+            headerChanged = true;
+          }
+        }
+      }
+      if (headerChanged) {
+        copy[key] = headerCopy;
+        changed = true;
+      }
+    }
+    // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
+    if (key.toLowerCase().contains('body') ||
+        key.toLowerCase().contains('data')) {
+      final scrubbed = _scrubRequestData(value);
+      if (!identical(scrubbed, value)) {
+        copy[key] = scrubbed;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) return b;
+  // Breadcrumb.copyWith は deprecated のため、新しいインスタンスを構築する
+  // （SentryRequest と同じ扱い）。
+  return Breadcrumb(
+    message: b.message,
+    timestamp: b.timestamp,
+    category: b.category,
+    data: copy,
+    level: b.level,
+    type: b.type,
+  );
 }
 
 /// Mastodon の `subscribePush` は FormData を渡すため、キーが
@@ -256,6 +332,32 @@ Account? _findAccountByString(List<Account> accounts, String accountString) {
   return null;
 }
 
+/// プッシュ通知の宛先アカウントに対応する「ブースト/リノート」ラベルを
+/// 解決する。モロヘイヤの `reblog_label` (例: キュアスタ！の "リキュア！")
+/// がある場合それを優先し、なければ adapter 種別で分岐する。
+String _resolveReblogLabelForAccount(String accountString) {
+  final account = _lookupAccount(accountString);
+  final mulukhiya = account?.mulukhiya;
+  if (mulukhiya?.reblogLabel != null) return mulukhiya!.reblogLabel!;
+  return account?.adapter is ReactionSupport ? 'リノート' : 'ブースト';
+}
+
+/// プッシュ通知の宛先アカウントに対応する「投稿」ラベルを解決する。
+String _resolvePostLabelForAccount(String accountString) {
+  final account = _lookupAccount(accountString);
+  return account?.mulukhiya?.postLabel ?? '投稿';
+}
+
+/// Riverpod コンテナから accountManagerProvider を読んで該当アカウントを返す。
+/// コンテナが未確立（ごく初期）の場合は null。
+Account? _lookupAccount(String accountString) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return null;
+  final container = ProviderScope.containerOf(context);
+  final accounts = container.read(accountManagerProvider).accounts;
+  return _findAccountByString(accounts, accountString);
+}
+
 /// Shared text received via share intent, waiting to be consumed after login.
 String? pendingSharedText;
 
@@ -264,6 +366,58 @@ late final Future<void> shareIntentReady;
 
 /// Completes when Firebase / FCM initialization is done (Android only).
 late final Future<void> firebaseReady;
+
+/// FCM onMessageOpenedApp / getInitialMessage の二重発火を抑止する。
+/// 端末・ディストリビューションによっては terminated から復帰した場合に
+/// 両方が同じ RemoteMessage を配信することがあるため、messageId で dedup。
+String? _lastFcmMessageId;
+
+void _handleFcmMessage(RemoteMessage message) {
+  final messageId = message.messageId;
+  if (messageId != null && messageId == _lastFcmMessageId) {
+    debugPrint('capsicum: FCM message dedup hit: $messageId');
+    return;
+  }
+  _lastFcmMessageId = messageId;
+  _routeToNotificationsTab(message.data['account'] as String?);
+}
+
+/// FCM バックグラウンド / キル状態メッセージ用のトップレベルハンドラ。
+///
+/// firebase_messaging は data-only メッセージ到着時にこの関数を
+/// **別 isolate** で呼び出す。その isolate には main() の実行結果が
+/// 残っていないため、Firebase / プラグインレジストリ / 通知プラグインの
+/// 初期化をここでもう一度行う必要がある。
+///
+/// リレーは `notification` ブロックを落として data-only で送る設計に
+/// したので、Android バックグラウンド / キル状態でもこのハンドラが発火し、
+/// [PushMessageDispatcher.dispatch] で RFC 8291 復号 → ローカル通知表示が
+/// 走る。fallback として復号失敗時は従来の「${account} に通知があります」
+/// 表示に落とすのは foreground 経路と同じ。
+///
+/// ラベル（ブースト/リノート/リキュア！・投稿）解決は providers が生きて
+/// いないため [NotificationLabelCache]（shared_preferences 永続キャッシュ）
+/// から読み取る。未保存アカウント向けには汎用ラベルに落ちる。
+@pragma('vm:entry-point')
+Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp();
+    // タップハンドラはフォアグラウンド側の登録が生きる（OS が通知をタップ
+    // された際に app を起動し、main() 経由で再登録される）ため、ここでは
+    // no-op を渡してプラグインの初期化だけ成立させる。
+    await NotificationInit.initialize(onTap: (_) {});
+    await PushMessageDispatcher.dispatch(
+      message,
+      reblogLabelResolver: NotificationLabelCache.readReblog,
+      postLabelResolver: NotificationLabelCache.readPost,
+    );
+  } catch (e, st) {
+    debugPrint('capsicum: push.background: handler failed: $e');
+    // Sentry はバックグラウンド isolate では init されていないため、
+    // ここでは debugPrint のみ。致命的でも UI を落とさない。
+    debugPrintStack(stackTrace: st);
+  }
+}
 
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
@@ -278,13 +432,29 @@ Future<void> _initFirebase() async {
     // onTap を経由しない（OS が直接表示するため）。
     // onMessageOpenedApp は background / foreground 状態でのタップ、
     // getInitialMessage は terminated 状態からの cold start タップを拾う。
-    FirebaseMessaging.onMessageOpenedApp.listen(
-      (message) => _routeToNotificationsTab(message.data['account'] as String?),
-    );
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleFcmMessage);
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
-      _routeToNotificationsTab(initial.data['account'] as String?);
+      _handleFcmMessage(initial);
     }
+
+    // フォアグラウンド配信: relay は data-only で送るため、OS による自動表示
+    // は一切起きない。復号してローカル通知を出す (#336 Phase 2)。
+    // バックグラウンド / キル時は main() 頭で登録した
+    // [_firebaseBackgroundMessageHandler] 側で処理する (#336 Phase 3)。
+    FirebaseMessaging.onMessage.listen((message) {
+      debugPrint(
+        'capsicum: push.onMessage fired: data keys=${message.data.keys.toList()}',
+      );
+      unawaited(
+        PushMessageDispatcher.dispatch(
+          message,
+          reblogLabelResolver: _resolveReblogLabelForAccount,
+          postLabelResolver: _resolvePostLabelForAccount,
+        ),
+      );
+    });
+    debugPrint('capsicum: push.onMessage listener registered');
   } catch (e, st) {
     debugPrint('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(

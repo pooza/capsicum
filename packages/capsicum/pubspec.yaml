@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.19.1+43
+version: 1.20.0+45
 
 environment:
   sdk: ^3.11.0
@@ -25,6 +25,12 @@ dependencies:
   go_router: ^14.8.1
   flutter_secure_storage: ^9.2.4
   shared_preferences: ^2.5.3
+  # iOS の App Group suiteName を指定するため
+  # `SharedPreferencesAsyncFoundationOptions` を参照しており、その型は
+  # shared_preferences_foundation の公開 API にある。transitive 依存だが
+  # 直接 import するため明示する（NotificationLabelCache が NSE と
+  # UserDefaults を共有するのに必要）。
+  shared_preferences_foundation: ^2.5.0
   dio: ^5.8.0+1
   flutter_web_auth_2: ^4.0.0
   url_launcher: ^6.3.1
@@ -48,6 +54,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
   sentry_dart_plugin: ^2.3.0
+  # SharedPreferencesAsyncPlatform のテスト用 in-memory 実装を使うため。
+  # 通常は shared_preferences 経由の transitive だが、lint
+  # (depend_on_referenced_packages) 回避のため明示する。
+  shared_preferences_platform_interface: ^2.4.0
 
 sentry:
   upload_debug_symbols: true

@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
 import 'apns_service.dart';
@@ -29,6 +31,11 @@ import 'push_relay_client.dart';
 class PushRegistrationService {
   /// 指定ホストがプリセットサーバーかどうかを判定する。
   static bool isPresetServer(String host) => kPresetServerHosts.contains(host);
+
+  /// アカウント群の中にプリセットサーバーのアカウントが 1 件以上あるか判定する。
+  /// eligible 判定（「連れて登録」判定）の中央集約。
+  static bool hasPresetAmong(Iterable<Account> accounts) =>
+      accounts.any((a) => isPresetServer(a.key.host));
 
   static final _client = PushRelayClient();
 
@@ -78,7 +85,7 @@ class PushRegistrationService {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
-      if (!eligible && !kPresetServerHosts.contains(account.key.host)) {
+      if (!eligible && !isPresetServer(account.key.host)) {
         debugPrint(
           'capsicum: push.registration: skipped (not preset): ${account.key.host}',
         );
@@ -91,11 +98,16 @@ class PushRegistrationService {
       final deviceToken = _getDeviceToken();
       if (deviceToken == null) {
         debugPrint('capsicum: push.registration: no device token available');
+        final isPermissionDenied = _isNotificationPermissionDenied();
         store.update(
           accountKey,
           PushRegistrationState.failed,
-          reason: PushRegistrationFailureReason.noDeviceToken,
-          errorMessage: 'デバイストークンを取得できませんでした',
+          reason: isPermissionDenied
+              ? PushRegistrationFailureReason.permissionDenied
+              : PushRegistrationFailureReason.noDeviceToken,
+          errorMessage: isPermissionDenied
+              ? '通知の権限が許可されていません'
+              : 'デバイストークンを取得できませんでした',
         );
         return;
       }
@@ -142,11 +154,25 @@ class PushRegistrationService {
       // 場合でも unregisterAccount で Misskey 側の掃除を試みられる。
       await PushKeyStore.saveEndpoint(accountKey, endpoint);
       subscribePhase = true;
-      await (account.adapter as PushSubscriptionSupport).subscribePush(
-        endpoint: endpoint,
-        p256dh: keys.p256dh,
-        auth: keys.auth,
-      );
+      // Misskey 本家は GHSA-7pxq-6xx9-xpgm 対策で /api/sw/register を
+      // secure: true にしており、MiAuth / OAuth トークンからは叩けない。
+      // モロヘイヤ導入済み Misskey サーバーでは /mulukhiya/api/sw/register
+      // を proxy 経由で呼び、境界を張り直す (#355)。
+      final mulukhiya = account.mulukhiya;
+      if (mulukhiya != null && mulukhiya.controllerType == 'misskey') {
+        await mulukhiya.subscribePushViaProxy(
+          accessToken: account.userSecret.accessToken,
+          endpoint: endpoint,
+          publickey: keys.p256dh,
+          auth: keys.auth,
+        );
+      } else {
+        await (account.adapter as PushSubscriptionSupport).subscribePush(
+          endpoint: endpoint,
+          p256dh: keys.p256dh,
+          auth: keys.auth,
+        );
+      }
 
       debugPrint(
         'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
@@ -236,9 +262,28 @@ class PushRegistrationService {
     if (account.adapter is PushSubscriptionSupport) {
       try {
         final endpoint = await PushKeyStore.getEndpoint(accountKey);
-        await (account.adapter as PushSubscriptionSupport).unsubscribePush(
-          endpoint: endpoint,
-        );
+        final mulukhiya = account.mulukhiya;
+        if (endpoint != null &&
+            mulukhiya != null &&
+            mulukhiya.controllerType == 'misskey') {
+          // subscribe と同じ proxy 経路で解除する (#355)。mulukhiya 側の
+          // SwSubscriptionContract は endpoint/publickey/auth の 3 フィールド
+          // 必須なので、既存鍵を読み出せない場合は proxy 呼び出しをスキップ
+          // する（サーバー側に該当 row は無いはず）。
+          final keys = await PushKeyStore.read(accountKey);
+          if (keys != null) {
+            await mulukhiya.unsubscribePushViaProxy(
+              accessToken: account.userSecret.accessToken,
+              endpoint: endpoint,
+              publickey: keys.p256dh,
+              auth: keys.auth,
+            );
+          }
+        } else {
+          await (account.adapter as PushSubscriptionSupport).unsubscribePush(
+            endpoint: endpoint,
+          );
+        }
       } catch (e, st) {
         debugPrint(
           'capsicum: push.registration: adapter unsubscribe failed: $e',
@@ -379,9 +424,7 @@ class PushRegistrationService {
       }
     }
 
-    final hasPreset = accounts.any(
-      (a) => kPresetServerHosts.contains(a.key.host),
-    );
+    final hasPreset = hasPresetAmong(accounts);
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
@@ -420,7 +463,7 @@ class PushRegistrationService {
       completer.complete(cached);
     }
 
-    final timer = Timer(const Duration(seconds: 10), () {
+    final timer = Timer(kDeviceTokenWait, () {
       if (!completer.isCompleted) completer.complete(null);
     });
 
@@ -438,6 +481,19 @@ class PushRegistrationService {
     return null;
   }
 
+  /// OS の通知権限が明示的に拒否されているかを判定する。
+  /// 現状は Android のみ判定可能（FcmService が requestPermission の結果を
+  /// 保持）。iOS は APNs の権限 API をネイティブ側で公開していないため、
+  /// deviceToken が null のまま判定不能で false を返す（= noDeviceToken 扱い）。
+  static bool _isNotificationPermissionDenied() {
+    if (Platform.isAndroid) {
+      final status = FcmService.lastAuthStatus;
+      return status == AuthorizationStatus.denied ||
+          status == AuthorizationStatus.notDetermined;
+    }
+    return false;
+  }
+
   /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
   /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
   static int? _parseRelayId(Object? raw) {
@@ -452,10 +508,19 @@ class PushRegistrationService {
     if (e is SocketException) return true;
     if (e is TimeoutException) return true;
     if (e is DioException) {
-      return e.type == DioExceptionType.connectionTimeout ||
+      if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.sendTimeout ||
           e.type == DioExceptionType.receiveTimeout ||
-          e.type == DioExceptionType.connectionError;
+          e.type == DioExceptionType.connectionError) {
+        return true;
+      }
+      // リレー / Mastodon / Misskey の一時障害・過負荷で 5xx や 429 が返る
+      // ケースは transient として扱う。Sentry に送っても原因追跡に寄与せず
+      // ノイズになるだけで、次回起動や再試行で解消する。
+      if (e.type == DioExceptionType.badResponse) {
+        final status = e.response?.statusCode ?? 0;
+        if (status == 429 || (status >= 500 && status < 600)) return true;
+      }
     }
     return false;
   }

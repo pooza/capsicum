@@ -10,7 +10,14 @@ import 'package:pointycastle/export.dart';
 /// 鍵はアカウントごとに生成・保存され、リレーサーバー経由で受信した
 /// Web Push ペイロードの復号に使用する（復号の実装は Stage 2）。
 class PushKeyStore {
-  static const _storage = FlutterSecureStorage();
+  /// iOS では Notification Service Extension (#336 Phase 3(b)) が復号に
+  /// 使うため、Keychain を Runner / NSE 共通の Access Group に逃がす。
+  /// Android の [AndroidOptions] は EncryptedSharedPreferences 既定で十分で、
+  /// バックグラウンド isolate も同一プロセス内のため追加設定は不要。
+  static const _iOSAccessGroup = 'group.jp.co.b-shock.capsicum';
+  static const _storage = FlutterSecureStorage(
+    iOptions: IOSOptions(groupId: _iOSAccessGroup),
+  );
   static const _prefix = 'capsicum_push_';
 
   /// 指定アカウントの鍵を取得する。未生成なら新規生成して保存する。
@@ -21,6 +28,12 @@ class PushKeyStore {
     final keys = _generate();
     await _save(accountStorageKey, keys);
     return keys;
+  }
+
+  /// 既存の鍵を読み出す。未生成なら null を返す（副作用なし）。
+  /// unregister 経路のように「既存鍵が無ければスキップしたい」ケースで使う。
+  static Future<PushKeys?> read(String accountStorageKey) async {
+    return _load(accountStorageKey);
   }
 
   /// リレーサーバーの subscription ID を保存する。
@@ -65,12 +78,31 @@ class PushKeyStore {
   static String _key(_Slot slot, String accountStorageKey) =>
       '$_prefix${slot.fragment}_$accountStorageKey';
 
+  /// 鍵セット（p256dh / auth / privateKey）の 1 JSON blob を読む。
+  ///
+  /// 旧来は 3 スロット個別 write だったため、書き換え中に並行した
+  /// バックグラウンド isolate / iOS NSE が読むと新旧混成ロードで silent
+  /// 復号失敗を起こしうるレースがあった。1 blob 化でアトミック化している。
   static Future<PushKeys?> _load(String key) async {
-    final p256dh = await _storage.read(key: _key(_Slot.p256dh, key));
-    final auth = await _storage.read(key: _key(_Slot.auth, key));
-    final privateKey = await _storage.read(key: _key(_Slot.privateKey, key));
-    if (p256dh == null || auth == null || privateKey == null) return null;
-    return PushKeys(p256dh: p256dh, auth: auth, privateKeyBase64: privateKey);
+    final raw = await _storage.read(key: _key(_Slot.keyset, key));
+    if (raw != null) {
+      try {
+        final json = jsonDecode(raw);
+        if (json is Map &&
+            json['p256dh'] is String &&
+            json['auth'] is String &&
+            json['priv'] is String) {
+          return PushKeys(
+            p256dh: json['p256dh'] as String,
+            auth: json['auth'] as String,
+            privateKeyBase64: json['priv'] as String,
+          );
+        }
+      } catch (_) {
+        // パース不能な値は壊れているので null 扱いで再生成を促す
+      }
+    }
+    return null;
   }
 
   static PushKeys _generate() {
@@ -125,22 +157,25 @@ class PushKeyStore {
     return bytes;
   }
 
+  /// 鍵セットを 1 JSON blob として書く（レース回避のためアトミック）。
   static Future<void> _save(String key, PushKeys keys) async {
-    await _storage.write(key: _key(_Slot.p256dh, key), value: keys.p256dh);
-    await _storage.write(key: _key(_Slot.auth, key), value: keys.auth);
-    await _storage.write(
-      key: _key(_Slot.privateKey, key),
-      value: keys.privateKeyBase64,
-    );
+    final body = jsonEncode({
+      'p256dh': keys.p256dh,
+      'auth': keys.auth,
+      'priv': keys.privateKeyBase64,
+    });
+    await _storage.write(key: _key(_Slot.keyset, key), value: body);
   }
 }
 
 /// 永続化する要素種別。enum に集約することで `delete()` 側の列挙忘れや
 /// サフィックス文字列のタイポを排除する。
+///
+/// [keyset] は p256dh / auth / privateKey をまとめた JSON blob のスロット。
+/// 旧版では各鍵を個別スロット (p256dh/auth/privateKey) に書き分けていたが、
+/// 書き換え中の読み出しで新旧混成ロードが起きる race を避けるため統合した。
 enum _Slot {
-  p256dh('p256dh'),
-  auth('auth'),
-  privateKey('private'),
+  keyset('keyset'),
   relayId('relay_id'),
   endpoint('endpoint');
 

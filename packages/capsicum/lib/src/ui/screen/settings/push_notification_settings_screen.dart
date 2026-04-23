@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../model/account.dart';
-import '../../../preset_servers.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
 import '../../../service/push_registration_service.dart';
@@ -24,9 +23,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
     final statusMap =
         ref.watch(pushRegistrationStatusProvider).valueOrNull ??
         const <String, PushRegistrationSnapshot>{};
-    final hasPreset = accounts.any(
-      (a) => kPresetServerHosts.contains(a.key.host),
-    );
+    final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
 
     return Scaffold(
       appBar: AppBar(
@@ -76,12 +73,14 @@ class _AccountStatusTile extends ConsumerWidget {
     final label = '@${account.key.username}@${account.key.host}';
     final state = snapshot?.state ?? PushRegistrationState.idle;
     // プリセットサーバー本体か、プリセットがあって「連れて登録」される側か
-    final eligible = hasPreset || kPresetServerHosts.contains(account.key.host);
+    final eligible =
+        hasPreset || PushRegistrationService.isPresetServer(account.key.host);
 
     final (statusText, statusColor, statusIcon) = _describeState(
       context,
       state,
       eligible,
+      snapshot?.reason,
     );
 
     return ListTile(
@@ -96,7 +95,7 @@ class _AccountStatusTile extends ConsumerWidget {
       isThreeLine: snapshot?.errorMessage != null,
       trailing: _isRetryable(state, eligible)
           ? TextButton(
-              onPressed: () => _retry(ref, account),
+              onPressed: () => _retry(account),
               child: const Text('再試行'),
             )
           : null,
@@ -107,6 +106,7 @@ class _AccountStatusTile extends ConsumerWidget {
     BuildContext context,
     PushRegistrationState state,
     bool eligible,
+    PushRegistrationFailureReason? reason,
   ) {
     final theme = Theme.of(context);
     if (!eligible) {
@@ -132,11 +132,14 @@ class _AccountStatusTile extends ConsumerWidget {
         Colors.green,
         Icons.check_circle,
       ),
-      PushRegistrationState.failed => (
-        '登録に失敗しました',
-        theme.colorScheme.error,
-        Icons.error_outline,
-      ),
+      PushRegistrationState.failed =>
+        reason == PushRegistrationFailureReason.permissionDenied
+            ? (
+                '通知の権限が許可されていません',
+                theme.colorScheme.error,
+                Icons.notifications_off_outlined,
+              )
+            : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
       PushRegistrationState.notSupported => (
         'このサーバーでは対応していません',
         theme.colorScheme.outline,
@@ -157,11 +160,8 @@ class _AccountStatusTile extends ConsumerWidget {
         state == PushRegistrationState.skipped;
   }
 
-  void _retry(WidgetRef ref, Account account) {
-    final accounts = ref.read(accountManagerProvider).accounts;
-    final hasPreset = accounts.any(
-      (a) => kPresetServerHosts.contains(a.key.host),
-    );
+  void _retry(Account account) {
+    // hasPreset は親 tile から props 経由で渡されているため再計算不要。
     PushRegistrationService.registerAccount(account, eligible: hasPreset);
   }
 }
