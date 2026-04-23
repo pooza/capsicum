@@ -8,20 +8,24 @@ import Foundation
 /// 拡張から読めるよう、エントリーは共有 Keychain Access Group
 /// (`group.jp.co.b-shock.capsicum`) に保存される想定（メインアプリ側で
 /// IOSOptions(groupId:) を付けて書き込む）。
+///
+/// 鍵セット（p256dh / auth / privateKey）は **1 JSON blob** として
+/// `capsicum_push_keyset_{storageKey}` に格納されている。旧来の 3 スロット
+/// 個別書き込みだと、メインアプリが鍵を書き換え中の NSE 側読み出しで
+/// 新旧混成ロードが起きる race があったため（R-C 対応）、統合済み。
 enum PushKeyReader {
     static let accessGroup = "group.jp.co.b-shock.capsicum"
 
     /// Dart 側 `_key(slot, accountStorageKey)` と同じ文字列を組み立てる。
     /// account は `{prefix}://{username}@{host}` 形式の storage key。
     ///
-    /// 例: `capsicum_push_private_mastodon://pooza@mstdn.b-shock.org`
+    /// 例: `capsicum_push_keyset_mastodon://pooza@mstdn.b-shock.org`
     private static func storageKey(slot: String, accountStorageKey: String) -> String {
         return "capsicum_push_\(slot)_\(accountStorageKey)"
     }
 
     /// `account` (`username@host`) に対応する鍵セットを返す。
     ///
-    /// 復号に必要なのは privateKey / auth / p256dh の 3 点のみ。
     /// adapter 種別が payload からは特定できないため、mastodon / misskey の
     /// 両 prefix を順に試す（Dart 側の [_findKeys] と同じ戦略）。
     static func read(account: String) -> PushKeys? {
@@ -35,20 +39,25 @@ enum PushKeyReader {
     }
 
     private static func tryRead(storageKey: String) -> PushKeys? {
+        let keychainKey = PushKeyReader.storageKey(
+            slot: "keyset", accountStorageKey: storageKey)
+        guard let raw = keychainRead(account: keychainKey) else {
+            return nil
+        }
         guard
-            let priv = keychainRead(
-                account: PushKeyReader.storageKey(
-                    slot: "private", accountStorageKey: storageKey)),
-            let auth = keychainRead(
-                account: PushKeyReader.storageKey(
-                    slot: "auth", accountStorageKey: storageKey)),
-            let p256dh = keychainRead(
-                account: PushKeyReader.storageKey(
-                    slot: "p256dh", accountStorageKey: storageKey))
+            let data = raw.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let p256dh = json["p256dh"] as? String,
+            let auth = json["auth"] as? String,
+            let priv = json["priv"] as? String
         else {
             return nil
         }
-        return PushKeys(privateKeyBase64: priv, authBase64: auth, p256dhBase64: p256dh)
+        return PushKeys(
+            privateKeyBase64: priv,
+            authBase64: auth,
+            p256dhBase64: p256dh
+        )
     }
 
     private static func keychainRead(account: String) -> String? {
