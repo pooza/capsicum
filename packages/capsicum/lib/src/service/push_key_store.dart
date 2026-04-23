@@ -10,7 +10,14 @@ import 'package:pointycastle/export.dart';
 /// 鍵はアカウントごとに生成・保存され、リレーサーバー経由で受信した
 /// Web Push ペイロードの復号に使用する（復号の実装は Stage 2）。
 class PushKeyStore {
-  static const _storage = FlutterSecureStorage();
+  /// iOS では Notification Service Extension (#336 Phase 3(b)) が復号に
+  /// 使うため、Keychain を Runner / NSE 共通の Access Group に逃がす。
+  /// Android の [AndroidOptions] は EncryptedSharedPreferences 既定で十分で、
+  /// バックグラウンド isolate も同一プロセス内のため追加設定は不要。
+  static const _iOSAccessGroup = 'group.jp.co.b-shock.capsicum';
+  static const _storage = FlutterSecureStorage(
+    iOptions: IOSOptions(groupId: _iOSAccessGroup),
+  );
   static const _prefix = 'capsicum_push_';
 
   /// 指定アカウントの鍵を取得する。未生成なら新規生成して保存する。

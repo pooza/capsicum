@@ -1,0 +1,4 @@
+// Minimal config for Notification Service Extension — only imports Flutter
+// build variables ($(FLUTTER_BUILD_NAME) / $(FLUTTER_BUILD_NUMBER))。
+// Pods は link しないので軽量。
+#include "Generated.xcconfig"

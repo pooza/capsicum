@@ -12,17 +12,23 @@
 		1815C7F367E557DC002E23D1 /* ShareIntentPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7145181D31E0D044918AE0FE /* ShareIntentPlugin.swift */; };
 		19E633722DA233FE11160BE2 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7910696FFDE5839DE170D4A /* Pods_RunnerTests.framework */; };
 		1F31ADFE6DACE54D9A5D2C70 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4A586A624A2DDB9D35D3F24 /* Pods_Runner.framework */; };
+		294B0DB95C48AE49C0DDA22C /* CapsicumNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 645479389F95E80B68BEBE49 /* CapsicumNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2979A159BDBCD34F28B6EB35 /* ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 97702AD55DB352D3CF3536C4 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		441FFE3F9352037EBB12C487 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 755BDB5246FFA629ECF0BFA1 /* Foundation.framework */; };
+		4BA0AC1E6C37AEDFEBD05293 /* NotificationTypeLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0C8C46FEEF3885A587400F /* NotificationTypeLabel.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A1B2C3D400000001E0000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000001E0000002 /* PrivacyInfo.xcprivacy */; };
 		A1B2C3D400000002E0000004 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002E0000003 /* InfoPlist.strings */; };
+		A97EA110D3D48729B9D6868F /* PushKeyReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 413E70CE25D6AA28BF4235E8 /* PushKeyReader.swift */; };
 		B92D5D8803C259CCF26B2FBA /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3E2C465E330AA7CDB8A38350 /* MainInterface.storyboard */; };
 		CA3C82E4508A3DB2400F1003 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE661ADE7A34359EE71C92A6 /* ShareViewController.swift */; };
+		DDADE17E44E14DF045816BE4 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F4296B4BF2BBB0927EA36A6 /* NotificationService.swift */; };
+		FD4CBBAA6411CACBD1C9B7C0 /* WebPushDecryptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 886D5004B33874BE9FC2A91B /* WebPushDecryptor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +38,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		9D435800E7E7C851ED1BF08A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8C6C46C13F33D8E5AD0E6B2E;
+			remoteInfo = CapsicumNotificationService;
 		};
 		9DF5267D0CAF68A61DEBA40A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -60,6 +73,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				2979A159BDBCD34F28B6EB35 /* ShareExtension.appex in Embed App Extensions */,
+				294B0DB95C48AE49C0DDA22C /* CapsicumNotificationService.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -75,13 +89,21 @@
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3E2C465E330AA7CDB8A38350 /* MainInterface.storyboard */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.storyboard; name = MainInterface.storyboard; path = Base.lproj/MainInterface.storyboard; sourceTree = "<group>"; };
+		3FF684EFCCA5AD171EDA00A8 /* CapsicumNotificationService.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = CapsicumNotificationService.entitlements; sourceTree = "<group>"; };
+		413E70CE25D6AA28BF4235E8 /* PushKeyReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushKeyReader.swift; sourceTree = "<group>"; };
 		595399CA782BDEA3A702A4E7 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		645479389F95E80B68BEBE49 /* CapsicumNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CapsicumNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		64EC77AA99BC5B8A1C66B4F4 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		650019B132021C8807B2B9CC /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		6671C8844426CDC3BE5EF390 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		696C113043BBE05BBFA9797E /* NotificationService.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = NotificationService.xcconfig; path = Flutter/NotificationService.xcconfig; sourceTree = "<group>"; };
 		7145181D31E0D044918AE0FE /* ShareIntentPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShareIntentPlugin.swift; path = Runner/ShareIntentPlugin.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		755BDB5246FFA629ECF0BFA1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		886D5004B33874BE9FC2A91B /* WebPushDecryptor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebPushDecryptor.swift; sourceTree = "<group>"; };
+		8F4296B4BF2BBB0927EA36A6 /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97702AD55DB352D3CF3536C4 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -98,6 +120,7 @@
 		A1SHARE0000000000000001 /* ShareExtension.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = ShareExtension.xcconfig; path = Flutter/ShareExtension.xcconfig; sourceTree = "<group>"; };
 		AE661ADE7A34359EE71C92A6 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D7910696FFDE5839DE170D4A /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		DB0C8C46FEEF3885A587400F /* NotificationTypeLabel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationTypeLabel.swift; sourceTree = "<group>"; };
 		E4A586A624A2DDB9D35D3F24 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E602D0DF00B64CA008C054CC /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		F03218D59B018BBF276CC7E4 /* ShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
@@ -128,6 +151,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FD7C09B9E0725DD027DFECBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				441FFE3F9352037EBB12C487 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -143,8 +174,23 @@
 			isa = PBXGroup;
 			children = (
 				6671C8844426CDC3BE5EF390 /* Foundation.framework */,
+				755BDB5246FFA629ECF0BFA1 /* Foundation.framework */,
 			);
 			name = iOS;
+			sourceTree = "<group>";
+		};
+		599FC88C6E1AAB530966F9FB /* CapsicumNotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				8F4296B4BF2BBB0927EA36A6 /* NotificationService.swift */,
+				886D5004B33874BE9FC2A91B /* WebPushDecryptor.swift */,
+				413E70CE25D6AA28BF4235E8 /* PushKeyReader.swift */,
+				DB0C8C46FEEF3885A587400F /* NotificationTypeLabel.swift */,
+				64EC77AA99BC5B8A1C66B4F4 /* Info.plist */,
+				3FF684EFCCA5AD171EDA00A8 /* CapsicumNotificationService.entitlements */,
+			);
+			name = CapsicumNotificationService;
+			path = CapsicumNotificationService;
 			sourceTree = "<group>";
 		};
 		6D81ADA1F5D1D52ABE9DE46A /* Frameworks */ = {
@@ -164,6 +210,7 @@
 				9740EEB21CF90195004384FC /* Debug.xcconfig */,
 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
+				696C113043BBE05BBFA9797E /* NotificationService.xcconfig */,
 			);
 			name = Flutter;
 			sourceTree = "<group>";
@@ -179,6 +226,7 @@
 				6D81ADA1F5D1D52ABE9DE46A /* Frameworks */,
 				7145181D31E0D044918AE0FE /* ShareIntentPlugin.swift */,
 				D1C2E9188722F6B655B89195 /* ShareExtension */,
+				599FC88C6E1AAB530966F9FB /* CapsicumNotificationService */,
 			);
 			sourceTree = "<group>";
 		};
@@ -188,6 +236,7 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				97702AD55DB352D3CF3536C4 /* ShareExtension.appex */,
+				645479389F95E80B68BEBE49 /* CapsicumNotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -273,6 +322,23 @@
 			productReference = 331C8081294A63A400263BE5 /* RunnerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		8C6C46C13F33D8E5AD0E6B2E /* CapsicumNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7FDE9E55DA16CD23AF405E96 /* Build configuration list for PBXNativeTarget "CapsicumNotificationService" */;
+			buildPhases = (
+				049AA3EFBD06D3D360027E16 /* Sources */,
+				FD7C09B9E0725DD027DFECBF /* Frameworks */,
+				899FCC9DEFA5E2A3EA3D576B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CapsicumNotificationService;
+			productName = CapsicumNotificationService;
+			productReference = 645479389F95E80B68BEBE49 /* CapsicumNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
@@ -292,6 +358,7 @@
 			);
 			dependencies = (
 				EB3AD5F0E552F8BD158771C8 /* PBXTargetDependency */,
+				63C5195EFA829F59CA4245D7 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -335,12 +402,20 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				0426E6A9E1BC45EC0C126F60 /* ShareExtension */,
+				8C6C46C13F33D8E5AD0E6B2E /* CapsicumNotificationService */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		331C807F294A63A400263BE5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		899FCC9DEFA5E2A3EA3D576B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -483,6 +558,17 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		049AA3EFBD06D3D360027E16 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DDADE17E44E14DF045816BE4 /* NotificationService.swift in Sources */,
+				FD4CBBAA6411CACBD1C9B7C0 /* WebPushDecryptor.swift in Sources */,
+				A97EA110D3D48729B9D6868F /* PushKeyReader.swift in Sources */,
+				4BA0AC1E6C37AEDFEBD05293 /* NotificationTypeLabel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C807D294A63A400263BE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -516,6 +602,12 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		63C5195EFA829F59CA4245D7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CapsicumNotificationService;
+			target = 8C6C46C13F33D8E5AD0E6B2E /* CapsicumNotificationService */;
+			targetProxy = 9D435800E7E7C851ED1BF08A /* PBXContainerItemProxy */;
 		};
 		EB3AD5F0E552F8BD158771C8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -653,6 +745,29 @@
 			};
 			name = Profile;
 		};
+		2EDB3201F90A1A3E5D01A9CB /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 696C113043BBE05BBFA9797E /* NotificationService.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = CapsicumNotificationService/CapsicumNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = Y27AK8VF85;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CapsicumNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "jp.co.b-shock.capsicum.NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Profile;
+		};
 		303EA25CCA848251C09DAA8B /* Profile */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A1SHARE0000000000000001 /* ShareExtension.xcconfig */;
@@ -747,6 +862,51 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		50341B668DD8237D397B048C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 696C113043BBE05BBFA9797E /* NotificationService.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = CapsicumNotificationService/CapsicumNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = Y27AK8VF85;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CapsicumNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "jp.co.b-shock.capsicum.debug.NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8C50AFF6B89F5F2E80129FE8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 696C113043BBE05BBFA9797E /* NotificationService.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = CapsicumNotificationService/CapsicumNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = Y27AK8VF85;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CapsicumNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "jp.co.b-shock.capsicum.NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
 		};
 		97C147031CF9000F007C117D /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -917,6 +1077,16 @@
 				331C8088294A63A400263BE5 /* Debug */,
 				331C8089294A63A400263BE5 /* Release */,
 				331C808A294A63A400263BE5 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7FDE9E55DA16CD23AF405E96 /* Build configuration list for PBXNativeTarget "CapsicumNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8C50AFF6B89F5F2E80129FE8 /* Release */,
+				50341B668DD8237D397B048C /* Debug */,
+				2EDB3201F90A1A3E5D01A9CB /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
