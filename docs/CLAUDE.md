@@ -264,15 +264,11 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.19.1**（2026-04-22、Android 本番昇格済み・App Store は審査中）。v1.19.0 の直後に、registerAccount 失敗時に共有 relay row を破壊する致命的バグを発見し、ホットフィックス。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
-
-### v1.20: プッシュ通知完成
-
-v1.19 シリーズで発生したプッシュ通知の残課題（transient リトライ、FCM タップ dedup、ペイロード復号、permissionDenied 配線、hasPreset 判定集約、別アカウント通知の誤表示等）を完結させ、プッシュ通知を「完成」と呼べる状態にする。capsicum 本体の修正に加え、[capsicum-relay](https://github.com/pooza/capsicum-relay) の改善（410 Gone 応答による cleanup 促進・構造化ログ / メトリクスによる可視性強化）もこのマイルストーンで同時に進める。Misskey メッセージ（#248）と macOS ネイティブ化（#327）は大更新のため後ろに送った。
+最新リリース: **v1.20.0**（2026-04-23、ストア公開作業中）。Misskey ネイティブ push ペイロード対応、バックグラウンド / キル状態での通知内容の個別表示（Android: `FirebaseMessaging.onBackgroundMessage` で RFC 8291 (aes128gcm) 復号 / iOS: Notification Service Extension `CapsicumNotificationService` を新設して CryptoKit で復号）、Misskey サードパーティ制約をモロヘイヤ側プロキシ（`/mulukhiya/api/sw/register`, モロヘイヤ v5.19.1+）経由で解消。v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 
-macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、現在はプッシュ通知完成 v1.20 を挟んでから着手する並びになっている）。
+macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、プッシュ通知完成 v1.20 を挟んだ上で着手する並びに落ち着いた）。
 
 1. **第1段階: macOS ネイティブ化（v1.21）** — `flutter config --enable-macos-desktop` による macOS ビルドに移行し、iOS の Mac 実行から卒業する。コスト最小で実況用途に直接効く。プラグインのデスクトップ対応状況の棚卸しも兼ねる。video_player → media_kit の事前調査もここで行う
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にする。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。デスクトップ向けには Dart `Timer` + 常駐前提のフォールバック実装を含む `BackgroundTaskScheduler` 層と、`flutter_local_notifications` のデスクトップ対応差分を吸収する層が要る
