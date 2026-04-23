@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../ui/util/notification_type_display.dart';
 import 'notification_init.dart';
 import 'push_key_store.dart';
 import 'web_push_decryptor.dart';
@@ -33,7 +34,16 @@ class PushMessageDispatcher {
 
     final decrypted = await _tryDecrypt(account, data);
     if (decrypted != null) {
-      title = decrypted.title ?? title;
+      // 用語統一: Mastodon サーバー生成 title の「返信」等は UI と表記揺れ
+      // するので、notification_type から capsicum 規定のラベルを作る。
+      // type が取れないケースのみサーバー title を fallback に使う。
+      if (decrypted.type != null) {
+        title = notificationTypeDisplay(
+          notificationTypeFromString(decrypted.type),
+        ).label;
+      } else if (decrypted.title != null && decrypted.title!.isNotEmpty) {
+        title = decrypted.title!;
+      }
       if (decrypted.body != null && decrypted.body!.isNotEmpty) {
         body = decrypted.body!;
       }
@@ -49,6 +59,10 @@ class PushMessageDispatcher {
     final bodyB64 = data['body'] as String?;
     final encoding = data['encoding'] as String?;
     if (bodyB64 == null || encoding != 'aes128gcm') {
+      debugPrint(
+        'capsicum: push.dispatcher: skipped decrypt '
+        '(body=${bodyB64 != null}, encoding=$encoding)',
+      );
       return null;
     }
 
@@ -68,7 +82,15 @@ class PushMessageDispatcher {
         uaPublicKey: base64Url.decode(base64Url.normalize(keys.p256dh)),
         authSecret: base64Url.decode(base64Url.normalize(keys.auth)),
       );
-      return parsePayload(plaintext);
+      debugPrint(
+        'capsicum: push.dispatcher: decrypt ok, ${plaintext.length} bytes',
+      );
+      final parsed = parsePayload(plaintext);
+      debugPrint(
+        'capsicum: push.dispatcher: parsed=${parsed != null} '
+        'titleLen=${parsed?.title?.length} bodyLen=${parsed?.body?.length}',
+      );
+      return parsed;
     } catch (e) {
       debugPrint('capsicum: push.dispatcher: decrypt failed: $e');
       return null;
@@ -100,18 +122,31 @@ class PushMessageDispatcher {
     try {
       final text = utf8.decode(plaintext);
       final json = jsonDecode(text);
-      if (json is! Map<String, dynamic>) return null;
+      if (json is! Map<String, dynamic>) {
+        debugPrint(
+          'capsicum: push.dispatcher: payload not a Map (${json.runtimeType})',
+        );
+        return null;
+      }
+      debugPrint(
+        'capsicum: push.dispatcher: payload keys=${json.keys.toList()}',
+      );
 
       final mastodonTitle = json['title'];
       final mastodonBody = json['body'];
-      if (mastodonTitle is String || mastodonBody is String) {
+      final mastodonType = json['notification_type'];
+      if (mastodonTitle is String ||
+          mastodonBody is String ||
+          mastodonType is String) {
         return DecryptedPushContent(
           title: mastodonTitle is String ? mastodonTitle : null,
           body: mastodonBody is String ? mastodonBody : null,
+          type: mastodonType is String ? mastodonType : null,
         );
       }
       return null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('capsicum: push.dispatcher: parse failed: $e');
       return null;
     }
   }
@@ -147,7 +182,11 @@ class PushMessageDispatcher {
 }
 
 class DecryptedPushContent {
+  /// Mastodon サーバー生成の title 文字列 (例: "@user さんから返信がありました")。
+  /// capsicum の用語統一（返信→メンション等）のため、通知表示では `type` から
+  /// 作る typeLabel を優先し、この文字列はそのまま使わない。
   final String? title;
   final String? body;
-  const DecryptedPushContent({this.title, this.body});
+  final String? type;
+  const DecryptedPushContent({this.title, this.body, this.type});
 }

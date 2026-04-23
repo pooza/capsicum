@@ -8,10 +8,10 @@ Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 
 void main() {
   group('PushMessageDispatcher.parsePayload', () {
-    test('Mastodon 形式 (title + body) を取り出す', () {
+    test('Mastodon 形式 (title + body + notification_type) を取り出す', () {
       final plaintext = _utf8(
         jsonEncode({
-          'title': '@alice さんからメンション',
+          'title': '@alice さんから返信がありました',
           'body': 'こんにちは',
           'notification_id': 12345,
           'notification_type': 'mention',
@@ -21,8 +21,9 @@ void main() {
       final result = PushMessageDispatcher.parsePayload(plaintext);
 
       expect(result, isNotNull);
-      expect(result!.title, '@alice さんからメンション');
+      expect(result!.title, '@alice さんから返信がありました');
       expect(result.body, 'こんにちは');
+      expect(result.type, 'mention');
     });
 
     test('title だけでも取り出せる', () {
