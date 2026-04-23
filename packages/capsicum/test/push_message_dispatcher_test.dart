@@ -50,5 +50,82 @@ void main() {
       final plaintext = _utf8(jsonEncode(['a', 'b']));
       expect(PushMessageDispatcher.parsePayload(plaintext), isNull);
     });
+
+    test('Misskey 形式 (notification / mention) から type と note.text を取り出す', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'notification',
+          'body': {
+            'id': 'abcd',
+            'type': 'mention',
+            'user': {'name': 'Alice', 'username': 'alice'},
+            'note': {'id': 'note1', 'text': 'こんにちは'},
+          },
+          'userId': 'u1',
+          'dateTime': 1700000000000,
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'mention');
+      expect(result.body, 'こんにちは');
+    });
+
+    test('Misskey 形式 (reaction / note.text 無し) は送信者+リアクションを合成', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'notification',
+          'body': {
+            'type': 'reaction',
+            'user': {'name': 'Bob', 'username': 'bob'},
+            'reaction': ':thumbsup:',
+          },
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'reaction');
+      expect(result.body, 'Bob が :thumbsup: でリアクション');
+    });
+
+    test('Misskey 形式 (follow) は「@user にフォローされました」を合成', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'notification',
+          'body': {
+            'type': 'follow',
+            'user': {'name': '', 'username': 'charlie'},
+          },
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'follow');
+      expect(result.body, '@charlie にフォローされました');
+    });
+
+    test('Misskey 形式 (renote) は元投稿の note.text を使う', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'notification',
+          'body': {
+            'type': 'renote',
+            'user': {'name': 'Dave', 'username': 'dave'},
+            'note': {'text': 'リノート元の本文'},
+          },
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'renote');
+      expect(result.body, 'リノート元の本文');
+    });
+
+    test('Misskey の readAllNotifications は通知表示対象外で null', () {
+      final plaintext = _utf8(
+        jsonEncode({'type': 'readAllNotifications'}),
+      );
+      expect(PushMessageDispatcher.parsePayload(plaintext), isNull);
+    });
   });
 }

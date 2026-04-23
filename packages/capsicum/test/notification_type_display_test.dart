@@ -56,6 +56,19 @@ void main() {
       );
     });
 
+    test('Misskey 固有の type を Mastodon の enum に寄せる', () {
+      // reply / quote は概念的にメンションと同じ扱い
+      expect(notificationTypeFromString('reply'), NotificationType.mention);
+      expect(notificationTypeFromString('quote'), NotificationType.mention);
+      // pollEnded は poll に寄せる
+      expect(notificationTypeFromString('pollEnded'), NotificationType.poll);
+      // receiveFollowRequest は followRequest に寄せる
+      expect(
+        notificationTypeFromString('receiveFollowRequest'),
+        NotificationType.followRequest,
+      );
+    });
+
     test('未知 / null は other', () {
       expect(notificationTypeFromString(null), NotificationType.other);
       expect(notificationTypeFromString('unknown'), NotificationType.other);

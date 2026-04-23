@@ -71,6 +71,9 @@ NotificationTypeDisplay notificationTypeDisplay(
 NotificationType notificationTypeFromString(String? raw) {
   switch (raw) {
     case 'mention':
+    // Misskey: reply / quote は概念的に「メンションされた」と同じ扱い
+    case 'reply':
+    case 'quote':
       return NotificationType.mention;
     case 'reblog':
     case 'renote':
@@ -80,10 +83,14 @@ NotificationType notificationTypeFromString(String? raw) {
     case 'follow':
       return NotificationType.follow;
     case 'follow_request':
+    // Misskey: receiveFollowRequest
+    case 'receiveFollowRequest':
       return NotificationType.followRequest;
     case 'reaction':
       return NotificationType.reaction;
     case 'poll':
+    // Misskey: pollEnded（Mastodon の poll 相当）
+    case 'pollEnded':
       return NotificationType.poll;
     case 'update':
       return NotificationType.update;

@@ -141,9 +141,9 @@ class PushMessageDispatcher {
   /// 復号済み平文から title / body を抜き出す。
   ///
   /// Mastodon の Web Push ペイロードは `{title, body, notification_type, ...}`
-  /// という JSON。Misskey は `{type, body: {user, note, ...}, ...}` と構造が
-  /// 異なる。本実装は Mastodon 形式のみサポート。Misskey ネイティブ形式への
-  /// 対応は到着するペイロードの実地確認後に判断する。
+  /// という JSON。
+  /// Misskey は `{type: 'notification', body: {type, user, note, ...}, ...}`
+  /// と構造が異なるため、両形式を個別にサポートする。
   ///
   /// `public` visibility は test 用。
   @visibleForTesting
@@ -161,6 +161,7 @@ class PushMessageDispatcher {
         'capsicum: push.dispatcher: payload keys=${json.keys.toList()}',
       );
 
+      // Mastodon: top-level に title / body / notification_type
       final mastodonTitle = json['title'];
       final mastodonBody = json['body'];
       final mastodonType = json['notification_type'];
@@ -173,11 +174,65 @@ class PushMessageDispatcher {
           type: mastodonType is String ? mastodonType : null,
         );
       }
+
+      // Misskey: {type: 'notification', body: { type, user, note, reaction, ... }}
+      // 他にも 'readAllNotifications'（UI 同期用、通知表示しない）や
+      // 'unreadAntennaNote' 等がある。通知として出すのは 'notification' のみ。
+      if (json['type'] == 'notification') {
+        final inner = json['body'];
+        if (inner is Map<String, dynamic>) {
+          return DecryptedPushContent(
+            title: null,
+            body: _synthesizeMisskeyBody(inner),
+            type: inner['type'] as String?,
+          );
+        }
+      }
       return null;
     } catch (e) {
       debugPrint('capsicum: push.dispatcher: parse failed: $e');
       return null;
     }
+  }
+
+  /// Misskey の通知オブジェクトから通知本文を合成する。Mastodon が
+  /// サーバー側で `body` に整形済み文字列を入れてくるのに対し、Misskey は
+  /// 構造化されたオブジェクトで送ってくるため、クライアント側で表示用に
+  /// 文章化する必要がある。
+  ///
+  /// 優先順位:
+  /// 1. `note.text` がある種別（mention / reply / quote / renote） → 投稿本文
+  /// 2. reaction → `@user が {reaction} でリアクション`
+  /// 3. follow → `@user にフォローされました`
+  /// 4. それ以外 → 送信者の表示名のみ
+  static String? _synthesizeMisskeyBody(Map<String, dynamic> body) {
+    final note = body['note'] is Map<String, dynamic>
+        ? body['note'] as Map<String, dynamic>
+        : null;
+    final user = body['user'] is Map<String, dynamic>
+        ? body['user'] as Map<String, dynamic>
+        : null;
+    final reaction = body['reaction'] as String?;
+    final type = body['type'] as String?;
+
+    final noteText = note?['text'] as String?;
+    if (noteText != null && noteText.isNotEmpty) {
+      return noteText;
+    }
+
+    final displayName = (user?['name'] as String?)?.trim();
+    final username = user?['username'] as String?;
+    final actor = (displayName != null && displayName.isNotEmpty)
+        ? displayName
+        : (username != null ? '@$username' : null);
+
+    if (type == 'reaction' && reaction != null) {
+      return actor != null ? '$actor が $reaction でリアクション' : reaction;
+    }
+    if (type == 'follow' && actor != null) {
+      return '$actor にフォローされました';
+    }
+    return actor;
   }
 
   static Future<void> _showNotification({
