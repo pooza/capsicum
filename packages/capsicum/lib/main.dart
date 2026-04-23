@@ -40,10 +40,16 @@ Future<void> main() async {
   // 必須（firebase_messaging が別 isolate から再エントリするため）。クラス
   // メソッドや匿名関数では silent fail する。
   //
-  // 登録は WidgetsFlutterBinding 確立後、runApp() より前の単一ポイントで
-  // 行うこと。_initFirebase() は await が入って後段で走るため、その中で
-  // 登録するとキル状態からの cold start イベントを拾えない。
+  // 登録前に Firebase.initializeApp() を必ず済ませておく。未初期化のまま
+  // onBackgroundMessage を呼ぶと plugin が callback handle を正しく登録
+  // できず、`FLTFireMsgService: no onBackgroundMessage handler has been
+  // registered` の警告が出てキル状態配信を取りこぼす。
   if (Platform.isAndroid) {
+    try {
+      await Firebase.initializeApp();
+    } catch (e) {
+      debugPrint('capsicum: Firebase.initializeApp (early) failed: $e');
+    }
     FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundMessageHandler);
   }
 
