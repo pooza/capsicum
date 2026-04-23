@@ -21,7 +21,19 @@ class PushMessageDispatcher {
 
   /// FCM メッセージを処理して通知を表示する。復号失敗 / 鍵不在時は fallback
   /// 文言 (`{account} に通知があります`) で表示し、完全に無応答にはしない。
-  static Future<void> dispatch(RemoteMessage message) async {
+  ///
+  /// [reblogLabelResolver] は通知宛先アカウントごとの「ブースト/リノート」
+  /// ラベルを返す。モロヘイヤの `reblog_label` を反映したいため、現在選択
+  /// アカウントではなく宛先アカウント単位で解決する必要がある。
+  /// 未指定時は "ブースト"。
+  ///
+  /// [postLabelResolver] は投稿ラベル（Mastodon カスタム "トゥート" 等）。
+  /// 未指定時は "投稿"。
+  static Future<void> dispatch(
+    RemoteMessage message, {
+    String Function(String account)? reblogLabelResolver,
+    String Function(String account)? postLabelResolver,
+  }) async {
     final data = message.data;
     final account = data['account'] as String?;
     if (account == null || account.isEmpty) {
@@ -40,6 +52,8 @@ class PushMessageDispatcher {
       if (decrypted.type != null) {
         title = notificationTypeDisplay(
           notificationTypeFromString(decrypted.type),
+          reblogLabel: reblogLabelResolver?.call(account) ?? 'ブースト',
+          postLabel: postLabelResolver?.call(account) ?? '投稿',
         ).label;
       } else if (decrypted.title != null && decrypted.title!.isNotEmpty) {
         title = decrypted.title!;

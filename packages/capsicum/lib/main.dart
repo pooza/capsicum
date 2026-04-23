@@ -317,6 +317,32 @@ Account? _findAccountByString(List<Account> accounts, String accountString) {
   return null;
 }
 
+/// プッシュ通知の宛先アカウントに対応する「ブースト/リノート」ラベルを
+/// 解決する。モロヘイヤの `reblog_label` (例: キュアスタ！の "リキュア！")
+/// がある場合それを優先し、なければ adapter 種別で分岐する。
+String _resolveReblogLabelForAccount(String accountString) {
+  final account = _lookupAccount(accountString);
+  final mulukhiya = account?.mulukhiya;
+  if (mulukhiya?.reblogLabel != null) return mulukhiya!.reblogLabel!;
+  return account?.adapter is ReactionSupport ? 'リノート' : 'ブースト';
+}
+
+/// プッシュ通知の宛先アカウントに対応する「投稿」ラベルを解決する。
+String _resolvePostLabelForAccount(String accountString) {
+  final account = _lookupAccount(accountString);
+  return account?.mulukhiya?.postLabel ?? '投稿';
+}
+
+/// Riverpod コンテナから accountManagerProvider を読んで該当アカウントを返す。
+/// コンテナが未確立（ごく初期）の場合は null。
+Account? _lookupAccount(String accountString) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return null;
+  final container = ProviderScope.containerOf(context);
+  final accounts = container.read(accountManagerProvider).accounts;
+  return _findAccountByString(accounts, accountString);
+}
+
 /// Shared text received via share intent, waiting to be consumed after login.
 String? pendingSharedText;
 
@@ -365,8 +391,18 @@ Future<void> _initFirebase() async {
     // 経由の local 通知を出す (#336 Phase 2)。background 対応は Phase 3 で
     // relay が notification ブロックを落とす変更と合わせて投入する。
     FirebaseMessaging.onMessage.listen((message) {
-      unawaited(PushMessageDispatcher.dispatch(message));
+      debugPrint(
+        'capsicum: push.onMessage fired: data keys=${message.data.keys.toList()}',
+      );
+      unawaited(
+        PushMessageDispatcher.dispatch(
+          message,
+          reblogLabelResolver: _resolveReblogLabelForAccount,
+          postLabelResolver: _resolvePostLabelForAccount,
+        ),
+      );
     });
+    debugPrint('capsicum: push.onMessage listener registered');
   } catch (e, st) {
     debugPrint('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(
