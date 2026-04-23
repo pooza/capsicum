@@ -84,7 +84,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     ServerMetadataCache.instance.fetch(account.key.host);
 
     // 通知ラベル（ブースト/投稿）を FCM バックグラウンド isolate 用に焼く。
-    _persistNotificationLabels(enriched);
+    // registerAccount より先に完了させる: 登録直後に届く最初のプッシュが
+    // ラベル未保存のまま既定値（ブースト/投稿）に化けないように。
+    await _persistNotificationLabels(enriched);
 
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
@@ -123,7 +125,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> logout(Account account) async {
     // プッシュ通知登録解除（ベストエフォート）。
     PushRegistrationService.unregisterAccount(account);
-    NotificationLabelCache.remove(_notificationLabelKey(account));
+    await NotificationLabelCache.remove(_notificationLabelKey(account));
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
@@ -161,7 +163,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
     state = AccountManagerState(accounts: accounts, current: updated);
-    _persistNotificationLabels(updated);
+    await _persistNotificationLabels(updated);
     return true;
   }
 
@@ -172,15 +174,18 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       '${account.key.username}@${account.key.host}';
 
   /// [Account] から「ブースト/リノート/リキュア！」「投稿」ラベルを解決し、
-  /// FCM バックグラウンド isolate からも参照できるよう永続化する。
+  /// FCM バックグラウンド isolate / iOS NSE からも参照できるよう永続化する。
   /// 解決ロジックは [main._resolveReblogLabelForAccount] と揃っている必要が
   /// ある（Mastodon=ブースト、Misskey=リノート、mulukhiya があれば上書き）。
-  void _persistNotificationLabels(Account account) {
+  ///
+  /// 呼び出し元は push 登録前に await すること: 登録直後の最初のプッシュが
+  /// ラベル未保存のまま既定値に化けるレースを避けるため。
+  Future<void> _persistNotificationLabels(Account account) async {
     final mulukhiya = account.mulukhiya;
     final reblog = mulukhiya?.reblogLabel ??
         (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
     final post = mulukhiya?.postLabel ?? '投稿';
-    NotificationLabelCache.save(
+    await NotificationLabelCache.save(
       _notificationLabelKey(account),
       reblogLabel: reblog,
       postLabel: post,
@@ -286,7 +291,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           current: state.current ?? account,
         );
 
-        _persistNotificationLabels(account);
+        await _persistNotificationLabels(account);
 
         // Prefetch server metadata for badge display (non-blocking).
         ServerMetadataCache.instance.fetch(accountKey.host);
