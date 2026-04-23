@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -12,9 +13,13 @@ import 'web_push_decryptor.dart';
 /// FCM から受信した RemoteMessage を復号し、flutter_local_notifications 経由で
 /// 通知を表示する。
 ///
-/// Phase 2 (#336) 時点ではフォアグラウンドの [FirebaseMessaging.onMessage] から
-/// 呼ばれることを想定。バックグラウンド対応は Phase 3 で relay 側が
-/// `notification` ブロックを落とす変更と合わせて投入する。
+/// 呼び出し元:
+/// - フォアグラウンド: [FirebaseMessaging.onMessage] → main.dart の listener
+/// - バックグラウンド / キル: main.dart の top-level
+///   `_firebaseBackgroundMessageHandler` から (#336 Phase 3)
+///
+/// リレーは `notification` ブロックを落として data-only で送るため、Android は
+/// どの状態でもこのディスパッチャを経由して復号 + 通知表示が走る。
 class PushMessageDispatcher {
   static const _channelId = 'capsicum_push';
   static const _channelName = 'プッシュ通知';
@@ -29,10 +34,14 @@ class PushMessageDispatcher {
   ///
   /// [postLabelResolver] は投稿ラベル（Mastodon カスタム "トゥート" 等）。
   /// 未指定時は "投稿"。
+  ///
+  /// resolvers は [FutureOr] を返してよい。フォアグラウンド経路は Riverpod
+  /// から同期的に返せるが、バックグラウンド isolate では [SharedPreferences]
+  /// 経由の非同期読み出しになるため。
   static Future<void> dispatch(
     RemoteMessage message, {
-    String Function(String account)? reblogLabelResolver,
-    String Function(String account)? postLabelResolver,
+    FutureOr<String> Function(String account)? reblogLabelResolver,
+    FutureOr<String> Function(String account)? postLabelResolver,
   }) async {
     final data = message.data;
     final account = data['account'] as String?;
@@ -50,10 +59,16 @@ class PushMessageDispatcher {
       // するので、notification_type から capsicum 規定のラベルを作る。
       // type が取れないケースのみサーバー title を fallback に使う。
       if (decrypted.type != null) {
+        final reblogLabel = reblogLabelResolver != null
+            ? await reblogLabelResolver(account)
+            : 'ブースト';
+        final postLabel = postLabelResolver != null
+            ? await postLabelResolver(account)
+            : '投稿';
         title = notificationTypeDisplay(
           notificationTypeFromString(decrypted.type),
-          reblogLabel: reblogLabelResolver?.call(account) ?? 'ブースト',
-          postLabel: postLabelResolver?.call(account) ?? '投稿',
+          reblogLabel: reblogLabel,
+          postLabel: postLabel,
         ).label;
       } else if (decrypted.title != null && decrypted.title!.isNotEmpty) {
         title = decrypted.title!;
@@ -127,8 +142,8 @@ class PushMessageDispatcher {
   ///
   /// Mastodon の Web Push ペイロードは `{title, body, notification_type, ...}`
   /// という JSON。Misskey は `{type, body: {user, note, ...}, ...}` と構造が
-  /// 異なるため、Phase 2 では Mastodon 形式のみサポート。Misskey 形式は
-  /// Phase 3 以降で対応する。
+  /// 異なる。本実装は Mastodon 形式のみサポート。Misskey ネイティブ形式への
+  /// 対応は到着するペイロードの実地確認後に判断する。
   ///
   /// `public` visibility は test 用。
   @visibleForTesting

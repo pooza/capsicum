@@ -22,6 +22,7 @@ import 'src/router.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
+import 'src/service/notification_label_cache.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 
@@ -31,6 +32,20 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // FCM バックグラウンド / キル状態で data-only メッセージを受けた際に、
+  // 復号 + ローカル通知を走らせるための top-level ハンドラ登録。
+  //
+  // onBackgroundMessage は **top-level / static の関数 & @pragma('vm:entry-point')**
+  // 必須（firebase_messaging が別 isolate から再エントリするため）。クラス
+  // メソッドや匿名関数では silent fail する。
+  //
+  // 登録は WidgetsFlutterBinding 確立後、runApp() より前の単一ポイントで
+  // 行うこと。_initFirebase() は await が入って後段で走るため、その中で
+  // 登録するとキル状態からの cold start イベントを拾えない。
+  if (Platform.isAndroid) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundMessageHandler);
+  }
 
   const dsn = String.fromEnvironment('SENTRY_DSN');
 
@@ -367,6 +382,43 @@ void _handleFcmMessage(RemoteMessage message) {
   _routeToNotificationsTab(message.data['account'] as String?);
 }
 
+/// FCM バックグラウンド / キル状態メッセージ用のトップレベルハンドラ。
+///
+/// firebase_messaging は data-only メッセージ到着時にこの関数を
+/// **別 isolate** で呼び出す。その isolate には main() の実行結果が
+/// 残っていないため、Firebase / プラグインレジストリ / 通知プラグインの
+/// 初期化をここでもう一度行う必要がある。
+///
+/// リレーは `notification` ブロックを落として data-only で送る設計に
+/// したので、Android バックグラウンド / キル状態でもこのハンドラが発火し、
+/// [PushMessageDispatcher.dispatch] で RFC 8291 復号 → ローカル通知表示が
+/// 走る。fallback として復号失敗時は従来の「${account} に通知があります」
+/// 表示に落とすのは foreground 経路と同じ。
+///
+/// ラベル（ブースト/リノート/リキュア！・投稿）解決は providers が生きて
+/// いないため [NotificationLabelCache]（shared_preferences 永続キャッシュ）
+/// から読み取る。未保存アカウント向けには汎用ラベルに落ちる。
+@pragma('vm:entry-point')
+Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp();
+    // タップハンドラはフォアグラウンド側の登録が生きる（OS が通知をタップ
+    // された際に app を起動し、main() 経由で再登録される）ため、ここでは
+    // no-op を渡してプラグインの初期化だけ成立させる。
+    await NotificationInit.initialize(onTap: (_) {});
+    await PushMessageDispatcher.dispatch(
+      message,
+      reblogLabelResolver: NotificationLabelCache.readReblog,
+      postLabelResolver: NotificationLabelCache.readPost,
+    );
+  } catch (e, st) {
+    debugPrint('capsicum: push.background: handler failed: $e');
+    // Sentry はバックグラウンド isolate では init されていないため、
+    // ここでは debugPrint のみ。致命的でも UI を落とさない。
+    debugPrintStack(stackTrace: st);
+  }
+}
+
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
   try {
@@ -386,10 +438,10 @@ Future<void> _initFirebase() async {
       _handleFcmMessage(initial);
     }
 
-    // フォアグラウンド配信: FCM は notification ブロック付きでも foreground
-    // では system tray を出さないので、ここで復号して flutter_local_notifications
-    // 経由の local 通知を出す (#336 Phase 2)。background 対応は Phase 3 で
-    // relay が notification ブロックを落とす変更と合わせて投入する。
+    // フォアグラウンド配信: relay は data-only で送るため、OS による自動表示
+    // は一切起きない。復号してローカル通知を出す (#336 Phase 2)。
+    // バックグラウンド / キル時は main() 頭で登録した
+    // [_firebaseBackgroundMessageHandler] 側で処理する (#336 Phase 3)。
     FirebaseMessaging.onMessage.listen((message) {
       debugPrint(
         'capsicum: push.onMessage fired: data keys=${message.data.keys.toList()}',

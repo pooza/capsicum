@@ -9,6 +9,7 @@ import '../model/account.dart';
 import '../model/account_key.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
+import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
 
@@ -82,6 +83,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);
 
+    // 通知ラベル（ブースト/投稿）を FCM バックグラウンド isolate 用に焼く。
+    _persistNotificationLabels(enriched);
+
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
     final hasPreset = PushRegistrationService.hasPresetAmong(newAccounts);
@@ -119,6 +123,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> logout(Account account) async {
     // プッシュ通知登録解除（ベストエフォート）。
     PushRegistrationService.unregisterAccount(account);
+    NotificationLabelCache.remove(_notificationLabelKey(account));
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
@@ -156,7 +161,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
     state = AccountManagerState(accounts: accounts, current: updated);
+    _persistNotificationLabels(updated);
     return true;
+  }
+
+  /// [Account] を `username@host` 形式に直す。capsicum-relay が push payload
+  /// に載せる `account` 文字列・[NotificationLabelCache] のキー・通知ルート
+  /// 解決用と全経路で同一フォーマットを使う。
+  static String _notificationLabelKey(Account account) =>
+      '${account.key.username}@${account.key.host}';
+
+  /// [Account] から「ブースト/リノート/リキュア！」「投稿」ラベルを解決し、
+  /// FCM バックグラウンド isolate からも参照できるよう永続化する。
+  /// 解決ロジックは [main._resolveReblogLabelForAccount] と揃っている必要が
+  /// ある（Mastodon=ブースト、Misskey=リノート、mulukhiya があれば上書き）。
+  void _persistNotificationLabels(Account account) {
+    final mulukhiya = account.mulukhiya;
+    final reblog = mulukhiya?.reblogLabel ??
+        (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
+    final post = mulukhiya?.postLabel ?? '投稿';
+    NotificationLabelCache.save(
+      _notificationLabelKey(account),
+      reblogLabel: reblog,
+      postLabel: post,
+    );
   }
 
   /// Detect software version via NodeInfo on the given host.
@@ -257,6 +285,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           accounts: newAccounts,
           current: state.current ?? account,
         );
+
+        _persistNotificationLabels(account);
 
         // Prefetch server metadata for badge display (non-blocking).
         ServerMetadataCache.instance.fetch(accountKey.host);
