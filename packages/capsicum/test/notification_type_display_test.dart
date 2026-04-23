@@ -5,17 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('notificationTypeDisplay', () {
     test('mention は「メンション」に統一（「返信」と表記揺れしない）', () {
-      expect(
-        notificationTypeDisplay(NotificationType.mention).label,
-        'メンション',
-      );
+      expect(notificationTypeDisplay(NotificationType.mention).label, 'メンション');
     });
 
     test('reblog はラベルを注入で切替（Mastodon: ブースト / Misskey: リノート）', () {
-      expect(
-        notificationTypeDisplay(NotificationType.reblog).label,
-        'ブースト',
-      );
+      expect(notificationTypeDisplay(NotificationType.reblog).label, 'ブースト');
       expect(
         notificationTypeDisplay(
           NotificationType.reblog,
@@ -30,10 +24,7 @@ void main() {
         notificationTypeDisplay(NotificationType.favourite).label,
         'お気に入り',
       );
-      expect(
-        notificationTypeDisplay(NotificationType.follow).label,
-        'フォロー',
-      );
+      expect(notificationTypeDisplay(NotificationType.follow).label, 'フォロー');
       expect(
         notificationTypeDisplay(NotificationType.reaction).label,
         'リアクション',

@@ -182,7 +182,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// ラベル未保存のまま既定値に化けるレースを避けるため。
   Future<void> _persistNotificationLabels(Account account) async {
     final mulukhiya = account.mulukhiya;
-    final reblog = mulukhiya?.reblogLabel ??
+    final reblog =
+        mulukhiya?.reblogLabel ??
         (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
     final post = mulukhiya?.postLabel ?? '投稿';
     await NotificationLabelCache.save(

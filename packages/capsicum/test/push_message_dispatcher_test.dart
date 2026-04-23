@@ -122,9 +122,7 @@ void main() {
     });
 
     test('Misskey の readAllNotifications は通知表示対象外で null', () {
-      final plaintext = _utf8(
-        jsonEncode({'type': 'readAllNotifications'}),
-      );
+      final plaintext = _utf8(jsonEncode({'type': 'readAllNotifications'}));
       expect(PushMessageDispatcher.parsePayload(plaintext), isNull);
     });
   });

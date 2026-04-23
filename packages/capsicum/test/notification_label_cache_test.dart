@@ -7,7 +7,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
   });
 
   test('save → read で保存値が取り出せる', () async {
