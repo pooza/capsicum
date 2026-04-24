@@ -253,8 +253,9 @@ class PushMessageDispatcher {
     );
     // 通知 ID は同時に複数通知を並べられるよう unique 化する。Mastodon の
     // notification_id があれば使いたいが、Phase 2 では簡便にタイムスタンプを
-    // 32bit に丸めて ID にする。
-    final id = (DateTime.now().millisecondsSinceEpoch ~/ 1000) & 0x7fffffff;
+    // 32bit に丸めて ID にする。ms 精度で取る（秒精度だと同一秒内に来た通知が
+    // 同 ID で上書きされる）。
+    final id = DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
     await NotificationInit.plugin.show(
       id,
       title,
