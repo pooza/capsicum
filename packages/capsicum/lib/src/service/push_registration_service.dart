@@ -507,6 +507,7 @@ class PushRegistrationService {
   static bool _isTransient(Object e) {
     if (e is SocketException) return true;
     if (e is TimeoutException) return true;
+    if (FcmService.isTransient(e)) return true;
     if (e is DioException) {
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.sendTimeout ||
