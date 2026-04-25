@@ -1329,9 +1329,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // Misskey upstream は /api/sw/register を `secure: true` で制限しており
       // （GHSA-7pxq-6xx9-xpgm, 2023-12）、サードパーティアプリのアクセストークン
       // では HTTP 400 + `{error: {code: 'ACCESS_DENIED'}}` を返す。再試行しても
-      // 成功しない既知の仕様制約なので、型付き例外に詰め替えて呼び出し側で
-      // Sentry 転送を抑制できるようにする。
-      if (_isAccessDenied(e)) {
+      // 成功しない既知の仕様制約。Misskey フォークによっては `/api/sw/register`
+      // 自体を削除している場合 (404) や、別形状の 400 を返す場合もあるため、
+      // /api/sw/register に対する 400 / 404 はすべて非対応扱いに寄せる (#365)。
+      if (_isUnsupportedRegistration(e)) {
         throw PushRegistrationNotSupportedException(
           'Misskey upstream blocks third-party Web Push registration '
           '(/api/sw/register requires secure session; see GHSA-7pxq-6xx9-xpgm)',
@@ -1341,12 +1342,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
   }
 
-  bool _isAccessDenied(DioException e) {
-    if (e.response?.statusCode != 400) return false;
-    final data = e.response?.data;
-    if (data is! Map) return false;
-    final error = data['error'];
-    return error is Map && error['code'] == 'ACCESS_DENIED';
+  bool _isUnsupportedRegistration(DioException e) {
+    final status = e.response?.statusCode;
+    return status == 400 || status == 404;
   }
 
   @override

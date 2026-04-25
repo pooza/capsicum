@@ -160,6 +160,15 @@ class PushRegistrationService {
       // を proxy 経由で呼び、境界を張り直す (#355)。
       final mulukhiya = account.mulukhiya;
       if (mulukhiya != null && mulukhiya.controllerType == 'misskey') {
+        // /mulukhiya/api/sw/register は mulukhiya v5.19.0 で導入された (#4254)。
+        // それ以前のサーバーに送ると 404 が返るが、リトライしても改善しないため
+        // notSupported に寄せて UI を「対応していません」表示に切り替える (#365)。
+        if (!_mulukhiyaSupportsPushProxy(mulukhiya.version)) {
+          throw PushRegistrationNotSupportedException(
+            'mulukhiya ${mulukhiya.version} does not provide '
+            '/mulukhiya/api/sw/register (introduced in 5.19.0)',
+          );
+        }
         await mulukhiya.subscribePushViaProxy(
           accessToken: account.userSecret.accessToken,
           endpoint: endpoint,
@@ -500,6 +509,20 @@ class PushRegistrationService {
     if (raw is int) return raw;
     if (raw == null) return null;
     return int.tryParse(raw.toString());
+  }
+
+  /// mulukhiya proxy が `/sw/register` をホスト可能か（v5.19.0 以降）を判定。
+  /// `version` は package.json の version 文字列で `MAJOR.MINOR.PATCH` 想定。
+  /// パース失敗時は `false`（未サポート扱い）にフォールバックする。
+  static bool _mulukhiyaSupportsPushProxy(String version) {
+    final parts = version.split('.');
+    if (parts.length < 2) return false;
+    final major = int.tryParse(parts[0]);
+    final minor = int.tryParse(parts[1]);
+    if (major == null || minor == null) return false;
+    if (major > 5) return true;
+    if (major < 5) return false;
+    return minor >= 19;
   }
 
   /// ネットワーク瞬断など通常の運用で発生しうる一過性エラーかどうか。
