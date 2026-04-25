@@ -277,8 +277,13 @@ class PushRegistrationService {
             mulukhiya.controllerType == 'misskey') {
           // subscribe と同じ proxy 経路で解除する (#355)。mulukhiya 側の
           // SwSubscriptionContract は endpoint/publickey/auth の 3 フィールド
-          // 必須なので、既存鍵を読み出せない場合は proxy 呼び出しをスキップ
-          // する（サーバー側に該当 row は無いはず）。
+          // 必須。鍵が読めれば proxy 経路、読めない場合は Misskey 本家の
+          // `/api/sw/unregister` を endpoint 単体で叩いて row を掃除する
+          // フォールバック (#370)。v1.20 で PushKeyStore を keyset blob 化した
+          // 結果、旧スキーマからアップグレードしたインストールでは
+          // PushKeyStore.read が null を返す経路がある。何もしないと
+          // モロヘイヤ側に Web Push 購読 row が残り、ログアウト後も relay 経由で
+          // 通知が届き続ける。
           final keys = await PushKeyStore.read(accountKey);
           if (keys != null) {
             await mulukhiya.unsubscribePushViaProxy(
@@ -286,6 +291,10 @@ class PushRegistrationService {
               endpoint: endpoint,
               publickey: keys.p256dh,
               auth: keys.auth,
+            );
+          } else {
+            await (account.adapter as PushSubscriptionSupport).unsubscribePush(
+              endpoint: endpoint,
             );
           }
         } else {
