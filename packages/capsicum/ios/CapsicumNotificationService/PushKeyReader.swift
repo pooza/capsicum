@@ -14,7 +14,14 @@ import Foundation
 /// 個別書き込みだと、メインアプリが鍵を書き換え中の NSE 側読み出しで
 /// 新旧混成ロードが起きる race があったため（R-C 対応）、統合済み。
 enum PushKeyReader {
-    static let accessGroup = "group.jp.co.b-shock.capsicum"
+    /// `kSecAttrAccessGroup` には **TeamID + ドット + グループ名** の完全表記が
+    /// 必須 (Apple Keychain Services Programming Guide)。bare 表記
+    /// （`group.jp.co.b-shock.capsicum`）でも development 署名では通ることが
+    /// あるが、distribution（TestFlight / App Store）署名ではエントリが
+    /// entitlements に解決できず、書き込み・読み出しが silent に失敗する。
+    /// `Y27AK8VF85` は Xcode project の `DEVELOPMENT_TEAM` と一致 (#373 候補 B)。
+    /// Dart 側 `PushKeyStore._iOSAccessGroup` と同じ文字列を使うこと。
+    static let accessGroup = "Y27AK8VF85.group.jp.co.b-shock.capsicum"
 
     /// Dart 側 `_key(slot, accountStorageKey)` と同じ文字列を組み立てる。
     /// account は `{prefix}://{username}@{host}` 形式の storage key。
