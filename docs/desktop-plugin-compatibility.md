@@ -53,14 +53,65 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 ### 2. video_player → media_kit 移行
 
-最も影響範囲が大きい置き換え候補。以下の調査が必要:
+[#306](https://github.com/pooza/capsicum/issues/306) の事前調査結果。**結論: 移行可能**。影響範囲は媒体ビューワー 1 ファイルに収まり、API 置き換えのみで対応できる。実装はデスクトップ対応の第3段階（[Linux / Windows 対応、v1.24](CLAUDE.md#長期構想-デスクトップ対応)）で実施する。
 
-- capsicum 内で `video_player` を使っている箇所の特定
-- 動画添付・GIF 再生・プレビュー等のユースケース洗い出し
-- `media_kit` 移行で失われる機能 / 新たに得る機能の比較
-- iOS/Android 側への影響確認（`media_kit` はモバイルも対応するが挙動差あり）
+#### 使用範囲
 
-これはデスクトップ対応の前提というより、デスクトップ対応の**コスト**として計上しておく必要がある。事前調査だけ先に済ませておけば、本格着手時の見積もり精度が上がる。
+| ファイル | 用途 | 内訳 |
+| --- | --- | --- |
+| [packages/capsicum/lib/src/ui/screen/media_viewer_screen.dart](../packages/capsicum/lib/src/ui/screen/media_viewer_screen.dart) | 添付メディアの全画面ビューワー | `_VideoPage`（動画 + `gifv`）と `_AudioPage`（音声）の 2 controller。どちらも `VideoPlayerController.networkUrl` を使う |
+
+`Image.network` / `CachedNetworkImage` 系で表示する画像（`AttachmentType.image`、通常 GIF 含む）は対象外。`gifv` だけが video 経路に流れる。
+
+#### 候補プラグイン: media_kit
+
+| 項目 | 値 |
+| --- | --- |
+| バージョン | `media_kit: ^1.2.6`（pub.dev、MIT、検証済みパブリッシャー） |
+| ベース | libmpv の FFI バインディング |
+| 対応プラットフォーム | Android / iOS / macOS / Windows / GNU/Linux / Web の 6 種 |
+| 必要な周辺パッケージ | `media_kit_video: ^2.0.1` + `media_kit_libs_video: ^1.0.7`（**video libs は libmpv フル機能を含むため音声も再生可能**。capsicum は動画 + 音声両用なので video libs 1 本で足りる。video / audio の libs は混在不可） |
+
+#### API 置き換え対応
+
+| 現行（video_player 2.x） | 置き換え（media_kit 1.x） |
+| --- | --- |
+| `VideoPlayerController.networkUrl(uri)` | `Player()..open(Media(uri.toString()))` |
+| `controller.initialize()` | `await player.open(...)`（`Future` で完結） |
+| `controller.play()` / `pause()` | `player.play()` / `player.pause()` |
+| `controller.addListener(cb)` | `player.stream.playing.listen(cb)` 等の Stream API |
+| `controller.value.isPlaying` / `position` / `duration` | `player.state.playing` / `position` / `duration` |
+| `controller.value.aspectRatio` | `player.state.width` / `height` から算出 |
+| `VideoPlayer(controller)` | `Video(controller: VideoController(player))` |
+| `VideoProgressIndicator` | 標準ウィジェットで自前実装（`Slider` + `state.position` ストリーム） |
+
+State 管理がリスナー方式から Stream 方式に変わるため、現状の `setState` 都度更新は `StreamBuilder` ベースに書き換える。
+
+#### プラットフォーム別の影響
+
+| プラットフォーム | バンドル影響 | ビルド設定 |
+| --- | --- | --- |
+| iOS | `media_kit_libs_ios_video` が CocoaPods 経由で libmpv を取り込み | App Store 提出は問題なしと公式案内あり |
+| Android | `media_kit_libs_android_video` を AAR で取り込み | 特別設定不要 |
+| macOS | バンドル増 +12〜15 MB（libmpv） | CocoaPods 経由 |
+| Windows | バンドル増 +20〜30 MB（`libmpv-2.dll` 同梱） | MSIX パッケージング時に DLL 同梱を確認 |
+| Linux | libmpv 依存。Flatpak の `finish-args` / dependencies に追記必要 | AppImage は同梱、配布形態ごとに調整 |
+| Web | HTML5 video 経路、別実装 | 当面 capsicum の対象外 |
+
+#### 失う機能 / 得る機能
+
+- **失う機能なし**: 現在 `media_viewer_screen.dart` で使っている API（再生位置・aspectRatio・seek・controls）は media_kit ですべて代替可能
+- **得る機能**: HEVC / AV1 / VP9 など多コーデック対応、HW アクセラレーション（VideoToolbox / MediaCodec / VAAPI / D3D11VA）、HLS / DASH ストリーミング、字幕・フィルタ等。capsicum の現用途では大半が不要だが、将来的なライブ配信・長尺動画への布石になる
+
+#### モバイルへの影響
+
+iOS / Android は media_kit 側がモバイル対応しているため動作自体は問題なし。ただし native ライブラリ（libmpv）が増えるためアプリサイズが増加する。実機での再生挙動（HW デコード切替・音声出力ルーティング）は移行時に確認が必要だが、置き換え自体のブロッカーにはならない。
+
+#### 実施タイミングと優先度
+
+- v1.24（デスクトップ対応 第3段階、Linux / Windows 本格着手）で実施
+- それまでは現行 video_player のまま運用（macOS / iOS / Android は既にカバー済み）
+- macOS ネイティブ化（v1.21）の段階では video_player のままで動作するため、移行を急ぐ必要はない
 
 ### 3. image_picker ↔ file_selector 抽象化（第2段階）
 
