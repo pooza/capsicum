@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../ui/util/notification_type_display.dart';
 import 'notification_init.dart';
+import 'push_failure_recorder.dart';
 import 'push_key_store.dart';
 import 'web_push_decryptor.dart';
 
@@ -98,6 +99,7 @@ class PushMessageDispatcher {
     final keys = await _findKeys(account);
     if (keys == null) {
       debugPrint('capsicum: push.dispatcher: no push keys for $account');
+      await PushFailureRecorder.record(PushFailureRecorder.codeNoKeys);
       return null;
     }
 
@@ -119,9 +121,13 @@ class PushMessageDispatcher {
         'capsicum: push.dispatcher: parsed=${parsed != null} '
         'titleLen=${parsed?.title?.length} bodyLen=${parsed?.body?.length}',
       );
+      if (parsed == null) {
+        await PushFailureRecorder.record(PushFailureRecorder.codeParseFailed);
+      }
       return parsed;
     } catch (e) {
       debugPrint('capsicum: push.dispatcher: decrypt failed: $e');
+      await PushFailureRecorder.record(PushFailureRecorder.codeDecryptFailed);
       return null;
     }
   }

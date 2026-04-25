@@ -23,6 +23,7 @@ import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
+import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 
@@ -208,6 +209,10 @@ bool _isSensitiveFieldName(String key) {
 void _startApp() {
   runApp(const ProviderScope(child: CapsicumApp()));
 
+  // バックグラウンド isolate / NSE が記録した復号失敗等を Sentry に吸い上げる
+  // (#366)。SentryFlutter.init より後に走るのでこの位置に配置している。
+  unawaited(_flushPushFailureRecord());
+
   // Firebase / FCM 初期化（Android）。スプラッシュ画面でプッシュ登録前に await する。
   firebaseReady = _initFirebase();
 
@@ -230,6 +235,35 @@ void _startApp() {
   // The result is stored in pendingSharedText and consumed by SplashScreen
   // after session restoration completes.
   shareIntentReady = _consumeSharedText();
+}
+
+/// バックグラウンド isolate / iOS NSE が記録したプッシュ復号失敗等を
+/// 1 件にまとめて Sentry へ吸い上げる (#366)。Sentry が初期化されていない
+/// 場合（DSN 未設定）は何もしない。エラーは握りつぶす（観測機構が本体を
+/// 落とさない）。
+Future<void> _flushPushFailureRecord() async {
+  try {
+    final record = await PushFailureRecorder.consume();
+    if (record == null) return;
+    if (Sentry.isEnabled) {
+      await Sentry.captureMessage(
+        'push.background_failure: ${record.code} (count=${record.count})',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('service', 'push_failure_recorder');
+          scope.setTag('push.failure.code', record.code);
+          scope.setTag('push.failure.count', record.count.toString());
+          scope.setTag('push.failure.last_at', record.at.toIso8601String());
+        },
+      );
+    }
+    debugPrint(
+      'capsicum: push.failure_recorder: flushed ${record.code} '
+      '(count=${record.count}, at=${record.at.toIso8601String()})',
+    );
+  } catch (_) {
+    // ignore
+  }
 }
 
 /// 通知タップで通知タブへ遷移する共通経路。[accountString] は `username@host`
@@ -415,7 +449,12 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
     debugPrint('capsicum: push.background: handler failed: $e');
     // Sentry はバックグラウンド isolate では init されていないため、
     // ここでは debugPrint のみ。致命的でも UI を落とさない。
+    // 復号失敗等は dispatcher 内で個別記録されているが、ここに落ちる
+    // 例外（Firebase init・notification plugin 初期化失敗等）は
+    // bg_handler.failed として永続化し、次回 main app 起動時に
+    // Sentry へ吸い上げる (#366)。
     debugPrintStack(stackTrace: st);
+    await PushFailureRecorder.record(PushFailureRecorder.codeHandlerFailed);
   }
 }
 
