@@ -6,8 +6,13 @@
 	<array>
 		<string>group.jp.co.b-shock.capsicum</string>
 	</array>
+	<!--
+	  Release / Profile build (TestFlight / App Store / 本番) は production APNs
+	  に紐付ける。Debug build は Runner-Debug.entitlements 側で `development`
+	  を指定 (#373 候補 A)。
+	-->
 	<key>aps-environment</key>
-	<string>development</string>
+	<string>production</string>
 	<!--
 	  Keychain Access Group を Runner と NSE で共有することで、
 	  PushKeyStore が書き込む p256dh / auth / privateKey を NSE から

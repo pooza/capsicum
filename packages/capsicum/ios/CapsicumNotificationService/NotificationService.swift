@@ -43,6 +43,7 @@ class NotificationService: UNNotificationServiceExtension {
 
         guard let keys = PushKeyReader.read(account: account) else {
             NSLog("capsicum: nse: no push keys for \(account)")
+            FailureRecorder.record(code: "nse.no_keys")
             contentHandler(bestAttempt)
             return
         }
@@ -54,6 +55,7 @@ class NotificationService: UNNotificationServiceExtension {
             let p256dh = Data(base64UrlEncoded: keys.p256dhBase64)
         else {
             NSLog("capsicum: nse: base64url decode failed for \(account)")
+            FailureRecorder.record(code: "nse.base64_decode_failed")
             contentHandler(bestAttempt)
             return
         }
@@ -68,12 +70,14 @@ class NotificationService: UNNotificationServiceExtension {
             )
         } catch {
             NSLog("capsicum: nse: decrypt failed: \(error)")
+            FailureRecorder.record(code: "nse.decrypt_failed")
             contentHandler(bestAttempt)
             return
         }
 
         guard let parsed = PayloadParser.parse(plaintext: plaintext) else {
             NSLog("capsicum: nse: parse failed")
+            FailureRecorder.record(code: "nse.parse_failed")
             contentHandler(bestAttempt)
             return
         }
@@ -127,6 +131,27 @@ enum LabelCache {
         let reblog = defaults?.string(forKey: "\(prefix)reblog_\(account)") ?? "ブースト"
         let post = defaults?.string(forKey: "\(prefix)post_\(account)") ?? "投稿"
         return (reblog, post)
+    }
+}
+
+// MARK: - Failure recorder
+
+/// NSE で起きた fallback 起因（鍵不在・base64 失敗・復号失敗・parse 失敗）を
+/// App Group UserDefaults に書き、次回 main app 起動時に Dart 側の
+/// [PushFailureRecorder] が読み出して Sentry へ送る (#366)。
+/// 単一スロット（最後のコード + 件数 + 最終時刻）のみ保持する。
+enum FailureRecorder {
+    private static let suiteName = "group.jp.co.b-shock.capsicum"
+    private static let codeKey = "capsicum_push_failure_last_code"
+    private static let atKey = "capsicum_push_failure_last_at_ms"
+    private static let countKey = "capsicum_push_failure_count"
+
+    static func record(code: String) {
+        guard let defaults = UserDefaults(suiteName: suiteName) else { return }
+        defaults.set(code, forKey: codeKey)
+        defaults.set(Int(Date().timeIntervalSince1970 * 1000), forKey: atKey)
+        let next = defaults.integer(forKey: countKey) + 1
+        defaults.set(next, forKey: countKey)
     }
 }
 

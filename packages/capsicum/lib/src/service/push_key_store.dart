@@ -14,7 +14,15 @@ class PushKeyStore {
   /// 使うため、Keychain を Runner / NSE 共通の Access Group に逃がす。
   /// Android の [AndroidOptions] は EncryptedSharedPreferences 既定で十分で、
   /// バックグラウンド isolate も同一プロセス内のため追加設定は不要。
-  static const _iOSAccessGroup = 'group.jp.co.b-shock.capsicum';
+  ///
+  /// `kSecAttrAccessGroup` は **TeamID + ドット + グループ名** の完全表記が
+  /// 必須 (Apple Keychain Services Programming Guide)。bare 表記
+  /// （`group.jp.co.b-shock.capsicum`）でも development 署名では通ることが
+  /// あるが、distribution（TestFlight / App Store）署名ではエントリが
+  /// entitlements に解決できず、書き込み・読み出しが silent に失敗する。
+  /// `Y27AK8VF85` は Xcode project の `DEVELOPMENT_TEAM` と一致 (#373 候補 B)。
+  /// NSE 側 [PushKeyReader.accessGroup] と同じ文字列を使うこと。
+  static const _iOSAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
   static const _storage = FlutterSecureStorage(
     iOptions: IOSOptions(groupId: _iOSAccessGroup),
   );
