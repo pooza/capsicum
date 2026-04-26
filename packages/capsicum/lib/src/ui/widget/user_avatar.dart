@@ -29,14 +29,18 @@ class UserAvatar extends ConsumerWidget {
     final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
 
-    // Misskey サーバー利用時は全アバターを丸に強制する (#371)。
-    // 猫耳・アイコンデコの座標計算が丸アバター前提のため、Misskey Web と
-    // 同じく丸に揃える。Mastodon 側の角丸は触らない。形状切り替え設定は
-    // #372 (v1.22) で別途扱う。
+    // Misskey 由来のユーザーは丸アバターで表示する (#371)。猫耳・アイコン
+    // デコの座標計算が丸アバター前提のため、user 本人の所属に合わせる。
+    // 判定:
+    // - user.isCat == true → Misskey 確定（Mastodon に isCat はない）
+    // - else → リモートユーザーの所属種別を確実に判定する手段がないため、
+    //   操作中の adapter (currentAdapterProvider) にフォールバックする。
+    //   結果として、Misskey ログイン中はほぼ全アバターが丸、Mastodon
+    //   ログイン中は基本角丸で isCat true のリモートだけ丸になる。
+    // 形状切替設定は #372 (v1.22) で別途扱う。
     final adapter = ref.watch(currentAdapterProvider);
-    final effectiveBorderRadius = adapter is MisskeyAdapter
-        ? size / 2
-        : borderRadius;
+    final isMisskeyUser = user.isCat || adapter is MisskeyAdapter;
+    final effectiveBorderRadius = isMisskeyUser ? size / 2 : borderRadius;
 
     final avatar = ClipRRect(
       borderRadius: BorderRadius.circular(effectiveBorderRadius),
