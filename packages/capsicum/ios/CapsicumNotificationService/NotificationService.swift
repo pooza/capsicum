@@ -22,6 +22,11 @@ class NotificationService: UNNotificationServiceExtension {
         _ request: UNNotificationRequest,
         withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
     ) {
+        let startedAtMs = Int(Date().timeIntervalSince1970 * 1000)
+        func elapsedMs() -> Int {
+            return Int(Date().timeIntervalSince1970 * 1000) - startedAtMs
+        }
+
         self.contentHandler = contentHandler
         bestAttemptContent =
             (request.content.mutableCopy() as? UNMutableNotificationContent)
@@ -32,10 +37,14 @@ class NotificationService: UNNotificationServiceExtension {
         }
 
         let userInfo = request.content.userInfo
+        let rawAccount = userInfo["account"] as? String
+        let rawEncoding = userInfo["encoding"] as? String
+        let host = rawAccount.flatMap { hostFromAccount($0) }
+
         guard
-            let account = userInfo["account"] as? String, !account.isEmpty,
+            let account = rawAccount, !account.isEmpty,
             let bodyB64 = userInfo["body"] as? String,
-            let encoding = userInfo["encoding"] as? String, encoding == "aes128gcm"
+            let encoding = rawEncoding, encoding == "aes128gcm"
         else {
             contentHandler(bestAttempt)
             return
@@ -43,7 +52,10 @@ class NotificationService: UNNotificationServiceExtension {
 
         guard let keys = PushKeyReader.read(account: account) else {
             NSLog("capsicum: nse: no push keys for \(account)")
-            FailureRecorder.record(code: "nse.no_keys")
+            FailureRecorder.record(
+                code: "nse.no_keys",
+                host: host, encoding: encoding, elapsedMs: elapsedMs()
+            )
             contentHandler(bestAttempt)
             return
         }
@@ -55,7 +67,10 @@ class NotificationService: UNNotificationServiceExtension {
             let p256dh = Data(base64UrlEncoded: keys.p256dhBase64)
         else {
             NSLog("capsicum: nse: base64url decode failed for \(account)")
-            FailureRecorder.record(code: "nse.base64_decode_failed")
+            FailureRecorder.record(
+                code: "nse.base64_decode_failed",
+                host: host, encoding: encoding, elapsedMs: elapsedMs()
+            )
             contentHandler(bestAttempt)
             return
         }
@@ -70,14 +85,20 @@ class NotificationService: UNNotificationServiceExtension {
             )
         } catch {
             NSLog("capsicum: nse: decrypt failed: \(error)")
-            FailureRecorder.record(code: "nse.decrypt_failed")
+            FailureRecorder.record(
+                code: "nse.decrypt_failed",
+                host: host, encoding: encoding, elapsedMs: elapsedMs()
+            )
             contentHandler(bestAttempt)
             return
         }
 
         guard let parsed = PayloadParser.parse(plaintext: plaintext) else {
             NSLog("capsicum: nse: parse failed")
-            FailureRecorder.record(code: "nse.parse_failed")
+            FailureRecorder.record(
+                code: "nse.parse_failed",
+                host: host, encoding: encoding, elapsedMs: elapsedMs()
+            )
             contentHandler(bestAttempt)
             return
         }
@@ -139,20 +160,55 @@ enum LabelCache {
 /// NSE で起きた fallback 起因（鍵不在・base64 失敗・復号失敗・parse 失敗）を
 /// App Group UserDefaults に書き、次回 main app 起動時に Dart 側の
 /// [PushFailureRecorder] が読み出して Sentry へ送る (#366)。
-/// 単一スロット（最後のコード + 件数 + 最終時刻）のみ保持する。
+/// 単一スロット（最後のコード + 件数 + 最終時刻 + コンテキスト）のみ保持する。
+///
+/// host / encoding / elapsedMs は #376 で追加した切り分け用コンテキストで、
+/// `nse.decrypt_failed` の発生源（自前/他鯖、aes128gcm 以外、タイムアウト由来か
+/// 即時失敗か）を Sentry tag/extra で見るために使う。
 enum FailureRecorder {
     private static let suiteName = "group.jp.co.b-shock.capsicum"
     private static let codeKey = "capsicum_push_failure_last_code"
     private static let atKey = "capsicum_push_failure_last_at_ms"
     private static let countKey = "capsicum_push_failure_count"
+    private static let hostKey = "capsicum_push_failure_last_host"
+    private static let encodingKey = "capsicum_push_failure_last_encoding"
+    private static let elapsedKey = "capsicum_push_failure_last_elapsed_ms"
 
-    static func record(code: String) {
+    static func record(
+        code: String,
+        host: String?,
+        encoding: String?,
+        elapsedMs: Int?
+    ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         defaults.set(code, forKey: codeKey)
         defaults.set(Int(Date().timeIntervalSince1970 * 1000), forKey: atKey)
         let next = defaults.integer(forKey: countKey) + 1
         defaults.set(next, forKey: countKey)
+        if let host = host {
+            defaults.set(host, forKey: hostKey)
+        } else {
+            defaults.removeObject(forKey: hostKey)
+        }
+        if let encoding = encoding {
+            defaults.set(encoding, forKey: encodingKey)
+        } else {
+            defaults.removeObject(forKey: encodingKey)
+        }
+        if let elapsedMs = elapsedMs {
+            defaults.set(elapsedMs, forKey: elapsedKey)
+        } else {
+            defaults.removeObject(forKey: elapsedKey)
+        }
     }
+}
+
+/// `username@host` 形式のアカウント識別子から host 部分を取り出す。
+/// 取得できない場合（`@` がない / 末尾が `@`）は `nil`。
+func hostFromAccount(_ account: String) -> String? {
+    guard let atIndex = account.lastIndex(of: "@") else { return nil }
+    let host = account[account.index(after: atIndex)...]
+    return host.isEmpty ? nil : String(host)
 }
 
 // MARK: - Payload parsing

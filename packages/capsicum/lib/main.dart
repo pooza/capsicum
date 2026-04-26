@@ -254,12 +254,27 @@ Future<void> _flushPushFailureRecord() async {
           scope.setTag('push.failure.code', record.code);
           scope.setTag('push.failure.count', record.count.toString());
           scope.setTag('push.failure.last_at', record.at.toIso8601String());
+          // #376: 切り分けコンテキスト。host で自前/他鯖、encoding で暗号化
+          // 方式の偏り、elapsedMs でタイムアウト由来か即時失敗かを Sentry の
+          // tag/extra で見られるようにする。bg_handler.failed のように context
+          // が取れない経路では欠落するので、null 時はタグごと出さない。
+          if (record.host != null) {
+            scope.setTag('push.host', record.host!);
+          }
+          if (record.encoding != null) {
+            scope.setTag('push.encoding', record.encoding!);
+          }
+          if (record.elapsedMs != null) {
+            scope.setContexts('push', {'nse_elapsed_ms': record.elapsedMs});
+          }
         },
       );
     }
     debugPrint(
       'capsicum: push.failure_recorder: flushed ${record.code} '
-      '(count=${record.count}, at=${record.at.toIso8601String()})',
+      '(count=${record.count}, at=${record.at.toIso8601String()}, '
+      'host=${record.host}, encoding=${record.encoding}, '
+      'elapsedMs=${record.elapsedMs})',
     );
   } catch (_) {
     // ignore
