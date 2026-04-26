@@ -59,8 +59,10 @@ void main() {
     );
 
     test(
-      '400 without ACCESS_DENIED rethrows the original DioException',
+      '400 without ACCESS_DENIED also maps to PushRegistrationNotSupportedException',
       () async {
+        // #365: /api/sw/register に対する 400 は内容に関係なくすべて非対応扱いに
+        // 寄せる（Misskey フォークが別形状の 400 を返すケースを救うため）。
         final adapter = await MisskeyAdapter.create('misskey.example');
         adapter.client.dio.httpClientAdapter = _StaticAdapter(400, {
           'error': {'code': 'INVALID_PARAM', 'message': 'boom'},
@@ -72,10 +74,27 @@ void main() {
             p256dh: 'p256dh-dummy',
             auth: 'auth-dummy',
           ),
-          throwsA(isA<DioException>()),
+          throwsA(isA<PushRegistrationNotSupportedException>()),
         );
       },
     );
+
+    test('404 (フォークが /api/sw/register を削除しているケース) も '
+        'PushRegistrationNotSupportedException に寄せる', () async {
+      // #365: モロヘイヤ非導入の Misskey フォークで /api/sw/register 自体が
+      // 存在しない場合 (404) も同様に非対応扱い。
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _StaticAdapter(404, '');
+
+      expect(
+        () => adapter.subscribePush(
+          endpoint: 'https://relay.example/push/abc',
+          p256dh: 'p256dh-dummy',
+          auth: 'auth-dummy',
+        ),
+        throwsA(isA<PushRegistrationNotSupportedException>()),
+      );
+    });
 
     test('other status codes rethrow the DioException as-is', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
