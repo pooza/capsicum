@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class UserAvatar extends StatelessWidget {
+import '../../provider/account_manager_provider.dart';
+
+class UserAvatar extends ConsumerWidget {
   final User user;
   final double size;
   final double borderRadius;
@@ -18,15 +22,24 @@ class UserAvatar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final decorations = user.avatarDecorations;
     final showCatEars = user.isCat;
     // compact: デコレーション用パディングを省略しアバターサイズを維持
     final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
 
+    // Misskey サーバー利用時は全アバターを丸に強制する (#371)。
+    // 猫耳・アイコンデコの座標計算が丸アバター前提のため、Misskey Web と
+    // 同じく丸に揃える。Mastodon 側の角丸は触らない。形状切り替え設定は
+    // #372 (v1.22) で別途扱う。
+    final adapter = ref.watch(currentAdapterProvider);
+    final effectiveBorderRadius = adapter is MisskeyAdapter
+        ? size / 2
+        : borderRadius;
+
     final avatar = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(effectiveBorderRadius),
       child: user.avatarUrl != null
           ? Image.network(
               user.avatarUrl!,
