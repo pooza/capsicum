@@ -435,6 +435,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .where((t) => t.isNotEmpty)
         .toList();
 
+    // Misskey は MIME によらず単一値（bytes）。image/video/audio すべてに
+    // 同じ値を入れて呼び出し側を統一する。
+    final maxFileSize = data['maxFileSize'] as int?;
+
     return Instance(
       name: data['name'] as String? ?? host,
       description: data['description'] as String?,
@@ -446,6 +450,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: data['privacyPolicyUrl'] as String?,
       statusUrl: data['statusUrl'] as String?,
+      imageSizeLimit: maxFileSize,
+      videoSizeLimit: maxFileSize,
+      audioSizeLimit: maxFileSize,
     );
   }
 

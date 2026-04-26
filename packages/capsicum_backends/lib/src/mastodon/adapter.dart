@@ -408,6 +408,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     final contact = data['contact'] as Map<String, dynamic>? ?? {};
     final config = data['configuration'] as Map<String, dynamic>? ?? {};
     final urls = config['urls'] as Map<String, dynamic>? ?? {};
+    final media = config['media_attachments'] as Map<String, dynamic>? ?? {};
     final accountData = contact['account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (accountData != null) {
@@ -433,6 +434,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
       statusUrl: urls['status'] as String?,
+      imageSizeLimit: media['image_size_limit'] as int?,
+      videoSizeLimit: media['video_size_limit'] as int?,
+      audioSizeLimit: media['audio_size_limit'] as int?,
     );
   }
 
