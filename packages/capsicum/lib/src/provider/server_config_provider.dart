@@ -122,6 +122,20 @@ final sabacanUrlProvider = FutureProvider<String?>((ref) async {
   }
 });
 
+/// 現在アカウントのサーバーが提供するカスタム絵文字一覧。アカウント切替で
+/// 自動再 fetch される。常時 mount される SimplePostBar 等から繰り返し参照
+/// される想定でキャッシュ目的に分離（emoji_picker は state 変数で都度 fetch
+/// しているが、別 issue でこちらに寄せる余地あり）。
+final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! CustomEmojiSupport) return const [];
+  try {
+    return await (adapter as CustomEmojiSupport).getEmojis();
+  } catch (_) {
+    return const [];
+  }
+});
+
 /// Local timeline display name: use default hashtag if available.
 final localTimelineNameProvider = Provider<String>((ref) {
   final mulukhiya = ref.watch(currentMulukhiyaProvider);
