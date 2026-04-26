@@ -110,6 +110,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// can't be meaningfully restored from a text-only draft.
   bool _draftAutoSave = false;
 
+  /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
+  /// (post_tile / notification_tile) は replyTo だけ渡してくるので、ここで
+  /// replyTo.channelId をフォールバックして全経路で継承する (#378)。
+  String? get _effectiveChannelId =>
+      widget.channelId ?? widget.replyTo?.channelId;
+  String? get _effectiveChannelName =>
+      widget.channelName ?? widget.replyTo?.channelName;
+
   // Poll state
   bool _pollEnabled = false;
   final List<TextEditingController> _pollControllers = [
@@ -1161,7 +1169,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
-          channelId: widget.channelId,
+          channelId: _effectiveChannelId,
           scheduledAt: _scheduledAt,
           language: _language,
           pollOptions: _pollEnabled
@@ -1189,8 +1197,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           ).showSnackBar(const SnackBar(content: Text('予約投稿を設定しました')));
         } else {
           ref.invalidate(timelineProvider);
-          if (widget.channelId != null) {
-            ref.invalidate(channelTimelineProvider(widget.channelId!));
+          final channelId = _effectiveChannelId;
+          if (channelId != null) {
+            ref.invalidate(channelTimelineProvider(channelId));
           }
         }
         if (context.canPop()) {
@@ -1217,9 +1226,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       appBar: AppBar(
         title: Text(
           widget.replyTo != null
-              ? 'リプライ'
-              : widget.channelName != null
-              ? '${ref.watch(postLabelProvider)}：${widget.channelName}'
+              ? (_effectiveChannelName != null
+                    ? 'リプライ：$_effectiveChannelName'
+                    : 'リプライ')
+              : _effectiveChannelName != null
+              ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
               : ref.watch(postLabelProvider),
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
