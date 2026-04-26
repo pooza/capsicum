@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,7 +38,7 @@ class UserAvatar extends ConsumerWidget {
     //   ログイン中は基本角丸で isCat true のリモートだけ丸になる。
     // 形状切替設定は #372 (v1.22) で別途扱う。
     final adapter = ref.watch(currentAdapterProvider);
-    final isMisskeyUser = user.isCat || adapter is MisskeyAdapter;
+    final isMisskeyUser = user.isCat || adapter is ReactionSupport;
     final effectiveBorderRadius = isMisskeyUser ? size / 2 : borderRadius;
 
     final avatar = ClipRRect(
