@@ -22,9 +22,17 @@ class PushKeyStore {
   /// entitlements に解決できず、書き込み・読み出しが silent に失敗する。
   /// `Y27AK8VF85` は Xcode project の `DEVELOPMENT_TEAM` と一致 (#373 候補 B)。
   /// NSE 側 [PushKeyReader.accessGroup] と同じ文字列を使うこと。
+  ///
+  /// [KeychainAccessibility.first_unlock]（= `kSecAttrAccessibleAfterFirstUnlock`）
+  /// は再起動後の最初のアンロック以降であればロック中でも read/write 可能にする。
+  /// 既定の `unlocked` だとバックグラウンド経路（NSE / トークン更新 / 通知到着等）が
+  /// デバイスロック中に -25308 errSecInteractionNotAllowed で弾かれる (#385)。
   static const _iOSAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
   static const _storage = FlutterSecureStorage(
-    iOptions: IOSOptions(groupId: _iOSAccessGroup),
+    iOptions: IOSOptions(
+      groupId: _iOSAccessGroup,
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
   );
   static const _prefix = 'capsicum_push_';
 
