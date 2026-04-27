@@ -214,10 +214,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         });
         // Also check synchronously in case the value was already loaded.
+        // build 中に selectedTabProvider を書き換えると Riverpod の
+        // `_debugCanModifyProviders` assertion で例外になるため、
+        // d08897c (#281 latent fix) と同じく postFrame に延期する (#386)。
         final saved = ref.read(lastTabProvider(storageKey));
         if (!_lastTabRestored && saved != null) {
           _lastTabRestored = true;
-          _applyLastTab(saved);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _applyLastTab(saved);
+          });
         }
       }
     }
