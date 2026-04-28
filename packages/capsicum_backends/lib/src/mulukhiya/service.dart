@@ -464,7 +464,7 @@ class MulukhiyaService {
       );
       return true;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404 || e.response?.statusCode == 401) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 403) {
         return false;
       }
       rethrow;
