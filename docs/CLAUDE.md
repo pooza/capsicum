@@ -264,13 +264,13 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.20.1**（2026-04-25 リリース、ストア公開済み）。v1.20.0 のプッシュ通知本実装の追補リリース。iOS リリース版で Keychain Access Group が distribution 署名で解決できず NSE が復号鍵を引けない不具合 (#373)、モロヘイヤ v5.19.0 未満サーバーへの Misskey push 登録を notSupported 寄せ (#365)、FCM 一過性エラー (`MISSING_INSTANCEID_SERVICE` / `SERVICE_NOT_AVAILABLE`) のリトライ (#374)、バックグラウンド isolate / NSE 復号失敗の観測性追加 (#366) ほか。リレーサーバ側も同時に v1.20.1 に更新（APNs socket 切断クラッシュ防止・ペイロード上限超過の retry storm 抑止・Content-Encoding 診断ログ）。v1.20.0 は 2026-04-23、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.21.0**（2026-04-28 リリース、Android はストア公開済み・iOS は審査中）。デスクトップ対応の第1段階として macOS ネイティブビルドを土台レベルで導入 (#327、ストア配布は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応予定)。あわせて v1.20.1 リリース後に観測されたプッシュ通知関連の取りこぼし、Misskey チャンネル投稿の継承漏れ、用語管理（タグ機能）の挙動を整理。主要修正: PushKeyStore Keychain accessibility (#385) と既存ユーザーの migration (#392)、HomeScreen lastTab race (#386)、Misskey channel 継承 (#378 / #384)、モロヘイヤ API 認証エラー判定 (#389)、redraft 失敗時の本文クリップボード保全 (#393)、投稿本文中のカスタム絵文字タップメニュー (#310)、リアクション失敗時の観測強化 (#395)、Sentry ホストタグ統一 (#394)、macOS Hardened Runtime 有効化 (#405) ほか。配布開始直後に Android 起動阻害が判明したため、PushKeyStore migration の同期 await を try/catch で握る修正 (#408) を入れた `+50` ビルドで再配信。v1.20.1 は 2026-04-25、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 
 macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、プッシュ通知完成 v1.20 を挟んだ上で着手する並びに落ち着いた）。
 
-1. **第1段階: macOS ネイティブ化（v1.21）** — `flutter config --enable-macos-desktop` による macOS ビルドに移行し、iOS の Mac 実行から卒業する。コスト最小で実況用途に直接効く。プラグインのデスクトップ対応状況の棚卸しも兼ねる。video_player → media_kit の事前調査もここで行う
+1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応する
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にする。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。デスクトップ向けには Dart `Timer` + 常駐前提のフォールバック実装を含む `BackgroundTaskScheduler` 層と、`flutter_local_notifications` のデスクトップ対応差分を吸収する層が要る
 3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態（Linux: Flathub + AppImage、Windows: Microsoft Store）もこの段階で決める。Linux と Windows のどちらを先にやるかは未定。v1.21 で事前調査した video_player → media_kit の本移行もこの段階
 
