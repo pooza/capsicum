@@ -64,6 +64,20 @@ macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicu
 - [x] App Store: 年齢区分の設定（16+）
 - SNS クライアントのため「ユーザー生成コンテンツ」に該当
 
+### 1.7 シークレット環境変数（一度だけセットアップ）
+
+ビルドに必要な `SENTRY_DSN` / `RELAY_SECRET` を `~/.config/capsicum/secrets.env` に保存し、リリースのたびに `source` して読み込む運用にする。リリース手順で env を毎回手打ちする煩わしさを減らし、`+50` で踏んだ「コマンドライン圧縮で `$VAR` が空展開」事故も予防できる。
+
+```bash
+cat > ~/.config/capsicum/secrets.env <<'EOF'
+export SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
+export RELAY_SECRET="<flauros の settings.yml に設定した shared_secret>"
+EOF
+chmod 600 ~/.config/capsicum/secrets.env
+```
+
+`~/.config/capsicum/` は AppStore Connect API Key (`AuthKey_WLS8G4W44L.p8`) と Google Play サービスアカウント JSON も置いているディレクトリ。リポジトリ外なので git に上がる心配はない。`chmod 600` で他ユーザーから読めないようにする。
+
 ## 2. ストア掲載情報
 
 ### 2.1 共通で必要なもの
@@ -248,11 +262,12 @@ cd ios
 pod install --repo-update
 cd ..
 
-# Sentry DSN（全ビルドで常に指定する）
-export SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
+# シークレット環境変数を読み込む（1.7 で作成した secrets.env を source）
+source ~/.config/capsicum/secrets.env
 
-# プッシュ通知リレーの共有シークレット（v1.18 以降必須）
-export RELAY_SECRET="<flauros の settings.yml に設定した shared_secret>"
+# 値が空でないか確認（空展開事故の予防、+50 で踏んだ罠を再発させない）
+echo "SENTRY_DSN length=${#SENTRY_DSN} RELAY_SECRET length=${#RELAY_SECRET}"
+# 両方とも 0 でないこと。0 だと secrets.env が壊れているか source 失敗
 
 # iOS: ビルド → TestFlight アップロード
 flutter build ipa --release \
