@@ -234,7 +234,7 @@ class PushRegistrationService {
           stackTrace: st,
           withScope: (scope) {
             scope.setTag('service', 'push_registration');
-            scope.setTag('host', account.key.host);
+            scope.setTag('push.host', account.key.host);
           },
         );
       }
@@ -351,7 +351,7 @@ class PushRegistrationService {
         scope.setTag('service', 'push_registration');
         scope.setTag('phase', 'unregister');
         scope.setTag('stage', stage);
-        scope.setTag('host', host);
+        scope.setTag('push.host', host);
       },
     );
   }
@@ -585,7 +585,7 @@ class PushRegistrationService {
       withScope: (scope) {
         scope.setTag('service', 'push_registration');
         scope.setTag('type', 'contract_violation');
-        scope.setTag('host', host);
+        scope.setTag('push.host', host);
       },
     );
   }
