@@ -31,13 +31,32 @@
 > Fastlane の Fastfile はこのパスを参照する。
 > 配布用証明書（Apple Distribution）は Xcode → Settings → Accounts → Manage Certificates で追加する。
 
-### 1.4 プライバシーポリシー
+### 1.4 macOS 署名 / Universal Purchase（v1.21 で初回セットアップ）
+
+macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicum` を Universal Purchase で紐付け、AppStore Connect 上は同一 App レコードで管理する方針。
+
+- [ ] Apple Developer ポータルで **macOS App ID** を新規作成
+  - Bundle ID: `jp.co.b-shock.capsicum`（iOS と同一文字列。プラットフォームが違うため衝突しない）
+  - Capabilities: **App Sandbox**（Release entitlements で必須）／ **Push Notifications**（capsicum-relay 経由で利用）
+- [ ] AppStore Connect の既存 iOS app `capsicum` レコードで **「Add Mac App Version」** を実行し、上記 macOS App ID と紐付け（Universal Purchase 化）
+  - ⚠️ Universal Purchase の紐付けは **後から外せない**。Bundle ID と App 名はこの時点で確定させる
+- [ ] **macOS App Development Profile** と **macOS App Distribution Profile** を作成 — Automatic Signing で自動管理
+- [ ] Xcode で `packages/capsicum/macos/Runner.xcodeproj` を開き、Runner / RunnerTests ターゲットの `DEVELOPMENT_TEAM` を `Y27AK8VF85` に設定（iOS と同一 Team）
+- [ ] Mac App Store 用スクリーンショット（1280×800 / 1440×900 / 2560×1600 のいずれか）を用意
+
+> **APNs キーの共用:**
+> iOS で使用している APNs Auth Key（`AuthKey_WLS8G4W44L.p8`）は macOS でもそのまま使える。`capsicum-relay` 側の APNs 接続も Bundle ID `jp.co.b-shock.capsicum` 単一で iOS / macOS 両プラットフォームを処理する。
+>
+> **Sandbox と flutter_secure_storage:**
+> Debug entitlements では `app-sandbox=false` で運用している（ad-hoc 署名 + sandbox 有効では `errSecMissingEntitlement (-34018)` で flutter_secure_storage が動かないため）。development 署名（Apple Developer Team 紐付け済み）が通れば Debug でも sandbox を有効化できる見込み。Release entitlements は常に sandbox 有効。
+
+### 1.5 プライバシーポリシー
 
 - [x] プライバシーポリシーの作成（`docs/privacy-policy.md`）
 - [x] `capsicum.shrieker.net/privacy-policy` で公開
 - [x] URL をストアの掲載情報に設定
 
-### 1.5 コンテンツレーティング
+### 1.6 コンテンツレーティング
 
 - [x] Google Play: IARC 質問回答
 - [x] App Store: 年齢区分の設定（16+）
