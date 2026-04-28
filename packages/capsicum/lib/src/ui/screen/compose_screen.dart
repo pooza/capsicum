@@ -5,14 +5,17 @@ import 'dart:async';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
+import '../../provider/instance_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -35,6 +38,19 @@ class _MediaEntry {
       sensitive = false;
 
   bool get isDrive => driveFile != null;
+}
+
+/// 添付サイズ超過で reject したファイルの集約用 (#375)。
+class _OversizeFile {
+  final String name;
+  final int size;
+  final int limit;
+
+  const _OversizeFile({
+    required this.name,
+    required this.size,
+    required this.limit,
+  });
 }
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -95,6 +111,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// initial text). Replies and quotes are tied to a specific post and
   /// can't be meaningfully restored from a text-only draft.
   bool _draftAutoSave = false;
+
+  /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
+  /// (post_tile / notification_tile) は replyTo / redraft だけ渡してくるので、
+  /// ここでフォールバックして全経路で継承する (#378 / #384)。
+  String? get _effectiveChannelId =>
+      widget.channelId ??
+      widget.redraft?.channelId ??
+      widget.replyTo?.channelId;
+  String? get _effectiveChannelName =>
+      widget.channelName ??
+      widget.redraft?.channelName ??
+      widget.replyTo?.channelName;
 
   // Poll state
   bool _pollEnabled = false;
@@ -449,11 +477,77 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   Future<void> _pickMedia() async {
     final files = await _imagePicker.pickMultipleMedia();
-    if (files.isNotEmpty) {
+    if (files.isEmpty) return;
+
+    // サーバーが上限を返している場合のみ事前比較。未取得 / fetch 失敗時は
+    // チェックを丸ごとスキップし、従来どおりサーバーエラーで知る経路に任せる
+    // (#375、CLAUDE.md「機能不足時の通知」)。
+    final instance = await ref.read(currentInstanceProvider.future);
+
+    final accepted = <XFile>[];
+    final rejected = <_OversizeFile>[];
+    for (final f in files) {
+      final type = _attachmentTypeFor(f);
+      final limit = instance?.maxAttachmentSizeBytes(type);
+      if (limit != null) {
+        final size = await f.length();
+        if (size > limit) {
+          rejected.add(_OversizeFile(name: f.name, size: size, limit: limit));
+          continue;
+        }
+      }
+      accepted.add(f);
+    }
+
+    if (accepted.isNotEmpty) {
       setState(() {
-        _attachments.addAll(files.map((f) => _MediaEntry.local(f)));
+        _attachments.addAll(accepted.map((f) => _MediaEntry.local(f)));
       });
     }
+    if (rejected.isNotEmpty && mounted) {
+      await _showOversizeDialog(rejected);
+    }
+  }
+
+  AttachmentType _attachmentTypeFor(XFile file) {
+    final mime = file.mimeType;
+    if (mime != null) {
+      if (mime.startsWith('image/')) return AttachmentType.image;
+      if (mime.startsWith('video/')) return AttachmentType.video;
+      if (mime.startsWith('audio/')) return AttachmentType.audio;
+    }
+    if (_isVideo(mime, file.path)) return AttachmentType.video;
+    // pickMultipleMedia の戻り値は image / video のいずれかなので、ここに
+    // 落ちるのは MIME 不明の画像が大半。image を仮定して image_size_limit と
+    // 比較する。
+    return AttachmentType.image;
+  }
+
+  Future<void> _showOversizeDialog(List<_OversizeFile> files) async {
+    String formatMb(int bytes) => (bytes / 1024 / 1024).toStringAsFixed(1);
+    final body = files.length == 1
+        ? 'このサーバーでは最大 ${formatMb(files.first.limit)} MB までです\n'
+              'このファイル: ${formatMb(files.first.size)} MB'
+        : files
+              .map(
+                (f) =>
+                    '・${f.name}\n  ${formatMb(f.size)} MB '
+                    '(上限 ${formatMb(f.limit)} MB)',
+              )
+              .join('\n');
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ファイルサイズ上限を超えています'),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickDriveFiles() async {
@@ -1081,7 +1175,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
           localOnly: _localOnly,
-          channelId: widget.channelId,
+          channelId: _effectiveChannelId,
           scheduledAt: _scheduledAt,
           language: _language,
           pollOptions: _pollEnabled
@@ -1109,8 +1203,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           ).showSnackBar(const SnackBar(content: Text('予約投稿を設定しました')));
         } else {
           ref.invalidate(timelineProvider);
-          if (widget.channelId != null) {
-            ref.invalidate(channelTimelineProvider(widget.channelId!));
+          final channelId = _effectiveChannelId;
+          if (channelId != null) {
+            ref.invalidate(channelTimelineProvider(channelId));
           }
         }
         if (context.canPop()) {
@@ -1119,8 +1214,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           context.go('/home');
         }
       }
-    } catch (e) {
-      if (mounted) {
+    } catch (e, st) {
+      if (!mounted) return;
+      if (widget.redraft != null) {
+        // 元投稿は既に削除されている。本文をクリップボードに保全し、
+        // 再投稿手段をユーザーに提示する (#393)。
+        await Clipboard.setData(ClipboardData(text: _controller.text));
+        await Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'redraft_resend_failed'),
+        );
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('投稿に失敗しました'),
+            content: const Text(
+              '元の投稿は既に削除されています。本文はクリップボードに'
+              'コピーしました。新規作成画面に貼り付けて再投稿してください。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) setState(() => _sending = false);
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました')),
         );
@@ -1137,9 +1260,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       appBar: AppBar(
         title: Text(
           widget.replyTo != null
-              ? 'リプライ'
-              : widget.channelName != null
-              ? '${ref.watch(postLabelProvider)}：${widget.channelName}'
+              ? (_effectiveChannelName != null
+                    ? 'リプライ：$_effectiveChannelName'
+                    : 'リプライ')
+              : _effectiveChannelName != null
+              ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
               : ref.watch(postLabelProvider),
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,

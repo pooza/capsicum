@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
 ///
@@ -22,11 +23,42 @@ class PushKeyStore {
   /// entitlements に解決できず、書き込み・読み出しが silent に失敗する。
   /// `Y27AK8VF85` は Xcode project の `DEVELOPMENT_TEAM` と一致 (#373 候補 B)。
   /// NSE 側 [PushKeyReader.accessGroup] と同じ文字列を使うこと。
+  ///
+  /// [KeychainAccessibility.first_unlock]（= `kSecAttrAccessibleAfterFirstUnlock`）
+  /// は再起動後の最初のアンロック以降であればロック中でも read/write 可能にする。
+  /// 既定の `unlocked` だとバックグラウンド経路（NSE / トークン更新 / 通知到着等）が
+  /// デバイスロック中に -25308 errSecInteractionNotAllowed で弾かれる (#385)。
   static const _iOSAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
   static const _storage = FlutterSecureStorage(
-    iOptions: IOSOptions(groupId: _iOSAccessGroup),
+    iOptions: IOSOptions(
+      groupId: _iOSAccessGroup,
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
   );
   static const _prefix = 'capsicum_push_';
+
+  /// v1.20 以前に書き込んだ鍵は旧 accessibility (kSecAttrAccessibleWhenUnlocked)
+  /// のまま。flutter_secure_storage は既存 item の attribute を書き換えないため、
+  /// 起動時に一度だけ全鍵を read → delete → re-write して新 accessibility
+  /// (kSecAttrAccessibleAfterFirstUnlock) に焼き直す。完了フラグを
+  /// SharedPreferences に持って二度目以降はスキップ (#392)。
+  ///
+  /// Android (EncryptedSharedPreferences) は accessibility 概念がないため
+  /// no-op に近い処理になるが、フラグを立てるためには走らせる。
+  static const _migrationFlagKey = 'push_keystore_accessibility_migrated_v1';
+
+  static Future<void> migrateAccessibilityIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_migrationFlagKey) ?? false) return;
+
+    final all = await _storage.readAll();
+    for (final entry in all.entries) {
+      if (!entry.key.startsWith(_prefix)) continue;
+      await _storage.delete(key: entry.key);
+      await _storage.write(key: entry.key, value: entry.value);
+    }
+    await prefs.setBool(_migrationFlagKey, true);
+  }
 
   /// 指定アカウントの鍵を取得する。未生成なら新規生成して保存する。
   static Future<PushKeys> getOrCreate(String accountStorageKey) async {

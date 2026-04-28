@@ -2,8 +2,11 @@ import 'dart:math' as math;
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class UserAvatar extends StatelessWidget {
+import '../../provider/account_manager_provider.dart';
+
+class UserAvatar extends ConsumerWidget {
   final User user;
   final double size;
   final double borderRadius;
@@ -18,15 +21,28 @@ class UserAvatar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final decorations = user.avatarDecorations;
     final showCatEars = user.isCat;
     // compact: デコレーション用パディングを省略しアバターサイズを維持
     final padding = decorations.isEmpty || compact ? 0.0 : size * 0.25;
     final totalSize = size + padding * 2;
 
+    // Misskey 由来のユーザーは丸アバターで表示する (#371)。猫耳・アイコン
+    // デコの座標計算が丸アバター前提のため、user 本人の所属に合わせる。
+    // 判定:
+    // - user.isCat == true → Misskey 確定（Mastodon に isCat はない）
+    // - else → リモートユーザーの所属種別を確実に判定する手段がないため、
+    //   操作中の adapter (currentAdapterProvider) にフォールバックする。
+    //   結果として、Misskey ログイン中はほぼ全アバターが丸、Mastodon
+    //   ログイン中は基本角丸で isCat true のリモートだけ丸になる。
+    // 形状切替設定は #372 (v1.22) で別途扱う。
+    final adapter = ref.watch(currentAdapterProvider);
+    final isMisskeyUser = user.isCat || adapter is ReactionSupport;
+    final effectiveBorderRadius = isMisskeyUser ? size / 2 : borderRadius;
+
     final avatar = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(effectiveBorderRadius),
       child: user.avatarUrl != null
           ? Image.network(
               user.avatarUrl!,

@@ -9,10 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
+import '../util/post_action_error.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
@@ -342,6 +344,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
+      onEmojiTap: (shortcode) => _showEmojiActionMenu(context, shortcode),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return isHtml
@@ -1116,14 +1119,15 @@ class _PostTileState extends ConsumerState<PostTile> {
               if (isOwn) ...[
                 const Divider(),
                 if (ref.read(currentMulukhiyaProvider) != null) ...[
-                  ListTile(
-                    leading: const Icon(Icons.sell_outlined),
-                    title: const Text('削除してタグづけ'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _showRetagSheet(context, targetPost);
-                    },
-                  ),
+                  if (_canRetag(targetPost))
+                    ListTile(
+                      leading: const Icon(Icons.sell_outlined),
+                      title: const Text('削除してタグづけ'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _showRetagSheet(context, targetPost);
+                      },
+                    ),
                   if (_hasNowPlayingTag(targetPost))
                     ListTile(
                       leading: const Icon(Icons.music_off_outlined),
@@ -1316,6 +1320,63 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
+  /// 投稿本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
+  /// ショートコードのコピーは全環境共通、リアクションは ReactionSupport 持ち
+  /// (Misskey) の adapter のみ表示する。
+  void _showEmojiActionMenu(BuildContext context, String shortcode) {
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
+    final canReact = adapter is ReactionSupport;
+    final targetPost = post.reblog ?? post;
+    final messenger = ScaffoldMessenger.of(context);
+    final shortcodeText = ':$shortcode:';
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('ショートコードをコピー'),
+              subtitle: Text(shortcodeText),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: shortcodeText));
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('ショートコードをコピーしました'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (canReact)
+              ListTile(
+                leading: const Icon(Icons.add_reaction_outlined),
+                title: const Text('この絵文字でリアクション'),
+                subtitle: Text(shortcodeText),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _runReactionAction(
+                    messenger,
+                    adapter as BackendAdapter,
+                    targetPost.id,
+                    () => (adapter as ReactionSupport).addReaction(
+                      targetPost.id,
+                      shortcodeText,
+                    ),
+                    'リアクションしました',
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showEmojiPicker(BuildContext context) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
@@ -1367,8 +1428,21 @@ class _PostTileState extends ConsumerState<PostTile> {
       ref.read(timelineProvider.notifier).updatePost(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      debugPrint('_runReactionAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1402,7 +1476,9 @@ class _PostTileState extends ConsumerState<PostTile> {
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
-      messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1415,19 +1491,6 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  String _describeError(Object e) {
-    if (e is DioException) {
-      final statusCode = e.response?.statusCode;
-      if (statusCode == 403) {
-        return '権限がありません。再ログインが必要な場合があります';
-      }
-      if (statusCode == 500) {
-        return 'サーバー内部エラーが発生しました。サーバー管理者にお問い合わせください';
-      }
-    }
-    return '操作に失敗しました';
-  }
-
   static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
 
   bool _hasNowPlayingTag(Post post) {
@@ -1435,6 +1498,14 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (content == null) return false;
     return _nowPlayingPattern.hasMatch(content);
   }
+
+  /// 「削除してタグづけ」を表示してよいか。連合 TL に載らない投稿
+  /// (unlisted / private / direct / channel / localOnly) はタグづけの
+  /// 意味がないので除外する (#383)。
+  bool _canRetag(Post post) =>
+      post.scope == PostScope.public &&
+      post.channelId == null &&
+      !post.localOnly;
 
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
     showDialog(
@@ -1471,7 +1542,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                   })
                   .catchError((e) {
                     messenger.showSnackBar(
-                      SnackBar(content: Text(_describeError(e))),
+                      SnackBar(content: Text(describePostActionError(e))),
                     );
                   });
             },
@@ -1515,7 +1586,9 @@ class _PostTileState extends ConsumerState<PostTile> {
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
-            messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
+            messenger.showSnackBar(
+              SnackBar(content: Text(describePostActionError(e))),
+            );
           }
         },
       ),

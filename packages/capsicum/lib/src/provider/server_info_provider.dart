@@ -79,6 +79,9 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
       rules: instance.rules,
       privacyPolicyUrl: instance.privacyPolicyUrl,
       statusUrl: instance.statusUrl,
+      imageSizeLimit: instance.imageSizeLimit,
+      videoSizeLimit: instance.videoSizeLimit,
+      audioSizeLimit: instance.audioSizeLimit,
     );
     return ServerInfoState(instance: enriched);
   }

@@ -36,6 +36,7 @@ class SimplePostBar extends ConsumerStatefulWidget {
 class _SimplePostBarState extends ConsumerState<SimplePostBar> {
   final _controller = TextEditingController();
   bool _sending = false;
+  bool _paletteOpen = false;
 
   @override
   void dispose() {
@@ -116,10 +117,27 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     }
   }
 
+  /// カーソル位置（または末尾）に絵文字エントリを挿入する。
+  /// recentEmojisProvider の add は LRU で先頭に持ち上がるため、再選択でも履歴
+  /// 順序がリフレッシュされる。
+  void _insertEmoji(String entry) {
+    final selection = _controller.selection;
+    final text = _controller.text;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    _controller.value = TextEditingValue(
+      text: text.replaceRange(start, end, entry),
+      selection: TextSelection.collapsed(offset: start + entry.length),
+    );
+    ref.read(recentEmojisProvider.notifier).add(entry);
+  }
+
   @override
   Widget build(BuildContext context) {
     final postLabel = ref.watch(postLabelProvider);
     final colorScheme = Theme.of(context).colorScheme;
+    final recents = ref.watch(recentEmojisProvider);
+    final hasRecents = recents.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -134,49 +152,117 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
         top: 8,
         bottom: MediaQuery.of(context).padding.bottom + 8,
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              enabled: !_sending,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _submit(),
-              decoration: InputDecoration(
-                hintText: '$postLabel...',
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+          if (_paletteOpen && hasRecents) _buildPalette(recents),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_sending,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    hintText: '$postLabel...',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerHighest,
+                  ),
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
               ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.open_in_new, size: 20),
-            tooltip: '詳細な$postLabel画面',
-            onPressed: _sending ? null : _openCompose,
-          ),
-          IconButton(
-            icon: _sending
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send),
-            tooltip: postLabel,
-            onPressed: _sending ? null : _submit,
+              const SizedBox(width: 4),
+              if (hasRecents)
+                IconButton(
+                  icon: Icon(
+                    _paletteOpen
+                        ? Icons.keyboard_hide_outlined
+                        : Icons.emoji_emotions_outlined,
+                    size: 20,
+                  ),
+                  tooltip: _paletteOpen ? 'パレットを閉じる' : '絵文字履歴',
+                  onPressed: _sending
+                      ? null
+                      : () => setState(() => _paletteOpen = !_paletteOpen),
+                ),
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 20),
+                tooltip: '詳細な$postLabel画面',
+                onPressed: _sending ? null : _openCompose,
+              ),
+              IconButton(
+                icon: _sending
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                tooltip: postLabel,
+                onPressed: _sending ? null : _submit,
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPalette(List<String> recents) {
+    final customEmojis =
+        ref.watch(customEmojisProvider).valueOrNull ?? const [];
+    final customByCode = {for (final e in customEmojis) e.shortcode: e};
+
+    return SizedBox(
+      height: 44,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: recents.length,
+        itemBuilder: (context, index) =>
+            _buildPaletteItem(recents[index], customByCode),
+      ),
+    );
+  }
+
+  Widget _buildPaletteItem(
+    String entry,
+    Map<String, CustomEmoji> customByCode,
+  ) {
+    final isCustom = entry.startsWith(':') && entry.endsWith(':');
+    Widget child;
+    if (isCustom) {
+      final shortcode = entry.substring(1, entry.length - 1);
+      final custom = customByCode[shortcode];
+      if (custom != null && custom.url.isNotEmpty) {
+        child = SizedBox(
+          width: 28,
+          height: 28,
+          child: Image.network(
+            custom.url,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stack) =>
+                Text(entry, style: const TextStyle(fontSize: 12)),
+          ),
+        );
+      } else {
+        child = Text(entry, style: const TextStyle(fontSize: 12));
+      }
+    } else {
+      child = Text(entry, style: const TextStyle(fontSize: 24));
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _insertEmoji(entry),
+      child: Padding(padding: const EdgeInsets.all(6), child: child),
     );
   }
 }

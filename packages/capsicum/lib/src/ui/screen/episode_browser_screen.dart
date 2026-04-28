@@ -1,4 +1,5 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -60,7 +61,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     } catch (e) {
       debugPrint('Episode browser search error: $e');
       if (mounted) {
-        final isAuthError = e.toString().contains('401');
+        final isAuthError = e is DioException && e.response?.statusCode == 403;
         setState(() {
           _error = isAuthError ? null : '作品の検索に失敗しました';
           if (isAuthError) _showAnnictAuthPrompt();

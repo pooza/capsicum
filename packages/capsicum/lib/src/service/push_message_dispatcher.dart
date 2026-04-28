@@ -86,6 +86,10 @@ class PushMessageDispatcher {
     String account,
     Map<String, dynamic> data,
   ) async {
+    final startedAtMs = DateTime.now().millisecondsSinceEpoch;
+    int elapsed() => DateTime.now().millisecondsSinceEpoch - startedAtMs;
+    final host = _hostFromAccount(account);
+
     final bodyB64 = data['body'] as String?;
     final encoding = data['encoding'] as String?;
     if (bodyB64 == null || encoding != 'aes128gcm') {
@@ -99,7 +103,12 @@ class PushMessageDispatcher {
     final keys = await _findKeys(account);
     if (keys == null) {
       debugPrint('capsicum: push.dispatcher: no push keys for $account');
-      await PushFailureRecorder.record(PushFailureRecorder.codeNoKeys);
+      await PushFailureRecorder.record(
+        PushFailureRecorder.codeNoKeys,
+        host: host,
+        encoding: encoding,
+        elapsedMs: elapsed(),
+      );
       return null;
     }
 
@@ -122,14 +131,33 @@ class PushMessageDispatcher {
         'titleLen=${parsed?.title?.length} bodyLen=${parsed?.body?.length}',
       );
       if (parsed == null) {
-        await PushFailureRecorder.record(PushFailureRecorder.codeParseFailed);
+        await PushFailureRecorder.record(
+          PushFailureRecorder.codeParseFailed,
+          host: host,
+          encoding: encoding,
+          elapsedMs: elapsed(),
+        );
       }
       return parsed;
     } catch (e) {
       debugPrint('capsicum: push.dispatcher: decrypt failed: $e');
-      await PushFailureRecorder.record(PushFailureRecorder.codeDecryptFailed);
+      await PushFailureRecorder.record(
+        PushFailureRecorder.codeDecryptFailed,
+        host: host,
+        encoding: encoding,
+        elapsedMs: elapsed(),
+      );
       return null;
     }
+  }
+
+  /// `username@host` 形式のアカウント識別子から host 部分を取り出す。
+  /// 取得できない場合（`@` がない / 末尾が `@`）は `null`。
+  /// NSE 側 `hostFromAccount` と同じ仕様。
+  static String? _hostFromAccount(String account) {
+    final at = account.lastIndexOf('@');
+    if (at < 0 || at == account.length - 1) return null;
+    return account.substring(at + 1);
   }
 
   /// `account` (username@host) に紐付く PushKeys を探す。backend 種別

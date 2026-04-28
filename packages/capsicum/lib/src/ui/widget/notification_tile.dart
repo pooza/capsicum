@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -11,6 +15,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../util/notification_type_display.dart';
+import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
@@ -88,6 +93,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         if (uri != null) launchUrlSafely(uri);
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onEmojiTap: post != null
+          ? (shortcode) => _showEmojiActionMenu(context, post, shortcode)
+          : null,
       emojiSize: ref.watch(emojiSizeProvider),
       applyNyaize: post?.author.isCat ?? false,
     );
@@ -302,6 +310,62 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     }
   }
 
+  /// 通知本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
+  /// post_tile 側と対称な実装。
+  void _showEmojiActionMenu(BuildContext context, Post post, String shortcode) {
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
+    final canReact = adapter is ReactionSupport;
+    final targetPost = post.reblog ?? post;
+    final messenger = ScaffoldMessenger.of(context);
+    final shortcodeText = ':$shortcode:';
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('ショートコードをコピー'),
+              subtitle: Text(shortcodeText),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: shortcodeText));
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('ショートコードをコピーしました'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (canReact)
+              ListTile(
+                leading: const Icon(Icons.add_reaction_outlined),
+                title: const Text('この絵文字でリアクション'),
+                subtitle: Text(shortcodeText),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _runReactionAction(
+                    messenger,
+                    adapter as BackendAdapter,
+                    targetPost.id,
+                    () => (adapter as ReactionSupport).addReaction(
+                      targetPost.id,
+                      shortcodeText,
+                    ),
+                    'リアクションしました',
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showEmojiPicker(BuildContext context) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
@@ -353,8 +417,21 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       final updated = await adapter.getPostById(postId);
       ref.read(timelineProvider.notifier).updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      debugPrint('_runReactionAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
