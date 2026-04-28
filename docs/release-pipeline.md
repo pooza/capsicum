@@ -38,7 +38,7 @@ flowchart TB
     subgraph fastlane [fastlane レーン]
         ios_lane[iOS: upload_to_testflight / app_store]
         and_lane[Android: upload_to_play_store]
-        mac_lane[macOS: deliver + notarize + create-dmg]
+        mac_lane[macOS: upload_to_testflight / app_store]
     end
 
     actions -->|macOS runner| fastlane
@@ -48,7 +48,7 @@ flowchart TB
 
     ios_lane --> appstore[App Store / TestFlight]
     and_lane --> playstore[Google Play]
-    mac_lane --> macstore[Mac App Store / .dmg 配布]
+    mac_lane --> macstore[Mac App Store]
     win --> msstore[Microsoft Store]
     flat --> flathub[Flathub]
     appimg --> ghrel[GitHub Releases]
@@ -60,13 +60,22 @@ flowchart TB
 | --- | --- | --- | --- |
 | iOS | fastlane (`ios/fastlane/Fastfile`) | macOS runner | TestFlight → App Store |
 | Android | fastlane (`android/fastlane/Fastfile`) | macOS / Linux runner | Play Store internal → production |
-| macOS (App Store) | fastlane `deliver` + `notarize` | macOS runner | Mac App Store |
-| macOS (.dmg) | fastlane `create-dmg` + `notarize` + Sparkle 等 | macOS runner | GitHub Releases / 自サイト配布 |
+| macOS | fastlane (`macos/fastlane/Fastfile`) | macOS runner | TestFlight → Mac App Store |
 | Windows (Store) | `msstore` CLI + MSIX packaging | Windows runner | Microsoft Store |
 | Linux (Flathub) | `flatpak-builder` + Flathub マニフェスト PR | Ubuntu runner | Flathub |
 | Linux (AppImage) | `appimagetool` / `linuxdeploy` | Ubuntu runner | GitHub Releases |
 
 Snap Store は[採用しない方針](CLAUDE.md#長期構想-デスクトップ対応)。
+
+### macOS は Mac App Store 一本化
+
+macOS の配布は **Mac App Store のみ**とする（.dmg / Developer ID 配布は採用しない）。理由:
+
+- macOS のセキュリティ設定で「App Store からのアプリのみ許可」にしているユーザーには、公証済みでも App Store 外のバイナリは実行できない
+- 配布経路を二系統にすると署名・公証・更新通知（Sparkle 等）の運用コストが二重になる
+- iOS と同一 App レコードに Universal Purchase で紐付け済みのため、ストア一本化が素直
+
+このため fastlane レーンは `upload_to_testflight` / `upload_to_app_store` のみで、`create-dmg` / `notarize` は使わない。`.pkg` の生成手順は [store-release-guide.md](store-release-guide.md) 4.2 を参照。
 
 ## タグ命名規則
 
@@ -129,8 +138,8 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 
 ### Phase 3: macOS ネイティブ対応（デスクトップ第1段階）
 
-- macOS デスクトップビルドの fastlane レーン追加
-- `deliver` + `notarize` + `create-dmg` の組み合わせで Mac App Store / .dmg 両対応
+- macOS デスクトップビルドの fastlane レーン追加（`upload_to_testflight` / `upload_to_app_store` で Mac App Store 提出のみ）
+- `flutter build macos --release` → `xcodebuild archive` → `-exportArchive` で `.pkg` を生成し、Universal Purchase 済みの App レコードに `platform: 'osx'` で投げる
 - Phase 2 の GitHub Actions に macOS ネイティブ分岐を追加
 
 ### Phase 4: Windows / Linux 対応（デスクトップ第3段階）

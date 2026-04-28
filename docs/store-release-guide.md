@@ -33,14 +33,16 @@
 
 ### 1.4 macOS 署名 / Universal Purchase（v1.21 で初回セットアップ）
 
-macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicum` を Universal Purchase で紐付け、AppStore Connect 上は同一 App レコードで管理する方針。
+macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicum` を Universal Purchase で紐付け、AppStore Connect 上は同一 App レコードで管理する方針。配布は **Mac App Store 一本**（.dmg / Developer ID 配布は採用しない — [release-pipeline.md](release-pipeline.md) 参照）。
 
 - [ ] Apple Developer ポータルで **macOS App ID** を新規作成
   - Bundle ID: `jp.co.b-shock.capsicum`（iOS と同一文字列。プラットフォームが違うため衝突しない）
   - Capabilities: **App Sandbox**（Release entitlements で必須）／ **Push Notifications**（capsicum-relay 経由で利用）
 - [ ] AppStore Connect の既存 iOS app `capsicum` レコードで **「Add Mac App Version」** を実行し、上記 macOS App ID と紐付け（Universal Purchase 化）
   - ⚠️ Universal Purchase の紐付けは **後から外せない**。Bundle ID と App 名はこの時点で確定させる
-- [ ] **macOS App Development Profile** と **macOS App Distribution Profile** を作成 — Automatic Signing で自動管理
+- [ ] **macOS App Development Profile** と **Mac App Store Provisioning Profile** を作成 — Automatic Signing で自動管理
+- [ ] **3rd Party Mac Developer Installer** 証明書を Apple Developer ポータルから取得し、ビルドマシンの Keychain に登録
+  - `.pkg` の installer 署名に必須。Apple Distribution（アプリ署名）とは別証明書で、Xcode の Automatic 管理対象外のため手動で配置する
 - [ ] Xcode で `packages/capsicum/macos/Runner.xcodeproj` を開き、Runner / RunnerTests ターゲットの `DEVELOPMENT_TEAM` を `Y27AK8VF85` に設定（iOS と同一 Team）
 - [ ] Mac App Store 用スクリーンショット（1280×800 / 1440×900 / 2560×1600 のいずれか）を用意
 
@@ -153,7 +155,36 @@ end
 ```
 
 > **Fastlane の実行ディレクトリ:**
-> `fastlane beta` / `fastlane internal` / `fastlane release` は **必ず** `packages/capsicum/ios/` または `packages/capsicum/android/` の Fastfile があるディレクトリから実行する。リポジトリルートや別ディレクトリから実行すると ipa / aab の相対パスが解決できず「Could not find ipa/aab file」エラーになり、アップロードが失敗する。v1.11.0 リリース時にこの問題で全アップロードがやり直しになった経緯がある。
+> `fastlane beta` / `fastlane internal` / `fastlane release` は **必ず** `packages/capsicum/ios/`、`packages/capsicum/android/`、`packages/capsicum/macos/` のいずれか、Fastfile があるディレクトリから実行する。リポジトリルートや別ディレクトリから実行すると ipa / aab / pkg の相対パスが解決できず「Could not find ipa/aab/pkg file」エラーになり、アップロードが失敗する。v1.11.0 リリース時にこの問題で全アップロードがやり直しになった経緯がある。
+
+### 3.4 macOS（`macos/fastlane/Fastfile`）
+
+ビルドは事前に行い、Fastlane は TestFlight / Mac App Store への `.pkg` アップロードのみを担当する。`.pkg` の生成手順は 4.2 を参照。
+
+```ruby
+default_platform(:mac)
+
+platform :mac do
+  desc "Deploy to TestFlight"
+  lane :beta do
+    upload_to_testflight(
+      pkg: '../build/macos/capsicum.pkg',
+    )
+  end
+
+  desc "Submit to Mac App Store"
+  lane :release do
+    upload_to_app_store(
+      pkg: '../build/macos/capsicum.pkg',
+      platform: 'osx',
+      submit_for_review: true,
+    )
+  end
+end
+```
+
+> **`platform: 'osx'` が必須:**
+> `upload_to_app_store` は既定で iOS の App レコードを対象にする。Universal Purchase で同一 App レコード上に macOS バージョンが乗っているため、`platform: 'osx'` を明示しないと iOS 側の最新ビルドに対する審査提出として解釈され、誤った提出になる。
 
 ## 4. リリース手順（毎回）
 
@@ -240,7 +271,32 @@ flutter build appbundle --release \
 cd android
 fastlane internal
 cd ..
+
+# macOS: flutter build → xcodebuild archive → exportArchive で .pkg 生成 → TestFlight アップロード
+# `flutter build macos` 単体では Apple Development 署名 + Mac App Development profile が
+# 埋め込まれるだけで App Store 提出には使えない。Generated.xcconfig に DART_DEFINES を反映
+# させたうえで xcodebuild archive 経由で Apple Distribution + Mac App Store profile に切り替える。
+flutter build macos --release \
+  --dart-define=SENTRY_DSN=$SENTRY_DSN \
+  --dart-define=SENTRY_ENV=production \
+  --dart-define=RELAY_SECRET=$RELAY_SECRET
+xcodebuild -workspace macos/Runner.xcworkspace \
+  -scheme Runner \
+  -configuration Release \
+  -archivePath build/macos/capsicum.xcarchive \
+  archive
+xcodebuild -exportArchive \
+  -archivePath build/macos/capsicum.xcarchive \
+  -exportOptionsPlist macos/ExportOptions.plist \
+  -exportPath build/macos
+# build/macos/capsicum.pkg が生成される
+cd macos
+fastlane beta
+cd ..
 ```
+
+> **macOS の `.pkg` 生成が iOS と異なる理由:**
+> iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
 
 ### 4.3 製品版昇格・審査提出
 
@@ -252,6 +308,9 @@ cd android && fastlane release && cd ..
 
 # iOS: App Store 審査提出
 cd ios && fastlane release && cd ..
+
+# macOS: Mac App Store 審査提出
+cd macos && fastlane release && cd ..
 ```
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
@@ -270,6 +329,7 @@ gh issue list --label bug --state open
 
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
+- **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](release-pipeline.md) 参照
 - **Google Play アカウント**: 法人（Google Workspace）アカウントのため、クローズドテスト 12 人要件は免除
 - **ホットフィックス**: Fastfile の構成上 internal → promote の手順が必要（production に直接アップロードは不可）
 - **App Store の説明文更新**: リリース提出時のみ可能。随時更新はできない
