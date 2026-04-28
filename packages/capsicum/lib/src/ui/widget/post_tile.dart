@@ -342,6 +342,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onMentionTap: (mention) => _navigateToMention(mention),
+      onEmojiTap: (shortcode) => _showEmojiActionMenu(context, shortcode),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return isHtml
@@ -1313,6 +1314,63 @@ class _PostTileState extends ConsumerState<PostTile> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 投稿本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
+  /// ショートコードのコピーは全環境共通、リアクションは ReactionSupport 持ち
+  /// (Misskey) の adapter のみ表示する。
+  void _showEmojiActionMenu(BuildContext context, String shortcode) {
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
+    final canReact = adapter is ReactionSupport;
+    final targetPost = post.reblog ?? post;
+    final messenger = ScaffoldMessenger.of(context);
+    final shortcodeText = ':$shortcode:';
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('ショートコードをコピー'),
+              subtitle: Text(shortcodeText),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: shortcodeText));
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('ショートコードをコピーしました'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (canReact)
+              ListTile(
+                leading: const Icon(Icons.add_reaction_outlined),
+                title: const Text('この絵文字でリアクション'),
+                subtitle: Text(shortcodeText),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _runReactionAction(
+                    messenger,
+                    adapter as BackendAdapter,
+                    targetPost.id,
+                    () => (adapter as ReactionSupport).addReaction(
+                      targetPost.id,
+                      shortcodeText,
+                    ),
+                    'リアクションしました',
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

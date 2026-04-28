@@ -778,6 +778,7 @@ typedef EmojiResolver = String? Function(String shortcode);
 typedef LinkTapCallback = void Function(String url);
 typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
+typedef EmojiTapCallback = void Function(String shortcode);
 
 /// Synchronous URL resolver: returns the resolved URL or `null`.
 typedef LinkLongPressCallback = void Function(String url);
@@ -790,6 +791,7 @@ class ContentRenderer {
   final LinkLongPressCallback? onLinkLongPress;
   final HashtagTapCallback? onHashtagTap;
   final MentionTapCallback? onMentionTap;
+  final EmojiTapCallback? onEmojiTap;
   final UrlResolver? resolveUrl;
   final UrlResolver? resolveDisplayUrl;
   final double emojiSize;
@@ -803,6 +805,7 @@ class ContentRenderer {
     this.onLinkLongPress,
     this.onHashtagTap,
     this.onMentionTap,
+    this.onEmojiTap,
     this.resolveUrl,
     this.resolveDisplayUrl,
     this.emojiSize = 20.0,
@@ -1031,24 +1034,28 @@ class ContentRenderer {
       case _NodeType.emoji:
         final emojiUrl = resolveEmoji(node.text);
         if (emojiUrl != null) {
+          final image = ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: emojiSize,
+              maxWidth: emojiSize * 3,
+            ),
+            child: Image.network(
+              emojiUrl,
+              height: emojiSize,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) =>
+                  Text(':${node.text}:', style: const TextStyle(fontSize: 14)),
+            ),
+          );
           return [
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: emojiSize,
-                  maxWidth: emojiSize * 3,
-                ),
-                child: Image.network(
-                  emojiUrl,
-                  height: emojiSize,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => Text(
-                    ':${node.text}:',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-              ),
+              child: onEmojiTap != null
+                  ? GestureDetector(
+                      onTap: () => onEmojiTap!(node.text),
+                      child: image,
+                    )
+                  : image,
             ),
           ];
         }
