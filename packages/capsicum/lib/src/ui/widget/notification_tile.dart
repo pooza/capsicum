@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -11,6 +15,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../util/notification_type_display.dart';
+import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
@@ -412,8 +417,21 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       final updated = await adapter.getPostById(postId);
       ref.read(timelineProvider.notifier).updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      debugPrint('_runReactionAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 

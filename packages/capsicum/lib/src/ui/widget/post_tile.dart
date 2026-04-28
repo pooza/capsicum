@@ -9,10 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
+import '../util/post_action_error.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
@@ -1426,8 +1428,21 @@ class _PostTileState extends ConsumerState<PostTile> {
       ref.read(timelineProvider.notifier).updatePost(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      debugPrint('_runReactionAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1461,7 +1476,9 @@ class _PostTileState extends ConsumerState<PostTile> {
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
-      messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1472,19 +1489,6 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (location == '/post') {
       context.pop();
     }
-  }
-
-  String _describeError(Object e) {
-    if (e is DioException) {
-      final statusCode = e.response?.statusCode;
-      if (statusCode == 403) {
-        return '権限がありません。再ログインが必要な場合があります';
-      }
-      if (statusCode == 500) {
-        return 'サーバー内部エラーが発生しました。サーバー管理者にお問い合わせください';
-      }
-    }
-    return '操作に失敗しました';
   }
 
   static final _nowPlayingPattern = RegExp(r'nowplaying', caseSensitive: false);
@@ -1538,7 +1542,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                   })
                   .catchError((e) {
                     messenger.showSnackBar(
-                      SnackBar(content: Text(_describeError(e))),
+                      SnackBar(content: Text(describePostActionError(e))),
                     );
                   });
             },
@@ -1582,7 +1586,9 @@ class _PostTileState extends ConsumerState<PostTile> {
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e) {
-            messenger.showSnackBar(SnackBar(content: Text(_describeError(e))));
+            messenger.showSnackBar(
+              SnackBar(content: Text(describePostActionError(e))),
+            );
           }
         },
       ),
