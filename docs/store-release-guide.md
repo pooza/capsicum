@@ -196,32 +196,50 @@ flutter pub upgrade --major-versions
 
 ### 4.2 ビルド + アップロード
 
+> ⚠️ **環境変数は必ず `export` で親シェルに設定すること**。
+> `VAR="..." flutter build ... --dart-define=KEY=$VAR` のように単一
+> コマンドラインで前置すると、`$VAR` の展開はコマンドライン構築時に
+> **親シェルから** 行われるため、前置した `VAR` は flutter にしか
+> 環境変数として渡らず、`$VAR` は **空文字列** に展開されてしまう。
+> その結果 `--dart-define=KEY=` として空値がビルドに焼き込まれ、
+> Sentry / RELAY シークレットが効かない。`v1.21.0+50` ではこのミスで
+> 全アカウント push 不達 (relay register 401) が発生し、`+51` で
+> 再ビルド対応した。`export` 文と `flutter build` 文は **必ず別文**
+> （独立した行）で書き、`\` で繋いで 1 行に圧縮しないこと。
+
 ```bash
 cd packages/capsicum
 
 # クリーンビルド（シミュレータバイナリ混入防止のため必須）
-flutter clean && flutter pub get
-cd ios && pod install --repo-update && cd ..
+flutter clean
+flutter pub get
+cd ios
+pod install --repo-update
+cd ..
 
 # Sentry DSN（全ビルドで常に指定する）
-SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
+export SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
 
 # プッシュ通知リレーの共有シークレット（v1.18 以降必須）
-RELAY_SECRET="<flauros の settings.yml に設定した shared_secret>"
+export RELAY_SECRET="<flauros の settings.yml に設定した shared_secret>"
 
 # iOS: ビルド → TestFlight アップロード
 flutter build ipa --release \
   --dart-define=SENTRY_DSN=$SENTRY_DSN \
   --dart-define=SENTRY_ENV=production \
   --dart-define=RELAY_SECRET=$RELAY_SECRET
-cd ios && fastlane beta && cd ..
+cd ios
+fastlane beta
+cd ..
 
 # Android: ビルド → Play Store 内部テストトラックにアップロード
 flutter build appbundle --release \
   --dart-define=SENTRY_DSN=$SENTRY_DSN \
   --dart-define=SENTRY_ENV=production \
   --dart-define=RELAY_SECRET=$RELAY_SECRET
-cd android && fastlane internal && cd ..
+cd android
+fastlane internal
+cd ..
 ```
 
 ### 4.3 製品版昇格・審査提出
