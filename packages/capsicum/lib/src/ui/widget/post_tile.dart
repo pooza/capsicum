@@ -1116,14 +1116,15 @@ class _PostTileState extends ConsumerState<PostTile> {
               if (isOwn) ...[
                 const Divider(),
                 if (ref.read(currentMulukhiyaProvider) != null) ...[
-                  ListTile(
-                    leading: const Icon(Icons.sell_outlined),
-                    title: const Text('削除してタグづけ'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _showRetagSheet(context, targetPost);
-                    },
-                  ),
+                  if (_canRetag(targetPost))
+                    ListTile(
+                      leading: const Icon(Icons.sell_outlined),
+                      title: const Text('削除してタグづけ'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _showRetagSheet(context, targetPost);
+                      },
+                    ),
                   if (_hasNowPlayingTag(targetPost))
                     ListTile(
                       leading: const Icon(Icons.music_off_outlined),
@@ -1435,6 +1436,14 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (content == null) return false;
     return _nowPlayingPattern.hasMatch(content);
   }
+
+  /// 「削除してタグづけ」を表示してよいか。連合 TL に載らない投稿
+  /// (unlisted / private / direct / channel / localOnly) はタグづけの
+  /// 意味がないので除外する (#383)。
+  bool _canRetag(Post post) =>
+      post.scope == PostScope.public &&
+      post.channelId == null &&
+      !post.localOnly;
 
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
     showDialog(
