@@ -111,12 +111,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _draftAutoSave = false;
 
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
-  /// (post_tile / notification_tile) は replyTo だけ渡してくるので、ここで
-  /// replyTo.channelId をフォールバックして全経路で継承する (#378)。
+  /// (post_tile / notification_tile) は replyTo / redraft だけ渡してくるので、
+  /// ここでフォールバックして全経路で継承する (#378 / #384)。
   String? get _effectiveChannelId =>
-      widget.channelId ?? widget.replyTo?.channelId;
+      widget.channelId ??
+      widget.redraft?.channelId ??
+      widget.replyTo?.channelId;
   String? get _effectiveChannelName =>
-      widget.channelName ?? widget.replyTo?.channelName;
+      widget.channelName ??
+      widget.redraft?.channelName ??
+      widget.replyTo?.channelName;
 
   // Poll state
   bool _pollEnabled = false;
