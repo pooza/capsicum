@@ -12,7 +12,10 @@ class NotificationInit {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      const iosSettings = DarwinInitializationSettings(
+      // Darwin (iOS / macOS) は同じ DarwinInitializationSettings を流用できる。
+      // macOS 側を渡さないと plugin.initialize が macOS で notification: init
+      // failed を返すため、両プラットフォームに同じ設定を渡す (#327)。
+      const darwinSettings = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
         requestSoundPermission: true,
@@ -20,7 +23,8 @@ class NotificationInit {
       await plugin.initialize(
         const InitializationSettings(
           android: androidSettings,
-          iOS: iosSettings,
+          iOS: darwinSettings,
+          macOS: darwinSettings,
         ),
         onDidReceiveNotificationResponse: onTap,
       );
