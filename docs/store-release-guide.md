@@ -284,11 +284,13 @@ xcodebuild -workspace macos/Runner.xcworkspace \
   -scheme Runner \
   -configuration Release \
   -archivePath build/macos/capsicum.xcarchive \
+  -allowProvisioningUpdates \
   archive
 xcodebuild -exportArchive \
   -archivePath build/macos/capsicum.xcarchive \
   -exportOptionsPlist macos/ExportOptions.plist \
-  -exportPath build/macos
+  -exportPath build/macos \
+  -allowProvisioningUpdates
 # build/macos/capsicum.pkg が生成される
 cd macos
 fastlane beta
