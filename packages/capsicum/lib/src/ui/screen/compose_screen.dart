@@ -5,9 +5,11 @@ import 'dart:async';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../provider/account_manager_provider.dart';
@@ -1212,8 +1214,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           context.go('/home');
         }
       }
-    } catch (e) {
-      if (mounted) {
+    } catch (e, st) {
+      if (!mounted) return;
+      if (widget.redraft != null) {
+        // 元投稿は既に削除されている。本文をクリップボードに保全し、
+        // 再投稿手段をユーザーに提示する (#393)。
+        await Clipboard.setData(ClipboardData(text: _controller.text));
+        await Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'redraft_resend_failed'),
+        );
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('投稿に失敗しました'),
+            content: const Text(
+              '元の投稿は既に削除されています。本文はクリップボードに'
+              'コピーしました。新規作成画面に貼り付けて再投稿してください。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) setState(() => _sending = false);
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました')),
         );
