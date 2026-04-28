@@ -24,11 +24,17 @@ import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
 import 'src/service/push_failure_recorder.dart';
+import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // v1.20 以前に書き込んだ Web Push 鍵は旧 Keychain accessibility のままで、
+  // ロック中の NSE 復号が -25308 で弾かれる (#392)。新 accessibility に
+  // 書き直す one-shot migration を APNs / push registration の前に同期実行。
+  await PushKeyStore.migrateAccessibilityIfNeeded();
 
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
