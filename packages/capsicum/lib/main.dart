@@ -34,7 +34,13 @@ Future<void> main() async {
   // v1.20 以前に書き込んだ Web Push 鍵は旧 Keychain accessibility のままで、
   // ロック中の NSE 復号が -25308 で弾かれる (#392)。新 accessibility に
   // 書き直す one-shot migration を APNs / push registration の前に同期実行。
-  await PushKeyStore.migrateAccessibilityIfNeeded();
+  // ただし migration 自体の失敗で起動経路を止めないよう try/catch で握る
+  // (Android で起動阻害を起こした実績があるため。#408)。次回起動時に再試行。
+  try {
+    await PushKeyStore.migrateAccessibilityIfNeeded();
+  } catch (e, st) {
+    debugPrint('PushKeyStore migration failed: $e\n$st');
+  }
 
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
