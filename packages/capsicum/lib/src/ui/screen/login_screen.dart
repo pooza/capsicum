@@ -202,7 +202,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             completeResult.error,
             stackTrace: completeResult.stackTrace,
           );
-          setState(() => _error = 'ログインに失敗しました');
+          if (mounted) setState(() => _error = 'ログインに失敗しました');
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
@@ -211,9 +211,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           stackTrace: startResult.stackTrace,
         );
         final errorMsg = startResult.error;
-        setState(
-          () => _error = errorMsg is String ? errorMsg : 'ログインの開始に失敗しました',
-        );
+        if (mounted) {
+          setState(
+            () => _error = errorMsg is String ? errorMsg : 'ログインの開始に失敗しました',
+          );
+        }
       }
     } catch (e, st) {
       final isCancelled =
@@ -283,7 +285,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else {
         debugPrint('Login error: $e');
         Sentry.captureException(e, stackTrace: st);
-        setState(() => _error = '通信に失敗しました');
+        if (mounted) setState(() => _error = '通信に失敗しました');
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
@@ -544,6 +546,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     await ref.read(accountManagerProvider.notifier).addAccount(account);
+    if (!mounted) return;
 
     // ログイン直後はホームタイムラインを表示する。
     // 前回のタブ復元が走ると、存在しないリスト/ハッシュタグを参照してエラーになりうる。
@@ -551,7 +554,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         .read(lastTabProvider(account.key.toStorageKey()).notifier)
         .save('timeline:home');
 
-    if (mounted) context.go('/home');
+    context.go('/home');
   }
 
   @override
