@@ -94,7 +94,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       },
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onEmojiTap: post != null
-          ? (shortcode) => _showEmojiActionMenu(context, post, shortcode)
+          ? (shortcode, emojiUrl) =>
+                _showEmojiActionMenu(context, post, shortcode, emojiUrl)
           : null,
       emojiSize: ref.watch(emojiSizeProvider),
       applyNyaize: post?.author.isCat ?? false,
@@ -312,7 +313,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
 
   /// 通知本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
   /// post_tile 側と対称な実装。
-  void _showEmojiActionMenu(BuildContext context, Post post, String shortcode) {
+  void _showEmojiActionMenu(
+    BuildContext context,
+    Post post,
+    String shortcode,
+    String emojiUrl,
+  ) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
     final canReact = adapter is ReactionSupport;
@@ -343,7 +349,14 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
             ),
             if (canReact)
               ListTile(
-                leading: const Icon(Icons.add_reaction_outlined),
+                leading: Image.network(
+                  emojiUrl,
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.add_reaction_outlined),
+                ),
                 title: const Text('この絵文字でリアクション'),
                 subtitle: Text(shortcodeText),
                 onTap: () {

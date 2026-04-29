@@ -778,7 +778,7 @@ typedef EmojiResolver = String? Function(String shortcode);
 typedef LinkTapCallback = void Function(String url);
 typedef HashtagTapCallback = void Function(String tag);
 typedef MentionTapCallback = void Function(String mention);
-typedef EmojiTapCallback = void Function(String shortcode);
+typedef EmojiTapCallback = void Function(String shortcode, String emojiUrl);
 
 /// Synchronous URL resolver: returns the resolved URL or `null`.
 typedef LinkLongPressCallback = void Function(String url);
@@ -1052,7 +1052,8 @@ class ContentRenderer {
               alignment: PlaceholderAlignment.middle,
               child: onEmojiTap != null
                   ? GestureDetector(
-                      onTap: () => onEmojiTap!(node.text),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onEmojiTap!(node.text, emojiUrl),
                       child: image,
                     )
                   : image,

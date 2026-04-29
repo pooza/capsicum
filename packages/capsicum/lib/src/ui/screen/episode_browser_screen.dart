@@ -61,7 +61,8 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     } catch (e) {
       debugPrint('Episode browser search error: $e');
       if (mounted) {
-        final isAuthError = e is DioException && e.response?.statusCode == 403;
+        final status = e is DioException ? e.response?.statusCode : null;
+        final isAuthError = status == 401 || status == 403;
         setState(() {
           _error = isAuthError ? null : '作品の検索に失敗しました';
           if (isAuthError) _showAnnictAuthPrompt();
