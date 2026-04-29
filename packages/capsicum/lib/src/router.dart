@@ -99,7 +99,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
+          // rebuild 中に extra が失われるケース（Sentry CAPSICUM-16）に備え、
+          // 強制 unwrap せず null の場合はサーバー選択へ戻す。
+          final extra = state.extra as Map<String, dynamic>?;
+          if (extra == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/server');
+            });
+            return const SizedBox.shrink();
+          }
           return LoginScreen(
             host: extra['host'] as String,
             backendType: extra['backendType'] as BackendType,
