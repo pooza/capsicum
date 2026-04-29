@@ -1052,6 +1052,7 @@ class ContentRenderer {
               alignment: PlaceholderAlignment.middle,
               child: onEmojiTap != null
                   ? GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => onEmojiTap!(node.text),
                       child: image,
                     )
