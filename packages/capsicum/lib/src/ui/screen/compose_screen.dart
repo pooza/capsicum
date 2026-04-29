@@ -220,6 +220,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _controller.addListener(_onTextChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is MastodonAdapter) {
         setState(
