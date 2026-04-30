@@ -118,8 +118,8 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
               child: GridView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(4),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 140,
                   crossAxisSpacing: 4,
                   mainAxisSpacing: 4,
                 ),
