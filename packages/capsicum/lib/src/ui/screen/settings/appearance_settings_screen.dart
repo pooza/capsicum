@@ -1,6 +1,8 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
 
 class AppearanceSettingsScreen extends ConsumerWidget {
@@ -12,6 +14,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     ThemeMode.dark: 'ダーク',
   };
 
+  static const _avatarShapeLabels = {
+    AvatarShape.auto: '自動',
+    AvatarShape.circle: '丸',
+    AvatarShape.squircle: '角',
+  };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
@@ -20,6 +28,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final thumbnailScale = ref.watch(thumbnailScaleProvider);
     final darkVariant = ref.watch(darkSurfaceVariantProvider);
     final darkText = ref.watch(darkTextColorProvider);
+    final avatarShape = ref.watch(avatarShapeProvider);
+    final adapter = ref.watch(currentAdapterProvider);
+    // 設定 UI は Misskey アカウントにのみ表示する (#372)。Mastodon にはアバター
+    // 形状の概念が無く、丼系サーバーは角アイコン前提で運用されているため
+    // 設定そのものが不要。
+    final showAvatarShape = adapter is ReactionSupport;
     final isDark =
         themeMode == ThemeMode.dark ||
         (themeMode == ThemeMode.system &&
@@ -143,6 +157,37 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                         },
                       );
                     }).toList(),
+                  ),
+                ],
+              ),
+            ),
+
+          // Avatar shape (Misskey accounts only)
+          if (showAvatarShape)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'アカウントアイコンの形状',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<AvatarShape>(
+                    segments: [
+                      for (final entry in _avatarShapeLabels.entries)
+                        ButtonSegment(
+                          value: entry.key,
+                          label: Text(entry.value),
+                        ),
+                    ],
+                    selected: {avatarShape},
+                    onSelectionChanged: (selected) {
+                      ref
+                          .read(avatarShapeProvider.notifier)
+                          .setShape(selected.first);
+                    },
                   ),
                 ],
               ),
