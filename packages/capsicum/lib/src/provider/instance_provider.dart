@@ -1,5 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account_manager_provider.dart';
 
@@ -18,7 +20,9 @@ final currentInstanceProvider = FutureProvider<Instance?>((ref) async {
   if (adapter == null) return null;
   try {
     return await adapter.getInstance();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('getInstance failed: $e');
+    Sentry.captureException(e, stackTrace: st);
     return null;
   }
 });
