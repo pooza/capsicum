@@ -175,6 +175,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   SegmentedButton<AvatarShape>(
+                    showSelectedIcon: false,
                     segments: [
                       for (final entry in _avatarShapeLabels.entries)
                         ButtonSegment(
