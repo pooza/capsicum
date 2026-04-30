@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -30,12 +31,16 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
   @override
   void initState() {
     super.initState();
-    // Sync server lists into tab config after the current frame,
-    // and again whenever the server list set changes.
+    // Sync server lists / followed channels into tab config after the
+    // current frame, and again whenever each set changes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncLists();
+      _syncChannels();
       ref.listenManual(listsProvider, (_, _) {
         _syncLists();
+      });
+      ref.listenManual(followedChannelsProvider, (_, _) {
+        _syncChannels();
       });
     });
   }
@@ -51,6 +56,19 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
         notifier.addTab(tab);
       }
       notifier.syncListName(list.id, list.title);
+    }
+  }
+
+  void _syncChannels() {
+    if (!mounted) return;
+    final allEntries = ref.read(tabConfigProvider(widget.storageKey));
+    final channels = ref.read(followedChannelsProvider).valueOrNull ?? const [];
+    final notifier = _notifier;
+    for (final ch in channels) {
+      final tab = ChannelTab(id: ch.id, name: ch.name);
+      if (!allEntries.any((e) => e.tab == tab)) {
+        notifier.addTab(tab);
+      }
     }
   }
 
@@ -164,12 +182,17 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
         {TimelineType.home, TimelineType.local, TimelineType.federated};
     final allLists = ref.read(listsProvider).valueOrNull ?? [];
     final serverListIds = allLists.map((l) => l.id).toSet();
+    final channels = ref.read(followedChannelsProvider).valueOrNull ?? const [];
+    final followedChannelIds = channels.map((c) => c.id).toSet();
     return ref.read(tabConfigProvider(widget.storageKey)).where((e) {
       if (e.tab is TimelineTab) {
         return supported.contains((e.tab as TimelineTab).type);
       }
       if (e.tab is ListTab) {
         return serverListIds.contains((e.tab as ListTab).id);
+      }
+      if (e.tab is ChannelTab) {
+        return followedChannelIds.contains((e.tab as ChannelTab).id);
       }
       return true;
     }).toList();
@@ -217,6 +240,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       }(),
       ListTab(:final name, :final id) => name ?? id,
       HashtagTab(:final tag) => hashtagSpecLabel(tag),
+      ChannelTab(:final name, :final id) => name ?? id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
     };
@@ -227,6 +251,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       TimelineTab() => Icons.forum_outlined,
       ListTab() => Icons.list,
       HashtagTab() => Icons.tag,
+      ChannelTab() => Icons.forum,
       NotificationsTab() => Icons.notifications_outlined,
       AnnouncementsTab() => Icons.campaign_outlined,
     };
@@ -241,14 +266,21 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     final allEntries = ref.watch(tabConfigProvider(widget.storageKey));
     final allLists = ref.watch(listsProvider).valueOrNull ?? [];
     final serverListIds = allLists.map((l) => l.id).toSet();
+    final channels =
+        ref.watch(followedChannelsProvider).valueOrNull ?? const [];
+    final followedChannelIds = channels.map((c) => c.id).toSet();
 
-    // Filter out unsupported timeline types and deleted lists.
+    // Filter out unsupported timeline types, deleted lists, and unfollowed
+    // channels.
     final entries = allEntries.where((e) {
       if (e.tab is TimelineTab) {
         return supported.contains((e.tab as TimelineTab).type);
       }
       if (e.tab is ListTab) {
         return serverListIds.contains((e.tab as ListTab).id);
+      }
+      if (e.tab is ChannelTab) {
+        return followedChannelIds.contains((e.tab as ChannelTab).id);
       }
       return true;
     }).toList();

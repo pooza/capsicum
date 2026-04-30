@@ -28,6 +28,7 @@ import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
 import 'announcement_screen.dart';
+import 'channel_timeline_screen.dart';
 import 'notification_screen.dart';
 
 /// Convenience providers derived from [selectedTabProvider] for backward
@@ -395,6 +396,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Non-timeline tabs: render their dedicated views.
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
+    if (currentTab is ChannelTab) {
+      return ChannelTimelineView(
+        key: ValueKey('channel:${currentTab.id}'),
+        channelId: currentTab.id,
+        channelName: currentTab.name,
+      );
+    }
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
@@ -573,6 +581,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ref.read(selectedTabProvider.notifier).state = tab;
           }
         }
+      case ChannelTab(:final id):
+        final account = ref.read(currentAccountProvider);
+        if (account != null) {
+          final config = ref.read(
+            tabConfigProvider(account.key.toStorageKey()),
+          );
+          if (config.any(
+            (e) => e.tab is ChannelTab && (e.tab as ChannelTab).id == id,
+          )) {
+            ref.read(selectedTabProvider.notifier).state = tab;
+          }
+        }
       case NotificationsTab():
       case AnnouncementsTab():
         ref.read(selectedTabProvider.notifier).state = tab;
@@ -666,6 +686,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ListTab(:final id, :final name) =>
         name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
       HashtagTab(:final tag) => hashtagSpecLabel(tag),
+      ChannelTab(:final id, :final name) => name ?? id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
     };

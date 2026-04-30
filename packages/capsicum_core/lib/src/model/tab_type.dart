@@ -14,6 +14,7 @@ sealed class TabType {
   /// - `list:abc123:My List`
   /// - `hashtag:precure_fun`
   /// - `hashtag:delmulin+capsicum` (AND condition)
+  /// - `channel:abc123:#general`
   /// - `notifications`
   /// - `announcements`
   String toKey();
@@ -39,6 +40,7 @@ sealed class TabType {
             ?.let((t) => TimelineTab(t)),
       'list' => _parseListTab(value),
       'hashtag' => HashtagTab(value),
+      'channel' => _parseChannelTab(value),
       _ => null,
     };
   }
@@ -47,6 +49,15 @@ sealed class TabType {
     final colon = value.indexOf(':');
     if (colon < 0) return ListTab(id: value);
     return ListTab(
+      id: value.substring(0, colon),
+      name: value.substring(colon + 1),
+    );
+  }
+
+  static ChannelTab? _parseChannelTab(String value) {
+    final colon = value.indexOf(':');
+    if (colon < 0) return ChannelTab(id: value);
+    return ChannelTab(
       id: value.substring(0, colon),
       name: value.substring(colon + 1),
     );
@@ -94,6 +105,21 @@ class HashtagTab extends TabType {
 
   @override
   int get hashCode => tag.hashCode;
+}
+
+class ChannelTab extends TabType {
+  final String id;
+  final String? name;
+  const ChannelTab({required this.id, this.name});
+
+  @override
+  String toKey() => name != null ? 'channel:$id:$name' : 'channel:$id';
+
+  @override
+  bool operator ==(Object other) => other is ChannelTab && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 class NotificationsTab extends TabType {
