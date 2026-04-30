@@ -23,6 +23,7 @@ import 'content_parser.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/post_scope_display.dart';
+import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
@@ -1323,7 +1324,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   /// 投稿本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
   /// ショートコードのコピーは全環境共通、リアクションは ReactionSupport 持ち
-  /// (Misskey) の adapter のみ表示する。
+  /// (Misskey) の adapter のみ表示する。BottomSheet 自体は #396 で共通化。
   void _showEmojiActionMenu(
     BuildContext context,
     String shortcode,
@@ -1331,61 +1332,25 @@ class _PostTileState extends ConsumerState<PostTile> {
   ) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
-    final canReact = adapter is ReactionSupport;
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
-    final shortcodeText = ':$shortcode:';
 
-    showModalBottomSheet(
+    EmojiActionSheet.show(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.content_copy_outlined),
-              title: const Text('ショートコードをコピー'),
-              subtitle: Text(shortcodeText),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                Clipboard.setData(ClipboardData(text: shortcodeText));
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('ショートコードをコピーしました'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-            if (canReact)
-              ListTile(
-                leading: Image.network(
-                  emojiUrl,
-                  width: 24,
-                  height: 24,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(Icons.add_reaction_outlined),
-                ),
-                title: const Text('この絵文字でリアクション'),
-                subtitle: Text(shortcodeText),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _runReactionAction(
-                    messenger,
-                    adapter as BackendAdapter,
-                    targetPost.id,
-                    () => (adapter as ReactionSupport).addReaction(
-                      targetPost.id,
-                      shortcodeText,
-                    ),
-                    'リアクションしました',
-                  );
-                },
+      shortcode: shortcode,
+      emojiUrl: emojiUrl,
+      onReact: adapter is ReactionSupport
+          ? () => _runReactionAction(
+              messenger,
+              adapter as BackendAdapter,
+              targetPost.id,
+              () => (adapter as ReactionSupport).addReaction(
+                targetPost.id,
+                ':$shortcode:',
               ),
-          ],
-        ),
-      ),
+              'リアクションしました',
+            )
+          : null,
     );
   }
 
