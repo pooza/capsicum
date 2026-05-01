@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import 'dart:developer' as developer;
 
+import 'chat_streaming.dart';
 import 'client.dart';
 import 'extensions.dart';
 import 'streaming.dart';
@@ -93,6 +94,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         DriveSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
+  MisskeyChatStreaming? _chatStreaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
@@ -1456,6 +1458,24 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> deleteChatMessage(String messageId) async {
     await client.deleteChatMessage(messageId);
+  }
+
+  @override
+  Stream<ChatMessage> streamChatMessages() {
+    _chatStreaming?.dispose();
+    _chatStreaming = MisskeyChatStreaming(
+      host: host,
+      accessToken: client.accessToken!,
+      adminRoleIds: _adminRoleIds,
+      selfUser: _myUser,
+    );
+    return _chatStreaming!.connect();
+  }
+
+  @override
+  void disposeChatStream() {
+    _chatStreaming?.dispose();
+    _chatStreaming = null;
   }
 
   @override

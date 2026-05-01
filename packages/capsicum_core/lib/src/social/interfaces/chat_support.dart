@@ -20,4 +20,13 @@ abstract mixin class ChatSupport {
   });
   Future<void> deleteChatMessage(String messageId);
   Future<void> markAllChatRead();
+
+  /// 新着 chat メッセージを通知する broadcast ストリーム。listen 開始で
+  /// WebSocket 接続を立て、onCancel で切断する想定。サーバーの main channel
+  /// から `newChatMessage` イベントだけ取り出して emit する。
+  Stream<ChatMessage> streamChatMessages();
+
+  /// streamChatMessages で立てた接続を明示的に切断する。アカウント切り替え
+  /// 時などライフサイクルが複数 listener を超えて変わる場面で呼ぶ。
+  void disposeChatStream();
 }

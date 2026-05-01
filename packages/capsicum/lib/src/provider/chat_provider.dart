@@ -1,20 +1,63 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
+/// chat ストリーミング (newChatMessage) の broadcast ストリーム。
+/// ChatSupport を持つ adapter のみ実体を返し、null だと購読側はスキップ。
+/// onCancel で adapter 側の WebSocket を切る。
+final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
+  ref,
+) {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! ChatSupport) return null;
+  if (!(adapter as ChatSupport).canUseChat) return null;
+  final stream = (adapter as ChatSupport).streamChatMessages();
+  ref.onDispose(() => (adapter as ChatSupport).disposeChatStream());
+  return stream;
+});
+
 /// /chat/history で取得するスレッド一覧。ChatSupport を持たない adapter では
-/// 空リストを返す。
+/// 空リストを返す。streaming で来た新着 chat は thread を先頭に並べ替える。
 class ChatThreadListNotifier
     extends AutoDisposeAsyncNotifier<List<ChatThread>> {
+  StreamSubscription<ChatMessage>? _streamSub;
+
   @override
   Future<List<ChatThread>> build() async {
+    ref.onDispose(() => _streamSub?.cancel());
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter is! ChatSupport) return const [];
+
+    final stream = ref.watch(chatMessageStreamProvider);
+    if (stream != null) {
+      _streamSub?.cancel();
+      _streamSub = stream.listen(_handleStreamMessage);
+    }
+
     return (adapter as ChatSupport).getChatHistory(
       query: const TimelineQuery(limit: 100),
     );
+  }
+
+  void _handleStreamMessage(ChatMessage message) {
+    final myUserId = ref.read(currentAccountProvider)?.user.id;
+    if (myUserId == null) return;
+    final isIncoming = message.fromUser.id != myUserId;
+    final otherUser = isIncoming ? message.fromUser : message.toUser;
+    final current = state.valueOrNull ?? const <ChatThread>[];
+    final updated = ChatThread(
+      otherUser: otherUser,
+      lastMessage: message,
+      isUnread: isIncoming && !message.isRead,
+    );
+    final filtered = current
+        .where((t) => t.otherUser.id != otherUser.id)
+        .toList();
+    state = AsyncData([updated, ...filtered]);
   }
 }
 
@@ -51,13 +94,22 @@ class ChatThreadState {
 class ChatThreadNotifier
     extends AutoDisposeFamilyAsyncNotifier<ChatThreadState, String> {
   static const _pageSize = 30;
+  StreamSubscription<ChatMessage>? _streamSub;
 
   @override
   Future<ChatThreadState> build(String arg) async {
+    ref.onDispose(() => _streamSub?.cancel());
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter is! ChatSupport) {
       return const ChatThreadState(hasMore: false);
     }
+
+    final stream = ref.watch(chatMessageStreamProvider);
+    if (stream != null) {
+      _streamSub?.cancel();
+      _streamSub = stream.listen((m) => _handleStreamMessage(m, arg));
+    }
+
     final messages = await (adapter as ChatSupport).getUserMessages(
       userId: arg,
       query: const TimelineQuery(limit: _pageSize),
@@ -65,6 +117,20 @@ class ChatThreadNotifier
     return ChatThreadState(
       messages: messages,
       hasMore: messages.length >= _pageSize,
+    );
+  }
+
+  void _handleStreamMessage(ChatMessage message, String userId) {
+    // このスレッド (= userId) と関係ないメッセージは無視。
+    final relevant =
+        message.fromUser.id == userId || message.toUser.id == userId;
+    if (!relevant) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    // 重複防止 (送信時の optimistic update と被るケース対策)。
+    if (current.messages.any((m) => m.id == message.id)) return;
+    state = AsyncData(
+      current.copyWith(messages: [message, ...current.messages]),
     );
   }
 
