@@ -128,7 +128,7 @@ class _UserTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        disabled ? '$handle ・ チャットを利用できません' : handle,
+        disabled ? '$handle ・ メッセージを利用できません' : handle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
