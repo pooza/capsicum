@@ -35,21 +35,34 @@ enum PushKeyReader {
     ///
     /// adapter 種別が payload からは特定できないため、mastodon / misskey の
     /// 両 prefix を順に試す（Dart 側の [_findKeys] と同じ戦略）。
-    static func read(account: String) -> PushKeys? {
+    ///
+    /// 戻り値の [PushKeyLookupResult.keys] が nil の場合、[lastStatus] / [triedPrefixes]
+    /// に Keychain の OSStatus と試行したプレフィックスを格納する (#436)。
+    /// nse.no_keys の根本原因切り分け（entitlement 不一致 / accessibility / migration 漏れ）
+    /// に必要な情報を Sentry に送るため。
+    static func read(account: String) -> PushKeyLookupResult {
+        var lastStatus: OSStatus = errSecItemNotFound
+        var tried: [String] = []
         for prefix in ["mastodon", "misskey"] {
             let storage = "\(prefix)://\(account)"
-            if let keys = tryRead(storageKey: storage) {
-                return keys
+            tried.append(prefix)
+            let (keys, status) = tryRead(storageKey: storage)
+            lastStatus = status
+            if let keys = keys {
+                return PushKeyLookupResult(
+                    keys: keys, lastStatus: status, triedPrefixes: tried)
             }
         }
-        return nil
+        return PushKeyLookupResult(
+            keys: nil, lastStatus: lastStatus, triedPrefixes: tried)
     }
 
-    private static func tryRead(storageKey: String) -> PushKeys? {
+    private static func tryRead(storageKey: String) -> (PushKeys?, OSStatus) {
         let keychainKey = PushKeyReader.storageKey(
             slot: "keyset", accountStorageKey: storageKey)
-        guard let raw = keychainRead(account: keychainKey) else {
-            return nil
+        let (raw, status) = keychainRead(account: keychainKey)
+        guard let raw = raw else {
+            return (nil, status)
         }
         guard
             let data = raw.data(using: .utf8),
@@ -58,16 +71,19 @@ enum PushKeyReader {
             let auth = json["auth"] as? String,
             let priv = json["priv"] as? String
         else {
-            return nil
+            return (nil, status)
         }
-        return PushKeys(
-            privateKeyBase64: priv,
-            authBase64: auth,
-            p256dhBase64: p256dh
+        return (
+            PushKeys(
+                privateKeyBase64: priv,
+                authBase64: auth,
+                p256dhBase64: p256dh
+            ),
+            status
         )
     }
 
-    private static func keychainRead(account: String) -> String? {
+    private static func keychainRead(account: String) -> (String?, OSStatus) {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrAccount: account,
@@ -78,10 +94,18 @@ enum PushKeyReader {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
-            return nil
+            return (nil, status)
         }
-        return String(data: data, encoding: .utf8)
+        return (String(data: data, encoding: .utf8), status)
     }
+}
+
+/// PushKeyReader.read() の結果。鍵が読めた場合は keys が non-nil。
+/// 失敗時は lastStatus / triedPrefixes が原因切り分けに使える (#436)。
+struct PushKeyLookupResult {
+    let keys: PushKeys?
+    let lastStatus: OSStatus
+    let triedPrefixes: [String]
 }
 
 struct PushKeys {

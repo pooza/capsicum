@@ -186,8 +186,8 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
       child: GridView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.all(4),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 140,
           mainAxisSpacing: 4,
           crossAxisSpacing: 4,
         ),

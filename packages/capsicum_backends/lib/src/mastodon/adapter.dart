@@ -434,9 +434,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
       statusUrl: urls['status'] as String?,
-      imageSizeLimit: media['image_size_limit'] as int?,
-      videoSizeLimit: media['video_size_limit'] as int?,
-      audioSizeLimit: media['audio_size_limit'] as int?,
+      imageSizeLimit: (media['image_size_limit'] as num?)?.toInt(),
+      videoSizeLimit: (media['video_size_limit'] as num?)?.toInt(),
+      audioSizeLimit: (media['audio_size_limit'] as num?)?.toInt(),
     );
   }
 

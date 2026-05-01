@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_info_provider.dart';
 import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
+import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
 class ServerInfoScreen extends ConsumerWidget {
@@ -233,6 +234,9 @@ class ServerInfoScreen extends ConsumerWidget {
         // Mulukhiya
         _SectionHeader(title: 'モロヘイヤ'),
         _MulukhiyaSection(),
+
+        // Push notification (widget が見出しを内包する)
+        const PushRegistrationStatusSection(),
 
         const SizedBox(height: 16),
       ],

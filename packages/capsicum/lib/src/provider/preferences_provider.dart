@@ -34,6 +34,7 @@ const _recentEmojisKey = 'recent_emojis';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _tabConfigPrefix = 'tab_config_';
+const _avatarShapeKey = 'avatar_shape';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -46,6 +47,16 @@ enum PreviewCardMode {
   /// Hide preview cards entirely.
   hide,
 }
+
+/// アカウントアイコンの形状 (#372)。
+///
+/// auto: #371 で確立した「Misskey 由来 (isCat または ReactionSupport adapter)
+/// なら丸、それ以外は角丸」のフォールバック。
+/// circle: 強制的に丸 (size/2)。
+/// squircle: 強制的に角丸 (UserAvatar の borderRadius を使用)。猫耳 / アイコン
+/// デコの座標計算は丸前提のため、squircle 選択時は位置ずれが生じる仕様
+/// (詳細は #372 のコメント参照)。
+enum AvatarShape { auto, circle, squircle }
 
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
@@ -774,6 +785,36 @@ class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_previewCardModeKey, mode.name);
+  }
+}
+
+/// アカウントアイコンの形状設定 (#372)。
+final avatarShapeProvider = NotifierProvider<AvatarShapeNotifier, AvatarShape>(
+  AvatarShapeNotifier.new,
+);
+
+class AvatarShapeNotifier extends Notifier<AvatarShape> {
+  @override
+  AvatarShape build() {
+    _load();
+    return AvatarShape.auto;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_avatarShapeKey);
+    if (saved != null) {
+      final shape = AvatarShape.values
+          .where((s) => s.name == saved)
+          .firstOrNull;
+      if (shape != null) state = shape;
+    }
+  }
+
+  Future<void> setShape(AvatarShape shape) async {
+    state = shape;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_avatarShapeKey, shape.name);
   }
 }
 

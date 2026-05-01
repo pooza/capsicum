@@ -6,22 +6,26 @@ import '../../provider/channel_provider.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
 
-class ChannelTimelineScreen extends ConsumerStatefulWidget {
+/// チャンネルタイムラインの本体（Scaffold/AppBar を持たない）。
+///
+/// HomeScreen にタブとして埋め込む経路 (#334) と、ドロワー由来の
+/// [ChannelTimelineScreen] から push する経路の両方で使う。
+class ChannelTimelineView extends ConsumerStatefulWidget {
   final String channelId;
   final String? channelName;
 
-  const ChannelTimelineScreen({
+  const ChannelTimelineView({
     super.key,
     required this.channelId,
     this.channelName,
   });
 
   @override
-  ConsumerState<ChannelTimelineScreen> createState() =>
-      _ChannelTimelineScreenState();
+  ConsumerState<ChannelTimelineView> createState() =>
+      _ChannelTimelineViewState();
 }
 
-class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
+class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   final _scrollController = ScrollController();
 
   @override
@@ -50,67 +54,83 @@ class _ChannelTimelineScreenState extends ConsumerState<ChannelTimelineScreen> {
     final adapter = ref.watch(currentAdapterProvider);
     final canPost = adapter is ChannelSupport;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.channelName ?? 'チャンネル'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: timeline.when(
-              data: (state) => state.posts.isEmpty
-                  ? const Center(child: Text('投稿がありません'))
-                  : RefreshIndicator(
-                      onRefresh: () => ref.refresh(
-                        channelTimelineProvider(widget.channelId).future,
-                      ),
-                      child: ListView.separated(
-                        controller: _scrollController,
-                        itemCount:
-                            state.posts.length + (state.isLoadingMore ? 1 : 0),
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          if (index >= state.posts.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            );
-                          }
-                          return PostTile(post: state.posts[index]);
-                        },
-                      ),
+    return Column(
+      children: [
+        Expanded(
+          child: timeline.when(
+            data: (state) => state.posts.isEmpty
+                ? const Center(child: Text('投稿がありません'))
+                : RefreshIndicator(
+                    onRefresh: () => ref.refresh(
+                      channelTimelineProvider(widget.channelId).future,
                     ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(
-                          channelTimelineProvider(widget.channelId),
-                        ),
-                        child: const Text('再試行'),
-                      ),
-                    ],
+                    child: ListView.separated(
+                      controller: _scrollController,
+                      itemCount:
+                          state.posts.length + (state.isLoadingMore ? 1 : 0),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        if (index >= state.posts.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        return PostTile(post: state.posts[index]);
+                      },
+                    ),
                   ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stack) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('読み込みに失敗しました', textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => ref.invalidate(
+                        channelTimelineProvider(widget.channelId),
+                      ),
+                      child: const Text('再試行'),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          if (canPost)
-            SimplePostBar(
-              channelId: widget.channelId,
-              channelName: widget.channelName,
-              onPosted: () =>
-                  ref.invalidate(channelTimelineProvider(widget.channelId)),
-            ),
-        ],
+        ),
+        if (canPost)
+          SimplePostBar(
+            channelId: widget.channelId,
+            channelName: widget.channelName,
+            onPosted: () =>
+                ref.invalidate(channelTimelineProvider(widget.channelId)),
+          ),
+      ],
+    );
+  }
+}
+
+class ChannelTimelineScreen extends StatelessWidget {
+  final String channelId;
+  final String? channelName;
+
+  const ChannelTimelineScreen({
+    super.key,
+    required this.channelId,
+    this.channelName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(channelName ?? 'チャンネル'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      body: ChannelTimelineView(channelId: channelId, channelName: channelName),
     );
   }
 }

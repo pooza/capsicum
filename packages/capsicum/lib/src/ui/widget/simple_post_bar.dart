@@ -137,7 +137,20 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     final postLabel = ref.watch(postLabelProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final recents = ref.watch(recentEmojisProvider);
-    final hasRecents = recents.isNotEmpty;
+    // recentEmojisProvider はサーバー横断で共有されるため、現在サーバーに無い
+    // カスタム絵文字は描画段階で除外する（emoji_picker と同じ流儀 / #421）。
+    final customEmojis =
+        ref.watch(customEmojisProvider).valueOrNull ?? const [];
+    final customByCode = {for (final e in customEmojis) e.shortcode: e};
+    final visibleRecents = recents.where((entry) {
+      if (entry.startsWith(':') && entry.endsWith(':')) {
+        final shortcode = entry.substring(1, entry.length - 1);
+        final custom = customByCode[shortcode];
+        return custom != null && custom.url.isNotEmpty;
+      }
+      return true;
+    }).toList();
+    final hasRecents = visibleRecents.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -155,7 +168,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_paletteOpen && hasRecents) _buildPalette(recents),
+          if (_paletteOpen && hasRecents)
+            _buildPalette(visibleRecents, customByCode),
           Row(
             children: [
               Expanded(
@@ -217,11 +231,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
     );
   }
 
-  Widget _buildPalette(List<String> recents) {
-    final customEmojis =
-        ref.watch(customEmojisProvider).valueOrNull ?? const [];
-    final customByCode = {for (final e in customEmojis) e.shortcode: e};
-
+  Widget _buildPalette(
+    List<String> recents,
+    Map<String, CustomEmoji> customByCode,
+  ) {
     return SizedBox(
       height: 44,
       child: ListView.builder(

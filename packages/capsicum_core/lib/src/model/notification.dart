@@ -12,6 +12,7 @@ enum NotificationType {
   update,
   login,
   createToken,
+  chat,
   other,
 }
 

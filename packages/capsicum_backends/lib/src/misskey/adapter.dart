@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import 'dart:developer' as developer;
 
+import 'chat_streaming.dart';
 import 'client.dart';
 import 'extensions.dart';
 import 'streaming.dart';
@@ -90,12 +91,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PushSubscriptionSupport,
         ScheduleSupport,
         TranslationSupport,
-        DriveSupport {
+        DriveSupport,
+        ChatSupport {
   MisskeyStreaming? _streaming;
+  MisskeyChatStreaming? _chatStreaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
+  User? _myUser;
+  bool _canUseChat = true;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -112,6 +117,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:blocks',
     'read:channels',
     'write:channels',
+    'read:chat',
+    'write:chat',
     'read:drive',
     'write:drive',
     'read:favorites',
@@ -151,7 +158,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final user = await client.getI();
     _mutedWords = user.mutedWords ?? [];
     _hardMutedWords = user.hardMutedWords ?? [];
-    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    // canChat は roleService.getUserPolicies(...).chatAvailability === 'available'
+    // をサーバー側で boolean 化したもの (UserEntityService.ts:561)。Misskey が
+    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる
+    // ため、null は「不可」寄りに倒して隠す。
+    _canUseChat = user.canChat ?? false;
+    final me = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    _myUser = me;
+    return me;
   }
 
   @override
@@ -437,7 +451,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
     // Misskey は MIME によらず単一値（bytes）。image/video/audio すべてに
     // 同じ値を入れて呼び出し側を統一する。
-    final maxFileSize = data['maxFileSize'] as int?;
+    final maxFileSize = (data['maxFileSize'] as num?)?.toInt();
 
     return Instance(
       name: data['name'] as String? ?? host,
@@ -1358,5 +1372,116 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> unsubscribePush({String? endpoint}) async {
     if (endpoint == null) return;
     await client.unsubscribePush(endpoint: endpoint);
+  }
+
+  // -- ChatSupport --
+
+  @override
+  bool get canUseChat => _canUseChat;
+
+  Future<User> _ensureMyUser() async {
+    final cached = _myUser;
+    if (cached != null) return cached;
+    return getMyself();
+  }
+
+  @override
+  Future<List<ChatThread>> getChatHistory({TimelineQuery? query}) async {
+    final me = await _ensureMyUser();
+    final entries = await client.getChatHistory(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return entries
+        .map(
+          (e) => misskeyChatThreadFromHistoryEntry(
+            e,
+            host,
+            me.id,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChatMessage>> getUserMessages({
+    required String userId,
+    TimelineQuery? query,
+  }) async {
+    final me = await _ensureMyUser();
+    // user-timeline は fromUser / toUser オブジェクトを省略するレスポンスを
+    // 返すことがあるため、self と counterparty を事前解決して helper に
+    // フォールバックとして渡す。
+    final counterparty = await getUserById(userId);
+    final messages = await client.getChatUserMessages(
+      userId: userId,
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return messages
+        .map(
+          (m) => misskeyChatMessageFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+            selfUser: me,
+            counterpartyUser: counterparty,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ChatMessage> sendUserMessage({
+    required String userId,
+    String? text,
+    String? fileId,
+  }) async {
+    final me = await _ensureMyUser();
+    final counterparty = await getUserById(userId);
+    final data = await client.createChatMessageToUser(
+      toUserId: userId,
+      text: text,
+      fileId: fileId,
+    );
+    return misskeyChatMessageFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+      selfUser: me,
+      counterpartyUser: counterparty,
+    );
+  }
+
+  @override
+  Future<void> deleteChatMessage(String messageId) async {
+    await client.deleteChatMessage(messageId);
+  }
+
+  @override
+  Stream<ChatMessage> streamChatMessages() {
+    _chatStreaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    _chatStreaming = MisskeyChatStreaming(
+      host: host,
+      accessToken: token,
+      adminRoleIds: _adminRoleIds,
+      selfUser: _myUser,
+    );
+    return _chatStreaming!.connect();
+  }
+
+  @override
+  void disposeChatStream() {
+    _chatStreaming?.dispose();
+    _chatStreaming = null;
+  }
+
+  @override
+  Future<void> markAllChatRead() async {
+    await client.markAllChatRead();
   }
 }

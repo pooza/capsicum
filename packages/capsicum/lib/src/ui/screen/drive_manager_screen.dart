@@ -385,6 +385,23 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     final drive = ref.watch(driveContentsProvider(_currentFolderId));
     final theme = Theme.of(context);
 
+    // loadMore 失敗を SnackBar でユーザーに 1 回だけ通知する (#430)。
+    // 失敗中はスクロール由来の自動再試行が抑止されるため、ユーザーは
+    // pull-to-refresh で明示的に再読み込みする必要がある。
+    ref.listen(driveContentsProvider(_currentFolderId), (prev, next) {
+      final error = next.valueOrNull?.loadMoreError;
+      if (error != null && prev?.valueOrNull?.loadMoreError == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('読み込みに失敗しました。下に引いて再読み込みしてください'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    });
+
     return PopScope(
       canPop: _folderStack.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
@@ -444,8 +461,8 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               child: GridView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(4),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 140,
                   crossAxisSpacing: 4,
                   mainAxisSpacing: 4,
                 ),

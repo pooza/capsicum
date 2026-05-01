@@ -75,6 +75,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       url: 'https://${host ?? localHost}/@$username',
       createdAt: createdAt,
       defaultScope: misskeyVisibilityRosetta[defaultNoteVisibility],
+      canChat: canChat,
     );
   }
 }
@@ -178,6 +179,67 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
       name: name,
     );
   }
+}
+
+/// Misskey の chat メッセージレスポンス Map → ChatMessage 変換。
+///
+/// `/api/chat/messages/user-timeline` 等は `fromUser` / `toUser` のオブジェクトを
+/// 省略し `fromUserId` / `toUserId` だけ返すことがある（呼び出し元の文脈で
+/// 自明だから）。そのフォールバックとして [selfUser] / [counterpartyUser] を
+/// 受け取り、ID 一致するものを差し込む。
+ChatMessage misskeyChatMessageFromMap(
+  Map<String, dynamic> data,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+  User? selfUser,
+  User? counterpartyUser,
+}) {
+  User resolveUser(String userIdKey, String userObjKey) {
+    final embedded = data[userObjKey] as Map<String, dynamic>?;
+    if (embedded != null) {
+      return MisskeyUser.fromJson(
+        embedded,
+      ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
+    }
+    final id = data[userIdKey] as String;
+    if (selfUser != null && selfUser.id == id) return selfUser;
+    if (counterpartyUser != null && counterpartyUser.id == id) {
+      return counterpartyUser;
+    }
+    return User(id: id, username: '?');
+  }
+
+  final fileMap = data['file'] as Map<String, dynamic>?;
+  return ChatMessage(
+    id: data['id'] as String,
+    createdAt: DateTime.parse(data['createdAt'] as String),
+    fromUser: resolveUser('fromUserId', 'fromUser'),
+    toUser: resolveUser('toUserId', 'toUser'),
+    text: data['text'] as String?,
+    file: fileMap != null
+        ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()
+        : null,
+    isRead: data['isRead'] as bool? ?? false,
+  );
+}
+
+ChatThread misskeyChatThreadFromHistoryEntry(
+  Map<String, dynamic> entry,
+  String localHost,
+  String myUserId, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final lastMessage = misskeyChatMessageFromMap(
+    entry,
+    localHost,
+    adminRoleIds: adminRoleIds,
+  );
+  final isIncoming = lastMessage.fromUser.id != myUserId;
+  return ChatThread(
+    otherUser: isIncoming ? lastMessage.fromUser : lastMessage.toUser,
+    lastMessage: lastMessage,
+    isUnread: isIncoming && !lastMessage.isRead,
+  );
 }
 
 Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {

@@ -113,16 +113,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _draftAutoSave = false;
 
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
-  /// (post_tile / notification_tile) は replyTo / redraft だけ渡してくるので、
-  /// ここでフォールバックして全経路で継承する (#378 / #384)。
+  /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
+  /// 渡してくるので、ここでフォールバックして全経路で継承する
+  /// (#378 / #384 / #401)。
   String? get _effectiveChannelId =>
       widget.channelId ??
       widget.redraft?.channelId ??
-      widget.replyTo?.channelId;
+      widget.replyTo?.channelId ??
+      widget.quoteTo?.channelId;
   String? get _effectiveChannelName =>
       widget.channelName ??
       widget.redraft?.channelName ??
-      widget.replyTo?.channelName;
+      widget.replyTo?.channelName ??
+      widget.quoteTo?.channelName;
 
   // Poll state
   bool _pollEnabled = false;
@@ -220,6 +223,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _controller.addListener(_onTextChanged);
     // Mastodon のみ: デフォルト言語をロケールから設定
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is MastodonAdapter) {
         setState(

@@ -58,6 +58,11 @@ NotificationTypeDisplay notificationTypeDisplay(
         icon: Icons.key,
         label: 'アクセストークン作成',
       );
+    case NotificationType.chat:
+      return const NotificationTypeDisplay(
+        icon: Icons.chat_bubble_outline,
+        label: 'メッセージ',
+      );
     case NotificationType.other:
       return const NotificationTypeDisplay(
         icon: Icons.notifications,
@@ -98,6 +103,10 @@ NotificationType notificationTypeFromString(String? raw) {
       return NotificationType.login;
     case 'create_token':
       return NotificationType.createToken;
+    // Misskey 新 chat の Web Push 専用 type (#248)。/api/i/notifications には
+    // 来ないが push payload 経由で届く。
+    case 'newChatMessage':
+      return NotificationType.chat;
     default:
       return NotificationType.other;
   }

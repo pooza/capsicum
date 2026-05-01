@@ -223,6 +223,11 @@ class MulukhiyaService {
   Options _bearerOptions(String token) =>
       Options(headers: {'Authorization': 'Bearer $token'});
 
+  /// Mulukhiya の `Ginseng::AuthError` は HTTP 403 を返す（401 ではない）。
+  /// 認証失効を機能未提供と同列に握りつぶして graceful fallback したい
+  /// 各 endpoint から共通で使う。
+  bool _isAuthError(DioException e) => e.response?.statusCode == 403;
+
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
   /// Returns [MulukhiyaService] if present, null otherwise.
   static Future<MulukhiyaService?> detect(Dio dio, String domain) async {
@@ -464,7 +469,7 @@ class MulukhiyaService {
       );
       return true;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404 || e.response?.statusCode == 403) {
+      if (e.response?.statusCode == 404 || _isAuthError(e)) {
         return false;
       }
       rethrow;
@@ -490,7 +495,7 @@ class MulukhiyaService {
       }
       return [];
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) return [];
+      if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
       rethrow;
     }
   }
@@ -622,7 +627,7 @@ class MulukhiyaService {
       }).toList();
       return MediaCatalogResult(items: items, hasNext: hasNext);
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
+      if (e.response?.statusCode == 404 || _isAuthError(e)) {
         return const MediaCatalogResult(items: [], hasNext: false);
       }
       rethrow;

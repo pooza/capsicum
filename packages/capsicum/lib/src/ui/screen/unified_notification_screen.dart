@@ -352,6 +352,7 @@ class _UnifiedNotificationTileState
     NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
     NotificationType.login => (Icons.login, 'ログイン'),
     NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
+    NotificationType.chat => (Icons.chat_bubble_outline, 'メッセージ'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
 

@@ -27,6 +27,8 @@ class MisskeyUser {
   final List<String>? verifiedLinks;
   final String? defaultNoteVisibility;
   final DateTime? createdAt;
+  final bool? canChat;
+  final String? chatScope;
 
   const MisskeyUser({
     required this.id,
@@ -52,6 +54,8 @@ class MisskeyUser {
     this.verifiedLinks,
     this.defaultNoteVisibility,
     this.createdAt,
+    this.canChat,
+    this.chatScope,
   });
 
   factory MisskeyUser.fromJson(Map<String, dynamic> json) =>

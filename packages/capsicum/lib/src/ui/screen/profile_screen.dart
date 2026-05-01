@@ -15,6 +15,7 @@ import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
+import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -57,6 +58,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool get _isOwnProfile {
     final current = ref.read(currentAccountProvider);
     return current != null && current.user.id == widget.user.id;
+  }
+
+  /// 「メッセージを送る」ボタンを出してよいか。
+  /// - 現アカウントが ChatSupport かつ canUseChat == true（自分のロールが
+  ///   chat 可能）
+  /// - 相手の canChat == true（相手のロールが chat 可能）
+  /// - リモートユーザー（host が現サーバーと違う）は対象外。Misskey の
+  ///   chat は同一サーバー内でのみ成立する仕様
+  bool _canStartChatWith(User user) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return false;
+    if (!(adapter as ChatSupport).canUseChat) return false;
+    if (user.canChat != true) return false;
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return false;
+    if (user.host != null && user.host != account.key.host) return false;
+    return true;
   }
 
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
@@ -729,18 +747,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ],
           ),
-          if (ref.read(currentAdapterProvider) is AchievementSupport)
-            OutlinedButton.icon(
-              onPressed: () => context.push(
-                '/achievements',
-                extra: {
-                  'userId': user.id,
-                  'displayName': user.displayName ?? user.username,
-                },
-              ),
-              icon: const Icon(Icons.emoji_events, size: 16),
-              label: const Text('実績'),
-            ),
+          ..._buildProfileActionRow(context, user),
           if (user.createdAt != null) ...[
             const SizedBox(height: 8),
             Row(
@@ -761,21 +768,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
           ],
           if (_isOwnProfile) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final updatedUser = await context.push<User>('/profile/edit');
-                if (updatedUser != null && mounted) {
-                  setState(() => _user = updatedUser);
-                }
-              },
-              icon: const Icon(Icons.edit, size: 16),
-              label: const Text('プロフィールを編集'),
-            ),
-          ],
-          if (!_isOwnProfile && _relationship != null) ...[
-            const SizedBox(height: 12),
-            _buildActionButtons(context),
+            const SizedBox(height: 8),
+            const PushRegistrationStatusSection(),
           ],
           if (user.roles.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -875,90 +869,151 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
-    final rel = _relationship!;
-    final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
+  /// プロフィール画面のアクションボタンを Wrap で横並びに配置する。
+  /// 自他・能力・関係性で表示するボタンを切り替える:
+  /// - 実績 (AchievementSupport がある adapter)
+  /// - プロフィールを編集 (自分)
+  /// - メッセージを送る (相手・chat 可能)
+  /// - フォロー / フォロー解除 (相手・関係性ロード済み)
+  /// - PopupMenu (相手・関係性ロード済み: URL コピー / ミュート / ブロック)
+  ///
+  /// 1 件もない場合は空リストを返し、呼び出し側の SizedBox も挿入されない。
+  List<Widget> _buildProfileActionRow(BuildContext context, User user) {
+    final adapter = ref.read(currentAdapterProvider);
+    final actions = <Widget>[];
 
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.icon(
-            onPressed: _relationshipLoading
-                ? null
-                : () => _performAction(
-                    () => rel.following
-                        ? adapter.unfollowUser(widget.user.id)
-                        : adapter.followUser(widget.user.id),
-                  ),
-            icon: Icon(rel.following ? Icons.person_remove : Icons.person_add),
-            label: Text(rel.following ? 'フォロー解除' : 'フォロー'),
-            style: rel.following
-                ? FilledButton.styleFrom(
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    foregroundColor: Theme.of(context).colorScheme.onSurface,
-                  )
-                : null,
+    if (adapter is AchievementSupport) {
+      actions.add(
+        OutlinedButton.icon(
+          onPressed: () => context.push(
+            '/achievements',
+            extra: {
+              'userId': user.id,
+              'displayName': user.displayName ?? user.username,
+            },
           ),
+          icon: const Icon(Icons.emoji_events, size: 16),
+          label: const Text('実績'),
         ),
-        const SizedBox(width: 8),
-        PopupMenuButton<String>(
-          onSelected: (value) async {
-            switch (value) {
-              case 'copy_url':
-                if (widget.user.url != null) {
-                  Clipboard.setData(ClipboardData(text: widget.user.url!));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('URL をコピーしました')),
-                    );
-                  }
-                }
-              case 'mute':
-                final ok = await _performAction(
-                  () => adapter.muteUser(widget.user.id),
-                );
-                if (ok) {
-                  ref
-                      .read(timelineProvider.notifier)
-                      .removePostsByUser(widget.user.id);
-                }
-              case 'mute_duration':
-                final ok = await _showMuteDurationPicker(adapter);
-                if (ok) {
-                  ref
-                      .read(timelineProvider.notifier)
-                      .removePostsByUser(widget.user.id);
-                }
-              case 'unmute':
-                _performAction(() => adapter.unmuteUser(widget.user.id));
-              case 'block':
-                await _confirmAndBlock(adapter);
-              case 'unblock':
-                _performAction(() => adapter.unblockUser(widget.user.id));
+      );
+    }
+
+    if (_isOwnProfile) {
+      actions.add(
+        OutlinedButton.icon(
+          onPressed: () async {
+            final updatedUser = await context.push<User>('/profile/edit');
+            if (updatedUser != null && mounted) {
+              setState(() => _user = updatedUser);
             }
           },
-          itemBuilder: (_) => [
-            if (widget.user.url != null)
-              const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
-            if (rel.muting)
-              const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
-            else ...[
-              const PopupMenuItem(value: 'mute', child: Text('ミュート')),
-              const PopupMenuItem(
-                value: 'mute_duration',
-                child: Text('期間を指定してミュート'),
-              ),
-            ],
-            if (rel.blocking)
-              const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
-            else
-              const PopupMenuItem(value: 'block', child: Text('ブロック')),
-          ],
+          icon: const Icon(Icons.edit, size: 16),
+          label: const Text('プロフィールを編集'),
         ),
-      ],
-    );
+      );
+    } else {
+      if (_canStartChatWith(user)) {
+        actions.add(
+          OutlinedButton.icon(
+            onPressed: () => context.push('/chat/user/${user.id}', extra: user),
+            icon: const Icon(Icons.chat_bubble_outline, size: 16),
+            label: const Text('メッセージを送る'),
+          ),
+        );
+      }
+      if (_relationship != null) {
+        actions.addAll(_buildRelationshipButtons(context));
+      }
+    }
+
+    if (actions.isEmpty) return const [];
+    return [
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 4, children: actions),
+    ];
+  }
+
+  /// 他人のプロフィールでフォロー / メニューボタンを返す。
+  /// Wrap 内に並べる前提で、以前の Row(Expanded(...)) ではなく content-sized
+  /// なボタンを返す。
+  List<Widget> _buildRelationshipButtons(BuildContext context) {
+    final rel = _relationship!;
+    final adapter = ref.read(currentAdapterProvider)! as FollowSupport;
+    return [
+      FilledButton.icon(
+        onPressed: _relationshipLoading
+            ? null
+            : () => _performAction(
+                () => rel.following
+                    ? adapter.unfollowUser(widget.user.id)
+                    : adapter.followUser(widget.user.id),
+              ),
+        icon: Icon(rel.following ? Icons.person_remove : Icons.person_add),
+        label: Text(rel.following ? 'フォロー解除' : 'フォロー'),
+        style: rel.following
+            ? FilledButton.styleFrom(
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+              )
+            : null,
+      ),
+      PopupMenuButton<String>(
+        onSelected: (value) async {
+          switch (value) {
+            case 'copy_url':
+              if (widget.user.url != null) {
+                Clipboard.setData(ClipboardData(text: widget.user.url!));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('URL をコピーしました')));
+                }
+              }
+            case 'mute':
+              final ok = await _performAction(
+                () => adapter.muteUser(widget.user.id),
+              );
+              if (ok) {
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
+              }
+            case 'mute_duration':
+              final ok = await _showMuteDurationPicker(adapter);
+              if (ok) {
+                ref
+                    .read(timelineProvider.notifier)
+                    .removePostsByUser(widget.user.id);
+              }
+            case 'unmute':
+              _performAction(() => adapter.unmuteUser(widget.user.id));
+            case 'block':
+              await _confirmAndBlock(adapter);
+            case 'unblock':
+              _performAction(() => adapter.unblockUser(widget.user.id));
+          }
+        },
+        itemBuilder: (_) => [
+          if (widget.user.url != null)
+            const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
+          if (rel.muting)
+            const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
+          else ...[
+            const PopupMenuItem(value: 'mute', child: Text('ミュート')),
+            const PopupMenuItem(
+              value: 'mute_duration',
+              child: Text('期間を指定してミュート'),
+            ),
+          ],
+          if (rel.blocking)
+            const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
+          else
+            const PopupMenuItem(value: 'block', child: Text('ブロック')),
+        ],
+      ),
+    ];
   }
 
   Future<bool> _showMuteDurationPicker(FollowSupport adapter) async {

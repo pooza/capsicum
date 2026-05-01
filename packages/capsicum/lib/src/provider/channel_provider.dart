@@ -79,3 +79,15 @@ final channelTimelineProvider = AsyncNotifierProvider.autoDispose
     .family<ChannelTimelineNotifier, TimelineState, String>(
       ChannelTimelineNotifier.new,
     );
+
+/// 現在アカウントがフォロー中のチャンネル一覧 (#334 タブ管理から参照)。
+/// ChannelSupport を持たない adapter では空配列を返す。
+final followedChannelsProvider = FutureProvider<List<Channel>>((ref) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! ChannelSupport) return const [];
+  try {
+    return await (adapter as ChannelSupport).getFollowedChannels();
+  } catch (_) {
+    return const [];
+  }
+});

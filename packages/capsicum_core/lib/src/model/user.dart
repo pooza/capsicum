@@ -64,6 +64,11 @@ class User {
   final DateTime? createdAt;
   final PostScope? defaultScope;
 
+  /// Misskey 用。サーバー側のロール policy から導出される
+  /// 「このユーザーが chat を利用可能か」フラグ。Mastodon 等
+  /// chat 概念のないサーバーでは null。
+  final bool? canChat;
+
   const User({
     required this.id,
     required this.username,
@@ -85,6 +90,7 @@ class User {
     this.url,
     this.createdAt,
     this.defaultScope,
+    this.canChat,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -108,5 +114,6 @@ class User {
     url: url,
     createdAt: createdAt,
     defaultScope: defaultScope,
+    canChat: canChat,
   );
 }

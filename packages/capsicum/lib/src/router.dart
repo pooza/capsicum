@@ -13,6 +13,9 @@ import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
+import 'ui/screen/chat_new_thread_screen.dart';
+import 'ui/screen/chat_thread_list_screen.dart';
+import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
@@ -99,7 +102,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
+          // rebuild 中に extra が失われるケース（Sentry CAPSICUM-16）に備え、
+          // 強制 unwrap せず null の場合はサーバー選択へ戻す。
+          final extra = state.extra as Map<String, dynamic>?;
+          if (extra == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/server');
+            });
+            return const SizedBox.shrink();
+          }
           return LoginScreen(
             host: extra['host'] as String,
             backendType: extra['backendType'] as BackendType,
@@ -259,6 +270,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),
+      GoRoute(
+        path: '/chat',
+        builder: (context, state) => const ChatThreadListScreen(),
+      ),
+      GoRoute(
+        path: '/chat/new',
+        builder: (context, state) => const ChatNewThreadScreen(),
+      ),
+      GoRoute(
+        path: '/chat/user/:userId',
+        builder: (context, state) {
+          final user = state.extra! as User;
+          return ChatThreadScreen(otherUser: user);
+        },
+      ),
       GoRoute(
         path: '/gallery',
         builder: (context, state) => const GalleryScreen(),

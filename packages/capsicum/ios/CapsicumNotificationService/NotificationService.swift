@@ -50,11 +50,17 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        guard let keys = PushKeyReader.read(account: account) else {
-            NSLog("capsicum: nse: no push keys for \(account)")
+        let lookup = PushKeyReader.read(account: account)
+        guard let keys = lookup.keys else {
+            NSLog(
+                "capsicum: nse: no push keys for \(account) "
+                    + "(status=\(lookup.lastStatus), tried=\(lookup.triedPrefixes))"
+            )
             FailureRecorder.record(
                 code: "nse.no_keys",
-                host: host, encoding: encoding, elapsedMs: elapsedMs()
+                host: host, encoding: encoding, elapsedMs: elapsedMs(),
+                keychainStatus: Int(lookup.lastStatus),
+                triedPrefixes: lookup.triedPrefixes.joined(separator: ",")
             )
             contentHandler(bestAttempt)
             return
@@ -173,12 +179,20 @@ enum FailureRecorder {
     private static let hostKey = "capsicum_push_failure_last_host"
     private static let encodingKey = "capsicum_push_failure_last_encoding"
     private static let elapsedKey = "capsicum_push_failure_last_elapsed_ms"
+    /// #436: nse.no_keys の根本原因切り分け用。Keychain OSStatus と
+    /// 試行したストレージキープレフィックス（"mastodon,misskey" 等）。
+    private static let keychainStatusKey =
+        "capsicum_push_failure_last_keychain_status"
+    private static let triedPrefixesKey =
+        "capsicum_push_failure_last_tried_prefixes"
 
     static func record(
         code: String,
         host: String?,
         encoding: String?,
-        elapsedMs: Int?
+        elapsedMs: Int?,
+        keychainStatus: Int? = nil,
+        triedPrefixes: String? = nil
     ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         defaults.set(code, forKey: codeKey)
@@ -199,6 +213,16 @@ enum FailureRecorder {
             defaults.set(elapsedMs, forKey: elapsedKey)
         } else {
             defaults.removeObject(forKey: elapsedKey)
+        }
+        if let keychainStatus = keychainStatus {
+            defaults.set(keychainStatus, forKey: keychainStatusKey)
+        } else {
+            defaults.removeObject(forKey: keychainStatusKey)
+        }
+        if let triedPrefixes = triedPrefixes {
+            defaults.set(triedPrefixes, forKey: triedPrefixesKey)
+        } else {
+            defaults.removeObject(forKey: triedPrefixesKey)
         }
     }
 }
@@ -249,6 +273,21 @@ enum PayloadParser {
                 type: inner["type"] as? String
             )
         }
+
+        // Misskey 新 chat: {type: 'newChatMessage', body: <ChatMessage>, ...} (#248)。
+        // /api/i/notifications には来ない push 専用 type。body は ChatMessage 自体で
+        // fromUser / text / file を直接持つ。Dart 側 push_message_dispatcher と同じ
+        // ハンドリングを NSE 側にも入れる必要がある (NSE は別プロセスで Dart の
+        // parsePayload を共有しないため)。
+        if (dict["type"] as? String) == "newChatMessage",
+            let inner = dict["body"] as? [String: Any]
+        {
+            return ParsedPayload(
+                title: nil,
+                body: synthesizeMisskeyChatBody(inner),
+                type: "newChatMessage"
+            )
+        }
         return nil
     }
 
@@ -282,6 +321,51 @@ enum PayloadParser {
             return "\(actor) にフォローされました"
         }
         return actor
+    }
+
+    /// Misskey 新 chat の `newChatMessage` push payload 内 body
+    /// (= ChatMessage そのもの) から通知本文を合成する。
+    /// 形式: `<actor>: <text or 添付ラベル>`。Dart 側 _synthesizeMisskeyChatBody と
+    /// 同じ仕様。
+    private static func synthesizeMisskeyChatBody(_ body: [String: Any]) -> String? {
+        let fromUser = body["fromUser"] as? [String: Any]
+        let text = body["text"] as? String
+        let fileMime = (body["file"] as? [String: Any])?["type"] as? String
+
+        let displayName =
+            (fromUser?["name"] as? String)?.trimmingCharacters(in: .whitespaces)
+        let username = fromUser?["username"] as? String
+        let actor: String? = {
+            if let displayName = displayName, !displayName.isEmpty {
+                return displayName
+            }
+            if let username = username {
+                return "@\(username)"
+            }
+            return nil
+        }()
+
+        let content: String
+        if let text = text, !text.isEmpty {
+            content = text
+        } else if let mime = fileMime {
+            if mime.hasPrefix("image/") {
+                content = "[画像]"
+            } else if mime.hasPrefix("video/") {
+                content = "[動画]"
+            } else if mime.hasPrefix("audio/") {
+                content = "[音声]"
+            } else {
+                content = "[ファイル]"
+            }
+        } else {
+            content = ""
+        }
+
+        guard let actor = actor else {
+            return content.isEmpty ? nil : content
+        }
+        return content.isEmpty ? actor : "\(actor): \(content)"
     }
 }
 

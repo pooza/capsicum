@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
@@ -131,7 +132,9 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
   if (adapter is! CustomEmojiSupport) return const [];
   try {
     return await (adapter as CustomEmojiSupport).getEmojis();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('getEmojis failed: $e');
+    Sentry.captureException(e, stackTrace: st);
     return const [];
   }
 });
