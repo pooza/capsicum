@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart' show loadMoreMaxRetries, loadMoreRetryDelay;
@@ -10,11 +11,17 @@ class DriveState {
   final bool isLoadingMore;
   final bool hasMore;
 
+  /// 直近の [DriveContentsNotifier.loadMore] が最終的に失敗した場合の例外。
+  /// 成功時は null。スクロール由来の自動再試行を抑止する番兵として使うため、
+  /// pull-to-refresh 等で build() が再実行されるまでクリアされない。
+  final Object? loadMoreError;
+
   const DriveState({
     this.folders = const [],
     this.files = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
+    this.loadMoreError,
   });
 
   DriveState copyWith({
@@ -22,12 +29,14 @@ class DriveState {
     List<Attachment>? files,
     bool? isLoadingMore,
     bool? hasMore,
+    Object? loadMoreError,
   }) {
     return DriveState(
       folders: folders ?? this.folders,
       files: files ?? this.files,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
+      loadMoreError: loadMoreError,
     );
   }
 }
@@ -45,16 +54,29 @@ class DriveContentsNotifier
     }
 
     final drive = adapter as DriveSupport;
-    final folders = await drive.getDriveFolders(folderId: arg);
-    final files = await drive.getDriveFiles(
-      folderId: arg,
-      query: const TimelineQuery(limit: _pageSize),
-    );
-    return DriveState(
-      folders: folders,
-      files: files,
-      hasMore: files.length >= _pageSize,
-    );
+    try {
+      final folders = await drive.getDriveFolders(folderId: arg);
+      final files = await drive.getDriveFiles(
+        folderId: arg,
+        query: const TimelineQuery(limit: _pageSize),
+      );
+      return DriveState(
+        folders: folders,
+        files: files,
+        hasMore: files.length >= _pageSize,
+      );
+    } catch (e, st) {
+      try {
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          hint: Hint.withMap({'folderId': arg ?? 'root'}),
+        );
+      } catch (_) {
+        // Sentry failure must not block the AsyncError path.
+      }
+      rethrow;
+    }
   }
 
   void removeFile(String fileId) {
@@ -152,6 +174,10 @@ class DriveContentsNotifier
   Future<void> loadMore() async {
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
+    // 直前の loadMore が失敗している場合、スクロール由来の自動再試行は抑止する。
+    // pull-to-refresh で build() が再実行されるまで loadMoreError は残るため、
+    // ユーザーが明示的に refresh するまでロックされる (#430)。
+    if (current.loadMoreError != null) return;
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
 
@@ -175,16 +201,32 @@ class DriveContentsNotifier
             files: [...base.files, ...older],
             isLoadingMore: false,
             hasMore: older.length >= _pageSize,
+            loadMoreError: null,
           ),
         );
         return;
-      } catch (_) {
+      } catch (e, st) {
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
+        try {
+          final failedMaxId = current.files.lastOrNull?.id;
+          Sentry.captureException(
+            e,
+            stackTrace: st,
+            hint: Hint.withMap({
+              'folderId': arg ?? 'root',
+              'maxId': failedMaxId ?? 'null',
+              'attempts': '${attempt + 1}',
+            }),
+          );
+        } catch (_) {
+          // Sentry failure must not block state recovery.
+        }
+        final latest = state.valueOrNull ?? current;
         state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(isLoadingMore: false),
+          latest.copyWith(isLoadingMore: false, loadMoreError: e),
         );
       }
     }
