@@ -1463,9 +1463,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Stream<ChatMessage> streamChatMessages() {
     _chatStreaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
     _chatStreaming = MisskeyChatStreaming(
       host: host,
-      accessToken: client.accessToken!,
+      accessToken: token,
       adminRoleIds: _adminRoleIds,
       selfUser: _myUser,
     );
