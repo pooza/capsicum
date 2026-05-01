@@ -273,6 +273,21 @@ enum PayloadParser {
                 type: inner["type"] as? String
             )
         }
+
+        // Misskey 新 chat: {type: 'newChatMessage', body: <ChatMessage>, ...} (#248)。
+        // /api/i/notifications には来ない push 専用 type。body は ChatMessage 自体で
+        // fromUser / text / file を直接持つ。Dart 側 push_message_dispatcher と同じ
+        // ハンドリングを NSE 側にも入れる必要がある (NSE は別プロセスで Dart の
+        // parsePayload を共有しないため)。
+        if (dict["type"] as? String) == "newChatMessage",
+            let inner = dict["body"] as? [String: Any]
+        {
+            return ParsedPayload(
+                title: nil,
+                body: synthesizeMisskeyChatBody(inner),
+                type: "newChatMessage"
+            )
+        }
         return nil
     }
 
@@ -306,6 +321,51 @@ enum PayloadParser {
             return "\(actor) にフォローされました"
         }
         return actor
+    }
+
+    /// Misskey 新 chat の `newChatMessage` push payload 内 body
+    /// (= ChatMessage そのもの) から通知本文を合成する。
+    /// 形式: `<actor>: <text or 添付ラベル>`。Dart 側 _synthesizeMisskeyChatBody と
+    /// 同じ仕様。
+    private static func synthesizeMisskeyChatBody(_ body: [String: Any]) -> String? {
+        let fromUser = body["fromUser"] as? [String: Any]
+        let text = body["text"] as? String
+        let fileMime = (body["file"] as? [String: Any])?["type"] as? String
+
+        let displayName =
+            (fromUser?["name"] as? String)?.trimmingCharacters(in: .whitespaces)
+        let username = fromUser?["username"] as? String
+        let actor: String? = {
+            if let displayName = displayName, !displayName.isEmpty {
+                return displayName
+            }
+            if let username = username {
+                return "@\(username)"
+            }
+            return nil
+        }()
+
+        let content: String
+        if let text = text, !text.isEmpty {
+            content = text
+        } else if let mime = fileMime {
+            if mime.hasPrefix("image/") {
+                content = "[画像]"
+            } else if mime.hasPrefix("video/") {
+                content = "[動画]"
+            } else if mime.hasPrefix("audio/") {
+                content = "[音声]"
+            } else {
+                content = "[ファイル]"
+            }
+        } else {
+            content = ""
+        }
+
+        guard let actor = actor else {
+            return content.isEmpty ? nil : content
+        }
+        return content.isEmpty ? actor : "\(actor): \(content)"
     }
 }
 
