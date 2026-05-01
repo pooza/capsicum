@@ -75,6 +75,7 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       url: 'https://${host ?? localHost}/@$username',
       createdAt: createdAt,
       defaultScope: misskeyVisibilityRosetta[defaultNoteVisibility],
+      canChat: canChat,
     );
   }
 }

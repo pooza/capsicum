@@ -17,6 +17,11 @@ class ChatThreadListScreen extends ConsumerWidget {
         title: const Text('メッセージ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/chat/new'),
+        tooltip: '新しいメッセージ',
+        child: const Icon(Icons.edit),
+      ),
       body: threads.when(
         data: (list) => list.isEmpty
             ? const Center(child: Text('メッセージはありません'))

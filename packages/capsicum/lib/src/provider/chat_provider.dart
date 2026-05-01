@@ -147,3 +147,13 @@ final chatThreadProvider = AsyncNotifierProvider.autoDispose
     .family<ChatThreadNotifier, ChatThreadState, String>(
       ChatThreadNotifier.new,
     );
+
+/// 新規 DM 相手をユーザー検索で探すための provider。
+/// 空クエリなら空配列を返す。SearchSupport を持たない adapter でも空配列。
+final chatUserSearchProvider = FutureProvider.autoDispose
+    .family<List<User>, String>((ref, query) async {
+      if (query.trim().isEmpty) return const [];
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! SearchSupport) return const [];
+      return (adapter as SearchSupport).searchUsers(query, limit: 20);
+    });

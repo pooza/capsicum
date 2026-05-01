@@ -98,6 +98,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
   User? _myUser;
+  bool _canUseChat = true;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -155,6 +156,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final user = await client.getI();
     _mutedWords = user.mutedWords ?? [];
     _hardMutedWords = user.hardMutedWords ?? [];
+    // canChat は roleService.getUserPolicies(...).chatAvailability === 'available'
+    // をサーバー側で boolean 化したもの (UserEntityService.ts:561)。Misskey が
+    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる
+    // ため、null は「不可」寄りに倒して隠す。
+    _canUseChat = user.canChat ?? false;
     final me = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     _myUser = me;
     return me;
@@ -1367,6 +1373,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   // -- ChatSupport --
+
+  @override
+  bool get canUseChat => _canUseChat;
 
   Future<User> _ensureMyUser() async {
     final cached = _myUser;

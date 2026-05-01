@@ -13,6 +13,7 @@ import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
+import 'ui/screen/chat_new_thread_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
@@ -272,6 +273,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/chat',
         builder: (context, state) => const ChatThreadListScreen(),
+      ),
+      GoRoute(
+        path: '/chat/new',
+        builder: (context, state) => const ChatNewThreadScreen(),
       ),
       GoRoute(
         path: '/chat/user/:userId',

@@ -978,7 +978,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
-          if (ref.read(currentAdapterProvider) is ChatSupport)
+          if (ref.read(currentAdapterProvider) is ChatSupport &&
+              (ref.read(currentAdapterProvider) as ChatSupport).canUseChat)
             ListTile(
               leading: const Icon(Icons.chat_bubble_outline),
               title: const Text('メッセージ'),
