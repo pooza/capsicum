@@ -59,6 +59,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return current != null && current.user.id == widget.user.id;
   }
 
+  /// 「メッセージを送る」ボタンを出してよいか。
+  /// - 現アカウントが ChatSupport かつ canUseChat == true（自分のロールが
+  ///   chat 可能）
+  /// - 相手の canChat == true（相手のロールが chat 可能）
+  /// - リモートユーザー（host が現サーバーと違う）は対象外。Misskey の
+  ///   chat は同一サーバー内でのみ成立する仕様
+  bool _canStartChatWith(User user) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return false;
+    if (!(adapter as ChatSupport).canUseChat) return false;
+    if (user.canChat != true) return false;
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return false;
+    if (user.host != null && user.host != account.key.host) return false;
+    return true;
+  }
+
   static final _tcoPattern = RegExp(r'https?://t\.co/\S+');
   ContentRenderer? _bioRenderer;
 
@@ -771,6 +788,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               },
               icon: const Icon(Icons.edit, size: 16),
               label: const Text('プロフィールを編集'),
+            ),
+          ],
+          if (!_isOwnProfile && _canStartChatWith(user)) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  context.push('/chat/user/${user.id}', extra: user),
+              icon: const Icon(Icons.chat_bubble_outline, size: 16),
+              label: const Text('メッセージを送る'),
             ),
           ],
           if (!_isOwnProfile && _relationship != null) ...[
