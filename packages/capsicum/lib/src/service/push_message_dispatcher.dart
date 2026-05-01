@@ -222,6 +222,20 @@ class PushMessageDispatcher {
           );
         }
       }
+
+      // Misskey 新 chat: {type: 'newChatMessage', body: <ChatMessage>, ...} (#248)。
+      // /api/i/notifications には来ない push 専用 type。body は ChatMessage そのもの
+      // で fromUser / text / file を直接持つ。
+      if (json['type'] == 'newChatMessage') {
+        final inner = json['body'];
+        if (inner is Map<String, dynamic>) {
+          return DecryptedPushContent(
+            title: null,
+            body: _synthesizeMisskeyChatBody(inner),
+            type: 'newChatMessage',
+          );
+        }
+      }
       return null;
     } catch (e) {
       debugPrint('capsicum: push.dispatcher: parse failed: $e');
@@ -267,6 +281,48 @@ class PushMessageDispatcher {
       return '$actor にフォローされました';
     }
     return actor;
+  }
+
+  /// Misskey 新 chat の `newChatMessage` push payload 内の `body`
+  /// (= ChatMessage そのもの) から通知本文を合成する。
+  ///
+  /// 形式: `<actor>: <text or 添付ラベル>`。fromUser が省略される場合は
+  /// テキストのみ（送信者は notification の payload にも `userId` がいるが、
+  /// 表示には文脈が薄いので省く）。
+  static String? _synthesizeMisskeyChatBody(Map<String, dynamic> body) {
+    final fromUser = body['fromUser'] is Map<String, dynamic>
+        ? body['fromUser'] as Map<String, dynamic>
+        : null;
+    final text = body['text'] as String?;
+    final fileMime = body['file'] is Map<String, dynamic>
+        ? (body['file'] as Map<String, dynamic>)['type'] as String?
+        : null;
+
+    final displayName = (fromUser?['name'] as String?)?.trim();
+    final username = fromUser?['username'] as String?;
+    final actor = (displayName != null && displayName.isNotEmpty)
+        ? displayName
+        : (username != null ? '@$username' : null);
+
+    String content;
+    if (text != null && text.isNotEmpty) {
+      content = text;
+    } else if (fileMime != null) {
+      if (fileMime.startsWith('image/')) {
+        content = '[画像]';
+      } else if (fileMime.startsWith('video/')) {
+        content = '[動画]';
+      } else if (fileMime.startsWith('audio/')) {
+        content = '[音声]';
+      } else {
+        content = '[ファイル]';
+      }
+    } else {
+      content = '';
+    }
+
+    if (actor == null) return content.isEmpty ? null : content;
+    return content.isEmpty ? actor : '$actor: $content';
   }
 
   static Future<void> _showNotification({
