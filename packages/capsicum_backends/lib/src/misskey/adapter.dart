@@ -90,12 +90,14 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PushSubscriptionSupport,
         ScheduleSupport,
         TranslationSupport,
-        DriveSupport {
+        DriveSupport,
+        ChatSupport {
   MisskeyStreaming? _streaming;
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
+  String? _myUserId;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -112,6 +114,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'write:blocks',
     'read:channels',
     'write:channels',
+    'read:chat',
+    'write:chat',
     'read:drive',
     'write:drive',
     'read:favorites',
@@ -151,6 +155,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final user = await client.getI();
     _mutedWords = user.mutedWords ?? [];
     _hardMutedWords = user.hardMutedWords ?? [];
+    _myUserId = user.id;
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
@@ -1358,5 +1363,77 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> unsubscribePush({String? endpoint}) async {
     if (endpoint == null) return;
     await client.unsubscribePush(endpoint: endpoint);
+  }
+
+  // -- ChatSupport --
+
+  Future<String> _ensureMyUserId() async {
+    final cached = _myUserId;
+    if (cached != null) return cached;
+    final user = await client.getI();
+    _myUserId = user.id;
+    return user.id;
+  }
+
+  @override
+  Future<List<ChatThread>> getChatHistory({TimelineQuery? query}) async {
+    final myUserId = await _ensureMyUserId();
+    final entries = await client.getChatHistory(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return entries
+        .map(
+          (e) => misskeyChatThreadFromHistoryEntry(
+            e,
+            host,
+            myUserId,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChatMessage>> getUserMessages({
+    required String userId,
+    TimelineQuery? query,
+  }) async {
+    final messages = await client.getChatUserMessages(
+      userId: userId,
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return messages
+        .map(
+          (m) =>
+              misskeyChatMessageFromMap(m, host, adminRoleIds: _adminRoleIds),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ChatMessage> sendUserMessage({
+    required String userId,
+    String? text,
+    String? fileId,
+  }) async {
+    final data = await client.createChatMessageToUser(
+      toUserId: userId,
+      text: text,
+      fileId: fileId,
+    );
+    return misskeyChatMessageFromMap(data, host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<void> deleteChatMessage(String messageId) async {
+    await client.deleteChatMessage(messageId);
+  }
+
+  @override
+  Future<void> markAllChatRead() async {
+    await client.markAllChatRead();
   }
 }

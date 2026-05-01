@@ -180,6 +180,50 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   }
 }
 
+ChatMessage misskeyChatMessageFromMap(
+  Map<String, dynamic> data,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final fromUser = MisskeyUser.fromJson(
+    data['fromUser'] as Map<String, dynamic>,
+  ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
+  final toUser = MisskeyUser.fromJson(
+    data['toUser'] as Map<String, dynamic>,
+  ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
+  final fileMap = data['file'] as Map<String, dynamic>?;
+  return ChatMessage(
+    id: data['id'] as String,
+    createdAt: DateTime.parse(data['createdAt'] as String),
+    fromUser: fromUser,
+    toUser: toUser,
+    text: data['text'] as String?,
+    file: fileMap != null
+        ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()
+        : null,
+    isRead: data['isRead'] as bool? ?? false,
+  );
+}
+
+ChatThread misskeyChatThreadFromHistoryEntry(
+  Map<String, dynamic> entry,
+  String localHost,
+  String myUserId, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final lastMessage = misskeyChatMessageFromMap(
+    entry,
+    localHost,
+    adminRoleIds: adminRoleIds,
+  );
+  final isIncoming = lastMessage.fromUser.id != myUserId;
+  return ChatThread(
+    otherUser: isIncoming ? lastMessage.fromUser : lastMessage.toUser,
+    lastMessage: lastMessage,
+    isUnread: isIncoming && !lastMessage.isRead,
+  );
+}
+
 Poll? _parseMisskeyPoll(Map<String, dynamic>? poll, String noteId) {
   if (poll == null) return null;
   final choices = poll['choices'] as List<dynamic>?;

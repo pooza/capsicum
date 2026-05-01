@@ -1069,6 +1069,67 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/chat/history
+  Future<List<Map<String, dynamic>>> getChatHistory({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/history',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/messages/user-timeline
+  Future<List<Map<String, dynamic>>> getChatUserMessages({
+    required String userId,
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/user-timeline',
+      data: createBody({
+        'userId': userId,
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/messages/create-to-user
+  Future<Map<String, dynamic>> createChatMessageToUser({
+    required String toUserId,
+    String? text,
+    String? fileId,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/create-to-user',
+      data: createBody({
+        'toUserId': toUserId,
+        'text': ?text,
+        'fileId': ?fileId,
+      }),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/messages/delete
+  Future<void> deleteChatMessage(String messageId) async {
+    await dio.post(
+      '/api/chat/messages/delete',
+      data: createBody({'messageId': messageId}),
+    );
+  }
+
+  /// POST /api/chat/read-all
+  Future<void> markAllChatRead() async {
+    await dio.post('/api/chat/read-all', data: createBody());
+  }
+
   /// Web Push サブスクリプション登録。POST /api/sw/register
   ///
   /// Mastodon 側の [MastodonClient.subscribePush] と対で、3 層（interface /
