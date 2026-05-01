@@ -14,7 +14,13 @@ import '../../service/push_registration_status.dart';
 /// 揃え、失敗時は再試行・全アカウントの状態確認 (/settings/push) への動線を
 /// 出す。
 class PushRegistrationStatusSection extends ConsumerWidget {
-  const PushRegistrationStatusSection({super.key});
+  /// セクション見出し。`null` のときは見出しを描画しない。デフォルトは
+  /// 「プッシュ通知」。サーバー情報画面・プロフィール画面で見出しの揃いを
+  /// 取るため widget 内で完結させる（呼び出し側で別途 _SectionHeader を
+  /// 置く必要はない）。
+  final String? title;
+
+  const PushRegistrationStatusSection({super.key, this.title = 'プッシュ通知'});
 
   static const _actionButtonWidth = 160.0;
 
@@ -52,7 +58,18 @@ class PushRegistrationStatusSection extends ConsumerWidget {
             state == PushRegistrationState.skipped);
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (title != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              title!,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
         ListTile(
           leading: Icon(statusIcon, color: statusColor),
           title: Text(statusText),

@@ -235,8 +235,7 @@ class ServerInfoScreen extends ConsumerWidget {
         _SectionHeader(title: 'モロヘイヤ'),
         _MulukhiyaSection(),
 
-        // Push notification
-        _SectionHeader(title: 'プッシュ通知'),
+        // Push notification (widget が見出しを内包する)
         const PushRegistrationStatusSection(),
 
         const SizedBox(height: 16),
