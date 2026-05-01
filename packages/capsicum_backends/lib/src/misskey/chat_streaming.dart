@@ -59,10 +59,7 @@ class MisskeyChatStreaming {
     _channel!.stream.listen(
       _onMessage,
       onError: (_) => _scheduleReconnect(),
-      onDone: () {
-        _reconnectAttempts = 0;
-        _scheduleReconnect();
-      },
+      onDone: _scheduleReconnect,
     );
 
     _subscriptionId = const Uuid().v4();
