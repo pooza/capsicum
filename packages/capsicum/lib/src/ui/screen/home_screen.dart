@@ -978,6 +978,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _showChannelList(context, ref);
               },
             ),
+          if (ref.read(currentAdapterProvider) is ChatSupport)
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: const Text('メッセージ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push('/chat');
+              },
+            ),
           if (ref.read(currentAdapterProvider) is DriveSupport)
             ListTile(
               leading: const Icon(Icons.cloud_outlined),

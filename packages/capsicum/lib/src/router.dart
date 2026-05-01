@@ -13,6 +13,8 @@ import 'ui/screen/bookmark_screen.dart';
 import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
+import 'ui/screen/chat_thread_list_screen.dart';
+import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
@@ -267,6 +269,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),
+      GoRoute(
+        path: '/chat',
+        builder: (context, state) => const ChatThreadListScreen(),
+      ),
+      GoRoute(
+        path: '/chat/user/:userId',
+        builder: (context, state) {
+          final user = state.extra! as User;
+          return ChatThreadScreen(otherUser: user);
+        },
+      ),
       GoRoute(
         path: '/gallery',
         builder: (context, state) => const GalleryScreen(),

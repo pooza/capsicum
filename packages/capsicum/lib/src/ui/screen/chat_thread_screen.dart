@@ -1,0 +1,363 @@
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../provider/account_manager_provider.dart';
+import '../../provider/chat_provider.dart';
+import '../widget/user_avatar.dart';
+
+class ChatThreadScreen extends ConsumerStatefulWidget {
+  final User otherUser;
+
+  const ChatThreadScreen({super.key, required this.otherUser});
+
+  @override
+  ConsumerState<ChatThreadScreen> createState() => _ChatThreadScreenState();
+}
+
+class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
+  final _scrollController = ScrollController();
+  final _textController = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 600) {
+      ref.read(chatThreadProvider(widget.otherUser.id).notifier).loadMore();
+    }
+  }
+
+  Future<void> _send() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await ref
+          .read(chatThreadProvider(widget.otherUser.id).notifier)
+          .send(text);
+      _textController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('送信に失敗しました: $e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _confirmDelete(ChatMessage message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('メッセージを削除しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref
+          .read(chatThreadProvider(widget.otherUser.id).notifier)
+          .deleteMessage(message.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myUserId = ref.watch(currentAccountProvider)?.user.id;
+    final state = ref.watch(chatThreadProvider(widget.otherUser.id));
+    final displayName = widget.otherUser.displayName?.isNotEmpty == true
+        ? widget.otherUser.displayName!
+        : widget.otherUser.username;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            UserAvatar(user: widget.otherUser, size: 32),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: state.when(
+              data: (data) => _buildMessageList(context, data, myUserId),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(
+                        '読み込みに失敗しました\n$error',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref.invalidate(
+                          chatThreadProvider(widget.otherUser.id),
+                        ),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _ComposeRow(
+            controller: _textController,
+            sending: _sending,
+            onSend: _send,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageList(
+    BuildContext context,
+    ChatThreadState data,
+    String? myUserId,
+  ) {
+    if (data.messages.isEmpty) {
+      return const Center(child: Text('メッセージはありません'));
+    }
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      itemCount: data.messages.length + (data.isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= data.messages.length) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final message = data.messages[index];
+        final isMine = myUserId != null && message.fromUser.id == myUserId;
+        return _MessageBubble(
+          message: message,
+          isMine: isMine,
+          onLongPress: isMine ? () => _confirmDelete(message) : null,
+        );
+      },
+    );
+  }
+}
+
+class _MessageBubble extends StatelessWidget {
+  final ChatMessage message;
+  final bool isMine;
+  final VoidCallback? onLongPress;
+
+  const _MessageBubble({
+    required this.message,
+    required this.isMine,
+    this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bubbleColor = isMine
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerHighest;
+    final textColor = isMine
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+
+    final children = <Widget>[];
+    if (message.file != null) {
+      children.add(_FilePreview(file: message.file!));
+      if (message.text != null && message.text!.isNotEmpty) {
+        children.add(const SizedBox(height: 6));
+      }
+    }
+    if (message.text != null && message.text!.isNotEmpty) {
+      children.add(Text(message.text!, style: TextStyle(color: textColor)));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        mainAxisAlignment: isMine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isMine) ...[
+            UserAvatar(user: message.fromUser, size: 32),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: GestureDetector(
+              onLongPress: onLongPress,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: bubbleColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...children,
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatTime(message.createdAt),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: textColor.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime t) {
+    final local = t.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+class _FilePreview extends StatelessWidget {
+  final Attachment file;
+
+  const _FilePreview({required this.file});
+
+  @override
+  Widget build(BuildContext context) {
+    if (file.type == AttachmentType.image && file.url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          file.previewUrl?.isNotEmpty == true ? file.previewUrl! : file.url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.broken_image_outlined, size: 32),
+        ),
+      );
+    }
+    final icon = switch (file.type) {
+      AttachmentType.video => Icons.movie_outlined,
+      AttachmentType.audio => Icons.audiotrack,
+      AttachmentType.gifv => Icons.gif,
+      _ => Icons.attach_file,
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            file.name?.isNotEmpty == true ? file.name! : '[ファイル]',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ComposeRow extends StatelessWidget {
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+
+  const _ComposeRow({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                minLines: 1,
+                maxLines: 5,
+                enabled: !sending,
+                decoration: const InputDecoration(
+                  hintText: 'メッセージを入力',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: sending
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+              onPressed: sending ? null : onSend,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
