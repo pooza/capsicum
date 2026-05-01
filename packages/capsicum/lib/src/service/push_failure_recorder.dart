@@ -29,6 +29,11 @@ class PushFailureRecorder {
   static const _prefixHost = 'capsicum_push_failure_last_host';
   static const _prefixEncoding = 'capsicum_push_failure_last_encoding';
   static const _prefixElapsedMs = 'capsicum_push_failure_last_elapsed_ms';
+  // #436: nse.no_keys の根本原因切り分け用。
+  static const _prefixKeychainStatus =
+      'capsicum_push_failure_last_keychain_status';
+  static const _prefixTriedPrefixes =
+      'capsicum_push_failure_last_tried_prefixes';
 
   /// `dispatch.*`: Android FCM バックグラウンド isolate
   /// `nse.*`: iOS Notification Service Extension（NSE 側で書く）
@@ -53,11 +58,17 @@ class PushFailureRecorder {
   /// 自前 / 他鯖 / 暗号化方式 / NSE 経過時間（タイムアウト由来かどうか）を
   /// Sentry tag/extra で見るために使う。`bg_handler.failed` のように context が
   /// 取れない経路では省略可。
+  ///
+  /// [keychainStatus] / [triedPrefixes] は #436 で追加した nse.no_keys 切り分け用。
+  /// iOS NSE が Keychain から鍵を読めなかった原因（OSStatus と試行したプレフィックス）を
+  /// Sentry tag に乗せる。NSE 由来でない経路では省略可。
   static Future<void> record(
     String code, {
     String? host,
     String? encoding,
     int? elapsedMs,
+    int? keychainStatus,
+    String? triedPrefixes,
   }) async {
     try {
       final prefs = _prefs();
@@ -80,6 +91,16 @@ class PushFailureRecorder {
       } else {
         await prefs.remove(_prefixElapsedMs);
       }
+      if (keychainStatus != null) {
+        await prefs.setInt(_prefixKeychainStatus, keychainStatus);
+      } else {
+        await prefs.remove(_prefixKeychainStatus);
+      }
+      if (triedPrefixes != null) {
+        await prefs.setString(_prefixTriedPrefixes, triedPrefixes);
+      } else {
+        await prefs.remove(_prefixTriedPrefixes);
+      }
     } catch (_) {
       // ignore: 観測機構の失敗で本体を落とさない
     }
@@ -97,12 +118,16 @@ class PushFailureRecorder {
       final host = await prefs.getString(_prefixHost);
       final encoding = await prefs.getString(_prefixEncoding);
       final elapsedMs = await prefs.getInt(_prefixElapsedMs);
+      final keychainStatus = await prefs.getInt(_prefixKeychainStatus);
+      final triedPrefixes = await prefs.getString(_prefixTriedPrefixes);
       await prefs.remove(_prefixCode);
       await prefs.remove(_prefixAt);
       await prefs.remove(_prefixCount);
       await prefs.remove(_prefixHost);
       await prefs.remove(_prefixEncoding);
       await prefs.remove(_prefixElapsedMs);
+      await prefs.remove(_prefixKeychainStatus);
+      await prefs.remove(_prefixTriedPrefixes);
       return PushFailureRecord(
         code: code,
         at: atMs != null
@@ -112,6 +137,8 @@ class PushFailureRecorder {
         host: host,
         encoding: encoding,
         elapsedMs: elapsedMs,
+        keychainStatus: keychainStatus,
+        triedPrefixes: triedPrefixes,
       );
     } catch (_) {
       return null;
@@ -127,6 +154,14 @@ class PushFailureRecord {
   final String? encoding;
   final int? elapsedMs;
 
+  /// iOS Keychain `SecItemCopyMatching` の OSStatus。`nse.no_keys` の根本
+  /// 原因切り分けに使う (#436)。NSE 由来でない経路では null。
+  final int? keychainStatus;
+
+  /// PushKeyReader が試行したストレージキープレフィックス（"mastodon,misskey" 等）。
+  /// 失敗時にどこまで試したかを Sentry で把握するため (#436)。
+  final String? triedPrefixes;
+
   const PushFailureRecord({
     required this.code,
     required this.at,
@@ -134,5 +169,7 @@ class PushFailureRecord {
     this.host,
     this.encoding,
     this.elapsedMs,
+    this.keychainStatus,
+    this.triedPrefixes,
   });
 }

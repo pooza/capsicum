@@ -266,6 +266,11 @@ Future<void> _flushPushFailureRecord() async {
           scope.setTag('push.failure.code', record.code);
           scope.setTag('push.failure.count', record.count.toString());
           scope.setTag('push.failure.last_at', record.at.toIso8601String());
+          // #436: code ごとに別グループへ分割する。デフォルトでは
+          // captureMessage の文面が固定（テンプレート文字列）でも Sentry が
+          // 単一グループにまとめてしまい、nse.no_keys / nse.decrypt_failed /
+          // dispatch.* の優先度判定が混ざる。
+          scope.fingerprint = ['push.failure', record.code];
           // #376: 切り分けコンテキスト。host で自前/他鯖、encoding で暗号化
           // 方式の偏り、elapsedMs でタイムアウト由来か即時失敗かを Sentry の
           // tag/extra で見られるようにする。bg_handler.failed のように context
@@ -279,6 +284,16 @@ Future<void> _flushPushFailureRecord() async {
           if (record.elapsedMs != null) {
             scope.setContexts('push', {'nse_elapsed_ms': record.elapsedMs});
           }
+          // #436: nse.no_keys 切り分け用。Keychain OSStatus と試行プレフィックス。
+          if (record.keychainStatus != null) {
+            scope.setTag(
+              'push.keychain.status',
+              record.keychainStatus.toString(),
+            );
+          }
+          if (record.triedPrefixes != null) {
+            scope.setTag('push.keychain.tried', record.triedPrefixes!);
+          }
         },
       );
     }
@@ -286,7 +301,9 @@ Future<void> _flushPushFailureRecord() async {
       'capsicum: push.failure_recorder: flushed ${record.code} '
       '(count=${record.count}, at=${record.at.toIso8601String()}, '
       'host=${record.host}, encoding=${record.encoding}, '
-      'elapsedMs=${record.elapsedMs})',
+      'elapsedMs=${record.elapsedMs}, '
+      'keychainStatus=${record.keychainStatus}, '
+      'triedPrefixes=${record.triedPrefixes})',
     );
   } catch (_) {
     // ignore

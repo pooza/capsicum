@@ -50,11 +50,17 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        guard let keys = PushKeyReader.read(account: account) else {
-            NSLog("capsicum: nse: no push keys for \(account)")
+        let lookup = PushKeyReader.read(account: account)
+        guard let keys = lookup.keys else {
+            NSLog(
+                "capsicum: nse: no push keys for \(account) "
+                    + "(status=\(lookup.lastStatus), tried=\(lookup.triedPrefixes))"
+            )
             FailureRecorder.record(
                 code: "nse.no_keys",
-                host: host, encoding: encoding, elapsedMs: elapsedMs()
+                host: host, encoding: encoding, elapsedMs: elapsedMs(),
+                keychainStatus: Int(lookup.lastStatus),
+                triedPrefixes: lookup.triedPrefixes.joined(separator: ",")
             )
             contentHandler(bestAttempt)
             return
@@ -173,12 +179,20 @@ enum FailureRecorder {
     private static let hostKey = "capsicum_push_failure_last_host"
     private static let encodingKey = "capsicum_push_failure_last_encoding"
     private static let elapsedKey = "capsicum_push_failure_last_elapsed_ms"
+    /// #436: nse.no_keys の根本原因切り分け用。Keychain OSStatus と
+    /// 試行したストレージキープレフィックス（"mastodon,misskey" 等）。
+    private static let keychainStatusKey =
+        "capsicum_push_failure_last_keychain_status"
+    private static let triedPrefixesKey =
+        "capsicum_push_failure_last_tried_prefixes"
 
     static func record(
         code: String,
         host: String?,
         encoding: String?,
-        elapsedMs: Int?
+        elapsedMs: Int?,
+        keychainStatus: Int? = nil,
+        triedPrefixes: String? = nil
     ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         defaults.set(code, forKey: codeKey)
@@ -199,6 +213,16 @@ enum FailureRecorder {
             defaults.set(elapsedMs, forKey: elapsedKey)
         } else {
             defaults.removeObject(forKey: elapsedKey)
+        }
+        if let keychainStatus = keychainStatus {
+            defaults.set(keychainStatus, forKey: keychainStatusKey)
+        } else {
+            defaults.removeObject(forKey: keychainStatusKey)
+        }
+        if let triedPrefixes = triedPrefixes {
+            defaults.set(triedPrefixes, forKey: triedPrefixesKey)
+        } else {
+            defaults.removeObject(forKey: triedPrefixesKey)
         }
     }
 }
