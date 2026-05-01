@@ -5,12 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
 import '../../provider/account_manager_provider.dart';
-import '../../provider/push_registration_status_provider.dart';
 import '../../provider/server_info_provider.dart';
-import '../../service/push_registration_service.dart';
-import '../../service/push_registration_status.dart';
 import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
+import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
 class ServerInfoScreen extends ConsumerWidget {
@@ -239,7 +237,7 @@ class ServerInfoScreen extends ConsumerWidget {
 
         // Push notification
         _SectionHeader(title: 'プッシュ通知'),
-        const _PushNotificationSection(),
+        const PushRegistrationStatusSection(),
 
         const SizedBox(height: 16),
       ],
@@ -308,137 +306,6 @@ class _MulukhiyaSectionState extends ConsumerState<_MulukhiyaSection> {
     } finally {
       if (mounted) setState(() => _detecting = false);
     }
-  }
-}
-
-/// 現アカウントのプッシュ通知登録状態を表示する。設定画面の per-account
-/// tile と同じ判定ロジックだが、ここはサーバー情報の流れに合わせて 1 アカウント
-/// 分だけ簡潔に出す。
-class _PushNotificationSection extends ConsumerWidget {
-  const _PushNotificationSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final account = ref.watch(currentAccountProvider);
-    if (account == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text('アカウント情報を取得できませんでした'),
-      );
-    }
-    final accounts = ref.watch(accountManagerProvider).accounts;
-    final hasPreset = PushRegistrationService.hasPresetAmong(accounts);
-    final eligible =
-        hasPreset || PushRegistrationService.isPresetServer(account.key.host);
-    final statusMap =
-        ref.watch(pushRegistrationStatusProvider).valueOrNull ??
-        const <String, PushRegistrationSnapshot>{};
-    final snapshot = statusMap[account.key.toStorageKey()];
-    final state = snapshot?.state ?? PushRegistrationState.idle;
-    final theme = Theme.of(context);
-
-    final (statusText, statusColor, statusIcon) = _describe(
-      theme,
-      state,
-      eligible,
-      snapshot?.reason,
-    );
-
-    final retryable =
-        eligible &&
-        (state == PushRegistrationState.failed ||
-            state == PushRegistrationState.idle ||
-            state == PushRegistrationState.skipped);
-
-    return Column(
-      children: [
-        ListTile(
-          leading: Icon(statusIcon, color: statusColor),
-          title: Text(statusText),
-          subtitle: snapshot?.errorMessage != null
-              ? Text(snapshot!.errorMessage!)
-              : null,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              if (retryable)
-                SizedBox(
-                  width: _actionButtonWidth,
-                  child: TextButton.icon(
-                    onPressed: () => PushRegistrationService.registerAccount(
-                      account,
-                      eligible: hasPreset,
-                    ),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('再試行'),
-                  ),
-                ),
-              SizedBox(
-                width: _actionButtonWidth,
-                child: TextButton.icon(
-                  onPressed: () => context.push('/settings/push'),
-                  icon: const Icon(Icons.tune),
-                  label: const Text('全アカウント'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  (String, Color, IconData) _describe(
-    ThemeData theme,
-    PushRegistrationState state,
-    bool eligible,
-    PushRegistrationFailureReason? reason,
-  ) {
-    if (!eligible) {
-      return (
-        '登録対象外（プリセットサーバーのアカウント未登録）',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      );
-    }
-    return switch (state) {
-      PushRegistrationState.idle => (
-        '未登録',
-        theme.colorScheme.outline,
-        Icons.hourglass_empty,
-      ),
-      PushRegistrationState.registering => (
-        '登録中…',
-        theme.colorScheme.primary,
-        Icons.sync,
-      ),
-      PushRegistrationState.registered => (
-        '登録済み',
-        Colors.green,
-        Icons.check_circle,
-      ),
-      PushRegistrationState.failed =>
-        reason == PushRegistrationFailureReason.permissionDenied
-            ? (
-                '通知の権限が許可されていません',
-                theme.colorScheme.error,
-                Icons.notifications_off_outlined,
-              )
-            : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
-      PushRegistrationState.notSupported => (
-        'このサーバーでは対応していません',
-        theme.colorScheme.outline,
-        Icons.block,
-      ),
-      PushRegistrationState.skipped => (
-        '登録対象外',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      ),
-    };
   }
 }
 

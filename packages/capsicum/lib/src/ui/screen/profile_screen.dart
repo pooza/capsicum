@@ -15,6 +15,7 @@ import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
+import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -789,6 +790,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               icon: const Icon(Icons.edit, size: 16),
               label: const Text('プロフィールを編集'),
             ),
+            const SizedBox(height: 8),
+            const PushRegistrationStatusSection(),
           ],
           if (!_isOwnProfile && _canStartChatWith(user)) ...[
             const SizedBox(height: 12),
