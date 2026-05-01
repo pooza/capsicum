@@ -180,23 +180,40 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
   }
 }
 
+/// Misskey の chat メッセージレスポンス Map → ChatMessage 変換。
+///
+/// `/api/chat/messages/user-timeline` 等は `fromUser` / `toUser` のオブジェクトを
+/// 省略し `fromUserId` / `toUserId` だけ返すことがある（呼び出し元の文脈で
+/// 自明だから）。そのフォールバックとして [selfUser] / [counterpartyUser] を
+/// 受け取り、ID 一致するものを差し込む。
 ChatMessage misskeyChatMessageFromMap(
   Map<String, dynamic> data,
   String localHost, {
   Set<String> adminRoleIds = const {},
+  User? selfUser,
+  User? counterpartyUser,
 }) {
-  final fromUser = MisskeyUser.fromJson(
-    data['fromUser'] as Map<String, dynamic>,
-  ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
-  final toUser = MisskeyUser.fromJson(
-    data['toUser'] as Map<String, dynamic>,
-  ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
+  User resolveUser(String userIdKey, String userObjKey) {
+    final embedded = data[userObjKey] as Map<String, dynamic>?;
+    if (embedded != null) {
+      return MisskeyUser.fromJson(
+        embedded,
+      ).toCapsicum(localHost, adminRoleIds: adminRoleIds);
+    }
+    final id = data[userIdKey] as String;
+    if (selfUser != null && selfUser.id == id) return selfUser;
+    if (counterpartyUser != null && counterpartyUser.id == id) {
+      return counterpartyUser;
+    }
+    return User(id: id, username: '?');
+  }
+
   final fileMap = data['file'] as Map<String, dynamic>?;
   return ChatMessage(
     id: data['id'] as String,
     createdAt: DateTime.parse(data['createdAt'] as String),
-    fromUser: fromUser,
-    toUser: toUser,
+    fromUser: resolveUser('fromUserId', 'fromUser'),
+    toUser: resolveUser('toUserId', 'toUser'),
     text: data['text'] as String?,
     file: fileMap != null
         ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()

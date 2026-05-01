@@ -97,7 +97,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
-  String? _myUserId;
+  User? _myUser;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -155,8 +155,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final user = await client.getI();
     _mutedWords = user.mutedWords ?? [];
     _hardMutedWords = user.hardMutedWords ?? [];
-    _myUserId = user.id;
-    return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    final me = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    _myUser = me;
+    return me;
   }
 
   @override
@@ -1367,17 +1368,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // -- ChatSupport --
 
-  Future<String> _ensureMyUserId() async {
-    final cached = _myUserId;
+  Future<User> _ensureMyUser() async {
+    final cached = _myUser;
     if (cached != null) return cached;
-    final user = await client.getI();
-    _myUserId = user.id;
-    return user.id;
+    return getMyself();
   }
 
   @override
   Future<List<ChatThread>> getChatHistory({TimelineQuery? query}) async {
-    final myUserId = await _ensureMyUserId();
+    final me = await _ensureMyUser();
     final entries = await client.getChatHistory(
       untilId: query?.maxId,
       limit: query?.limit,
@@ -1387,7 +1386,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           (e) => misskeyChatThreadFromHistoryEntry(
             e,
             host,
-            myUserId,
+            me.id,
             adminRoleIds: _adminRoleIds,
           ),
         )
@@ -1399,6 +1398,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     required String userId,
     TimelineQuery? query,
   }) async {
+    final me = await _ensureMyUser();
+    // user-timeline は fromUser / toUser オブジェクトを省略するレスポンスを
+    // 返すことがあるため、self と counterparty を事前解決して helper に
+    // フォールバックとして渡す。
+    final counterparty = await getUserById(userId);
     final messages = await client.getChatUserMessages(
       userId: userId,
       untilId: query?.maxId,
@@ -1407,8 +1411,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return messages
         .map(
-          (m) =>
-              misskeyChatMessageFromMap(m, host, adminRoleIds: _adminRoleIds),
+          (m) => misskeyChatMessageFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+            selfUser: me,
+            counterpartyUser: counterparty,
+          ),
         )
         .toList();
   }
@@ -1419,12 +1428,20 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String? text,
     String? fileId,
   }) async {
+    final me = await _ensureMyUser();
+    final counterparty = await getUserById(userId);
     final data = await client.createChatMessageToUser(
       toUserId: userId,
       text: text,
       fileId: fileId,
     );
-    return misskeyChatMessageFromMap(data, host, adminRoleIds: _adminRoleIds);
+    return misskeyChatMessageFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+      selfUser: me,
+      counterpartyUser: counterparty,
+    );
   }
 
   @override
