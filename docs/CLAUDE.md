@@ -174,6 +174,7 @@ capsicum/
     tech-notes.md         # 実装の落とし穴・API 固有の注意点
     dev-environment.md    # 開発マシン・検証端末・Sentry 環境
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
+    flutter-upstream-watch.md  # Flutter 上流バグの追跡（月次 chase routine と連動）
     release-pipeline.md   # リリースパイプライン構想（fastlane + GitHub Actions）
     sync-procedure.md     # セッション開始時の同期手順
     archive/              # 過去の記録（現役運用では参照しない）
@@ -314,6 +315,7 @@ macOS の付加機能としては、Music.app 等の「共有」メニューか�
   - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
+- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、月 1 回の chase routine（毎月 1 日 09:00 JST）で上流の進捗を巡回する
 
 ### 実装しない機能
 
