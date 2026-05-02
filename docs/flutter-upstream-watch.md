@@ -6,10 +6,10 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
 
 | capsicum | タイトル | 上流参照 | 最終確認日 | 状態 |
 |---|---|---|---|---|
-| [#54](https://github.com/pooza/capsicum/issues/54) | ATOK で日本語入力が二重になる (iOS) | (未調査 — IME composing text / ATOK で `flutter/flutter` を検索) | 2026-05-02 | 未調査 |
-| [#94](https://github.com/pooza/capsicum/issues/94) | 投稿フォームのテキスト選択メニューが英語表示・範囲選択不可 | (未調査 — TextSelectionToolbar / MaterialLocalizations で `flutter/flutter` を検索) | 2026-05-02 | 未調査 |
-| [#276](https://github.com/pooza/capsicum/issues/276) | Android: ログイン画面から遷移しない (Custom Tab + `capsicum://` リダイレクト) | (未調査 — `LinusU/flutter_web_auth_2` で Custom Tab / カスタム URL スキーム / Android 12+ のキーワード検索) | 2026-05-02 | 緩和策実装済み・上流進展待ち |
-| [#390](https://github.com/pooza/capsicum/issues/390) | macOS HardwareKeyboard assertion (リモート操作環境) | [flutter/flutter#136419](https://github.com/flutter/flutter/issues/136419), [flutter/flutter#167091](https://github.com/flutter/flutter/issues/167091) | 2026-05-02 | 上流 open、未確認 |
+| [#54](https://github.com/pooza/capsicum/issues/54) | ATOK で日本語入力が二重になる (iOS) | iOS 特化の上流 issue 未発見。関連: [flutter/flutter#96092](https://github.com/flutter/flutter/issues/96092) (Android), [flutter/flutter#151103](https://github.com/flutter/flutter/issues/151103) / [#134926](https://github.com/flutter/flutter/issues/134926) (web) | 2026-05-02 | 上流 issue 未特定 |
+| [#94](https://github.com/pooza/capsicum/issues/94) | 投稿フォームのテキスト選択メニューが英語表示・範囲選択不可 | [flutter/flutter#105028](https://github.com/flutter/flutter/issues/105028) (OPEN, TextField toolbar button text do not match platform iOS and macOS text in Japanese) | 2026-05-02 | 上流 open、本命特定 |
+| [#276](https://github.com/pooza/capsicum/issues/276) | Android: ログイン画面から遷移しない (Custom Tab + `capsicum://` リダイレクト) | [ThexXTURBOXx/flutter_web_auth_2#187](https://github.com/ThexXTURBOXx/flutter_web_auth_2/issues/187) (Deeplink not working / bounce), [#198](https://github.com/ThexXTURBOXx/flutter_web_auth_2/issues/198) (Non-default browser opens), [#158](https://github.com/ThexXTURBOXx/flutter_web_auth_2/issues/158) (Browser doesn't close after callback), [#183](https://github.com/ThexXTURBOXx/flutter_web_auth_2/issues/183) (App Links docs clarity) | 2026-05-02 | 緩和策実装済み・上流複数 open |
+| [#390](https://github.com/pooza/capsicum/issues/390) | macOS HardwareKeyboard assertion (リモート操作環境) | [flutter/flutter#180809](https://github.com/flutter/flutter/issues/180809) (CLOSED 2026-01-12, 同種 assertion の最新 close)。OPEN 類似: [#152391](https://github.com/flutter/flutter/issues/152391) (PDA keyboard SHIFT)。周辺: [#136419](https://github.com/flutter/flutter/issues/136419) (RawKeyboard deprecation tracking) | 2026-05-02 | 上流で繰り返し close→再現を周回。stable 反映と現行版での再現確認が必要 |
 
 ## chase 手順
 
