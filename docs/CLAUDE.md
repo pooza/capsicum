@@ -104,7 +104,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 ### DM / メッセージの方針
 
 - **Mastodon**（#179）: `GET /api/v1/conversations` で DM 専用タイムラインを実装
-- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する
+- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。なお Misskey メッセージは現状実験的機能の位置付けで、追加のバグ修正・enhancement（#442 系列、#449 のレンダリング要素反映、#440 push tap 動線、グループチャット #438 等）は v1.22.x ホットフィックスではなく v1.25（Misskey メッセージ改善マイルストーン）に集約して消化する方針。利用状況が増えてホットフィックス級の判断が必要になった場合は別途見直す
 
 ### タイムラインの読み込み挙動
 
@@ -284,7 +284,7 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にする。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。デスクトップ向けには Dart `Timer` + 常駐前提のフォールバック実装を含む `BackgroundTaskScheduler` 層と、`flutter_local_notifications` のデスクトップ対応差分を吸収する層が要る
 3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態は Linux: Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）、Windows: Microsoft Store（[#423](https://github.com/pooza/capsicum/issues/423)）。Linux と Windows のどちらを先にやるかは未定。実機検証は別 issue として並走させる（[#425](https://github.com/pooza/capsicum/issues/425)）。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux / Windows 着手時に各プラットフォームの video_player 対応状況を改めて棚卸しし、必要があれば移行を判断する位置付けにする。プラグイン関連の追加対応（libsecret manifest / 通知機能差吸収の実装ギャップ等）は v1.23 完了後に必要なら起票する
 
-第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置する（大更新を他の大更新と並走させない方針）。
+第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置した（大更新を他の大更新と並走させない方針）。v1.22 として 2026-05-01 にリリース完了。リリース前レビューの黄判定や追加報告から派生したバグ修正・enhancement (#442 系列、#449、#440 など) は v1.22.x ホットフィックスではなく **v1.25**（Misskey メッセージ改善マイルストーン）にまとめて消化する方針 — Misskey メッセージは現状実験的機能の位置付けで、ホットフィックス級の利用状況・致命度には達していないため。グループチャット (#438) は単独機能として **v1.28** に分離。
 
 動機の具体例:
 
@@ -300,7 +300,7 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 
 配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Windows は Microsoft Store、Linux は Flathub + AppImage、Snap は不採用）、および段階的な実装順序は [release-pipeline.md](release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
 
-macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がバックログにある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。急がない位置付けで未割り当て。
+macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。desktop 系として **v1.24**（Linux / Windows 配布）に同居でアサイン。
 
 制約: モロヘイヤ透過プロキシ前提のためネットワーク層は問題にならない。
 
