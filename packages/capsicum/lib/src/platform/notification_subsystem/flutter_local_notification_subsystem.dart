@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'notification_subsystem.dart';
 
@@ -62,8 +63,21 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
             AndroidFlutterLocalNotificationsPlugin
           >();
       await androidPlugin?.requestNotificationsPermission();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('capsicum: notification: init failed: $e');
+      // 初期化失敗は通知配信が完全に止まる致命的状態だが、UI 起動経路は
+      // 止めない（observability 故障で本体を落とさない方針）。Sentry に
+      // 上げて気付ける状態を確保する。bg isolate / Sentry 未初期化経路でも
+      // 失敗が UI を巻き込まないよう更に try で包む。
+      try {
+        await Sentry.captureException(
+          e,
+          stackTrace: st,
+          hint: Hint.withMap({'subsystem': 'notification'}),
+        );
+      } catch (_) {
+        // ignore
+      }
     }
   }
 
@@ -81,12 +95,13 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       importance: Importance.high,
       priority: Priority.high,
     );
-    const iosDetails = DarwinNotificationDetails();
+    // iOS / macOS は同じ DarwinNotificationDetails で扱える。
+    const darwinDetails = DarwinNotificationDetails();
     const linuxDetails = LinuxNotificationDetails();
     const details = NotificationDetails(
       android: androidDetails,
-      iOS: iosDetails,
-      macOS: iosDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
       linux: linuxDetails,
     );
     return _plugin.show(id, title, body, details, payload: payload);

@@ -7,7 +7,7 @@ import 'timeline_provider.dart' show loadMoreMaxRetries, loadMoreRetryDelay;
 
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel。
-const Object _kKeepLoadMoreError = Object();
+const Object _keepLoadMoreError = Object();
 
 class DriveState {
   final List<DriveFolder> folders;
@@ -35,14 +35,14 @@ class DriveState {
     List<Attachment>? files,
     bool? isLoadingMore,
     bool? hasMore,
-    Object? loadMoreError = _kKeepLoadMoreError,
+    Object? loadMoreError = _keepLoadMoreError,
   }) {
     return DriveState(
       folders: folders ?? this.folders,
       files: files ?? this.files,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
-      loadMoreError: identical(loadMoreError, _kKeepLoadMoreError)
+      loadMoreError: identical(loadMoreError, _keepLoadMoreError)
           ? this.loadMoreError
           : loadMoreError,
     );
