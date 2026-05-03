@@ -6,6 +6,7 @@ import '../../../provider/account_manager_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
+import '../../widget/push_registration_status_section.dart';
 
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
 /// 再試行できる設定画面（#340）。
@@ -76,8 +77,12 @@ class _AccountStatusTile extends ConsumerWidget {
     final eligible =
         hasPreset || PushRegistrationService.isPresetServer(account.key.host);
 
-    final (statusText, statusColor, statusIcon) = _describeState(
-      context,
+    final (
+      statusText,
+      statusColor,
+      statusIcon,
+    ) = describePushRegistrationStatus(
+      Theme.of(context),
       state,
       eligible,
       snapshot?.reason,
@@ -100,57 +105,6 @@ class _AccountStatusTile extends ConsumerWidget {
             )
           : null,
     );
-  }
-
-  (String, Color, IconData) _describeState(
-    BuildContext context,
-    PushRegistrationState state,
-    bool eligible,
-    PushRegistrationFailureReason? reason,
-  ) {
-    final theme = Theme.of(context);
-    if (!eligible) {
-      return (
-        '登録対象外（プリセットサーバーのアカウントが未登録）',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      );
-    }
-    return switch (state) {
-      PushRegistrationState.idle => (
-        '未登録',
-        theme.colorScheme.outline,
-        Icons.hourglass_empty,
-      ),
-      PushRegistrationState.registering => (
-        '登録中…',
-        theme.colorScheme.primary,
-        Icons.sync,
-      ),
-      PushRegistrationState.registered => (
-        '登録済み',
-        Colors.green,
-        Icons.check_circle,
-      ),
-      PushRegistrationState.failed =>
-        reason == PushRegistrationFailureReason.permissionDenied
-            ? (
-                '通知の権限が許可されていません',
-                theme.colorScheme.error,
-                Icons.notifications_off_outlined,
-              )
-            : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
-      PushRegistrationState.notSupported => (
-        'このサーバーでは対応していません',
-        theme.colorScheme.outline,
-        Icons.block,
-      ),
-      PushRegistrationState.skipped => (
-        '登録対象外',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      ),
-    };
   }
 
   bool _isRetryable(PushRegistrationState state, bool eligible) {

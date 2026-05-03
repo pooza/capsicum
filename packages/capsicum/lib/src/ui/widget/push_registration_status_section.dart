@@ -7,6 +7,66 @@ import '../../provider/push_registration_status_provider.dart';
 import '../../service/push_registration_service.dart';
 import '../../service/push_registration_status.dart';
 
+/// プッシュ通知登録状態の表示文言・色・アイコンを返す共通ロジック。
+/// 設定 → プッシュ通知画面とサーバー情報 / プロフィールの
+/// [PushRegistrationStatusSection] が同一の判定を使うために抽出してある。
+///
+/// `compact` を true にすると登録対象外の文言を短縮版（プロフィール等の
+/// 限られた幅に収める用）で返す。デフォルトは設定画面用の長文。
+(String, Color, IconData) describePushRegistrationStatus(
+  ThemeData theme,
+  PushRegistrationState state,
+  bool eligible,
+  PushRegistrationFailureReason? reason, {
+  bool compact = false,
+}) {
+  if (!eligible) {
+    return (
+      compact ? '登録対象外（プリセットサーバーのアカウント未登録）' : '登録対象外（プリセットサーバーのアカウントが未登録）',
+      theme.colorScheme.outline,
+      Icons.remove_circle_outline,
+    );
+  }
+  return switch (state) {
+    PushRegistrationState.idle => (
+      '未登録',
+      theme.colorScheme.outline,
+      Icons.hourglass_empty,
+    ),
+    PushRegistrationState.registering => (
+      '登録中…',
+      theme.colorScheme.primary,
+      Icons.sync,
+    ),
+    PushRegistrationState.registered => (
+      '登録済み',
+      // theme.colorScheme に「成功」枠の色が無いため Material のシェード値で
+      // 代替。shade400 はライト/ダーク両モードで十分なコントラストを確保
+      // できる中間調。
+      Colors.green.shade400,
+      Icons.check_circle,
+    ),
+    PushRegistrationState.failed =>
+      reason == PushRegistrationFailureReason.permissionDenied
+          ? (
+              '通知の権限が許可されていません',
+              theme.colorScheme.error,
+              Icons.notifications_off_outlined,
+            )
+          : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
+    PushRegistrationState.notSupported => (
+      'このサーバーでは対応していません',
+      theme.colorScheme.outline,
+      Icons.block,
+    ),
+    PushRegistrationState.skipped => (
+      '登録対象外',
+      theme.colorScheme.outline,
+      Icons.remove_circle_outline,
+    ),
+  };
+}
+
 /// 現アカウントのプッシュ通知登録状態を表示する共有 widget。
 ///
 /// サーバー情報画面・プロフィール画面など複数の画面で同一の判定ロジック・
@@ -44,11 +104,16 @@ class PushRegistrationStatusSection extends ConsumerWidget {
     final state = snapshot?.state ?? PushRegistrationState.idle;
     final theme = Theme.of(context);
 
-    final (statusText, statusColor, statusIcon) = _describe(
+    final (
+      statusText,
+      statusColor,
+      statusIcon,
+    ) = describePushRegistrationStatus(
       theme,
       state,
       eligible,
       snapshot?.reason,
+      compact: true,
     );
 
     final retryable =
@@ -107,55 +172,5 @@ class PushRegistrationStatusSection extends ConsumerWidget {
         ),
       ],
     );
-  }
-
-  (String, Color, IconData) _describe(
-    ThemeData theme,
-    PushRegistrationState state,
-    bool eligible,
-    PushRegistrationFailureReason? reason,
-  ) {
-    if (!eligible) {
-      return (
-        '登録対象外（プリセットサーバーのアカウント未登録）',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      );
-    }
-    return switch (state) {
-      PushRegistrationState.idle => (
-        '未登録',
-        theme.colorScheme.outline,
-        Icons.hourglass_empty,
-      ),
-      PushRegistrationState.registering => (
-        '登録中…',
-        theme.colorScheme.primary,
-        Icons.sync,
-      ),
-      PushRegistrationState.registered => (
-        '登録済み',
-        Colors.green,
-        Icons.check_circle,
-      ),
-      PushRegistrationState.failed =>
-        reason == PushRegistrationFailureReason.permissionDenied
-            ? (
-                '通知の権限が許可されていません',
-                theme.colorScheme.error,
-                Icons.notifications_off_outlined,
-              )
-            : ('登録に失敗しました', theme.colorScheme.error, Icons.error_outline),
-      PushRegistrationState.notSupported => (
-        'このサーバーでは対応していません',
-        theme.colorScheme.outline,
-        Icons.block,
-      ),
-      PushRegistrationState.skipped => (
-        '登録対象外',
-        theme.colorScheme.outline,
-        Icons.remove_circle_outline,
-      ),
-    };
   }
 }
