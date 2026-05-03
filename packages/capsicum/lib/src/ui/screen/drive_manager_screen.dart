@@ -45,6 +45,19 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     }
   }
 
+  /// 取得済みコンテンツが viewport に収まりきってスクロールが発生しない場合、
+  /// 自動再試行のフックがないため自前で次ページを要求する (#452)。
+  /// hasMore / isLoadingMore / loadMoreError で無限ループを防ぐ。
+  void _maybeLoadMoreIfNotScrollable() {
+    if (!mounted || !_scrollController.hasClients) return;
+    if (_scrollController.position.maxScrollExtent > 0) return;
+    final state = ref.read(driveContentsProvider(_currentFolderId)).valueOrNull;
+    if (state == null) return;
+    if (!state.hasMore || state.isLoadingMore) return;
+    if (state.loadMoreError != null) return;
+    ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
+  }
+
   void _openFolder(DriveFolder folder) {
     setState(() {
       _folderStack.add(_FolderEntry(id: folder.id, name: folder.name));
@@ -450,6 +463,13 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             final totalFiles = state.files.length;
             final totalItems =
                 totalFolders + totalFiles + (state.isLoadingMore ? 1 : 0);
+
+            // 画面幅が広いと初期 20 件が viewport 内に収まり、スクロール
+            // 由来の loadMore() が起動しない。レイアウト確定後にスクロール
+            // 可能か再評価し、必要なら次ページを要求する (#452)。
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _maybeLoadMoreIfNotScrollable();
+            });
 
             if (totalFolders == 0 && totalFiles == 0) {
               return const Center(child: Text('ファイルがありません'));
