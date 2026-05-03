@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../platform/media_picker/media_picker.dart';
 import '../platform/media_picker/media_picker_factory.dart';
+import '../platform/notification_subsystem/notification_subsystem.dart';
+import '../service/notification_init.dart';
 
 /// プラットフォーム抽象層 (`lib/src/platform/`) の Riverpod 入口。
 /// UI 層はこの provider 経由で実装を受け取り、`Platform.isXxx` を
@@ -10,3 +12,11 @@ import '../platform/media_picker/media_picker_factory.dart';
 /// メディア選択 ([MediaPicker])。iOS / Android / macOS は image_picker、
 /// Linux / Windows は file_selector を使う。
 final mediaPickerProvider = Provider<MediaPicker>((_) => createMediaPicker());
+
+/// ローカル通知 ([NotificationSubsystem])。flutter_local_notifications を
+/// 共通基盤として使い、プラットフォーム差は実装内部で吸収する。バックグラウンド
+/// isolate からも同じインスタンスを参照する必要があるため、`notification_init`
+/// の top-level singleton をそのまま返す。
+final notificationSubsystemProvider = Provider<NotificationSubsystem>(
+  (_) => notificationSubsystem,
+);

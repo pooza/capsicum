@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../ui/util/notification_type_display.dart';
 import 'notification_init.dart';
@@ -22,9 +21,6 @@ import 'web_push_decryptor.dart';
 /// リレーは `notification` ブロックを落として data-only で送るため、Android は
 /// どの状態でもこのディスパッチャを経由して復号 + 通知表示が走る。
 class PushMessageDispatcher {
-  static const _channelId = 'capsicum_push';
-  static const _channelName = 'プッシュ通知';
-
   /// FCM メッセージを処理して通知を表示する。復号失敗 / 鍵不在時は fallback
   /// 文言 (`{account} に通知があります`) で表示し、完全に無応答にはしない。
   ///
@@ -330,27 +326,15 @@ class PushMessageDispatcher {
     required String body,
     required String payload,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-    const iosDetails = DarwinNotificationDetails();
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
     // 通知 ID は同時に複数通知を並べられるよう unique 化する。Mastodon の
     // notification_id があれば使いたいが、Phase 2 では簡便にタイムスタンプを
     // 32bit に丸めて ID にする。ms 精度で取る（秒精度だと同一秒内に来た通知が
     // 同 ID で上書きされる）。
     final id = DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
-    await NotificationInit.plugin.show(
-      id,
-      title,
-      body,
-      details,
+    await notificationSubsystem.show(
+      id: id,
+      title: title,
+      body: body,
       payload: payload,
     );
   }
