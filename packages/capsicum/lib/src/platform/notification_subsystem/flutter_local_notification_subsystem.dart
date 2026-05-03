@@ -25,12 +25,22 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      // Darwin (iOS / macOS) は同じ DarwinInitializationSettings を流用する。
-      // macOS 側を渡さないと plugin.initialize が macOS で失敗する (#327)。
-      const darwinSettings = DarwinInitializationSettings(
+      // iOS は APNs から token を取得して push 経路が成立しているため
+      // 通知許可を要求する。
+      const iosSettings = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
         requestSoundPermission: true,
+      );
+      // macOS は AppDelegate 側で registerForRemoteNotifications を未配線で
+      // push 経路が成立していないため、許可ダイアログを出してもユーザーが
+      // 許可しても何も来ない (#404)。push を配線するまでは許可要求を抑制し、
+      // plugin の初期化だけ成立させる。macOS 設定 (DarwinInitializationSettings)
+      // 自体は渡さないと macOS で plugin.initialize が失敗するので残す (#327)。
+      const macOSSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
       );
       const linuxSettings = LinuxInitializationSettings(
         defaultActionName: '開く',
@@ -38,8 +48,8 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       await _plugin.initialize(
         const InitializationSettings(
           android: androidSettings,
-          iOS: darwinSettings,
-          macOS: darwinSettings,
+          iOS: iosSettings,
+          macOS: macOSSettings,
           linux: linuxSettings,
         ),
         onDidReceiveNotificationResponse: onTap == null
@@ -101,12 +111,11 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
           MacOSFlutterLocalNotificationsPlugin
         >();
     if (macOSPlugin != null) {
-      return await macOSPlugin.requestPermissions(
-            alert: true,
-            badge: true,
-            sound: true,
-          ) ??
-          false;
+      // macOS は AppDelegate で registerForRemoteNotifications を未配線で
+      // push 経路が成立しないため、許可を取っても何も届かない (#404)。
+      // push を配線したタイミングで本来の requestPermissions を呼ぶよう
+      // 戻す。それまでは許可ダイアログを出さず false を返す。
+      return false;
     }
     final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
