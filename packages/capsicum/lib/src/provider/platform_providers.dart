@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../platform/background_task/background_task_scheduler.dart';
+import '../platform/background_task/background_task_scheduler_factory.dart';
 import '../platform/media_picker/media_picker.dart';
 import '../platform/media_picker/media_picker_factory.dart';
 import '../platform/notification_subsystem/notification_subsystem.dart';
@@ -19,4 +21,11 @@ final mediaPickerProvider = Provider<MediaPicker>((_) => createMediaPicker());
 /// の top-level singleton をそのまま返す。
 final notificationSubsystemProvider = Provider<NotificationSubsystem>(
   (_) => notificationSubsystem,
+);
+
+/// バックグラウンドタスク ([BackgroundTaskScheduler])。モバイルはプッシュ
+/// 通知リレーに一本化済みで no-op、デスクトップは Timer 常駐ベースで動く。
+/// v1.23 では interface のみ提供で、実際の利用は v1.24 のデスクトップ着手時。
+final backgroundTaskSchedulerProvider = Provider<BackgroundTaskScheduler>(
+  (_) => createBackgroundTaskScheduler(),
 );
