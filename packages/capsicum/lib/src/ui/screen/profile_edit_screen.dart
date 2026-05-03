@@ -2,12 +2,13 @@ import 'dart:io';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/platform_providers.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
   const ProfileEditScreen({super.key});
@@ -19,7 +20,6 @@ class ProfileEditScreen extends ConsumerStatefulWidget {
 class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _displayNameController = TextEditingController();
   final _bioController = TextEditingController();
-  final _imagePicker = ImagePicker();
   final List<_FieldEntry> _fields = [];
   XFile? _avatarFile;
   XFile? _bannerFile;
@@ -100,12 +100,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   }
 
   Future<void> _pickAvatar() async {
-    final file = await _imagePicker.pickImage(source: ImageSource.gallery);
+    final file = await ref.read(mediaPickerProvider).pickImage();
     if (file != null) setState(() => _avatarFile = file);
   }
 
   Future<void> _pickBanner() async {
-    final file = await _imagePicker.pickImage(source: ImageSource.gallery);
+    final file = await ref.read(mediaPickerProvider).pickImage();
     if (file != null) setState(() => _bannerFile = file);
   }
 

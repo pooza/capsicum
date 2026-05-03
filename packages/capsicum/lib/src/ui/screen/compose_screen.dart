@@ -4,11 +4,11 @@ import 'dart:async';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,6 +16,7 @@ import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/instance_provider.dart';
+import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
@@ -89,7 +90,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _cwController = TextEditingController();
-  final _imagePicker = ImagePicker();
   final List<_MediaEntry> _attachments = [];
   PostScope _scope = PostScope.public;
   bool _cwEnabled = false;
@@ -480,7 +480,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _pickMedia() async {
-    final files = await _imagePicker.pickMultipleMedia();
+    final files = await ref.read(mediaPickerProvider).pickMultipleMedia();
     if (files.isEmpty) return;
 
     // サーバーが上限を返している場合のみ事前比較。未取得 / fetch 失敗時は
