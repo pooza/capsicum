@@ -5,6 +5,10 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart' show loadMoreMaxRetries, loadMoreRetryDelay;
 
+/// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
+/// `copyWith` で保持／差し替えするための sentinel。
+const Object _kKeepLoadMoreError = Object();
+
 class DriveState {
   final List<DriveFolder> folders;
   final List<Attachment> files;
@@ -24,19 +28,23 @@ class DriveState {
     this.loadMoreError,
   });
 
+  /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
+  /// 場合はクリア、例外を渡した場合は差し替え、という三状態を区別する。
   DriveState copyWith({
     List<DriveFolder>? folders,
     List<Attachment>? files,
     bool? isLoadingMore,
     bool? hasMore,
-    Object? loadMoreError,
+    Object? loadMoreError = _kKeepLoadMoreError,
   }) {
     return DriveState(
       folders: folders ?? this.folders,
       files: files ?? this.files,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
-      loadMoreError: loadMoreError,
+      loadMoreError: identical(loadMoreError, _kKeepLoadMoreError)
+          ? this.loadMoreError
+          : loadMoreError,
     );
   }
 }
