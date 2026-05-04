@@ -90,10 +90,17 @@ class NotificationService: UNNotificationServiceExtension {
                 authSecret: authSecret
             )
         } catch {
-            NSLog("capsicum: nse: decrypt failed: \(error)")
+            // #436: Misskey 限定で発生している decrypt_failed の切り分け。
+            // ヘッダ系 (WebPushError.invalidKeyId / payloadTruncated 等) と
+            // 鍵不一致系 (CryptoKitError.authenticationFailure) で意味が違うので
+            // タグに残す。`String(describing:)` は enum case を含むので
+            // "WebPushError.invalidKeyId" の形で出る。
+            let reason = "\(type(of: error)).\(String(describing: error))"
+            NSLog("capsicum: nse: decrypt failed: \(reason)")
             FailureRecorder.record(
                 code: "nse.decrypt_failed",
-                host: host, encoding: encoding, elapsedMs: elapsedMs()
+                host: host, encoding: encoding, elapsedMs: elapsedMs(),
+                decryptError: reason
             )
             contentHandler(bestAttempt)
             return
@@ -185,6 +192,10 @@ enum FailureRecorder {
         "capsicum_push_failure_last_keychain_status"
     private static let triedPrefixesKey =
         "capsicum_push_failure_last_tried_prefixes"
+    /// #436: nse.decrypt_failed の切り分け用。WebPushDecryptor / CryptoKit が
+    /// 投げた error の type + case 名（"WebPushError.invalidKeyId" 等）。
+    private static let decryptErrorKey =
+        "capsicum_push_failure_last_decrypt_error"
 
     static func record(
         code: String,
@@ -192,7 +203,8 @@ enum FailureRecorder {
         encoding: String?,
         elapsedMs: Int?,
         keychainStatus: Int? = nil,
-        triedPrefixes: String? = nil
+        triedPrefixes: String? = nil,
+        decryptError: String? = nil
     ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         defaults.set(code, forKey: codeKey)
@@ -223,6 +235,11 @@ enum FailureRecorder {
             defaults.set(triedPrefixes, forKey: triedPrefixesKey)
         } else {
             defaults.removeObject(forKey: triedPrefixesKey)
+        }
+        if let decryptError = decryptError {
+            defaults.set(decryptError, forKey: decryptErrorKey)
+        } else {
+            defaults.removeObject(forKey: decryptErrorKey)
         }
     }
 }

@@ -294,6 +294,12 @@ Future<void> _flushPushFailureRecord() async {
           if (record.triedPrefixes != null) {
             scope.setTag('push.keychain.tried', record.triedPrefixes!);
           }
+          // #436: nse.decrypt_failed 切り分け用。WebPushDecryptor / CryptoKit
+          // が投げた error の type + case 名。Misskey 限定の decrypt_failed
+          // が header 系か鍵不一致 (CryptoKit authenticationFailure) かを分ける。
+          if (record.decryptError != null) {
+            scope.setTag('push.decrypt.error', record.decryptError!);
+          }
         },
       );
     }
@@ -303,7 +309,8 @@ Future<void> _flushPushFailureRecord() async {
       'host=${record.host}, encoding=${record.encoding}, '
       'elapsedMs=${record.elapsedMs}, '
       'keychainStatus=${record.keychainStatus}, '
-      'triedPrefixes=${record.triedPrefixes})',
+      'triedPrefixes=${record.triedPrefixes}, '
+      'decryptError=${record.decryptError})',
     );
   } catch (_) {
     // ignore
