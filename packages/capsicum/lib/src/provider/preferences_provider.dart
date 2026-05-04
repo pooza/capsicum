@@ -421,6 +421,7 @@ final visibleTabsProvider = Provider.family<List<TabType>, String>((
   final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
     if (tab is TimelineTab) return supported.contains(tab.type);
     if (tab is ListTab) return serverListIds.contains(tab.id);
+    if (tab is ChannelTab) return adapter is ChannelSupport;
     return true;
   }).toList();
 

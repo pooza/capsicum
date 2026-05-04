@@ -397,11 +397,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
     if (currentTab is ChannelTab) {
-      return ChannelTimelineView(
-        key: ValueKey('channel:${currentTab.id}'),
-        channelId: currentTab.id,
-        channelName: currentTab.name,
-      );
+      // アカウント切替で ChannelSupport を持たない adapter (Mastodon 等) に
+      // 移った直後、selectedTabProvider が前アカウントの ChannelTab を
+      // 保持していることがある (#461)。タブバー側は visibleTabsProvider の
+      // capability check で除外されるが、selectedTab の値がここに到達する
+      // 場合は通常タイムライン経路にフォールスルーさせて整合を取る。
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is ChannelSupport) {
+        return ChannelTimelineView(
+          key: ValueKey('channel:${currentTab.id}'),
+          channelId: currentTab.id,
+          channelName: currentTab.name,
+        );
+      }
     }
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
     final bgPath = storageKey != null
