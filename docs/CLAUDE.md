@@ -238,7 +238,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 - 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
 - ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
 
-具体的な実装着手時期は未定（マイルストーン未割り当て）。設計が固まり次第マイルストーンに割り当てる。
+v1.27 マイルストーンに単独配置（大更新のため他項目と並走させない）。商品設計 + 課金経路 + 装飾範囲の検討も同マイルストーン内で扱う。
 
 ## 自前サーバー
 
@@ -283,7 +283,7 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 
 1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応する
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23、完了）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にした。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。v1.23 で `BackgroundTaskScheduler`（#328、Dart `Timer` + 常駐前提のフォールバック実装）/ `MediaPicker`（#329、image_picker + file_selector 統合）/ `NotificationSubsystem`（#330、flutter_local_notifications プラットフォーム差吸収）の各層を導入
-3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態は Linux: Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）、Windows: Microsoft Store（[#423](https://github.com/pooza/capsicum/issues/423)）。Linux と Windows のどちらを先にやるかは未定。実機検証は別 issue として並走させる（[#425](https://github.com/pooza/capsicum/issues/425)）。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux / Windows 着手時に各プラットフォームの video_player 対応状況を改めて棚卸しし、必要があれば移行を判断する位置付けにする。プラグイン関連の追加対応（libsecret manifest / 通知機能差吸収の実装ギャップ等）は v1.23 完了後に必要なら起票する
+3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態は Linux: Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）、Windows: Microsoft Store（[#423](https://github.com/pooza/capsicum/issues/423)）。Linux と Windows のどちらを先にやるかは未定。実機検証は別 issue として並走させる（[#425](https://github.com/pooza/capsicum/issues/425)）。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux / Windows 着手時に各プラットフォームの video_player 対応状況を改めて棚卸しし、必要があれば移行を判断する位置付けにする。v1.23 リリース前レビューで挙がった desktop 補修系（macOS Keychain Access Group 明示・FileSelectorMediaPicker の videoGroup 拡張・TimerBackgroundTaskScheduler 堅牢化等）も v1.24 に同居
 
 第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置した（大更新を他の大更新と並走させない方針）。v1.22 として 2026-05-01 にリリース完了。リリース前レビューの黄判定や追加報告から派生したバグ修正・enhancement (#442 系列、#449、#440 など) は v1.22.x ホットフィックスではなく **v1.25**（Misskey メッセージ改善マイルストーン）にまとめて消化する方針 — Misskey メッセージは現状実験的機能の位置付けで、ホットフィックス級の利用状況・致命度には達していないため。グループチャット (#438) は単独機能として **v1.28** に分離。
 
