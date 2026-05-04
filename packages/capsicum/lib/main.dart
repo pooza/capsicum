@@ -230,10 +230,10 @@ void _startApp() {
 
   // Initialize notifications after the widget tree is built so that
   // the permission dialog on iOS does not block rendering.
-  // `response.payload` は将来通知ごとにアカウントを埋める可能性があるため、
+  // `payload` は将来通知ごとにアカウントを埋める可能性があるため、
   // 受けた文字列をそのまま account-aware routing に委譲する（現状は null）。
-  NotificationInit.initialize(
-    onTap: (response) => _routeToNotificationsTab(response.payload),
+  notificationSubsystem.initialize(
+    onTap: (payload) => _routeToNotificationsTab(payload),
   );
 
   // iOS: APNs タップはネイティブ側で userInfo を乗せて送ってくる。Dart 側では
@@ -483,7 +483,7 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
     // タップハンドラはフォアグラウンド側の登録が生きる（OS が通知をタップ
     // された際に app を起動し、main() 経由で再登録される）ため、ここでは
     // no-op を渡してプラグインの初期化だけ成立させる。
-    await NotificationInit.initialize(onTap: (_) {});
+    await notificationSubsystem.initialize(onTap: (_) {});
     await PushMessageDispatcher.dispatch(
       message,
       reblogLabelResolver: NotificationLabelCache.readReblog,

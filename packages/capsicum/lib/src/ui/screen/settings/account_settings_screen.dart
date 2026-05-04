@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../../provider/account_manager_provider.dart';
+import '../../../provider/platform_providers.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../widget/tab_management_sheet.dart';
 
@@ -129,7 +129,6 @@ class _TabOrderTile extends StatelessWidget {
 
 class _BackgroundImageTile extends StatelessWidget {
   final WidgetRef ref;
-  static final _imagePicker = ImagePicker();
 
   const _BackgroundImageTile({required this.ref});
 
@@ -192,9 +191,7 @@ class _BackgroundImageTile extends StatelessWidget {
             children: [
               ElevatedButton.icon(
                 onPressed: () async {
-                  final file = await _imagePicker.pickImage(
-                    source: ImageSource.gallery,
-                  );
+                  final file = await ref.read(mediaPickerProvider).pickImage();
                   if (file != null) {
                     await ref
                         .read(backgroundImageProvider(storageKey).notifier)

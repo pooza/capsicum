@@ -104,7 +104,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 ### DM / メッセージの方針
 
 - **Mastodon**（#179）: `GET /api/v1/conversations` で DM 専用タイムラインを実装
-- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する
+- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。なお Misskey メッセージは現状実験的機能の位置付けで、追加のバグ修正・enhancement（#442 系列、#449 のレンダリング要素反映、#440 push tap 動線、グループチャット #438 等）は v1.22.x ホットフィックスではなく v1.25（Misskey メッセージ改善マイルストーン）に集約して消化する方針。利用状況が増えてホットフィックス級の判断が必要になった場合は別途見直す
 
 ### タイムラインの読み込み挙動
 
@@ -174,6 +174,7 @@ capsicum/
     tech-notes.md         # 実装の落とし穴・API 固有の注意点
     dev-environment.md    # 開発マシン・検証端末・Sentry 環境
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
+    flutter-upstream-watch.md  # Flutter 上流バグの追跡（月次 chase routine と連動）
     release-pipeline.md   # リリースパイプライン構想（fastlane + GitHub Actions）
     sync-procedure.md     # セッション開始時の同期手順
     archive/              # 過去の記録（現役運用では参照しない）
@@ -274,7 +275,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.21.0**（2026-04-28 リリース、Android / iOS ともストア公開済み。iOS は 2026-04-29 に審査通過）。デスクトップ対応の第1段階として macOS ネイティブビルドを土台レベルで導入 (#327)。macOS のストア配布は [#407](https://github.com/pooza/capsicum/issues/407) を v1.21.1 として進行中で、2026-04-29 に fastlane lane の整備と `.pkg` ラップ手順を確立（PR #413）し、Mac App Store 審査提出済み（審査結果待ち）。なお macOS 上でも `video_player` が再生・添付・投稿いずれも問題なく動作することを TestFlight Internal で確認済み（PR #418）。あわせて v1.20.1 リリース後に観測されたプッシュ通知関連の取りこぼし、Misskey チャンネル投稿の継承漏れ、用語管理（タグ機能）の挙動を整理。主要修正: PushKeyStore Keychain accessibility (#385) と既存ユーザーの migration (#392)、HomeScreen lastTab race (#386)、Misskey channel 継承 (#378 / #384)、モロヘイヤ API 認証エラー判定 (#389)、redraft 失敗時の本文クリップボード保全 (#393)、投稿本文中のカスタム絵文字タップメニュー (#310)、リアクション失敗時の観測強化 (#395)、Sentry ホストタグ統一 (#394)、macOS Hardened Runtime 有効化 (#405) ほか。配布開始直後に Android 起動阻害が判明したため、PushKeyStore migration の同期 await を try/catch で握る修正 (#408) を入れた `+50` で再配信。さらに `+50` のビルド時に `flutter build` のコマンドラインを `\` で 1 行に圧縮した結果、`--dart-define=KEY=$VAR` の `$VAR` が空展開されて `RELAY_SECRET` / `SENTRY_DSN` がビルドに焼き込まれず、relay register が全アカウント 401 全滅となる事故が発生（[store-release-guide.md](store-release-guide.md) 4.2 を `export` 形式に改訂、`feedback_build_procedure_strict` を強化）。コード変更なしで `+51` にバンプして正しい手順で再ビルドし、本番リリースは `+51` で配信。v1.20.1 は 2026-04-25、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.22.0**（2026-05-02 リリース、Android 製品版昇格済み・iOS App Store 公開済み）。マイルストーン単独配置の大更新として **Misskey の新メッセージ機能** (`/api/chat/*`) に対応 (#248) — DM (1 対 1) のスレッド一覧 / 履歴閲覧 / 送信 / 削除 / 全既読、`main` channel `newChatMessage` のストリーミング、push 通知 (Web Push → APNs/FCM) 経路、プロフィール「メッセージを送る」導線、ドロワーの permission gate、新規 DM 起動 UI を実装。ルームは未対応（次以降に送り）。あわせて Misskey チャンネルタイムラインのタブ化 (#334)、サーバー情報 / プロフィール画面へのプッシュ通知ステータス表示、アバター形状切替設定 (#372)、ドライブ等のグリッド responsive レイアウト (#431)、Codex / Sentry followup（#398–#403, #421, #426–#430, #435 ほか）を消化。リリース前 5 観点レビューで chat ストリーミングの再接続無限ループと streamChatMessages の null guard を緊急修正し +54 で配信、黄判定 7 件は v1.23 へ送り (#442–#448)。macOS 配布は v1.21.1 (#407) として Mac App Store 審査提出済みで結果待ち、v1.22.0 の macOS バイナリは TestFlight Internal までアップロード済み。v1.21.0 は 2026-04-28、v1.20.1 は 2026-04-25、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 
@@ -284,7 +285,7 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にする。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。デスクトップ向けには Dart `Timer` + 常駐前提のフォールバック実装を含む `BackgroundTaskScheduler` 層と、`flutter_local_notifications` のデスクトップ対応差分を吸収する層が要る
 3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態は Linux: Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）、Windows: Microsoft Store（[#423](https://github.com/pooza/capsicum/issues/423)）。Linux と Windows のどちらを先にやるかは未定。実機検証は別 issue として並走させる（[#425](https://github.com/pooza/capsicum/issues/425)）。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux / Windows 着手時に各プラットフォームの video_player 対応状況を改めて棚卸しし、必要があれば移行を判断する位置付けにする。プラグイン関連の追加対応（libsecret manifest / 通知機能差吸収の実装ギャップ等）は v1.23 完了後に必要なら起票する
 
-第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置する（大更新を他の大更新と並走させない方針）。
+第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置した（大更新を他の大更新と並走させない方針）。v1.22 として 2026-05-01 にリリース完了。リリース前レビューの黄判定や追加報告から派生したバグ修正・enhancement (#442 系列、#449、#440 など) は v1.22.x ホットフィックスではなく **v1.25**（Misskey メッセージ改善マイルストーン）にまとめて消化する方針 — Misskey メッセージは現状実験的機能の位置付けで、ホットフィックス級の利用状況・致命度には達していないため。グループチャット (#438) は単独機能として **v1.28** に分離。
 
 動機の具体例:
 
@@ -300,7 +301,7 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 
 配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Windows は Microsoft Store、Linux は Flathub + AppImage、Snap は不採用）、および段階的な実装順序は [release-pipeline.md](release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
 
-macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がバックログにある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。急がない位置付けで未割り当て。
+macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。desktop 系として **v1.24**（Linux / Windows 配布）に同居でアサイン。
 
 制約: モロヘイヤ透過プロキシ前提のためネットワーク層は問題にならない。
 
@@ -314,6 +315,7 @@ macOS の付加機能としては、Music.app 等の「共有」メニューか�
   - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
+- Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、月 1 回の chase routine（毎月 1 日 09:00 JST）で上流の進捗を巡回する
 
 ### 実装しない機能
 

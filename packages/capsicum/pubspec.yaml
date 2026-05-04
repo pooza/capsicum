@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.22.0+54
+version: 1.23.0+55
 
 environment:
   sdk: ^3.11.0
@@ -36,6 +36,14 @@ dependencies:
   url_launcher: ^6.3.1
   flutter_local_notifications: ^18.0.0
   image_picker: ^1.2.1
+  # Linux / Windows のメディア選択は image_picker 非対応のため file_selector を
+  # 経由する。MediaPicker 抽象層 (#329) でプラットフォームごとに実装を
+  # 切り替える。
+  file_selector: ^1.0.3
+  # MediaPicker 抽象層 (#329) は image_picker / file_selector のどちらにも
+  # 依存しない純インターフェースとして cross_file の XFile だけを参照する。
+  # transitive 依存だが直接 import するため明示する。
+  cross_file: ^0.3.4
   path_provider: ^2.1.0
   video_player: ^2.11.0
   package_info_plus: ^8.3.0
