@@ -11,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 鍵はアカウントごとに生成・保存され、リレーサーバー経由で受信した
 /// Web Push ペイロードの復号に使用する（復号の実装は Stage 2）。
 class PushKeyStore {
-  /// iOS では Notification Service Extension (#336 Phase 3(b)) が復号に
-  /// 使うため、Keychain を Runner / NSE 共通の Access Group に逃がす。
-  /// Android の [AndroidOptions] は EncryptedSharedPreferences 既定で十分で、
+  /// iOS の Notification Service Extension (#336 Phase 3(b)) と macOS の
+  /// バックグラウンド経路で復号に使うため、Keychain を Runner / NSE 共通の
+  /// Access Group に逃がす。macOS 側 entitlement (#397) と一致させる必要が
+  /// あり、IOSOptions と MacOsOptions に同じ値を指定する。Android の
+  /// [AndroidOptions] は EncryptedSharedPreferences 既定で十分で、
   /// バックグラウンド isolate も同一プロセス内のため追加設定は不要。
   ///
   /// `kSecAttrAccessGroup` は **TeamID + ドット + グループ名** の完全表記が
@@ -28,10 +30,14 @@ class PushKeyStore {
   /// は再起動後の最初のアンロック以降であればロック中でも read/write 可能にする。
   /// 既定の `unlocked` だとバックグラウンド経路（NSE / トークン更新 / 通知到着等）が
   /// デバイスロック中に -25308 errSecInteractionNotAllowed で弾かれる (#385)。
-  static const _iOSAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
+  static const _appleAccessGroup = 'Y27AK8VF85.group.jp.co.b-shock.capsicum';
   static const _storage = FlutterSecureStorage(
     iOptions: IOSOptions(
-      groupId: _iOSAccessGroup,
+      groupId: _appleAccessGroup,
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
+    mOptions: MacOsOptions(
+      groupId: _appleAccessGroup,
       accessibility: KeychainAccessibility.first_unlock,
     ),
   );
