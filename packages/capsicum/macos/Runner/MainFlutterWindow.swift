@@ -10,6 +10,12 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // ShareExtension からの shared_text.txt を消費する MethodChannel
+    // (#422)。iOS と同じ "net.shrieker.capsicum/share" を提供する。
+    if let registrar = flutterViewController.registrar(forPlugin: "ShareIntentPlugin") {
+      ShareIntentPlugin.register(with: registrar)
+    }
+
     super.awakeFromNib()
   }
 }
