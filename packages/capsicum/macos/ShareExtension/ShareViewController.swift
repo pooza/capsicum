@@ -82,27 +82,7 @@ class ShareViewController: NSViewController {
                 error.localizedDescription
               )
             }
-            if let url = data as? URL {
-              os_log(
-                "got URL: %{public}@",
-                log: self?.log ?? .default, type: .info,
-                url.absoluteString
-              )
-              self?.saveSharedText(url.absoluteString)
-            } else if let text = data as? String {
-              os_log(
-                "got String for typeURL: %{public}@",
-                log: self?.log ?? .default, type: .info,
-                text
-              )
-              self?.saveSharedText(text)
-            } else {
-              os_log(
-                "loadItem(URL) returned unexpected type: %{public}@",
-                log: self?.log ?? .default, type: .error,
-                String(describing: type(of: data))
-              )
-            }
+            self?.handleLoadedItem(data, label: "typeURL")
             self?.close()
           }
           return
@@ -117,14 +97,7 @@ class ShareViewController: NSViewController {
                 error.localizedDescription
               )
             }
-            if let text = data as? String {
-              os_log(
-                "got text: %{public}@",
-                log: self?.log ?? .default, type: .info,
-                text
-              )
-              self?.saveSharedText(text)
-            }
+            self?.handleLoadedItem(data, label: "typeText")
             self?.close()
           }
           return
@@ -133,6 +106,56 @@ class ShareViewController: NSViewController {
     }
     os_log("no matching provider found, closing", log: log, type: .error)
     close()
+  }
+
+  /// loadItem コールバックで渡される data は静的型 `(any NSSecureCoding)?` で、
+  /// macOS Music.app は URL / NSURL / String / NSString のどれでもなく
+  /// Data や別の型で URL を渡してくることがある (#422 の TestFlight +57 で観測)。
+  /// 型を一通り試して URL 文字列を抽出し、抽出できた値を App Group に保存する。
+  /// 識別できなかった場合は実際の runtime 型と String 表現をログに残す。
+  private func handleLoadedItem(_ data: NSSecureCoding?, label: String) {
+    guard let unwrapped = data else {
+      os_log("loadItem(%{public}@) returned nil", log: log, type: .error, label)
+      return
+    }
+    let actualType = String(describing: type(of: unwrapped))
+    os_log(
+      "loadItem(%{public}@) actualType=%{public}@",
+      log: log, type: .info, label, actualType
+    )
+
+    if let url = unwrapped as? URL {
+      os_log("matched URL: %{public}@", log: log, type: .info, url.absoluteString)
+      saveSharedText(url.absoluteString)
+      return
+    }
+    if let nsurl = unwrapped as? NSURL, let abs = nsurl.absoluteString {
+      os_log("matched NSURL: %{public}@", log: log, type: .info, abs)
+      saveSharedText(abs)
+      return
+    }
+    if let str = unwrapped as? String {
+      os_log("matched String: %{public}@", log: log, type: .info, str)
+      saveSharedText(str)
+      return
+    }
+    if let nsstr = unwrapped as? NSString {
+      let s = nsstr as String
+      os_log("matched NSString: %{public}@", log: log, type: .info, s)
+      saveSharedText(s)
+      return
+    }
+    if let bytes = unwrapped as? Data, let str = String(data: bytes, encoding: .utf8) {
+      os_log("matched Data utf8: %{public}@", log: log, type: .info, str)
+      saveSharedText(str)
+      return
+    }
+
+    let stringRep = String(describing: unwrapped)
+    os_log(
+      "no fallback matched. type=%{public}@ value=%{public}@",
+      log: log, type: .error, actualType, stringRep
+    )
   }
 
   private func saveSharedText(_ text: String) {
