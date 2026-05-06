@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh api *)"
+      "Bash(gh api *)",
+      "Bash(gh issue *)",
+      "Bash(flutter clean *)",
+      "Bash(flutter pub *)",
+      "Bash(pod install *)",
+      "Bash(xcodebuild *)",
+      "Bash(fastlane beta *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "defaultMode": "auto"
   }
