@@ -8,10 +8,11 @@ import os.log
 /// [ShareIntentPlugin] 経由でポーリング消費する。compose UI はモバイル本体で
 /// 表示するため、ここでは即時保存・close で UI を出さない。
 ///
-/// `@objc(ShareViewController)` を付けて Info.plist の
-/// `NSExtensionPrincipalClass = $(PRODUCT_MODULE_NAME).ShareViewController` から
-/// Objective-C runtime 経由で解決できるようにする。
-@objc(ShareViewController)
+/// NSViewController を継承しているので NSObject 経由で ObjC runtime に
+/// `ShareExtension.ShareViewController` として自動登録される。Info.plist の
+/// `NSExtensionPrincipalClass = $(PRODUCT_MODULE_NAME).ShareViewController` と
+/// マッチする。`@objc(...)` で ObjC 名を上書きすると Swift module 名側の
+/// 登録が消え、NSClassFromString で nil が返るので付けない。
 class ShareViewController: NSViewController {
   private let appGroupId = "group.jp.co.b-shock.capsicum"
   private let typeText = "public.plain-text"
