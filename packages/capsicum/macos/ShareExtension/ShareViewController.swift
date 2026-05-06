@@ -6,6 +6,11 @@ import Cocoa
 /// コンテナの `shared_text.txt` に書き出し、本体（capsicum）が起動時に
 /// [ShareIntentPlugin] 経由でポーリング消費する。compose UI はモバイル本体で
 /// 表示するため、ここでは即時保存・close で UI を出さない。
+///
+/// `@objc(ShareViewController)` を付けて Info.plist の
+/// `NSExtensionPrincipalClass = $(PRODUCT_MODULE_NAME).ShareViewController` から
+/// Objective-C runtime 経由で解決できるようにする。
+@objc(ShareViewController)
 class ShareViewController: NSViewController {
   private let appGroupId = "group.jp.co.b-shock.capsicum"
   private let typeText = "public.plain-text"
