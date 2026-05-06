@@ -256,6 +256,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   void _onTextChanged() {
+    // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
+    // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
+    if (_controller.value.composing.isValid) return;
+
     _mentionDebounce?.cancel();
 
     // Check mention trigger first, then hashtag.
