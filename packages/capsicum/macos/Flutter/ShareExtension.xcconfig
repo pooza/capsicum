@@ -1,0 +1,15 @@
+// Minimal config for ShareExtension — only imports Flutter build variables.
+// Does NOT include Pods, so no frameworks are linked.
+#include "ephemeral/Flutter-Generated.xcconfig"
+
+// Project-level xcconfig (Debug.xcconfig / Release.xcconfig) #include の連鎖で
+// Pods-Runner.debug.xcconfig が取り込まれ、OTHER_LDFLAGS / FRAMEWORK_SEARCH_PATHS
+// 等に Firebase / Sentry 等のプラグイン framework が混入する。Share Extension は
+// それらを使わない（FlutterMacOS も link しない）ため、リンク時に
+// FlutterMethodChannel が見つからずビルドが落ちる。明示的に空に上書きする。
+OTHER_LDFLAGS =
+FRAMEWORK_SEARCH_PATHS =
+HEADER_SEARCH_PATHS =
+LIBRARY_SEARCH_PATHS =
+GCC_PREPROCESSOR_DEFINITIONS =
+OTHER_SWIFT_FLAGS =
