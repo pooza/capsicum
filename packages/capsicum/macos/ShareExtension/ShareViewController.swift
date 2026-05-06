@@ -24,7 +24,7 @@ class ShareViewController: NSViewController {
 
   override func loadView() {
     self.view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
-    os_log("loadView called", log: log, type: .info)
+    os_log("loadView called", log: log, type: .debug)
   }
 
   /// macOS NSExtensionPrincipalClass 経路では viewDidAppear が確実に発火する
@@ -34,13 +34,13 @@ class ShareViewController: NSViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    os_log("viewDidLoad called", log: log, type: .info)
+    os_log("viewDidLoad called", log: log, type: .debug)
     handleOnce()
   }
 
   override func viewDidAppear() {
     super.viewDidAppear()
-    os_log("viewDidAppear called", log: log, type: .info)
+    os_log("viewDidAppear called", log: log, type: .debug)
     handleOnce()
   }
 
@@ -56,24 +56,24 @@ class ShareViewController: NSViewController {
       close()
       return
     }
-    os_log("inputItems count=%d", log: log, type: .info, items.count)
+    os_log("inputItems count=%d", log: log, type: .debug, items.count)
 
     for (i, item) in items.enumerated() {
       guard let attachments = item.attachments else {
-        os_log("item[%d] has no attachments", log: log, type: .info, i)
+        os_log("item[%d] has no attachments", log: log, type: .debug, i)
         continue
       }
-      os_log("item[%d] attachments count=%d", log: log, type: .info, i, attachments.count)
+      os_log("item[%d] attachments count=%d", log: log, type: .debug, i, attachments.count)
 
       for (j, provider) in attachments.enumerated() {
         let types = provider.registeredTypeIdentifiers
         os_log(
           "item[%d].provider[%d] types=%{public}@",
-          log: log, type: .info, i, j, types.joined(separator: ",")
+          log: log, type: .debug, i, j, types.joined(separator: ",")
         )
 
         if provider.hasItemConformingToTypeIdentifier(typeURL) {
-          os_log("matched typeURL, loading...", log: log, type: .info)
+          os_log("matched typeURL, loading...", log: log, type: .debug)
           provider.loadItem(forTypeIdentifier: typeURL, options: nil) { [weak self] data, error in
             if let error = error {
               os_log(
@@ -88,7 +88,7 @@ class ShareViewController: NSViewController {
           return
         }
         if provider.hasItemConformingToTypeIdentifier(typeText) {
-          os_log("matched typeText, loading...", log: log, type: .info)
+          os_log("matched typeText, loading...", log: log, type: .debug)
           provider.loadItem(forTypeIdentifier: typeText, options: nil) { [weak self] data, error in
             if let error = error {
               os_log(
@@ -121,32 +121,32 @@ class ShareViewController: NSViewController {
     let actualType = String(describing: type(of: unwrapped))
     os_log(
       "loadItem(%{public}@) actualType=%{public}@",
-      log: log, type: .info, label, actualType
+      log: log, type: .debug, label, actualType
     )
 
     if let url = unwrapped as? URL {
-      os_log("matched URL: %{public}@", log: log, type: .info, url.absoluteString)
+      os_log("matched URL: %{public}@", log: log, type: .debug, url.absoluteString)
       saveSharedText(url.absoluteString)
       return
     }
     if let nsurl = unwrapped as? NSURL, let abs = nsurl.absoluteString {
-      os_log("matched NSURL: %{public}@", log: log, type: .info, abs)
+      os_log("matched NSURL: %{public}@", log: log, type: .debug, abs)
       saveSharedText(abs)
       return
     }
     if let str = unwrapped as? String {
-      os_log("matched String: %{public}@", log: log, type: .info, str)
+      os_log("matched String: %{public}@", log: log, type: .debug, str)
       saveSharedText(str)
       return
     }
     if let nsstr = unwrapped as? NSString {
       let s = nsstr as String
-      os_log("matched NSString: %{public}@", log: log, type: .info, s)
+      os_log("matched NSString: %{public}@", log: log, type: .debug, s)
       saveSharedText(s)
       return
     }
     if let bytes = unwrapped as? Data, let str = String(data: bytes, encoding: .utf8) {
-      os_log("matched Data utf8: %{public}@", log: log, type: .info, str)
+      os_log("matched Data utf8: %{public}@", log: log, type: .debug, str)
       saveSharedText(str)
       return
     }
@@ -170,14 +170,14 @@ class ShareViewController: NSViewController {
     }
     os_log(
       "containerURL: %{public}@",
-      log: log, type: .info, containerURL.path
+      log: log, type: .debug, containerURL.path
     )
     let fileURL = containerURL.appendingPathComponent("shared_text.txt")
     do {
       try text.write(to: fileURL, atomically: true, encoding: .utf8)
       os_log(
         "wrote %d chars to %{public}@",
-        log: log, type: .info, text.count, fileURL.path
+        log: log, type: .debug, text.count, fileURL.path
       )
     } catch {
       os_log(

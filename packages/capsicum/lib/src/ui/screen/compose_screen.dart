@@ -1266,6 +1266,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     return Scaffold(
       appBar: AppBar(
+        // Share intent (URL push from macOS Music.app 等) で起動した場合
+        // GoRouter の go() で stack が置換されており automatic back button が
+        // 出ないため、明示的に leading に置く。_submit 末尾と同じく canPop
+        // が false のときは /home にフォールバック (#422)。
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         title: Text(
           widget.replyTo != null
               ? (_effectiveChannelName != null
