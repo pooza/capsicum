@@ -36,9 +36,33 @@ v1.24 以降のデスクトップ向け作業（[#423](https://github.com/pooza/
 
 ### Linux 固有
 
-- `clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev`（Flutter desktop ビルド + flutter_secure_storage の libsecret 依存）
-- 配布パイプライン作業時: `flatpak-builder`（Flathub）、`appimagetool`（AppImage）
-- Flathub アカウント（[#424](https://github.com/pooza/capsicum/issues/424) で submit する際に必要）
+[#424](https://github.com/pooza/capsicum/issues/424) で実機検証して確定した system 依存:
+
+```sh
+sudo apt install -y \
+  clang cmake ninja-build pkg-config \
+  libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
+  libcurl4-openssl-dev default-jdk-headless \
+  libfuse2t64 patchelf
+```
+
+- `libgtk-3-dev` / `libsecret-1-dev`: Flutter desktop と flutter_secure_storage 用
+- `libwebkit2gtk-4.1-dev`: `flutter_web_auth_2` が transitive で引く `desktop_webview_window` の OAuth 用 WebView (#382 で OS デフォルトブラウザ方式に切り替えれば不要になる候補)
+- `libcurl4-openssl-dev`: sentry-native の HTTP 送信
+- `default-jdk-headless`: `sentry_flutter` が transitive で引く `jni` のヘッダ (ビルド時のみ。実行時は使われない)
+- `libfuse2t64` / `patchelf`: AppImage 起動と linuxdeploy の依存解決
+
+配布パイプライン作業時は追加で:
+
+```sh
+sudo apt install -y flatpak flatpak-builder
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+```
+
+`linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md)。
+
+Flathub アカウント（pooza 個人）は最初の submission ([packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md)) で必要。
 
 ### Windows 固有
 
