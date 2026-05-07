@@ -31,9 +31,9 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 | プラグイン | 用途 | 問題 | 対応案 |
 | --- | --- | --- | --- |
-| flutter_secure_storage | 機密情報保存 | Linux は `libsecret-1-dev` の導入が前提。Flatpak では manifest への依存宣言が必要 | そのまま使用、Flathub ビルド時に finish-args / dependencies を記述 |
+| flutter_secure_storage | 機密情報保存 | Linux は `libsecret-1-dev` 必須。AppImage / Flatpak それぞれサンドボックス越しの keyring アクセス経路が独立で、debug ビルド・AppImage・Flatpak 三者で別 keyring を見ることになる (相互不可視) | そのまま使用。AppImage は `--talk-name=org.freedesktop.secrets` で gnome-keyring と接続。永続性は #424/#425 で確認 |
 | flutter_local_notifications | ローカル通知 | macOS / Linux / Windows 対応済みだが機能差あり。Linux は libnotify、Windows は Toast XML。アクションボタン等はプラットフォーム依存 | 通知サブシステム抽象化層を介して機能差を吸収 |
-| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、デスクトップは localhost コールバック経由。Linux/Windows でも動作するが挙動差あり。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | そのまま使用。デスクトップ実機での動作確認は必須 |
+| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、デスクトップは localhost コールバック経由。Linux では transitive で `desktop_webview_window` を引き、`libwebkit2gtk-4.1.so.0` をリンクするため Flathub では `org.gnome.Platform//49` ベース必須 (`org.freedesktop.Platform` には webkit が無い)。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | そのまま使用。Linux 実機 + AppImage / Flatpak いずれでも OAuth フローが動作することを #424 で確認済み。webkit2gtk への runtime 依存を解消したい場合は OS デフォルトブラウザ方式 (#382) への切替が候補 |
 | image_picker | 画像選択 | iOS/Android/macOS は対応、**Linux/Windows は未対応** | デスクトップは `file_selector` に置き換え。抽象層（例: `MediaPicker`）で使い分け |
 
 ## Tier C: 要抽象化・要置き換え（ブロッカー）

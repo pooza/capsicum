@@ -342,11 +342,44 @@ gh issue list --label bug --state open
 
 この結果をもとにリリースノートの「既知の不具合」を構築する。
 
+### 4.5 Linux 配布（v1.24〜）
+
+Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.github/workflows/linux-release.yml](../.github/workflows/linux-release.yml)) でビルドする。
+
+#### AppImage
+
+タグ駆動 (`v*.*.*`) で `linux-release.yml` の `appimage` ジョブが起動し:
+
+1. ubuntu-22.04 で `flutter build linux --release` (glibc 2.35 互換性確保)
+2. `linuxdeploy` + `linuxdeploy-plugin-gtk` で AppDir を組み立て、`appimagetool` で AppImage 化
+3. `capsicum-<version>-x86_64.AppImage` と `capsicum-bundle-<version>-x86_64.tar.gz` (Flathub source 用) を **draft Release** に添付
+4. pooza が GitHub UI で draft Release をレビューしてから手動で publish
+
+draft で生成するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
+
+#### Flathub
+
+初回提出は v1.24 リリース後に手動。詳細手順は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md):
+
+1. `linux-release.yml` が生成・添付した bundle tarball を Flathub 提出 manifest の `type: archive` source として参照
+2. `flathub/flathub` リポジトリに `net.shrieker.capsicum.yml` を含む PR を出す (pooza 個人アカウント)
+3. レビュー期間 1〜4 週間。AppImage は GitHub Releases から並行配布できるので v1.24 リリースは Flathub 採択を待たない
+
+#### ローカル動作確認
+
+```sh
+bash packaging/linux/appimage/build.sh    # AppImage
+bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
+```
+
+詳細は各 README 参照。
+
 ## 5. 配布方針
 
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
 - **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](release-pipeline.md) 参照
+- **Linux**: Flathub + AppImage 併用（Snap は不採用）。AppImage は GitHub Releases に添付して即座に配布、Flathub は審査制で 1〜4 週間遅れて利用可能になる。手順は §4.5 参照
 - **Google Play アカウント**: 法人（Google Workspace）アカウントのため、クローズドテスト 12 人要件は免除
 - **ホットフィックス**: Fastfile の構成上 internal → promote の手順が必要（production に直接アップロードは不可）
 - **App Store の説明文更新**: リリース提出時のみ可能。随時更新はできない

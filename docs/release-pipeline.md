@@ -144,10 +144,15 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 
 ### Phase 4: Windows / Linux 対応（デスクトップ第3段階）
 
-- GitHub Actions に Windows runner / Ubuntu runner のジョブを追加
-- Microsoft Store 向け MSIX ビルド + msstore CLI
-- Flathub 向け flatpak-builder + マニフェスト PR
-- AppImage 向け appimagetool + GitHub Releases 添付
+- Linux 側 (#424): **v1.24 で実装済み**
+  - `.github/workflows/linux-release.yml` — タグ駆動 + workflow_dispatch + path-filter pull_request トリガ
+  - Ubuntu 22.04 runner で `linuxdeploy + linuxdeploy-plugin-gtk + appimagetool` 経由で AppImage 生成 → GitHub Releases (draft) 添付
+  - bundle tarball を Releases に同梱 (Flathub 提出 manifest の `type: archive` source 用)
+  - flatpak-lint ジョブ (Ubuntu 24.04) で manifest YAML / AppStream metainfo / desktop entry を毎 PR 検証
+  - Flathub 提出は v1.24 リリース後の手動 PR (詳細は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md))。レビュー期間中も AppImage は GitHub Releases から配布できる
+- Windows 側 (#423): 未着手
+  - Microsoft Store 向け MSIX ビルド + msstore CLI
+  - Microsoft Partner Center アカウント連携
 
 ## 未確定事項
 
