@@ -26,7 +26,7 @@ jobs:
   # Phase 4a: portable AppImage を組み立てて GitHub Releases (draft) に添付。
   # Ubuntu 22.04 を使うのは glibc 2.35 (Ubuntu LTS 全代で動く AppImage) 確保のため。
   appimage:
-    if: github.event_name == 'push' || inputs.build_kind == 'appimage' || inputs.build_kind == 'both'
+    if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'appimage' || inputs.build_kind == 'both'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +104,7 @@ jobs:
   # 整ってから別 job で実施。この job は YAML / AppStream / desktop entry の
   # 整合性を低コストで毎回検証する。
   flatpak-lint:
-    if: github.event_name == 'push' || inputs.build_kind == 'flatpak' || inputs.build_kind == 'both'
+    if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'flatpak' || inputs.build_kind == 'both'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
