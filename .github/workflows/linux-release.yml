@@ -105,7 +105,10 @@ jobs:
   # 整合性を低コストで毎回検証する。
   flatpak-lint:
     if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'flatpak' || inputs.build_kind == 'both'
-    runs-on: ubuntu-22.04
+    # appimage と違い実バイナリは作らないので glibc 互換性は不要。
+    # 新しい appstreamcli (developer タグの新形式・vcs-browser url type 等) を
+    # 使うために 24.04 を採用。
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
