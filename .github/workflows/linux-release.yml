@@ -1,0 +1,140 @@
+name: Linux Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      build_kind:
+        description: 'Which artifacts to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - appimage
+          - flatpak
+          - both
+
+jobs:
+  # Phase 4a: portable AppImage を組み立てて GitHub Releases (draft) に添付。
+  # Ubuntu 22.04 を使うのは glibc 2.35 (Ubuntu LTS 全代で動く AppImage) 確保のため。
+  appimage:
+    if: github.event_name == 'push' || inputs.build_kind == 'appimage' || inputs.build_kind == 'both'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
+            libcurl4-openssl-dev default-jdk-headless \
+            libfuse2 patchelf
+
+      - name: Install linuxdeploy / appimagetool
+        run: |
+          mkdir -p ~/.local/bin
+          cd ~/.local/bin
+          curl -fL -o linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fL -o linuxdeploy-plugin-gtk.sh \
+            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          curl -fL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+
+      - name: Activate melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Generate code (build_runner)
+        run: melos run build_runner
+
+      - name: Build AppImage
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+        run: |
+          # build.sh は ~/.config/capsicum/secrets.env を読むので CI でも同様に配置。
+          # secrets が未設定の場合は空のまま (Sentry 送信無効・push 通知無効で起動可能)。
+          mkdir -p "$HOME/.config/capsicum"
+          {
+            echo "SENTRY_DSN=${SENTRY_DSN:-}"
+            echo "RELAY_SECRET=${RELAY_SECRET:-}"
+          } > "$HOME/.config/capsicum/secrets.env"
+          bash packaging/linux/appimage/build.sh
+
+      - name: Upload AppImage as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsicum-appimage
+          path: build/linux/dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach AppImage to GitHub Release
+        # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
+        # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/linux/dist/*.AppImage
+          fail_on_unmatched_files: true
+          draft: true
+
+  # Phase 4b: Flathub manifest の syntax / 構造をチェック (Phase 5a の事前検証)。
+  # 本格的な flatpak-builder ビルドはオフライン対応の Phase 5a manifest が
+  # 整ってから別 job で実施。この job は YAML / AppStream / desktop entry の
+  # 整合性を低コストで毎回検証する。
+  flatpak-lint:
+    if: github.event_name == 'push' || inputs.build_kind == 'flatpak' || inputs.build_kind == 'both'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils python3-yaml pipx
+          pipx install flatpak-builder-lint || true
+
+      - name: Validate manifest YAML syntax
+        run: |
+          python3 - <<'EOF'
+          import sys, yaml
+          path = 'packaging/linux/flathub/net.shrieker.capsicum.yml'
+          with open(path) as fh:
+              data = yaml.safe_load(fh)
+          required = ['app-id', 'runtime', 'runtime-version', 'sdk', 'command', 'modules']
+          missing = [k for k in required if k not in data]
+          if missing:
+              print(f'ERROR: missing keys: {missing}', file=sys.stderr)
+              sys.exit(1)
+          print(f'OK: app-id={data["app-id"]} runtime={data["runtime"]}//{data["runtime-version"]}')
+          EOF
+
+      - name: Validate AppStream metainfo
+        run: appstreamcli validate --no-net packaging/linux/shared/net.shrieker.capsicum.metainfo.xml
+
+      - name: Validate desktop entry
+        run: desktop-file-validate packaging/linux/shared/net.shrieker.capsicum.desktop
+
+      - name: Run flatpak-builder-lint (best-effort)
+        # Phase 5a で公式 OCI image (ghcr.io/flathub-infra/flatpak-builder-lint)
+        # を使う形に強化する。本 job は available なら呼び、無ければ skip。
+        run: |
+          if command -v flatpak-builder-lint >/dev/null 2>&1; then
+            flatpak-builder-lint manifest packaging/linux/flathub/net.shrieker.capsicum.yml || true
+          else
+            echo "flatpak-builder-lint not installed; skipping"
+          fi
