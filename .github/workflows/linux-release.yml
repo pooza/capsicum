@@ -89,13 +89,34 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attach AppImage to GitHub Release
+      - name: Pack Flutter bundle as tarball (for Flathub source)
+        # Flathub のサンドボックスはネットワーク無し。提出 manifest は
+        # GitHub Releases に上げた bundle tarball を type: archive で取り込む。
+        # 詳細: packaging/linux/flathub/SUBMISSION.md
+        run: |
+          VERSION=$(awk -F'[ +]' '/^version:/{print $2; exit}' packages/capsicum/pubspec.yaml)
+          mkdir -p build/linux/dist
+          tar -czf "build/linux/dist/capsicum-bundle-${VERSION}-x86_64.tar.gz" \
+            -C packages/capsicum/build/linux/x64/release/bundle .
+          ( cd build/linux/dist && sha256sum "capsicum-bundle-${VERSION}-x86_64.tar.gz" )
+
+      - name: Upload bundle tarball as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsicum-bundle-tarball
+          path: build/linux/dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach AppImage and bundle tarball to GitHub Release
         # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
         # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/linux/dist/*.AppImage
+          files: |
+            build/linux/dist/*.AppImage
+            build/linux/dist/*.tar.gz
           fail_on_unmatched_files: true
           draft: true
 
