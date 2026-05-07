@@ -3,6 +3,13 @@ name: Linux Release
 on:
   push:
     tags: ['v*.*.*']
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'packaging/linux/**'
+      - 'packages/capsicum/linux/**'
+      - 'packages/capsicum/pubspec.yaml'
+      - '.github/workflows/linux-release.yml'
   workflow_dispatch:
     inputs:
       build_kind:
