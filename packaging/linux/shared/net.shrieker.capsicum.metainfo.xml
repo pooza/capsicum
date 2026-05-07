@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.shrieker.capsicum</id>
+
+  <name>capsicum</name>
+  <summary>Mastodon / Misskey クライアント</summary>
+  <summary xml:lang="en">Mastodon / Misskey client</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      capsicum は Mastodon と Misskey の両方に対応した Fediverse クライアント。
+      自前サーバーで稼働するモロヘイヤ拡張を検出すると、お気に入りタグ・タグセット・
+      番組情報などの拡張機能が利用可能になる。
+    </p>
+    <p xml:lang="en">
+      capsicum is a Fediverse client supporting both Mastodon and Misskey.
+      Extra features such as favorite tags, tag sets, and program information
+      become available on servers running the mulukhiya-toot-proxy extension.
+    </p>
+  </description>
+
+  <developer id="net.shrieker">
+    <name>Tatsuya Koishi</name>
+  </developer>
+
+  <launchable type="desktop-id">net.shrieker.capsicum.desktop</launchable>
+
+  <url type="homepage">https://capsicum.shrieker.net/</url>
+  <url type="bugtracker">https://github.com/pooza/capsicum/issues</url>
+  <url type="vcs-browser">https://github.com/pooza/capsicum</url>
+
+  <categories>
+    <category>Network</category>
+    <category>Chat</category>
+  </categories>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.24.0" date="2026-05-08"/>
+  </releases>
+</component>

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=capsicum
+GenericName=Mastodon / Misskey クライアント
+GenericName[en]=Mastodon / Misskey Client
+Comment=Mastodon / Misskey 互換の Fediverse クライアント
+Comment[en]=Fediverse client compatible with Mastodon and Misskey
+Icon=net.shrieker.capsicum
+Exec=capsicum %U
+Terminal=false
+Categories=Network;Chat;
+StartupWMClass=capsicum
+StartupNotify=true
