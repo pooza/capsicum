@@ -3,6 +3,7 @@
     "allow": [
       "Bash(gh api *)",
       "Bash(gh issue *)",
+      "Bash(gh pr *)",
       "Bash(flutter clean *)",
       "Bash(flutter pub *)",
       "Bash(pod install *)",
@@ -11,18 +12,10 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(python3 -c ' *)",
-      "Bash(gh pr *)",
       "Bash(curl -s \"https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20\")",
-      "Read(//opt/local/bin/**)",
-      "Read(//Users/pooza/.local/bin/**)",
-      "Read(//Users/pooza/**)",
       "Bash(curl -sH \"Authorization: Bearer $\\(awk '/\\\\[auth\\\\]/{getline; print}' ~/.sentryclirc)",
       "Bash(python3 -m json.tool)"
     ],
-    "defaultMode": "auto",
-    "additionalDirectories": [
-      "/Users/pooza/.claude/projects/-Volumes-extdata-repos-capsicum/memory",
-      "/Volumes/extdata/gdrive/プライベート共有/Documents/b-shock/capsicum/claude-memory"
-    ]
+    "defaultMode": "auto"
   }
 }
