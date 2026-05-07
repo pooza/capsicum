@@ -4,20 +4,55 @@
 
 ## 対応 OS
 
-開発は macOS のみで行う。Windows は開発ホストとしての対応対象外。
+メインの開発ホストは **macOS**。Apple toolchain（Xcode / fastlane / 各種証明書 / `.p8` 鍵）と Android toolchain・Sentry dSYM アップロード環境がここに揃っており、リリースサイクルおよび iOS / Android / macOS 向けビルドはすべてこのマシンで行う。
 
-ここでの「Windows 対象外」は **開発ホスト**（ビルドや実機検証を行うマシン）の話であり、**ターゲットプラットフォームとしての Windows 対応**は別の議論。後者は [CLAUDE.md](CLAUDE.md#長期構想-デスクトップ対応) の「長期構想: デスクトップ対応」で段階的に進める長期目標として位置づけている。
+v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対応 第3段階）以降は Linux / Windows を **補助機**として併用する。Flutter のデスクトップビルドは `flutter build linux` / `flutter build windows` ともクロスコンパイル不可で、配布パイプライン（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424)）と実機検証（[#425](https://github.com/pooza/capsicum/issues/425)）はそれぞれの OS でしか進められないため。補助機は OS 固有作業（Linux/Windows ビルド・配布物生成・実機検証）専用で、リリース判定・ストア公開・各種シークレット管理はメインの macOS に集約する。
 
-## 各マシン共通セットアップ
+## メイン (macOS) セットアップ
 
 - `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置（Fastfile から参照）
 - `~/.config/capsicum/google-play-service-account.json` に Google Play サービスアカウント JSON キーを配置
+- `~/.config/capsicum/secrets.env` を Google Drive 上の実体（`/Volumes/extdata/gdrive/プライベート共有/Documents/b-shock/capsicum/secrets.env`）への symlink で配置（`SENTRY_DSN` / `RELAY_SECRET` を複数 PC で共有するため）
 - Xcode → Settings → Accounts で Apple ID 追加 → Manage Certificates → Apple Distribution 証明書を作成
 - `gem install fastlane`（rbenv の Ruby を使用）
 - Android 署名鍵 `android/key.properties` を配置（git 管理外、手動配置）
 - リポジトリルートの `.sentryclirc`（git 管理外）に dSYM アップロード用トークンを配置（`sentry_dart_plugin` が自動参照）
+- `~/.sentryclirc` に Issue 読み取り用トークン（`event:read` / `event:write` / `project:read`）を配置
 
 詳細なリリース手順は [store-release-guide.md](store-release-guide.md) を参照。
+
+## 補助機（Linux / Windows）セットアップ
+
+v1.24 以降のデスクトップ向け作業（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424) / [#425](https://github.com/pooza/capsicum/issues/425)）専用。Apple / Google Play 関連のシークレットや署名鍵は持ち込まない。
+
+### 共通
+
+- リポジトリは `~/repos/capsicum` にクローン（全端末共通の配置ルール）
+- Flutter SDK（stable channel に固定）、Melos（`dart pub global activate melos`）、`gh` CLI
+- `sentry-cli` を GitHub Releases から `~/.local/bin/sentry-cli`（Windows は `%USERPROFILE%\.local\bin\sentry-cli.exe`）に直接配置（MacPorts / Homebrew / scoop 等のパッケージマネージャ不使用）
+- `~/.sentryclirc` に Issue 読み取り用トークンを配置（メインと同じ）
+- Google Drive クライアント（Drive for desktop 等）をインストールし、`~/.config/capsicum/secrets.env` を Google Drive 上の実体への symlink で配置
+- Claude Code の memory ディレクトリ（`~/.claude/projects/<project-key>/memory/`）も Google Drive 上の `claude-memory/` 実体への symlink で共有する。`<project-key>` は Claude Code 起動時に作業ディレクトリから自動生成されるため、起動後に確認してから symlink を張る
+
+### Linux 固有
+
+- `clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev`（Flutter desktop ビルド + flutter_secure_storage の libsecret 依存）
+- 配布パイプライン作業時: `flatpak-builder`（Flathub）、`appimagetool`（AppImage）
+- Flathub アカウント（[#424](https://github.com/pooza/capsicum/issues/424) で submit する際に必要）
+
+### Windows 固有
+
+- Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
+- MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
+- Microsoft Partner Center アカウント（Microsoft Store 登録用）
+
+### 持ち込まないもの
+
+- Apple toolchain（Xcode / fastlane / Apple Distribution 証明書 / `AuthKey_*.p8`）
+- Android 署名鍵（`android/key.properties`）/ Google Play サービスアカウント JSON
+- リポジトリルートの `.sentryclirc`（dSYM アップロード用、iOS/Android/macOS 専用）
+
+リリース判定・ストア公開・iOS/Android/macOS の dSYM アップロードはすべてメインの macOS で行うため、補助機にこれらを置く必要はない。
 
 ## Sentry
 
@@ -39,7 +74,7 @@
 
 ### Issue 読み取り用トークン
 
-リポジトリ直下の `.sentryclirc` は dSYM アップロード用の `org:ci` スコープのみで、Issue 読み取り不可。進捗同期時に `sentry-cli issues list` を使う際は `~/.sentryclirc`（広スコープ、`project:read` あり）のトークンを `SENTRY_AUTH_TOKEN` で明示指定する。詳細は [CLAUDE.md](CLAUDE.md) の同期手順節を参照。
+リポジトリ直下の `.sentryclirc` は dSYM アップロード用の `org:ci` スコープのみで、Issue 読み取り不可。進捗同期時に `sentry-cli issues list` を使う際は `~/.sentryclirc`（広スコープ、`project:read` あり）のトークンを `--auth-token` フラグで明示指定する（`SENTRY_AUTH_TOKEN` 環境変数はプロジェクトごとのトークン使い分けを壊すため使わない）。詳細は [sync-procedure.md](sync-procedure.md) の同期手順を参照。
 
 ## iOS 実機環境
 
