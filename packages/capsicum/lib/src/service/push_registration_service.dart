@@ -81,6 +81,14 @@ class PushRegistrationService {
     // 必要がある（wipe すると古いサーバー側サブスクリプションが orphan 化）。
     var localStateModified = false;
     try {
+      // 本配線が無いプラットフォームでは試行自体を止め、UI 上は「対象外」
+      // として整合させる（#467: macOS）。registerAllAccounts 側でも guard
+      // しているが、tokenRefresh など別経路から呼ばれる場合の保険として
+      // ここでも止める。
+      if (Platform.isMacOS) {
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
       if (account.adapter is! PushSubscriptionSupport) {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
@@ -430,6 +438,17 @@ class PushRegistrationService {
   /// デバイストークンが未取得の場合は到着を待ってから登録する。
   static Future<void> registerAllAccounts(List<Account> accounts) async {
     if (accounts.isEmpty) return;
+
+    // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
+    // 走らせず、各アカウントを「対象外」状態に揃えて即時 return する
+    // （#467: macOS）。
+    if (Platform.isMacOS) {
+      final store = PushRegistrationStatusStore.instance;
+      for (final account in accounts) {
+        store.update(account.key.toStorageKey(), PushRegistrationState.skipped);
+      }
+      return;
+    }
 
     // デバイストークンが未取得なら到着を待つ（最大 10 秒）
     if (_getDeviceToken() == null) {
