@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(grep *)",
+      "Bash(ls *)",
       "Bash(flutter *)",
       "Bash(pkg-config *)",
       "Bash(apt-cache *)",
@@ -38,6 +39,9 @@
       "Bash(curl -s \"https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20\")",
       "Bash(curl -sH \"Authorization: Bearer $\\(awk '/\\\\[auth\\\\]/{getline; print}' ~/.sentryclirc)",
       "Bash(python3 -m json.tool)",
+      "PowerShell(gh *)",
+      "PowerShell(where.exe *)",
+      "PowerShell(winget *)",
       "WebFetch(domain:gist.github.com)"
     ],
     "defaultMode": "auto"
