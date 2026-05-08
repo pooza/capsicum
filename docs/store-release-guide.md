@@ -344,6 +344,8 @@ gh issue list --label bug --state open
 
 ### 4.5 Linux 配布（v1.24〜）
 
+> **v1.24.0（Linux 初回リリース）時の追加チェック**: AppImage の draft Release publish に加えて、**Flathub 公式リポジトリへの初回申請 PR (Phase 5b)** を pooza 個人 Flathub アカウントで手動で出す。手順は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md)。Flathub レビュー期間 (1〜4 週間) は v1.24 リリース自体をブロックしない (AppImage は GitHub Releases から並行配布)。採択後の継続更新自動化は #470 で追跡。
+
 Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.github/workflows/linux-release.yml](../.github/workflows/linux-release.yml)) でビルドする。
 
 #### AppImage
