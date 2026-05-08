@@ -28,6 +28,9 @@ jobs:
   appimage:
     if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'appimage' || inputs.build_kind == 'both'
     runs-on: ubuntu-22.04
+    permissions:
+      # softprops/action-gh-release の draft Release 作成 + 添付に必要 (タグ駆動時のみ実行)
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
