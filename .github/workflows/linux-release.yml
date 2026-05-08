@@ -43,7 +43,10 @@ jobs:
             libcurl4-openssl-dev default-jdk-headless \
             libfuse2 patchelf
 
-      - name: Install linuxdeploy / appimagetool
+      - name: Install linuxdeploy / appimagetool (with sha256 pin)
+        # continuous / master という rolling アップデート tag から DL するが、
+        # packaging/linux/appimage/tooling.sha256 の固定値で検証することで
+        # 上流が更新されたら CI を明示的に落とし、pin の更新を必須化する。
         run: |
           mkdir -p ~/.local/bin
           cd ~/.local/bin
@@ -53,6 +56,7 @@ jobs:
             https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
           curl -fL -o appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          sha256sum -c "$GITHUB_WORKSPACE/packaging/linux/appimage/tooling.sha256"
           chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 

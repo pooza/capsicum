@@ -43,6 +43,21 @@ chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
 `~/.local/bin` を `PATH` に通しておく (`~/.zshrc` / `~/.bashrc` で
 `export PATH="$HOME/.local/bin:$PATH"`)。
 
+### sha256 pin の更新
+
+CI ([.github/workflows/linux-release.yml](../../../.github/workflows/linux-release.yml))
+は [tooling.sha256](tooling.sha256) で linuxdeploy 系バイナリの hash を pin
+している (continuous / master の rolling アップデートに対するサプライチェーン
+保護)。上流が更新されると CI が落ちるので、明示的に pin を更新する:
+
+```sh
+cd ~/.local/bin
+sha256sum linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool > \
+  /path/to/capsicum/packaging/linux/appimage/tooling.sha256
+```
+
+更新前に release notes / commit log を確認して、上流の変更内容を把握すること。
+
 ### secrets.env (任意)
 
 `~/.config/capsicum/secrets.env` に `SENTRY_DSN` / `RELAY_SECRET` が
