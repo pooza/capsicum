@@ -25,6 +25,7 @@
       "Bash(gh release *)",
       "Bash(gh workflow *)",
       "Bash(gh run *)",
+      "Bash(gh label *)",
       "Bash(git fetch *)",
       "Bash(git add *)",
       "Bash(git mv *)",
