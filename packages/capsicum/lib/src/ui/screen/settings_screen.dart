@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -41,13 +43,16 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/display'),
           ),
-          ListTile(
-            leading: const Icon(Icons.notifications_outlined),
-            title: const Text('プッシュ通知'),
-            subtitle: const Text('アカウント別の登録状況・再試行'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/settings/push'),
-          ),
+          // macOS は push 通知を本配線していない (#467)。本配線が入るまで
+          // 設定エントリも隠す。
+          if (!Platform.isMacOS)
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('プッシュ通知'),
+              subtitle: const Text('アカウント別の登録状況・再試行'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/settings/push'),
+            ),
         ],
       ),
     );
