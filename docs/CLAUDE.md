@@ -275,7 +275,9 @@ v1.27 マイルストーンに単独配置（大更新のため他項目と並�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.23.0**（2026-05-04 リリース、Android 製品版昇格済み・iOS / macOS App Store 審査提出済み）。デスクトップ展開の第2段階として、プラットフォーム抽象化レイヤ **BackgroundTaskScheduler** (#328、workmanager 脱却) / **MediaPicker** (#329、image_picker + file_selector 統合) / **NotificationSubsystem** (#330、flutter_local_notifications プラットフォーム差吸収) を導入。あわせて macOS の通知許可整合 (#404)、entitlements の keychain-access-group 統一 (#397)、ドライブの retry lock 解除バグ (#450) と responsive スクロール (#452) の修正、PushRegistrationStatusSection のリファクタ (#444) を消化。v1.22.0 は 2026-05-02、v1.21.0 は 2026-04-28、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.23.1**（2026-05-09 タグ、macOS App Store 審査提出済み）。v1.23.0+55 が macOS 審査でリジェクト (Guideline 2.1(a)、ログイン後スピナー固着) されたため、Keychain Access Group の `MacOsOptions(groupId:)` 未指定で OAuth トークン書き込みが silent fail する不具合 (#454) と push 登録 UI の本配線まで非表示 (#467) を `release/1.23.1` ブランチ (main から分岐) に cherry-pick して macOS のみ +61 で再提出。iOS / Android は v1.23.0+55 のまま継続。
+
+v1.23.0（2026-05-04 リリース、Android 製品版昇格済み・iOS App Store 審査提出済み）はデスクトップ展開の第2段階として、プラットフォーム抽象化レイヤ **BackgroundTaskScheduler** (#328、workmanager 脱却) / **MediaPicker** (#329、image_picker + file_selector 統合) / **NotificationSubsystem** (#330、flutter_local_notifications プラットフォーム差吸収) を導入。あわせて macOS の通知許可整合 (#404)、entitlements の keychain-access-group 統一 (#397)、ドライブの retry lock 解除バグ (#450) と responsive スクロール (#452) の修正、PushRegistrationStatusSection のリファクタ (#444) を消化。v1.22.0 は 2026-05-02、v1.21.0 は 2026-04-28、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 

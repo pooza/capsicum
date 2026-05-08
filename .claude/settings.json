@@ -29,13 +29,16 @@
       "Bash(git fetch *)",
       "Bash(git add *)",
       "Bash(git mv *)",
+      "Bash(git tag *)",
       "Bash(git commit *)",
       "Bash(git clone *)",
       "Bash(git checkout *)",
       "Bash(curl -s \"https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20\")",
       "Bash(curl -sH \"Authorization: Bearer $\\(awk '/\\\\[auth\\\\]/{getline; print}' ~/.sentryclirc)",
       "Bash(python3 -m json.tool)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "Bash(git pull *)",
+      "Bash(git stash *)"
     ],
     "defaultMode": "auto"
   }
