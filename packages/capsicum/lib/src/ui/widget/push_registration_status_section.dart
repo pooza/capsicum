@@ -82,9 +82,10 @@ class PushRegistrationStatusSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 本配線が無いプラットフォームでは UI ごと隠す（#467: macOS / #471: Linux）。
-    // 表示しても登録は必ず token 取得失敗となり、ユーザーが再試行を繰り返す
-    // 混乱状態になるため、本配線が入るまでの暫定対応。
+    // 本配線が無いプラットフォームでは UI ごと隠す
+    // （#467: macOS / #471: Linux / #423: Windows）。表示しても登録は必ず
+    // token 取得失敗となり、ユーザーが再試行を繰り返す混乱状態になるため、
+    // 本配線が入るまでの暫定対応。
     if (!PushRegistrationService.isPushBackendWired) {
       return const SizedBox.shrink();
     }
