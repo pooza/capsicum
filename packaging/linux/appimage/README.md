@@ -75,11 +75,32 @@ bash packaging/linux/appimage/build.sh
 
 ## 動作確認
 
+### ローカルビルドの起動
+
+build.sh が出力する AppImage は実行ビット付き。そのまま起動可能。
+
 ```sh
 ./build/linux/dist/capsicum-1.24.0-x86_64.AppImage
 ```
 
-確認項目は #425 (実機検証 Issue) を参照。
+### 配布物 (GitHub Releases から DL した AppImage) の検証
+
+リリース直前 / 直後に、Linux 補助機で配布バイナリを実機検証する場合の手順。`linux-release.yml` がタグ駆動で生成して draft Release に添付した AppImage を、pooza が GitHub UI からダウンロード後:
+
+```sh
+chmod +x ~/Downloads/capsicum-1.24.0-x86_64.AppImage
+~/Downloads/capsicum-1.24.0-x86_64.AppImage
+```
+
+公開済み Release のアセットは curl からも取得可能 (draft 中は pooza のみアクセス可):
+
+```sh
+curl -LO https://github.com/pooza/capsicum/releases/download/v1.24.0/capsicum-1.24.0-x86_64.AppImage
+chmod +x capsicum-1.24.0-x86_64.AppImage
+./capsicum-1.24.0-x86_64.AppImage
+```
+
+確認項目は [#425](https://github.com/pooza/capsicum/issues/425) (Linux 実機検証 Issue) を参照。
 
 ## 制約
 

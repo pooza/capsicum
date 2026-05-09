@@ -374,7 +374,7 @@ bash packaging/linux/appimage/build.sh    # AppImage
 bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
 ```
 
-詳細は各 README 参照。
+ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認、Flatpak は [packaging/linux/flathub/README.md](../packaging/linux/flathub/README.md) を参照。
 
 ## 5. 配布方針
 
