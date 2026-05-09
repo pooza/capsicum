@@ -86,22 +86,18 @@ flutter:
 # Windows MSIX パッケージング設定 (#423)。
 #
 # identity_name / publisher は Microsoft Partner Center で capsicum を
-# アプリ予約した時点で確定する識別子で、ストア提出 MSIX が一致しないと
-# バリデーションで弾かれる。Phase 3 (Partner Center 登録) で正規値に
-# 差し替える。下記はそれまでの placeholder。
+# アプリ予約した時点で確定した識別子。MSIX 提出時にこの値が一致しないと
+# ストア側でバリデーション失敗するため固定値で埋めている。
 #
 # 配布アーキは v1.24 リリース時点で x64 1 本（ARM64 ユーザーは Windows の
 # x64 emulation 経由で動作）。後日 ARM64 を追加する場合は同一プロダクトに
 # 別 MSIX として bundle する（Microsoft Store 側で arch 振り分け）。
 msix_config:
   display_name: capsicum
-  # 当面は個人発行元 (小石達也) で Microsoft Store に登録する方針
-  # （Apple / Google も同様に個人発行元のため、3 ストア整合）。
-  # 法人 (有限会社ビーショック) への切替は税務・ブランド要請が顕在化した
-  # 時点で 3 ストア一括移行する。詳細は CLAUDE.md「運営元」節参照。
+  # 3 ストア（Apple / Google / Microsoft）すべて個人発行元 (小石達也) で
+  # 整合させる方針。法人 (有限会社ビーショック) への切替は税務・ブランド
+  # 要請が顕在化した時点で一括移行する。詳細は CLAUDE.md「運営元」節参照。
   publisher_display_name: 小石達也
-  # Microsoft Partner Center で capsicum を予約した際に確定した識別子。
-  # MSIX 提出時にこの値が一致しないとストア側でバリデーション失敗する。
   identity_name: 9AFBB08E.capsicum
   publisher: CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42
   logo_path: windows/runner/resources/app_icon.png
