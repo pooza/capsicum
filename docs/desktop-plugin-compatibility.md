@@ -127,6 +127,7 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 
 - **image_picker_macos**: 本体経由で自動的に動くが、内部実装は `file_selector` 相当。UX が iOS とやや異なる
 - **flutter_local_notifications の Windows 実装**: Windows 10/11 の Toast 通知を使う。MSIX パッケージングが必須で、素の exe 配布だと通知が出ない。Microsoft Store 経由推奨の根拠のひとつ
+- **MSIX パッケージング (`msix: ^3.16.13`)**: dev_dependency として導入。`pubspec.yaml` の `msix_config` セクションから `dart run msix:create` で `capsicum.msix` を生成する。Microsoft Store 経由配布のため `store: true` で未署名出力（ストア側で再署名）。詳細は [#423](https://github.com/pooza/capsicum/issues/423) と [release-pipeline.md](release-pipeline.md) Phase 4
 - **Linux で Flathub 配布する場合のサンドボックス制約**: secure_storage / notifications / file access 等、必要な権限（finish-args）を manifest に明示する必要がある
 
 ## 更新時の注意
