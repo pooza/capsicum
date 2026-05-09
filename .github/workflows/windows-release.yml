@@ -1,0 +1,102 @@
+name: Windows Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'packages/capsicum/windows/**'
+      - 'packages/capsicum/pubspec.yaml'
+      - '.github/workflows/windows-release.yml'
+  workflow_dispatch:
+
+jobs:
+  # Microsoft Store 提出用 MSIX を windows-latest (x64) で組み立てて
+  # GitHub Releases (draft) に添付する。Microsoft Store への自動 publish は
+  # Phase 3 (Partner Center 登録 + msstore CLI シークレット投入) 完了後に
+  # 別ステップとして本ファイルに足す。
+  msix:
+    runs-on: windows-latest
+    permissions:
+      # softprops/action-gh-release の draft Release 作成 + 添付に必要
+      # (タグ駆動時のみ実行)
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # sentry_flutter 9.x が transitive で引き込む jni 0.14.x が
+      # JNI_CreateJavaVM のリンクで JDK の jvm.lib (x64) を要求する。
+      # windows-latest runner の bundled JDK ではなく、固定 minor の
+      # Microsoft OpenJDK 21 を入れて再現性を確保する。
+      - name: Setup JDK 21 (x64) for jni transitive
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '21'
+          architecture: x64
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+
+      - name: Activate melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Generate code (build_runner)
+        run: melos run build_runner
+
+      - name: Build Windows release
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+        shell: pwsh
+        # Sentry / capsicum-relay 連携キーは GitHub Secrets から渡し、
+        # 未設定なら省略 (起動可能、Sentry 送信無効・push 通知無効)。
+        # Linux 側 (packaging/linux/appimage/build.sh) と同じ運用。
+        run: |
+          $defines = @('--dart-define=SENTRY_ENV=production')
+          if ($env:SENTRY_DSN)   { $defines += "--dart-define=SENTRY_DSN=$env:SENTRY_DSN" }
+          if ($env:RELAY_SECRET) { $defines += "--dart-define=RELAY_SECRET=$env:RELAY_SECRET" }
+          Push-Location packages/capsicum
+          flutter build windows --release @defines
+          Pop-Location
+
+      - name: Package MSIX
+        # pubspec.yaml の msix_config セクションを読んで
+        # build/windows/x64/runner/Release/capsicum.msix を生成する。
+        # store: true なので未署名のまま、Microsoft Store 側で再署名される。
+        shell: pwsh
+        run: |
+          Push-Location packages/capsicum
+          dart run msix:create
+          Pop-Location
+
+      - name: Upload MSIX as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsicum-msix
+          path: packages/capsicum/build/windows/x64/runner/Release/*.msix
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach MSIX to GitHub Release
+        # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
+        # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
+        # Linux Release (linux-release.yml) と同じ draft 運用。
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/capsicum/build/windows/x64/runner/Release/*.msix
+          fail_on_unmatched_files: true
+          draft: true
+
+      # TODO(#423 Phase 3): Microsoft Partner Center 登録完了 +
+      # MS_STORE_CLIENT_ID / MS_STORE_CLIENT_SECRET / MS_STORE_TENANT_ID
+      # シークレット投入後、msstore CLI で Microsoft Store へ自動アップロード
+      # するステップを追加する (タグ駆動時のみ、draft submission)。
+      # release-pipeline.md のシークレット表参照。
