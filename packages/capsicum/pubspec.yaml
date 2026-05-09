@@ -95,14 +95,15 @@ flutter:
 # 別 MSIX として bundle する（Microsoft Store 側で arch 振り分け）。
 msix_config:
   display_name: capsicum
-  # 当面は個人 (Tatsuya Koishi) で Microsoft Store に登録する方針
+  # 当面は個人発行元 (小石達也) で Microsoft Store に登録する方針
   # （Apple / Google も同様に個人発行元のため、3 ストア整合）。
   # 法人 (有限会社ビーショック) への切替は税務・ブランド要請が顕在化した
   # 時点で 3 ストア一括移行する。詳細は CLAUDE.md「運営元」節参照。
-  publisher_display_name: Tatsuya Koishi
-  # TODO(#423): Partner Center 登録後に確定識別子へ差し替え
-  identity_name: TatsuyaKoishi.capsicum
-  publisher: CN=TatsuyaKoishi
+  publisher_display_name: 小石達也
+  # Microsoft Partner Center で capsicum を予約した際に確定した識別子。
+  # MSIX 提出時にこの値が一致しないとストア側でバリデーション失敗する。
+  identity_name: 9AFBB08E.capsicum
+  publisher: CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42
   logo_path: windows/runner/resources/app_icon.png
   capabilities: internetClient
   architecture: x64
