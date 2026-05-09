@@ -66,6 +66,11 @@ dev_dependencies:
   # 通常は shared_preferences 経由の transitive だが、lint
   # (depend_on_referenced_packages) 回避のため明示する。
   shared_preferences_platform_interface: ^2.4.0
+  # Windows MSIX パッケージング (#423)。dart run msix:create で
+  # build/windows/x64/runner/Release/ 配下に capsicum.msix を生成する。
+  # Microsoft Store 提出時は store: true により未署名のままアップロード、
+  # ストア側で再署名される。
+  msix: ^3.16.13
 
 sentry:
   upload_debug_symbols: true
@@ -77,3 +82,27 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+# Windows MSIX パッケージング設定 (#423)。
+#
+# identity_name / publisher は Microsoft Partner Center で capsicum を
+# アプリ予約した時点で確定する識別子で、ストア提出 MSIX が一致しないと
+# バリデーションで弾かれる。Phase 3 (Partner Center 登録) で正規値に
+# 差し替える。下記はそれまでの placeholder。
+#
+# 配布アーキは v1.24 リリース時点で x64 1 本（ARM64 ユーザーは Windows の
+# x64 emulation 経由で動作）。後日 ARM64 を追加する場合は同一プロダクトに
+# 別 MSIX として bundle する（Microsoft Store 側で arch 振り分け）。
+msix_config:
+  display_name: capsicum
+  publisher_display_name: 有限会社ビーショック
+  # TODO(#423): Partner Center 登録後に確定識別子へ差し替え
+  identity_name: B-Shock.capsicum
+  publisher: CN=B-Shock
+  logo_path: windows/runner/resources/app_icon.png
+  capabilities: internetClient
+  architecture: x64
+  languages: ja-jp, en-us
+  # Microsoft Store 提出用。ストア側で再署名されるため自前証明書は不要。
+  store: true
+  output_name: capsicum
