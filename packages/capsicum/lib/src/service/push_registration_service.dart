@@ -82,10 +82,10 @@ class PushRegistrationService {
     var localStateModified = false;
     try {
       // 本配線が無いプラットフォームでは試行自体を止め、UI 上は「対象外」
-      // として整合させる（#467: macOS / #471: Linux）。registerAllAccounts
-      // 側でも guard しているが、tokenRefresh など別経路から呼ばれる場合の
-      // 保険としてここでも止める。
-      if (Platform.isMacOS || Platform.isLinux) {
+      // として整合させる（#467: macOS / #471: Linux / #423: Windows）。
+      // registerAllAccounts 側でも guard しているが、tokenRefresh など別経路
+      // から呼ばれる場合の保険としてここでも止める。
+      if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
@@ -441,8 +441,8 @@ class PushRegistrationService {
 
     // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
     // 走らせず、各アカウントを「対象外」状態に揃えて即時 return する
-    // （#467: macOS / #471: Linux）。
-    if (Platform.isMacOS || Platform.isLinux) {
+    // （#467: macOS / #471: Linux / #423: Windows）。
+    if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
       final store = PushRegistrationStatusStore.instance;
       for (final account in accounts) {
         store.update(account.key.toStorageKey(), PushRegistrationState.skipped);
