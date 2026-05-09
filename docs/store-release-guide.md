@@ -376,6 +376,62 @@ bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
 
 詳細は各 README 参照。
 
+### 4.6 Windows 配布（v1.24〜）
+
+Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は **Microsoft Store 一本**（自前 MSI / 自己署名 exe 配布は採用しない — Microsoft Store 経由ならストア側で再署名されるため Authenticode 証明書が不要、Toast 通知が動く、自動更新が乗るため）。
+
+#### MSIX
+
+タグ駆動 (`v*.*.*`) で `windows-release.yml` の `msix` ジョブが起動し:
+
+1. windows-latest (x64) で `flutter build windows --release`（jni transitive のため Microsoft OpenJDK 21 を `actions/setup-java` で導入）
+2. `dart run msix:create` で `pubspec.yaml` の `msix_config` から `capsicum.msix` を生成（`store: true` で未署名）
+3. `capsicum.msix` を **draft Release** に添付（pooza が GitHub UI で publish 判断）
+4. Repository Secrets 投入済みなら msstore CLI で Microsoft Store に **draft submission** として送る（Partner Center で pooza が提出操作）
+
+draft で生成・submit するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
+
+#### Microsoft Store credential 投入手順（一度だけ）
+
+Phase 5 として実施。以下を Repository Secrets に投入すると、`windows-release.yml` の publish step が自動的に有効化される（未投入時は publish step が skip され、MSIX は GitHub Releases にのみ添付される）。
+
+1. **Microsoft Entra ID（旧 Azure AD）でアプリ登録**:
+   - Microsoft Entra admin center → 「アプリの登録」→ 「新規登録」
+   - 名前: `capsicum-msstore-cli`（任意）/ サポートされているアカウントの種類: 「この組織ディレクトリのみ」
+   - 登録後、概要ページの **Application (client) ID** と **Directory (tenant) ID** を控える
+2. **client secret の発行**:
+   - 上記アプリの「証明書とシークレット」→ 「新しいクライアント シークレット」→ 期限 24 か月
+   - 値（Value）を控える（**ページ離脱後は再表示できない**）
+3. **Partner Center に Entra アプリを紐付け**:
+   - [Partner Center](https://partner.microsoft.com/) → Account settings → Tenants → 上記 Entra テナントを追加
+   - User management → Azure AD applications → 上記アプリを追加 → Manager 権限を付与
+4. **GitHub Repository Secrets に投入** (`https://github.com/pooza/capsicum/settings/secrets/actions`):
+   - `MS_STORE_CLIENT_ID`: 上記 Application (client) ID
+   - `MS_STORE_CLIENT_SECRET`: 上記 client secret の Value
+   - `MS_STORE_TENANT_ID`: 上記 Directory (tenant) ID
+
+投入後の最初のタグ駆動ビルドで publish step が走り、Partner Center 上に submission が draft 状態で出現する。pooza が Partner Center でリリースノート・スクリーンショット等を確認のうえ提出する。
+
+#### Microsoft Store 固有の掲載情報
+
+- [ ] スクリーンショット（1366×768 / 1920×1080 / 3840×2160 のいずれか、最低 1 枚）
+- [ ] ストアロゴ（300×300 PNG）— `msix_config.logo_path` で指定した `windows/runner/resources/app_icon.png` がそのまま使われる
+- [ ] アプリ説明文 — `store-listing.md` の内容を流用
+- [ ] 年齢区分: IARC 質問への回答（既存の Google Play / App Store 回答と整合させる）
+- [ ] サポート URL: `https://github.com/pooza/capsicum/issues`
+
+#### Windows ローカルビルド確認
+
+```sh
+cd packages/capsicum
+flutter build windows --release
+dart run msix:create
+# build/windows/x64/runner/Release/capsicum.msix が生成される
+# Add-AppxPackage -Path .\build\windows\x64\runner\Release\capsicum.msix （PowerShell）でインストール可能
+```
+
+ローカル MSIX は未署名のため、開発者モード ON のマシンでのみインストールできる。Microsoft Store 提出 MSIX はストア側で再署名されるため、エンドユーザーは開発者モード不要。
+
 ## 5. 配布方針
 
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）

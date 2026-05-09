@@ -150,9 +150,13 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
   - bundle tarball を Releases に同梱 (Flathub 提出 manifest の `type: archive` source 用)
   - flatpak-lint ジョブ (Ubuntu 24.04) で manifest YAML / AppStream metainfo / desktop entry を毎 PR 検証
   - Flathub 提出は v1.24 リリース後の手動 PR (詳細は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md))。レビュー期間中も AppImage は GitHub Releases から配布できる
-- Windows 側 (#423): 未着手
-  - Microsoft Store 向け MSIX ビルド + msstore CLI
-  - Microsoft Partner Center アカウント連携
+- Windows 側 (#423): **v1.24 で実装**（実装段階別ステータスは下記）
+  - Phase 1（Windows scaffold）: 完了 — `flutter create` で `packages/capsicum/windows/` 生成
+  - Phase 2（MSIX パッケージング設定）: 完了 — `pubspec.yaml` に `msix_config` 追加、`msix: ^3.16.13` 採用
+  - Phase 3（Microsoft Partner Center 登録）: 完了 — 個人開発者登録 + アプリ予約。`identity_name` / `publisher` は `pubspec.yaml` 参照
+  - Phase 4（GitHub Actions ワークフロー）: 完了 — [.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml) で windows-latest x64 / Flutter 3.41.9 / `dart run msix:create` / draft Release 添付
+  - Phase 5（msstore CLI 連携）: ワークフロー側は実装済み。Entra ID (Azure AD) アプリ登録 + `MS_STORE_CLIENT_ID/SECRET/TENANT_ID` の Repository Secrets 投入は pooza さんの手作業待ち。投入されると Phase 4 ワークフローの publish step が自動有効化される（未投入時は skip）。手順は [store-release-guide.md §4.6](store-release-guide.md#46-windows-配布v124)
+  - 実機検証は [#425](https://github.com/pooza/capsicum/issues/425) に分離（Linux / Windows 共用の実機検証 issue）
 
 ## 未確定事項
 
