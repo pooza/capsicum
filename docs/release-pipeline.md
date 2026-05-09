@@ -142,7 +142,7 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 - `flutter build macos --release` → `xcodebuild archive` → `-exportArchive` で `.pkg` を生成し、Universal Purchase 済みの App レコードに `platform: 'osx'` で投げる
 - Phase 2 の GitHub Actions に macOS ネイティブ分岐を追加
 
-### Phase 4: Windows / Linux 対応（デスクトップ第3段階）
+### Phase 4: Linux 対応（デスクトップ第3段階。Windows は保留）
 
 - Linux 側 (#424): **v1.24 で実装済み**
   - `.github/workflows/linux-release.yml` — タグ駆動 + workflow_dispatch + path-filter pull_request トリガ
@@ -150,9 +150,12 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
   - bundle tarball を Releases に同梱 (Flathub 提出 manifest の `type: archive` source 用)
   - flatpak-lint ジョブ (Ubuntu 24.04) で manifest YAML / AppStream metainfo / desktop entry を毎 PR 検証
   - Flathub 提出は v1.24 リリース後の手動 PR (詳細は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md))。レビュー期間中も AppImage は GitHub Releases から配布できる
-- Windows 側 (#423): 未着手
-  - Microsoft Store 向け MSIX ビルド + msstore CLI
-  - Microsoft Partner Center アカウント連携
+- Windows 側 (#423): **2026-05-09 に保留判断**
+  - Phase 1（Windows scaffold）/ Phase 2（MSIX パッケージング設定）/ Phase 3（Microsoft Partner Center 個人開発者登録 + アプリ予約）/ Phase 4（GitHub Actions ワークフロー）まで実装したが、Phase 5（msstore CLI 連携）の前提となる Microsoft Entra ID テナントの Partner Center 関連付け UI に、Microsoft Store 個人開発者アカウントでは到達できないことが判明
+  - 実装は `feature/423-windows-distribution` ブランチに保持。develop には取り込まない。再開時はこのブランチを起点に rebase
+  - 再開トリガー: Windows ユーザーからの強い実機要望、または運営元節（[CLAUDE.md](CLAUDE.md)）で言及した法人化移行（組織 Microsoft アカウントへの切替で Entra テナントが整備されれば UI 制約が解消する見込み）
+  - 試行錯誤の詳細は [#423 のコメント](https://github.com/pooza/capsicum/issues/423)
+  - 関連の Windows 専用 issue（[#474](https://github.com/pooza/capsicum/issues/474) push 本配線、[#483](https://github.com/pooza/capsicum/issues/483) 実機検証、[#484](https://github.com/pooza/capsicum/issues/484) SMTC NowPlaying）もすべて on-hold
 
 ## 未確定事項
 

@@ -2,6 +2,8 @@
 
 capsicum が依存している Flutter プラグインの macOS / Linux / Windows 対応状況まとめ。デスクトップ対応（[CLAUDE.md の長期構想](CLAUDE.md#長期構想-デスクトップ対応) を参照）を段階的に進めるための見積もり資料として使う。
 
+> **Windows 対応は 2026-05-09 に保留** （[#423](https://github.com/pooza/capsicum/issues/423)、Microsoft Store 個人開発者アカウントの Entra ID テナント関連付け UI 制約による）。本書の Windows 関連項目（Tier 区分・バンドル影響・MSIX 必須要件等）は再開時の参考情報として保持。当面のデスクトップ対応の主軸は **macOS + Linux**。
+
 対象のリポジトリ配下の [pubspec.yaml](../packages/capsicum/pubspec.yaml) および workspace 配下の各サブパッケージ（`capsicum_core` / `capsicum_backends` / `fediverse_objects`）の依存をベースに整理している。プラグイン構成が変わったら本書も更新すること。
 
 ## 分類基準
