@@ -13,15 +13,23 @@ on:
 
 jobs:
   # Microsoft Store 提出用 MSIX を windows-latest (x64) で組み立てて
-  # GitHub Releases (draft) に添付する。Microsoft Store への自動 publish は
-  # Phase 3 (Partner Center 登録 + msstore CLI シークレット投入) 完了後に
-  # 別ステップとして本ファイルに足す。
+  # GitHub Releases (draft) に添付する。msstore CLI 経由で
+  # Microsoft Store への draft submission も行うが、これは Entra ID
+  # (Azure AD) アプリ登録 + Repository Secrets 投入後にのみ自動有効化される
+  # (未投入なら publish step は skip)。手順は store-release-guide.md §4.6 参照。
   msix:
     runs-on: windows-latest
     permissions:
       # softprops/action-gh-release の draft Release 作成 + 添付に必要
       # (タグ駆動時のみ実行)
       contents: write
+    env:
+      # Microsoft Store credentials. job レベルで env に上げておくことで
+      # publish step の if: 条件 (env.MS_STORE_CLIENT_ID != '') を評価できる。
+      # secrets が未投入なら空文字列になり publish step は skip される。
+      MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+      MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+      MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -95,8 +103,22 @@ jobs:
           fail_on_unmatched_files: true
           draft: true
 
-      # TODO(#423 Phase 3): Microsoft Partner Center 登録完了 +
-      # MS_STORE_CLIENT_ID / MS_STORE_CLIENT_SECRET / MS_STORE_TENANT_ID
-      # シークレット投入後、msstore CLI で Microsoft Store へ自動アップロード
-      # するステップを追加する (タグ駆動時のみ、draft submission)。
-      # release-pipeline.md のシークレット表参照。
+      - name: Publish to Microsoft Store (draft submission)
+        # タグ駆動 + Repository Secrets 投入済みのときだけ実行する。
+        # secrets 未投入時は env が空文字列になり、本 step は skip される
+        # (Phase 4 までの動作確認は publish 抜きで成立させる)。
+        # msstore は dotnet global tool。windows-latest runner には
+        # .NET SDK が同梱済みのため追加セットアップ不要。
+        # publish はストア側で draft submission として保留され、
+        # pooza が Partner Center でレビューしてから提出操作を行う
+        # (Linux / GitHub Releases の draft 運用と同じ思想)。
+        if: startsWith(github.ref, 'refs/tags/') && env.MS_STORE_CLIENT_ID != ''
+        shell: pwsh
+        run: |
+          dotnet tool install --global Microsoft.MSStore.CLI
+          msstore reconfigure `
+            --tenantId $env:MS_STORE_TENANT_ID `
+            --clientId $env:MS_STORE_CLIENT_ID `
+            --clientSecret $env:MS_STORE_CLIENT_SECRET `
+            --reset
+          msstore publish packages/capsicum/build/windows/x64/runner/Release/capsicum.msix
