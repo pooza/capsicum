@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -273,6 +274,18 @@ bool _isSensitiveFieldName(String key) {
 }
 
 void _startApp() {
+  // DSN 空ビルド (個人ビルド・CI debug 等で SENTRY_DSN 未設定) では
+  // SentryFlutter.init が走らず、FlutterError.onError と
+  // PlatformDispatcher.onError が未設定のままになり、Dart エラーが完全に
+  // 飲まれる (#498)。最低限 stderr (= Linux AppImage の AppRun ログ) に
+  // 流れるよう、未設定の場合だけ既定ハンドラを入れる。Sentry 経路では
+  // Sentry が自前で設定済なので ??= で上書きを避ける。
+  FlutterError.onError ??= FlutterError.presentError;
+  PlatformDispatcher.instance.onError ??= (e, st) {
+    debugPrint('Uncaught: $e\n$st');
+    return true;
+  };
+
   runApp(const ProviderScope(child: CapsicumApp()));
 
   // バックグラウンド isolate / NSE が記録した復号失敗等を Sentry に吸い上げる
