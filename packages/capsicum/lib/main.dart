@@ -71,6 +71,16 @@ Future<void> main() async {
         defaultValue: 'debug',
       );
       options.beforeSend = _scrubEvent;
+      // Linux / Windows の sentry-native はデフォルトで CWD 直下に
+      // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
+      // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
+      // XDG_DATA_HOME 配下に明示的に固定する。AppRun wrapper のログ出力先
+      // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃える。
+      if (Platform.isLinux || Platform.isWindows) {
+        final base = Platform.environment['XDG_DATA_HOME'] ??
+            '${Platform.environment['HOME']}/.local/share';
+        options.nativeDatabasePath = '$base/capsicum/.sentry-native';
+      }
     }, appRunner: () => _startApp());
   } else {
     _startApp();
