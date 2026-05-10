@@ -327,6 +327,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
   static final Set<String> _reportedRestoreErrors = {};
 
+  /// テストの tearDown 等で per-test 汚染を避けるための reset hook (#516)。
+  /// 本番経路では呼ばれず、Notifier が dispose-recreate されても dedup を
+  /// 永続化するという仕様自体は維持する。
+  @visibleForTesting
+  static void resetReportedRestoreErrors() => _reportedRestoreErrors.clear();
+
   static void _reportRestoreOnce(String accountKey, Object e, StackTrace st) {
     final dedupKey = '$accountKey:${e.runtimeType}';
     if (!_reportedRestoreErrors.add(dedupKey)) return;
