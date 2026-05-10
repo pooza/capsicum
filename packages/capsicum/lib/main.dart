@@ -77,7 +77,8 @@ Future<void> main() async {
       // XDG_DATA_HOME 配下に明示的に固定する。AppRun wrapper のログ出力先
       // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃える。
       if (Platform.isLinux || Platform.isWindows) {
-        final base = Platform.environment['XDG_DATA_HOME'] ??
+        final base =
+            Platform.environment['XDG_DATA_HOME'] ??
             '${Platform.environment['HOME']}/.local/share';
         options.nativeDatabasePath = '$base/capsicum/.sentry-native';
       }
@@ -125,38 +126,62 @@ const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];
 
 Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
   final data = b.data;
-  if (data == null || data.isEmpty) return b;
-
-  final copy = Map<String, dynamic>.from(data);
   var changed = false;
-  for (final entry in copy.entries.toList()) {
-    final key = entry.key;
-    final value = entry.value;
-    // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
-    if (key.toLowerCase().contains('header') && value is Map) {
-      final headerCopy = Map<String, dynamic>.from(value);
-      var headerChanged = false;
-      for (final name in _sensitiveHeaderNames) {
-        for (final hk in headerCopy.keys.toList()) {
-          if (hk.toString().toLowerCase() == name.toLowerCase()) {
-            headerCopy[hk] = '[Filtered]';
-            headerChanged = true;
+  Map<String, dynamic>? scrubbedData;
+
+  if (data != null && data.isNotEmpty) {
+    final copy = Map<String, dynamic>.from(data);
+    for (final entry in copy.entries.toList()) {
+      final key = entry.key;
+      final value = entry.value;
+      // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
+      if (key.toLowerCase().contains('header') && value is Map) {
+        final headerCopy = Map<String, dynamic>.from(value);
+        var headerChanged = false;
+        for (final name in _sensitiveHeaderNames) {
+          for (final hk in headerCopy.keys.toList()) {
+            if (hk.toString().toLowerCase() == name.toLowerCase()) {
+              headerCopy[hk] = '[Filtered]';
+              headerChanged = true;
+            }
           }
         }
+        if (headerChanged) {
+          copy[key] = headerCopy;
+          changed = true;
+        }
       }
-      if (headerChanged) {
-        copy[key] = headerCopy;
-        changed = true;
+      // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
+      if (key.toLowerCase().contains('body') ||
+          key.toLowerCase().contains('data')) {
+        final scrubbed = _scrubRequestData(value);
+        if (!identical(scrubbed, value)) {
+          copy[key] = scrubbed;
+          changed = true;
+        }
+      }
+      // URL 系フィールド (sentry_dio の `url`、HTTP breadcrumb の
+      // `to`、独自に詰めた `endpoint` 等) に capsicum-relay の
+      // `/push/{push_token}` が混入し得るため、path 末尾セグメントをマスクする。
+      if (value is String && _isUrlLikeFieldName(key.toString())) {
+        final scrubbed = _scrubRelayPushUrl(value);
+        if (scrubbed != value) {
+          copy[key] = scrubbed;
+          changed = true;
+        }
       }
     }
-    // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
-    if (key.toLowerCase().contains('body') ||
-        key.toLowerCase().contains('data')) {
-      final scrubbed = _scrubRequestData(value);
-      if (!identical(scrubbed, value)) {
-        copy[key] = scrubbed;
-        changed = true;
-      }
+    if (changed) scrubbedData = copy;
+  }
+
+  // breadcrumb.message にも生 URL が載ることがある (例: log カテゴリの
+  // breadcrumb に "POST https://relay.../push/<token>" のような行)。
+  String? newMessage = b.message;
+  if (b.message != null) {
+    final scrubbed = _scrubRelayPushUrl(b.message!);
+    if (scrubbed != b.message) {
+      newMessage = scrubbed;
+      changed = true;
     }
   }
 
@@ -164,13 +189,32 @@ Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
   // Breadcrumb.copyWith は deprecated のため、新しいインスタンスを構築する
   // （SentryRequest と同じ扱い）。
   return Breadcrumb(
-    message: b.message,
+    message: newMessage,
     timestamp: b.timestamp,
     category: b.category,
-    data: copy,
+    data: scrubbedData ?? data,
     level: b.level,
     type: b.type,
   );
+}
+
+bool _isUrlLikeFieldName(String key) {
+  final lower = key.toLowerCase();
+  return lower == 'url' ||
+      lower == 'endpoint' ||
+      lower == 'to' ||
+      lower == 'from' ||
+      lower.endsWith('_url') ||
+      lower.endsWith('.url');
+}
+
+// `/push/<push_token>` の `<push_token>` 部分を `[Filtered]` に置換する。
+// path 区切り (`/`)、クエリ (`?`)、フラグメント (`#`)、空白 / 引用符 / 行終端
+// に当たるまでを 1 トークンとして扱う。
+final _relayPushTokenPattern = RegExp(r'/push/[^/?#\s"\\]+');
+
+String _scrubRelayPushUrl(String input) {
+  return input.replaceAll(_relayPushTokenPattern, '/push/[Filtered]');
 }
 
 /// Mastodon の `subscribePush` は FormData を渡すため、キーが
