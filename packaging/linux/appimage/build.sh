@@ -151,7 +151,11 @@ this_dir="$(readlink -f "$(dirname "$0")")"
 source "$this_dir"/apprun-hooks/"linuxdeploy-plugin-gtk.sh"
 
 LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/capsicum/logs"
+# tee 経由で機微情報 (debugPrint・stderr スタック等) が混じり得るため、
+# ディレクトリと以降に作るログファイルを 700/600 に制限する。
+umask 077
 mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR" 2>/dev/null || true
 LOG_FILE="$LOG_DIR/capsicum-$(date +%Y%m%d-%H%M%S)-$$.log"
 
 # 古いログをローテーション (最新 10 件のみ残す)
