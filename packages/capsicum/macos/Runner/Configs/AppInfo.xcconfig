@@ -11,4 +11,4 @@ PRODUCT_NAME = capsicum
 PRODUCT_BUNDLE_IDENTIFIER = jp.co.b-shock.capsicum
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 B-Shock Co.,Ltd. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 b-shock. co.,Ltd. All rights reserved.
