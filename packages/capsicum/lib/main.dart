@@ -465,6 +465,16 @@ void _rescheduleNotificationRoute(
     debugPrint(
       'capsicum: notification: routing gave up after $maxAttempts frames',
     );
+    // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
+    // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
+    Sentry.captureMessage(
+      'notification.routing.gave_up',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('payload', accountString ?? '<null>');
+        scope.setTag('attempts', maxAttempts.toString());
+      },
+    );
     return;
   }
   WidgetsBinding.instance.addPostFrameCallback(
