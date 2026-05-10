@@ -28,6 +28,7 @@ import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
+import 'src/util/sentry_tag_hash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -467,11 +468,25 @@ void _rescheduleNotificationRoute(
     );
     // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
     // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
+    // payload (= username@host) は #500 の方針に揃えて host + user_hash の
+    // 2 タグに分離し、生 username を Sentry に出さない。
     Sentry.captureMessage(
       'notification.routing.gave_up',
       level: SentryLevel.warning,
       withScope: (scope) {
-        scope.setTag('payload', accountString ?? '<null>');
+        if (accountString == null) {
+          scope.setTag('payload', '<null>');
+        } else {
+          final atIdx = accountString.indexOf('@');
+          if (atIdx > 0 && atIdx < accountString.length - 1) {
+            final username = accountString.substring(0, atIdx);
+            final host = accountString.substring(atIdx + 1);
+            scope.setTag('payload.host', host);
+            scope.setTag('payload.user_hash', hashForSentryTag(username));
+          } else {
+            scope.setTag('payload', '<malformed>');
+          }
+        }
         scope.setTag('attempts', maxAttempts.toString());
       },
     );

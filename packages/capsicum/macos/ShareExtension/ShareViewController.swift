@@ -124,29 +124,32 @@ class ShareViewController: NSViewController {
       log: log, type: .debug, label, actualType
     )
 
+    // 共有された値は URL / テキスト本体 (機微情報候補) のため、type 判別の
+    // 文字列のみ public に残し、value は %{private}@ で Console.app からの
+    // 平文読み取りを抑制する (#518 / 差分レビュー)。
     if let url = unwrapped as? URL {
-      os_log("matched URL: %{public}@", log: log, type: .debug, url.absoluteString)
+      os_log("matched URL: %{private}@", log: log, type: .debug, url.absoluteString)
       saveSharedText(url.absoluteString)
       return
     }
     if let nsurl = unwrapped as? NSURL, let abs = nsurl.absoluteString {
-      os_log("matched NSURL: %{public}@", log: log, type: .debug, abs)
+      os_log("matched NSURL: %{private}@", log: log, type: .debug, abs)
       saveSharedText(abs)
       return
     }
     if let str = unwrapped as? String {
-      os_log("matched String: %{public}@", log: log, type: .debug, str)
+      os_log("matched String: %{private}@", log: log, type: .debug, str)
       saveSharedText(str)
       return
     }
     if let nsstr = unwrapped as? NSString {
       let s = nsstr as String
-      os_log("matched NSString: %{public}@", log: log, type: .debug, s)
+      os_log("matched NSString: %{private}@", log: log, type: .debug, s)
       saveSharedText(s)
       return
     }
     if let bytes = unwrapped as? Data, let str = String(data: bytes, encoding: .utf8) {
-      os_log("matched Data utf8: %{public}@", log: log, type: .debug, str)
+      os_log("matched Data utf8: %{private}@", log: log, type: .debug, str)
       saveSharedText(str)
       return
     }

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -15,6 +13,7 @@ import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
+import '../util/sentry_tag_hash.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -349,7 +348,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           scope.setTag('account_restore.host', parsed.host);
           scope.setTag(
             'account_restore.user_hash',
-            _hashForTag(parsed.username),
+            hashForSentryTag(parsed.username),
           );
           scope.fingerprint = ['account_restore', e.runtimeType.toString()];
         },
@@ -357,19 +356,6 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     } catch (_) {
       // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
     }
-  }
-
-  /// Sentry tag 用の de-identification ハッシュ。暗号学的強度は不要のため
-  /// FNV-1a 64-bit で十分。同一 username が常に同一ハッシュに丸まるので
-  /// 同一ユーザの相関は取れる一方、ハッシュから username は復元不能 (#500)。
-  static String _hashForTag(String username) {
-    var hash = BigInt.parse('cbf29ce484222325', radix: 16);
-    final mask = BigInt.parse('ffffffffffffffff', radix: 16);
-    final prime = BigInt.parse('100000001b3', radix: 16);
-    for (final byte in utf8.encode(username)) {
-      hash = (hash ^ BigInt.from(byte)) * prime & mask;
-    }
-    return hash.toRadixString(16).padLeft(16, '0').substring(0, 16);
   }
 }
 
