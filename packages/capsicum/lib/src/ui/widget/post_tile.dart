@@ -2573,9 +2573,42 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     List<Attachment> images, {
     BoxFit fit = BoxFit.cover,
   }) {
-    final imageUrl = attachment.previewUrl ?? attachment.url;
     final blurAll = ref.watch(blurAllImagesProvider);
     final isSensitive = (widget.sensitive || blurAll) && !_revealed;
+    // 動画系で preview_url が無い場合は実 URL（.mp4 等）を Image.network に
+    // 渡しても Skia が aspect だけ取って黒フレームを返すケースがあり
+    // (Linux GTK で確認、#491)、broken_image にも落ちず無言で黒くなる。
+    // Image を試みず placeholder を返す。
+    final hasPreview = attachment.previewUrl != null;
+    final isVideoLike =
+        attachment.type == AttachmentType.video ||
+        attachment.type == AttachmentType.gifv;
+    final imageUrl = attachment.previewUrl ?? attachment.url;
+
+    Widget media;
+    if (isVideoLike && !hasPreview) {
+      media = Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
+    } else {
+      media = Image.network(
+        imageUrl,
+        fit: fit,
+        errorBuilder: (_, _, _) => Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      );
+    }
+    // sensitive 時のみ ImageFiltered で blur を掛ける。非 sensitive 時に
+    // identity matrix を被せると Linux GTK embedder で render が黒に
+    // 落ちる事例があり (#491)、no-op の filter は実害だけ残るため外す。
+    if (isSensitive) {
+      media = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: media,
+      );
+    }
 
     return GestureDetector(
       onTap: () {
@@ -2590,19 +2623,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ImageFiltered(
-              imageFilter: isSensitive
-                  ? ImageFilter.blur(sigmaX: 30, sigmaY: 30)
-                  : ImageFilter.matrix(Matrix4.identity().storage),
-              child: Image.network(
-                imageUrl,
-                fit: fit,
-                errorBuilder: (_, _, _) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            ),
+            media,
             if (isSensitive)
               Positioned.fill(
                 child: Container(
