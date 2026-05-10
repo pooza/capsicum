@@ -76,15 +76,24 @@ Flathub への新規 submission は flathub/flathub リポジトリに以下の�
 PR を出す形:
 
 - リポジトリ: <https://github.com/flathub/flathub>
-- 申請ブランチ: `new-pr` 系
+- **base ブランチ: `new-pr` (必須)** — `master` を base にすると Flathub
+  の auto-close ボットに即座に弾かれる。2026-05-10 の初回提出時に
+  flathub/flathub#8625 でこれを踏み、base を `new-pr` に直して #8626 として
+  再提出した経緯あり。`gh pr create --base new-pr ...` で指定すること。
+  fork 元の作業ブランチも `git checkout -b xxx upstream/new-pr` で
+  upstream/new-pr から派生させる必要がある (master から派生すると
+  「pooza:branch has no history in common with flathub:new-pr」エラーで
+  PR を作れない)。
 - マニフェストファイル: ルートに `net.shrieker.capsicum.yml` を配置
 
 申請から採択までは 1〜4 週間程度を見込む。レビューで指摘される代表的な
 ポイント:
 
 - `finish-args` の `--filesystem=` を最小化 (xdg-portal で代替できないか)
-- AppStream metainfo の `<screenshots>` セクションが必要 (本 manifest には
-  まだ無いので、Phase 5b で追加)
+- AppStream metainfo の `<screenshots>` セクション (Phase 5b で
+  packaging/linux/screenshots/ 以下に PNG を置き、metainfo の
+  `<image>` から SHA 参照の raw URL で引く形に整理済み。次回以降の
+  リリースでは screenshot 更新時に metainfo の SHA を併せて差し替える)
 - `<release>` セクションの date と version が pubspec と一致しているか
 - アイコンが SVG または最低 256x256 PNG か (本 manifest は OK)
 

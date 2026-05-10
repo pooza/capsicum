@@ -60,6 +60,9 @@ coverage/
 **/android/key.properties
 **/android/*.jks
 
+# AppImage extract (unpacked .AppImage SquashFS)
+squashfs-root/
+
 # Sentry
 .sentryclirc
 .sentry-native/

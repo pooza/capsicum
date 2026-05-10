@@ -138,6 +138,18 @@ linuxdeploy \
   --desktop-file "$APPDIR/usr/share/applications/$APP_ID.desktop" \
   --icon-file "$APPDIR/$APP_ID.png"
 
+# bundled libibus を除去する (#532)。linuxdeploy-plugin-gtk が ldd 経由で
+# libibus-1.0.so.5 を $APPDIR/usr/lib/ に同梱するが、これがホスト
+# ibus-daemon との DBus protocol drift を起こし、AppImage 配布版で日本語
+# IME (ibus-mozc 等) が一切効かなくなる現象が出る。bundled im-ibus.so は
+# 残し、libibus は ld.so の既定パス検索でホスト側を引かせる (im-ibus の
+# DT_NEEDED は libibus-1.0.so.5。RUNPATH/RPATH に AppDir が無くても、
+# ホストの /lib/x86_64-linux-gnu/libibus-1.0.so.5 が ld.so.cache 経由で
+# 見つかる)。Flatpak (org.gnome.Platform 提供 GTK + libibus) では発生
+# しないことから、bundle 経路だけの問題と確定済み。
+echo "==> Removing bundled libibus to avoid #532 (AppImage IME broken)"
+rm -fv "$APPDIR/usr/lib/libibus-1.0.so."* 2>&1 | sed 's/^/  /'
+
 echo "==> Replacing AppRun with logging wrapper (#496)"
 # linuxdeploy が生成する AppRun は exec で wrapped を呼ぶだけで、stderr が
 # ターミナル外起動 (.desktop / Activities) では失われる。AppRun.wrapped を
