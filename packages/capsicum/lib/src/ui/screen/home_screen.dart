@@ -819,14 +819,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               '',
                           emojis: current?.user.emojis ?? const {},
                           fallbackHost: current?.user.host,
-                          style: const TextStyle(
-                            color: Colors.black,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                          style: const TextStyle(color: Colors.black),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
