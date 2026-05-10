@@ -107,8 +107,14 @@ echo "==> Patching plugin RUNPATHs to \$ORIGIN (defensive)"
 shopt -s nullglob
 for so in "$APPDIR/usr/bin/lib/"*.so; do
   current_rpath=$(patchelf --print-rpath "$so" 2>/dev/null || true)
+  # /home /Users /build は手元 / モデルケースの絶対パスを拾うために残し、
+  # それ以外も含めた絶対パス全般 (CI runner の /__w/... や非標準 build dir
+  # 等、未知の配置) を拾えるよう defensive に拡張 (#514)。
+  # $ORIGIN はもとから相対指定なので case で除外すればよい。
   case "$current_rpath" in
-    /home/*|/Users/*|/build/*)
+    '$ORIGIN'|'$ORIGIN'/*|'')
+      ;;
+    /*)
       patchelf --set-rpath '$ORIGIN' "$so"
       echo "  patched $(basename "$so") (was: $current_rpath)"
       ;;
