@@ -31,7 +31,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 # 必要ツールの存在確認
-for cmd in linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool; do
+for cmd in linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool patchelf; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: $cmd not found in PATH (~/.local/bin/ に配置する想定)" >&2
     exit 1
@@ -84,6 +84,28 @@ done
 
 # linuxdeploy は AppDir 直下のアイコンも要求する
 cp "$ICON_SRC/app_icon_256.png" "$APPDIR/$APP_ID.png"
+
+# Flutter ビルドが生成する plugin .so の RUNPATH には build 時の絶対パス
+# (例: /home/pooza/.../linux/flutter/ephemeral) が刻まれている。これは
+# 開発機のローカルパス前提で、build マシン以外では解決に失敗する。
+# linuxdeploy は usr/lib/ にコピーする plugin の RUNPATH を $ORIGIN に
+# 直すが、usr/bin/lib/ の元ファイルはそのまま。AppImage 配布は usr/lib/
+# 経由で動くため通常は問題にならないが、生 bundle (build/linux/x64/
+# release/bundle/) を直接動かす経路で同じ .so をロードする場合に絶対
+# パス RUNPATH が悪さをする。defensive な cleanup として元ファイルも
+# $ORIGIN に揃えておく。
+echo "==> Patching plugin RUNPATHs to \$ORIGIN (defensive)"
+shopt -s nullglob
+for so in "$APPDIR/usr/bin/lib/"*.so; do
+  current_rpath=$(patchelf --print-rpath "$so" 2>/dev/null || true)
+  case "$current_rpath" in
+    /home/*|/Users/*|/build/*)
+      patchelf --set-rpath '$ORIGIN' "$so"
+      echo "  patched $(basename "$so") (was: $current_rpath)"
+      ;;
+  esac
+done
+shopt -u nullglob
 
 echo "==> Bundling GTK and dependencies via linuxdeploy"
 mkdir -p "$DIST_DIR"
