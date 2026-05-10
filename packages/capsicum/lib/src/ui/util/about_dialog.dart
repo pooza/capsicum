@@ -15,11 +15,7 @@ Future<void> showAboutCapsicum(BuildContext context) async {
     applicationVersion: 'v${info.version} (${info.buildNumber})',
     applicationIcon: ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Image.asset(
-        'assets/images/logo.png',
-        width: 48,
-        height: 48,
-      ),
+      child: Image.asset('assets/images/logo.png', width: 48, height: 48),
     ),
     applicationLegalese: 'Mastodon / Misskey クライアント',
     children: [
