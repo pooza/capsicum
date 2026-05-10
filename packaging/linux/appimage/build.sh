@@ -148,6 +148,15 @@ set -e
 
 this_dir="$(readlink -f "$(dirname "$0")")"
 
+# crashpad_handler の execute bit が落ちていると Sentry に native crash dump
+# が届かなくなる (build.sh 側で chmod +x しているが、Flutter / sentry_flutter
+# の上流挙動変更や手動 untar 等で bit が落ちうる)。AppRun のログに警告を残し、
+# pooza に送られる診断情報から検知できるようにする (#510)。
+crashpad_handler="$this_dir/usr/bin/lib/crashpad_handler"
+if [ -e "$crashpad_handler" ] && [ ! -x "$crashpad_handler" ]; then
+  echo "WARN: crashpad_handler not executable: $crashpad_handler" >&2
+fi
+
 source "$this_dir"/apprun-hooks/"linuxdeploy-plugin-gtk.sh"
 
 LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/capsicum/logs"
