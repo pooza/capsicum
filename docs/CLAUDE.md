@@ -305,6 +305,17 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 
 macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。desktop 系として **v1.24**（Linux 配布、Windows は保留）に同居でアサイン。
 
+### Linux 固有の差分（v1.24）
+
+v1.24 リリース直前の Linux 実機検証で判明・対応した、他プラットフォームと挙動が違う部分。
+
+- **OAuth 経路はシステムブラウザ + localhost callback**（[`AppConstants.linuxOAuthPort = 7099`](../packages/capsicum/lib/src/constants.dart)）。`desktop_webview_window` は upstream 停止 (0.2.3 / 2023-08-21 以降更新無し) で GLX context cleanup の assertion failure による native crash があり (#489 / #496)、回避のため `flutter_web_auth_2` の server impl (`useWebview: false`) で受ける。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポート固定。Bitwarden / 1Password 等のパスワードマネージャ統合 (#382 一次動機) も副次的に達成。macOS / iOS / Android は従来通り
+- **AppImage の起動時観測性**（[`packaging/linux/appimage/build.sh`](../packaging/linux/appimage/build.sh)）。Flutter (sentry_flutter 同梱) の `crashpad_handler` が release bundle 段階で execute bit 落ち → `chmod +x` 補正。AppImage の `AppRun` を logging wrapper に差し替え `~/.local/share/capsicum/logs/` に stderr/stdout を保存し、デスクトップ起動時の native crash でも GTK / X 警告を残す
+- **sentry-native database path 固定**（[`main.dart`](../packages/capsicum/lib/main.dart) の `SentryFlutter.init`）。デフォルトは CWD 直下に `.sentry-native/` を作るため起動経路で場所が変わる。Linux / Windows のみ `$XDG_DATA_HOME/capsicum/.sentry-native/` に明示
+- **flutter_secure_storage の register race 対策**（[`account_storage.dart`](../packages/capsicum/lib/src/service/account_storage.dart) の `_readWithRegisterRetry`）。Linux runner は `gtk_widget_realize` の後に `fl_register_plugins` を呼ぶ Flutter 標準 template で、Splash 起動直後の `restoreSessions` から MissingPluginException が出る race がある。短間隔 retry (50ms × 3) で吸収
+
+詳細は #488 / #489 / #491 / #496 と [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) の flutter_web_auth_2 行を参照。
+
 制約: モロヘイヤ透過プロキシ前提のためネットワーク層は問題にならない。
 
 運用ルール:

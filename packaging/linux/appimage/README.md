@@ -73,6 +73,13 @@ bash packaging/linux/appimage/build.sh
 
 成果物: `build/linux/dist/capsicum-<version>-x86_64.AppImage`
 
+build.sh が行う Linux 固有の補正 (#496 対応で導入):
+
+- **plugin .so の RUNPATH 修正**: Flutter ビルドが埋め込むビルドマシン絶対パス (`linux/flutter/ephemeral`) を `$ORIGIN` に書き換え (defensive)
+- **`crashpad_handler` の execute bit 補正**: sentry_flutter 同梱の `crashpad_handler` が `-rw-r--r--` で出力されるため `chmod +x`。これが無いと Sentry の native crash dump 経路が EACCES で起動できない
+- **`AppRun` を logging wrapper に差し替え**: `~/.local/share/capsicum/logs/capsicum-{timestamp}-{pid}.log` に stderr/stdout を保存 (最新 10 件ローテーション)。デスクトップ起動 (.desktop / Activities) で stderr が捨てられる問題への対処。`stdbuf -oL -eL` でラインバッファ化して native crash 直前まで記録
+- **`appimagetool` で seal**: linuxdeploy は AppDir のバンドルだけ行わせ、AppRun 差し替え後に `appimagetool` で AppImage 化
+
 ## 動作確認
 
 ### ローカルビルドの起動
