@@ -20,6 +20,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
+import 'src/service/about_menu_service.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
@@ -47,6 +48,12 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // macOS メニューバー「About capsicum」→ Flutter 側ダイアログを開くための
+  // MethodChannel handler。Drawer の「capsicum について」と同じ表示に統一。
+  if (Platform.isMacOS) {
+    AboutMenuService.initialize();
+  }
 
   // FCM バックグラウンド / キル状態で data-only メッセージを受けた際に、
   // 復号 + ローカル通知を走らせるための top-level ハンドラ登録。

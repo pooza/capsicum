@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import '../../constants.dart';
 import '../../model/account.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
@@ -18,6 +17,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/about_dialog.dart';
 import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
@@ -1137,57 +1137,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             title: const Text('capsicum について'),
             onTap: () async {
               Navigator.of(context).pop();
-              final info = await PackageInfo.fromPlatform();
               if (!context.mounted) return;
-              showAboutDialog(
-                context: context,
-                applicationName: AppConstants.appName,
-                applicationVersion: 'v${info.version} (${info.buildNumber})',
-                applicationIcon: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 48,
-                    height: 48,
-                  ),
-                ),
-                applicationLegalese: 'Mastodon / Misskey クライアント',
-                children: [
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.websiteUrl),
-                    child: Text(
-                      AppConstants.websiteUrl.toString(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.communityUrl),
-                    child: Text(
-                      'コミュニティ（PieFed）',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.contactUrl),
-                    child: Text(
-                      'お問い合わせ',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              );
+              await showAboutCapsicum(context);
             },
           ),
           const Divider(),

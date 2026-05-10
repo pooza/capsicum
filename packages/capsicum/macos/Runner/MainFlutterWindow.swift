@@ -16,6 +16,12 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.registrar(forPlugin: "ShareIntentPlugin")
     )
 
+    // メニューバー "About capsicum" → Flutter 側 About ダイアログを開く
+    // MethodChannel "net.shrieker.capsicum/about" を提供する。
+    AboutMenuPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "AboutMenuPlugin")
+    )
+
     super.awakeFromNib()
   }
 }
