@@ -18,6 +18,23 @@ const kDeviceTokenWait = Duration(seconds: 10);
 class AppConstants {
   static const appName = 'capsicum';
   static const callbackUrlScheme = 'capsicum';
+
+  /// Linux 限定: OAuth callback を受ける localhost ポート (#496)。
+  /// `desktop_webview_window` の GLX 系 native crash (#489) を回避するため、
+  /// Linux では WebView でなく `flutter_web_auth_2` の server impl
+  /// (システムブラウザ + 自前 HTTP サーバ) で OAuth callback を受ける。
+  /// Mastodon は createApplication 時に redirect_uri を完全一致登録する
+  /// ため、ポートは固定する必要がある。
+  static const linuxOAuthPort = 7099;
+  static const linuxOAuthCallbackUrl =
+      'http://localhost:$linuxOAuthPort/oauth/callback';
+
+  /// カスタムスキーム経由の OAuth redirect URI。
+  /// WebView (`flutter_web_auth_2` の native impl) で受ける iOS / Android /
+  /// macOS 等で使う。Linux は localhost callback (`linuxOAuthCallbackUrl`)
+  /// を使うため、どちらを採用するかは呼び出し側 (login_screen) で判定する。
+  static const customSchemeOAuthCallbackUrl = '$callbackUrlScheme://oauth';
+
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');

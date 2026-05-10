@@ -11,6 +11,7 @@ import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
 import 'apns_service.dart';
+import 'exception_scrub.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
@@ -36,6 +37,12 @@ class PushRegistrationService {
   /// eligible 判定（「連れて登録」判定）の中央集約。
   static bool hasPresetAmong(Iterable<Account> accounts) =>
       accounts.any((a) => isPresetServer(a.key.host));
+
+  /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
+  /// が本配線済みか。macOS / Linux は本配線未対応のため (#468 / #475 で確定後
+  /// に切り替え予定)、UI と service 層で push 機能を gate するときの
+  /// 単一の真実源とする (#502)。Windows は #474 で本配線判断後に追加。
+  static bool get isPushBackendWired => !(Platform.isMacOS || Platform.isLinux);
 
   static final _client = PushRelayClient();
 
@@ -82,10 +89,10 @@ class PushRegistrationService {
     var localStateModified = false;
     try {
       // 本配線が無いプラットフォームでは試行自体を止め、UI 上は「対象外」
-      // として整合させる（#467: macOS）。registerAllAccounts 側でも guard
-      // しているが、tokenRefresh など別経路から呼ばれる場合の保険として
-      // ここでも止める。
-      if (Platform.isMacOS) {
+      // として整合させる（#467: macOS / #471: Linux）。registerAllAccounts
+      // 側でも guard しているが、tokenRefresh など別経路から呼ばれる場合の
+      // 保険としてここでも止める。
+      if (!isPushBackendWired) {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
@@ -238,7 +245,7 @@ class PushRegistrationService {
 
       if (!_isTransient(e) && e is! PushRegistrationNotSupportedException) {
         Sentry.captureException(
-          _scrubException(e),
+          scrubException(e),
           stackTrace: st,
           withScope: (scope) {
             scope.setTag('service', 'push_registration');
@@ -353,7 +360,7 @@ class PushRegistrationService {
   ) {
     if (_isTransient(e)) return;
     Sentry.captureException(
-      _scrubException(e),
+      scrubException(e),
       stackTrace: st,
       withScope: (scope) {
         scope.setTag('service', 'push_registration');
@@ -441,8 +448,8 @@ class PushRegistrationService {
 
     // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
     // 走らせず、各アカウントを「対象外」状態に揃えて即時 return する
-    // （#467: macOS）。
-    if (Platform.isMacOS) {
+    // （#467: macOS / #471: Linux）。
+    if (!isPushBackendWired) {
       final store = PushRegistrationStatusStore.instance;
       for (final account in accounts) {
         store.update(account.key.toStorageKey(), PushRegistrationState.skipped);
@@ -575,26 +582,6 @@ class PushRegistrationService {
       }
     }
     return false;
-  }
-
-  /// DioException は `requestOptions.headers` に `X-Relay-Secret` や
-  /// body に token を抱えており、そのまま Sentry に投げると漏洩する。
-  /// メタ情報のみを抜き出した安全な例外に詰め替える。
-  ///
-  /// `message` は Dio の版次第で requestOptions.uri を埋め込むケースがあり、
-  /// リレー URL には push_token が含まれるため使わず、type とステータス
-  /// コードとパスのみを出力する（クエリ文字列はクライアント側で付けて
-  /// いないが念のため削ぎ落とす）。
-  static Object _scrubException(Object e) {
-    if (e is DioException) {
-      final path = e.requestOptions.path.split('?').first;
-      return StateError(
-        'DioException ${e.type.name} '
-        'status=${e.response?.statusCode ?? '-'} '
-        'path=$path',
-      );
-    }
-    return e;
   }
 
   /// リレー応答がスキーマを満たさないなど、サーバー契約違反を Sentry に記録する。

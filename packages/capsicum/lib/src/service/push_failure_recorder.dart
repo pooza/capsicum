@@ -34,6 +34,9 @@ class PushFailureRecorder {
       'capsicum_push_failure_last_keychain_status';
   static const _prefixTriedPrefixes =
       'capsicum_push_failure_last_tried_prefixes';
+  // #436: nse.decrypt_failed の切り分け用。WebPushDecryptor / CryptoKit が
+  // 投げた error の type + case 名。
+  static const _prefixDecryptError = 'capsicum_push_failure_last_decrypt_error';
 
   /// `dispatch.*`: Android FCM バックグラウンド isolate
   /// `nse.*`: iOS Notification Service Extension（NSE 側で書く）
@@ -62,6 +65,10 @@ class PushFailureRecorder {
   /// [keychainStatus] / [triedPrefixes] は #436 で追加した nse.no_keys 切り分け用。
   /// iOS NSE が Keychain から鍵を読めなかった原因（OSStatus と試行したプレフィックス）を
   /// Sentry tag に乗せる。NSE 由来でない経路では省略可。
+  ///
+  /// [decryptError] は #436 で追加した nse.decrypt_failed 切り分け用。
+  /// WebPushDecryptor / CryptoKit が投げた error の type + case 名
+  /// （"WebPushError.invalidKeyId" / "CryptoKitError.authenticationFailure" 等）。
   static Future<void> record(
     String code, {
     String? host,
@@ -69,6 +76,7 @@ class PushFailureRecorder {
     int? elapsedMs,
     int? keychainStatus,
     String? triedPrefixes,
+    String? decryptError,
   }) async {
     try {
       final prefs = _prefs();
@@ -101,6 +109,11 @@ class PushFailureRecorder {
       } else {
         await prefs.remove(_prefixTriedPrefixes);
       }
+      if (decryptError != null) {
+        await prefs.setString(_prefixDecryptError, decryptError);
+      } else {
+        await prefs.remove(_prefixDecryptError);
+      }
     } catch (_) {
       // ignore: 観測機構の失敗で本体を落とさない
     }
@@ -120,6 +133,7 @@ class PushFailureRecorder {
       final elapsedMs = await prefs.getInt(_prefixElapsedMs);
       final keychainStatus = await prefs.getInt(_prefixKeychainStatus);
       final triedPrefixes = await prefs.getString(_prefixTriedPrefixes);
+      final decryptError = await prefs.getString(_prefixDecryptError);
       await prefs.remove(_prefixCode);
       await prefs.remove(_prefixAt);
       await prefs.remove(_prefixCount);
@@ -128,6 +142,7 @@ class PushFailureRecorder {
       await prefs.remove(_prefixElapsedMs);
       await prefs.remove(_prefixKeychainStatus);
       await prefs.remove(_prefixTriedPrefixes);
+      await prefs.remove(_prefixDecryptError);
       return PushFailureRecord(
         code: code,
         at: atMs != null
@@ -139,6 +154,7 @@ class PushFailureRecorder {
         elapsedMs: elapsedMs,
         keychainStatus: keychainStatus,
         triedPrefixes: triedPrefixes,
+        decryptError: decryptError,
       );
     } catch (_) {
       return null;
@@ -162,6 +178,11 @@ class PushFailureRecord {
   /// 失敗時にどこまで試したかを Sentry で把握するため (#436)。
   final String? triedPrefixes;
 
+  /// `nse.decrypt_failed` 発生時に WebPushDecryptor / CryptoKit が投げた
+  /// error の type + case 名（"WebPushError.invalidKeyId" /
+  /// "CryptoKitError.authenticationFailure" 等）。NSE 由来でない経路では null。
+  final String? decryptError;
+
   const PushFailureRecord({
     required this.code,
     required this.at,
@@ -171,5 +192,6 @@ class PushFailureRecord {
     this.elapsedMs,
     this.keychainStatus,
     this.triedPrefixes,
+    this.decryptError,
   });
 }

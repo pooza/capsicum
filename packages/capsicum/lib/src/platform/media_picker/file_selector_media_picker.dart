@@ -16,7 +16,7 @@ class FileSelectorMediaPicker implements MediaPicker {
 
   static const _videoGroup = XTypeGroup(
     label: '動画',
-    extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'],
+    extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', '3gp'],
     mimeTypes: ['video/*'],
   );
 

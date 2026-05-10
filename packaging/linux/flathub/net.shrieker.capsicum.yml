@@ -1,0 +1,88 @@
+# capsicum Flathub manifest (ローカル動作確認用 / Phase 3)
+#
+# Phase 5a で Flathub への submission 用にオフラインビルド対応版に
+# 書き換える。本ファイルはネットワーク有り環境 (= 開発機) でローカルに
+# Flatpak を組み立てる前提。
+#
+# 使い方: bash packaging/linux/flathub/build.sh
+#
+# 重要: runtime に org.gnome.Platform を採用。理由は flutter_web_auth_2 が
+# 引く desktop_webview_window が libwebkit2gtk-4.1.so.0 をリンクしており、
+# org.freedesktop.Platform には webkit2gtk が含まれないため。
+
+app-id: net.shrieker.capsicum
+
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+
+command: capsicum
+
+finish-args:
+  # ネットワーク (Mastodon / Misskey / モロヘイヤ API)
+  - --share=network
+  # 共有メモリ (X11 描画高速化)
+  - --share=ipc
+  # ディスプレイサーバー
+  - --socket=wayland
+  - --socket=fallback-x11
+  # GPU レンダリング
+  - --device=dri
+  # ローカル通知 (libnotify)
+  - --talk-name=org.freedesktop.Notifications
+  # アカウントトークン保存 (libsecret / gnome-keyring)
+  - --talk-name=org.freedesktop.secrets
+  # 画像添付 (image_picker / file_selector)
+  - --filesystem=xdg-pictures
+  # 動画 / その他添付・ダウンロード
+  - --filesystem=xdg-download
+
+modules:
+  - name: capsicum
+    buildsystem: simple
+    build-commands:
+      # Flutter のバンドルは executable の隣に data/ と lib/ を要求する。
+      # /app/bin/ 配下にフラットに展開することで Flutter のパス解決が
+      # 機能する (AppImage と同じ方針)。
+      - install -d /app/bin
+      - cp -r bundle/. /app/bin/
+
+      # Desktop entry / AppStream metainfo (AppImage と共有)
+      - install -Dm644 net.shrieker.capsicum.desktop -t /app/share/applications/
+      - install -Dm644 net.shrieker.capsicum.metainfo.xml -t /app/share/metainfo/
+
+      # Icons (macOS の AppIconSet を流用、各サイズ hicolor に配置)
+      - install -Dm644 icon-16.png   /app/share/icons/hicolor/16x16/apps/net.shrieker.capsicum.png
+      - install -Dm644 icon-32.png   /app/share/icons/hicolor/32x32/apps/net.shrieker.capsicum.png
+      - install -Dm644 icon-64.png   /app/share/icons/hicolor/64x64/apps/net.shrieker.capsicum.png
+      - install -Dm644 icon-128.png  /app/share/icons/hicolor/128x128/apps/net.shrieker.capsicum.png
+      - install -Dm644 icon-256.png  /app/share/icons/hicolor/256x256/apps/net.shrieker.capsicum.png
+      - install -Dm644 icon-512.png  /app/share/icons/hicolor/512x512/apps/net.shrieker.capsicum.png
+    sources:
+      - type: dir
+        path: ../../../packages/capsicum/build/linux/x64/release/bundle
+        dest: bundle
+
+      - type: file
+        path: ../shared/net.shrieker.capsicum.desktop
+      - type: file
+        path: ../shared/net.shrieker.capsicum.metainfo.xml
+
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_16.png
+        dest-filename: icon-16.png
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png
+        dest-filename: icon-32.png
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_64.png
+        dest-filename: icon-64.png
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png
+        dest-filename: icon-128.png
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png
+        dest-filename: icon-256.png
+      - type: file
+        path: ../../../packages/capsicum/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
+        dest-filename: icon-512.png

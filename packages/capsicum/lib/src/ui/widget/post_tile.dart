@@ -2573,9 +2573,45 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     List<Attachment> images, {
     BoxFit fit = BoxFit.cover,
   }) {
-    final imageUrl = attachment.previewUrl ?? attachment.url;
     final blurAll = ref.watch(blurAllImagesProvider);
     final isSensitive = (widget.sensitive || blurAll) && !_revealed;
+    // 動画系 (video / gifv) で preview_url が無い場合は実 URL (.mp4 等) を
+    // Image.network に渡しても Skia が aspect だけ取って黒フレームを返し
+    // (broken_image にも落ちず無言で黒くなる)、ユーザーには「画像が消えた」
+    // ように見える。Image を試みず placeholder を返す。
+    // 報告経路は Linux GTK (#491) だが、原因は preview_url 不在時のデコード
+    // 動作という プラットフォーム非依存の不変条件のため、全環境で同じ防御を
+    // かける。
+    final hasPreview = attachment.previewUrl != null;
+    final isVideoLike =
+        attachment.type == AttachmentType.video ||
+        attachment.type == AttachmentType.gifv;
+    final imageUrl = attachment.previewUrl ?? attachment.url;
+
+    Widget media;
+    if (isVideoLike && !hasPreview) {
+      media = Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
+    } else {
+      media = Image.network(
+        imageUrl,
+        fit: fit,
+        errorBuilder: (_, _, _) => Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      );
+    }
+    // sensitive 時のみ ImageFiltered で blur を掛ける。非 sensitive 時に
+    // identity (no-op) の filter を被せても render が黒に落ちる事例があり
+    // (Linux GTK で確認、#491)、no-op の filter は実害だけ残るため外す。
+    if (isSensitive) {
+      media = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: media,
+      );
+    }
 
     return GestureDetector(
       onTap: () {
@@ -2590,19 +2626,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ImageFiltered(
-              imageFilter: isSensitive
-                  ? ImageFilter.blur(sigmaX: 30, sigmaY: 30)
-                  : ImageFilter.matrix(Matrix4.identity().storage),
-              child: Image.network(
-                imageUrl,
-                fit: fit,
-                errorBuilder: (_, _, _) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            ),
+            media,
             if (isSensitive)
               Positioned.fill(
                 child: Container(
@@ -2756,6 +2780,10 @@ class _RetagSheetState extends State<_RetagSheet> {
   }
 
   void _onTextChanged() {
+    // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
+    // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
+    if (_controller.value.composing.isValid) return;
+
     _debounce?.cancel();
     final query = _controller.text.trim().replaceAll('#', '');
     if (query.isEmpty) {

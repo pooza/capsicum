@@ -205,7 +205,7 @@ capsicum/
 ### マイルストーン運用
 
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
-- **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
+- **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
 - **マイルストーン未設定は意図的な場合がある**。実現性検討中・Flutter 側の対応待ち・横断的タスクなどで pooza が意図的に未割り当てにしていることがあるため、「トリアージが必要」等と機械的に指摘しない。同期報告では一覧として淡々と列挙するに留める
 - **ユーザー要望の振り分け基準**:
   - 不具合 → 可能なら着手中のマイルストーンに入れる
@@ -238,7 +238,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 - 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
 - ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
 
-具体的な実装着手時期は未定（マイルストーン未割り当て）。設計が固まり次第マイルストーンに割り当てる。
+v1.27 マイルストーンに単独配置（大更新のため他項目と並走させない）。商品設計 + 課金経路 + 装飾範囲の検討も同マイルストーン内で扱う。
 
 ## 自前サーバー
 
@@ -275,15 +275,17 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.22.0**（2026-05-02 リリース、Android 製品版昇格済み・iOS App Store 公開済み）。マイルストーン単独配置の大更新として **Misskey の新メッセージ機能** (`/api/chat/*`) に対応 (#248) — DM (1 対 1) のスレッド一覧 / 履歴閲覧 / 送信 / 削除 / 全既読、`main` channel `newChatMessage` のストリーミング、push 通知 (Web Push → APNs/FCM) 経路、プロフィール「メッセージを送る」導線、ドロワーの permission gate、新規 DM 起動 UI を実装。ルームは未対応（次以降に送り）。あわせて Misskey チャンネルタイムラインのタブ化 (#334)、サーバー情報 / プロフィール画面へのプッシュ通知ステータス表示、アバター形状切替設定 (#372)、ドライブ等のグリッド responsive レイアウト (#431)、Codex / Sentry followup（#398–#403, #421, #426–#430, #435 ほか）を消化。リリース前 5 観点レビューで chat ストリーミングの再接続無限ループと streamChatMessages の null guard を緊急修正し +54 で配信、黄判定 7 件は v1.23 へ送り (#442–#448)。macOS 配布は v1.21.1 (#407) として Mac App Store 審査提出済みで結果待ち、v1.22.0 の macOS バイナリは TestFlight Internal までアップロード済み。v1.21.0 は 2026-04-28、v1.20.1 は 2026-04-25、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
+最新リリース: **v1.23.1**（2026-05-09 タグ、macOS App Store 審査提出済み）。v1.23.0+55 が macOS 審査でリジェクト (Guideline 2.1(a)、ログイン後スピナー固着) されたため、Keychain Access Group の `MacOsOptions(groupId:)` 未指定で OAuth トークン書き込みが silent fail する不具合 (#454) と push 登録 UI の本配線まで非表示 (#467) を `release/1.23.1` ブランチ (main から分岐) に cherry-pick して macOS のみ +61 で再提出。iOS / Android は v1.23.0+55 のまま継続。
+
+v1.23.0（2026-05-04 リリース、Android 製品版昇格済み・iOS App Store 審査提出済み）はデスクトップ展開の第2段階として、プラットフォーム抽象化レイヤ **BackgroundTaskScheduler** (#328、workmanager 脱却) / **MediaPicker** (#329、image_picker + file_selector 統合) / **NotificationSubsystem** (#330、flutter_local_notifications プラットフォーム差吸収) を導入。あわせて macOS の通知許可整合 (#404)、entitlements の keychain-access-group 統一 (#397)、ドライブの retry lock 解除バグ (#450) と responsive スクロール (#452) の修正、PushRegistrationStatusSection のリファクタ (#444) を消化。v1.22.0 は 2026-05-02、v1.21.0 は 2026-04-28、v1.0.0 は 2026-03-14 にストア公開。リリース履歴の詳細は [GitHub Releases](https://github.com/pooza/capsicum/releases) を参照。
 
 ### デスクトップ対応
 
 macOS / Linux / Windows のデスクトップ環境への展開。動機は、iOS 版を Mac 上で実況用途に使って手応えがあること。v1.21 以降のマイルストーンに組み込み済み（当初は v1.19 → v1.20 → v1.21 と後ろ倒しを重ね、プッシュ通知完成 v1.20 を挟んだ上で着手する並びに落ち着いた）。
 
 1. **第1段階: macOS ネイティブ化（v1.21、土台完成）** — `flutter config --enable-macos-desktop` を有効化し、Apple Developer Team / Apple Development 署名 / App Sandbox / Hardened Runtime / keychain-access-groups の設定を導入。Universal Purchase で iOS と同一 App レコードに紐付け済み。プラグインのデスクトップ対応状況の棚卸し・video_player → media_kit の事前調査もこの段階で完了。ストア配布（.pkg ラップ + fastlane の macOS lane）は [#407](https://github.com/pooza/capsicum/issues/407) で v1.21.x にて対応する
-2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にする。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。デスクトップ向けには Dart `Timer` + 常駐前提のフォールバック実装を含む `BackgroundTaskScheduler` 層と、`flutter_local_notifications` のデスクトップ対応差分を吸収する層が要る
-3. **第3段階: Linux / Windows 対応（v1.24）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。配布形態は Linux: Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）、Windows: Microsoft Store（[#423](https://github.com/pooza/capsicum/issues/423)）。Linux と Windows のどちらを先にやるかは未定。実機検証は別 issue として並走させる（[#425](https://github.com/pooza/capsicum/issues/425)）。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux / Windows 着手時に各プラットフォームの video_player 対応状況を改めて棚卸しし、必要があれば移行を判断する位置付けにする。プラグイン関連の追加対応（libsecret manifest / 通知機能差吸収の実装ギャップ等）は v1.23 完了後に必要なら起票する
+2. **第2段階: バックグラウンド/通知モデルの再設計（v1.23、完了）** — デスクトップにはバックグラウンド更新の概念がないため、通知ポーリング相当の仕組みを抽象化して差し替え可能にした。v1.18 のプッシュ通知リレー完了・v1.19 (#348) での workmanager / iOS BGTask 撤去後、モバイル側は APNs / FCM 一本化済み。v1.23 で `BackgroundTaskScheduler`（#328、Dart `Timer` + 常駐前提のフォールバック実装）/ `MediaPicker`（#329、image_picker + file_selector 統合）/ `NotificationSubsystem`（#330、flutter_local_notifications プラットフォーム差吸収）の各層を導入
+3. **第3段階: Linux 対応（v1.24、Linux 配布パイプライン整備済み。Windows は保留）** — 第2段階で通知周りが整理され、プラグイン依存の棚卸しが済んでから本格着手。Linux の配布形態は Flathub + AppImage（[#424](https://github.com/pooza/capsicum/issues/424)）。flutter create で scaffold 生成 → AppImage / Flatpak ローカルビルド → GitHub Actions Ubuntu runner CI 整備 → Flathub 提出文書化まで完了し、v1.24 リリースで AppImage は GitHub Releases から即座に配布、Flathub は審査制で 1〜4 週間遅れて利用可能化する想定（手順は [store-release-guide.md §4.5](store-release-guide.md) と [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md)）。Linux 実機検証は [#425](https://github.com/pooza/capsicum/issues/425)、macOS 実機検証は [#494](https://github.com/pooza/capsicum/issues/494) で並走。Windows（Microsoft Store、[#423](https://github.com/pooza/capsicum/issues/423)）は **2026-05-09 に保留判断** — Microsoft Store 個人開発者アカウントでは msstore CLI が要求する Entra ID テナントの Partner Center 関連付け UI に到達できず、Phase 5 の自動 publish 連携が消化不能と判明。`feature/423-windows-distribution` ブランチに Phase 1〜4 の成果（Windows scaffold / `msix_config` / `windows-release.yml`）は保持しているが、再開トリガー（Windows ユーザーからの強い要望、または運営元節で言及した法人化移行）が来るまで触らない。関連の Windows 専用 issue（[#474](https://github.com/pooza/capsicum/issues/474) push 本配線、[#483](https://github.com/pooza/capsicum/issues/483) 実機検証、[#484](https://github.com/pooza/capsicum/issues/484) SMTC NowPlaying）もすべて on-hold。video_player → media_kit の本移行は v1.21 の TestFlight Internal 検証で video_player が macOS 上で再生・添付・投稿とも問題なく動作することが確認できた（pooza が動画つき投稿で意図的に検証）ため緊急性が下がっており、第3段階の必須スコープからは外す。Linux 着手時に video_player 対応状況を改めて棚卸ししたが移行不要と判断（Linux でも video_player は動作）。v1.23 リリース前レビューで挙がった desktop 補修系（macOS Keychain Access Group 明示・FileSelectorMediaPicker の videoGroup 拡張・TimerBackgroundTaskScheduler 堅牢化等）も v1.24 に同居
 
 第1段階と第2段階のあいだに **v1.22: Misskey メッセージ機能対応** を単独配置した（大更新を他の大更新と並走させない方針）。v1.22 として 2026-05-01 にリリース完了。リリース前レビューの黄判定や追加報告から派生したバグ修正・enhancement (#442 系列、#449、#440 など) は v1.22.x ホットフィックスではなく **v1.25**（Misskey メッセージ改善マイルストーン）にまとめて消化する方針 — Misskey メッセージは現状実験的機能の位置付けで、ホットフィックス級の利用状況・致命度には達していないため。グループチャット (#438) は単独機能として **v1.28** に分離。
 
@@ -299,9 +301,20 @@ macOS / Linux / Windows のデスクトップ環境への展開。動機は、iO
 - **プラットフォーム定数はテーブル化**。ショートカット・メニュー構成などは1箇所にまとめ、プラットフォームごとにテーブルを差し替える
 - **条件付きコンパイル（conditional import）は最後の手段**。使う場合も `lib/src/platform/` のような特定ディレクトリに閉じ込める
 
-配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Windows は Microsoft Store、Linux は Flathub + AppImage、Snap は不採用）、および段階的な実装順序は [release-pipeline.md](release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
+配布・ストア・ツールチェーンの方針（macOS は Apple Developer Program を iOS と共用、Linux は Flathub + AppImage、Snap は不採用、Windows は Microsoft Store 想定だが個人開発者制約により保留）、および段階的な実装順序は [release-pipeline.md](release-pipeline.md) を参照。プラグインのデスクトップ対応状況の棚卸しは [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) にまとめている。第2段階では `BackgroundTaskScheduler`（[#328](https://github.com/pooza/capsicum/issues/328)）/ `MediaPicker`（[#329](https://github.com/pooza/capsicum/issues/329)）/ 通知サブシステム（[#330](https://github.com/pooza/capsicum/issues/330)）の抽象化が主題となる。
 
-macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。desktop 系として **v1.24**（Linux / Windows 配布）に同居でアサイン。
+macOS の付加機能としては、Music.app 等の「共有」メニューから capsicum に投稿を流す Share Extension の追加（[#422](https://github.com/pooza/capsicum/issues/422)）がある。iOS の Share Extension と同パターンで App Group コンテナ経由 + ナウプレ整形はモロヘイヤ側ハンドラに委譲。desktop 系として **v1.24**（Linux 配布、Windows は保留）に同居でアサイン。
+
+### Linux 固有の差分（v1.24）
+
+v1.24 リリース直前の Linux 実機検証で判明・対応した、他プラットフォームと挙動が違う部分。
+
+- **OAuth 経路はシステムブラウザ + localhost callback**（[`AppConstants.linuxOAuthPort = 7099`](../packages/capsicum/lib/src/constants.dart)）。`desktop_webview_window` は upstream 停止 (0.2.3 / 2023-08-21 以降更新無し) で GLX context cleanup の assertion failure による native crash があり (#489 / #496)、回避のため `flutter_web_auth_2` の server impl (`useWebview: false`) で受ける。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポート固定。Bitwarden / 1Password 等のパスワードマネージャ統合 (#382 一次動機) も副次的に達成。macOS / iOS / Android は従来通り
+- **AppImage の起動時観測性**（[`packaging/linux/appimage/build.sh`](../packaging/linux/appimage/build.sh)）。Flutter (sentry_flutter 同梱) の `crashpad_handler` が release bundle 段階で execute bit 落ち → `chmod +x` 補正。AppImage の `AppRun` を logging wrapper に差し替え `~/.local/share/capsicum/logs/` に stderr/stdout を保存し、デスクトップ起動時の native crash でも GTK / X 警告を残す
+- **sentry-native database path 固定**（[`main.dart`](../packages/capsicum/lib/main.dart) の `SentryFlutter.init`）。デフォルトは CWD 直下に `.sentry-native/` を作るため起動経路で場所が変わる。Linux / Windows のみ `$XDG_DATA_HOME/capsicum/.sentry-native/` に明示
+- **flutter_secure_storage の register race 対策**（[`account_storage.dart`](../packages/capsicum/lib/src/service/account_storage.dart) の `_readWithRegisterRetry`）。Linux runner は `gtk_widget_realize` の後に `fl_register_plugins` を呼ぶ Flutter 標準 template で、Splash 起動直後の `restoreSessions` から MissingPluginException が出る race がある。短間隔 retry (50ms × 3) で吸収
+
+詳細は #488 / #489 / #491 / #496 と [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) の flutter_web_auth_2 行を参照。
 
 制約: モロヘイヤ透過プロキシ前提のためネットワーク層は問題にならない。
 
@@ -313,6 +326,8 @@ macOS の付加機能としては、Music.app 等の「共有」メニューか�
   - 並行性・ライフサイクル（async 連鎖、Riverpod provider 寿命、dispose、race）
   - エラー処理・観測性（try/catch カバレッジ、Sentry 計装、secrets scrub、UX）
   - コーディングスタイル・規約整合性（用語統一、ハードコーディング、命名の揺れ、重複ロジック、規約違反）
+- **レビュー指摘の起票閾値**: コメント書き直し・既に触っている関数内のリネーム・型変更（`Map<String,bool>` → `Set<String>` 等）・隣接ファイルでの軽微な追従等、起票 + ラベル + マイルストーン + 移動 + close の往復コストが修正コストと拮抗する粒度のものは、issue を起こさず P1 修正の commit に直接含めて消化する。本文に「今は緊急性なし」「必要性が顕在化してから対応」と書きたくなる粒度のものは、起票せずレビュー報告内の note として残す（未来に必要になった時点で起票する）
+- **2 回目レビュー（差分レビュー）**: プラットフォーム追加・大更新独立配置マイルストーンに限り、1 回目の修正 commit に起因する新規問題を拾うため 2 回目を回す。対象は 1 回目以降の差分と新規サーフェスのみ。リリース 1 週間前までに完了させ、直前に出た P1 はホットフィックス前提で次リリースに送ってよい（詳細は [store-release-guide.md](store-release-guide.md) §4.0）
 - ATOK 二重入力（[#54](https://github.com/pooza/capsicum/issues/54)）は Flutter 側の対応待ち。リリースごとにリリースノートの「既知の不具合」に記載し、Flutter 側の関連 issue の動向を確認する
 - マイルストーン未設定の Issue は `no:milestone` フィルタで確認する
 - Flutter framework 由来の不具合（capsicum 側で根治不能なもの、`flutter` ラベル付き）は [flutter-upstream-watch.md](flutter-upstream-watch.md) で集中管理し、月 1 回の chase routine（毎月 1 日 09:00 JST）で上流の進捗を巡回する

@@ -62,9 +62,10 @@ coverage/
 
 # Sentry
 .sentryclirc
+.sentry-native/
 
 # Firebase
 google-services.json
 
 # Claude Code
-.claude/
+.claude/settings.local.json

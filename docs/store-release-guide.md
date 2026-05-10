@@ -222,6 +222,14 @@ end
 - **黄（余力があれば）**: 単一の edge case、観測性ギャップ
 - **緑（送り）**: 将来の拡張時に顕在化しうる構造改善
 
+#### 差分レビュー（プラットフォーム追加・大更新マイルストーンのみ 2 回目）
+
+新サーフェス導入時（macOS native v1.21・push relay v1.18・Misskey messages v1.22・Linux v1.24 等）は、1 回目で見つけた問題への修正 commit 自体が新しい問題を入れることがあり、平場のマイルストーンより 2 回目を回す価値が高い。以下のルールで実施する:
+
+- **対象**: 1 回目以降の差分（`git diff <1回目時点のSHA>..HEAD`）と、新規追加されたサーフェスのみ。全文再走査はしない
+- **タイミング**: リリース 1 週間前までに完了させる。直前に出た P1 は焦って広げず **ホットフィックス前提で次リリースに送ってよい**
+- **何回目のマイルストーンでも対象になる**: 「大更新独立配置」のマイルストーンは定義上対象。それ以外は実施しない（issue 累積を避けるため）
+
 v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
 
 ### 4.1 バージョン更新・依存関係の更新
@@ -342,11 +350,46 @@ gh issue list --label bug --state open
 
 この結果をもとにリリースノートの「既知の不具合」を構築する。
 
+### 4.5 Linux 配布（v1.24〜）
+
+> **v1.24.0（Linux 初回リリース）時の追加チェック**: AppImage の draft Release publish に加えて、**Flathub 公式リポジトリへの初回申請 PR (Phase 5b)** を pooza 個人 Flathub アカウントで手動で出す。手順は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md)。Flathub レビュー期間 (1〜4 週間) は v1.24 リリース自体をブロックしない (AppImage は GitHub Releases から並行配布)。採択後の継続更新自動化は #470 で追跡。
+
+Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.github/workflows/linux-release.yml](../.github/workflows/linux-release.yml)) でビルドする。
+
+#### AppImage
+
+タグ駆動 (`v*.*.*`) で `linux-release.yml` の `appimage` ジョブが起動し:
+
+1. ubuntu-22.04 で `flutter build linux --release` (glibc 2.35 互換性確保)
+2. `linuxdeploy` + `linuxdeploy-plugin-gtk` で AppDir を組み立て、`appimagetool` で AppImage 化
+3. `capsicum-<version>-x86_64.AppImage` と `capsicum-bundle-<version>-x86_64.tar.gz` (Flathub source 用) を **draft Release** に添付
+4. pooza が GitHub UI で draft Release をレビューしてから手動で publish
+
+draft で生成するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
+
+#### Flathub
+
+初回提出は v1.24 リリース後に手動。詳細手順は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md):
+
+1. `linux-release.yml` が生成・添付した bundle tarball を Flathub 提出 manifest の `type: archive` source として参照
+2. `flathub/flathub` リポジトリに `net.shrieker.capsicum.yml` を含む PR を出す (pooza 個人アカウント)
+3. レビュー期間 1〜4 週間。AppImage は GitHub Releases から並行配布できるので v1.24 リリースは Flathub 採択を待たない
+
+#### ローカル動作確認
+
+```sh
+bash packaging/linux/appimage/build.sh    # AppImage
+bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
+```
+
+ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認、Flatpak は [packaging/linux/flathub/README.md](../packaging/linux/flathub/README.md) を参照。
+
 ## 5. 配布方針
 
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
 - **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](release-pipeline.md) 参照
+- **Linux**: Flathub + AppImage 併用（Snap は不採用）。AppImage は GitHub Releases に添付して即座に配布、Flathub は審査制で 1〜4 週間遅れて利用可能になる。手順は §4.5 参照
 - **Google Play アカウント**: 法人（Google Workspace）アカウントのため、クローズドテスト 12 人要件は免除
 - **ホットフィックス**: Fastfile の構成上 internal → promote の手順が必要（production に直接アップロードは不可）
 - **App Store の説明文更新**: リリース提出時のみ可能。随時更新はできない

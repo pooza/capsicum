@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,10 +86,12 @@ class PushRegistrationStatusSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 本配線が無いプラットフォームでは UI ごと隠す（#467: macOS）。
+    // 本配線が無いプラットフォームでは UI ごと隠す（#467: macOS / #471: Linux）。
     // 表示しても登録は必ず token 取得失敗となり、ユーザーが再試行を繰り返す
     // 混乱状態になるため、本配線が入るまでの暫定対応。
-    if (Platform.isMacOS) return const SizedBox.shrink();
+    if (!PushRegistrationService.isPushBackendWired) {
+      return const SizedBox.shrink();
+    }
     final account = ref.watch(currentAccountProvider);
     if (account == null) {
       return const Padding(

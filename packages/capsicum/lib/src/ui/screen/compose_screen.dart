@@ -256,7 +256,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   void _onTextChanged() {
+    // 既存の debounce は IME 中でも止める (#511): early return より前に
+    // cancel しないと、IME 確定前の前回 query が 300ms 後に発火して古い
+    // 候補を出してしまう race が残る。
     _mentionDebounce?.cancel();
+
+    // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
+    // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
+    if (_controller.value.composing.isValid) return;
 
     // Check mention trigger first, then hashtag.
     final mentionQuery = _currentTriggerQuery('@');
@@ -1262,6 +1269,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     return Scaffold(
       appBar: AppBar(
+        // Share intent (URL push from macOS Music.app 等) で起動した場合
+        // GoRouter の go() で stack が置換されており automatic back button が
+        // 出ないため、明示的に leading に置く。_submit 末尾と同じく canPop
+        // が false のときは /home にフォールバック (#422)。
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         title: Text(
           widget.replyTo != null
               ? (_effectiveChannelName != null

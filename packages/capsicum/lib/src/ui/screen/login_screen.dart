@@ -15,6 +15,7 @@ import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../service/exception_scrub.dart';
 import '../widget/content_parser.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -34,7 +35,18 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  static final _redirectUri = '${AppConstants.callbackUrlScheme}://oauth';
+  /// localhost callback (server impl) 経由で OAuth 認可コードを受けるか
+  /// どうか。`desktop_webview_window` の GLX 系 native crash (#489 / #496)
+  /// を回避するため、Linux のみ true。Windows 対応再開時に true 化する
+  /// 可能性があるため、地域名でなく機能ベース命名を採用 (#507)。
+  bool get _useLocalhostCallback => Platform.isLinux;
+
+  /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
+  /// `linuxOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
+  /// それ以外は `capsicum://oauth` カスタムスキーム。
+  String get _redirectUri => _useLocalhostCallback
+      ? AppConstants.linuxOAuthCallbackUrl
+      : AppConstants.customSchemeOAuthCallbackUrl;
 
   bool _isLoggingIn = false;
   bool _loginCompleted = false;
@@ -169,10 +181,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
+        // localhost callback では `desktop_webview_window` の GLX 系 native
+        // crash (#489 / #496) を回避するため useWebview: false で
+        // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
+        // で受ける。callbackUrlScheme は server impl では完全な
+        // http://localhost:{port}/{path} URL を期待する仕様 (flutter_web_auth_2
+        // 4.1.0 の server.dart 参照)。
+        // 現状 Linux のみ true (Windows 対応再開時に true 化検討)。
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
-          callbackUrlScheme: AppConstants.callbackUrlScheme,
-          options: const FlutterWebAuth2Options(preferEphemeral: true),
+          callbackUrlScheme: _useLocalhostCallback
+              ? AppConstants.linuxOAuthCallbackUrl
+              : AppConstants.callbackUrlScheme,
+          options: _useLocalhostCallback
+              ? const FlutterWebAuth2Options(useWebview: false)
+              : const FlutterWebAuth2Options(preferEphemeral: true),
         );
         authenticateReturned = true;
         _logLoginStep('authenticate.end');
@@ -508,7 +531,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       }
     } catch (e) {
-      debugPrint('Manual code fallback error: $e');
+      // DioException の場合 requestOptions.uri に client_secret が載る
+      // Mastodon サーバ実装があるため、そのまま debugPrint すると AppImage
+      // の AppRun ログ (~/.local/share/capsicum/logs/) に平文で残る (#499)。
+      // service/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
+      debugPrint('Manual code fallback error: ${scrubException(e)}');
       if (mounted) {
         setState(() => _error = '認証コードが正しくありません');
       }

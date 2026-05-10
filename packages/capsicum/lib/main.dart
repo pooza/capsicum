@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -19,6 +20,7 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
+import 'src/service/about_menu_service.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
@@ -27,6 +29,7 @@ import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
+import 'src/util/sentry_tag_hash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +48,12 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // macOS メニューバー「About capsicum」→ Flutter 側ダイアログを開くための
+  // MethodChannel handler。Drawer の「capsicum について」と同じ表示に統一。
+  if (Platform.isMacOS) {
+    AboutMenuService.initialize();
+  }
 
   // FCM バックグラウンド / キル状態で data-only メッセージを受けた際に、
   // 復号 + ローカル通知を走らせるための top-level ハンドラ登録。
@@ -71,6 +80,17 @@ Future<void> main() async {
         defaultValue: 'debug',
       );
       options.beforeSend = _scrubEvent;
+      // Linux / Windows の sentry-native はデフォルトで CWD 直下に
+      // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
+      // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
+      // XDG_DATA_HOME 配下に明示的に固定する。AppRun wrapper のログ出力先
+      // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃える。
+      if (Platform.isLinux || Platform.isWindows) {
+        final base =
+            Platform.environment['XDG_DATA_HOME'] ??
+            '${Platform.environment['HOME']}/.local/share';
+        options.nativeDatabasePath = '$base/capsicum/.sentry-native';
+      }
     }, appRunner: () => _startApp());
   } else {
     _startApp();
@@ -115,38 +135,62 @@ const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];
 
 Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
   final data = b.data;
-  if (data == null || data.isEmpty) return b;
-
-  final copy = Map<String, dynamic>.from(data);
   var changed = false;
-  for (final entry in copy.entries.toList()) {
-    final key = entry.key;
-    final value = entry.value;
-    // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
-    if (key.toLowerCase().contains('header') && value is Map) {
-      final headerCopy = Map<String, dynamic>.from(value);
-      var headerChanged = false;
-      for (final name in _sensitiveHeaderNames) {
-        for (final hk in headerCopy.keys.toList()) {
-          if (hk.toString().toLowerCase() == name.toLowerCase()) {
-            headerCopy[hk] = '[Filtered]';
-            headerChanged = true;
+  Map<String, dynamic>? scrubbedData;
+
+  if (data != null && data.isNotEmpty) {
+    final copy = Map<String, dynamic>.from(data);
+    for (final entry in copy.entries.toList()) {
+      final key = entry.key;
+      final value = entry.value;
+      // ヘッダーマップ（request_headers / response_headers / headers）をスクラブ
+      if (key.toLowerCase().contains('header') && value is Map) {
+        final headerCopy = Map<String, dynamic>.from(value);
+        var headerChanged = false;
+        for (final name in _sensitiveHeaderNames) {
+          for (final hk in headerCopy.keys.toList()) {
+            if (hk.toString().toLowerCase() == name.toLowerCase()) {
+              headerCopy[hk] = '[Filtered]';
+              headerChanged = true;
+            }
           }
         }
+        if (headerChanged) {
+          copy[key] = headerCopy;
+          changed = true;
+        }
       }
-      if (headerChanged) {
-        copy[key] = headerCopy;
-        changed = true;
+      // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
+      if (key.toLowerCase().contains('body') ||
+          key.toLowerCase().contains('data')) {
+        final scrubbed = _scrubRequestData(value);
+        if (!identical(scrubbed, value)) {
+          copy[key] = scrubbed;
+          changed = true;
+        }
+      }
+      // URL 系フィールド (sentry_dio の `url`、HTTP breadcrumb の
+      // `to`、独自に詰めた `endpoint` 等) に capsicum-relay の
+      // `/push/{push_token}` が混入し得るため、path 末尾セグメントをマスクする。
+      if (value is String && _isUrlLikeFieldName(key.toString())) {
+        final scrubbed = _scrubRelayPushUrl(value);
+        if (scrubbed != value) {
+          copy[key] = scrubbed;
+          changed = true;
+        }
       }
     }
-    // body マップ / JSON 文字列をスクラブ（既存の _scrubRequestData を流用）
-    if (key.toLowerCase().contains('body') ||
-        key.toLowerCase().contains('data')) {
-      final scrubbed = _scrubRequestData(value);
-      if (!identical(scrubbed, value)) {
-        copy[key] = scrubbed;
-        changed = true;
-      }
+    if (changed) scrubbedData = copy;
+  }
+
+  // breadcrumb.message にも生 URL が載ることがある (例: log カテゴリの
+  // breadcrumb に "POST https://relay.../push/<token>" のような行)。
+  String? newMessage = b.message;
+  if (b.message != null) {
+    final scrubbed = _scrubRelayPushUrl(b.message!);
+    if (scrubbed != b.message) {
+      newMessage = scrubbed;
+      changed = true;
     }
   }
 
@@ -154,13 +198,32 @@ Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
   // Breadcrumb.copyWith は deprecated のため、新しいインスタンスを構築する
   // （SentryRequest と同じ扱い）。
   return Breadcrumb(
-    message: b.message,
+    message: newMessage,
     timestamp: b.timestamp,
     category: b.category,
-    data: copy,
+    data: scrubbedData ?? data,
     level: b.level,
     type: b.type,
   );
+}
+
+bool _isUrlLikeFieldName(String key) {
+  final lower = key.toLowerCase();
+  return lower == 'url' ||
+      lower == 'endpoint' ||
+      lower == 'to' ||
+      lower == 'from' ||
+      lower.endsWith('_url') ||
+      lower.endsWith('.url');
+}
+
+// `/push/<push_token>` の `<push_token>` 部分を `[Filtered]` に置換する。
+// path 区切り (`/`)、クエリ (`?`)、フラグメント (`#`)、空白 / 引用符 / 行終端
+// に当たるまでを 1 トークンとして扱う。
+final _relayPushTokenPattern = RegExp(r'/push/[^/?#\s"\\]+');
+
+String _scrubRelayPushUrl(String input) {
+  return input.replaceAll(_relayPushTokenPattern, '/push/[Filtered]');
 }
 
 /// Mastodon の `subscribePush` は FormData を渡すため、キーが
@@ -219,6 +282,18 @@ bool _isSensitiveFieldName(String key) {
 }
 
 void _startApp() {
+  // DSN 空ビルド (個人ビルド・CI debug 等で SENTRY_DSN 未設定) では
+  // SentryFlutter.init が走らず、FlutterError.onError と
+  // PlatformDispatcher.onError が未設定のままになり、Dart エラーが完全に
+  // 飲まれる (#498)。最低限 stderr (= Linux AppImage の AppRun ログ) に
+  // 流れるよう、未設定の場合だけ既定ハンドラを入れる。Sentry 経路では
+  // Sentry が自前で設定済なので ??= で上書きを避ける。
+  FlutterError.onError ??= FlutterError.presentError;
+  PlatformDispatcher.instance.onError ??= (e, st) {
+    debugPrint('Uncaught: $e\n$st');
+    return true;
+  };
+
   runApp(const ProviderScope(child: CapsicumApp()));
 
   // バックグラウンド isolate / NSE が記録した復号失敗等を Sentry に吸い上げる
@@ -294,6 +369,12 @@ Future<void> _flushPushFailureRecord() async {
           if (record.triedPrefixes != null) {
             scope.setTag('push.keychain.tried', record.triedPrefixes!);
           }
+          // #436: nse.decrypt_failed 切り分け用。WebPushDecryptor / CryptoKit
+          // が投げた error の type + case 名。Misskey 限定の decrypt_failed
+          // が header 系か鍵不一致 (CryptoKit authenticationFailure) かを分ける。
+          if (record.decryptError != null) {
+            scope.setTag('push.decrypt.error', record.decryptError!);
+          }
         },
       );
     }
@@ -303,7 +384,8 @@ Future<void> _flushPushFailureRecord() async {
       'host=${record.host}, encoding=${record.encoding}, '
       'elapsedMs=${record.elapsedMs}, '
       'keychainStatus=${record.keychainStatus}, '
-      'triedPrefixes=${record.triedPrefixes})',
+      'triedPrefixes=${record.triedPrefixes}, '
+      'decryptError=${record.decryptError})',
     );
   } catch (_) {
     // ignore
@@ -390,6 +472,30 @@ void _rescheduleNotificationRoute(
   if (attempt >= maxAttempts) {
     debugPrint(
       'capsicum: notification: routing gave up after $maxAttempts frames',
+    );
+    // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
+    // のみで Sentry に上がらず発生頻度・条件が掴めなかった (#513)。
+    // payload (= username@host) は #500 の方針に揃えて host + user_hash の
+    // 2 タグに分離し、生 username を Sentry に出さない。
+    Sentry.captureMessage(
+      'notification.routing.gave_up',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        if (accountString == null) {
+          scope.setTag('payload', '<null>');
+        } else {
+          final atIdx = accountString.indexOf('@');
+          if (atIdx > 0 && atIdx < accountString.length - 1) {
+            final username = accountString.substring(0, atIdx);
+            final host = accountString.substring(atIdx + 1);
+            scope.setTag('payload.host', host);
+            scope.setTag('payload.user_hash', hashForSentryTag(username));
+          } else {
+            scope.setTag('payload', '<malformed>');
+          }
+        }
+        scope.setTag('attempts', maxAttempts.toString());
+      },
     );
     return;
   }
