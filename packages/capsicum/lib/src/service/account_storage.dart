@@ -49,6 +49,15 @@ class AccountStorage {
       final raw = await _readWithRegisterRetry('secret_$accountKey');
       if (raw == null) return null;
       return Map<String, String>.from(jsonDecode(raw) as Map);
+    } on MissingPluginException catch (e, st) {
+      // plugin register race が retry 後も解消しないケース。同じ race で
+      // delete も失敗するため、ここでは観測のみ行い secret は残す。
+      // 次回起動で再試行される。
+      debugPrint(
+        'capsicum: plugin register race persisted for $accountKey: $e',
+      );
+      _reportOnce('secret:$accountKey', e, st);
+      return null;
     } on PlatformException catch (e, st) {
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
       _reportOnce('secret:$accountKey', e, st);
@@ -67,32 +76,38 @@ class AccountStorage {
   }
 
   /// flutter_secure_storage の MethodChannel が plugin register より先に
-  /// 叩かれた場合、Linux では `MissingPluginException` (Dart-side で
-  /// `MissingPluginException` として throw される) で帰る。これは
+  /// 叩かれた場合、Linux では `MissingPluginException` で帰る。これは
   /// `gtk_widget_realize` が Flutter engine を起動した直後に
   /// `_SplashScreenState.initState` から `restoreSessions` が走ると、
   /// runner 側 `fl_register_plugins` の完了とレースするため (#488)。
   ///
   /// runner の register 自体は同期で短時間に完了するので、短いインターバル
-  /// で 1〜2 回リトライすれば十分塞げる。Mastodon / Misskey 共通経路で
+  /// で数回リトライすれば十分塞げる。Mastodon / Misskey 共通経路で
   /// アカウント復元の信頼性を底上げするため、storage 層に閉じ込めて配置。
+  ///
+  /// `MissingPluginException` は `PlatformException` を継承していないため、
+  /// retry 後も解消しない場合はそのまま re-throw して呼び出し側
+  /// (`getSecrets`) の専用 catch で処理する。
   Future<String?> _readWithRegisterRetry(String key) async {
+    // 50 + 100 + 200 + 250 = 600ms。低スペック端末 / cold start で plugin
+    // register が遅れる場合に備え、合計を約 600ms に延長 (#497)。
+    const delaysMs = [50, 100, 200, 250];
     MissingPluginException? lastMissing;
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (final delayMs in delaysMs) {
       try {
         return await _storage.read(key: key);
       } on MissingPluginException catch (e) {
-        // plugin register 待ち。短いインターバルで再試行。
         lastMissing = e;
-        await Future<void>.delayed(
-          Duration(milliseconds: 50 * (attempt + 1)),
-        );
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
       }
     }
-    // 3 回試して MissingPluginException が解消しなかったら諦めて throw。
-    // 上位の getSecrets が PlatformException 扱いで Sentry 報告 + secret
-    // 削除するパスは MissingPluginException も拾うので、そこに任せる。
-    throw lastMissing!;
+    // 最後にもう 1 回試す (delay 累計後)。
+    try {
+      return await _storage.read(key: key);
+    } on MissingPluginException catch (e) {
+      lastMissing = e;
+    }
+    throw lastMissing;
   }
 
   /// Get all stored account keys.
