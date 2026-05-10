@@ -2575,10 +2575,13 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   }) {
     final blurAll = ref.watch(blurAllImagesProvider);
     final isSensitive = (widget.sensitive || blurAll) && !_revealed;
-    // 動画系で preview_url が無い場合は実 URL（.mp4 等）を Image.network に
-    // 渡しても Skia が aspect だけ取って黒フレームを返すケースがあり
-    // (Linux GTK で確認、#491)、broken_image にも落ちず無言で黒くなる。
-    // Image を試みず placeholder を返す。
+    // 動画系 (video / gifv) で preview_url が無い場合は実 URL (.mp4 等) を
+    // Image.network に渡しても Skia が aspect だけ取って黒フレームを返し
+    // (broken_image にも落ちず無言で黒くなる)、ユーザーには「画像が消えた」
+    // ように見える。Image を試みず placeholder を返す。
+    // 報告経路は Linux GTK (#491) だが、原因は preview_url 不在時のデコード
+    // 動作という プラットフォーム非依存の不変条件のため、全環境で同じ防御を
+    // かける。
     final hasPreview = attachment.previewUrl != null;
     final isVideoLike =
         attachment.type == AttachmentType.video ||
@@ -2601,8 +2604,8 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
       );
     }
     // sensitive 時のみ ImageFiltered で blur を掛ける。非 sensitive 時に
-    // identity matrix を被せると Linux GTK embedder で render が黒に
-    // 落ちる事例があり (#491)、no-op の filter は実害だけ残るため外す。
+    // identity (no-op) の filter を被せても render が黒に落ちる事例があり
+    // (Linux GTK で確認、#491)、no-op の filter は実害だけ残るため外す。
     if (isSensitive) {
       media = ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
