@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 /// 通常の HTTP リクエストの接続タイムアウト。
 const kNetworkConnectTimeout = Duration(seconds: 5);
 
@@ -31,11 +29,11 @@ class AppConstants {
   static const linuxOAuthCallbackUrl =
       'http://localhost:$linuxOAuthPort/oauth/callback';
 
-  /// プラットフォーム固有の OAuth redirect URI。
-  /// - Linux: `http://localhost:7099/oauth/callback` (server impl 経由)
-  /// - その他: `capsicum://oauth` (カスタムスキーム + WebView)
-  static String get oauthRedirectUri =>
-      Platform.isLinux ? linuxOAuthCallbackUrl : '$callbackUrlScheme://oauth';
+  /// カスタムスキーム経由の OAuth redirect URI。
+  /// WebView (`flutter_web_auth_2` の native impl) で受ける iOS / Android /
+  /// macOS 等で使う。Linux は localhost callback (`linuxOAuthCallbackUrl`)
+  /// を使うため、どちらを採用するかは呼び出し側 (login_screen) で判定する。
+  static const customSchemeOAuthCallbackUrl = '$callbackUrlScheme://oauth';
 
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');

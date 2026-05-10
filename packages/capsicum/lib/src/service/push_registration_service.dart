@@ -38,6 +38,12 @@ class PushRegistrationService {
   static bool hasPresetAmong(Iterable<Account> accounts) =>
       accounts.any((a) => isPresetServer(a.key.host));
 
+  /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
+  /// が本配線済みか。macOS / Linux は本配線未対応のため (#468 / #475 で確定後
+  /// に切り替え予定)、UI と service 層で push 機能を gate するときの
+  /// 単一の真実源とする (#502)。Windows は #474 で本配線判断後に追加。
+  static bool get isPushBackendWired => !(Platform.isMacOS || Platform.isLinux);
+
   static final _client = PushRelayClient();
 
   static StreamSubscription<String>? _tokenRefreshSub;
@@ -86,7 +92,7 @@ class PushRegistrationService {
       // として整合させる（#467: macOS / #471: Linux）。registerAllAccounts
       // 側でも guard しているが、tokenRefresh など別経路から呼ばれる場合の
       // 保険としてここでも止める。
-      if (Platform.isMacOS || Platform.isLinux) {
+      if (!isPushBackendWired) {
         store.update(accountKey, PushRegistrationState.skipped);
         return;
       }
@@ -443,7 +449,7 @@ class PushRegistrationService {
     // 本配線が無いプラットフォームでは _waitForDeviceToken (最大 10 秒) を
     // 走らせず、各アカウントを「対象外」状態に揃えて即時 return する
     // （#467: macOS / #471: Linux）。
-    if (Platform.isMacOS || Platform.isLinux) {
+    if (!isPushBackendWired) {
       final store = PushRegistrationStatusStore.instance;
       for (final account in accounts) {
         store.update(account.key.toStorageKey(), PushRegistrationState.skipped);

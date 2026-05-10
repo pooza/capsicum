@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/push_registration_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -45,7 +44,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           // macOS / Linux は push 通知を本配線していない (#467 / #471)。
           // 本配線が入るまで設定エントリも隠す。
-          if (!Platform.isMacOS && !Platform.isLinux)
+          if (PushRegistrationService.isPushBackendWired)
             ListTile(
               leading: const Icon(Icons.notifications_outlined),
               title: const Text('プッシュ通知'),
