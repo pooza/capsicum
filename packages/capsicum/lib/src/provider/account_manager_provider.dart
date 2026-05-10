@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -314,9 +316,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         // なっていた (#496)。debugPrint で起動ログに出し、Sentry にも
         // accountKey 単位で 1 度だけ送る (Keystore 破壊で全アカウント
         // 同時失敗するケースで Sentry を埋めないように)。
-        debugPrint(
-          'capsicum: account_restore: failed for $keyStr: $e\n$st',
-        );
+        debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
         _reportRestoreOnce(keyStr, e, st);
         skippedCount++;
         continue;
@@ -331,17 +331,39 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final dedupKey = '$accountKey:${e.runtimeType}';
     if (!_reportedRestoreErrors.add(dedupKey)) return;
     try {
+      // accountKey 全体 (host_username) を tag に出すと Sentry プロジェクトの
+      // アクセス制御次第で運用者以外にユーザ名が見えうる (#500)。tag は host
+      // のみに限定し、username は de-identification 用ハッシュに丸めて
+      // 別 tag に出す。dedup には fingerprint で対応。
+      final parsed = AccountKey.fromStorageKey(accountKey);
       Sentry.captureException(
         e,
         stackTrace: st,
         withScope: (scope) {
-          scope.setTag('account_restore.key', accountKey);
+          scope.setTag('account_restore.host', parsed.host);
+          scope.setTag(
+            'account_restore.user_hash',
+            _hashForTag(parsed.username),
+          );
           scope.fingerprint = ['account_restore', e.runtimeType.toString()];
         },
       );
     } catch (_) {
       // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
     }
+  }
+
+  /// Sentry tag 用の de-identification ハッシュ。暗号学的強度は不要のため
+  /// FNV-1a 64-bit で十分。同一 username が常に同一ハッシュに丸まるので
+  /// 同一ユーザの相関は取れる一方、ハッシュから username は復元不能 (#500)。
+  static String _hashForTag(String username) {
+    var hash = BigInt.parse('cbf29ce484222325', radix: 16);
+    final mask = BigInt.parse('ffffffffffffffff', radix: 16);
+    final prime = BigInt.parse('100000001b3', radix: 16);
+    for (final byte in utf8.encode(username)) {
+      hash = (hash ^ BigInt.from(byte)) * prime & mask;
+    }
+    return hash.toRadixString(16).padLeft(16, '0').substring(0, 16);
   }
 }
 
