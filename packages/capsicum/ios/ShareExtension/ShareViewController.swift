@@ -97,9 +97,12 @@ class ShareViewController: UIViewController {
       return
     }
 
+    // value は共有された URL / テキスト本体になりうる (機微情報候補)。
+    // %{private}@ にして Configuration Profile を入れない限り Console.app
+    // で読めないようにする (#518)。type は誤判定をデバッグするため public のまま。
     let stringRep = String(describing: unwrapped)
     os_log(
-      "no fallback matched. type=%{public}@ value=%{public}@",
+      "no fallback matched. type=%{public}@ value=%{private}@",
       log: log, type: .error, actualType, stringRep
     )
   }
