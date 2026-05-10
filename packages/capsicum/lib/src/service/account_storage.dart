@@ -204,8 +204,12 @@ class AccountStorage {
         clientId: map['client_id']!,
         clientSecret: map['client_secret']!,
       );
-    } catch (e) {
+    } catch (e, st) {
+      // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
+      // (BadPaddingException) が host_credentials 側で発火しても観測できる
+      // よう、_reportOnce 経路に揃える (#501)。
       debugPrint('capsicum: failed to read client credentials for $host: $e');
+      _reportOnce('client_creds:$host', e, st);
       return null;
     }
   }
