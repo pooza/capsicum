@@ -256,11 +256,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   void _onTextChanged() {
+    // 既存の debounce は IME 中でも止める (#511): early return より前に
+    // cancel しないと、IME 確定前の前回 query が 300ms 後に発火して古い
+    // 候補を出してしまう race が残る。
+    _mentionDebounce?.cancel();
+
     // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
     // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
     if (_controller.value.composing.isValid) return;
-
-    _mentionDebounce?.cancel();
 
     // Check mention trigger first, then hashtag.
     final mentionQuery = _currentTriggerQuery('@');
