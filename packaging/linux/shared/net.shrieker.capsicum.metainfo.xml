@@ -39,7 +39,15 @@
 
   <content_rating type="oars-1.1"/>
 
+  <screenshots>
+    <screenshot type="default">
+      <caption>ローカルタイムライン (Misskey)</caption>
+      <caption xml:lang="en">Local timeline (Misskey)</caption>
+      <image>https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/screenshots/01-timeline.png</image>
+    </screenshot>
+  </screenshots>
+
   <releases>
-    <release version="1.24.0" date="2026-05-08"/>
+    <release version="1.24.0" date="2026-05-10"/>
   </releases>
 </component>
