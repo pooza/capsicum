@@ -34,7 +34,9 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  static final _redirectUri = '${AppConstants.callbackUrlScheme}://oauth';
+  // Platform 固有 (Linux: localhost callback, その他: capsicum:// scheme)。
+  // 詳細は AppConstants.oauthRedirectUri 参照。
+  String get _redirectUri => AppConstants.oauthRedirectUri;
 
   bool _isLoggingIn = false;
   bool _loginCompleted = false;
@@ -169,10 +171,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
+        // Linux では `desktop_webview_window` の GLX 系 native crash (#489 /
+        // #496) を回避するため、useWebview: false でシステムブラウザ +
+        // localhost callback (server impl) 経由に切り替える。callbackUrlScheme
+        // は server impl では完全な http://localhost:{port}/{path} URL を
+        // 期待する仕様 (flutter_web_auth_2 4.1.0 の server.dart 参照)。
+        // その他のプラットフォームは従来通り WebView + custom scheme。
+        final useLinuxServerImpl = Platform.isLinux;
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
-          callbackUrlScheme: AppConstants.callbackUrlScheme,
-          options: const FlutterWebAuth2Options(preferEphemeral: true),
+          callbackUrlScheme: useLinuxServerImpl
+              ? AppConstants.linuxOAuthCallbackUrl
+              : AppConstants.callbackUrlScheme,
+          options: useLinuxServerImpl
+              ? const FlutterWebAuth2Options(useWebview: false)
+              : const FlutterWebAuth2Options(preferEphemeral: true),
         );
         authenticateReturned = true;
         _logLoginStep('authenticate.end');
