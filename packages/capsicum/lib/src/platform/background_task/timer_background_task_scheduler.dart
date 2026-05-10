@@ -17,8 +17,9 @@ class TimerBackgroundTaskScheduler
   final Map<String, Timer> _timers = {};
   // Timer.periodic は前回 callback が in-flight でも次の tick を発火する。
   // interval が短く callback が遅いと多重実行になるため、taskId 単位の
-  // in-flight ガードで再入を防ぐ。
-  final Map<String, bool> _inFlight = {};
+  // in-flight ガードで再入を防ぐ。常に bool を入れる Map<String,bool> より
+  // Set<String> の方が意図が明確で、add の戻り値で再入検出にも使える (#519)。
+  final Set<String> _inFlightTaskIds = {};
   bool _observing = false;
 
   @override
@@ -29,10 +30,10 @@ class TimerBackgroundTaskScheduler
   }) async {
     _ensureLifecycleObserver();
     _timers.remove(taskId)?.cancel();
-    _inFlight.remove(taskId);
+    _inFlightTaskIds.remove(taskId);
     _timers[taskId] = Timer.periodic(interval, (_) async {
-      if (_inFlight[taskId] == true) return;
-      _inFlight[taskId] = true;
+      // add の戻り値で「未 in-flight だったか」を判定 (Set.add は既存なら false)。
+      if (!_inFlightTaskIds.add(taskId)) return;
       try {
         await callback();
       } catch (e, st) {
@@ -54,7 +55,7 @@ class TimerBackgroundTaskScheduler
           // Sentry 自体の失敗で次回発火を止めない。
         }
       } finally {
-        _inFlight[taskId] = false;
+        _inFlightTaskIds.remove(taskId);
       }
     });
   }
@@ -62,7 +63,7 @@ class TimerBackgroundTaskScheduler
   @override
   Future<void> cancel(String taskId) async {
     _timers.remove(taskId)?.cancel();
-    _inFlight.remove(taskId);
+    _inFlightTaskIds.remove(taskId);
   }
 
   /// アプリが [AppLifecycleState.detached] に至ったタイミングで登録済み
@@ -91,7 +92,7 @@ class TimerBackgroundTaskScheduler
       timer.cancel();
     }
     _timers.clear();
-    _inFlight.clear();
+    _inFlightTaskIds.clear();
     if (_observing) {
       WidgetsBinding.instance.removeObserver(this);
       _observing = false;
