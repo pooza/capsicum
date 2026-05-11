@@ -232,7 +232,12 @@ for module in im-ibus.so im-fcitx5.so im-uim.so; do
     echo "ERROR: $module not bundled at $IM_DIR/$module" >&2
     exit 1
   fi
-  if ! grep -q "\"$module\"" "$IM_CACHE"; then
+  # immodules.cache のエントリは linuxdeploy-plugin-gtk が basename へ正規化する
+  # (`sed -i "s|.../immodules/||g"`) ため通常は `"im-ibus.so"` 形式になるが、
+  # host の GTK lib path が標準と異なって sed が空振りした場合は
+  # `"/usr/lib/.../im-ibus.so"` のパス形式で残る。どちらでも検出できるよう
+  # 両方の prefix (`"` / `/`) を許す fixed-string 検索にする (#539 Codex P1)。
+  if ! grep -qF -e "\"$module\"" -e "/$module\"" "$IM_CACHE"; then
     echo "ERROR: $module not registered in immodules.cache" >&2
     exit 1
   fi
