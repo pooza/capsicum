@@ -15,7 +15,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
 ) {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter is! ChatSupport) return null;
-  if (!(adapter as ChatSupport).canUseChat) return null;
+  if (!(adapter as ChatSupport).canReadChat) return null;
   // streaming 内部 parse 失敗 (server schema 変更等) を観測層に流す (#448)。
   // breadcrumb は毎回、captureException は throttle して spam を防ぐ。
   DateTime? lastCapture;

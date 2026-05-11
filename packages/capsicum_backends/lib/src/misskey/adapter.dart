@@ -100,7 +100,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
   User? _myUser;
-  bool _canUseChat = true;
+  // _canWriteChat は user.canChat (chatAvailability == 'available') と一致。
+  // readonly / unavailable はどちらも false。
+  // 読み取り側は permissive に倒す方針なので flag を持たず、`canReadChat`
+  // は常に true を返す (#446)。
+  bool _canWriteChat = true;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -160,9 +164,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _hardMutedWords = user.hardMutedWords ?? [];
     // canChat は roleService.getUserPolicies(...).chatAvailability === 'available'
     // をサーバー側で boolean 化したもの (UserEntityService.ts:561)。Misskey が
-    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる
-    // ため、null は「不可」寄りに倒して隠す。
-    _canUseChat = user.canChat ?? false;
+    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる。
+    // 書き込み (canWriteChat) は strictly available のみ true。読み取り側
+    // (canReadChat) は permissive 方針で常に true (#446)。
+    _canWriteChat = user.canChat ?? false;
     final me = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     _myUser = me;
     return me;
@@ -1376,8 +1381,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // -- ChatSupport --
 
+  // readonly ロールでも履歴閲覧は試させる方針 (#446)。実際の 403 は UI 側
+  // で error builder が処理する。
   @override
-  bool get canUseChat => _canUseChat;
+  bool get canReadChat => true;
+
+  @override
+  bool get canWriteChat => _canWriteChat;
 
   Future<User> _ensureMyUser() async {
     final cached = _myUser;

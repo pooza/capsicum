@@ -96,6 +96,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   Widget build(BuildContext context) {
     final myUserId = ref.watch(currentAccountProvider)?.user.id;
     final state = ref.watch(chatThreadProvider(widget.otherUser.id));
+    final adapter = ref.watch(currentAdapterProvider);
+    // readonly ロールでは送信不可。compose row 自体を隠す (#446)。
+    final canSend =
+        adapter is ChatSupport && (adapter as ChatSupport).canWriteChat;
     final displayName = widget.otherUser.displayName?.isNotEmpty == true
         ? widget.otherUser.displayName!
         : widget.otherUser.username;
@@ -148,11 +152,24 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                     ),
             ),
           ),
-          _ComposeRow(
-            controller: _textController,
-            sending: _sending,
-            onSend: _send,
-          ),
+          if (canSend)
+            _ComposeRow(
+              controller: _textController,
+              sending: _sending,
+              onSend: _send,
+            )
+          else
+            // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
+            Container(
+              padding: const EdgeInsets.all(12),
+              alignment: Alignment.center,
+              child: Text(
+                'このアカウントではメッセージを送信できません',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
         ],
       ),
     );

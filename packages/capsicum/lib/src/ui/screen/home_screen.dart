@@ -993,7 +993,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
           if (ref.read(currentAdapterProvider) is ChatSupport &&
-              (ref.read(currentAdapterProvider) as ChatSupport).canUseChat)
+              (ref.read(currentAdapterProvider) as ChatSupport).canReadChat)
             ListTile(
               leading: const Icon(Icons.chat_bubble_outline),
               title: const Text('メッセージ'),
