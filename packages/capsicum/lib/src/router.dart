@@ -281,7 +281,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/chat/user/:userId',
         builder: (context, state) {
-          final user = state.extra! as User;
+          // rebuild 中に extra が失われたり、push 通知タップ等で `extra` 無しで
+          // 飛んでくるケース (CAPSICUM-16 と同型、#443) に備え、強制 unwrap せず
+          // null の場合はメッセージ一覧へ戻す。userId からの User 復元は
+          // #440 の push 通知タップ動線整備で扱う。
+          final user = state.extra as User?;
+          if (user == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/chat');
+            });
+            return const SizedBox.shrink();
+          }
           return ChatThreadScreen(otherUser: user);
         },
       ),
