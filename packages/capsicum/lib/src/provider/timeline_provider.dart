@@ -29,6 +29,10 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
   return tab is TimelineTab ? tab.type : TimelineType.home;
 });
 
+/// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
+/// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
+const Object _keepLoadMoreError = Object();
+
 /// Paginated timeline state.
 class TimelineState {
   final List<Post> posts;
@@ -50,17 +54,22 @@ class TimelineState {
     this.pendingCount = 0,
   });
 
+  /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
+  /// 場合はクリア、例外を渡した場合は差し替え、という三状態を区別する
+  /// (#455 / #450 と同型)。
   TimelineState copyWith({
     List<Post>? posts,
     bool? isLoadingMore,
     bool? hasMore,
-    Object? loadMoreError,
+    Object? loadMoreError = _keepLoadMoreError,
     int? pendingCount,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
-    loadMoreError: loadMoreError,
+    loadMoreError: identical(loadMoreError, _keepLoadMoreError)
+        ? this.loadMoreError
+        : loadMoreError,
     pendingCount: pendingCount ?? this.pendingCount,
   );
 }
