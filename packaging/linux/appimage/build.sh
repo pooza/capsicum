@@ -138,17 +138,34 @@ linuxdeploy \
   --desktop-file "$APPDIR/usr/share/applications/$APP_ID.desktop" \
   --icon-file "$APPDIR/$APP_ID.png"
 
-# bundled libibus を除去する (#532)。linuxdeploy-plugin-gtk が ldd 経由で
-# libibus-1.0.so.5 を $APPDIR/usr/lib/ に同梱するが、これがホスト
-# ibus-daemon との DBus protocol drift を起こし、AppImage 配布版で日本語
-# IME (ibus-mozc 等) が一切効かなくなる現象が出る。bundled im-ibus.so は
-# 残し、libibus は ld.so の既定パス検索でホスト側を引かせる (im-ibus の
-# DT_NEEDED は libibus-1.0.so.5。RUNPATH/RPATH に AppDir が無くても、
-# ホストの /lib/x86_64-linux-gnu/libibus-1.0.so.5 が ld.so.cache 経由で
-# 見つかる)。Flatpak (org.gnome.Platform 提供 GTK + libibus) では発生
-# しないことから、bundle 経路だけの問題と確定済み。
-echo "==> Removing bundled libibus to avoid #532 (AppImage IME broken)"
-rm -fv "$APPDIR/usr/lib/libibus-1.0.so."* 2>&1 | sed 's/^/  /'
+# libibus-1.0.so.5 を AppDir に明示コピーする (#532)。
+#
+# 経緯 (v1.24.0 〜 v1.24.3 真因解明):
+# linuxdeploy-plugin-gtk は ldd 経由で im-ibus.so を AppImage に bundle するが、
+# その依存 libibus-1.0.so.5 は (理由不明だが) bundle しない。host 側 libibus
+# を ld.so.cache 経由で引かせると、新しい host libibus が要求する GLib symbol
+# (g_task_set_static_name 等。GLib 2.76 以降) が bundled GLib (build host
+# ubuntu-22.04 = GLib 2.72) で解決できず、IM context 'ibus' のロードに失敗
+# する。具体例: Debian 13 / GLib 2.84 系の host で `Loading IM context type
+# 'ibus' failed` + `undefined symbol: g_task_set_static_name` が stderr に出る。
+#
+# v1.24.0 / v1.24.1 / v1.24.2 まではこの mismatch を見逃しており、当初は
+# 「bundled libibus と host ibus-daemon の DBus protocol drift」「im-ibus.so
+# 不足」と二段階の誤診を経た。真因は GLib version mismatch。
+#
+# 対処として AppImage 内に libibus を明示同梱する。bundled GLib と同世代の
+# libibus (build host = ubuntu-22.04 の libibus-1.0-5) が入るため symbol
+# resolution は成立する。host ibus-daemon との DBus protocol は libibus 1.5
+# 系で安定しており、Flatpak (org.gnome.Platform 提供 libibus + host ibus-daemon)
+# が問題なく動いていることから drift リスクは小さいと判断。
+echo "==> Bundling libibus into AppDir (host libibus 経由の GLib symbol mismatch を避ける)"
+HOST_LIBIBUS_DIR=/usr/lib/x86_64-linux-gnu
+if compgen -G "$HOST_LIBIBUS_DIR/libibus-1.0.so.*" > /dev/null; then
+  cp -av "$HOST_LIBIBUS_DIR"/libibus-1.0.so.* "$APPDIR/usr/lib/" 2>&1 | sed 's/^/  /'
+else
+  echo "ERROR: $HOST_LIBIBUS_DIR/libibus-1.0.so.* not found. Install libibus-1.0-5 (ibus-gtk3 brings it)." >&2
+  exit 1
+fi
 
 echo "==> Replacing AppRun with logging wrapper (#496)"
 # linuxdeploy が生成する AppRun は exec で wrapped を呼ぶだけで、stderr が
