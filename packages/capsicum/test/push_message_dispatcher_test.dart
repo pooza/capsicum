@@ -125,5 +125,43 @@ void main() {
       final plaintext = _utf8(jsonEncode({'type': 'readAllNotifications'}));
       expect(PushMessageDispatcher.parsePayload(plaintext), isNull);
     });
+
+    test('Misskey newChatMessage は fromUser.id を userId として取り出す (#440)', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'newChatMessage',
+          'body': {
+            'id': 'msg1',
+            'fromUser': {
+              'id': 'user_abc',
+              'name': 'Alice',
+              'username': 'alice',
+            },
+            'text': 'こんにちは',
+          },
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'newChatMessage');
+      expect(result.userId, 'user_abc');
+    });
+
+    test('Misskey newChatMessage (fromUser オブジェクト無し) は fromUserId に fallback', () {
+      final plaintext = _utf8(
+        jsonEncode({
+          'type': 'newChatMessage',
+          'body': {
+            'id': 'msg1',
+            'fromUserId': 'user_xyz',
+            'text': 'こんにちは',
+          },
+        }),
+      );
+      final result = PushMessageDispatcher.parsePayload(plaintext);
+      expect(result, isNotNull);
+      expect(result!.type, 'newChatMessage');
+      expect(result.userId, 'user_xyz');
+    });
   });
 }

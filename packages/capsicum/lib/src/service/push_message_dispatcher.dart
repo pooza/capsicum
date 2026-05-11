@@ -94,7 +94,14 @@ class PushMessageDispatcher {
       }
     }
 
-    await _showNotification(title: title, body: body, payload: account);
+    // タップ payload は JSON 化して type / userId も伝搬する。chat の場合は
+    // タップで /chat/user/:userId に直行できるよう main.dart 側で分岐 (#440)。
+    final payload = jsonEncode({
+      'account': account,
+      if (decrypted?.type != null) 'type': decrypted!.type,
+      if (decrypted?.userId != null) 'userId': decrypted!.userId,
+    });
+    await _showNotification(title: title, body: body, payload: payload);
   }
 
   static Future<DecryptedPushContent?> _tryDecrypt(
@@ -237,10 +244,15 @@ class PushMessageDispatcher {
       if (json['type'] == 'newChatMessage') {
         final inner = json['body'];
         if (inner is Map<String, dynamic>) {
+          final fromUser = inner['fromUser'];
+          final userId = fromUser is Map<String, dynamic>
+              ? fromUser['id'] as String?
+              : inner['fromUserId'] as String?;
           return DecryptedPushContent(
             title: null,
             body: _synthesizeMisskeyChatBody(inner),
             type: 'newChatMessage',
+            userId: userId,
           );
         }
       }
@@ -359,5 +371,15 @@ class DecryptedPushContent {
   final String? title;
   final String? body;
   final String? type;
-  const DecryptedPushContent({this.title, this.body, this.type});
+
+  /// Misskey newChatMessage の `fromUser.id` (タップで `/chat/user/:id`
+  /// に遷移する宛先解決に使う)。type=newChatMessage 以外は null (#440)。
+  final String? userId;
+
+  const DecryptedPushContent({
+    this.title,
+    this.body,
+    this.type,
+    this.userId,
+  });
 }

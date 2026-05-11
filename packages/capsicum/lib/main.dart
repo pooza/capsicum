@@ -308,14 +308,14 @@ void _startApp() {
   // `payload` は将来通知ごとにアカウントを埋める可能性があるため、
   // 受けた文字列をそのまま account-aware routing に委譲する（現状は null）。
   notificationSubsystem.initialize(
-    onTap: (payload) => _routeToNotificationsTab(payload),
+    onTap: (payload) => _routeFromNotificationPayload(payload),
   );
 
   // iOS: APNs タップはネイティブ側で userInfo を乗せて送ってくる。Dart 側では
   // ストリーム経由で account-aware routing に委譲する。cold start 時は
   // AppDelegate 側でバッファされ、engine 起動後に発火する。
   ApnsService.onNotificationTap.listen(
-    (userInfo) => _routeToNotificationsTab(userInfo['account'] as String?),
+    (userInfo) => _routeFromNotificationUserInfo(userInfo),
   );
 
   // Check for shared text from external apps (e.g. Spotify, Apple Music).
@@ -405,6 +405,114 @@ Future<void> _flushPushFailureRecord() async {
 /// この 2 段待ちがないと、restore 中に go('/home') → 認証 redirect で /server
 /// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
 /// 正規ルーティングが空振り、ユーザーがサーバー選択画面に取り残される。
+/// 通知タップで届く JSON payload (push_message_dispatcher が encode) を解釈し、
+/// type=newChatMessage なら `/chat/user/<userId>` へ直行、それ以外は通知タブへ
+/// 遷移する (#440)。後方互換: payload が JSON でなく裸の `username@host` だった
+/// 場合 (v1.24.x 以前にスケジュールされて残っている通知) は account-only として扱う。
+void _routeFromNotificationPayload(String? payload) {
+  if (payload == null || payload.isEmpty) {
+    _routeToNotificationsTab(null);
+    return;
+  }
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map<String, dynamic>) {
+      final account = decoded['account'] as String?;
+      final type = decoded['type'] as String?;
+      final userId = decoded['userId'] as String?;
+      if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
+        _routeToChatThread(account, userId);
+        return;
+      }
+      _routeToNotificationsTab(account);
+      return;
+    }
+  } catch (_) {
+    // JSON でない → legacy 形式として扱う。
+  }
+  _routeToNotificationsTab(payload);
+}
+
+/// iOS APNs タップの userInfo dict から JSON 経路と同じ判定を行う。
+void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
+  final account = userInfo['account'] as String?;
+  final type = userInfo['type'] as String?;
+  final userId = userInfo['userId'] as String?;
+  if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
+    _routeToChatThread(account, userId);
+    return;
+  }
+  _routeToNotificationsTab(account);
+}
+
+/// 通知タップで該当 DM スレッドを開く経路 (#440)。account を必要に応じて切り替え、
+/// `getUserById(userId)` で User を解決してから `/chat/user/:userId` に push する。
+/// session restore 完了と Navigator 確立を待つ点は [_routeToNotificationsTab] と
+/// 同じ 2 段待ち構造を踏襲。
+void _routeToChatThread(
+  String? accountString,
+  String userId, {
+  int attempt = 0,
+}) {
+  const maxAttempts = 3600;
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+  if (!container.read(sessionsRestoredProvider)) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+    );
+    return;
+  }
+  final accounts = container.read(accountManagerProvider).accounts;
+  if (accounts.isEmpty) return;
+  if (accountString != null) {
+    final matched = _findAccountByString(accounts, accountString);
+    if (matched != null) {
+      container.read(accountManagerProvider.notifier).switchAccount(matched);
+    }
+  }
+  // adapter 切替後の `getUserById` を非同期に実行し、解決後に push。
+  unawaited(() async {
+    final adapter = container.read(currentAdapterProvider);
+    if (adapter == null || adapter is! ChatSupport) {
+      // 想定外: chat 非対応アカウントへ切り替わった等。通知タブにフォールバック。
+      _routeToNotificationsTab(accountString);
+      return;
+    }
+    try {
+      final user = await adapter.getUserById(userId);
+      if (!context.mounted) return;
+      // /home に揃えてから push しないと Drawer / 戻る挙動が崩れるので、
+      // 現在 location が /splash 等なら home に遷移してから push する。
+      final router = GoRouter.of(context);
+      final currentLocation = router.state.matchedLocation;
+      if (currentLocation != '/home') {
+        router.go('/home');
+      }
+      router.push('/chat/user/$userId', extra: user);
+    } catch (e, st) {
+      // user 解決失敗 (削除済み・通信エラー等) は通知タブにフォールバック。
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('notification.routing', 'chat.user_resolve_failed');
+          scope.fingerprint = ['notification.routing.chat.failed'];
+        },
+      );
+      _routeToNotificationsTab(accountString);
+    }
+  }());
+}
+
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   // 上限: restoreSessions は 1 アカウントあたり getMyself + mulukhiya probe
   // + timeline availability probe を走らせるため、低速回線 + 多アカウント
