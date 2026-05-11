@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
@@ -66,25 +67,41 @@ final chatThreadListProvider =
       ChatThreadListNotifier.new,
     );
 
+/// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
+/// `copyWith` で保持／差し替えするための sentinel (#442 / #450 と同型)。
+const Object _keepLoadMoreError = Object();
+
 class ChatThreadState {
   final List<ChatMessage> messages;
   final bool hasMore;
   final bool isLoadingMore;
 
+  /// 直近の [ChatThreadNotifier.loadMore] が最終的に失敗した場合の例外。
+  /// スクロール由来の自動再試行を抑止する番兵として使うため、pull-to-refresh
+  /// 等で build() が再実行されるまでクリアされない (#442)。
+  final Object? loadMoreError;
+
   const ChatThreadState({
     this.messages = const [],
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.loadMoreError,
   });
 
+  /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
+  /// 場合はクリア、例外を渡した場合は差し替え。
   ChatThreadState copyWith({
     List<ChatMessage>? messages,
     bool? hasMore,
     bool? isLoadingMore,
+    Object? loadMoreError = _keepLoadMoreError,
   }) => ChatThreadState(
     messages: messages ?? this.messages,
     hasMore: hasMore ?? this.hasMore,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    loadMoreError: identical(loadMoreError, _keepLoadMoreError)
+        ? this.loadMoreError
+        : loadMoreError,
   );
 }
 
@@ -138,6 +155,9 @@ class ChatThreadNotifier
     final current = state.valueOrNull;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
     if (current.messages.isEmpty) return;
+    // 直前に最終失敗で loadMoreError が立っているなら、build() 再実行
+    // (pull-to-refresh 等) までスクロール再試行を止める。#442 / drive と同型。
+    if (current.loadMoreError != null) return;
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
 
@@ -159,16 +179,34 @@ class ChatThreadNotifier
             messages: [...base.messages, ...older],
             isLoadingMore: false,
             hasMore: older.length >= _pageSize,
+            loadMoreError: null,
           ),
         );
         return;
-      } catch (_) {
+      } catch (e, st) {
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
+        // 最終失敗: Sentry へ計装し、loadMoreError 番兵で次回スクロール再入
+        // を止める。drive_provider と同じ形 (#442 / #430 と同型)。
+        try {
+          await Sentry.captureException(
+            e,
+            stackTrace: st,
+            withScope: (scope) {
+              scope.setTag('chat.load_more', 'failed');
+              scope.fingerprint = ['chat.load_more', e.runtimeType.toString()];
+            },
+          );
+        } catch (_) {
+          // Sentry 失敗で UI 更新を止めない。
+        }
         state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(isLoadingMore: false),
+          (state.valueOrNull ?? current).copyWith(
+            isLoadingMore: false,
+            loadMoreError: e,
+          ),
         );
       }
     }
