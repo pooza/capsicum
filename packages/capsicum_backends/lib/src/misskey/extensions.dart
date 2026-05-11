@@ -216,6 +216,14 @@ ChatMessage misskeyChatMessageFromMap(
   }
 
   final fileMap = data['file'] as Map<String, dynamic>?;
+  final rawEmojis = data['emojis'];
+  final emojis = rawEmojis is Map
+      ? Map<String, String>.fromEntries(
+          rawEmojis.entries
+              .where((e) => e.value is String)
+              .map((e) => MapEntry(e.key as String, e.value as String)),
+        )
+      : const <String, String>{};
   return ChatMessage(
     id: data['id'] as String,
     createdAt: DateTime.parse(data['createdAt'] as String),
@@ -226,6 +234,7 @@ ChatMessage misskeyChatMessageFromMap(
         ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()
         : null,
     isRead: data['isRead'] as bool? ?? defaultIsRead,
+    emojis: emojis,
   );
 }
 
