@@ -275,13 +275,14 @@ v1.27 マイルストーンに単独配置（大更新のため他項目と並�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.24.3**（2026-05-11 タグ、Linux 限定 hotfix 3）。v1.24.0 の Linux AppImage で日本語 IME (ibus-mozc 等) が一切効かない不具合 (#532) について、**二段階の誤診を経て真因を解明**:
+最新リリース: **v1.24.4**（2026-05-11 タグ、Linux 限定 hotfix 4）。v1.24.0 の Linux AppImage で日本語 IME (ibus-mozc 等) が一切効かない不具合 (#532) について、v1.24.1 / v1.24.2 の二段階の誤診を経て v1.24.3 で真因を解明、v1.24.4 で fcitx5 / uim 経路への immodule 同梱と CI assertion (回帰防止) を追加:
 
 - **v1.24.1** (誤診1): 「bundled libibus と host ibus-daemon の DBus protocol drift」と推定 → そもそも bundled libibus は AppImage に同梱されておらず `rm libibus-1.0.so.*` は no-op だった
 - **v1.24.2** ([#535](https://github.com/pooza/capsicum/pull/535)、誤診2): 「CI runner (ubuntu-22.04) に `ibus-gtk3` 未インストールで `im-ibus.so` が同梱されていない」と特定 → workflow に `ibus-gtk3` 追加。im-ibus.so の同梱は必要だが本丸ではなかった。draft Release のまま実機検証で `Loading IM context type 'ibus' failed` を確認 → タグごと削除して仕切り直し
 - **v1.24.3** ([#537](https://github.com/pooza/capsicum/pull/537)、真因): bundled libglib (build host ubuntu-22.04 / GLib 2.72) と host libibus (新しい host GLib 2.76+ で追加された `g_task_set_static_name` を要求) の **GLib symbol mismatch**。AppImage 内に build host の `libibus-1.0.so.5` を明示同梱して bundled GLib と整合させる構成に変更 (Flatpak の `runtime 提供 libibus + host ibus-daemon` と同じ方針)。Debian 13 / LXQt / X11 / ibus-mozc の実機で日本語変換が動作することを確認
+- **v1.24.4** ([#539](https://github.com/pooza/capsicum/pull/539)、#536): `fcitx5-frontend-gtk3` / `uim-gtk3-immodule` を CI workflow に追加し `im-fcitx5.so` / `im-uim.so` を AppImage に同梱。`build.sh` seal 直前で immodule bundle + `immodules.cache` 登録を mechanical に検証する assertion を追加し、v1.24.1→v1.24.2 で発生した「CI image 構成変化で im-ibus.so が静かに消える」事故を再発時に検出可能にした。fcitx5 / uim は pooza 検証環境外のため best-effort スタンス (動作未確認)。#533 Codex P2 で `metainfo.xml` の `<releases>` を 1.24.4 まで補完
 
-Android / iOS / macOS は v1.24.0+65 のまま再提出しない。fcitx5 / uim 等 ibus 以外の IM 経路への対応と CI assertion (回帰防止) は [#536](https://github.com/pooza/capsicum/issues/536) で v1.25 候補として追跡。あわせて `metainfo.xml` の screenshots 追加 / リリース日訂正、`SUBMISSION.md` の Flathub 提出 base ブランチ表記訂正を v1.24.1 で同梱済み。
+Android / iOS / macOS は v1.24.0+65 のまま再提出しない。`metainfo.xml` の screenshots 追加 / リリース日訂正、`SUBMISSION.md` の Flathub 提出 base ブランチ表記訂正は v1.24.1 で同梱済み。
 
 v1.24.0（2026-05-10 タグ、Android 製品版昇格済み・iOS App Store 公開済み・macOS Mac App Store 公開済み・Linux AppImage 配布開始）は デスクトップ展開の第3段階として **Linux 初回リリース** を実施 — GTK runner ベースの Flutter ネイティブビルドを AppImage 形式で GitHub Releases から即時配布開始（Flathub Phase 5b は同日 [flathub/flathub#8626](https://github.com/flathub/flathub/pull/8626) として申請 PR 提出済み、採択まで 1〜4 週間）。`desktop_webview_window` の native crash (#489 / #496) 回避のため OAuth はシステムブラウザ + localhost callback (port 7099) 構成 (#506 / #507)。`flutter_secure_storage` register race の retry (#488 / #497)、`flutter_local_notifications_linux` の generated_plugin_registrant 抜け (#493)、AppRun の crashpad_handler 起動時検証 (#510)、build.sh patchelf RUNPATH 拡張 (#514) など Linux 初期不具合を一括解消。macOS は実機検証 (#494) 完了、メニューバー About を Drawer の「capsicum について」と統一、Share Extension (#422) 同梱、v1.23.1 hotfix の Keychain Access Group 明示 (#454) を取り込み。リリース前レビュー差分 2 回目 (#513 / #518) 対応も同梱。
 

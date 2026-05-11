@@ -48,7 +48,9 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl -s \"https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20\")",
       "Bash(curl -sH \"Authorization: Bearer $\\(awk '/\\\\[auth\\\\]/{getline; print}' ~/.sentryclirc)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "Bash(bash -n /Volumes/extdata/repos/capsicum/packaging/linux/appimage/build.sh)",
+      "Bash(bash -c *)"
     ],
     "defaultMode": "auto"
   }
