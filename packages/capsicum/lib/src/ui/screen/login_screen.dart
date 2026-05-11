@@ -532,24 +532,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       // Accept either a bare code or a full callback URL.
+      //
+      // 旧実装は「capsicum:// 以外は OOB と決め打ち」にしていたが、Linux で
+      // `_redirectUri` が `http://localhost:7099/oauth/callback` (#507) に
+      // なった結果、ユーザーがブラウザのアドレスバーから localhost callback
+      // URL をそのまま貼ると OOB 強制で `invalid_grant` を踏む (#528)。
+      // 「元の redirect_uri (custom scheme or localhost) と一致するか」で
+      // 判定する形に変更。それ以外 (裸コード含む) は OOB 経由扱い。
       final String extractedCode;
-      final bool codeFromCustomScheme;
+      final bool codeFromOriginalRedirect;
       if (code.contains('code=')) {
         final uri = Uri.parse(code);
         extractedCode = uri.queryParameters['code'] ?? code;
-        codeFromCustomScheme = uri.scheme == 'capsicum';
+        final isCustomScheme = uri.scheme == 'capsicum';
+        final isLocalhostCallback =
+            _useLocalhostCallback &&
+            uri.toString().startsWith(_redirectUri);
+        codeFromOriginalRedirect = isCustomScheme || isLocalhostCallback;
       } else {
         extractedCode = code;
-        codeFromCustomScheme = false;
+        // 裸コードは OOB ボタン経由とみなす (ブラウザに表示された 6 桁等)。
+        codeFromOriginalRedirect = false;
       }
 
-      // If the code came from a capsicum:// URL, it was issued for the
-      // custom-scheme redirect URI — use the original redirect_uri.
-      // Otherwise assume it came from the OOB browser flow.
+      // 元の redirect_uri 由来のコードなら同じ redirect_uri で交換 (Mastodon
+      // の厳格 match 要件)。OOB 経由なら oobRedirect で交換。
       final exchangeExtra = Map<String, String>.from(extra);
-      if (!codeFromCustomScheme) {
-        exchangeExtra['redirect_uri'] = oobRedirect;
-      }
+      exchangeExtra['redirect_uri'] = codeFromOriginalRedirect
+          ? _redirectUri
+          : oobRedirect;
       exchangeExtra['client_id'] = clientId;
       exchangeExtra['client_secret'] = clientSecret;
       final callbackUri = Uri(queryParameters: {'code': extractedCode});
