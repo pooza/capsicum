@@ -1218,6 +1218,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             ref.invalidate(channelTimelineProvider(channelId));
           }
+          // 「#実況 タグの投稿を非表示」設定中に自分が #実況 を含む投稿を
+          // すると TL に出ない。設定の存在を意識していないユーザに「消えた」
+          // と誤認させないため、その場で SnackBar で通知 + 設定への動線を
+          // 出す (#433)。
+          final hideLivecure = ref.read(hideLivecureProvider);
+          if (hideLivecure && text.contains('#実況')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  '投稿しました（現在 #実況 を非表示中のため、タイムラインには表示されません）',
+                ),
+                duration: const Duration(seconds: 8),
+                action: SnackBarAction(
+                  label: '表示する',
+                  onPressed: () {
+                    // toggle() しか公開されていないため、現状 true 前提で
+                    // 反転して false にする。
+                    if (ref.read(hideLivecureProvider)) {
+                      ref.read(hideLivecureProvider.notifier).toggle();
+                    }
+                  },
+                ),
+              ),
+            );
+          }
         }
         if (context.canPop()) {
           context.pop(true);
