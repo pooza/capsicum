@@ -218,6 +218,7 @@ class MisskeyClient {
     String? comment,
     String? mimeType,
     bool? isSensitive,
+    String? folderId,
   }) async {
     final fileName = filePath.split('/').last;
     final mediaType = mimeType != null ? MediaType.parse(mimeType) : null;
@@ -230,6 +231,7 @@ class MisskeyClient {
       ),
       'comment': ?comment,
       'isSensitive': ?isSensitive,
+      'folderId': ?folderId,
       if (_token != null) 'i': _token,
     });
 

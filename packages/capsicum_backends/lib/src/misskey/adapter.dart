@@ -482,6 +482,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       comment: draft.description,
       mimeType: draft.mimeType,
       isSensitive: draft.sensitive ? true : null,
+      folderId: draft.folderId,
     );
     return Attachment(
       id: file['id'] as String,
