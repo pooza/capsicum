@@ -120,6 +120,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  /// localhost callback 用のポート ([AppConstants.linuxOAuthPort]) が
+  /// 別プロセスに占有されているかを試し、占有時は専用エラー文を返す。
+  /// 空いていれば null を返す。TOCTOU はあるが、flutter_web_auth_2 側で
+  /// EADDRINUSE を握って authorization code を取り逃がす UX 劣化を
+  /// 識別可能な error に置き換えるための実用的な防御 (#503)。
+  Future<String?> _checkOAuthPortAvailability() async {
+    try {
+      final socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        AppConstants.linuxOAuthPort,
+      );
+      await socket.close();
+      return null;
+    } on SocketException catch (e) {
+      _logLoginStep(
+        'oauth_port.occupied',
+        data: {
+          'port': AppConstants.linuxOAuthPort,
+          'error': e.osError?.message ?? e.message,
+        },
+      );
+      return 'OAuth コールバック用ポート ${AppConstants.linuxOAuthPort} が'
+          '他プロセスに占有されています。占有中のアプリを閉じてから再試行してください。';
+    }
+  }
+
   Future<void> _login() async {
     if (_loginCompleted) return;
     setState(() {
@@ -181,6 +207,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
+        // localhost callback 経路では port 7099 が別プロセスで bind 済みだと
+        // flutter_web_auth_2 server impl が internally EADDRINUSE を握って
+        // authorization code を受け取れず、UX が「ログインに失敗しました」と
+        // 出るだけでポート競合と判別できなくなる (#503)。authenticate 呼び出し
+        // 直前に短時間 ServerSocket.bind を試して占有を専用エラーに昇格させる。
+        if (_useLocalhostCallback) {
+          final portError = await _checkOAuthPortAvailability();
+          if (portError != null) {
+            if (mounted) setState(() => _error = portError);
+            return;
+          }
+        }
         // localhost callback では `desktop_webview_window` の GLX 系 native
         // crash (#489 / #496) を回避するため useWebview: false で
         // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
