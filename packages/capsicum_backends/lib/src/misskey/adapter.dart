@@ -1388,10 +1388,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<ChatThread>> getChatHistory({TimelineQuery? query}) async {
     final me = await _ensureMyUser();
-    final entries = await client.getChatHistory(
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
+    // /api/chat/history はサーバー側ページング非対応 (#445)。query.maxId は
+    // 無視し、limit のみ通す。
+    final entries = await client.getChatHistory(limit: query?.limit);
     return entries
         .map(
           (e) => misskeyChatThreadFromHistoryEntry(

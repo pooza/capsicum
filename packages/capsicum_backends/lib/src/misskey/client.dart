@@ -1070,13 +1070,14 @@ class MisskeyClient {
   }
 
   /// POST /api/chat/history
-  Future<List<Map<String, dynamic>>> getChatHistory({
-    String? untilId,
-    int? limit,
-  }) async {
+  ///
+  /// Misskey 本家 endpoints/chat/history.ts の paramDef は `{limit, room}` のみで、
+  /// `untilId` はサーバー側で paramDef に無く Ajv が黙殺するため受け付けない
+  /// (#445)。ページングは非対応。`limit=100` 程度の一回取り運用が想定。
+  Future<List<Map<String, dynamic>>> getChatHistory({int? limit}) async {
     final response = await dio.post(
       '/api/chat/history',
-      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+      data: createBody({'limit': ?limit}),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
   }
