@@ -49,6 +49,25 @@ class DriveState {
   }
 }
 
+/// drive_manager_screen の post-frame 自動 loadMore (#452 / #459) が
+/// `loadMore()` を呼んでよい条件 (DriveState 側の予条件のみ)。
+/// scroll controller 側の `maxScrollExtent > 0` チェックは widget 側で
+/// 持つ。本関数はそれ以外の純粋条件を 1 ヶ所に集めて回帰テスト可能にした
+/// (#456)。
+///
+/// 発火条件:
+/// - state が AsyncData として確定している (= null でない)
+/// - `hasMore == true`
+/// - `isLoadingMore == false`
+/// - `loadMoreError == null` (sentinel パターンで残っている前回失敗を尊重)
+bool shouldAutoLoadMore(DriveState? state) {
+  if (state == null) return false;
+  if (!state.hasMore) return false;
+  if (state.isLoadingMore) return false;
+  if (state.loadMoreError != null) return false;
+  return true;
+}
+
 /// Drive contents for a given folder (null = root).
 class DriveContentsNotifier
     extends AutoDisposeFamilyAsyncNotifier<DriveState, String?> {

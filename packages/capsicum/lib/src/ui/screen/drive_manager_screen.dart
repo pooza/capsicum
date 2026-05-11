@@ -83,14 +83,14 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   /// 取得済みコンテンツが viewport に収まりきってスクロールが発生しない場合、
   /// 自動再試行のフックがないため自前で次ページを要求する (#452)。
-  /// hasMore / isLoadingMore / loadMoreError で無限ループを防ぐ。
+  /// hasMore / isLoadingMore / loadMoreError で無限ループを防ぐ。state 側の
+  /// 予条件判定は [shouldAutoLoadMore] にまとめて回帰テスト可能にしてある
+  /// (#456)。
   void _maybeLoadMoreIfNotScrollable() {
     if (!mounted || !_scrollController.hasClients) return;
     if (_scrollController.position.maxScrollExtent > 0) return;
     final state = ref.read(driveContentsProvider(_currentFolderId)).valueOrNull;
-    if (state == null) return;
-    if (!state.hasMore || state.isLoadingMore) return;
-    if (state.loadMoreError != null) return;
+    if (!shouldAutoLoadMore(state)) return;
     ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
   }
 
