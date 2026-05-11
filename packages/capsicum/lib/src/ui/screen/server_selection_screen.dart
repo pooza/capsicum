@@ -34,6 +34,9 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     try {
       final dio = Dio();
       final probe = await probeInstance(dio, host);
+      // async gap 後に widget が dispose されているケース (CAPSICUM-1D / #472)。
+      // 以下の各 setState 前に必ず mounted ガード。
+      if (!mounted) return;
       if (probe == null) {
         setState(() {
           _error = 'サポートされていないサーバーです';
@@ -42,7 +45,6 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
         return;
       }
 
-      if (!mounted) return;
       context.push(
         '/login',
         extra: {
@@ -52,8 +54,9 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
         },
       );
     } catch (e) {
+      debugPrint('Server probe error: $e');
+      if (!mounted) return;
       setState(() {
-        debugPrint('Server probe error: $e');
         _error = '接続に失敗しました';
       });
     } finally {
