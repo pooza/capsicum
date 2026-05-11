@@ -374,6 +374,13 @@ Future<void> _flushPushFailureRecord() async {
           // が header 系か鍵不一致 (CryptoKit authenticationFailure) かを分ける。
           if (record.decryptError != null) {
             scope.setTag('push.decrypt.error', record.decryptError!);
+            // 二次タグで Sentry 検索を簡素化する (#436 v1.25 observation):
+            //   - auth_failure: 鍵不一致 (Misskey サーバー側に保存された
+            //     p256dh と capsicum 側の鍵がずれているケース)
+            //   - header: WebPushError 系 (relay → NSE の payload 欠損)
+            //   - other: 上記外
+            final kind = _classifyDecryptErrorKind(record.decryptError!);
+            scope.setTag('push.decrypt.kind', kind);
           }
         },
       );
@@ -405,6 +412,28 @@ Future<void> _flushPushFailureRecord() async {
 /// この 2 段待ちがないと、restore 中に go('/home') → 認証 redirect で /server
 /// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
 /// 正規ルーティングが空振り、ユーザーがサーバー選択画面に取り残される。
+/// `record.decryptError` の type+case 名から二次分類タグを生成する (#436 v1.25)。
+///
+/// NSE が記録する文字列は `"\(type(of: error)).\(String(describing: error))"`
+/// の形 (例: `CryptoKitError.authenticationFailure`,
+/// `WebPushError.invalidKeyId`, `WebPushError.payloadTruncated`)。Sentry
+/// 検索で個別の文字列を OR で並べると煩雑なため、3 値に丸めた `push.decrypt.kind`
+/// を一緒に出して filter / facet をしやすくする。
+@visibleForTesting
+String classifyDecryptErrorKind(String reason) {
+  final lower = reason.toLowerCase();
+  if (lower.contains('authenticationfailure')) {
+    return 'auth_failure';
+  }
+  if (lower.contains('webpusherror') || lower.contains('payloadtruncated')) {
+    return 'header';
+  }
+  return 'other';
+}
+
+String _classifyDecryptErrorKind(String reason) =>
+    classifyDecryptErrorKind(reason);
+
 /// 通知タップで届く JSON payload (push_message_dispatcher が encode) を解釈し、
 /// type=newChatMessage なら `/chat/user/<userId>` へ直行、それ以外は通知タブへ
 /// 遷移する (#440)。後方互換: payload が JSON でなく裸の `username@host` だった
