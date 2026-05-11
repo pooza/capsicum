@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,37 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import 'media_viewer_screen.dart';
+
+/// drive 操作系 SnackBar に流す短い人間向け要約。DioException の URL や
+/// ヘッダ等の機微情報を流さず、status code / type だけ含める (#460)。
+String _summarizeDriveError(Object error) {
+  if (error is DioException) {
+    final status = error.response?.statusCode;
+    if (status != null) return 'サーバーエラー (HTTP $status)';
+    return 'ネットワークエラー (${error.type.name})';
+  }
+  return 'エラーが発生しました';
+}
+
+/// drive 操作系 SnackBar 出力前に Sentry に詳細を流す共通フック (#460)。
+void _reportDriveOpFailure(String operation, Object error, StackTrace st) {
+  try {
+    Sentry.captureException(
+      error,
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('drive.op', operation);
+        scope.fingerprint = [
+          'drive.op',
+          operation,
+          error.runtimeType.toString(),
+        ];
+      },
+    );
+  } catch (_) {
+    // Sentry 失敗で UI 更新を止めない。
+  }
+}
 
 class DriveManagerScreen extends ConsumerStatefulWidget {
   const DriveManagerScreen({super.key});
@@ -103,11 +135,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('ファイルを移動しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('move_file_out', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('移動に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('移動に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -274,11 +307,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .updateFileDescription(file.id, newAlt);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('edit_alt', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -291,11 +325,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .renameFile(file.id, newName);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('rename_file', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -329,11 +364,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('削除しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('delete_file', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('削除に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -346,11 +382,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .renameFolder(folder.id, newName);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('rename_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -379,11 +416,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .removeFolder(folder.id);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('delete_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -394,11 +432,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     try {
       await _drive?.createDriveFolder(name, parentId: _currentFolderId);
       _refresh();
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('create_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
