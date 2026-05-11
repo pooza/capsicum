@@ -36,12 +36,20 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          # ibus-gtk3 を入れる理由 (#532 真因対応 / v1.24.2):
+          # GTK の ibus IM モジュール (im-ibus.so) は host にインストール
+          # されていないと linuxdeploy-plugin-gtk が AppImage に bundle で
+          # きない。CI runner (ubuntu-22.04) には標準で入っていないため、
+          # 配布 AppImage の immodules.cache から ibus エントリが欠落し、
+          # GTK_IM_MODULE=ibus を立てても解決できず日本語入力が一切
+          # 効かない状態だった。
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
             libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
             libcurl4-openssl-dev default-jdk-headless \
-            libfuse2 patchelf
+            libfuse2 patchelf \
+            ibus-gtk3
 
       - name: Install linuxdeploy / appimagetool (with sha256 pin)
         # continuous / master という rolling アップデート tag から DL するが、
