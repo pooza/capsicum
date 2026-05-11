@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/chat_provider.dart';
+import '../../util/oauth_scope_error.dart';
+import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
 class ChatThreadListScreen extends ConsumerWidget {
@@ -35,25 +37,28 @@ class ChatThreadListScreen extends ConsumerWidget {
                 ),
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(
-                  '読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
+        error: (error, _) => isOAuthScopeError(error)
+            ? const OAuthScopeErrorView()
+            : Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(
+                        '読み込みに失敗しました\n$error',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () =>
+                            ref.invalidate(chatThreadListProvider),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(chatThreadListProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
   }
