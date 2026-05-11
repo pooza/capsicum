@@ -138,16 +138,29 @@ linuxdeploy \
   --desktop-file "$APPDIR/usr/share/applications/$APP_ID.desktop" \
   --icon-file "$APPDIR/$APP_ID.png"
 
-# bundled libibus を除去する (#532)。linuxdeploy-plugin-gtk が ldd 経由で
-# libibus-1.0.so.5 を $APPDIR/usr/lib/ に同梱するが、これがホスト
-# ibus-daemon との DBus protocol drift を起こし、AppImage 配布版で日本語
-# IME (ibus-mozc 等) が一切効かなくなる現象が出る。bundled im-ibus.so は
-# 残し、libibus は ld.so の既定パス検索でホスト側を引かせる (im-ibus の
-# DT_NEEDED は libibus-1.0.so.5。RUNPATH/RPATH に AppDir が無くても、
-# ホストの /lib/x86_64-linux-gnu/libibus-1.0.so.5 が ld.so.cache 経由で
-# 見つかる)。Flatpak (org.gnome.Platform 提供 GTK + libibus) では発生
-# しないことから、bundle 経路だけの問題と確定済み。
-echo "==> Removing bundled libibus to avoid #532 (AppImage IME broken)"
+# bundled libibus を除去する (#532)。
+#
+# 経緯 (v1.24.1 → v1.24.2 訂正):
+# v1.24.1 リリース時は「linuxdeploy-plugin-gtk が ldd 経由で libibus-1.0.so.5
+# をバンドルしホスト ibus-daemon との DBus protocol drift を起こしている」
+# という仮説で本 rm を追加した。しかし真因は別で、CI runner (ubuntu-22.04)
+# に ibus-gtk3 がインストールされておらず im-ibus.so 自体が host に存在せず
+# AppImage に bundle されていない、つまり ibus 経路が完全に欠落していたこと
+# だった。v1.24.2 で workflow に ibus-gtk3 を追加して im-ibus.so が bundle
+# されるようにした結果、im-ibus.so / libibus-1.0.so.5 がどちらも bundle される
+# 状態になる。
+#
+# その上で libibus 本体は AppDir から除去し、ホスト側 libibus
+# (/lib/x86_64-linux-gnu/libibus-1.0.so.5) を ld.so.cache 経由で引かせる。
+# im-ibus.so の DT_NEEDED は libibus-1.0.so.5 で、RUNPATH/RPATH に AppDir が
+# 無くても解決される。host ibus-daemon と libibus の version を必ず一致させる
+# ことで protocol drift リスクを最小化する (Flatpak が同じ方針 = runtime 提供
+# の libibus + ibus-daemon 揃え、で問題なく動いている)。
+#
+# pooza の手元 (Debian 13 + ibus-gtk3 既導入) で本 rm を入れずに ibus 経路が
+# 動いていたのは、Debian の ibus と AppImage 内 libibus の API が偶然一致して
+# いたから。他環境では未保証なので本 rm は v1.24.2 でも残す。
+echo "==> Removing bundled libibus to avoid #532 host drift risk"
 rm -fv "$APPDIR/usr/lib/libibus-1.0.so."* 2>&1 | sed 's/^/  /'
 
 echo "==> Replacing AppRun with logging wrapper (#496)"
