@@ -19,6 +19,7 @@ class MisskeyChatStreaming {
   final String accessToken;
   final Set<String> adminRoleIds;
   final User? selfUser;
+  final void Function(Object error, StackTrace stack)? onParseError;
 
   WebSocketChannel? _channel;
   StreamController<ChatMessage>? _controller;
@@ -35,6 +36,7 @@ class MisskeyChatStreaming {
     required this.accessToken,
     this.adminRoleIds = const {},
     this.selfUser,
+    this.onParseError,
   });
 
   Stream<ChatMessage> connect() {
@@ -97,8 +99,16 @@ class MisskeyChatStreaming {
         selfUser: selfUser,
       );
       _controller?.add(chatMessage);
-    } catch (_) {
-      // Ignore malformed messages.
+    } catch (e, st) {
+      // raw payload を捨てる前に観測層へ流す。サーバー側 schema 変更や
+      // fediverse_objects のパース失敗を「ストリーミング来ない」だけで
+      // 気付けなくなるのを避ける (#448)。呼び出し側で Sentry breadcrumb /
+      // captureException に繋ぐ (chat_provider 側でレート制限付き)。
+      try {
+        onParseError?.call(e, st);
+      } catch (_) {
+        // 観測経路の失敗で本筋を止めない。
+      }
     }
   }
 

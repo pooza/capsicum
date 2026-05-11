@@ -16,7 +16,40 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter is! ChatSupport) return null;
   if (!(adapter as ChatSupport).canUseChat) return null;
-  final stream = (adapter as ChatSupport).streamChatMessages();
+  // streaming 内部 parse 失敗 (server schema 変更等) を観測層に流す (#448)。
+  // breadcrumb は毎回、captureException は throttle して spam を防ぐ。
+  DateTime? lastCapture;
+  const captureThrottle = Duration(seconds: 60);
+  final stream = (adapter as ChatSupport).streamChatMessages(
+    onParseError: (e, st) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'chat.stream.parse',
+          level: SentryLevel.warning,
+          message: e.toString().length > 200
+              ? '${e.toString().substring(0, 200)}…'
+              : e.toString(),
+        ),
+      );
+      final now = DateTime.now();
+      if (lastCapture != null &&
+          now.difference(lastCapture!) < captureThrottle) {
+        return;
+      }
+      lastCapture = now;
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('chat.stream.parse', 'failed');
+          scope.fingerprint = [
+            'chat.stream.parse',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
+    },
+  );
   ref.onDispose(() => (adapter as ChatSupport).disposeChatStream());
   return stream;
 });

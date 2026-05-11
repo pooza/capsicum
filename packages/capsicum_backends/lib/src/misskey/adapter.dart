@@ -1461,7 +1461,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Stream<ChatMessage> streamChatMessages() {
+  Stream<ChatMessage> streamChatMessages({
+    void Function(Object error, StackTrace stack)? onParseError,
+  }) {
     _chatStreaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
@@ -1470,6 +1472,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       accessToken: token,
       adminRoleIds: _adminRoleIds,
       selfUser: _myUser,
+      onParseError: onParseError,
     );
     return _chatStreaming!.connect();
   }
