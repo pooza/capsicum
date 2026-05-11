@@ -2,6 +2,13 @@ import UIKit
 import os.log
 
 class ShareViewController: UIViewController {
+  // ShareExtension と本体が共有する識別子は以下 4 ファイルにベタ書きで重複している
+  // (Xcode の同一 .swift を 2 target に member 追加するコストを避けるため。#508):
+  //   - macos/Runner/ShareIntentPlugin.swift
+  //   - macos/ShareExtension/ShareViewController.swift
+  //   - ios/Runner/ShareIntentPlugin.swift
+  //   - ios/ShareExtension/ShareViewController.swift  （本ファイル）
+  // 変更時は 4 箇所同期すること。書き込み先ファイル名 "shared_text.txt" も同様。
   private let appGroupId = "group.jp.co.b-shock.capsicum"
   private let typeText = "public.plain-text"
   private let typeURL = "public.url"
