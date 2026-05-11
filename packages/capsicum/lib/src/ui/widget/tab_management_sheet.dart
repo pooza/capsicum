@@ -194,6 +194,11 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       if (e.tab is ChannelTab) {
         return followedChannelIds.contains((e.tab as ChannelTab).id);
       }
+      if (e.tab is MessagesTab) {
+        // ChatSupport / canReadChat を満たすアダプタでのみ表示 (#439)。
+        return adapter is ChatSupport &&
+            (adapter as ChatSupport).canReadChat;
+      }
       return true;
     }).toList();
   }
@@ -243,6 +248,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       ChannelTab(:final name, :final id) => name ?? id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
+      MessagesTab() => 'メッセージ',
     };
   }
 
@@ -254,6 +260,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       ChannelTab() => Icons.forum,
       NotificationsTab() => Icons.notifications_outlined,
       AnnouncementsTab() => Icons.campaign_outlined,
+      MessagesTab() => Icons.chat_bubble_outline,
     };
   }
 
@@ -281,6 +288,10 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       }
       if (e.tab is ChannelTab) {
         return followedChannelIds.contains((e.tab as ChannelTab).id);
+      }
+      if (e.tab is MessagesTab) {
+        return adapter is ChatSupport &&
+            (adapter as ChatSupport).canReadChat;
       }
       return true;
     }).toList();

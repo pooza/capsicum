@@ -396,6 +396,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Non-timeline tabs: render their dedicated views.
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
+    // MessagesTab はフィードを持たず、タップ時に /chat へ push する遷移
+    // トリガー (#439)。アクティブ化されないようタップ側で intercept する
+    // 想定だが、保存された状態の食い違い等で到達した場合は防御的に空表示。
+    if (currentTab is MessagesTab) return const SizedBox.shrink();
     if (currentTab is ChannelTab) {
       // アカウント切替で ChannelSupport を持たない adapter (Mastodon 等) に
       // 移った直後、selectedTabProvider が前アカウントの ChannelTab を
@@ -604,6 +608,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case NotificationsTab():
       case AnnouncementsTab():
         ref.read(selectedTabProvider.notifier).state = tab;
+      case MessagesTab():
+        // MessagesTab はフィードを持たず、push notification 等から飛んで
+        // きた場合も /chat に直接遷移する。selectedTab は変更しない。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.push('/chat');
+        });
     }
   }
 
@@ -655,8 +665,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           ...visible.map((tab) {
             final label = _tabLabel(tab, isMastodon, adapter, allLists);
-            final isSelected = tab == currentTab;
+            // MessagesTab はフィードを持たず /chat に push する遷移トリガー
+            // (#439)。タップでも selectedTabProvider を切り替えない (= 戻った
+            // ときに元のタブが活きている)。
+            final isSelected = tab is! MessagesTab && tab == currentTab;
             return _tabChip(context, label, isSelected, () {
+              if (tab is MessagesTab) {
+                context.push('/chat');
+                return;
+              }
               ref.read(selectedTabProvider.notifier).state = tab;
               _saveLastTab();
             });
@@ -697,6 +714,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ChannelTab(:final id, :final name) => name ?? id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
+      MessagesTab() => 'メッセージ',
     };
   }
 

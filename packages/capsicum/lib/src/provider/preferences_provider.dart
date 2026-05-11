@@ -212,6 +212,9 @@ const defaultTabConfig = [
   TabConfigEntry(tab: TimelineTab(TimelineType.directMessages), visible: true),
   TabConfigEntry(tab: NotificationsTab(), visible: false),
   TabConfigEntry(tab: AnnouncementsTab(), visible: false),
+  // Misskey 限定。ChatSupport 不在アダプタでは tab_management_sheet 側で
+  // フィルタされて表示されない (#439)。
+  TabConfigEntry(tab: MessagesTab(), visible: false),
 ];
 
 /// A single entry in the tab configuration: a tab and its visibility.
@@ -309,6 +312,8 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
     // 4. Notifications & announcements (default hidden for existing users).
     entries.add(const TabConfigEntry(tab: NotificationsTab(), visible: false));
     entries.add(const TabConfigEntry(tab: AnnouncementsTab(), visible: false));
+    // Messages tab — Misskey 限定動線 (#439)。デフォルト hidden。
+    entries.add(const TabConfigEntry(tab: MessagesTab(), visible: false));
 
     // Persist the migrated config.
     await _save(entries, prefs);
