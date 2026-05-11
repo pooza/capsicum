@@ -138,30 +138,34 @@ linuxdeploy \
   --desktop-file "$APPDIR/usr/share/applications/$APP_ID.desktop" \
   --icon-file "$APPDIR/$APP_ID.png"
 
-# bundled libibus を除去する (#532)。
+# libibus-1.0.so.5 を AppDir に明示コピーする (#532)。
 #
-# 経緯 (v1.24.1 → v1.24.2 訂正):
-# v1.24.1 リリース時は「linuxdeploy-plugin-gtk が ldd 経由で libibus-1.0.so.5
-# をバンドルしホスト ibus-daemon との DBus protocol drift を起こしている」
-# という仮説で本 rm を追加した。しかし真因は別で、CI runner (ubuntu-22.04)
-# に ibus-gtk3 がインストールされておらず im-ibus.so 自体が host に存在せず
-# AppImage に bundle されていない、つまり ibus 経路が完全に欠落していたこと
-# だった。v1.24.2 で workflow に ibus-gtk3 を追加して im-ibus.so が bundle
-# されるようにした結果、im-ibus.so / libibus-1.0.so.5 がどちらも bundle される
-# 状態になる。
+# 経緯 (v1.24.0 〜 v1.24.3 真因解明):
+# linuxdeploy-plugin-gtk は ldd 経由で im-ibus.so を AppImage に bundle するが、
+# その依存 libibus-1.0.so.5 は (理由不明だが) bundle しない。host 側 libibus
+# を ld.so.cache 経由で引かせると、新しい host libibus が要求する GLib symbol
+# (g_task_set_static_name 等。GLib 2.76 以降) が bundled GLib (build host
+# ubuntu-22.04 = GLib 2.72) で解決できず、IM context 'ibus' のロードに失敗
+# する。具体例: Debian 13 / GLib 2.84 系の host で `Loading IM context type
+# 'ibus' failed` + `undefined symbol: g_task_set_static_name` が stderr に出る。
 #
-# その上で libibus 本体は AppDir から除去し、ホスト側 libibus
-# (/lib/x86_64-linux-gnu/libibus-1.0.so.5) を ld.so.cache 経由で引かせる。
-# im-ibus.so の DT_NEEDED は libibus-1.0.so.5 で、RUNPATH/RPATH に AppDir が
-# 無くても解決される。host ibus-daemon と libibus の version を必ず一致させる
-# ことで protocol drift リスクを最小化する (Flatpak が同じ方針 = runtime 提供
-# の libibus + ibus-daemon 揃え、で問題なく動いている)。
+# v1.24.0 / v1.24.1 / v1.24.2 まではこの mismatch を見逃しており、当初は
+# 「bundled libibus と host ibus-daemon の DBus protocol drift」「im-ibus.so
+# 不足」と二段階の誤診を経た。真因は GLib version mismatch。
 #
-# pooza の手元 (Debian 13 + ibus-gtk3 既導入) で本 rm を入れずに ibus 経路が
-# 動いていたのは、Debian の ibus と AppImage 内 libibus の API が偶然一致して
-# いたから。他環境では未保証なので本 rm は v1.24.2 でも残す。
-echo "==> Removing bundled libibus to avoid #532 host drift risk"
-rm -fv "$APPDIR/usr/lib/libibus-1.0.so."* 2>&1 | sed 's/^/  /'
+# 対処として AppImage 内に libibus を明示同梱する。bundled GLib と同世代の
+# libibus (build host = ubuntu-22.04 の libibus-1.0-5) が入るため symbol
+# resolution は成立する。host ibus-daemon との DBus protocol は libibus 1.5
+# 系で安定しており、Flatpak (org.gnome.Platform 提供 libibus + host ibus-daemon)
+# が問題なく動いていることから drift リスクは小さいと判断。
+echo "==> Bundling libibus into AppDir (host libibus 経由の GLib symbol mismatch を避ける)"
+HOST_LIBIBUS_DIR=/usr/lib/x86_64-linux-gnu
+if compgen -G "$HOST_LIBIBUS_DIR/libibus-1.0.so.*" > /dev/null; then
+  cp -av "$HOST_LIBIBUS_DIR"/libibus-1.0.so.* "$APPDIR/usr/lib/" 2>&1 | sed 's/^/  /'
+else
+  echo "ERROR: $HOST_LIBIBUS_DIR/libibus-1.0.so.* not found. Install libibus-1.0-5 (ibus-gtk3 brings it)." >&2
+  exit 1
+fi
 
 echo "==> Replacing AppRun with logging wrapper (#496)"
 # linuxdeploy が生成する AppRun は exec で wrapped を呼ぶだけで、stderr が
