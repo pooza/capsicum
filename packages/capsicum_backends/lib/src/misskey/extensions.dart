@@ -187,12 +187,18 @@ extension CapsicumMisskeyDriveFileExtension on MisskeyDriveFile {
 /// 省略し `fromUserId` / `toUserId` だけ返すことがある（呼び出し元の文脈で
 /// 自明だから）。そのフォールバックとして [selfUser] / [counterpartyUser] を
 /// 受け取り、ID 一致するものを差し込む。
+///
+/// [defaultIsRead] は `isRead` フィールドが入って来ないレスポンス
+/// (`ChatMessageLiteFor1on1`: user-timeline / create-to-user / streaming
+/// newChatMessage) に対するデフォルト値 (#447)。user-timeline は呼び出し
+/// 時点で既読更新されるため呼び出し側で `defaultIsRead: true` を渡す。
 ChatMessage misskeyChatMessageFromMap(
   Map<String, dynamic> data,
   String localHost, {
   Set<String> adminRoleIds = const {},
   User? selfUser,
   User? counterpartyUser,
+  bool defaultIsRead = false,
 }) {
   User resolveUser(String userIdKey, String userObjKey) {
     final embedded = data[userObjKey] as Map<String, dynamic>?;
@@ -219,7 +225,7 @@ ChatMessage misskeyChatMessageFromMap(
     file: fileMap != null
         ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()
         : null,
-    isRead: data['isRead'] as bool? ?? false,
+    isRead: data['isRead'] as bool? ?? defaultIsRead,
   );
 }
 

@@ -1428,6 +1428,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
             selfUser: me,
             counterpartyUser: counterparty,
+            // user-timeline は呼び出し時点で既読更新されるため、isRead を
+            // 持たない lite スキーマでは既読扱いに倒す (#447)。
+            defaultIsRead: true,
           ),
         )
         .toList();
