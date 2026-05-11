@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
@@ -18,6 +19,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   final _scrollController = ScrollController();
   final List<_FolderEntry> _folderStack = [];
   bool _isDragging = false;
+  // 自動 loadMore (#452) の post-frame callback を毎フレーム積むのを避ける
+  // ためのラッチ (#459)。folder 移動 / refresh で false に戻す。
+  bool _autoLoadRequested = false;
 
   String? get _currentFolderId =>
       _folderStack.isEmpty ? null : _folderStack.last.id;
@@ -61,12 +65,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   void _openFolder(DriveFolder folder) {
     setState(() {
       _folderStack.add(_FolderEntry(id: folder.id, name: folder.name));
+      _autoLoadRequested = false;
     });
   }
 
   void _goBack() {
     if (_folderStack.isNotEmpty) {
-      setState(() => _folderStack.removeLast());
+      setState(() {
+        _folderStack.removeLast();
+        _autoLoadRequested = false;
+      });
     } else {
       Navigator.of(context).pop();
     }
@@ -74,7 +82,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   void _refresh() {
     ref.invalidate(driveContentsProvider(_currentFolderId));
-    setState(() {});
+    setState(() {
+      _autoLoadRequested = false;
+    });
   }
 
   DriveSupport? get _drive {
@@ -467,9 +477,30 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             // 画面幅が広いと初期 20 件が viewport 内に収まり、スクロール
             // 由来の loadMore() が起動しない。レイアウト確定後にスクロール
             // 可能か再評価し、必要なら次ページを要求する (#452)。
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _maybeLoadMoreIfNotScrollable();
-            });
+            // 毎フレーム積むのを避けるため _autoLoadRequested ラッチで
+            // 一度だけ実行する。folder 移動 / refresh で false に戻す (#459)。
+            if (!_autoLoadRequested) {
+              _autoLoadRequested = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                // ref.read が dispose 後に呼ばれる極稀ケース等に備え、全体を
+                // try/catch で包み Sentry に上げる (#459)。
+                try {
+                  _maybeLoadMoreIfNotScrollable();
+                } catch (e, st) {
+                  Sentry.captureException(
+                    e,
+                    stackTrace: st,
+                    withScope: (scope) {
+                      scope.setTag('drive.auto_load', 'failed');
+                      scope.fingerprint = [
+                        'drive.auto_load',
+                        e.runtimeType.toString(),
+                      ];
+                    },
+                  );
+                }
+              });
+            }
 
             if (totalFolders == 0 && totalFiles == 0) {
               return const Center(child: Text('ファイルがありません'));
