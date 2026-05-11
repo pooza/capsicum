@@ -1146,6 +1146,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     await client.updateDriveFolder(folderId, name: newName);
   }
 
+  @override
+  Future<void> moveDriveFolder(String folderId, String? parentId) async {
+    // Misskey API はキー省略=変更なし、明示的 null=ルートへ移動。
+    // updateDriveFolder は null-aware で省略するため、直接 POST する。
+    await client.dio.post(
+      '/api/drive/folders/update',
+      data: client.createBody({
+        'folderId': folderId,
+        'parentId': parentId,
+      }),
+    );
+  }
+
   // AntennaSupport
 
   @override

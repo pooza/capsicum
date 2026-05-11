@@ -124,6 +124,92 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     return adapter is DriveSupport ? adapter as DriveSupport : null;
   }
 
+  /// 移動先フォルダ選択ダイアログを開き、結果を返す。`_FolderPick(id: null)`
+  /// がルート、`_FolderPick(id: <非null>)` が特定フォルダ、`null` の戻りは
+  /// キャンセル (tap outside or キャンセルボタン)。
+  ///
+  /// 簡易実装: 現在の親フォルダ階層 (root + 直下フォルダ) のみを候補に出す。
+  /// 子フォルダへ移動したい場合は親に降りてから再操作する想定 (#437)。
+  Future<_FolderPick?> _showFolderPickerDialog({
+    required String title,
+    String? excludeFolderId,
+  }) async {
+    final folders = await _drive?.getDriveFolders() ?? const [];
+    if (!mounted) return null;
+    return showDialog<_FolderPick>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.home_outlined),
+                  title: const Text('ルート (/)'),
+                  onTap: () =>
+                      Navigator.pop(dialogContext, const _FolderPick(null)),
+                ),
+                const Divider(height: 1),
+                for (final f in folders)
+                  if (f.id != excludeFolderId)
+                    ListTile(
+                      leading: const Icon(Icons.folder),
+                      title: Text(f.name),
+                      onTap: () =>
+                          Navigator.pop(dialogContext, _FolderPick(f.id)),
+                    ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('キャンセル'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _promptMoveFile(Attachment file) async {
+    final picked = await _showFolderPickerDialog(title: 'ファイルの移動先');
+    if (picked == null) return; // キャンセル
+    await _moveFileToFolder(file, picked.id);
+  }
+
+  Future<void> _promptMoveFolder(DriveFolder folder) async {
+    final picked = await _showFolderPickerDialog(
+      title: 'フォルダの移動先',
+      excludeFolderId: folder.id,
+    );
+    if (picked == null) return; // キャンセル
+    final destParentId = picked.id;
+    if (destParentId == folder.parentId) return; // 変更なし
+    try {
+      await _drive?.moveDriveFolder(folder.id, destParentId);
+      // 現在フォルダから出ていったので一覧から除外。
+      ref
+          .read(driveContentsProvider(_currentFolderId).notifier)
+          .removeFolder(folder.id);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('フォルダを移動しました')));
+      }
+    } catch (e, st) {
+      _reportDriveOpFailure('move_folder', e, st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('移動に失敗しました (${_summarizeDriveError(e)})')),
+        );
+      }
+    }
+  }
+
   Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
     try {
       await _drive?.moveDriveFile(file.id, folderId);
@@ -182,6 +268,14 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移動'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _promptMoveFile(file);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.image_outlined),
               title: Text(
                 file.description?.isNotEmpty == true
@@ -234,6 +328,14 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 _renameFolder(folder);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移動'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _promptMoveFolder(folder);
               },
             ),
             ListTile(
@@ -638,6 +740,14 @@ class _FolderEntry {
   final String id;
   final String name;
   const _FolderEntry({required this.id, required this.name});
+}
+
+/// 移動先選択ダイアログの戻り値。`id == null` がルート、それ以外は対象
+/// フォルダ ID (#437)。ダイアログ全体の `null` 戻りはキャンセルを意味する
+/// ため、root pick と区別するために wrapper 化している。
+class _FolderPick {
+  final String? id;
+  const _FolderPick(this.id);
 }
 
 class _FolderTile extends StatelessWidget {
