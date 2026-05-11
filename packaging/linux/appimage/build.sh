@@ -215,6 +215,30 @@ exit "${PIPESTATUS[0]}"
 APPRUN_EOF
 chmod +x "$APPDIR/AppRun"
 
+# v1.24.1 → v1.24.2 で CI runner image の構成変化により im-ibus.so が
+# 静かに同梱されなくなる事故があった。回帰防止のため、GTK IM module の
+# bundle と immodules.cache 登録を mechanical に検証する (#536)。
+# fcitx5 / uim は best-effort (動作未検証) だが、CI assertion 自体は
+# 同等にかける。
+echo "==> Verifying GTK IM module bundling (regression guard, #536)"
+IM_DIR="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules"
+IM_CACHE="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules.cache"
+if [ ! -f "$IM_CACHE" ]; then
+  echo "ERROR: immodules.cache not found at $IM_CACHE" >&2
+  exit 1
+fi
+for module in im-ibus.so im-fcitx5.so im-uim.so; do
+  if [ ! -f "$IM_DIR/$module" ]; then
+    echo "ERROR: $module not bundled at $IM_DIR/$module" >&2
+    exit 1
+  fi
+  if ! grep -q "\"$module\"" "$IM_CACHE"; then
+    echo "ERROR: $module not registered in immodules.cache" >&2
+    exit 1
+  fi
+  echo "  OK: $module bundled and registered"
+done
+
 echo "==> Sealing AppImage with appimagetool"
 FINAL="$DIST_DIR/${APP_NAME}-${VERSION}-x86_64.AppImage"
 ARCH=x86_64 appimagetool "$APPDIR" "$FINAL"
