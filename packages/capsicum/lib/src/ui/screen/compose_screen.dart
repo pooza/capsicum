@@ -1224,21 +1224,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           // 出す (#433)。
           final hideLivecure = ref.read(hideLivecureProvider);
           if (hideLivecure && text.contains('#実況')) {
+            // SnackBar action は ComposeScreen が pop された後に発火しうるため、
+            // ref を捕捉してはいけない (#546)。notifier 自体は root provider で
+            // widget の寿命に依存しないので、表示前にローカル参照を取る。
+            final hideLivecureNotifier = ref.read(
+              hideLivecureProvider.notifier,
+            );
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: const Text(
-                  '投稿しました（現在 #実況 を非表示中のため、タイムラインには表示されません）',
-                ),
+                content: const Text('投稿しました（現在 #実況 を非表示中のため、タイムラインには表示されません）'),
                 duration: const Duration(seconds: 8),
                 action: SnackBarAction(
                   label: '表示する',
-                  onPressed: () {
-                    // toggle() しか公開されていないため、現状 true 前提で
-                    // 反転して false にする。
-                    if (ref.read(hideLivecureProvider)) {
-                      ref.read(hideLivecureProvider.notifier).toggle();
-                    }
-                  },
+                  onPressed: () => hideLivecureNotifier.setHidden(false),
                 ),
               ),
             );
