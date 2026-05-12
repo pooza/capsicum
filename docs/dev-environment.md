@@ -78,9 +78,11 @@ Flathub アカウント（pooza 個人）は最初の submission ([packaging/lin
 
 ### Windows 固有
 
+- 実体は **Parallels Desktop 上の Windows 11 VM**（メイン macOS に同居）。v1.25 配布パイプライン [#423](https://github.com/pooza/capsicum/issues/423) の実装・MSIX 自己署名インストール検証はこの VM 上で行う。物理 PC を別途用意する想定ではない
 - Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
 - MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
 - Microsoft Partner Center アカウント（Microsoft Store 登録用）
+- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内でダウンロード → PowerShell で `Import-Certificate` + `Add-AppxPackage`。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる
 
 ### 持ち込まないもの
 
