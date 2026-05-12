@@ -277,7 +277,9 @@ v1.27 マイルストーンに単独配置（大更新のため他項目と並�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.24.4**（2026-05-11 タグ、Linux 限定 hotfix 4）。v1.24.0 の Linux AppImage で日本語 IME (ibus-mozc 等) が一切効かない不具合 (#532) について、v1.24.1 / v1.24.2 の二段階の誤診を経て v1.24.3 で真因を解明、v1.24.4 で fcitx5 / uim 経路への immodule 同梱と CI assertion (回帰防止) を追加:
+最新リリース: **v1.25.0**（2026-05-12 タグ、Android 製品版昇格済み・iOS App Store 審査提出済み・macOS Mac App Store 審査提出済み・Linux AppImage 配布開始・**Windows MSIX 自己署名直配 初回投入**）。デスクトップ展開の第 3 段階として **Windows 初回配布** を実施し、あわせて v1.22 で実装した Misskey メッセージ機能の改善 (大型 followup、#432 / #437-#449 / #455-#456 / #464) と、v1.24.x で重ねた Linux / macOS の followup (#503 / #504 / #527 / #528 / #531 / #538 / #495) を取り込んだ。Windows 配布パイプライン (#423) は MSIX 自己署名 PFX + GitHub Releases 直配で構成 (Microsoft Store は #544 で on-hold)、Parallels VM での実機検証 (#483) で OAuth localhost callback / file picker / メディア添付投稿が成立。リリース前 5 観点レビューの赤判定 2 件 (chat 画面 raw exception 露出 = #460 と同型 chat 版 / `client_secret` の scrub 抜け) は本リリースで同梱解消、黄判定のうち易しい 4 件をインライン消化 + 残り 10 件 (#548-#558, #547) を v1.26 へ送り。
+
+v1.24.4（2026-05-11 タグ、Linux 限定 hotfix 4）は v1.24.0 の Linux AppImage で日本語 IME (ibus-mozc 等) が一切効かない不具合 (#532) について、v1.24.1 / v1.24.2 の二段階の誤診を経て v1.24.3 で真因を解明、v1.24.4 で fcitx5 / uim 経路への immodule 同梱と CI assertion (回帰防止) を追加:
 
 - **v1.24.1** (誤診1): 「bundled libibus と host ibus-daemon の DBus protocol drift」と推定 → そもそも bundled libibus は AppImage に同梱されておらず `rm libibus-1.0.so.*` は no-op だった
 - **v1.24.2** ([#535](https://github.com/pooza/capsicum/pull/535)、誤診2): 「CI runner (ubuntu-22.04) に `ibus-gtk3` 未インストールで `im-ibus.so` が同梱されていない」と特定 → workflow に `ibus-gtk3` 追加。im-ibus.so の同梱は必要だが本丸ではなかった。draft Release のまま実機検証で `Loading IM context type 'ibus' failed` を確認 → タグごと削除して仕切り直し

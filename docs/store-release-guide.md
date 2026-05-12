@@ -340,6 +340,39 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+#### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
+
+iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:
+
+```text
+The provided entity is missing a required attribute -
+You must provide a value for the attribute 'whatsNew' with this request
+```
+
+v1.25.0 リリースで初めて踏んだ。エラーが出た場合は spaceship で localization に whatsNew を patch してから fastlane release を再実行する:
+
+```ruby
+require 'spaceship'
+token = Spaceship::ConnectAPI::Token.create(
+  key_id: 'WLS8G4W44L',
+  issuer_id: '69a6de71-e621-47e3-e053-5b8c7c11a4d1',
+  filepath: File.expand_path('~/.config/capsicum/AuthKey_WLS8G4W44L.p8'),
+)
+Spaceship::ConnectAPI.token = token
+
+# macOS 1.X.Y バージョンの localization ID を取得し whatsNew を patch
+app = Spaceship::ConnectAPI::App.find('jp.co.b-shock.capsicum')
+mac_version = app.get_app_store_versions.find { |v| v.platform == 'MAC_OS' && v.version_string == '1.X.Y' }
+loc_resp = Spaceship::ConnectAPI.get_app_store_version_localizations(app_store_version_id: mac_version.id)
+ja_loc = loc_resp.body['data'].find { |l| l['attributes']['locale'] == 'ja' }
+Spaceship::ConnectAPI.patch_app_store_version_localization(
+  app_store_version_localization_id: ja_loc['id'],
+  attributes: { whatsNew: "変更内容の詳細は GitHub リリースページをご覧ください。\nhttps://github.com/pooza/capsicum/releases" },
+)
+```
+
+なお submit_for_review に失敗した review submission は `READY_FOR_REVIEW` で残留し、見た目上 cancellable でない (`Resource is not in cancellable state`) ことがある。次回 fastlane release で新規 submission が作られて吸収されるので無視してよい。
+
 ### 4.4 GitHub Release のリリースノート
 
 GitHub Release のリリースノートで「既知の不具合」セクションを作る場合は、ハードコードせず **bug ラベルが付いた open Issue を列挙** する。固定の文言は実態とズレるため、Issue が正本となるように書く。
