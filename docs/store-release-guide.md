@@ -437,6 +437,23 @@ PFX を Mac 側で生成して Repository Secrets に投入する。Subject は 
 
 投入後の最初のタグ駆動ビルドで `msix` ジョブが署名済み MSIX を生成する。
 
+#### 自己署名 PFX の rotation / 失効対応 runbook
+
+PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役のいずれかが発生したらローテーションする**。流出した場合、当該 cert で署名された任意 MSIX が既存ユーザーの `TrustedPeople (LocalMachine)` に対して auto-trust されるため、迅速な対応が必要。
+
+ローテーション手順:
+
+1. 上記「自己署名証明書の投入手順」を再実行し、新しい PFX を生成 → Repository Secrets を上書き
+2. 次の通常リリース (または hotfix) で新 cert 署名 MSIX を draft Release に出す
+3. リリースノートに「証明書ローテーションのため、初回起動前に新 `.cer` を `TrustedPeople` に再 import する必要があります」を明記。旧 `.cer` 削除手順 ([packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) のアンインストール手順末尾) もリンク
+
+流出が確定した場合の追加対応:
+
+- 旧 cert の Subject Key Identifier / Serial Number を release notes と [capsicum-site](https://capsicum.shrieker.net) にアナウンスし、エンドユーザーに `Cert:\LocalMachine\Disallowed` への追加 (`Set-Location Cert:\LocalMachine\TrustedPeople; Get-ChildItem | Where-Object {<対象cert>} | Move-Item -Destination Cert:\LocalMachine\Disallowed`) を案内
+- OV cert 取得 (#534) を前倒しできるか検討。OV 経路に切り替われば自己署名 cert は不要になり、再発防止できる
+
+`pubspec.yaml` の `msix_config.publisher` (`CN=0B8EE9C3-…`) を変更すると、Microsoft Store の identity 紐付け (#544) で再申請が必要になるため、ローテーション時の Subject 変更は避ける。
+
 #### Microsoft Store credential 投入手順（[#544](https://github.com/pooza/capsicum/issues/544) が再開した時のみ）
 
 [#544](https://github.com/pooza/capsicum/issues/544) の再開トリガー (法人化 → Microsoft 365 Business → 組織契約 Entra ID テナント) が満たされた時点で実施。手順は #544 issue 本文を参照。Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される。

@@ -163,6 +163,10 @@ class PushMessageDispatcher {
         host: host,
         encoding: encoding,
         elapsedMs: elapsed(),
+        // FormatException (bodyB64 異常) や WebPushDecryptor / parsePayload
+        // が投げた exception 文字列を kind 分類 (push.decrypt.kind) のために
+        // recorder に流す (#436 の二次分類タグを実走経路にも適用)。
+        decryptError: e.toString(),
       );
       return null;
     }

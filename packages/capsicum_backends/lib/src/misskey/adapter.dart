@@ -1151,6 +1151,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> moveDriveFolder(String folderId, String? parentId) async {
     // Misskey API はキー省略=変更なし、明示的 null=ルートへ移動。
     // updateDriveFolder は null-aware で省略するため、直接 POST する。
+    //
+    // 単階層前提: caller (drive_manager_screen._promptMoveFolder) は現在
+    // 開いているフォルダの直下の子だけを候補に出し、folderId 自身と祖先は
+    // 候補から除外しているため、ここで循環防止のサーバーチェック (Misskey
+    // は子孫を parentId に渡すと 400/422) を踏まないことを前提にしている。
+    // 将来 candidate に親フォルダや遠縁を含めるなら、Misskey の error
+    // ハンドリング (DioException response) を caller 側で吸収すること。
     await client.dio.post(
       '/api/drive/folders/update',
       data: client.createBody({'folderId': folderId, 'parentId': parentId}),

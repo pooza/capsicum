@@ -105,6 +105,19 @@ Future<void> main() async {
         options.nativeDatabasePath = sentryNativeDbPath;
       }
     }, appRunner: () => _startApp());
+    // Linux / Windows 固有の crashpad_handler 不発 (MSIX の AppContainer 制限
+    // や AppRun 経由の長 path) を Sentry initial event から切り分けられるよう、
+    // 解決済みの sentry-native database path を breadcrumb に積んでおく。
+    if (sentryNativeDbPath != null) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'sentry.native',
+          message: 'database_path resolved',
+          data: {'path': sentryNativeDbPath},
+          level: SentryLevel.info,
+        ),
+      );
+    }
   } else {
     _startApp();
   }
