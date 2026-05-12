@@ -443,43 +443,14 @@ PFX を Mac 側で生成して Repository Secrets に投入する。Subject は 
 
 #### GitHub Release のリリースノート（Windows セクションテンプレート）
 
-タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。
+タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
 
 ````markdown
 ## Windows (MSIX 自己署名直配)
 
 > ⚠️ 配布対象は「証明書 import を厭わない上級ユーザー」です。Microsoft Store 公開は法人化対応待ちで、当面 GitHub Releases 経由の自己署名配布のみとなります。
 
-### インストール手順
-
-1. 本 Release のアセットから以下をダウンロード:
-   - `capsicum.msix` — アプリケーション本体
-   - `capsicum-signing.cer` — 自己署名証明書 (信頼ストア import 用)
-
-2. PowerShell を **管理者として実行** で開き、ダウンロードフォルダに `cd`
-
-3. 証明書を Trusted People (LocalMachine) に import:
-
-   ```powershell
-   Import-Certificate -FilePath .\capsicum-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-   ```
-
-4. MSIX をインストール:
-
-   ```powershell
-   Add-AppxPackage -Path .\capsicum.msix
-   ```
-
-5. スタートメニューから `capsicum` を起動
-
-### アンインストール手順
-
-設定 → アプリ → インストールされているアプリ → `capsicum` → アンインストール。証明書も削除する場合は `Cert:\LocalMachine\TrustedPeople` から該当エントリを削除。
-
-### 動作要件
-
-- Windows 10 (1809+) / Windows 11 x64
-- 管理者権限 (証明書 import + MSIX install のため、初回のみ)
+本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
 ````
 
 #### Windows ローカルビルド確認

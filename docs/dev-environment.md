@@ -82,7 +82,7 @@ Flathub アカウント（pooza 個人）は最初の submission ([packaging/lin
 - Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
 - MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
 - Microsoft Partner Center アカウント（Microsoft Store 登録用）
-- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内でダウンロード → PowerShell で `Import-Certificate` + `Add-AppxPackage`。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる
+- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内でダウンロード → [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) に従って `Import-Certificate` + `Add-AppxPackage`。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる（リリース後のエンドユーザー手順とも完全同一）
 
 ### 持ち込まないもの
 
