@@ -2,46 +2,52 @@ import 'package:capsicum/src/provider/drive_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('shouldAutoLoadMore — drive_manager_screen post-frame contract (#456)', () {
-    test('state == null では発火しない', () {
-      expect(shouldAutoLoadMore(null), isFalse);
-    });
+  group(
+    'shouldAutoLoadMore — drive_manager_screen post-frame contract (#456)',
+    () {
+      test('state == null では発火しない', () {
+        expect(shouldAutoLoadMore(null), isFalse);
+      });
 
-    test('通常の状態 (hasMore=true, isLoadingMore=false, loadMoreError=null) で発火', () {
-      expect(shouldAutoLoadMore(const DriveState()), isTrue);
-    });
-
-    test('hasMore=false では発火しない', () {
-      expect(shouldAutoLoadMore(const DriveState(hasMore: false)), isFalse);
-    });
-
-    test('isLoadingMore=true では発火しない', () {
-      expect(
-        shouldAutoLoadMore(const DriveState(isLoadingMore: true)),
-        isFalse,
+      test(
+        '通常の状態 (hasMore=true, isLoadingMore=false, loadMoreError=null) で発火',
+        () {
+          expect(shouldAutoLoadMore(const DriveState()), isTrue);
+        },
       );
-    });
 
-    test('loadMoreError != null では発火しない (sentinel 由来の前回失敗を尊重)', () {
-      expect(
-        shouldAutoLoadMore(DriveState(loadMoreError: Exception('boom'))),
-        isFalse,
-      );
-    });
+      test('hasMore=false では発火しない', () {
+        expect(shouldAutoLoadMore(const DriveState(hasMore: false)), isFalse);
+      });
 
-    test('複数条件 NG が同時に成立しても false', () {
-      expect(
-        shouldAutoLoadMore(
-          DriveState(
-            hasMore: false,
-            isLoadingMore: true,
-            loadMoreError: Exception('boom'),
+      test('isLoadingMore=true では発火しない', () {
+        expect(
+          shouldAutoLoadMore(const DriveState(isLoadingMore: true)),
+          isFalse,
+        );
+      });
+
+      test('loadMoreError != null では発火しない (sentinel 由来の前回失敗を尊重)', () {
+        expect(
+          shouldAutoLoadMore(DriveState(loadMoreError: Exception('boom'))),
+          isFalse,
+        );
+      });
+
+      test('複数条件 NG が同時に成立しても false', () {
+        expect(
+          shouldAutoLoadMore(
+            DriveState(
+              hasMore: false,
+              isLoadingMore: true,
+              loadMoreError: Exception('boom'),
+            ),
           ),
-        ),
-        isFalse,
-      );
-    });
-  });
+          isFalse,
+        );
+      });
+    },
+  );
 
   group('DriveState.copyWith — loadMoreError sentinel (#450)', () {
     test('引数省略時は既存の loadMoreError を保持する', () {

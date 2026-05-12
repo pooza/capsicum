@@ -1153,10 +1153,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // updateDriveFolder は null-aware で省略するため、直接 POST する。
     await client.dio.post(
       '/api/drive/folders/update',
-      data: client.createBody({
-        'folderId': folderId,
-        'parentId': parentId,
-      }),
+      data: client.createBody({'folderId': folderId, 'parentId': parentId}),
     );
   }
 

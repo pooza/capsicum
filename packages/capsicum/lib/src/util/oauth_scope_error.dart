@@ -29,7 +29,8 @@ bool isOAuthScopeError(Object error) {
     if (data is Map && data['error'] == 'insufficient_scope') return true;
     // WWW-Authenticate: Bearer error="insufficient_scope" scope="..."
     final wwwAuth = error.response?.headers.value('www-authenticate');
-    if (wwwAuth != null && wwwAuth.toLowerCase().contains('insufficient_scope')) {
+    if (wwwAuth != null &&
+        wwwAuth.toLowerCase().contains('insufficient_scope')) {
       return true;
     }
   }

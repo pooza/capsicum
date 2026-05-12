@@ -241,10 +241,7 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
   TextSpan _renderContent(String content, TextStyle baseStyle) {
     _contentRenderer?.dispose();
     final message = widget.message;
-    final allEmojis = {
-      ...message.fromUser.emojis,
-      ...message.emojis,
-    };
+    final allEmojis = {...message.fromUser.emojis, ...message.emojis};
     final host = message.fromUser.host;
     _contentRenderer = ContentRenderer(
       baseStyle: baseStyle,

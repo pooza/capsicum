@@ -115,9 +115,7 @@ class PushMessageDispatcher {
     final bodyB64 = data['body'] as String?;
     final encoding = data['encoding'] as String?;
     if (bodyB64 == null || encoding != 'aes128gcm') {
-      _trace(
-        'skipped decrypt (body=${bodyB64 != null}, encoding=$encoding)',
-      );
+      _trace('skipped decrypt (body=${bodyB64 != null}, encoding=$encoding)');
       return null;
     }
 
@@ -376,10 +374,5 @@ class DecryptedPushContent {
   /// に遷移する宛先解決に使う)。type=newChatMessage 以外は null (#440)。
   final String? userId;
 
-  const DecryptedPushContent({
-    this.title,
-    this.body,
-    this.type,
-    this.userId,
-  });
+  const DecryptedPushContent({this.title, this.body, this.type, this.userId});
 }

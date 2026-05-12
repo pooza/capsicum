@@ -147,21 +147,20 @@ void main() {
       expect(result.userId, 'user_abc');
     });
 
-    test('Misskey newChatMessage (fromUser オブジェクト無し) は fromUserId に fallback', () {
-      final plaintext = _utf8(
-        jsonEncode({
-          'type': 'newChatMessage',
-          'body': {
-            'id': 'msg1',
-            'fromUserId': 'user_xyz',
-            'text': 'こんにちは',
-          },
-        }),
-      );
-      final result = PushMessageDispatcher.parsePayload(plaintext);
-      expect(result, isNotNull);
-      expect(result!.type, 'newChatMessage');
-      expect(result.userId, 'user_xyz');
-    });
+    test(
+      'Misskey newChatMessage (fromUser オブジェクト無し) は fromUserId に fallback',
+      () {
+        final plaintext = _utf8(
+          jsonEncode({
+            'type': 'newChatMessage',
+            'body': {'id': 'msg1', 'fromUserId': 'user_xyz', 'text': 'こんにちは'},
+          }),
+        );
+        final result = PushMessageDispatcher.parsePayload(plaintext);
+        expect(result, isNotNull);
+        expect(result!.type, 'newChatMessage');
+        expect(result.userId, 'user_xyz');
+      },
+    );
   });
 }

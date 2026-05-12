@@ -196,8 +196,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
       }
       if (e.tab is MessagesTab) {
         // ChatSupport / canReadChat を満たすアダプタでのみ表示 (#439)。
-        return adapter is ChatSupport &&
-            (adapter as ChatSupport).canReadChat;
+        return adapter is ChatSupport && (adapter as ChatSupport).canReadChat;
       }
       return true;
     }).toList();
@@ -290,8 +289,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
         return followedChannelIds.contains((e.tab as ChannelTab).id);
       }
       if (e.tab is MessagesTab) {
-        return adapter is ChatSupport &&
-            (adapter as ChatSupport).canReadChat;
+        return adapter is ChatSupport && (adapter as ChatSupport).canReadChat;
       }
       return true;
     }).toList();

@@ -546,8 +546,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         extractedCode = uri.queryParameters['code'] ?? code;
         final isCustomScheme = uri.scheme == 'capsicum';
         final isLocalhostCallback =
-            _useLocalhostCallback &&
-            uri.toString().startsWith(_redirectUri);
+            _useLocalhostCallback && uri.toString().startsWith(_redirectUri);
         codeFromOriginalRedirect = isCustomScheme || isLocalhostCallback;
       } else {
         extractedCode = code;

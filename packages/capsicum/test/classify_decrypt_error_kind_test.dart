@@ -13,10 +13,7 @@ void main() {
     });
 
     test('WebPushError.invalidKeyId は header', () {
-      expect(
-        classifyDecryptErrorKind('WebPushError.invalidKeyId'),
-        'header',
-      );
+      expect(classifyDecryptErrorKind('WebPushError.invalidKeyId'), 'header');
     });
 
     test('WebPushError.payloadTruncated は header', () {

@@ -88,10 +88,7 @@ void main() {
     test('Mastodon 401 + 別 error 値 (invalid_token) は false', () {
       expect(
         isOAuthScopeError(
-          _fakeDioException(
-            statusCode: 401,
-            body: {'error': 'invalid_token'},
-          ),
+          _fakeDioException(statusCode: 401, body: {'error': 'invalid_token'}),
         ),
         isFalse,
       );
