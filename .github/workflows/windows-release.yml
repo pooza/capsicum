@@ -124,10 +124,15 @@ jobs:
         # --certificate-path 指定時は pubspec.yaml の `store: true` よりも
         # 署名フローが優先される。Microsoft Store 公開 (#544) を再開する際は、
         # 別途 `--store` で未署名 MSIX を生成する step を組む。
+        # --build-windows false を必ず付けて、前段の `Build Windows release`
+        # step で渡した --dart-define (SENTRY_DSN / RELAY_SECRET) を保持した
+        # build output をそのまま MSIX に詰める。デフォルトの true だと msix
+        # package が裏で再ビルドして dart-define が落ちる (Codex P1 指摘)。
         shell: pwsh
         run: |
           Push-Location packages/capsicum
           dart run msix:create `
+            --build-windows false `
             --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
             --certificate-password "$env:CERT_PASSWORD"
           Pop-Location
