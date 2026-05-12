@@ -1,9 +1,17 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
+import '../../provider/preferences_provider.dart';
+import '../../url_helper.dart';
+import '../../util/oauth_scope_error.dart';
+import '../util/chat_error.dart';
+import '../widget/content_parser.dart';
+import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
 class ChatThreadScreen extends ConsumerStatefulWidget {
@@ -50,11 +58,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           .read(chatThreadProvider(widget.otherUser.id).notifier)
           .send(text);
       _textController.clear();
-    } catch (e) {
+    } catch (e, st) {
+      reportChatOpFailure('send_message', e, st);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('送信に失敗しました: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -78,15 +87,17 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       ),
     );
     if (ok != true) return;
+    if (!mounted) return;
     try {
       await ref
           .read(chatThreadProvider(widget.otherUser.id).notifier)
           .deleteMessage(message.id);
-    } catch (e) {
+    } catch (e, st) {
+      reportChatOpFailure('delete_message', e, st);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+      );
     }
   }
 
@@ -94,6 +105,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   Widget build(BuildContext context) {
     final myUserId = ref.watch(currentAccountProvider)?.user.id;
     final state = ref.watch(chatThreadProvider(widget.otherUser.id));
+    final adapter = ref.watch(currentAdapterProvider);
+    // readonly ロールでは送信不可。compose row 自体を隠す (#446)。
+    final canSend =
+        adapter is ChatSupport && (adapter as ChatSupport).canWriteChat;
     final displayName = widget.otherUser.displayName?.isNotEmpty == true
         ? widget.otherUser.displayName!
         : widget.otherUser.username;
@@ -121,34 +136,49 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
             child: state.when(
               data: (data) => _buildMessageList(context, data, myUserId),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SelectableText(
-                        '読み込みに失敗しました\n$error',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(
-                          chatThreadProvider(widget.otherUser.id),
+              error: (error, _) => isOAuthScopeError(error)
+                  ? const OAuthScopeErrorView()
+                  : Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SelectableText(
+                              '読み込みに失敗しました\n${summarizeChatError(error)}',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () => ref.invalidate(
+                                chatThreadProvider(widget.otherUser.id),
+                              ),
+                              child: const Text('再試行'),
+                            ),
+                          ],
                         ),
-                        child: const Text('再試行'),
                       ),
-                    ],
-                  ),
+                    ),
+            ),
+          ),
+          if (canSend)
+            _ComposeRow(
+              controller: _textController,
+              sending: _sending,
+              onSend: _send,
+            )
+          else
+            // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
+            Container(
+              padding: const EdgeInsets.all(12),
+              alignment: Alignment.center,
+              child: Text(
+                'このアカウントではメッセージを送信できません',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
                 ),
               ),
             ),
-          ),
-          _ComposeRow(
-            controller: _textController,
-            sending: _sending,
-            onSend: _send,
-          ),
         ],
       ),
     );
@@ -185,7 +215,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
   final bool isMine;
   final VoidCallback? onLongPress;
@@ -197,7 +227,59 @@ class _MessageBubble extends StatelessWidget {
   });
 
   @override
+  ConsumerState<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends ConsumerState<_MessageBubble> {
+  ContentRenderer? _contentRenderer;
+
+  @override
+  void dispose() {
+    _contentRenderer?.dispose();
+    super.dispose();
+  }
+
+  /// メッセージ本文を post_tile と同じ ContentRenderer (MFM) でレンダリング
+  /// する (#449)。Misskey の chat は MFM のみで HTML は来ない。emojis は
+  /// メッセージ自体の `emojis` と送信者の `emojis` をマージ。
+  TextSpan _renderContent(String content, TextStyle baseStyle) {
+    _contentRenderer?.dispose();
+    final message = widget.message;
+    final allEmojis = {...message.fromUser.emojis, ...message.emojis};
+    final host = message.fromUser.host;
+    _contentRenderer = ContentRenderer(
+      baseStyle: baseStyle,
+      resolveEmoji: (shortcode) {
+        final url = allEmojis[shortcode];
+        if (url != null) return url;
+        if (host != null) return 'https://$host/emoji/$shortcode.webp';
+        return null;
+      },
+      onLinkTap: (url) {
+        final uri = Uri.tryParse(url);
+        if (uri != null) launchUrlSafely(uri);
+      },
+      onLinkLongPress: (url) {
+        Clipboard.setData(ClipboardData(text: url));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL をコピーしました'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      emojiSize: ref.watch(emojiSizeProvider),
+      applyNyaize: message.fromUser.isCat,
+    );
+    return _contentRenderer!.renderMfm(content);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final message = widget.message;
+    final isMine = widget.isMine;
+    final onLongPress = widget.onLongPress;
     final scheme = Theme.of(context).colorScheme;
     final bubbleColor = isMine
         ? scheme.primaryContainer
@@ -214,7 +296,10 @@ class _MessageBubble extends StatelessWidget {
       }
     }
     if (message.text != null && message.text!.isNotEmpty) {
-      children.add(Text(message.text!, style: TextStyle(color: textColor)));
+      final baseStyle = TextStyle(color: textColor);
+      children.add(
+        Text.rich(_renderContent(message.text!, baseStyle), style: baseStyle),
+      );
     }
 
     return Padding(

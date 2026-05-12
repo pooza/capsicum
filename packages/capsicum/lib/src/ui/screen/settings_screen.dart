@@ -42,8 +42,8 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/display'),
           ),
-          // macOS / Linux は push 通知を本配線していない (#467 / #471)。
-          // 本配線が入るまで設定エントリも隠す。
+          // macOS / Linux / Windows は push 通知を本配線していない
+          // (#467 / #471 / #423)。本配線が入るまで設定エントリも隠す。
           if (PushRegistrationService.isPushBackendWired)
             ListTile(
               leading: const Icon(Icons.notifications_outlined),

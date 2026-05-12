@@ -107,18 +107,30 @@ echo "==> Patching plugin RUNPATHs to \$ORIGIN (defensive)"
 shopt -s nullglob
 for so in "$APPDIR/usr/bin/lib/"*.so; do
   current_rpath=$(patchelf --print-rpath "$so" 2>/dev/null || true)
-  # /home /Users /build は手元 / モデルケースの絶対パスを拾うために残し、
-  # それ以外も含めた絶対パス全般 (CI runner の /__w/... や非標準 build dir
-  # 等、未知の配置) を拾えるよう defensive に拡張 (#514)。
-  # $ORIGIN はもとから相対指定なので case で除外すればよい。
-  case "$current_rpath" in
-    '$ORIGIN'|'$ORIGIN'/*|'')
-      ;;
-    /*)
-      patchelf --set-rpath '$ORIGIN' "$so"
-      echo "  patched $(basename "$so") (was: $current_rpath)"
-      ;;
-  esac
+  # patchelf --print-rpath は `/path1:/path2` のようなコロン区切り複合
+  # RUNPATH もそのまま返す。絶対パス全般を `$ORIGIN` 一発に書き換える
+  # 旧実装 (#514) は、`$ORIGIN:/usr/lib/...` のような複合エントリで
+  # 正当な相対部分まで失っていた (#527)。コロン区切りで分割し、各
+  # セグメント単位で絶対パス → `$ORIGIN` に丸めて再結合する。
+  if [ -z "$current_rpath" ]; then
+    continue
+  fi
+  new_rpath=""
+  changed=0
+  IFS=':' read -ra rpath_segments <<< "$current_rpath"
+  for seg in "${rpath_segments[@]}"; do
+    case "$seg" in
+      /*)
+        seg='$ORIGIN'
+        changed=1
+        ;;
+    esac
+    new_rpath="${new_rpath:+$new_rpath:}$seg"
+  done
+  if [ "$changed" -eq 1 ]; then
+    patchelf --set-rpath "$new_rpath" "$so"
+    echo "  patched $(basename "$so") (was: $current_rpath)"
+  fi
 done
 shopt -u nullglob
 
@@ -232,7 +244,12 @@ for module in im-ibus.so im-fcitx5.so im-uim.so; do
     echo "ERROR: $module not bundled at $IM_DIR/$module" >&2
     exit 1
   fi
-  if ! grep -q "\"$module\"" "$IM_CACHE"; then
+  # immodules.cache のエントリは linuxdeploy-plugin-gtk が basename へ正規化する
+  # (`sed -i "s|.../immodules/||g"`) ため通常は `"im-ibus.so"` 形式になるが、
+  # host の GTK lib path が標準と異なって sed が空振りした場合は
+  # `"/usr/lib/.../im-ibus.so"` のパス形式で残る。どちらでも検出できるよう
+  # 両方の prefix (`"` / `/`) を許す fixed-string 検索にする (#539 Codex P1)。
+  if ! grep -qF -e "\"$module\"" -e "/$module\"" "$IM_CACHE"; then
     echo "ERROR: $module not registered in immodules.cache" >&2
     exit 1
   fi

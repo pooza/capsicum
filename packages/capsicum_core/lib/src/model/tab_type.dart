@@ -25,6 +25,7 @@ sealed class TabType {
   static TabType? fromKey(String key) {
     if (key == 'notifications') return const NotificationsTab();
     if (key == 'announcements') return const AnnouncementsTab();
+    if (key == 'messages') return const MessagesTab();
 
     final colon = key.indexOf(':');
     if (colon < 0) return null;
@@ -143,6 +144,26 @@ class AnnouncementsTab extends TabType {
 
   @override
   bool operator ==(Object other) => other is AnnouncementsTab;
+
+  @override
+  int get hashCode => runtimeType.hashCode;
+}
+
+/// Misskey の DM (chat) 一覧画面へのショートカットタブ (#439)。Mastodon
+/// の DM タイムラインタブと違い、本タブはフィードを持たず、タップで
+/// `ChatThreadListScreen` (`/chat`) へ push 遷移するトリガー扱い。
+/// 戻ると元のタブに戻る (タブ自体はフィードを保持しない)。
+///
+/// 表示は ChatSupport 持ちアダプタ (Misskey) のみで意味があるため、
+/// UI 側でフィルタする想定。
+class MessagesTab extends TabType {
+  const MessagesTab();
+
+  @override
+  String toKey() => 'messages';
+
+  @override
+  bool operator ==(Object other) => other is MessagesTab;
 
   @override
   int get hashCode => runtimeType.hashCode;

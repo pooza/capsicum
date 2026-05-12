@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'account_manager_provider.dart';
+import 'channel_provider.dart';
 import 'list_provider.dart';
 
 /// User preference keys.
@@ -212,6 +213,9 @@ const defaultTabConfig = [
   TabConfigEntry(tab: TimelineTab(TimelineType.directMessages), visible: true),
   TabConfigEntry(tab: NotificationsTab(), visible: false),
   TabConfigEntry(tab: AnnouncementsTab(), visible: false),
+  // Misskey 限定。ChatSupport 不在アダプタでは tab_management_sheet 側で
+  // フィルタされて表示されない (#439)。
+  TabConfigEntry(tab: MessagesTab(), visible: false),
 ];
 
 /// A single entry in the tab configuration: a tab and its visibility.
@@ -309,6 +313,8 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
     // 4. Notifications & announcements (default hidden for existing users).
     entries.add(const TabConfigEntry(tab: NotificationsTab(), visible: false));
     entries.add(const TabConfigEntry(tab: AnnouncementsTab(), visible: false));
+    // Messages tab — Misskey 限定動線 (#439)。デフォルト hidden。
+    entries.add(const TabConfigEntry(tab: MessagesTab(), visible: false));
 
     // Persist the migrated config.
     await _save(entries, prefs);
@@ -405,6 +411,9 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
 /// Timeline tabs whose type is not supported by the current adapter
 /// (e.g. social on Mastodon, directMessages on Misskey) are excluded.
 /// List tabs whose list no longer exists on the server are also excluded.
+/// Channel tabs whose ID is not present on the current server are also
+/// excluded (#464 — Misskey 同士でも別サーバーの ChannelTab が残存表示
+/// される問題対策。ListTab と同型に揃える)。
 /// Server lists not yet in the config are appended automatically.
 final visibleTabsProvider = Provider.family<List<TabType>, String>((
   ref,
@@ -416,12 +425,27 @@ final visibleTabsProvider = Provider.family<List<TabType>, String>((
       {TimelineType.home, TimelineType.local, TimelineType.federated};
   final serverLists = ref.watch(listsProvider).valueOrNull ?? [];
   final serverListIds = serverLists.map((l) => l.id).toSet();
+  // 現サーバーのフォロー中チャンネル ID 集合。followedChannelsProvider が
+  // まだ resolve していない (loading) 段階では `null` のままで、capability
+  // チェックだけにフォールバックする (前アカウントの古い ChannelTab を
+  // 切るのが目的なので、loading 中の誤判定で正規チャンネルを消すのを避ける)。
+  final serverChannelsAsync = ref.watch(followedChannelsProvider);
+  final serverChannelIds = serverChannelsAsync.valueOrNull
+      ?.map((c) => c.id)
+      .toSet();
   final config = ref.watch(tabConfigProvider(storageKey));
 
   final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
     if (tab is TimelineTab) return supported.contains(tab.type);
     if (tab is ListTab) return serverListIds.contains(tab.id);
-    if (tab is ChannelTab) return adapter is ChannelSupport;
+    if (tab is ChannelTab) {
+      if (adapter is! ChannelSupport) return false;
+      // serverChannelIds が未確定 (初回ロード前) の間は capability 判定の
+      // みでフォールバック。確定後に本フィルタが効いて他サーバー由来の
+      // ChannelTab が消える。
+      if (serverChannelIds == null) return true;
+      return serverChannelIds.contains(tab.id);
+    }
     return true;
   }).toList();
 
@@ -699,6 +723,13 @@ class HideLivecureNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideLivecureKey, state);
+  }
+
+  Future<void> setHidden(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideLivecureKey, value);
   }
 }
 

@@ -20,6 +20,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
@@ -1176,7 +1177,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
 
       final spoilerText = _cwEnabled ? _cwController.text.trim() : null;
-      await adapter.postStatus(
+      final posted = await adapter.postStatus(
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
@@ -1218,6 +1219,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             ref.invalidate(channelTimelineProvider(channelId));
           }
+          // #433: hideLivecure ON 中に #実況 を含む投稿をすると TL から
+          // 除外されるため SnackBar で告知。検出はモロヘイヤ handler が
+          // タグを追記した後の rendered content (= postStatus 戻り値) で
+          // 行うため、ユーザー入力に #実況 がない自動付与経路もカバーする。
+          maybeShowHideLivecureSnackBar(context, ref, posted);
         }
         if (context.canPop()) {
           context.pop(true);

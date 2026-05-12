@@ -24,10 +24,15 @@ class AttachmentDraft {
   final String? mimeType;
   final bool sensitive;
 
+  /// Misskey 限定: アップロード先フォルダ ID (#432)。`null` でルートに保存。
+  /// Mastodon には folder 概念がないため無視される。
+  final String? folderId;
+
   const AttachmentDraft({
     required this.filePath,
     this.description,
     this.mimeType,
     this.sensitive = false,
+    this.folderId,
   });
 }

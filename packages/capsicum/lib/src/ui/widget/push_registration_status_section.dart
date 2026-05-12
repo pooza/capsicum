@@ -10,19 +10,15 @@ import '../../service/push_registration_status.dart';
 /// プッシュ通知登録状態の表示文言・色・アイコンを返す共通ロジック。
 /// 設定 → プッシュ通知画面とサーバー情報 / プロフィールの
 /// [PushRegistrationStatusSection] が同一の判定を使うために抽出してある。
-///
-/// `compact` を true にすると登録対象外の文言を短縮版（プロフィール等の
-/// 限られた幅に収める用）で返す。デフォルトは設定画面用の長文。
 (String, Color, IconData) describePushRegistrationStatus(
   ThemeData theme,
   PushRegistrationState state,
   bool eligible,
-  PushRegistrationFailureReason? reason, {
-  bool compact = false,
-}) {
+  PushRegistrationFailureReason? reason,
+) {
   if (!eligible) {
     return (
-      compact ? '登録対象外（プリセットサーバーのアカウント未登録）' : '登録対象外（プリセットサーバーのアカウントが未登録）',
+      '登録対象外（プリセットサーバーのアカウントが未登録）',
       theme.colorScheme.outline,
       Icons.remove_circle_outline,
     );
@@ -86,9 +82,10 @@ class PushRegistrationStatusSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 本配線が無いプラットフォームでは UI ごと隠す（#467: macOS / #471: Linux）。
-    // 表示しても登録は必ず token 取得失敗となり、ユーザーが再試行を繰り返す
-    // 混乱状態になるため、本配線が入るまでの暫定対応。
+    // 本配線が無いプラットフォームでは UI ごと隠す
+    // （#467: macOS / #471: Linux / #423: Windows）。表示しても登録は必ず
+    // token 取得失敗となり、ユーザーが再試行を繰り返す混乱状態になるため、
+    // 本配線が入るまでの暫定対応。
     if (!PushRegistrationService.isPushBackendWired) {
       return const SizedBox.shrink();
     }
@@ -119,7 +116,6 @@ class PushRegistrationStatusSection extends ConsumerWidget {
       state,
       eligible,
       snapshot?.reason,
-      compact: true,
     );
 
     final retryable =

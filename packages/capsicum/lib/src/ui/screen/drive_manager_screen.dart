@@ -1,11 +1,44 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import 'media_viewer_screen.dart';
+
+/// drive 操作系 SnackBar に流す短い人間向け要約。DioException の URL や
+/// ヘッダ等の機微情報を流さず、status code / type だけ含める (#460)。
+String _summarizeDriveError(Object error) {
+  if (error is DioException) {
+    final status = error.response?.statusCode;
+    if (status != null) return 'サーバーエラー (HTTP $status)';
+    return 'ネットワークエラー (${error.type.name})';
+  }
+  return 'エラーが発生しました';
+}
+
+/// drive 操作系 SnackBar 出力前に Sentry に詳細を流す共通フック (#460)。
+void _reportDriveOpFailure(String operation, Object error, StackTrace st) {
+  try {
+    Sentry.captureException(
+      error,
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('drive.op', operation);
+        scope.fingerprint = [
+          'drive.op',
+          operation,
+          error.runtimeType.toString(),
+        ];
+      },
+    );
+  } catch (_) {
+    // Sentry 失敗で UI 更新を止めない。
+  }
+}
 
 class DriveManagerScreen extends ConsumerStatefulWidget {
   const DriveManagerScreen({super.key});
@@ -18,6 +51,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   final _scrollController = ScrollController();
   final List<_FolderEntry> _folderStack = [];
   bool _isDragging = false;
+  // 自動 loadMore (#452) の post-frame callback を毎フレーム積むのを避ける
+  // ためのラッチ (#459)。folder 移動 / refresh で false に戻す。
+  bool _autoLoadRequested = false;
 
   String? get _currentFolderId =>
       _folderStack.isEmpty ? null : _folderStack.last.id;
@@ -47,26 +83,30 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   /// 取得済みコンテンツが viewport に収まりきってスクロールが発生しない場合、
   /// 自動再試行のフックがないため自前で次ページを要求する (#452)。
-  /// hasMore / isLoadingMore / loadMoreError で無限ループを防ぐ。
+  /// hasMore / isLoadingMore / loadMoreError で無限ループを防ぐ。state 側の
+  /// 予条件判定は [shouldAutoLoadMore] にまとめて回帰テスト可能にしてある
+  /// (#456)。
   void _maybeLoadMoreIfNotScrollable() {
     if (!mounted || !_scrollController.hasClients) return;
     if (_scrollController.position.maxScrollExtent > 0) return;
     final state = ref.read(driveContentsProvider(_currentFolderId)).valueOrNull;
-    if (state == null) return;
-    if (!state.hasMore || state.isLoadingMore) return;
-    if (state.loadMoreError != null) return;
+    if (!shouldAutoLoadMore(state)) return;
     ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
   }
 
   void _openFolder(DriveFolder folder) {
     setState(() {
       _folderStack.add(_FolderEntry(id: folder.id, name: folder.name));
+      _autoLoadRequested = false;
     });
   }
 
   void _goBack() {
     if (_folderStack.isNotEmpty) {
-      setState(() => _folderStack.removeLast());
+      setState(() {
+        _folderStack.removeLast();
+        _autoLoadRequested = false;
+      });
     } else {
       Navigator.of(context).pop();
     }
@@ -74,12 +114,100 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   void _refresh() {
     ref.invalidate(driveContentsProvider(_currentFolderId));
-    setState(() {});
+    setState(() {
+      _autoLoadRequested = false;
+    });
   }
 
   DriveSupport? get _drive {
     final adapter = ref.read(currentAdapterProvider);
     return adapter is DriveSupport ? adapter as DriveSupport : null;
+  }
+
+  /// 移動先フォルダ選択ダイアログを開き、結果を返す。`_FolderPick(id: null)`
+  /// がルート、`_FolderPick(id: <非null>)` が特定フォルダ、`null` の戻りは
+  /// キャンセル (tap outside or キャンセルボタン)。
+  ///
+  /// 簡易実装: 現在の親フォルダ階層 (root + 直下フォルダ) のみを候補に出す。
+  /// 子フォルダへ移動したい場合は親に降りてから再操作する想定 (#437)。
+  Future<_FolderPick?> _showFolderPickerDialog({
+    required String title,
+    String? excludeFolderId,
+  }) async {
+    final folders = await _drive?.getDriveFolders() ?? const [];
+    if (!mounted) return null;
+    return showDialog<_FolderPick>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.home_outlined),
+                  title: const Text('ルート (/)'),
+                  onTap: () =>
+                      Navigator.pop(dialogContext, const _FolderPick(null)),
+                ),
+                const Divider(height: 1),
+                for (final f in folders)
+                  if (f.id != excludeFolderId)
+                    ListTile(
+                      leading: const Icon(Icons.folder),
+                      title: Text(f.name),
+                      onTap: () =>
+                          Navigator.pop(dialogContext, _FolderPick(f.id)),
+                    ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('キャンセル'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _promptMoveFile(Attachment file) async {
+    final picked = await _showFolderPickerDialog(title: 'ファイルの移動先');
+    if (picked == null) return; // キャンセル
+    await _moveFileToFolder(file, picked.id);
+  }
+
+  Future<void> _promptMoveFolder(DriveFolder folder) async {
+    final picked = await _showFolderPickerDialog(
+      title: 'フォルダの移動先',
+      excludeFolderId: folder.id,
+    );
+    if (picked == null) return; // キャンセル
+    final destParentId = picked.id;
+    if (destParentId == folder.parentId) return; // 変更なし
+    try {
+      await _drive?.moveDriveFolder(folder.id, destParentId);
+      // 現在フォルダから出ていったので一覧から除外。
+      ref
+          .read(driveContentsProvider(_currentFolderId).notifier)
+          .removeFolder(folder.id);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('フォルダを移動しました')));
+      }
+    } catch (e, st) {
+      _reportDriveOpFailure('move_folder', e, st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('移動に失敗しました (${_summarizeDriveError(e)})')),
+        );
+      }
+    }
   }
 
   Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
@@ -93,11 +221,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('ファイルを移動しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('move_file_out', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('移動に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('移動に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -136,6 +265,14 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 _renameFile(file);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移動'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _promptMoveFile(file);
               },
             ),
             ListTile(
@@ -191,6 +328,14 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 _renameFolder(folder);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移動'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _promptMoveFolder(folder);
               },
             ),
             ListTile(
@@ -264,11 +409,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .updateFileDescription(file.id, newAlt);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('edit_alt', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -281,11 +427,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .renameFile(file.id, newName);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('rename_file', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -319,11 +466,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('削除しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('delete_file', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('削除に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -336,11 +484,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .renameFolder(folder.id, newName);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('rename_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -369,11 +518,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .removeFolder(folder.id);
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('delete_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -384,11 +534,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     try {
       await _drive?.createDriveFolder(name, parentId: _currentFolderId);
       _refresh();
-    } catch (e) {
+    } catch (e, st) {
+      _reportDriveOpFailure('create_folder', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作に失敗しました: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作に失敗しました (${_summarizeDriveError(e)})')),
+        );
       }
     }
   }
@@ -467,9 +618,30 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             // 画面幅が広いと初期 20 件が viewport 内に収まり、スクロール
             // 由来の loadMore() が起動しない。レイアウト確定後にスクロール
             // 可能か再評価し、必要なら次ページを要求する (#452)。
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _maybeLoadMoreIfNotScrollable();
-            });
+            // 毎フレーム積むのを避けるため _autoLoadRequested ラッチで
+            // 一度だけ実行する。folder 移動 / refresh で false に戻す (#459)。
+            if (!_autoLoadRequested) {
+              _autoLoadRequested = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                // ref.read が dispose 後に呼ばれる極稀ケース等に備え、全体を
+                // try/catch で包み Sentry に上げる (#459)。
+                try {
+                  _maybeLoadMoreIfNotScrollable();
+                } catch (e, st) {
+                  Sentry.captureException(
+                    e,
+                    stackTrace: st,
+                    withScope: (scope) {
+                      scope.setTag('drive.auto_load', 'failed');
+                      scope.fingerprint = [
+                        'drive.auto_load',
+                        e.runtimeType.toString(),
+                      ];
+                    },
+                  );
+                }
+              });
+            }
 
             if (totalFolders == 0 && totalFiles == 0) {
               return const Center(child: Text('ファイルがありません'));
@@ -568,6 +740,14 @@ class _FolderEntry {
   final String id;
   final String name;
   const _FolderEntry({required this.id, required this.name});
+}
+
+/// 移動先選択ダイアログの戻り値。`id == null` がルート、それ以外は対象
+/// フォルダ ID (#437)。ダイアログ全体の `null` 戻りはキャンセルを意味する
+/// ため、root pick と区別するために wrapper 化している。
+class _FolderPick {
+  final String? id;
+  const _FolderPick(this.id);
 }
 
 class _FolderTile extends StatelessWidget {

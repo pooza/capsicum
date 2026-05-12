@@ -2,10 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(grep *)",
+      "Bash(find *)",
       "Bash(flutter *)",
       "Bash(pkg-config *)",
       "Bash(apt-cache *)",
+      "Bash(port *)",
       "Bash(dpkg *)",
+      "Bash(lsb_release *)",
       "Bash(linuxdeploy *)",
       "Bash(appimagetool *)",
       "Bash(appstreamcli *)",
@@ -27,9 +30,6 @@
       "Bash(gh run *)",
       "Bash(gh label *)",
       "Bash(gh search *)",
-      "Bash(lsb_release -a)",
-      "Bash(ldconfig -p)",
-      "Bash(secret-tool search *)",
       "Bash(git fetch *)",
       "Bash(git add *)",
       "Bash(git mv *)",
@@ -43,11 +43,7 @@
       "Bash(git branch *)",
       "Bash(git remote *)",
       "Bash(git status *)",
-      "Bash(bash packaging/linux/appimage/build.sh)",
-      "Bash(bash -n packaging/linux/appimage/build.sh)",
       "Bash(python3 -m json.tool)",
-      "Bash(curl -s \"https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20\")",
-      "Bash(curl -sH \"Authorization: Bearer $\\(awk '/\\\\[auth\\\\]/{getline; print}' ~/.sentryclirc)",
       "WebFetch(domain:gist.github.com)"
     ],
     "defaultMode": "auto"
