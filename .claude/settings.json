@@ -44,7 +44,7 @@
       "Bash(git remote *)",
       "Bash(git status *)",
       "Bash(python3 -m json.tool)",
-      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:gist.github.com)"
     ],
     "defaultMode": "auto"
   }
