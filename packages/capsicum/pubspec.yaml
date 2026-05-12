@@ -34,7 +34,7 @@ dependencies:
   dio: ^5.8.0+1
   flutter_web_auth_2: ^4.0.0
   url_launcher: ^6.3.1
-  flutter_local_notifications: ^18.0.0
+  flutter_local_notifications: ^21.0.0
   image_picker: ^1.2.1
   # Linux / Windows のメディア選択は image_picker 非対応のため file_selector を
   # 経由する。MediaPicker 抽象層 (#329) でプラットフォームごとに実装を
@@ -107,3 +107,11 @@ msix_config:
   # Microsoft Store 提出用。ストア側で再署名されるため自前証明書は不要。
   store: true
   output_name: capsicum
+  # 通知アクティベータの COM CLSID。flutter_local_notifications_windows が
+  # 通知タップ時にこの CLSID を介してアプリにコールバックする。
+  # `lib/src/platform/notification_subsystem/flutter_local_notification_subsystem.dart`
+  # の WindowsInitializationSettings.guid と完全一致させること (#423)。
+  toast_activator:
+    clsid: 'c97e7770-db27-4202-96cc-739a44734e65'
+    arguments: '----AppNotificationActivationServer'
+    display_name: 'capsicum'
