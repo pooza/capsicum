@@ -110,6 +110,11 @@ msix_config:
   # 生成されない (実機で `Add-AppxPackage` が拒否される)。Microsoft Store
   # 公開 (#544) を再開する際は別経路で --store を渡す。
   store: false
+  # CI には TTY がないため、msix:create の証明書インストール確認プロンプト
+  # (y/N) が呼ばれると Prompter で stdin null → 'Null is not a subtype of
+  # FutureOr<String>' で落ちる。CI 上でローカルに cert を import する用途は
+  # ないので無効化する。
+  install_certificate: false
   output_name: capsicum
   # 通知アクティベータの COM CLSID。flutter_local_notifications_windows が
   # 通知タップ時にこの CLSID を介してアプリにコールバックする。
