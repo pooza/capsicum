@@ -36,16 +36,17 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// localhost callback (server impl) 経由で OAuth 認可コードを受けるか
-  /// どうか。`desktop_webview_window` の GLX 系 native crash (#489 / #496)
-  /// を回避するため、Linux のみ true。Windows 対応再開時に true 化する
-  /// 可能性があるため、地域名でなく機能ベース命名を採用 (#507)。
-  bool get _useLocalhostCallback => Platform.isLinux;
+  /// どうか。Linux は `desktop_webview_window` の GLX 系 native crash
+  /// (#489 / #496) を、Windows は MSIX に `flutter_web_auth_2` の native
+  /// plugin が含まれない制約 (#423) を、いずれも localhost callback で
+  /// 回避する。地域名でなく機能ベース命名を採用 (#507)。
+  bool get _useLocalhostCallback => Platform.isLinux || Platform.isWindows;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
-  /// `linuxOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
+  /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
   /// それ以外は `capsicum://oauth` カスタムスキーム。
   String get _redirectUri => _useLocalhostCallback
-      ? AppConstants.linuxOAuthCallbackUrl
+      ? AppConstants.localhostOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
 
   bool _isLoggingIn = false;
@@ -120,7 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  /// localhost callback 用のポート ([AppConstants.linuxOAuthPort]) が
+  /// localhost callback 用のポート ([AppConstants.localhostOAuthPort]) が
   /// 別プロセスに占有されているかを試し、占有時は専用エラー文を返す。
   /// 空いていれば null を返す。TOCTOU はあるが、flutter_web_auth_2 側で
   /// EADDRINUSE を握って authorization code を取り逃がす UX 劣化を
@@ -129,7 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final socket = await ServerSocket.bind(
         InternetAddress.loopbackIPv4,
-        AppConstants.linuxOAuthPort,
+        AppConstants.localhostOAuthPort,
       );
       await socket.close();
       return null;
@@ -137,11 +138,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _logLoginStep(
         'oauth_port.occupied',
         data: {
-          'port': AppConstants.linuxOAuthPort,
+          'port': AppConstants.localhostOAuthPort,
           'error': e.osError?.message ?? e.message,
         },
       );
-      return 'OAuth コールバック用ポート ${AppConstants.linuxOAuthPort} が'
+      return 'OAuth コールバック用ポート ${AppConstants.localhostOAuthPort} が'
           '他プロセスに占有されています。占有中のアプリを閉じてから再試行してください。';
     }
   }
@@ -229,7 +230,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: _useLocalhostCallback
-              ? AppConstants.linuxOAuthCallbackUrl
+              ? AppConstants.localhostOAuthCallbackUrl
               : AppConstants.callbackUrlScheme,
           options: _useLocalhostCallback
               ? const FlutterWebAuth2Options(useWebview: false)
@@ -546,8 +547,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         extractedCode = uri.queryParameters['code'] ?? code;
         final isCustomScheme = uri.scheme == 'capsicum';
         final isLocalhostCallback =
-            _useLocalhostCallback &&
-            uri.toString().startsWith(_redirectUri);
+            _useLocalhostCallback && uri.toString().startsWith(_redirectUri);
         codeFromOriginalRedirect = isCustomScheme || isLocalhostCallback;
       } else {
         extractedCode = code;
