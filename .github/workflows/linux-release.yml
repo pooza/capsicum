@@ -59,18 +59,20 @@ jobs:
             uim-gtk3-immodule
 
       - name: Install linuxdeploy / appimagetool (with sha256 pin)
-        # continuous / master という rolling アップデート tag から DL するが、
-        # packaging/linux/appimage/tooling.sha256 の固定値で検証することで
-        # 上流が更新されたら CI を明示的に落とし、pin の更新を必須化する。
+        # 各ツールを上流の固定 tag / commit から DL する (#515)。rolling な
+        # continuous / master を pin していた構成は、上流が再ビルドするたびに
+        # 全リリースがブロックされる構造だった。pin の追従は四半期 chase
+        # routine で実施し、上記の固定参照と packaging/linux/appimage/
+        # tooling.sha256 をペアで更新する。
         run: |
           mkdir -p ~/.local/bin
           cd ~/.local/bin
           curl -fL -o linuxdeploy \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
           curl -fL -o linuxdeploy-plugin-gtk.sh \
-            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/3b67a1d1c1b0c8268f57f2bce40fe2d33d409cea/linuxdeploy-plugin-gtk.sh
           curl -fL -o appimagetool \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
           sha256sum -c "$GITHUB_WORKSPACE/packaging/linux/appimage/tooling.sha256"
           chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
