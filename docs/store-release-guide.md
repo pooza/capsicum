@@ -384,61 +384,114 @@ bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
 
 ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認、Flatpak は [packaging/linux/flathub/README.md](../packaging/linux/flathub/README.md) を参照。
 
-### 4.6 Windows 配布（v1.24〜）
+### 4.6 Windows 配布（v1.25〜）
 
-Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は **Microsoft Store 一本**（自前 MSI / 自己署名 exe 配布は採用しない — Microsoft Store 経由ならストア側で再署名されるため Authenticode 証明書が不要、Toast 通知が動く、自動更新が乗るため）。
+Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は **GitHub Releases 経由の自己署名 MSIX 直配**（[#423](https://github.com/pooza/capsicum/issues/423)）。Microsoft Store 公開は個人開発者アカウントでは Entra ID テナント関連付け UI に到達できないため [#544](https://github.com/pooza/capsicum/issues/544) で on-hold（法人化後に再挑戦）。短期は AppImage と同じく「ストアスキップして GitHub Releases 直配」で配布鶏卵問題を崩す。
+
+中期（v1.26、[#534](https://github.com/pooza/capsicum/issues/534)）はビーショック名義で OV コード署名証明書取得 → SmartScreen 通過な MSIX 直配に格上げ予定。
 
 #### MSIX
 
 タグ駆動 (`v*.*.*`) で `windows-release.yml` の `msix` ジョブが起動し:
 
 1. windows-latest (x64) で `flutter build windows --release`（jni transitive のため Microsoft OpenJDK 21 を `actions/setup-java` で導入）
-2. `dart run msix:create` で `pubspec.yaml` の `msix_config` から `capsicum.msix` を生成（`store: true` で未署名）
-3. `capsicum.msix` を **draft Release** に添付（pooza が GitHub UI で publish 判断）
-4. Repository Secrets 投入済みなら msstore CLI で Microsoft Store に **draft submission** として送る（Partner Center で pooza が提出操作）
+2. Repository Secrets `WINDOWS_SELFSIGNED_PFX_BASE64` / `WINDOWS_SELFSIGNED_PFX_PASSWORD` から PFX を復元（未投入時は ephemeral cert にフォールバック、warning 出力）
+3. `dart run msix:create --certificate-path ... --certificate-password ...` で **署名済み** `capsicum.msix` を生成（msix package が内部で signtool を呼ぶ）
+4. PFX から公開鍵 `.cer` を抽出
+5. `capsicum.msix` + `capsicum-signing.cer` を **draft Release** に添付（pooza が GitHub UI で publish 判断）
+6. Microsoft Store credential が投入されていれば msstore CLI で draft submission として送る（現状 on-hold、[#544](https://github.com/pooza/capsicum/issues/544)）
 
 draft で生成・submit するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
 
-#### Microsoft Store credential 投入手順（一度だけ）
+#### 自己署名証明書の投入手順（一度だけ、[#423](https://github.com/pooza/capsicum/issues/423)）
 
-Phase 5 として実施。以下を Repository Secrets に投入すると、`windows-release.yml` の publish step が自動的に有効化される（未投入時は publish step が skip され、MSIX は GitHub Releases にのみ添付される）。
+PFX を Mac 側で生成して Repository Secrets に投入する。Subject は `pubspec.yaml` の `msix_config.publisher` (`CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42`) と完全一致させる必要がある。
 
-1. **Microsoft Entra ID（旧 Azure AD）でアプリ登録**:
-   - Microsoft Entra admin center → 「アプリの登録」→ 「新規登録」
-   - 名前: `capsicum-msstore-cli`（任意）/ サポートされているアカウントの種類: 「この組織ディレクトリのみ」
-   - 登録後、概要ページの **Application (client) ID** と **Directory (tenant) ID** を控える
-2. **client secret の発行**:
-   - 上記アプリの「証明書とシークレット」→ 「新しいクライアント シークレット」→ 期限 24 か月
-   - 値（Value）を控える（**ページ離脱後は再表示できない**）
-3. **Partner Center に Entra アプリを紐付け**:
-   - [Partner Center](https://partner.microsoft.com/) → Account settings → Tenants → 上記 Entra テナントを追加
-   - User management → Azure AD applications → 上記アプリを追加 → Manager 権限を付与
-4. **GitHub Repository Secrets に投入** (`https://github.com/pooza/capsicum/settings/secrets/actions`):
-   - `MS_STORE_CLIENT_ID`: 上記 Application (client) ID
-   - `MS_STORE_CLIENT_SECRET`: 上記 client secret の Value
-   - `MS_STORE_TENANT_ID`: 上記 Directory (tenant) ID
+1. **PFX 生成** (Mac で openssl):
 
-投入後の最初のタグ駆動ビルドで publish step が走り、Partner Center 上に submission が draft 状態で出現する。pooza が Partner Center でリリースノート・スクリーンショット等を確認のうえ提出する。
+   ```sh
+   # 任意のパスワードを決める
+   PASSWORD="$(openssl rand -base64 24)"
+   echo "$PASSWORD"  # 控える (secrets.env と同等の機密扱い)
 
-#### Microsoft Store 固有の掲載情報
+   # 秘密鍵 + 自己署名証明書を生成 (5 年有効、Code Signing EKU)
+   openssl req -x509 -newkey rsa:4096 -keyout capsicum-signing.key -out capsicum-signing.crt \
+     -days 1825 -nodes \
+     -subj "/CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42" \
+     -addext "extendedKeyUsage=codeSigning"
 
-- [ ] スクリーンショット（1366×768 / 1920×1080 / 3840×2160 のいずれか、最低 1 枚）
-- [ ] ストアロゴ（300×300 PNG）— `msix_config.logo_path` で指定した `windows/runner/resources/app_icon.png` がそのまま使われる
-- [ ] アプリ説明文 — `store-listing.md` の内容を流用
-- [ ] 年齢区分: IARC 質問への回答（既存の Google Play / App Store 回答と整合させる）
-- [ ] サポート URL: `https://github.com/pooza/capsicum/issues`
+   # PFX (PKCS#12) にまとめる
+   openssl pkcs12 -export -out capsicum-signing.pfx \
+     -inkey capsicum-signing.key -in capsicum-signing.crt \
+     -password pass:"$PASSWORD"
+
+   # base64 化 (macOS では直接クリップボードへ)
+   base64 -i capsicum-signing.pfx | pbcopy
+   ```
+
+2. **GitHub Repository Secrets に投入** (`https://github.com/pooza/capsicum/settings/secrets/actions`):
+   - `WINDOWS_SELFSIGNED_PFX_BASE64`: 上記 base64 文字列
+   - `WINDOWS_SELFSIGNED_PFX_PASSWORD`: 上記 `PASSWORD`
+
+3. **生成物の保管**: `capsicum-signing.pfx` 本体と `PASSWORD` は **secrets.env と同等の機密扱い** で保管。再生成するとエンドユーザーが信頼ストアに再 import 必要になる。
+
+投入後の最初のタグ駆動ビルドで `msix` ジョブが署名済み MSIX を生成する。
+
+#### Microsoft Store credential 投入手順（[#544](https://github.com/pooza/capsicum/issues/544) が再開した時のみ）
+
+[#544](https://github.com/pooza/capsicum/issues/544) の再開トリガー (法人化 → Microsoft 365 Business → 組織契約 Entra ID テナント) が満たされた時点で実施。手順は #544 issue 本文を参照。Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される。
+
+#### GitHub Release のリリースノート（Windows セクションテンプレート）
+
+タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。
+
+````markdown
+## Windows (MSIX 自己署名直配)
+
+> ⚠️ 配布対象は「証明書 import を厭わない上級ユーザー」です。Microsoft Store 公開は法人化対応待ちで、当面 GitHub Releases 経由の自己署名配布のみとなります。
+
+### インストール手順
+
+1. 本 Release のアセットから以下をダウンロード:
+   - `capsicum.msix` — アプリケーション本体
+   - `capsicum-signing.cer` — 自己署名証明書 (信頼ストア import 用)
+
+2. PowerShell を **管理者として実行** で開き、ダウンロードフォルダに `cd`
+
+3. 証明書を Trusted People (LocalMachine) に import:
+
+   ```powershell
+   Import-Certificate -FilePath .\capsicum-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+   ```
+
+4. MSIX をインストール:
+
+   ```powershell
+   Add-AppxPackage -Path .\capsicum.msix
+   ```
+
+5. スタートメニューから `capsicum` を起動
+
+### アンインストール手順
+
+設定 → アプリ → インストールされているアプリ → `capsicum` → アンインストール。証明書も削除する場合は `Cert:\LocalMachine\TrustedPeople` から該当エントリを削除。
+
+### 動作要件
+
+- Windows 10 (1809+) / Windows 11 x64
+- 管理者権限 (証明書 import + MSIX install のため、初回のみ)
+````
 
 #### Windows ローカルビルド確認
 
 ```sh
 cd packages/capsicum
 flutter build windows --release
-dart run msix:create
-# build/windows/x64/runner/Release/capsicum.msix が生成される
-# Add-AppxPackage -Path .\build\windows\x64\runner\Release\capsicum.msix （PowerShell）でインストール可能
+dart run msix:create  # 未署名で生成 (開発者モード ON の Windows でのみ動作)
+# build/windows/x64/runner/Release/capsicum.msix
 ```
 
-ローカル MSIX は未署名のため、開発者モード ON のマシンでのみインストールできる。Microsoft Store 提出 MSIX はストア側で再署名されるため、エンドユーザーは開発者モード不要。
+ローカル MSIX は未署名のため、Windows 側で「開発者モード ON」 (Settings → For developers → Developer Mode) の状態でのみ `Add-AppxPackage` できる。CI 経由の署名済み MSIX は信頼ストア import 後であれば開発者モード不要。
 
 ## 5. 配布方針
 
