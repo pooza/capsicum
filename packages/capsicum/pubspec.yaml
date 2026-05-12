@@ -104,8 +104,12 @@ msix_config:
   capabilities: internetClient
   architecture: x64
   languages: ja-jp, en-us
-  # Microsoft Store 提出用。ストア側で再署名されるため自前証明書は不要。
-  store: true
+  # 自己署名 MSIX 直配 (#423) では false 必須。msix:create は
+  # `signMsix && !store` の条件で signtool を呼ぶため、true のままだと
+  # --certificate-path を渡しても署名 step が skip され AppxSignature.p7x が
+  # 生成されない (実機で `Add-AppxPackage` が拒否される)。Microsoft Store
+  # 公開 (#544) を再開する際は別経路で --store を渡す。
+  store: false
   output_name: capsicum
   # 通知アクティベータの COM CLSID。flutter_local_notifications_windows が
   # 通知タップ時にこの CLSID を介してアプリにコールバックする。
