@@ -46,12 +46,26 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       const linuxSettings = LinuxInitializationSettings(
         defaultActionName: '開く',
       );
+      // Windows は flutter_local_notifications v19 で対応開始、v21 federated
+      // package (flutter_local_notifications_windows) で MSIX に同梱される
+      // (#423)。
+      // - appName: アクションセンタ上での通知グルーピング表示名
+      // - appUserModelId: msix_config の identity_name と一致させる
+      // - guid: 通知アクティベータ COM CLSID。pubspec.yaml の
+      //   msix_config.toast_activator.clsid と完全一致が必須 (一致しないと
+      //   タップ時のアプリ前面化 / payload 受け取りが動かない)
+      const windowsSettings = WindowsInitializationSettings(
+        appName: 'capsicum',
+        appUserModelId: '9AFBB08E.capsicum',
+        guid: 'c97e7770-db27-4202-96cc-739a44734e65',
+      );
       await _plugin.initialize(
-        const InitializationSettings(
+        settings: const InitializationSettings(
           android: androidSettings,
           iOS: iosSettings,
           macOS: macOSSettings,
           linux: linuxSettings,
+          windows: windowsSettings,
         ),
         onDidReceiveNotificationResponse: onTap == null
             ? null
@@ -98,13 +112,21 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
     // iOS / macOS は同じ DarwinNotificationDetails で扱える。
     const darwinDetails = DarwinNotificationDetails();
     const linuxDetails = LinuxNotificationDetails();
+    const windowsDetails = WindowsNotificationDetails();
     const details = NotificationDetails(
       android: androidDetails,
       iOS: darwinDetails,
       macOS: darwinDetails,
       linux: linuxDetails,
+      windows: windowsDetails,
     );
-    return _plugin.show(id, title, body, details, payload: payload);
+    return _plugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: details,
+      payload: payload,
+    );
   }
 
   @override

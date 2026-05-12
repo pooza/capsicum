@@ -35,7 +35,7 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 | --- | --- | --- | --- |
 | flutter_secure_storage | 機密情報保存 | Linux は `libsecret-1-dev` 必須。AppImage / Flatpak それぞれサンドボックス越しの keyring アクセス経路が独立で、debug ビルド・AppImage・Flatpak 三者で別 keyring を見ることになる (相互不可視) | そのまま使用。AppImage は `--talk-name=org.freedesktop.secrets` で gnome-keyring と接続。永続性は #424/#425 で確認 |
 | flutter_local_notifications | ローカル通知 | macOS / Linux / Windows 対応済みだが機能差あり。Linux は libnotify、Windows は Toast XML。アクションボタン等はプラットフォーム依存 | 通知サブシステム抽象化層を介して機能差を吸収 |
-| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、Linux は localhost コールバック (#382 方式)、macOS は当面 WebView (将来 #382 で切替予定)。Linux では transitive で `desktop_webview_window` を引き、`libwebkit2gtk-4.1.so.0` をリンクするため Flathub では `org.gnome.Platform//49` ベース必須 (`org.freedesktop.Platform` には webkit が無い)。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | **Linux のみ `useWebview: false` + `http://localhost:7099/oauth/callback` で server impl 経由** (#489 / #496 の `desktop_webview_window` GLX assertion native crash 回避のため。0aaa2f9 で実装、`AppConstants.linuxOAuthPort` 参照)。macOS は引き続き WebView 経由 (現状致命 crash 報告無し)。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポートは固定。OAuth client_secret cache の URI と新 redirect_uri が不一致になる場合は再ログインで解消する |
+| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、Linux / Windows は localhost コールバック (#382 方式)、macOS は当面 WebView (将来 #382 で切替予定)。Linux では transitive で `desktop_webview_window` を引き、`libwebkit2gtk-4.1.so.0` をリンクするため Flathub では `org.gnome.Platform//49` ベース必須 (`org.freedesktop.Platform` には webkit が無い)。Windows は v4.1.0 時点で native plugin が無く MSIX に同梱されないため、Linux と同じ server impl 経路で回避。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | **Linux / Windows は `useWebview: false` + `http://localhost:7099/oauth/callback` で server impl 経由** (Linux は #489 / #496 の `desktop_webview_window` GLX assertion native crash 回避、Windows は #423 の native plugin 同梱欠落回避。0aaa2f9 / feature/423-windows-distribution で実装、`AppConstants.localhostOAuthPort` 参照)。macOS は引き続き WebView 経由 (現状致命 crash 報告無し)。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポートは固定。OAuth client_secret cache の URI と新 redirect_uri が不一致になる場合は再ログインで解消する |
 | image_picker | 画像選択 | iOS/Android/macOS は対応、**Linux/Windows は未対応** | デスクトップは `file_selector` に置き換え。抽象層（例: `MediaPicker`）で使い分け |
 
 ## Tier C: 要抽象化・要置き換え（ブロッカー）
@@ -127,6 +127,7 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 
 - **image_picker_macos**: 本体経由で自動的に動くが、内部実装は `file_selector` 相当。UX が iOS とやや異なる
 - **flutter_local_notifications の Windows 実装**: Windows 10/11 の Toast 通知を使う。MSIX パッケージングが必須で、素の exe 配布だと通知が出ない。Microsoft Store 経由推奨の根拠のひとつ
+- **MSIX パッケージング (`msix: ^3.16.13`)**: dev_dependency として導入。`pubspec.yaml` の `msix_config` セクションから `dart run msix:create` で `capsicum.msix` を生成する。Microsoft Store 経由配布のため `store: true` で未署名出力（ストア側で再署名）。詳細は [#423](https://github.com/pooza/capsicum/issues/423) と [release-pipeline.md](release-pipeline.md) Phase 4
 - **Linux で Flathub 配布する場合のサンドボックス制約**: secure_storage / notifications / file access 等、必要な権限（finish-args）を manifest に明示する必要がある
 
 ## 更新時の注意

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:capsicum_core/capsicum_core.dart';
@@ -72,6 +73,26 @@ Future<void> main() async {
   const dsn = String.fromEnvironment('SENTRY_DSN');
 
   if (dsn.isNotEmpty) {
+    // Linux / Windows の sentry-native はデフォルトで CWD 直下に
+    // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
+    // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
+    // path_provider の getApplicationSupportDirectory() で得られる OS 規約
+    // 準拠の app data ディレクトリに明示的に固定する。Linux では
+    // ~/.local/share/capsicum/、Windows MSIX では %LOCALAPPDATA%\Packages\
+    // <PFN>\LocalCache\... に着地し、AppRun wrapper のログ出力先
+    // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃う。
+    String? sentryNativeDbPath;
+    if (Platform.isLinux || Platform.isWindows) {
+      try {
+        final supportDir = await getApplicationSupportDirectory();
+        sentryNativeDbPath = '${supportDir.path}/.sentry-native';
+      } catch (e, st) {
+        // path_provider 失敗時は nativeDatabasePath を未設定のままにし、
+        // sentry-native のフォールバック (CWD 直下) に任せる。起動経路を
+        // 止める要件ではない。
+        debugPrint('getApplicationSupportDirectory failed: $e\n$st');
+      }
+    }
     await SentryFlutter.init((options) {
       options.dsn = dsn;
       options.tracesSampleRate = 1.0;
@@ -80,16 +101,8 @@ Future<void> main() async {
         defaultValue: 'debug',
       );
       options.beforeSend = _scrubEvent;
-      // Linux / Windows の sentry-native はデフォルトで CWD 直下に
-      // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
-      // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
-      // XDG_DATA_HOME 配下に明示的に固定する。AppRun wrapper のログ出力先
-      // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃える。
-      if (Platform.isLinux || Platform.isWindows) {
-        final base =
-            Platform.environment['XDG_DATA_HOME'] ??
-            '${Platform.environment['HOME']}/.local/share';
-        options.nativeDatabasePath = '$base/capsicum/.sentry-native';
+      if (sentryNativeDbPath != null) {
+        options.nativeDatabasePath = sentryNativeDbPath;
       }
     }, appRunner: () => _startApp());
   } else {
