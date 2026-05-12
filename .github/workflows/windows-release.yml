@@ -12,10 +12,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Microsoft Store 提出用 MSIX を windows-latest (x64) で組み立てて
-  # GitHub Releases (draft) に添付する。msstore CLI 経由で
-  # Microsoft Store への draft submission も行うが、これは Entra ID
-  # (Azure AD) アプリ登録 + Repository Secrets 投入後にのみ自動有効化される
+  # 自己署名 MSIX を windows-latest (x64) で組み立てて
+  # GitHub Releases (draft) に .msix + .cer を添付する (#423)。
+  # Microsoft Store 公開 (#544) は on-hold だが、msstore CLI publish step は
+  # Repository Secrets 投入後に自動有効化される構造を維持しておく
   # (未投入なら publish step は skip)。手順は store-release-guide.md §4.6 参照。
   msix:
     runs-on: windows-latest
@@ -24,9 +24,15 @@ jobs:
       # (タグ駆動時のみ実行)
       contents: write
     env:
-      # Microsoft Store credentials. job レベルで env に上げておくことで
-      # publish step の if: 条件 (env.MS_STORE_CLIENT_ID != '') を評価できる。
-      # secrets が未投入なら空文字列になり publish step は skip される。
+      # 自己署名 MSIX 用 Repository Secrets (#423)。リリース時は必須。
+      # 未投入なら ephemeral cert にフォールバックする (PR ビルドの動作確認用)。
+      # WINDOWS_SELFSIGNED_PFX_BASE64: PFX を base64 化したもの
+      # WINDOWS_SELFSIGNED_PFX_PASSWORD: 上記 PFX の export password
+      WINDOWS_SELFSIGNED_PFX_BASE64: ${{ secrets.WINDOWS_SELFSIGNED_PFX_BASE64 }}
+      WINDOWS_SELFSIGNED_PFX_PASSWORD: ${{ secrets.WINDOWS_SELFSIGNED_PFX_PASSWORD }}
+      # Microsoft Store credentials (#544、on-hold)。job レベルで env に
+      # 上げておくことで publish step の if: 条件を評価できる。
+      # secrets 未投入なら空文字列になり publish step は skip される。
       MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
       MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
       MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
@@ -74,32 +80,80 @@ jobs:
           flutter build windows --release @defines
           Pop-Location
 
-      - name: Package MSIX
-        # pubspec.yaml の msix_config セクションを読んで
-        # build/windows/x64/runner/Release/capsicum.msix を生成する。
-        # store: true なので未署名のまま、Microsoft Store 側で再署名される。
+      - name: Prepare signing certificate
+        # 自己署名 MSIX 直配 (#423) 用の PFX を準備する。
+        # Subject は MSIX の publisher 識別子 (pubspec.yaml の
+        # msix_config.publisher) と一致させる必要がある
+        # (CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42)。
+        # 通常は Repository Secrets の PFX を復元、未投入時は ephemeral cert
+        # にフォールバックして build 確認のみ通す (warning を出す)。
+        # 出力パスは ${{ runner.temp }}/capsicum-signing.{pfx,cer} に固定し、
+        # 後続 step は同パスを直接参照する (password のみ GITHUB_ENV 経由)。
+        shell: pwsh
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "capsicum-signing.pfx"
+          $cerPath = Join-Path $env:RUNNER_TEMP "capsicum-signing.cer"
+          if ($env:WINDOWS_SELFSIGNED_PFX_BASE64) {
+            [System.IO.File]::WriteAllBytes(
+              $pfxPath,
+              [System.Convert]::FromBase64String($env:WINDOWS_SELFSIGNED_PFX_BASE64)
+            )
+            $password = $env:WINDOWS_SELFSIGNED_PFX_PASSWORD
+          } else {
+            Write-Host "::warning::WINDOWS_SELFSIGNED_PFX_BASE64 secret not set; using ephemeral cert. The resulting MSIX is for build verification only — end users cannot install it because the corresponding .cer is unique per run."
+            $password = "ephemeral-" + [System.Guid]::NewGuid().ToString("N")
+            $cert = New-SelfSignedCertificate `
+              -Type Custom `
+              -Subject "CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42" `
+              -KeyUsage DigitalSignature `
+              -FriendlyName "capsicum self-signed (ephemeral CI)" `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+            $securePassword = ConvertTo-SecureString -String $password -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $securePassword | Out-Null
+          }
+          Write-Host "::add-mask::$password"
+          # PFX から公開鍵 .cer を抽出する (エンドユーザーが信頼ストアに import する用)
+          $x509 = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $password)
+          [System.IO.File]::WriteAllBytes($cerPath, $x509.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          "CERT_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Package MSIX (self-signed)
+        # pubspec.yaml の msix_config を読んで MSIX を生成し、上で用意した
+        # PFX で signtool 経由で署名する (msix package が内部で signtool を呼ぶ)。
+        # --certificate-path 指定時は pubspec.yaml の `store: true` よりも
+        # 署名フローが優先される。Microsoft Store 公開 (#544) を再開する際は、
+        # 別途 `--store` で未署名 MSIX を生成する step を組む。
         shell: pwsh
         run: |
           Push-Location packages/capsicum
-          dart run msix:create
+          dart run msix:create `
+            --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
+            --certificate-password "$env:CERT_PASSWORD"
           Pop-Location
 
-      - name: Upload MSIX as workflow artifact
+      - name: Upload MSIX + .cer as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: capsicum-msix
-          path: packages/capsicum/build/windows/x64/runner/Release/*.msix
+          path: |
+            packages/capsicum/build/windows/x64/runner/Release/*.msix
+            ${{ runner.temp }}/capsicum-signing.cer
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attach MSIX to GitHub Release
+      - name: Attach MSIX + .cer to GitHub Release
         # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
         # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
         # Linux Release (linux-release.yml) と同じ draft 運用。
+        # .cer はエンドユーザーが Trusted People (LocalMachine) に import
+        # するために配布する (Release notes に PowerShell 手順を明記)。
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: packages/capsicum/build/windows/x64/runner/Release/*.msix
+          files: |
+            packages/capsicum/build/windows/x64/runner/Release/*.msix
+            ${{ runner.temp }}/capsicum-signing.cer
           fail_on_unmatched_files: true
           draft: true
 
