@@ -281,6 +281,7 @@ bool _isSensitiveFieldName(String key) {
     'access_token',
     'refresh_token',
     'token', // FCM / APNs device token in relay register
+    'client_secret', // OAuth completeLogin の exchangeExtra (#528 manual fallback)
     'p256dh', // Web Push ECDH public key
     'auth', // Web Push auth secret
     'endpoint', // push_token が URL に埋め込まれた relay endpoint

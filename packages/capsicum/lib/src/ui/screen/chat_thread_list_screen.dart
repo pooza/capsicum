@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/chat_provider.dart';
 import '../../util/oauth_scope_error.dart';
+import '../util/chat_error.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
@@ -46,7 +47,7 @@ class ChatThreadListScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SelectableText(
-                        '読み込みに失敗しました\n$error',
+                        '読み込みに失敗しました\n${summarizeChatError(error)}',
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 16),

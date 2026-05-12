@@ -9,6 +9,7 @@ import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 import '../../util/oauth_scope_error.dart';
+import '../util/chat_error.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
@@ -57,11 +58,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           .read(chatThreadProvider(widget.otherUser.id).notifier)
           .send(text);
       _textController.clear();
-    } catch (e) {
+    } catch (e, st) {
+      reportChatOpFailure('send_message', e, st);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('送信に失敗しました: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -85,15 +87,17 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       ),
     );
     if (ok != true) return;
+    if (!mounted) return;
     try {
       await ref
           .read(chatThreadProvider(widget.otherUser.id).notifier)
           .deleteMessage(message.id);
-    } catch (e) {
+    } catch (e, st) {
+      reportChatOpFailure('delete_message', e, st);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+      );
     }
   }
 
@@ -141,7 +145,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SelectableText(
-                              '読み込みに失敗しました\n$error',
+                              '読み込みに失敗しました\n${summarizeChatError(error)}',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 16),
