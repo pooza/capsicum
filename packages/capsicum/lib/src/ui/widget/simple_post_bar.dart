@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/livecure_snackbar.dart';
 
 class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel ID to post into (Misskey channels).
@@ -79,12 +80,15 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
 
     setState(() => _sending = true);
     try {
-      await adapter.postStatus(
+      final posted = await adapter.postStatus(
         PostDraft(content: content, channelId: widget.channelId),
       );
       if (mounted) {
         _controller.clear();
         ref.invalidate(timelineProvider);
+        // #433: hideLivecure ON 中に #実況 を含む投稿 (モロヘイヤ自動付与含む)
+        // は TL から除外されるため SnackBar で告知。
+        maybeShowHideLivecureSnackBar(context, ref, posted);
         widget.onPosted?.call();
       }
     } catch (e) {
