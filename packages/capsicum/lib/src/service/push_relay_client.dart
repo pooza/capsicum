@@ -69,8 +69,7 @@ class PushRelayClient {
         return response.data!;
       } on DioException catch (e) {
         lastError = e;
-        if (!_isTransientNetwork(e) ||
-            attempt >= _registerRetryDelays.length) {
+        if (!_isTransientNetwork(e) || attempt >= _registerRetryDelays.length) {
           rethrow;
         }
         final delay = _registerRetryDelays[attempt];

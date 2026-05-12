@@ -20,6 +20,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
@@ -1176,7 +1177,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
 
       final spoilerText = _cwEnabled ? _cwController.text.trim() : null;
-      await adapter.postStatus(
+      final posted = await adapter.postStatus(
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
@@ -1218,31 +1219,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             ref.invalidate(channelTimelineProvider(channelId));
           }
-          // 「#実況 タグの投稿を非表示」設定中に自分が #実況 を含む投稿を
-          // すると TL に出ない。設定の存在を意識していないユーザに「消えた」
-          // と誤認させないため、その場で SnackBar で通知 + 設定への動線を
-          // 出す (#433)。
-          final hideLivecure = ref.read(hideLivecureProvider);
-          if (hideLivecure && text.contains('#実況')) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text(
-                  '投稿しました（現在 #実況 を非表示中のため、タイムラインには表示されません）',
-                ),
-                duration: const Duration(seconds: 8),
-                action: SnackBarAction(
-                  label: '表示する',
-                  onPressed: () {
-                    // toggle() しか公開されていないため、現状 true 前提で
-                    // 反転して false にする。
-                    if (ref.read(hideLivecureProvider)) {
-                      ref.read(hideLivecureProvider.notifier).toggle();
-                    }
-                  },
-                ),
-              ),
-            );
-          }
+          // #433: hideLivecure ON 中に #実況 を含む投稿をすると TL から
+          // 除外されるため SnackBar で告知。検出はモロヘイヤ handler が
+          // タグを追記した後の rendered content (= postStatus 戻り値) で
+          // 行うため、ユーザー入力に #実況 がない自動付与経路もカバーする。
+          maybeShowHideLivecureSnackBar(context, ref, posted);
         }
         if (context.canPop()) {
           context.pop(true);

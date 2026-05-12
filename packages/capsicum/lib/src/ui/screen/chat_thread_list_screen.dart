@@ -51,8 +51,7 @@ class ChatThreadListScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: () =>
-                            ref.invalidate(chatThreadListProvider),
+                        onPressed: () => ref.invalidate(chatThreadListProvider),
                         child: const Text('再試行'),
                       ),
                     ],

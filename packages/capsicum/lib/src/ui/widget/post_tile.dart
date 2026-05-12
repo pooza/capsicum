@@ -426,85 +426,93 @@ class _PostTileState extends ConsumerState<PostTile> {
                           fallbackHost: post.emojiHost,
                         ),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: EmojiText(
-                            displayPost.author.displayName ??
-                                displayPost.author.username,
-                            emojis: displayPost.author.emojis,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            fallbackHost: displayPost.emojiHost,
-                          ),
-                        ),
-                        // 末尾アイコン列 (bot / group / role / scope / localOnly /
-                        // 時刻) を狭幅ウィンドウで Row overflow させないため、
-                        // FittedBox(scaleDown) で必要時のみ縮める。通常幅では
-                        // 等倍。Wrap で改行する案もあるが行高が動くと TL の
-                        // リズムが崩れるので単行スケールに倒す (#495)。
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (displayPost.author.isBot) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.smart_toy,
-                                    size: 14,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall?.color,
-                                  ),
-                                ],
-                                if (displayPost.author.isGroup) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.groups,
-                                    size: 14,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall?.color,
-                                  ),
-                                ],
-                                for (final role in displayPost.author.roles)
-                                  ..._buildRoleIcon(context, role),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  _scopeIcon(displayPost.scope),
-                                  size: 14,
-                                  color: Theme.of(
-                                    context,
-                                  ).textTheme.bodySmall?.color,
-                                ),
-                                if (displayPost.localOnly) ...[
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    Icons.edit_off,
-                                    size: 14,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall?.color,
-                                  ),
-                                ],
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatTime(displayPost.postedAt),
-                                  style:
-                                      Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
+                    // 末尾アイコン列 (bot / group / role / scope / localOnly /
+                    // 時刻) はレイアウト幅 60% を上限とした ConstrainedBox に
+                    // 入れて Row 右端に張り付かせる。intrinsic がその上限を
+                    // 超える狭幅ウィンドウでは FittedBox(scaleDown) で縮める。
+                    // 元実装は Flexible(flex:1) で半幅枠を確保していたため、
+                    // intrinsic が小さくても枠が Row 中央に張り付いて見えていた
+                    // (#542)。Wrap で改行する案もあるが行高が動くと TL の
+                    // リズムが崩れるので単行スケールに倒す (#495)。
+                    LayoutBuilder(
+                      builder: (context, constraints) => Row(
+                        children: [
+                          Expanded(
+                            child: EmojiText(
+                              displayPost.author.displayName ??
+                                  displayPost.author.username,
+                              emojis: displayPost.author.emojis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              fallbackHost: displayPost.emojiHost,
                             ),
                           ),
-                        ),
-                      ],
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: constraints.maxWidth * 0.6,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (displayPost.author.isBot) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.smart_toy,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  if (displayPost.author.isGroup) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.groups,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  for (final role in displayPost.author.roles)
+                                    ..._buildRoleIcon(context, role),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _scopeIcon(displayPost.scope),
+                                    size: 14,
+                                    color: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.color,
+                                  ),
+                                  if (displayPost.localOnly) ...[
+                                    const SizedBox(width: 2),
+                                    Icon(
+                                      Icons.edit_off,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatTime(displayPost.postedAt),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     Text(
                       _handleText(displayPost.author),

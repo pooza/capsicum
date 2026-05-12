@@ -724,6 +724,13 @@ class HideLivecureNotifier extends Notifier<bool> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideLivecureKey, state);
   }
+
+  Future<void> setHidden(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideLivecureKey, value);
+  }
 }
 
 /// Per-account pinned hashtags for home screen tabs.

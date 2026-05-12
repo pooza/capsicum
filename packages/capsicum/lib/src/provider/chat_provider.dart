@@ -42,10 +42,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('chat.stream.parse', 'failed');
-          scope.fingerprint = [
-            'chat.stream.parse',
-            e.runtimeType.toString(),
-          ];
+          scope.fingerprint = ['chat.stream.parse', e.runtimeType.toString()];
         },
       );
     },
