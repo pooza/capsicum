@@ -984,6 +984,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         post.reblog != null &&
         currentUser != null &&
         post.author.id == currentUser.id;
+    final canUnrepeat = isOwnRenote || targetPost.reblogged;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
@@ -1078,15 +1079,30 @@ class _PostTileState extends ConsumerState<PostTile> {
                     );
                   },
                 ),
-              if (isOwnRenote)
+              if (canUnrepeat)
                 ListTile(
                   leading: const Icon(Icons.repeat_on),
                   title: Text('$boostLabelを取り消す'),
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     try {
-                      await adapter.unrepeatPost(post.id);
-                      ref.read(timelineProvider.notifier).removePost(post.id);
+                      // Misskey: 自分のリノート note 表示そのものを delete。
+                      // Mastodon: 元 status の id で /unreblog。
+                      await adapter.unrepeatPost(
+                        isOwnRenote ? post : targetPost,
+                      );
+                      if (isOwnRenote) {
+                        ref.read(timelineProvider.notifier).removePost(post.id);
+                      }
+                      if (targetPost.reblogged) {
+                        final updated = targetPost.copyWith(
+                          reblogged: false,
+                          reblogCount: targetPost.reblogCount > 0
+                              ? targetPost.reblogCount - 1
+                              : 0,
+                        );
+                        ref.read(timelineProvider.notifier).updatePost(updated);
+                      }
                       onActionCompleted?.call();
                       messenger.showSnackBar(
                         SnackBar(content: Text('$boostLabelを取り消しました')),
