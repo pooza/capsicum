@@ -980,6 +980,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final currentUser = ref.read(currentAccountProvider)?.user;
     final targetPost = post.reblog ?? post;
     final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
+    final isOwnRenote =
+        post.reblog != null &&
+        currentUser != null &&
+        post.author.id == currentUser.id;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
@@ -1072,6 +1076,26 @@ class _PostTileState extends ConsumerState<PostTile> {
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
                     );
+                  },
+                ),
+              if (isOwnRenote)
+                ListTile(
+                  leading: const Icon(Icons.repeat_on),
+                  title: Text('$boostLabelを取り消す'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      await adapter.unrepeatPost(post.id);
+                      ref.read(timelineProvider.notifier).removePost(post.id);
+                      onActionCompleted?.call();
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('$boostLabelを取り消しました')),
+                      );
+                    } catch (_) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('操作に失敗しました')),
+                      );
+                    }
                   },
                 ),
               if (adapter is BookmarkSupport)

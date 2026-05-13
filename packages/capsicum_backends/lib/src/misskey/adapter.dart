@@ -439,7 +439,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> unrepeatPost(String id) => throw UnimplementedError();
+  Future<void> unrepeatPost(String id) => client.deleteNote(id);
 
   @override
   Future<Instance> getInstance() async {
