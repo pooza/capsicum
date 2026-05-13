@@ -37,11 +37,12 @@
 - ステップ 3 で取得した全 Issue をマイルストーン別に集計し、件数の変動を把握する
 - MEMORY.md のマイルストーン構成（件数）が実態と一致しているか確認し、ズレがあれば更新する
 - クローズ済みマイルストーンの残 Issue が 0 であることを確認する
+- リリース直後の同期では、open マイルストーンの description が実態と乖離していないかも確認する。GitHub Milestones が正本（CLAUDE.md に複写しない方針）のため、description が空・古い場合は同期内で `gh api -X PATCH repos/pooza/capsicum/milestones/{number} -f description="..."` で整える。最低限、(a) 大更新の単独配置か否か、(b) 主な含有 Issue、(c) 並走条件 を 1〜3 行で書く
 
 ## 6. Codex レビューコメントの確認
 
-- 最近マージされた PR（`gh pr list --state merged --limit 5`）を取得
-- 各 PR に対して `gh api repos/pooza/capsicum/pulls/{number}/comments` で Codex（`chatgpt-codex-connector[bot]`）のコメントを確認
+- 最近マージされた PR（`gh pr list --state merged --limit 5`）を取得。**直近リリース PR（`develop` → `main` の merge）も merged にカウントされる**ため、リリース直後の同期では明示的にリリース PR が含まれていることを確認する（過去に #529 を見落としかけた経緯あり）
+- 各 PR に対して `gh api repos/pooza/capsicum/pulls/{number}/comments`（line comments）+ `gh api repos/pooza/capsicum/pulls/{number}/reviews`（review 本体）の両方で Codex（`chatgpt-codex-connector[bot]`）のコメントを確認。**line comments と review comments は別 API** で、片方だけ見ると review 本体に書かれた指摘 (P2 レベル等) を取りこぼす
 - 各コメントについて以下を判定する:
   1. **未返信** → 指摘内容を確認し、対応が必要か判断。必要なら Issue 起票
   2. **返信済みだがリアクション未付与** → 修正コミットの存在を確認し、+1 リアクションを付与
