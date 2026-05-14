@@ -24,6 +24,7 @@ import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
+import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 
 class _MediaEntry {
@@ -921,6 +922,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  // 番組表エントリから直接 Annict 感想投稿画面に遷移する (#298)。
+  // annict_episode_id が埋まっているエントリ (= 実在番組) のみ呼ばれる前提。
+  void _openAnnictRecord(MulukhiyaProgram program) {
+    final episodeId = program.annictEpisodeId;
+    if (episodeId == null) return;
+    final episodeLabel = [
+      if (program.episode != null)
+        '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
+      if (program.subtitle != null) program.subtitle!,
+    ].join(' ');
+    context.push(
+      '/annict/record',
+      extra: AnnictRecordScreenArgs(
+        episodeId: episodeId,
+        workTitle: program.series ?? program.name,
+        episodeLabel: episodeLabel,
+      ),
+    );
+  }
+
   Future<void> _showTagsetSheet() async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
@@ -943,6 +964,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           onEpisodeBrowser: () {
             Navigator.pop(sheetContext);
             _openEpisodeBrowser();
+          },
+          onAnnictRecord: (program) {
+            Navigator.pop(sheetContext);
+            _openAnnictRecord(program);
           },
           onReload: () async {
             try {
@@ -1973,6 +1998,7 @@ class _TagsetSheet extends StatefulWidget {
   final void Function(MulukhiyaProgram program) onSelect;
   final VoidCallback onClear;
   final VoidCallback? onEpisodeBrowser;
+  final void Function(MulukhiyaProgram program) onAnnictRecord;
   final VoidCallback onReload;
 
   const _TagsetSheet({
@@ -1981,6 +2007,7 @@ class _TagsetSheet extends StatefulWidget {
     required this.onSelect,
     required this.onClear,
     this.onEpisodeBrowser,
+    required this.onAnnictRecord,
     required this.onReload,
   });
 
@@ -2080,6 +2107,18 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         leading: const Icon(Icons.live_tv),
                         title: Text(_programLabel(entry.value)),
                         subtitle: Text(_programSublabel(entry.value)),
+                        // annict_episode_id を持つ番組表エントリは Annict 感想
+                        // 投稿への動線も提供する (#298)。エア番組 (実在しない
+                        // ジョーク番組) はそもそも Annict ID を持たないので
+                        // 自然に除外される (project_air_program_concept)。
+                        trailing: entry.value.annictEpisodeId != null
+                            ? IconButton(
+                                icon: const Icon(Icons.rate_review_outlined),
+                                tooltip: 'Annict に感想投稿',
+                                onPressed: () =>
+                                    widget.onAnnictRecord(entry.value),
+                              )
+                            : null,
                         onTap: () => widget.onSelect(entry.value),
                       ),
                   if (widget.annictEnabled && widget.onEpisodeBrowser != null)
