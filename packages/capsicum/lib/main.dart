@@ -32,6 +32,7 @@ import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
+import 'src/service/window_state_service.dart';
 import 'src/util/sentry_tag_hash.dart';
 
 /// SnackBar が SimplePostBar (簡易投稿バー) を覆って投稿のタイミングが
@@ -58,6 +59,12 @@ void _logDevStack(StackTrace stackTrace) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // デスクトップ (macOS / Linux / Windows) のウィンドウ位置・サイズ・最大化
+  // 状態を復元する (#559)。runApp() より前に呼ぶことで、デフォルトサイズで
+  // 一瞬表示されてから saved size に縮む「ちらつき」を最小化する。モバイル
+  // では early return する。
+  await WindowStateService().init();
 
   // v1.20 以前に書き込んだ Web Push 鍵は旧 Keychain accessibility のままで、
   // ロック中の NSE 復号が -25308 で弾かれる (#392)。新 accessibility に
