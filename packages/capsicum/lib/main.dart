@@ -531,9 +531,32 @@ void _routeToChatThread(
   if (accounts.isEmpty) return;
   if (accountString != null) {
     final matched = _findAccountByString(accounts, accountString);
-    if (matched != null) {
-      container.read(accountManagerProvider.notifier).switchAccount(matched);
+    if (matched == null) {
+      // payload のアカウントが accounts に存在しない (ログアウト済み等)。
+      // ここで何もせず進むと、現在 adapter (= 無関係なアカウントのサーバー)
+      // に対して getUserById を走らせて 404 になり、結果として通知タブ
+      // フォールバックに化ける (#549)。早期に通知タブへ落とし、observability
+      // タグで頻度を追跡する (#500 の host / user_hash 分離ポリシー準拠)。
+      Sentry.captureMessage(
+        'notification.routing.chat.account_unmatched',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('notification.routing', 'chat.account_unmatched');
+          final atIdx = accountString.indexOf('@');
+          if (atIdx > 0 && atIdx < accountString.length - 1) {
+            final username = accountString.substring(0, atIdx);
+            final host = accountString.substring(atIdx + 1);
+            scope.setTag('payload.host', host);
+            scope.setTag('payload.user_hash', hashForSentryTag(username));
+          } else {
+            scope.setTag('payload', '<malformed>');
+          }
+        },
+      );
+      _routeToNotificationsTab(accountString);
+      return;
     }
+    container.read(accountManagerProvider.notifier).switchAccount(matched);
   }
   // adapter 切替後の `getUserById` を非同期に実行し、解決後に push。
   unawaited(() async {
