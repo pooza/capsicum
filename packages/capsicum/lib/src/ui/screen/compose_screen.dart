@@ -2108,9 +2108,12 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         title: Text(_programLabel(entry.value)),
                         subtitle: Text(_programSublabel(entry.value)),
                         // annict_episode_id を持つ番組表エントリは Annict 感想
-                        // 投稿への動線も提供する (#298)。エア番組 (実在しない
-                        // ジョーク番組) はそもそも Annict ID を持たないので
-                        // 自然に除外される (project_air_program_concept)。
+                        // 投稿への動線も提供する (#298)。判定は ID の有無のみで、
+                        // air フラグ (= 公式放送が無い作品を「放送中のテイ」で
+                        // 実況する番組) は独立した軸。エア番組も作品自体は実在し
+                        // Annict にエントリがあるため annict_episode_id が
+                        // 埋まっていれば普通に感想投稿対象になる
+                        // (project_air_program_concept)。
                         trailing: entry.value.annictEpisodeId != null
                             ? IconButton(
                                 icon: const Icon(Icons.rate_review_outlined),
