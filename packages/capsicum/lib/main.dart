@@ -546,10 +546,24 @@ void _routeToChatThread(
     try {
       final user = await adapter.getUserById(userId);
       if (!context.mounted) return;
-      // /home に揃えてから push しないと Drawer / 戻る挙動が崩れるので、
-      // 現在 location が /splash 等なら home に遷移してから push する。
+      // /home に揃えてから push しないと Drawer / 戻る挙動が崩れるが、
+      // /splash や /eula は起動 / EULA 承諾フローのゲート画面であり、
+      // ここで go('/home') を呼ぶとそれらを bypass してしまう (#562)。
+      // ゲート中の chat push は drop し、Sentry に観測タグを残す。
+      // ユーザーは EULA 承諾後に通知から再タップで該当チャットに到達できる。
       final router = GoRouter.of(context);
       final currentLocation = router.state.matchedLocation;
+      if (currentLocation == '/splash' || currentLocation == '/eula') {
+        Sentry.captureMessage(
+          'notification.routing.chat.dropped_during_gate',
+          level: SentryLevel.info,
+          withScope: (scope) {
+            scope.setTag('notification.routing', 'chat.dropped_during_gate');
+            scope.setTag('current_location', currentLocation);
+          },
+        );
+        return;
+      }
       if (currentLocation != '/home') {
         router.go('/home');
       }
