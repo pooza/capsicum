@@ -18,7 +18,8 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
   if (!(adapter as ChatSupport).canReadChat) return null;
   // streaming 内部 parse 失敗 (server schema 変更等) を観測層に流す (#448)。
   // breadcrumb は毎回、captureException は throttle して spam を防ぐ。
-  DateTime? lastCapture;
+  DateTime? lastParseCapture;
+  DateTime? lastConnectCapture;
   const captureThrottle = Duration(seconds: 60);
   final stream = (adapter as ChatSupport).streamChatMessages(
     onParseError: (e, st) {
@@ -32,17 +33,55 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         ),
       );
       final now = DateTime.now();
-      if (lastCapture != null &&
-          now.difference(lastCapture!) < captureThrottle) {
+      if (lastParseCapture != null &&
+          now.difference(lastParseCapture!) < captureThrottle) {
         return;
       }
-      lastCapture = now;
+      lastParseCapture = now;
       Sentry.captureException(
         e,
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('chat.stream.parse', 'failed');
           scope.fingerprint = ['chat.stream.parse', e.runtimeType.toString()];
+        },
+      );
+    },
+    // 接続層 (TLS / DNS / WebSocket abort 等) の error を観測 (#552)。
+    // 切断中は同種 error が連発しがちなので breadcrumb は毎回・
+    // captureException のみ throttle する。
+    onStreamError: (e, st) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'chat.stream.connect',
+          level: SentryLevel.warning,
+          message: e.runtimeType.toString(),
+        ),
+      );
+      final now = DateTime.now();
+      if (lastConnectCapture != null &&
+          now.difference(lastConnectCapture!) < captureThrottle) {
+        return;
+      }
+      lastConnectCapture = now;
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('chat.stream.connect', 'failed');
+          scope.fingerprint = ['chat.stream.connect', e.runtimeType.toString()];
+        },
+      );
+    },
+    // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。UI 側で
+    // ストリーミング停止を可視化したくなったらここに繋ぐ (#552)。
+    onReconnectExhausted: () {
+      Sentry.captureMessage(
+        'chat.stream.reconnect_exhausted',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('chat.stream', 'reconnect_exhausted');
+          scope.fingerprint = ['chat.stream.reconnect_exhausted'];
         },
       );
     },

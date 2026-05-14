@@ -20,12 +20,15 @@ class MisskeyChatStreaming {
   final Set<String> adminRoleIds;
   final User? selfUser;
   final void Function(Object error, StackTrace stack)? onParseError;
+  final void Function(Object error, StackTrace stack)? onStreamError;
+  final void Function()? onReconnectExhausted;
 
   WebSocketChannel? _channel;
   StreamController<ChatMessage>? _controller;
   Timer? _reconnectTimer;
   String? _subscriptionId;
   bool _disposed = false;
+  bool _reconnectExhaustedNotified = false;
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
@@ -37,6 +40,8 @@ class MisskeyChatStreaming {
     this.adminRoleIds = const {},
     this.selfUser,
     this.onParseError,
+    this.onStreamError,
+    this.onReconnectExhausted,
   });
 
   Stream<ChatMessage> connect() {
@@ -62,11 +67,13 @@ class MisskeyChatStreaming {
     // listener / catchError は前世代 channel の close でも発火しうるので
     // 「現役 channel と同一か」をクロージャ捕捉した channel で判定し、
     // 旧世代の onDone / onError で余計な reconnect Timer が積まれるのを
-    // 防ぐ (#548)。
+    // 防ぐ (#548)。error は #552 で onStreamError 経路に流す。
     channel.stream.listen(
       _onMessage,
-      onError: (_) {
-        if (_channel == channel) _scheduleReconnect();
+      onError: (Object error, StackTrace stack) {
+        if (_channel != channel) return;
+        _notifyStreamError(error, stack);
+        _scheduleReconnect();
       },
       onDone: () {
         if (_channel == channel) _scheduleReconnect();
@@ -79,6 +86,7 @@ class MisskeyChatStreaming {
         .then((_) {
           if (_disposed || _channel != channel) return;
           _reconnectAttempts = 0;
+          _reconnectExhaustedNotified = false;
           channel.sink.add(
             jsonEncode({
               'type': 'connect',
@@ -86,9 +94,19 @@ class MisskeyChatStreaming {
             }),
           );
         })
-        .catchError((_) {
-          if (_channel == channel) _scheduleReconnect();
+        .catchError((Object error, StackTrace stack) {
+          if (_channel != channel) return;
+          _notifyStreamError(error, stack);
+          _scheduleReconnect();
         });
+  }
+
+  void _notifyStreamError(Object error, StackTrace stack) {
+    try {
+      onStreamError?.call(error, stack);
+    } catch (_) {
+      // 観測経路の失敗で本筋を止めない。
+    }
   }
 
   void _onMessage(dynamic message) {
@@ -122,7 +140,20 @@ class MisskeyChatStreaming {
 
   void _scheduleReconnect() {
     if (_disposed) return;
-    if (_reconnectAttempts >= _maxReconnectAttempts) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      // 諦めたまま _controller を開きっぱなしにすると、UI 側は「接続中」
+      // のまま無期限に新規イベントを待つことになる。callback で外に出して
+      // 呼び出し側に判断させる (#552)。一度きり通知する。
+      if (!_reconnectExhaustedNotified) {
+        _reconnectExhaustedNotified = true;
+        try {
+          onReconnectExhausted?.call();
+        } catch (_) {
+          // 観測経路の失敗で本筋を止めない。
+        }
+      }
+      return;
+    }
     _reconnectTimer?.cancel();
     final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
     final delay = Duration(

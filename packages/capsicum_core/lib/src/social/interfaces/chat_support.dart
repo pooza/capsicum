@@ -46,8 +46,16 @@ abstract mixin class ChatSupport {
   /// ときに呼ばれる任意コールバック。サーバー schema 変更を観測するため、
   /// 呼び出し側 (capsicum 本体) で Sentry breadcrumb / 計装に繋げる用途を
   /// 想定 (#448)。null なら無視。
+  ///
+  /// [onStreamError] は接続層 (TLS / DNS / WebSocket abort 等) で発生した
+  /// error を観測層に流すための任意コールバック。null なら無視 (#552)。
+  ///
+  /// [onReconnectExhausted] は再接続上限に到達して諦めたときに 1 回だけ
+  /// 呼ばれる。UI 警告や Sentry captureMessage に繋ぐ用途を想定 (#552)。
   Stream<ChatMessage> streamChatMessages({
     void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
   });
 
   /// streamChatMessages で立てた接続を明示的に切断する。アカウント切り替え
