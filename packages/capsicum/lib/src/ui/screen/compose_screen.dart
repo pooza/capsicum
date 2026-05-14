@@ -299,8 +299,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         limit: 5,
       );
       if (mounted) setState(() => _mentionSuggestions = users);
-    } catch (_) {
-      // Silently ignore search failures.
+    } catch (e) {
+      // best-effort なサジェスト系。致命でないので breadcrumb のみ残し、
+      // サーバー側 schema 変更や rate-limit を「サジェスト出ない」だけで
+      // 取りこぼさないようにする (#553)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.search.users',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
@@ -313,8 +322,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         limit: 5,
       );
       if (mounted) setState(() => _hashtagSuggestions = tags);
-    } catch (_) {
-      // Silently ignore search failures.
+    } catch (e) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.search.hashtags',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
@@ -895,8 +910,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (account == null || mulukhiya == null) return;
     try {
       await mulukhiya.restoreDecoration(account.userSecret.accessToken);
-    } catch (_) {
-      // Decoration restore is best-effort; ignore failures.
+    } catch (e) {
+      // best-effort。失敗してもユーザー操作には支障なし。
+      // モロヘイヤ側の不調・API 変更を breadcrumb で観測可能にする (#553)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.decoration.restore',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
@@ -918,8 +941,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         for (final e in serverEmojis) {
           allEmojis.putIfAbsent(e.shortcode, () => e.url);
         }
-      } catch (_) {
-        // 取得失敗時はユーザー絵文字のみでフォールバック
+      } catch (e) {
+        // 取得失敗時はユーザー絵文字のみでフォールバック。サーバー側 API 変更・
+        // rate-limit を breadcrumb で観測可能にする (#553)。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.emoji.fetch',
+            message: e.runtimeType.toString(),
+            level: SentryLevel.warning,
+          ),
+        );
       }
     }
     if (!mounted) return;
