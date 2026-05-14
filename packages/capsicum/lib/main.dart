@@ -23,6 +23,7 @@ import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/apns_service.dart';
+import 'src/service/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
@@ -797,16 +798,40 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
       postLabelResolver: NotificationLabelCache.readPost,
     );
   } catch (e, st) {
-    debugPrint('capsicum: push.background: handler failed: $e');
     // Sentry はバックグラウンド isolate では init されていないため、
     // ここでは debugPrint のみ。致命的でも UI を落とさない。
     // 復号失敗等は dispatcher 内で個別記録されているが、ここに落ちる
     // 例外（Firebase init・notification plugin 初期化失敗等）は
     // bg_handler.failed として永続化し、次回 main app 起動時に
     // Sentry へ吸い上げる (#366)。
+    //
+    // 例外コンテキスト (#551): host + e.runtimeType + 安全な toString を
+    // recorder に乗せ、後段の bg_handler.failed イベントを #436 と同じ
+    // 二次分類で切り分け可能にする。DioException 等が client_secret
+    // を含む URL を toString に持ちうるため scrubException 経由で詰め替え。
+    final scrubbed = scrubException(e);
+    debugPrint('capsicum: push.background: handler failed: $scrubbed');
     debugPrintStack(stackTrace: st);
-    await PushFailureRecorder.record(PushFailureRecorder.codeHandlerFailed);
+    final scrubbedText = scrubbed.toString();
+    final truncated = scrubbedText.length > 200
+        ? '${scrubbedText.substring(0, 200)}…'
+        : scrubbedText;
+    await PushFailureRecorder.record(
+      PushFailureRecorder.codeHandlerFailed,
+      host: _hostFromBackgroundMessage(message),
+      decryptError: '${scrubbed.runtimeType}: $truncated',
+    );
   }
+}
+
+/// FCM `RemoteMessage` の `data['account']` (`user@host`) から host のみ抽出。
+/// bg_handler の観測タグ (push.host) と一致させるのに使う。
+String? _hostFromBackgroundMessage(RemoteMessage message) {
+  final account = message.data['account'] as String?;
+  if (account == null) return null;
+  final idx = account.indexOf('@');
+  if (idx <= 0 || idx >= account.length - 1) return null;
+  return account.substring(idx + 1);
 }
 
 Future<void> _initFirebase() async {
