@@ -348,11 +348,23 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
     );
   }
 
+  // post_tile / notification_tile と同じ表示モード (display_settings の
+  // absoluteTimeProvider) に追従する (#560)。日付が分からないと「いつの
+  // メッセージか」が読み取れないため、時刻のみの表示は廃止する。
   String _formatTime(DateTime t) {
-    final local = t.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+    if (ref.watch(absoluteTimeProvider)) {
+      final local = t.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    final diff = DateTime.now().toUtc().difference(t);
+    if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
+    if (diff.inHours < 24) return '${diff.inHours}時間前';
+    if (diff.inDays < 30) return '${diff.inDays}日前';
+    final months = diff.inDays ~/ 30;
+    if (months < 12) return '$monthsヶ月前';
+    return '${diff.inDays ~/ 365}年前';
   }
 }
 
