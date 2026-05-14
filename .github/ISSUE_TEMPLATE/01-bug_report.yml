@@ -23,17 +23,22 @@ body:
       description: どうなるべきか
     validations:
       required: false
-  - type: input
-    id: platform
+  - type: checkboxes
+    id: platforms
     attributes:
       label: プラットフォーム
-      description: Android / iOS / 両方 / 未確認
-    validations:
-      required: false
+      description: 該当するものを選択 (複数可)
+      options:
+        - label: Android
+        - label: iOS / iPadOS
+        - label: macOS
+        - label: Linux (AppImage / Flatpak)
+        - label: Windows (MSIX)
+        - label: 未確認 / 不明
   - type: textarea
     id: extra
     attributes:
       label: 補足
-      description: プラットフォーム、サーバー名、スクリーンショット、ログなど
+      description: サーバー名、バージョン、スクリーンショット、ログなど
     validations:
       required: false
