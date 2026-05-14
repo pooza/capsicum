@@ -905,11 +905,19 @@ class ContentRenderer {
                         ),
                       ),
                     ),
-                  Text(
-                    node.text,
-                    style: style.copyWith(
-                      fontFamily: 'monospace',
-                      fontSize: (style.fontSize ?? 14) * 0.9,
+                  // コードは折り返さず横スクロール (#434)。コマンドトゥート
+                  // の結果として表示する JSON / YAML も同じ codeBlock 経路で
+                  // 描画されるので、長い 1 行が省略 / 折り返しで読みにくく
+                  // ならないようにする。
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Text(
+                      node.text,
+                      softWrap: false,
+                      style: style.copyWith(
+                        fontFamily: 'monospace',
+                        fontSize: (style.fontSize ?? 14) * 0.9,
+                      ),
                     ),
                   ),
                 ],
