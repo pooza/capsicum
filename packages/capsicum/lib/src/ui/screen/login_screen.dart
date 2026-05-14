@@ -641,15 +641,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // Server thumbnail
+          // 横長ビューポート (macOS / タブレット landscape) で box が
+          // 極端に横長になり BoxFit.cover で上下がクリップされていたため、
+          // maxWidth 480 で頭打ちにして中央寄せする (#479)。
           if (_serverThumbnail != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _serverThumbnail!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    _serverThumbnail!,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
           const SizedBox(height: 16),
