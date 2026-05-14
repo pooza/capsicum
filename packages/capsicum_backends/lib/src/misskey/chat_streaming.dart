@@ -57,20 +57,28 @@ class MisskeyChatStreaming {
       queryParameters: {'i': accessToken},
     );
 
-    _channel = WebSocketChannel.connect(uri);
-    _channel!.stream.listen(
+    final channel = WebSocketChannel.connect(uri);
+    _channel = channel;
+    // listener / catchError は前世代 channel の close でも発火しうるので
+    // 「現役 channel と同一か」をクロージャ捕捉した channel で判定し、
+    // 旧世代の onDone / onError で余計な reconnect Timer が積まれるのを
+    // 防ぐ (#548)。
+    channel.stream.listen(
       _onMessage,
-      onError: (_) => _scheduleReconnect(),
-      onDone: _scheduleReconnect,
+      onError: (_) {
+        if (_channel == channel) _scheduleReconnect();
+      },
+      onDone: () {
+        if (_channel == channel) _scheduleReconnect();
+      },
     );
 
     _subscriptionId = const Uuid().v4();
-    final channel = _channel!;
     final subId = _subscriptionId!;
     channel.ready
         .then((_) {
-          _reconnectAttempts = 0;
           if (_disposed || _channel != channel) return;
+          _reconnectAttempts = 0;
           channel.sink.add(
             jsonEncode({
               'type': 'connect',
@@ -79,7 +87,7 @@ class MisskeyChatStreaming {
           );
         })
         .catchError((_) {
-          _scheduleReconnect();
+          if (_channel == channel) _scheduleReconnect();
         });
   }
 
