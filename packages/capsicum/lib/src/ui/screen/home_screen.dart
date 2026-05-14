@@ -281,17 +281,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
+    // 「タイムライン本体 (約 600px) + ドロワー 304px」が成り立つ最小ラインを
+    // 採用。タブレット横向き (iPad 1024 / Galaxy Tab 1280) や 13" デスクトップ
+    // (1366+) も常駐側に倒れる。ハンバーガーは AppBar.leading: null + Drawer
+    // 内 `Scaffold.of(context).closeDrawer()` が hasDrawer ガード内蔵で no-op
+    // になることを利用して、wide / narrow 双方を 1 つの _buildDrawer 実装で
+    // 賄う。未読アナウンスメントの badge は Drawer 内の「お知らせ」ListTile に
+    // 既に trailing badge があるため AppBar 側を消しても可視性は失われない。
+    final wideLayout = MediaQuery.of(context).size.width >= 900;
+    final drawerWidget = _buildDrawer(
+      context,
+      ref,
+      account,
+      accountState,
+      unreadAnnouncements,
+    );
+
     return Scaffold(
       appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: Badge(
-              isLabelVisible: unreadAnnouncements > 0,
-              child: const Icon(Icons.menu),
-            ),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
+        automaticallyImplyLeading: false,
+        leading: wideLayout
+            ? null
+            : Builder(
+                builder: (context) => IconButton(
+                  icon: Badge(
+                    isLabelVisible: unreadAnnouncements > 0,
+                    child: const Icon(Icons.menu),
+                  ),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
         title: Row(
           children: [
             if (account != null)
@@ -353,13 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: _buildTimelineTabs(context),
         ),
       ),
-      drawer: _buildDrawer(
-        context,
-        ref,
-        account,
-        accountState,
-        unreadAnnouncements,
-      ),
+      drawer: wideLayout ? null : drawerWidget,
       floatingActionButton: _showScrollTop
           ? Padding(
               padding: const EdgeInsets.only(bottom: 56),
@@ -376,13 +390,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             )
           : null,
-      body: _buildBody(
-        ref.watch(selectedTabProvider),
-        selectedList,
-        selectedType,
-        selectedHashtag,
-        timeline,
-      ),
+      body: wideLayout
+          ? Row(
+              children: [
+                // 常駐モードでも _buildDrawer が返す Drawer ウィジェットを
+                // そのまま流用 (Drawer は Material + elevation のスタイリングを
+                // 内包しているため、Row 内に直接置いても境界線とシャドウで
+                // 自然に左パネルになる)。
+                drawerWidget,
+                Expanded(
+                  child: _buildBody(
+                    ref.watch(selectedTabProvider),
+                    selectedList,
+                    selectedType,
+                    selectedHashtag,
+                    timeline,
+                  ),
+                ),
+              ],
+            )
+          : _buildBody(
+              ref.watch(selectedTabProvider),
+              selectedList,
+              selectedType,
+              selectedHashtag,
+              timeline,
+            ),
     );
   }
 
@@ -796,7 +829,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   GestureDetector(
                     onTap: current != null
                         ? () {
-                            Navigator.of(context).pop();
+                            Scaffold.of(context).closeDrawer();
                             context.push('/profile', extra: current.user);
                           }
                         : null,
@@ -824,7 +857,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   GestureDetector(
                     onTap: current != null
                         ? () {
-                            Navigator.of(context).pop();
+                            Scaffold.of(context).closeDrawer();
                             context.push('/profile', extra: current.user);
                           }
                         : null,
@@ -922,7 +955,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref
                       .read(accountManagerProvider.notifier)
                       .switchAccount(account);
-                  Navigator.of(context).pop();
+                  Scaffold.of(context).closeDrawer();
                 },
               );
             }),
@@ -931,7 +964,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.person_add),
             title: const Text('アカウントを追加'),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/server');
             },
           ),
@@ -940,7 +973,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.search),
             title: const Text('検索'),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/search');
             },
           ),
@@ -948,7 +981,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('通知'),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/notifications');
             },
           ),
@@ -957,7 +990,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.notifications_active_outlined),
               title: const Text('すべての通知'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/notifications/all');
               },
             ),
@@ -969,7 +1002,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   : 'ブックマーク',
             ),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/bookmarks');
             },
           ),
@@ -988,7 +1021,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ? Badge(label: Text('$unreadAnnouncements'))
                   : null,
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/announcements');
               },
             ),
@@ -997,7 +1030,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.list),
               title: const Text('リスト'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/lists/manage');
               },
             ),
@@ -1006,7 +1039,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.forum),
               title: const Text('チャンネル'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showChannelList(context, ref);
               },
             ),
@@ -1016,7 +1049,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.chat_bubble_outline),
               title: const Text('メッセージ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/chat');
               },
             ),
@@ -1025,7 +1058,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.cloud_outlined),
               title: const Text('ドライブ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/drive');
               },
             ),
@@ -1034,7 +1067,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.content_paste),
               title: const Text('クリップ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showClipList(context, ref);
               },
             ),
@@ -1043,7 +1076,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.settings_input_antenna),
               title: const Text('アンテナ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showAntennaList(context, ref);
               },
             ),
@@ -1052,7 +1085,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.play_circle_outline),
               title: const Text('Play'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showFlashList(context, ref);
               },
             ),
@@ -1061,7 +1094,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('ギャラリー'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/gallery');
               },
             ),
@@ -1070,7 +1103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.tag),
               title: const Text('プロフィールタグ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showFavoriteTags(context, ref);
               },
             ),
@@ -1078,7 +1111,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.link),
               title: const Text('リンク'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 _showServerLinks(context, ref);
               },
             ),
@@ -1086,7 +1119,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('メディアカタログ'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/media-catalog');
               },
             ),
@@ -1096,7 +1129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               leading: const Icon(Icons.schedule),
               title: const Text('予約投稿'),
               onTap: () {
-                Navigator.of(context).pop();
+                Scaffold.of(context).closeDrawer();
                 context.push('/scheduled');
               },
             ),
@@ -1104,7 +1137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.dns_outlined),
             title: const Text('サーバー情報'),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/server-info');
             },
           ),
@@ -1112,7 +1145,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.settings),
             title: const Text('設定'),
             onTap: () {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               context.push('/settings');
             },
           ),
@@ -1121,7 +1154,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.logout),
             title: const Text('ログアウト'),
             onTap: () async {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               if (current == null) return;
 
               final confirmed = await showDialog<bool>(
@@ -1154,7 +1187,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             leading: const Icon(Icons.info_outline),
             title: const Text('capsicum について'),
             onTap: () async {
-              Navigator.of(context).pop();
+              Scaffold.of(context).closeDrawer();
               if (!context.mounted) return;
               await showAboutCapsicum(context);
             },
@@ -1240,7 +1273,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   dense: true,
                   onTap: () {
-                    Navigator.of(context).pop();
+                    Navigator.pop(context);
                     context.push('/hashtag/${tag.name}');
                   },
                 ),
@@ -1300,7 +1333,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   title: Text(link.body),
                   dense: true,
                   onTap: () {
-                    Navigator.of(context).pop();
+                    Navigator.pop(context);
                     final url = link.href.startsWith('/')
                         ? Uri.parse('https://$host${link.href}')
                         : Uri.parse(link.href);
@@ -1368,7 +1401,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : null,
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   if (host != null) {
                     launchUrlSafely(
                       Uri.parse('https://$host/play/${flash.id}'),
@@ -1435,7 +1468,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : null,
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/clip/${clip.id}', extra: clip.name);
                 },
               ),
@@ -1489,7 +1522,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 title: Text(antenna.name),
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/antenna/${antenna.id}', extra: antenna.name);
                 },
               ),
@@ -1543,7 +1576,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 title: Text(ch.name),
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/channel/${ch.id}', extra: ch.name);
                 },
               ),
