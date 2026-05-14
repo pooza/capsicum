@@ -48,12 +48,52 @@ capsicum は [Annict](https://annict.com/) (アニメ視聴記録サービス) �
 
 ## 仕組み (概要)
 
+### 連携 (OAuth)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant C as capsicum
+    participant M as mulukhiya (Ruby)
+    participant B as OS デフォルトブラウザ
+    participant A as Annict
+
+    U->>C: 「Annict と連携」をタップ
+    C->>M: GET /api/annict/oauth_uri
+    M-->>C: { uri: "https://annict.com/oauth/authorize?..." }
+    C->>B: launchUrlSafely(uri)
+    B->>A: ユーザー認可
+    A-->>B: authorization code を表示
+    U->>C: code をペースト
+    C->>M: POST /api/annict/auth (SNS token, code)
+    M->>A: code を access_token に交換
+    A-->>M: { access_token }
+    M->>M: SNS token に紐付けて暗号化保管
+    M-->>C: 200 OK
+    C-->>U: 「Annict 連携が完了しました」
 ```
-┌───────────┐  POST /api/annict/  ┌──────────────┐  GraphQL  ┌──────────────┐
-│ capsicum  │ ──── record ──────→ │ mulukhiya    │ ────────→ │ Annict API   │
-│           │       (SNS token)   │ (Ruby)       │  (OAuth)  │              │
-└───────────┘                     └──────────────┘           └──────────────┘
+
+### 感想投稿
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant C as capsicum
+    participant M as mulukhiya (Ruby)
+    participant A as Annict
+
+    U->>C: 「感想投稿」をタップ、評価/感想を入力
+    C->>M: POST /api/annict/record<br/>{ episode_id, comment?, rating_state? }<br/>(Authorization: Bearer SNS token)
+    M->>M: SNS token から Annict access_token を解決
+    M->>A: GraphQL createRecord mutation
+    A-->>M: result
+    M-->>C: 200 OK
+    C-->>U: SnackBar 「Annict に感想を投稿しました」
 ```
+
+### 要点
 
 - Annict OAuth の client_secret は **モロヘイヤ側で保管** (capsicum バイナリには含まれない)
 - ユーザーごとの Annict access_token もモロヘイヤ側で暗号化保管
