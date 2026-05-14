@@ -9,22 +9,67 @@
 
 ## 全体アーキ
 
-```
-┌────────────────┐  GET /me/player/        ┌──────────────┐
-│ Spotify Web    │ ◄──── currently-playing ─│ mulukhiya    │
-│ API            │     (user OAuth token)   │ (Ruby)       │
-└────────────────┘                          └──────────────┘
-                                                  ▲
-                                                  │ HTTPS
-                                                  │ /api/spotify/*
-                                                  │
-                                            ┌──────────────┐
-                                            │ capsicum     │
-                                            │ (Flutter)    │
-                                            └──────────────┘
+### 連携 (OAuth Authorization Code)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant C as capsicum
+    participant M as mulukhiya (Ruby)
+    participant B as OS デフォルトブラウザ
+    participant S as Spotify
+
+    U->>C: 「Spotify と連携」をタップ
+    C->>M: GET /api/spotify/auth_uri (SNS token)
+    M-->>C: { uri: "https://accounts.spotify.com/authorize?...&scope=user-read-currently-playing" }
+    C->>B: launchUrlSafely(uri)
+    B->>S: ユーザー認可
+    S-->>B: redirect: mulukhiya callback URL (code)
+    B->>M: GET /api/spotify/callback?code=...
+    M->>S: code を access_token + refresh_token に交換
+    S-->>M: { access_token, refresh_token, expires_in }
+    M->>M: SNS token に紐付けて暗号化保管
+    M-->>U: 「連携完了」ページ表示 (ブラウザ内)
+    U->>C: capsicum に戻る
+    C-->>U: 連携完了 (features API spotify_linked=true)
 ```
 
-**Spotify client_secret はモロヘイヤ側に保管**、capsicum 側には漏らさない。Annict と同じ「サーバー保管型 OAuth」方針。
+### ナウプレ取得 (Bearer 経由)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant C as capsicum
+    participant M as mulukhiya (Ruby)
+    participant S as Spotify
+
+    U->>C: 「ナウプレを挿入」をタップ
+    C->>M: GET /api/spotify/currently_playing<br/>(Authorization: Bearer SNS token)
+    M->>M: SNS token から Spotify access_token を解決
+    alt access_token 期限切れ
+        M->>S: refresh_token で再発行
+        S-->>M: { access_token, expires_in }
+        M->>M: 保管値を更新
+    end
+    M->>S: GET /me/player/currently-playing
+    alt 再生中
+        S-->>M: track info
+        M-->>C: { url: "https://open.spotify.com/track/..." }
+        C-->>U: 投稿本文に URL 挿入
+    else 未再生 / 広告 / プライベートセッション
+        S-->>M: 204 No Content
+        M-->>C: { url: null }
+        C-->>U: SnackBar「現在再生中の曲がありません」
+    end
+```
+
+### 要点
+
+- **Spotify client_secret はモロヘイヤ側に保管**、capsicum 側には漏らさない。Annict と同じ「サーバー保管型 OAuth」方針
+- access_token は 3600s で expire するため、mulukhiya 内部で refresh_token による自動更新を隠蔽 (capsicum 側は意識しない)
+- 再生状態の判定 (未再生 / 広告 / プライベート) も mulukhiya 側で吸収し、capsicum は `url` の有無だけ見れば良い
 
 ## なぜモロヘイヤ経由か
 
