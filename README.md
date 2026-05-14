@@ -12,6 +12,7 @@ capsicum が提案するのは、アプリ単体の体験ではなく、サー�
 [![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-000000?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/jp/app/capsicum/id6760206608)
 [![Download on the Mac App Store](https://img.shields.io/badge/Download_on_the-Mac_App_Store-000000?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/jp/app/capsicum/id6760206608)
 [![Linux AppImage](https://img.shields.io/badge/Linux-AppImage-000000?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/pooza/capsicum/releases/latest)
+[![Windows MSIX](https://img.shields.io/badge/Windows-MSIX-000000?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/pooza/capsicum/releases/latest)
 
 ## macOS / Linux 版について
 
