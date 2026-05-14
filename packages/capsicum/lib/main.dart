@@ -34,6 +34,15 @@ import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/util/sentry_tag_hash.dart';
 
+/// SnackBar が SimplePostBar (簡易投稿バー) を覆って投稿のタイミングが
+/// 遅れる事故 (#540) を避けるため、floating + bottom 余白で簡易投稿バー
+/// の上に表示する。SimplePostBar を持たない画面 (compose / settings 等) では
+/// 多少高めに浮くが UX 上の弊害は小さい。
+const _snackBarTheme = SnackBarThemeData(
+  behavior: SnackBarBehavior.floating,
+  insetPadding: EdgeInsets.fromLTRB(16, 0, 16, 72),
+);
+
 /// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
 /// Linux AppImage の AppRun ログ (~/.local/share/capsicum/logs/) に
 /// release のスタートアップ / push 経路の内部情報が流入するのを抑える目的。
@@ -989,8 +998,13 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
         useMaterial3: true,
+        snackBarTheme: _snackBarTheme,
       ),
-      darkTheme: ThemeData(colorScheme: darkScheme, useMaterial3: true),
+      darkTheme: ThemeData(
+        colorScheme: darkScheme,
+        useMaterial3: true,
+        snackBarTheme: _snackBarTheme,
+      ),
       themeMode: themeMode,
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);
