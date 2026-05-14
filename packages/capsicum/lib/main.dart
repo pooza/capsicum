@@ -5,6 +5,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +34,19 @@ import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/util/sentry_tag_hash.dart';
 
+/// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
+/// Linux AppImage の AppRun ログ (~/.local/share/capsicum/logs/) に
+/// release のスタートアップ / push 経路の内部情報が流入するのを抑える目的。
+/// release で残したい情報は Sentry breadcrumb / captureException に上げる。
+void _logDev(String message) {
+  if (!kReleaseMode) _logDev(message);
+}
+
+/// [_logDev] の StackTrace 版。
+void _logDevStack(StackTrace stackTrace) {
+  if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -44,7 +58,7 @@ Future<void> main() async {
   try {
     await PushKeyStore.migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    debugPrint('PushKeyStore migration failed: $e\n$st');
+    _logDev('PushKeyStore migration failed: $e\n$st');
   }
 
   // Register the APNs MethodChannel handler before runApp() so that
@@ -91,7 +105,7 @@ Future<void> main() async {
         // path_provider 失敗時は nativeDatabasePath を未設定のままにし、
         // sentry-native のフォールバック (CWD 直下) に任せる。起動経路を
         // 止める要件ではない。
-        debugPrint('getApplicationSupportDirectory failed: $e\n$st');
+        _logDev('getApplicationSupportDirectory failed: $e\n$st');
       }
     }
     await SentryFlutter.init((options) {
@@ -318,7 +332,7 @@ void _startApp() {
   // Sentry が自前で設定済なので ??= で上書きを避ける。
   FlutterError.onError ??= FlutterError.presentError;
   PlatformDispatcher.instance.onError ??= (e, st) {
-    debugPrint('Uncaught: $e\n$st');
+    _logDev('Uncaught: $e\n$st');
     return true;
   };
 
@@ -413,7 +427,7 @@ Future<void> _flushPushFailureRecord() async {
         },
       );
     }
-    debugPrint(
+    _logDev(
       'capsicum: push.failure_recorder: flushed ${record.code} '
       '(count=${record.count}, at=${record.at.toIso8601String()}, '
       'host=${record.host}, encoding=${record.encoding}, '
@@ -635,7 +649,7 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
     // タップ等）。ここで pendingInitialTabProvider を設定して go('/home')
     // を呼ぶと auth redirect で /server に飛ばされた後も pendingTab が
     // 残留し、次回のログイン後に意図せず通知タブが開かれてしまう。
-    debugPrint('capsicum: notification: routing dropped — no active accounts');
+    _logDev('capsicum: notification: routing dropped — no active accounts');
     return;
   }
 
@@ -672,7 +686,7 @@ void _rescheduleNotificationRoute(
   int maxAttempts,
 ) {
   if (attempt >= maxAttempts) {
-    debugPrint(
+    _logDev(
       'capsicum: notification: routing gave up after $maxAttempts frames',
     );
     // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
@@ -761,7 +775,7 @@ String? _lastFcmMessageId;
 void _handleFcmMessage(RemoteMessage message) {
   final messageId = message.messageId;
   if (messageId != null && messageId == _lastFcmMessageId) {
-    debugPrint('capsicum: FCM message dedup hit: $messageId');
+    _logDev('capsicum: FCM message dedup hit: $messageId');
     return;
   }
   _lastFcmMessageId = messageId;
@@ -810,8 +824,8 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
     // 二次分類で切り分け可能にする。DioException 等が client_secret
     // を含む URL を toString に持ちうるため scrubException 経由で詰め替え。
     final scrubbed = scrubException(e);
-    debugPrint('capsicum: push.background: handler failed: $scrubbed');
-    debugPrintStack(stackTrace: st);
+    _logDev('capsicum: push.background: handler failed: $scrubbed');
+    _logDevStack(st);
     final scrubbedText = scrubbed.toString();
     final truncated = scrubbedText.length > 200
         ? '${scrubbedText.substring(0, 200)}…'
@@ -837,11 +851,11 @@ String? _hostFromBackgroundMessage(RemoteMessage message) {
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
   try {
-    debugPrint('capsicum: Firebase.initializeApp starting');
+    _logDev('capsicum: Firebase.initializeApp starting');
     await Firebase.initializeApp();
-    debugPrint('capsicum: Firebase.initializeApp done, starting FCM');
+    _logDev('capsicum: Firebase.initializeApp done, starting FCM');
     await FcmService.initialize();
-    debugPrint('capsicum: FCM init done');
+    _logDev('capsicum: FCM init done');
 
     // Android: FCM の system-tray 通知タップは flutter_local_notifications の
     // onTap を経由しない（OS が直接表示するため）。
@@ -858,7 +872,7 @@ Future<void> _initFirebase() async {
     // バックグラウンド / キル時は main() 頭で登録した
     // [_firebaseBackgroundMessageHandler] 側で処理する (#336 Phase 3)。
     FirebaseMessaging.onMessage.listen((message) {
-      debugPrint(
+      _logDev(
         'capsicum: push.onMessage fired: data keys=${message.data.keys.toList()}',
       );
       unawaited(
@@ -869,9 +883,9 @@ Future<void> _initFirebase() async {
         ),
       );
     });
-    debugPrint('capsicum: push.onMessage listener registered');
+    _logDev('capsicum: push.onMessage listener registered');
   } catch (e, st) {
-    debugPrint('capsicum: Firebase initialization failed: $e');
+    _logDev('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(
       e,
       stackTrace: st,
