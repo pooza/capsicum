@@ -17,4 +17,7 @@ abstract mixin class DriveSupport {
   Future<DriveFolder> createDriveFolder(String name, {String? parentId});
   Future<void> deleteDriveFolder(String folderId);
   Future<void> renameDriveFolder(String folderId, String newName);
+
+  /// フォルダを別の親フォルダに移動する。`null` で root へ移動 (#437)。
+  Future<void> moveDriveFolder(String folderId, String? parentId);
 }

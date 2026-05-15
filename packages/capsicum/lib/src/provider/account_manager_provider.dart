@@ -3,6 +3,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../constants.dart';
 import '../model/account.dart';
@@ -12,6 +13,7 @@ import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
+import '../util/sentry_tag_hash.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -49,7 +51,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     if (adapter is MastodonAdapter) {
       try {
         await adapter.detectTimelineAvailability();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint(
+          'capsicum: addAccount: detectTimelineAvailability failed for '
+          '${account.key.toStorageKey()}: $e',
+        );
+      }
     }
 
     // Detect mulukhiya on the server (non-blocking — failure is fine).
@@ -199,7 +206,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
       final probe = await probeInstance(dio, host);
       return probe?.softwareVersion;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('capsicum: software version detection error on $host: $e');
       return null;
     }
   }
@@ -263,7 +271,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         if (adapter is MastodonAdapter) {
           try {
             await adapter.detectTimelineAvailability();
-          } catch (_) {}
+          } catch (e) {
+            debugPrint(
+              'capsicum: restoreSessions: detectTimelineAvailability '
+              'failed for $keyStr: $e',
+            );
+          }
         }
 
         final mulukhiya = await _detectMulukhiya(accountKey.host);
@@ -296,12 +309,67 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
         // Prefetch server metadata for badge display (non-blocking).
         ServerMetadataCache.instance.fetch(accountKey.host);
-      } catch (_) {
+      } catch (e, st) {
+        // 復元中の例外を以前は完全に握りつぶしていたが、Linux で
+        // Misskey アカウントだけ silently に消える挙動の追跡が不可能に
+        // なっていた (#496)。debugPrint で起動ログに出し、Sentry にも
+        // accountKey 単位で 1 度だけ送る (Keystore 破壊で全アカウント
+        // 同時失敗するケースで Sentry を埋めないように)。
+        debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
+        _reportRestoreOnce(keyStr, e, st);
         skippedCount++;
         continue;
       }
     }
     return skippedCount;
+  }
+
+  static final Set<String> _reportedRestoreErrors = {};
+
+  /// テストの tearDown 等で per-test 汚染を避けるための reset hook (#516)。
+  /// 本番経路では呼ばれず、Notifier が dispose-recreate されても dedup を
+  /// 永続化するという仕様自体は維持する。
+  @visibleForTesting
+  static void resetReportedRestoreErrors() => _reportedRestoreErrors.clear();
+
+  static void _reportRestoreOnce(String accountKey, Object e, StackTrace st) {
+    final dedupKey = '$accountKey:${e.runtimeType}';
+    if (!_reportedRestoreErrors.add(dedupKey)) return;
+    try {
+      // accountKey 全体 (host_username) を tag に出すと Sentry プロジェクトの
+      // アクセス制御次第で運用者以外にユーザ名が見えうる (#500)。tag は host
+      // のみに限定し、username は de-identification 用ハッシュに丸めて
+      // 別 tag に出す。dedup には fingerprint で対応。
+      //
+      // AccountKey.fromStorageKey は scheme 不正な legacy / 破損 key で
+      // StateError を投げる。parse 失敗時は tag を諦めて元の例外を上げ続ける
+      // (#524)。観測ロストよりは parse 失敗マーカ付きで Sentry に届けるほうが
+      // 価値が高いと判断。
+      AccountKey? parsed;
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        parsed = null;
+      }
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          if (parsed != null) {
+            scope.setTag('account_restore.host', parsed.host);
+            scope.setTag(
+              'account_restore.user_hash',
+              hashForSentryTag(parsed.username),
+            );
+          } else {
+            scope.setTag('account_restore.key_parse', 'failed');
+          }
+          scope.fingerprint = ['account_restore', e.runtimeType.toString()];
+        },
+      );
+    } catch (_) {
+      // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
+    }
   }
 }
 

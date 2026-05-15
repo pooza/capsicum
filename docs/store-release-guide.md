@@ -222,6 +222,14 @@ end
 - **黄（余力があれば）**: 単一の edge case、観測性ギャップ
 - **緑（送り）**: 将来の拡張時に顕在化しうる構造改善
 
+#### 差分レビュー（プラットフォーム追加・大更新マイルストーンのみ 2 回目）
+
+新サーフェス導入時（macOS native v1.21・push relay v1.18・Misskey messages v1.22・Linux v1.24 等）は、1 回目で見つけた問題への修正 commit 自体が新しい問題を入れることがあり、平場のマイルストーンより 2 回目を回す価値が高い。以下のルールで実施する:
+
+- **対象**: 1 回目以降の差分（`git diff <1回目時点のSHA>..HEAD`）と、新規追加されたサーフェスのみ。全文再走査はしない
+- **タイミング**: リリース 1 週間前までに完了させる。直前に出た P1 は焦って広げず **ホットフィックス前提で次リリースに送ってよい**
+- **何回目のマイルストーンでも対象になる**: 「大更新独立配置」のマイルストーンは定義上対象。それ以外は実施しない（issue 累積を避けるため）
+
 v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
 
 ### 4.1 バージョン更新・依存関係の更新
@@ -332,6 +340,39 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+#### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
+
+iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:
+
+```text
+The provided entity is missing a required attribute -
+You must provide a value for the attribute 'whatsNew' with this request
+```
+
+v1.25.0 リリースで初めて踏んだ。エラーが出た場合は spaceship で localization に whatsNew を patch してから fastlane release を再実行する:
+
+```ruby
+require 'spaceship'
+token = Spaceship::ConnectAPI::Token.create(
+  key_id: 'WLS8G4W44L',
+  issuer_id: '69a6de71-e621-47e3-e053-5b8c7c11a4d1',
+  filepath: File.expand_path('~/.config/capsicum/AuthKey_WLS8G4W44L.p8'),
+)
+Spaceship::ConnectAPI.token = token
+
+# macOS 1.X.Y バージョンの localization ID を取得し whatsNew を patch
+app = Spaceship::ConnectAPI::App.find('jp.co.b-shock.capsicum')
+mac_version = app.get_app_store_versions.find { |v| v.platform == 'MAC_OS' && v.version_string == '1.X.Y' }
+loc_resp = Spaceship::ConnectAPI.get_app_store_version_localizations(app_store_version_id: mac_version.id)
+ja_loc = loc_resp.body['data'].find { |l| l['attributes']['locale'] == 'ja' }
+Spaceship::ConnectAPI.patch_app_store_version_localization(
+  app_store_version_localization_id: ja_loc['id'],
+  attributes: { whatsNew: "変更内容の詳細は GitHub リリースページをご覧ください。\nhttps://github.com/pooza/capsicum/releases" },
+)
+```
+
+なお submit_for_review に失敗した review submission は `READY_FOR_REVIEW` で残留し、見た目上 cancellable でない (`Resource is not in cancellable state`) ことがある。次回 fastlane release で新規 submission が作られて吸収されるので無視してよい。
+
 ### 4.4 GitHub Release のリリースノート
 
 GitHub Release のリリースノートで「既知の不具合」セクションを作る場合は、ハードコードせず **bug ラベルが付いた open Issue を列挙** する。固定の文言は実態とズレるため、Issue が正本となるように書く。
@@ -374,7 +415,104 @@ bash packaging/linux/appimage/build.sh    # AppImage
 bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
 ```
 
-詳細は各 README 参照。
+ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認、Flatpak は [packaging/linux/flathub/README.md](../packaging/linux/flathub/README.md) を参照。
+
+### 4.6 Windows 配布（v1.25〜）
+
+Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は **GitHub Releases 経由の自己署名 MSIX 直配**（[#423](https://github.com/pooza/capsicum/issues/423)）。Microsoft Store 公開は個人開発者アカウントでは Entra ID テナント関連付け UI に到達できないため [#544](https://github.com/pooza/capsicum/issues/544) で on-hold（法人化後に再挑戦）。短期は AppImage と同じく「ストアスキップして GitHub Releases 直配」で配布鶏卵問題を崩す。
+
+中期（v1.26、[#534](https://github.com/pooza/capsicum/issues/534)）はビーショック名義で OV コード署名証明書取得 → SmartScreen 通過な MSIX 直配に格上げ予定。
+
+#### MSIX
+
+タグ駆動 (`v*.*.*`) で `windows-release.yml` の `msix` ジョブが起動し:
+
+1. windows-latest (x64) で `flutter build windows --release`（jni transitive のため Microsoft OpenJDK 21 を `actions/setup-java` で導入）
+2. Repository Secrets `WINDOWS_SELFSIGNED_PFX_BASE64` / `WINDOWS_SELFSIGNED_PFX_PASSWORD` から PFX を復元（未投入時は ephemeral cert にフォールバック、warning 出力）
+3. `dart run msix:create --certificate-path ... --certificate-password ...` で **署名済み** `capsicum.msix` を生成（msix package が内部で signtool を呼ぶ）
+4. PFX から公開鍵 `.cer` を抽出
+5. `capsicum.msix` + `capsicum-signing.cer` を **draft Release** に添付（pooza が GitHub UI で publish 判断）
+6. Microsoft Store credential が投入されていれば msstore CLI で draft submission として送る（現状 on-hold、[#544](https://github.com/pooza/capsicum/issues/544)）
+
+draft で生成・submit するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
+
+#### 自己署名証明書の投入手順（一度だけ、[#423](https://github.com/pooza/capsicum/issues/423)）
+
+PFX を Mac 側で生成して Repository Secrets に投入する。Subject は `pubspec.yaml` の `msix_config.publisher` (`CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42`) と完全一致させる必要がある。
+
+1. **PFX 生成** (Mac で openssl):
+
+   ```sh
+   # 任意のパスワードを決める
+   PASSWORD="$(openssl rand -base64 24)"
+   echo "$PASSWORD"  # 控える (secrets.env と同等の機密扱い)
+
+   # 秘密鍵 + 自己署名証明書を生成 (5 年有効、Code Signing EKU)
+   openssl req -x509 -newkey rsa:4096 -keyout capsicum-signing.key -out capsicum-signing.crt \
+     -days 1825 -nodes \
+     -subj "/CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42" \
+     -addext "extendedKeyUsage=codeSigning"
+
+   # PFX (PKCS#12) にまとめる
+   openssl pkcs12 -export -out capsicum-signing.pfx \
+     -inkey capsicum-signing.key -in capsicum-signing.crt \
+     -password pass:"$PASSWORD"
+
+   # base64 化 (macOS では直接クリップボードへ)
+   base64 -i capsicum-signing.pfx | pbcopy
+   ```
+
+2. **GitHub Repository Secrets に投入** (`https://github.com/pooza/capsicum/settings/secrets/actions`):
+   - `WINDOWS_SELFSIGNED_PFX_BASE64`: 上記 base64 文字列
+   - `WINDOWS_SELFSIGNED_PFX_PASSWORD`: 上記 `PASSWORD`
+
+3. **生成物の保管**: `capsicum-signing.pfx` 本体と `PASSWORD` は **secrets.env と同等の機密扱い** で保管。再生成するとエンドユーザーが信頼ストアに再 import 必要になる。
+
+投入後の最初のタグ駆動ビルドで `msix` ジョブが署名済み MSIX を生成する。
+
+#### 自己署名 PFX の rotation / 失効対応 runbook
+
+PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役のいずれかが発生したらローテーションする**。流出した場合、当該 cert で署名された任意 MSIX が既存ユーザーの `TrustedPeople (LocalMachine)` に対して auto-trust されるため、迅速な対応が必要。
+
+ローテーション手順:
+
+1. 上記「自己署名証明書の投入手順」を再実行し、新しい PFX を生成 → Repository Secrets を上書き
+2. 次の通常リリース (または hotfix) で新 cert 署名 MSIX を draft Release に出す
+3. リリースノートに「証明書ローテーションのため、初回起動前に新 `.cer` を `TrustedPeople` に再 import する必要があります」を明記。旧 `.cer` 削除手順 ([packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) のアンインストール手順末尾) もリンク
+
+流出が確定した場合の追加対応:
+
+- 旧 cert の Subject Key Identifier / Serial Number を release notes と [capsicum-site](https://capsicum.shrieker.net) にアナウンスし、エンドユーザーに `Cert:\LocalMachine\Disallowed` への追加 (`Set-Location Cert:\LocalMachine\TrustedPeople; Get-ChildItem | Where-Object {<対象cert>} | Move-Item -Destination Cert:\LocalMachine\Disallowed`) を案内
+- OV cert 取得 (#534) を前倒しできるか検討。OV 経路に切り替われば自己署名 cert は不要になり、再発防止できる
+
+`pubspec.yaml` の `msix_config.publisher` (`CN=0B8EE9C3-…`) を変更すると、Microsoft Store の identity 紐付け (#544) で再申請が必要になるため、ローテーション時の Subject 変更は避ける。
+
+#### Microsoft Store credential 投入手順（[#544](https://github.com/pooza/capsicum/issues/544) が再開した時のみ）
+
+[#544](https://github.com/pooza/capsicum/issues/544) の再開トリガー (法人化 → Microsoft 365 Business → 組織契約 Entra ID テナント) が満たされた時点で実施。手順は #544 issue 本文を参照。Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される。
+
+#### GitHub Release のリリースノート（Windows セクションテンプレート）
+
+タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
+
+````markdown
+## Windows (MSIX 自己署名直配)
+
+> ⚠️ 配布対象は「証明書 import を厭わない上級ユーザー」です。Microsoft Store 公開は法人化対応待ちで、当面 GitHub Releases 経由の自己署名配布のみとなります。
+
+本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
+````
+
+#### Windows ローカルビルド確認
+
+```sh
+cd packages/capsicum
+flutter build windows --release
+dart run msix:create  # 未署名で生成 (開発者モード ON の Windows でのみ動作)
+# build/windows/x64/runner/Release/capsicum.msix
+```
+
+ローカル MSIX は未署名のため、Windows 側で「開発者モード ON」 (Settings → For developers → Developer Mode) の状態でのみ `Add-AppxPackage` できる。CI 経由の署名済み MSIX は信頼ストア import 後であれば開発者モード不要。
 
 ## 5. 配布方針
 

@@ -426,57 +426,93 @@ class _PostTileState extends ConsumerState<PostTile> {
                           fallbackHost: post.emojiHost,
                         ),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: EmojiText(
-                            displayPost.author.displayName ??
-                                displayPost.author.username,
-                            emojis: displayPost.author.emojis,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            fallbackHost: displayPost.emojiHost,
+                    // 末尾アイコン列 (bot / group / role / scope / localOnly /
+                    // 時刻) はレイアウト幅 60% を上限とした ConstrainedBox に
+                    // 入れて Row 右端に張り付かせる。intrinsic がその上限を
+                    // 超える狭幅ウィンドウでは FittedBox(scaleDown) で縮める。
+                    // 元実装は Flexible(flex:1) で半幅枠を確保していたため、
+                    // intrinsic が小さくても枠が Row 中央に張り付いて見えていた
+                    // (#542)。Wrap で改行する案もあるが行高が動くと TL の
+                    // リズムが崩れるので単行スケールに倒す (#495)。
+                    LayoutBuilder(
+                      builder: (context, constraints) => Row(
+                        children: [
+                          Expanded(
+                            child: EmojiText(
+                              displayPost.author.displayName ??
+                                  displayPost.author.username,
+                              emojis: displayPost.author.emojis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              fallbackHost: displayPost.emojiHost,
+                            ),
                           ),
-                        ),
-                        if (displayPost.author.isBot) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.smart_toy,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: constraints.maxWidth * 0.6,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (displayPost.author.isBot) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.smart_toy,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  if (displayPost.author.isGroup) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.groups,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  for (final role in displayPost.author.roles)
+                                    ..._buildRoleIcon(context, role),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _scopeIcon(displayPost.scope),
+                                    size: 14,
+                                    color: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.color,
+                                  ),
+                                  if (displayPost.localOnly) ...[
+                                    const SizedBox(width: 2),
+                                    Icon(
+                                      Icons.edit_off,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatTime(displayPost.postedAt),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
-                        if (displayPost.author.isGroup) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.groups,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                        ],
-                        for (final role in displayPost.author.roles)
-                          ..._buildRoleIcon(context, role),
-                        const SizedBox(width: 4),
-                        Icon(
-                          _scopeIcon(displayPost.scope),
-                          size: 14,
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                        ),
-                        if (displayPost.localOnly) ...[
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.edit_off,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                        ],
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatTime(displayPost.postedAt),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+                      ),
                     ),
                     Text(
                       _handleText(displayPost.author),
@@ -944,6 +980,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     final currentUser = ref.read(currentAccountProvider)?.user;
     final targetPost = post.reblog ?? post;
     final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
+    final isOwnRenote =
+        post.reblog != null &&
+        currentUser != null &&
+        post.author.id == currentUser.id;
+    final canUnrepeat = isOwnRenote || targetPost.reblogged;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
@@ -1036,6 +1077,41 @@ class _PostTileState extends ConsumerState<PostTile> {
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
                     );
+                  },
+                ),
+              if (canUnrepeat)
+                ListTile(
+                  leading: const Icon(Icons.repeat_on),
+                  title: Text('$boostLabelを取り消す'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      // Misskey: 自分のリノート note 表示そのものを delete。
+                      // Mastodon: 元 status の id で /unreblog。
+                      await adapter.unrepeatPost(
+                        isOwnRenote ? post : targetPost,
+                      );
+                      if (isOwnRenote) {
+                        ref.read(timelineProvider.notifier).removePost(post.id);
+                      }
+                      if (targetPost.reblogged) {
+                        final updated = targetPost.copyWith(
+                          reblogged: false,
+                          reblogCount: targetPost.reblogCount > 0
+                              ? targetPost.reblogCount - 1
+                              : 0,
+                        );
+                        ref.read(timelineProvider.notifier).updatePost(updated);
+                      }
+                      onActionCompleted?.call();
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('$boostLabelを取り消しました')),
+                      );
+                    } catch (_) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('操作に失敗しました')),
+                      );
+                    }
                   },
                 ),
               if (adapter is BookmarkSupport)
@@ -2573,9 +2649,45 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
     List<Attachment> images, {
     BoxFit fit = BoxFit.cover,
   }) {
-    final imageUrl = attachment.previewUrl ?? attachment.url;
     final blurAll = ref.watch(blurAllImagesProvider);
     final isSensitive = (widget.sensitive || blurAll) && !_revealed;
+    // 動画系 (video / gifv) で preview_url が無い場合は実 URL (.mp4 等) を
+    // Image.network に渡しても Skia が aspect だけ取って黒フレームを返し
+    // (broken_image にも落ちず無言で黒くなる)、ユーザーには「画像が消えた」
+    // ように見える。Image を試みず placeholder を返す。
+    // 報告経路は Linux GTK (#491) だが、原因は preview_url 不在時のデコード
+    // 動作という プラットフォーム非依存の不変条件のため、全環境で同じ防御を
+    // かける。
+    final hasPreview = attachment.previewUrl != null;
+    final isVideoLike =
+        attachment.type == AttachmentType.video ||
+        attachment.type == AttachmentType.gifv;
+    final imageUrl = attachment.previewUrl ?? attachment.url;
+
+    Widget media;
+    if (isVideoLike && !hasPreview) {
+      media = Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
+    } else {
+      media = Image.network(
+        imageUrl,
+        fit: fit,
+        errorBuilder: (_, _, _) => Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      );
+    }
+    // sensitive 時のみ ImageFiltered で blur を掛ける。非 sensitive 時に
+    // identity (no-op) の filter を被せても render が黒に落ちる事例があり
+    // (Linux GTK で確認、#491)、no-op の filter は実害だけ残るため外す。
+    if (isSensitive) {
+      media = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: media,
+      );
+    }
 
     return GestureDetector(
       onTap: () {
@@ -2590,19 +2702,7 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ImageFiltered(
-              imageFilter: isSensitive
-                  ? ImageFilter.blur(sigmaX: 30, sigmaY: 30)
-                  : ImageFilter.matrix(Matrix4.identity().storage),
-              child: Image.network(
-                imageUrl,
-                fit: fit,
-                errorBuilder: (_, _, _) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            ),
+            media,
             if (isSensitive)
               Positioned.fill(
                 child: Container(

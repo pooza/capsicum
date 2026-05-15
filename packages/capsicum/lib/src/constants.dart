@@ -18,6 +18,29 @@ const kDeviceTokenWait = Duration(seconds: 10);
 class AppConstants {
   static const appName = 'capsicum';
   static const callbackUrlScheme = 'capsicum';
+
+  /// macOS / Linux / Windows 用: OAuth callback を受ける localhost ポート
+  /// (#382 / #489 / #423)。デスクトップ 3 OS でシステムブラウザ + 自前 HTTP
+  /// サーバ (`flutter_web_auth_2` の server impl) 経路に統一する。動機は:
+  /// - Linux: `desktop_webview_window` の GLX 系 native crash (#489 / #496)
+  /// - Windows: MSIX に `flutter_web_auth_2` の native plugin が含まれない (#423)
+  /// - macOS: 外部パスワードマネージャ (Bitwarden / 1Password) 連携 + macOS
+  ///   Keychain 依存の沼 (#327) 軽減 (#382)
+  ///
+  /// Mastodon は createApplication 時に redirect_uri を完全一致登録するため、
+  /// ポートは固定する必要がある。macOS Mac App Store ビルドは Sandbox 下で
+  /// `HttpServer.bind` が成立するために Release.entitlements に
+  /// `com.apple.security.network.server` が必要。
+  static const localhostOAuthPort = 7099;
+  static const localhostOAuthCallbackUrl =
+      'http://localhost:$localhostOAuthPort/oauth/callback';
+
+  /// カスタムスキーム経由の OAuth redirect URI。
+  /// iOS / Android (ASWebAuthenticationSession / Custom Tabs) で使う。
+  /// macOS / Linux / Windows は localhost callback (`localhostOAuthCallbackUrl`)
+  /// を使うため、どちらを採用するかは呼び出し側 (login_screen) で判定する。
+  static const customSchemeOAuthCallbackUrl = '$callbackUrlScheme://oauth';
+
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final contactUrl = Uri.parse('https://contact.capsicum.shrieker.net');
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');

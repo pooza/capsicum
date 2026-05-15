@@ -84,7 +84,12 @@ class Post {
   /// 派生オブジェクトを生成する。現状は enrich パイプライン（IsCatEnricher 等）
   /// で author / reblog だけを差し替える用途で使用。フィールド追加時の
   /// 取りこぼし防止のため、新フィールドの追加はここに追従する。
-  Post copyWith({User? author, Post? reblog}) => Post(
+  Post copyWith({
+    User? author,
+    Post? reblog,
+    bool? reblogged,
+    int? reblogCount,
+  }) => Post(
     id: id,
     postedAt: postedAt,
     author: author ?? this.author,
@@ -92,11 +97,11 @@ class Post {
     scope: scope,
     attachments: attachments,
     favouriteCount: favouriteCount,
-    reblogCount: reblogCount,
+    reblogCount: reblogCount ?? this.reblogCount,
     replyCount: replyCount,
     quoteCount: quoteCount,
     favourited: favourited,
-    reblogged: reblogged,
+    reblogged: reblogged ?? this.reblogged,
     bookmarked: bookmarked,
     sensitive: sensitive,
     reactions: reactions,

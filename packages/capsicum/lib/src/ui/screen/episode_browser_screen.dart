@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import 'annict_record_screen.dart';
 
 /// Screen for browsing Annict works and episodes.
 /// Returns the selected episode's command_toot via context.pop().
@@ -383,6 +384,20 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
                     context.push('/hashtag/$tag');
                   },
                 ),
+              IconButton(
+                icon: const Icon(Icons.rate_review_outlined, size: 20),
+                tooltip: 'Annict に感想投稿',
+                onPressed: () {
+                  context.push(
+                    '/annict/record',
+                    extra: AnnictRecordScreenArgs(
+                      episodeId: ep.annictId,
+                      workTitle: _selectedWork!.title,
+                      episodeLabel: subtitle,
+                    ),
+                  );
+                },
+              ),
             ],
           ),
           onTap: () {

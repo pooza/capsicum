@@ -61,15 +61,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   /// 「メッセージを送る」ボタンを出してよいか。
-  /// - 現アカウントが ChatSupport かつ canUseChat == true（自分のロールが
-  ///   chat 可能）
+  /// - 現アカウントが ChatSupport かつ canWriteChat == true（自分のロールが
+  ///   送信可能。readonly では false）
   /// - 相手の canChat == true（相手のロールが chat 可能）
   /// - リモートユーザー（host が現サーバーと違う）は対象外。Misskey の
   ///   chat は同一サーバー内でのみ成立する仕様
   bool _canStartChatWith(User user) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) return false;
-    if (!(adapter as ChatSupport).canUseChat) return false;
+    if (!(adapter as ChatSupport).canWriteChat) return false;
     if (user.canChat != true) return false;
     final account = ref.read(currentAccountProvider);
     if (account == null) return false;

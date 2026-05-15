@@ -2,6 +2,13 @@ import UIKit
 import os.log
 
 class ShareViewController: UIViewController {
+  // ShareExtension と本体が共有する識別子は以下 4 ファイルにベタ書きで重複している
+  // (Xcode の同一 .swift を 2 target に member 追加するコストを避けるため。#508):
+  //   - macos/Runner/ShareIntentPlugin.swift
+  //   - macos/ShareExtension/ShareViewController.swift
+  //   - ios/Runner/ShareIntentPlugin.swift
+  //   - ios/ShareExtension/ShareViewController.swift  （本ファイル）
+  // 変更時は 4 箇所同期すること。書き込み先ファイル名 "shared_text.txt" も同様。
   private let appGroupId = "group.jp.co.b-shock.capsicum"
   private let typeText = "public.plain-text"
   private let typeURL = "public.url"
@@ -97,9 +104,12 @@ class ShareViewController: UIViewController {
       return
     }
 
+    // value は共有された URL / テキスト本体になりうる (機微情報候補)。
+    // %{private}@ にして Configuration Profile を入れない限り Console.app
+    // で読めないようにする (#518)。type は誤判定をデバッグするため public のまま。
     let stringRep = String(describing: unwrapped)
     os_log(
-      "no fallback matched. type=%{public}@ value=%{public}@",
+      "no fallback matched. type=%{public}@ value=%{private}@",
       log: log, type: .error, actualType, stringRep
     )
   }
