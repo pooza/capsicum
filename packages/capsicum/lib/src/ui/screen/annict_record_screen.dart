@@ -62,6 +62,9 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('アカウント情報が取得できませんでした')));
+      // 連携リトライ経由 (#298) の再帰呼び出しでは外側が _submitting=true の
+      // まま戻ってくるので、abort 時はここでリセットしないと画面が固まる。
+      if (mounted && _submitting) setState(() => _submitting = false);
       return;
     }
     final comment = _commentController.text.trim();
@@ -86,7 +89,12 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
           ],
         ),
       );
-      if (confirm != true || !mounted) return;
+      if (confirm != true || !mounted) {
+        // 連携リトライ経由 (#298) の再帰呼び出しでは外側が _submitting=true の
+        // まま戻ってくるので、キャンセル時はここでリセットしないと画面が固まる。
+        if (mounted && _submitting) setState(() => _submitting = false);
+        return;
+      }
     }
 
     setState(() => _submitting = true);
