@@ -73,35 +73,55 @@ Future<bool> runAnnictLinkFlow(BuildContext context, WidgetRef ref) async {
   }
 }
 
-Future<String?> _showCodeInputDialog(BuildContext context) async {
-  final codeController = TextEditingController();
-  try {
-    return await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('認可コードの入力'),
-        content: TextField(
-          controller: codeController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Annict で表示されたコードを貼り付け',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value),
+Future<String?> _showCodeInputDialog(BuildContext context) {
+  return showDialog<String>(
+    context: context,
+    builder: (context) => const _CodeInputDialog(),
+  );
+}
+
+/// controller のライフサイクルをダイアログの State に束ねる。関数内で
+/// `finally` 破棄すると、閉じるアニメーション中の TextField 再描画と
+/// 競合し "used after being disposed" になるため。
+class _CodeInputDialog extends StatefulWidget {
+  const _CodeInputDialog();
+
+  @override
+  State<_CodeInputDialog> createState() => _CodeInputDialogState();
+}
+
+class _CodeInputDialogState extends State<_CodeInputDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('認可コードの入力'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          hintText: 'Annict で表示されたコードを貼り付け',
+          border: OutlineInputBorder(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, codeController.text),
-            child: const Text('認証'),
-          ),
-        ],
+        onSubmitted: (value) => Navigator.pop(context, value),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('認証'),
+        ),
+      ],
     );
-  } finally {
-    codeController.dispose();
   }
 }
