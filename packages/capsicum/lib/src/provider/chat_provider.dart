@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../service/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
@@ -39,7 +40,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
       }
       lastParseCapture = now;
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('chat.stream.parse', 'failed');
@@ -65,7 +66,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
       }
       lastConnectCapture = now;
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('chat.stream.connect', 'failed');

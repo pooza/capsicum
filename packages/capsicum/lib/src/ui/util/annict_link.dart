@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/exception_scrub.dart';
 import '../../url_helper.dart';
 
 /// Annict OAuth 連携フロー (確認 → ブラウザ認可 → コード入力 → トークン交換)。
@@ -63,7 +64,7 @@ Future<bool> runAnnictLinkFlow(BuildContext context, WidgetRef ref) async {
     }
     return true;
   } catch (e) {
-    debugPrint('Annict auth error: $e');
+    debugPrint('Annict auth error: ${scrubException(e)}');
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,

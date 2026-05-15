@@ -49,7 +49,7 @@ const _snackBarTheme = SnackBarThemeData(
 /// release のスタートアップ / push 経路の内部情報が流入するのを抑える目的。
 /// release で残したい情報は Sentry breadcrumb / captureException に上げる。
 void _logDev(String message) {
-  if (!kReleaseMode) _logDev(message);
+  if (!kReleaseMode) debugPrint(message);
 }
 
 /// [_logDev] の StackTrace 版。

@@ -3,8 +3,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/exception_scrub.dart';
 import '../util/annict_link.dart';
 
 /// Annict 視聴記録 (感想・レーティング) を投稿する画面 (#298)。
@@ -43,6 +45,9 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
   final _commentController = TextEditingController();
   AnnictRatingState? _rating;
   bool _submitting = false;
+  // 連携フロー後の自動リトライは 1 回まで。連携直後のトークン伝播遅延で
+  // 再び 401/403 が返った時の無限ループを防ぐ。
+  bool _linkRetried = false;
 
   @override
   void dispose() {
@@ -97,7 +102,7 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict に感想を投稿しました')));
       context.pop();
-    } on DioException catch (e) {
+    } on DioException catch (e, st) {
       if (!mounted) return;
       final status = e.response?.statusCode;
       if (status == 401 || status == 403) {
@@ -105,17 +110,30 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
         // 系をすべて 403 (Ginseng::AuthError) に正規化して返すため、401/403 を
         // まとめて「要連携」とみなす (episode_browser_screen と同じ判定)。
         // 番組表→感想投稿が主要導線なのでその場で連携→投稿リトライする (#298)。
-        setState(() => _submitting = false);
+        // _submitting は連携フロー中も true のまま維持する。false に戻すと
+        // ブラウザ/コード入力中に投稿ボタンが再活性化し、二重 POST する。
         final linked = await runAnnictLinkFlow(context, ref);
-        if (linked && mounted) _submit();
+        if (!mounted) return;
+        if (linked && !_linkRetried) {
+          _linkRetried = true;
+          await _submit();
+          return;
+        }
+        setState(() => _submitting = false);
         return;
+      }
+      // 5xx はサーバ起因の異常。主要導線 (#298) の成功率を観測するため
+      // Sentry に上げる (401/403/連携不足は通常運用なのでノイズとして送らない)。
+      if (status != null && status >= 500) {
+        Sentry.captureException(scrubException(e), stackTrace: st);
       }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict への投稿に失敗しました')));
       setState(() => _submitting = false);
-    } catch (_) {
+    } catch (e, st) {
       if (!mounted) return;
+      Sentry.captureException(scrubException(e), stackTrace: st);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict への投稿に失敗しました')));
