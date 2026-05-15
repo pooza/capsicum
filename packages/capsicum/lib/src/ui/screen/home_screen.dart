@@ -814,422 +814,444 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .where((a) => a.key != current?.key)
         .toList();
 
+    // Drawer 内の各 ListTile から `Scaffold.of(context).closeDrawer()` を
+    // 呼ぶ際、`context` は _buildDrawer が受け取る HomeScreen レベルの
+    // 外側 context のため、Scaffold ancestor が見つからず assertion で
+    // 落ちる (#541 リグレッション、ca98c21 で本格化)。Builder を 1 段
+    // 挟んで Drawer サブツリー内側の `innerCtx` を取得し、それを使う
+    // `dismiss()` を closure ローカルに用意して全 ListTile から呼ぶ。
+    // wide モード (Scaffold.drawer が null、Row で並ぶ inline 配置) でも
+    // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
+    // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          Container(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: current != null
-                        ? () {
-                            Scaffold.of(context).closeDrawer();
-                            context.push('/profile', extra: current.user);
-                          }
-                        : null,
-                    child: current != null
-                        ? UserAvatar(
-                            user: current.user,
-                            size: 72,
-                            borderRadius: 8,
-                          )
-                        : Container(
-                            width: 72,
-                            height: 72,
-                            color: Theme.of(context).colorScheme.primary,
-                            alignment: Alignment.center,
-                            child: const Text(
-                              '?',
+      child: Builder(
+        builder: (innerCtx) {
+          void dismiss() => Scaffold.of(innerCtx).closeDrawer();
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: current != null
+                            ? () {
+                                dismiss();
+                                context.push('/profile', extra: current.user);
+                              }
+                            : null,
+                        child: current != null
+                            ? UserAvatar(
+                                user: current.user,
+                                size: 72,
+                                borderRadius: 8,
+                              )
+                            : Container(
+                                width: 72,
+                                height: 72,
+                                color: Theme.of(context).colorScheme.primary,
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  '?',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: current != null
+                            ? () {
+                                dismiss();
+                                context.push('/profile', extra: current.user);
+                              }
+                            : null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            EmojiText(
+                              current?.user.displayName ??
+                                  current?.user.username ??
+                                  '',
+                              emojis: current?.user.emojis ?? const {},
+                              fallbackHost: current?.user.host,
                               style: TextStyle(
-                                fontSize: 24,
-                                color: Colors.white,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                  ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: current != null
-                        ? () {
-                            Scaffold.of(context).closeDrawer();
-                            context.push('/profile', extra: current.user);
-                          }
-                        : null,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        EmojiText(
-                          current?.user.displayName ??
-                              current?.user.username ??
-                              '',
-                          emojis: current?.user.emojis ?? const {},
-                          fallbackHost: current?.user.host,
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onPrimaryContainer,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (current != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: _buildServerBadge(
-                              context,
-                              ref,
-                              current.key.host,
+                            Text(
+                              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                      ],
+                            if (current != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: _buildServerBadge(
+                                  context,
+                                  ref,
+                                  current.key.host,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (otherAccounts.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    'アカウント切替',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                ...otherAccounts.map((account) {
+                  final themeColors = ref.watch(hostThemeColorProvider);
+                  final badges = ref.watch(unreadBadgeProvider).valueOrNull;
+                  final badge = badges?[account.key.toStorageKey()];
+                  return ListTile(
+                    leading: Badge(
+                      isLabelVisible: badge != null && badge.hasUnread,
+                      label: badge != null && badge.hasUnread
+                          ? Text('${badge.total}')
+                          : null,
+                      child: UserAvatar(
+                        user: account.user,
+                        size: 32,
+                        compact: true,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (otherAccounts.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                'アカウント切替',
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ),
-            ...otherAccounts.map((account) {
-              final themeColors = ref.watch(hostThemeColorProvider);
-              final badges = ref.watch(unreadBadgeProvider).valueOrNull;
-              final badge = badges?[account.key.toStorageKey()];
-              return ListTile(
-                leading: Badge(
-                  isLabelVisible: badge != null && badge.hasUnread,
-                  label: badge != null && badge.hasUnread
-                      ? Text('${badge.total}')
-                      : null,
-                  child: UserAvatar(
-                    user: account.user,
-                    size: 32,
-                    compact: true,
-                  ),
-                ),
-                title: EmojiText(
-                  account.user.displayName ?? account.user.username,
-                  emojis: account.user.emojis,
-                  fallbackHost: account.user.host,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '@${account.user.username}@${account.key.host}',
+                    title: EmojiText(
+                      account.user.displayName ?? account.user.username,
+                      emojis: account.user.emojis,
+                      fallbackHost: account.user.host,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: ServerBadge.fromHost(
-                        account.key.host,
-                        themeColors: themeColors,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '@${account.user.username}@${account.key.host}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: ServerBadge.fromHost(
+                            account.key.host,
+                            themeColors: themeColors,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                    onTap: () {
+                      ref
+                          .read(accountManagerProvider.notifier)
+                          .switchAccount(account);
+                      dismiss();
+                    },
+                  );
+                }),
+              ],
+              ListTile(
+                leading: const Icon(Icons.person_add),
+                title: const Text('アカウントを追加'),
+                onTap: () {
+                  dismiss();
+                  context.push('/server');
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('検索'),
+                onTap: () {
+                  dismiss();
+                  context.push('/search');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('通知'),
+                onTap: () {
+                  dismiss();
+                  context.push('/notifications');
+                },
+              ),
+              if (accountState.accounts.length > 1)
+                ListTile(
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: const Text('すべての通知'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/notifications/all');
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.bookmark_outline),
+                title: Text(
+                  ref.read(currentAdapterProvider) is ReactionSupport
+                      ? 'お気に入り'
+                      : 'ブックマーク',
                 ),
                 onTap: () {
-                  ref
-                      .read(accountManagerProvider.notifier)
-                      .switchAccount(account);
-                  Scaffold.of(context).closeDrawer();
+                  dismiss();
+                  context.push('/bookmarks');
                 },
-              );
-            }),
-          ],
-          ListTile(
-            leading: const Icon(Icons.person_add),
-            title: const Text('アカウントを追加'),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/server');
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.search),
-            title: const Text('検索'),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/search');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications_outlined),
-            title: const Text('通知'),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/notifications');
-            },
-          ),
-          if (accountState.accounts.length > 1)
-            ListTile(
-              leading: const Icon(Icons.notifications_active_outlined),
-              title: const Text('すべての通知'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/notifications/all');
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_outline),
-            title: Text(
-              ref.read(currentAdapterProvider) is ReactionSupport
-                  ? 'お気に入り'
-                  : 'ブックマーク',
-            ),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/bookmarks');
-            },
-          ),
-          // Hide drawer item when announcements tab is visible.
-          if (current == null ||
-              !ref.watch(
-                isTabVisibleProvider((
-                  storageKey: current.key.toStorageKey(),
-                  tab: const AnnouncementsTab(),
-                )),
-              ))
-            ListTile(
-              leading: const Icon(Icons.campaign_outlined),
-              title: const Text('お知らせ'),
-              trailing: unreadAnnouncements > 0
-                  ? Badge(label: Text('$unreadAnnouncements'))
-                  : null,
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/announcements');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ListSupport)
-            ListTile(
-              leading: const Icon(Icons.list),
-              title: const Text('リスト'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/lists/manage');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ChannelSupport)
-            ListTile(
-              leading: const Icon(Icons.forum),
-              title: const Text('チャンネル'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showChannelList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ChatSupport &&
-              (ref.read(currentAdapterProvider) as ChatSupport).canReadChat)
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('メッセージ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/chat');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is DriveSupport)
-            ListTile(
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('ドライブ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/drive');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ClipSupport)
-            ListTile(
-              leading: const Icon(Icons.content_paste),
-              title: const Text('クリップ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showClipList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is AntennaSupport)
-            ListTile(
-              leading: const Icon(Icons.settings_input_antenna),
-              title: const Text('アンテナ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showAntennaList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is FlashSupport)
-            ListTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: const Text('Play'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showFlashList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is GallerySupport)
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('ギャラリー'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/gallery');
-              },
-            ),
-          if (ref.read(currentMulukhiyaProvider) != null) ...[
-            ListTile(
-              leading: const Icon(Icons.tag),
-              title: const Text('プロフィールタグ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showFavoriteTags(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('リンク'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                _showServerLinks(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('メディアカタログ'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/media-catalog');
-              },
-            ),
-          ],
-          if (ref.read(currentAdapterProvider) is ScheduleSupport)
-            ListTile(
-              leading: const Icon(Icons.schedule),
-              title: const Text('予約投稿'),
-              onTap: () {
-                Scaffold.of(context).closeDrawer();
-                context.push('/scheduled');
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.dns_outlined),
-            title: const Text('サーバー情報'),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/server-info');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('設定'),
-            onTap: () {
-              Scaffold.of(context).closeDrawer();
-              context.push('/settings');
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('ログアウト'),
-            onTap: () async {
-              Scaffold.of(context).closeDrawer();
-              if (current == null) return;
-
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('ログアウト'),
-                  content: Text(
-                    '@${current.user.username}@${current.key.host} '
-                    'からログアウトしますか？',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('キャンセル'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('ログアウト'),
-                    ),
-                  ],
+              ),
+              // Hide drawer item when announcements tab is visible.
+              if (current == null ||
+                  !ref.watch(
+                    isTabVisibleProvider((
+                      storageKey: current.key.toStorageKey(),
+                      tab: const AnnouncementsTab(),
+                    )),
+                  ))
+                ListTile(
+                  leading: const Icon(Icons.campaign_outlined),
+                  title: const Text('お知らせ'),
+                  trailing: unreadAnnouncements > 0
+                      ? Badge(label: Text('$unreadAnnouncements'))
+                      : null,
+                  onTap: () {
+                    dismiss();
+                    context.push('/announcements');
+                  },
                 ),
-              );
-
-              if (confirmed == true) {
-                await ref.read(accountManagerProvider.notifier).logout(current);
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('capsicum について'),
-            onTap: () async {
-              Scaffold.of(context).closeDrawer();
-              if (!context.mounted) return;
-              await showAboutCapsicum(context);
-            },
-          ),
-          const Divider(),
-          FutureBuilder<PackageInfo>(
-            future: PackageInfo.fromPlatform(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
-              final info = snapshot.data!;
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              if (ref.read(currentAdapterProvider) is ListSupport)
+                ListTile(
+                  leading: const Icon(Icons.list),
+                  title: const Text('リスト'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/lists/manage');
+                  },
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (current != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '${current.key.host} (${current.key.type.displayName})'
-                          '${current.softwareVersion != null ? ' v${current.softwareVersion}' : ''}',
+              if (ref.read(currentAdapterProvider) is ChannelSupport)
+                ListTile(
+                  leading: const Icon(Icons.forum),
+                  title: const Text('チャンネル'),
+                  onTap: () {
+                    dismiss();
+                    _showChannelList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ChatSupport &&
+                  (ref.read(currentAdapterProvider) as ChatSupport).canReadChat)
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: const Text('メッセージ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/chat');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is DriveSupport)
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: const Text('ドライブ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/drive');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ClipSupport)
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('クリップ'),
+                  onTap: () {
+                    dismiss();
+                    _showClipList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is AntennaSupport)
+                ListTile(
+                  leading: const Icon(Icons.settings_input_antenna),
+                  title: const Text('アンテナ'),
+                  onTap: () {
+                    dismiss();
+                    _showAntennaList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is FlashSupport)
+                ListTile(
+                  leading: const Icon(Icons.play_circle_outline),
+                  title: const Text('Play'),
+                  onTap: () {
+                    dismiss();
+                    _showFlashList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is GallerySupport)
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('ギャラリー'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/gallery');
+                  },
+                ),
+              if (ref.read(currentMulukhiyaProvider) != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.tag),
+                  title: const Text('プロフィールタグ'),
+                  onTap: () {
+                    dismiss();
+                    _showFavoriteTags(context, ref);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('リンク'),
+                  onTap: () {
+                    dismiss();
+                    _showServerLinks(context, ref);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('メディアカタログ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/media-catalog');
+                  },
+                ),
+              ],
+              if (ref.read(currentAdapterProvider) is ScheduleSupport)
+                ListTile(
+                  leading: const Icon(Icons.schedule),
+                  title: const Text('予約投稿'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/scheduled');
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: const Text('サーバー情報'),
+                onTap: () {
+                  dismiss();
+                  context.push('/server-info');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('設定'),
+                onTap: () {
+                  dismiss();
+                  context.push('/settings');
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('ログアウト'),
+                onTap: () async {
+                  dismiss();
+                  if (current == null) return;
+
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('ログアウト'),
+                      content: Text(
+                        '@${current.user.username}@${current.key.host} '
+                        'からログアウトしますか？',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('キャンセル'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('ログアウト'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmed == true) {
+                    await ref
+                        .read(accountManagerProvider.notifier)
+                        .logout(current);
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('capsicum について'),
+                onTap: () async {
+                  dismiss();
+                  if (!context.mounted) return;
+                  await showAboutCapsicum(context);
+                },
+              ),
+              const Divider(),
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const SizedBox.shrink();
+                  final info = snapshot.data!;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (current != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              '${current.key.host} (${current.key.type.displayName})'
+                              '${current.softwareVersion != null ? ' v${current.softwareVersion}' : ''}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
+                                  ),
+                            ),
+                          ),
+                        Text(
+                          'capsicum v${info.version} (${info.buildNumber})',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,
                               ),
                         ),
-                      ),
-                    Text(
-                      'capsicum v${info.version} (${info.buildNumber})',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
