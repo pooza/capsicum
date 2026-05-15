@@ -390,9 +390,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> unrepeatPost(String id) async {
-    final status = await client.unreblogStatus(id);
-    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  Future<void> unrepeatPost(Post post) async {
+    // Mastodon の /unreblog は「元 status の id」を要求する。
+    // post が自分のブースト status の場合は post.reblog に元 status が入る。
+    final originalId = post.reblog?.id ?? post.id;
+    await client.unreblogStatus(originalId);
   }
 
   @override

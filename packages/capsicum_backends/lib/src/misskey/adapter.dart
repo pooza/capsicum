@@ -439,7 +439,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> unrepeatPost(String id) => throw UnimplementedError();
+  Future<void> unrepeatPost(Post post) => client.deleteNote(post.id);
 
   @override
   Future<Instance> getInstance() async {
@@ -1493,6 +1493,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Stream<ChatMessage> streamChatMessages({
     void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
   }) {
     _chatStreaming?.dispose();
     final token = client.accessToken;
@@ -1503,6 +1505,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       adminRoleIds: _adminRoleIds,
       selfUser: _myUser,
       onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
     );
     return _chatStreaming!.connect();
   }

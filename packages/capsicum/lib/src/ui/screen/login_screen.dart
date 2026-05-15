@@ -40,7 +40,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// (#489 / #496) を、Windows は MSIX に `flutter_web_auth_2` の native
   /// plugin が含まれない制約 (#423) を、いずれも localhost callback で
   /// 回避する。地域名でなく機能ベース命名を採用 (#507)。
-  bool get _useLocalhostCallback => Platform.isLinux || Platform.isWindows;
+  // Linux / Windows / macOS でこの経路に入れる (#382)。挙動はプラット
+  // フォームで分かれる:
+  // - Linux: desktop_webview_window の GLX 系 native crash 回避 (#489 /
+  //   #496)。flutter_web_auth_2 server impl で localhost callback を受ける
+  // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない
+  //   (#423) ため同じく server impl 経路
+  // - macOS: flutter_web_auth_2 4.x の macOS 実装は ASWebAuthentication
+  //   Session のみで server impl が無い。localhost callback は拾えず
+  //   決定論的に oob fallback (外部デフォルトブラウザ + 手動コード) に
+  //   落ちる。+75 検証で ASWebAuthenticationSession 直行は「無効な
+  //   リダイレクトURI」+ ephemeral で Bitwarden 拡張が効かないと判明、
+  //   逆に oob fallback は実ブラウザで Bitwarden が効き安定だったため、
+  //   macOS は意図的にこの経路に入れて oob に着地させる。
+  // Mac App Store ビルドは Sandbox 下で _checkOAuthPortAvailability の
+  // ServerSocket.bind が成立するために Release.entitlements に
+  // com.apple.security.network.server が必要 (実 OAuth サーバは立てない
+  // が bind プローブ自体に要る)。
+  bool get _useLocalhostCallback =>
+      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
@@ -641,15 +659,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // Server thumbnail
+          // 横長ビューポート (macOS / タブレット landscape) で box が
+          // 極端に横長になり BoxFit.cover で上下がクリップされていたため、
+          // maxWidth 480 で頭打ちにして中央寄せする (#479)。
           if (_serverThumbnail != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _serverThumbnail!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    _serverThumbnail!,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
           const SizedBox(height: 16),

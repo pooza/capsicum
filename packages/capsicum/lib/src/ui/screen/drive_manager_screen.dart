@@ -211,6 +211,10 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   }
 
   Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
+    // 移動先 == 現在のフォルダなら API も notifier も触らない (#563)。
+    // moveFileOut を呼ぶとローカルリストから消えるが API は no-op のため、
+    // 手動 refresh まで表示が戻らない事故が起きていた。
+    if (folderId == _currentFolderId) return;
     try {
       await _drive?.moveDriveFile(file.id, folderId);
       ref

@@ -980,6 +980,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     final currentUser = ref.read(currentAccountProvider)?.user;
     final targetPost = post.reblog ?? post;
     final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
+    final isOwnRenote =
+        post.reblog != null &&
+        currentUser != null &&
+        post.author.id == currentUser.id;
+    final canUnrepeat = isOwnRenote || targetPost.reblogged;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
@@ -1072,6 +1077,41 @@ class _PostTileState extends ConsumerState<PostTile> {
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
                     );
+                  },
+                ),
+              if (canUnrepeat)
+                ListTile(
+                  leading: const Icon(Icons.repeat_on),
+                  title: Text('$boostLabelを取り消す'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      // Misskey: 自分のリノート note 表示そのものを delete。
+                      // Mastodon: 元 status の id で /unreblog。
+                      await adapter.unrepeatPost(
+                        isOwnRenote ? post : targetPost,
+                      );
+                      if (isOwnRenote) {
+                        ref.read(timelineProvider.notifier).removePost(post.id);
+                      }
+                      if (targetPost.reblogged) {
+                        final updated = targetPost.copyWith(
+                          reblogged: false,
+                          reblogCount: targetPost.reblogCount > 0
+                              ? targetPost.reblogCount - 1
+                              : 0,
+                        );
+                        ref.read(timelineProvider.notifier).updatePost(updated);
+                      }
+                      onActionCompleted?.call();
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('$boostLabelを取り消しました')),
+                      );
+                    } catch (_) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('操作に失敗しました')),
+                      );
+                    }
                   },
                 ),
               if (adapter is BookmarkSupport)

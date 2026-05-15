@@ -8,7 +8,14 @@ import 'package:dio/dio.dart';
 /// ファイルに流す前に必ずこのユーティリティを通す。
 ///
 /// `service.push_registration` の relay 経路、`ui.login_screen` の OAuth
-/// fallback 経路で共通利用 (#499)。
+/// fallback 経路、`provider.chat_provider` の WebSocket 接続例外 (#552) で
+/// 共通利用 (#499)。
+///
+/// DioException 以外でも、`WebSocketChannelException` / `SocketException`
+/// 等が `toString()` に `wss://host/streaming?i=<accessToken>` のような
+/// 機密クエリ付き URL を含めることがあるため、文字列表現から既知の機密
+/// クエリパラメータ (`i` / `token` / `access_token` / `push_token` /
+/// `client_secret`) の値をマスクして詰め替える。
 Object scrubException(Object e) {
   if (e is DioException) {
     final path = e.requestOptions.path.split('?').first;
@@ -18,5 +25,17 @@ Object scrubException(Object e) {
       'path=$path',
     );
   }
+  final text = e.toString();
+  if (_sensitiveQueryParam.hasMatch(text)) {
+    return StateError(
+      '${e.runtimeType}: '
+      '${text.replaceAllMapped(_sensitiveQueryParam, (m) => '${m[1]}***')}',
+    );
+  }
   return e;
 }
+
+final _sensitiveQueryParam = RegExp(
+  r'''([?&](?:i|token|access_token|push_token|client_secret)=)[^&\s'"]+''',
+  caseSensitive: false,
+);

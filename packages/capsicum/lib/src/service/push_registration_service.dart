@@ -251,6 +251,14 @@ class PushRegistrationService {
           withScope: (scope) {
             scope.setTag('service', 'push_registration');
             scope.setTag('push.host', account.key.host);
+            // scrubException で詰め替えた StateError は status / path 毎に
+            // grouping が散るため、runtimeType + phase だけで集約する (#526)。
+            // _captureContractViolation の fingerprint 形と整合させる。
+            scope.fingerprint = [
+              'push_registration',
+              'register',
+              e.runtimeType.toString(),
+            ];
           },
         );
       }
@@ -368,6 +376,14 @@ class PushRegistrationService {
         scope.setTag('phase', 'unregister');
         scope.setTag('stage', stage);
         scope.setTag('push.host', host);
+        // status / path 毎の grouping 分散を避けるため runtimeType + stage で
+        // 集約する (#526)。
+        scope.fingerprint = [
+          'push_registration',
+          'unregister',
+          stage,
+          e.runtimeType.toString(),
+        ];
       },
     );
   }

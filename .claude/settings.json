@@ -21,6 +21,9 @@
       "Bash(file *)",
       "Bash(chmod *)",
       "Bash(sudo apt *)",
+      "Bash(unzip *)",
+      "Bash(sort *)",
+      "Bash(magick *)",
       "Bash(fastlane beta *)",
       "Bash(gh api *)",
       "Bash(gh issue *)",
@@ -43,7 +46,11 @@
       "Bash(git branch *)",
       "Bash(git remote *)",
       "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git config *)",
       "Bash(python3 -m json.tool)",
+      "WebFetch(domain:mstdn.b-shock.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:gist.github.com)"
     ],
     "defaultMode": "auto"
