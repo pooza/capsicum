@@ -99,10 +99,12 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       context.pop();
     } on DioException catch (e) {
       if (!mounted) return;
-      if (e.response?.statusCode == 401) {
-        // Annict 未連携 / トークン失効。番組表→感想投稿が主要導線なので
-        // エピソードブラウザに寄り道させず、その場で連携フローを起動して
-        // 成功したら投稿をリトライする (#298)。
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        // Annict 未連携 / トークン失効 / スコープ不足。モロヘイヤが auth/scope
+        // 系をすべて 403 (Ginseng::AuthError) に正規化して返すため、401/403 を
+        // まとめて「要連携」とみなす (episode_browser_screen と同じ判定)。
+        // 番組表→感想投稿が主要導線なのでその場で連携→投稿リトライする (#298)。
         setState(() => _submitting = false);
         final linked = await runAnnictLinkFlow(context, ref);
         if (linked && mounted) _submit();
