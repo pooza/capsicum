@@ -52,7 +52,7 @@ AppImage は **libfuse2** に依存します (`libfuse2` / `libfuse2t64` 等の�
 | IM | 同梱 | 検証 |
 |---|---|---|
 | ibus | ✓ | **動作確認済み** (Debian 13 + ibus-mozc + LXQt / X11) |
-| fcitx5 | ✓ | best-effort (開発者環境で未検証、動作報告歓迎) |
+| fcitx5 | ✓ | **動作報告あり** (外部ユーザーによる確認、開発者環境では未検証) |
 | uim | ✓ | best-effort (開発者環境で未検証、動作報告歓迎) |
 
 ホスト側に該当 IM フレームワークがインストールされていれば、capsicum 起動時に環境変数 `GTK_IM_MODULE` で自動的に拾われます。動作しない場合は明示指定で試してください:

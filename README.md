@@ -18,7 +18,7 @@ capsicum が提案するのは、アプリ単体の体験ではなく、サー�
 
 - **macOS**: App Store からダウンロードできます（iOS / iPadOS と同一の App レコード・Universal Purchase）。Apple silicon / Intel 両対応
 - **Linux**: [GitHub Releases](https://github.com/pooza/capsicum/releases) から AppImage（x86_64）を配布。Flathub への提出は再申請手続き中
-- **Linux の日本語入力（IM）**: GTK IM module の `ibus` / `fcitx5` / `uim` を AppImage に同梱。開発者環境では `ibus-mozc` のみ動作確認済みで、`fcitx5` / `uim` 経路は **未検証 (best-effort)**。動かない場合は [Issue](https://github.com/pooza/capsicum/issues) にご報告ください
+- **Linux の日本語入力（IM）**: GTK IM module の `ibus` / `fcitx5` / `uim` を AppImage に同梱。`ibus-mozc` (開発者環境) と `fcitx5` (外部ユーザー報告) は動作確認済み。`uim` 経路は **未検証 (best-effort)**。動かない場合は [Issue](https://github.com/pooza/capsicum/issues) にご報告ください
 
 ## モロヘイヤ連携
 
