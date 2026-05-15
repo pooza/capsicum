@@ -40,17 +40,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// (#489 / #496) を、Windows は MSIX に `flutter_web_auth_2` の native
   /// plugin が含まれない制約 (#423) を、いずれも localhost callback で
   /// 回避する。地域名でなく機能ベース命名を採用 (#507)。
-  // Linux / Windows でシステムブラウザ + 自前 HTTP サーバ
-  // (flutter_web_auth_2 server impl) 経路を使う (#382)。動機は:
-  // - Linux: desktop_webview_window の GLX 系 native crash 回避 (#489 / #496)
-  // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない (#423)
-  // macOS は除外する。flutter_web_auth_2 4.x の macOS 実装は
-  // ASWebAuthenticationSession のみで server impl を持たないため、
-  // localhost callback URL を渡すと redirect を拾えず必ず oob fallback に
-  // 落ちる。macOS は iOS と同じ ASWebAuthenticationSession + カスタム
-  // スキーム経路に戻す (これ自体がシステム認証セッションなので
-  // パスワードマネージャ連携も維持される)。
-  bool get _useLocalhostCallback => Platform.isLinux || Platform.isWindows;
+  // Linux / Windows / macOS でこの経路に入れる (#382)。挙動はプラット
+  // フォームで分かれる:
+  // - Linux: desktop_webview_window の GLX 系 native crash 回避 (#489 /
+  //   #496)。flutter_web_auth_2 server impl で localhost callback を受ける
+  // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない
+  //   (#423) ため同じく server impl 経路
+  // - macOS: flutter_web_auth_2 4.x の macOS 実装は ASWebAuthentication
+  //   Session のみで server impl が無い。localhost callback は拾えず
+  //   決定論的に oob fallback (外部デフォルトブラウザ + 手動コード) に
+  //   落ちる。+75 検証で ASWebAuthenticationSession 直行は「無効な
+  //   リダイレクトURI」+ ephemeral で Bitwarden 拡張が効かないと判明、
+  //   逆に oob fallback は実ブラウザで Bitwarden が効き安定だったため、
+  //   macOS は意図的にこの経路に入れて oob に着地させる。
+  // Mac App Store ビルドは Sandbox 下で _checkOAuthPortAvailability の
+  // ServerSocket.bind が成立するために Release.entitlements に
+  // com.apple.security.network.server が必要 (実 OAuth サーバは立てない
+  // が bind プローブ自体に要る)。
+  bool get _useLocalhostCallback =>
+      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
