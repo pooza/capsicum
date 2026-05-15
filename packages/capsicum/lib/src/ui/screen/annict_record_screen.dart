@@ -150,10 +150,10 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
               Wrap(
                 spacing: 8,
                 children: [
-                  _ratingChip(AnnictRatingState.great, 'すごい'),
-                  _ratingChip(AnnictRatingState.good, 'いいね'),
-                  _ratingChip(AnnictRatingState.average, 'ふつう'),
-                  _ratingChip(AnnictRatingState.bad, 'うーん'),
+                  _ratingChip(AnnictRatingState.great, 'とても良い'),
+                  _ratingChip(AnnictRatingState.good, '良い'),
+                  _ratingChip(AnnictRatingState.average, '普通'),
+                  _ratingChip(AnnictRatingState.bad, '良くない'),
                 ],
               ),
               const SizedBox(height: 16),
