@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../util/annict_link.dart';
 
 /// Annict 視聴記録 (感想・レーティング) を投稿する画面 (#298)。
 ///
@@ -98,12 +99,18 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       context.pop();
     } on DioException catch (e) {
       if (!mounted) return;
-      // 401 は Annict 未連携 / トークン失効。設定画面 (or エピソードブラウザ)
-      // 経由で再連携してもらう動線に倒すが、本画面では文言で誘導するに留める。
-      final msg = e.response?.statusCode == 401
-          ? 'Annict と未連携です。エピソードブラウザから連携してください'
-          : 'Annict への投稿に失敗しました';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (e.response?.statusCode == 401) {
+        // Annict 未連携 / トークン失効。番組表→感想投稿が主要導線なので
+        // エピソードブラウザに寄り道させず、その場で連携フローを起動して
+        // 成功したら投稿をリトライする (#298)。
+        setState(() => _submitting = false);
+        final linked = await runAnnictLinkFlow(context, ref);
+        if (linked && mounted) _submit();
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Annict への投稿に失敗しました')));
       setState(() => _submitting = false);
     } catch (_) {
       if (!mounted) return;

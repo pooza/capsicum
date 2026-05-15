@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
+import '../util/annict_link.dart';
 import 'annict_record_screen.dart';
 
 /// Screen for browsing Annict works and episodes.
@@ -75,106 +75,8 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
   }
 
   Future<void> _showAnnictAuthPrompt() async {
-    final mulukhiya = _mulukhiya;
-    if (mulukhiya == null) return;
-
-    final account = ref.read(currentAccountProvider);
-    if (account == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Annict 連携'),
-        content: const Text(
-          'エピソードブラウザを使うには Annict アカウントとの連携が必要です。\n\n'
-          'ブラウザで Annict の認可画面を開き、表示されるコードを入力してください。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('連携する'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      final oauthUri = await mulukhiya.getAnnictOAuthUri();
-      final uri = Uri.parse(oauthUri);
-      if (!await launchUrlSafely(uri, mode: LaunchMode.externalApplication)) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('ブラウザを開けませんでした')));
-        }
-        return;
-      }
-
-      if (!mounted) return;
-
-      final code = await _showCodeInputDialog();
-      if (code == null || code.trim().isEmpty || !mounted) return;
-
-      setState(() => _loading = true);
-      await mulukhiya.authenticateAnnict(
-        snsToken: account.userSecret.accessToken,
-        annictCode: code.trim(),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Annict 連携が完了しました')));
-        _searchWorks();
-      }
-    } catch (e) {
-      debugPrint('Annict auth error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Annict 連携に失敗しました')));
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  Future<String?> _showCodeInputDialog() async {
-    final codeController = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('認可コードの入力'),
-          content: TextField(
-            controller: codeController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Annict で表示されたコードを貼り付け',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (value) => Navigator.pop(context, value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('キャンセル'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, codeController.text),
-              child: const Text('認証'),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      codeController.dispose();
-    }
+    final linked = await runAnnictLinkFlow(context, ref);
+    if (linked && mounted) _searchWorks();
   }
 
   Future<void> _selectWork(AnnictWork work) async {
