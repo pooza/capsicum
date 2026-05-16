@@ -426,6 +426,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    // スワイプによるカラム移動はタブ種別に依存しない共通操作なので、
+    // 通知 / お知らせ / リスト等すべてのタブ本体を単一の GestureDetector で
+    // 包む。HitTestBehavior.opaque で空リスト領域上のドラッグも拾う (#573)。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: _onSwipe,
+      child: _buildTabContent(
+        currentTab,
+        selectedList,
+        selectedType,
+        selectedHashtag,
+        timeline,
+      ),
+    );
+  }
+
+  Widget _buildTabContent(
+    TabType currentTab,
+    PostList? selectedList,
+    TimelineType selectedType,
+    String? selectedHashtag,
+    AsyncValue<dynamic> timeline,
+  ) {
     // Non-timeline tabs: render their dedicated views.
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
@@ -459,90 +482,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget body = Column(
       children: [
         Expanded(
-          child: GestureDetector(
-            onHorizontalDragEnd: selectedList == null
-                ? (details) => _onSwipe(details)
-                : null,
-            child: timeline.when(
-              data: (tlState) {
-                // Restore marker position on first load (home timeline only).
-                if (selectedList == null &&
-                    selectedType == TimelineType.home &&
-                    tlState.posts.isNotEmpty) {
-                  _restoreMarker(tlState.posts);
-                }
-                return RefreshIndicator(
-                  onRefresh: () {
-                    _markerRestored = false;
-                    if (selectedHashtag != null) {
-                      return ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
+          child: timeline.when(
+            data: (tlState) {
+              // Restore marker position on first load (home timeline only).
+              if (selectedList == null &&
+                  selectedType == TimelineType.home &&
+                  tlState.posts.isNotEmpty) {
+                _restoreMarker(tlState.posts);
+              }
+              return RefreshIndicator(
+                onRefresh: () {
+                  _markerRestored = false;
+                  if (selectedHashtag != null) {
+                    return ref.refresh(
+                      hashtagTimelineProvider(selectedHashtag).future,
+                    );
+                  }
+                  if (selectedList != null) {
+                    return ref.refresh(
+                      listTimelineProvider(selectedList.id).future,
+                    );
+                  }
+                  return ref.refresh(timelineProvider.future);
+                },
+                child: ScrollablePositionedList.separated(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  itemCount:
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index >= tlState.posts.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    if (selectedList != null) {
-                      return ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    }
-                    return ref.refresh(timelineProvider.future);
+                    return PostTile(post: tlState.posts[index]);
                   },
-                  child: ScrollablePositionedList.separated(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    itemCount:
-                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= tlState.posts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      return PostTile(post: tlState.posts[index]);
-                    },
-                  ),
-                );
-              },
-              loading: () {
-                if (_showScrollTop) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _showScrollTop = false);
-                  });
-                }
-                return const Center(child: CircularProgressIndicator());
-              },
-              error: (error, stack) {
-                final message = _timelineErrorMessage(error);
-                final canRetry = !_isForbiddenError(error);
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(message, textAlign: TextAlign.center),
-                        if (canRetry) ...[
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              if (selectedList != null) {
-                                ref.invalidate(
-                                  listTimelineProvider(selectedList.id),
-                                );
-                              } else {
-                                ref.invalidate(timelineProvider);
-                              }
-                            },
-                            child: const Text('再試行'),
-                          ),
-                        ],
+                ),
+              );
+            },
+            loading: () {
+              if (_showScrollTop) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _showScrollTop = false);
+                });
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+            error: (error, stack) {
+              final message = _timelineErrorMessage(error);
+              final canRetry = !_isForbiddenError(error);
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(message, textAlign: TextAlign.center),
+                      if (canRetry) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (selectedList != null) {
+                              ref.invalidate(
+                                listTimelineProvider(selectedList.id),
+                              );
+                            } else {
+                              ref.invalidate(timelineProvider);
+                            }
+                          },
+                          child: const Text('再試行'),
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
         const SimplePostBar(),
