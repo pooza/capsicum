@@ -177,6 +177,13 @@ final lastTabProvider =
     );
 
 class LastTabNotifier extends FamilyNotifier<String?, String> {
+  /// build() 中に走った _load() の SharedPreferences.getInstance() await は
+  /// 初回起動で遅く、その間に login_screen 等が save() を呼ぶと、後から
+  /// 解決した _load() が disk の旧値で明示選択を無条件上書きしてしまう
+  /// (#579: misskey.io でホームのつもりがローカルになる間欠不具合)。
+  /// 明示 save() があったら _load() は復元をスキップし「後勝ち」を防ぐ。
+  bool _explicitlySet = false;
+
   @override
   String? build(String arg) {
     _load();
@@ -185,13 +192,16 @@ class LastTabNotifier extends FamilyNotifier<String?, String> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    // await 中に save() が走っていれば、その明示選択を尊重して復元しない。
+    if (_explicitlySet) return;
     final saved = prefs.getString('$_lastTabPrefix$arg');
-    if (saved != null) {
+    if (saved != null && !_explicitlySet) {
       state = saved;
     }
   }
 
   Future<void> save(String value) async {
+    _explicitlySet = true;
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('$_lastTabPrefix$arg', value);
