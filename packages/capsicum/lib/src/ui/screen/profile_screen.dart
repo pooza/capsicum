@@ -17,6 +17,7 @@ import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
+import '../util/user_acct.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
@@ -911,6 +912,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           label: const Text('プロフィールを編集'),
         ),
       );
+      actions.add(_buildOwnProfileMenu());
     } else {
       if (_canStartChatWith(user)) {
         actions.add(
@@ -963,14 +965,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         onSelected: (value) async {
           switch (value) {
             case 'copy_url':
-              if (widget.user.url != null) {
-                Clipboard.setData(ClipboardData(text: widget.user.url!));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('URL をコピーしました')));
-                }
-              }
+              _copyUrl(context);
+            case 'copy_acct':
+              _copyAcct(context);
+            case 'mention_compose':
+              context.push(
+                '/compose',
+                extra: {'initialText': '@${userAcct(widget.user)} '},
+              );
             case 'mute':
               final ok = await _performAction(
                 () => adapter.muteUser(widget.user.id),
@@ -996,6 +998,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           }
         },
         itemBuilder: (_) => [
+          const PopupMenuItem(
+            value: 'mention_compose',
+            child: Text('メンションして投稿'),
+          ),
+          const PopupMenuItem(
+            value: 'copy_acct',
+            child: Text('ユーザー名をコピー'),
+          ),
           if (widget.user.url != null)
             const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
           if (rel.muting)
@@ -1014,6 +1024,50 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ],
       ),
     ];
+  }
+
+  /// 自分のプロフィールにも出す軽量メニュー。メンション / ミュート / ブロックは
+  /// 自分には無意味なため、自己適用しうるコピー系のみを並べる。
+  /// コピー処理は [_buildRelationshipButtons] の PopupMenu と [_copyAcct] /
+  /// [_copyUrl] を共有する。
+  Widget _buildOwnProfileMenu() {
+    return PopupMenuButton<String>(
+      onSelected: (value) {
+        switch (value) {
+          case 'copy_acct':
+            _copyAcct(context);
+          case 'copy_url':
+            _copyUrl(context);
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'copy_acct',
+          child: Text('ユーザー名をコピー'),
+        ),
+        if (widget.user.url != null)
+          const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
+      ],
+    );
+  }
+
+  void _copyAcct(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: '@${userAcct(widget.user)}'));
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ユーザー名をコピーしました')));
+    }
+  }
+
+  void _copyUrl(BuildContext context) {
+    if (widget.user.url == null) return;
+    Clipboard.setData(ClipboardData(text: widget.user.url!));
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL をコピーしました')));
+    }
   }
 
   Future<bool> _showMuteDurationPicker(FollowSupport adapter) async {

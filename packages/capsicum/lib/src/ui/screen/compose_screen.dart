@@ -22,6 +22,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
+import '../util/user_acct.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
@@ -545,12 +546,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  String _buildAcct(User user) {
-    if (user.host != null && user.host!.isNotEmpty) {
-      return '${user.username}@${user.host}';
-    }
-    return user.username;
-  }
+  String _buildAcct(User user) => userAcct(user);
 
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
