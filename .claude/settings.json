@@ -57,6 +57,9 @@
       "WebFetch(domain:misskey.delmulin.com)",
       "WebSearch"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "/tmp"
+    ]
   }
 }
