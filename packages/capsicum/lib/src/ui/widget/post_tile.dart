@@ -212,9 +212,16 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             ),
           ),
-          SelectableText(
-            body,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          // コマンドトゥート結果 (JSON/YAML) は長い 1 行を折り返さず横
+          // スクロールで読む。content_parser の codeBlock (#434) と同じ
+          // 扱いに揃える (#585。従来この経路だけ softWrap 抑止が無く、
+          // _isStructuredContent で検出できても折り返していた)。
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SelectableText(
+              body,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            ),
           ),
         ],
       ),
