@@ -310,6 +310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       account,
       accountState,
       unreadAnnouncements,
+      wideLayout: wideLayout,
     );
 
     return Scaffold(
@@ -872,8 +873,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetRef ref,
     Account? current,
     AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
+    int unreadAnnouncements, {
+    bool wideLayout = false,
+  }) {
     final otherAccounts = accountState.accounts
         .where((a) => a.key != current?.key)
         .toList();
@@ -888,6 +890,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
     // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
     return Drawer(
+      // 常駐 (wide) モードでは Row 内の左パネルとして並ぶため、Material
+      // 既定の内容側 (右端) 角丸を消してフラットな仕切りにする (#541
+      // フォローアップ)。オーバーレイ (narrow) モードでは shape: null で
+      // 従来の Material 既定 (角丸あり) を維持する。
+      shape: wideLayout ? const RoundedRectangleBorder() : null,
       child: Builder(
         builder: (innerCtx) {
           void dismiss() => Scaffold.of(innerCtx).closeDrawer();
