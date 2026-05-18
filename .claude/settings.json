@@ -49,6 +49,7 @@
       "Bash(git status *)",
       "Bash(git log *)",
       "Bash(git config *)",
+      "Bash(fvm flutter *)",
       "Bash(python3 -m json.tool)",
       "WebFetch(domain:mstdn.b-shock.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
