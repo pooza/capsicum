@@ -33,6 +33,7 @@
       "Bash(gh run *)",
       "Bash(gh label *)",
       "Bash(gh search *)",
+      "Bash(gh repo *)",
       "Bash(git fetch *)",
       "Bash(git add *)",
       "Bash(git mv *)",
@@ -51,7 +52,10 @@
       "Bash(python3 -m json.tool)",
       "WebFetch(domain:mstdn.b-shock.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.ssl.com)",
+      "WebFetch(domain:misskey.delmulin.com)",
+      "WebSearch"
     ],
     "defaultMode": "auto"
   }
