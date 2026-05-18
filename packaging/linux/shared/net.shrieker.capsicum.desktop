@@ -10,5 +10,5 @@ Icon=net.shrieker.capsicum
 Exec=capsicum %U
 Terminal=false
 Categories=Network;Chat;
-StartupWMClass=capsicum
+StartupWMClass=net.shrieker.capsicum
 StartupNotify=true
