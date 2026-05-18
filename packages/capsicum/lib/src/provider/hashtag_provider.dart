@@ -33,16 +33,15 @@ class HashtagTimelineNotifier
 
     final (primary, all) = parseHashtagSpec(arg);
     final hideLivecure = ref.watch(hideLivecureProvider);
-    final posts = await (adapter as HashtagSupport).getPostsByHashtag(
-      primary,
-      query: const TimelineQuery(limit: _pageSize),
-      all: all,
+    return fetchUntilVisible(
+      pageSize: _pageSize,
+      hideLivecure: hideLivecure,
+      fetch: (maxId) => (adapter as HashtagSupport).getPostsByHashtag(
+        primary,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+        all: all,
+      ),
     );
-    final visible = hideLivecure
-        ? posts.where((p) => !hasLivecureTag(p)).toList()
-        : posts;
-
-    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
   }
 
   Future<void> loadMore() async {

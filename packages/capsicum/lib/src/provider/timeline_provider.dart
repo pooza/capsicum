@@ -91,6 +91,46 @@ bool hasLivecureTag(Post post) {
   return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
 }
 
+/// Fetch pages until at least one post survives client-side filtering, or the
+/// source is exhausted.
+///
+/// Without this, a first page that is entirely #実況 (with hideLivecure on)
+/// yields an empty timeline that never auto-loads the next page, because the
+/// list has nothing to scroll. Shared by the list/hashtag/channel build()s so
+/// they get the same behaviour TimelineNotifier.build() already has (#583; the
+/// original fix for the home timeline was #230).
+///
+/// [fetch] takes the pagination cursor (null for the first page, otherwise the
+/// last fetched post's id) and returns one raw page.
+Future<TimelineState> fetchUntilVisible({
+  required int pageSize,
+  required bool hideLivecure,
+  required Future<List<Post>> Function(String? maxId) fetch,
+}) async {
+  final allVisible = <Post>[];
+  String? maxId;
+  var hasMore = true;
+
+  while (hasMore) {
+    final posts = await fetch(maxId);
+    if (posts.isEmpty) {
+      hasMore = false;
+      break;
+    }
+    maxId = posts.last.id;
+    hasMore = posts.length >= pageSize;
+
+    final visible = hideLivecure
+        ? posts.where((p) => !hasLivecureTag(p)).toList()
+        : posts;
+    allVisible.addAll(visible);
+
+    if (allVisible.isNotEmpty || !hasMore) break;
+  }
+
+  return TimelineState(posts: allVisible, hasMore: hasMore);
+}
+
 /// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
