@@ -491,6 +491,10 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 
 [#544](https://github.com/pooza/capsicum/issues/544) の再開トリガー (法人化 → Microsoft 365 Business → 組織契約 Entra ID テナント) が満たされた時点で実施。手順は #544 issue 本文を参照。Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される。
 
+#### Microsoft Store 認定の Notes for Certification（毎回・[#544](https://github.com/pooza/capsicum/issues/544)）
+
+Partner Center 手動 publish で submission する際は、**Submission Options > Notes for Certification** に審査用アカウントとログイン手順を必ず記載する。capsicum は OAuth + 外部サーバー前提のため、これを書かないと Policy 10.3.1 (App Is Testable - Test Account) で繰り返し差し戻される。確定文面・根本原因・Windows 固有の注意は [msstore-review-notes-login.md](msstore-review-notes-login.md) を single source of truth とする。
+
 #### GitHub Release のリリースノート（Windows セクションテンプレート）
 
 タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
