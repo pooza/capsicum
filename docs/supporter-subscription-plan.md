@@ -232,6 +232,47 @@ B/C 確定（2026-05-20）を受けた v1.27 実装スコープ。
 - 復元（Restore）UI は消耗型につき不要（サーバー側保持を実装した時点で
   「サポーター状態の同期」として別途設計）
 
+### D-1. プラットフォームスコープ（v1.27）
+
+| OS | v1.27 投げ銭購入 | バッジ表示 | 根拠 |
+| --- | --- | --- | --- |
+| iOS | ✅ StoreKit 経由 | ✅ | 主対象 |
+| Android | ✅ Play Billing 経由 | ✅ | 主対象 |
+| macOS | ❌ 後日 | ✅（ローカルフラグがあれば） | Mac App Store IAP は技術的に可能だが surface 増。サーバー側保持導入時に同期で対応 |
+| Linux / Windows | ❌（ストア IAP 不在） | ✅（ローカルフラグがあれば） | ストア課金経路が無い。購入導線は出さない |
+
+購入導線は iOS / Android のみ。バッジ UI は全 OS で `SupporterStatus`
+（抽象層）を参照するだけなので、ローカルフラグ or 将来のサーバー同期で
+立てば desktop でも表示される。**macOS への購入導線追加は overridable な
+スコープ判断**（必要なら v1.27 に含める）。
+
+### D-2. プラグイン
+
+公式 [`in_app_purchase`](https://pub.dev/packages/in_app_purchase)（iOS
+StoreKit / Android Play Billing の consumable を統一 API で扱える）を採用。
+現状 pubspec 未導入のため追加する。abstraction 層の内側に閉じ込め、UI から
+直接は触らせない。
+
+### D-3. commit 分割と着手順（#428 を umbrella、commit は概念ごと）
+
+大更新 単独配置のため #428 を tracking issue とし、sub-issue は作らず
+[コミットの分割方針](CLAUDE.md)に従って概念ごとに分割する。
+
+1. `SupporterStatus` 抽象層 + ローカル永続化（shared_preferences の
+   「投げ銭済み」フラグ）+ Riverpod provider。UI 非依存で先行
+2. `in_app_purchase` 導入 + 消耗型 3 SKU 定義（`supporter.tip.small`
+   `.medium` `.large`）+ 購入フロー（pending / 成功で flag 立て / 失敗
+   ハンドリング / Android consume で再投げ銭可能に）+ Sentry 計装
+3. 投げ銭画面 UI（3 金額・「サポーターになる / 投げ銭」導線）+ 設定 or
+   Drawer からのエントリポイント。用語は[用語統一](CLAUDE.md)準拠
+4. サポーターバッジ UI（自プロフィール恒久表示・装飾のみ）
+5. 特商法表記リンク（capsicum-site の法人名義ページへ）+ C-2 審査文言の
+   反映 + リリース前レビュー対象に追加
+
+各段は単体で動作確認可能な粒度。1 が UI 非依存なので最初に土台を固め、
+2 以降を順に積む。サーバー側保持（B-4 後日対応）は 1 の抽象層の内側に
+移行経路を残すだけで v1.27 では未実装。
+
 ---
 
 ## 次アクション
