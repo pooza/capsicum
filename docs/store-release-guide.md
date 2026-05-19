@@ -340,6 +340,10 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+#### サポーター（投げ銭）IAP の審査ノート（[#428](https://github.com/pooza/capsicum/issues/428)、v1.27〜）
+
+消耗型サポータープランを含むビルドを iOS / Android に提出する際は、App Review Information の Notes（App Store）／アプリのアクセス権の説明（Google Play）に [supporter-subscription-plan.md](supporter-subscription-plan.md) C-2 の英文を貼り付ける。機能差別化なし・装飾のみ・単発である旨を明示することで、機能アンロックを伴わない IAP に対する審査員の混乱を回避する。継続課金ではないため Apple Guideline 3.1.2（継続的価値）の論点は発生しない。
+
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 
 iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:

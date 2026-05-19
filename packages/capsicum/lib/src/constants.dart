@@ -46,6 +46,13 @@ class AppConstants {
   static final communityUrl = Uri.parse('https://pf.korako.me/c/capsicum');
   static final termsUrl = Uri.parse('https://capsicum.shrieker.net/terms');
 
+  /// 特定商取引法に基づく表記 (#428 C-1/C-3 確定: 法人名義 有限会社ビーショック)。
+  /// capsicum-site の法人名義ページを参照する。最終的な URL の整備 (ページ
+  /// 配置 / 法定住所表示 / 連絡先メール) は pooza が capsicum-site 側で行う。
+  static final tokushohoUrl = Uri.parse(
+    'https://capsicum.shrieker.net/tokushoho',
+  );
+
   // 外部サービス
   static const notestockBaseUrl = 'https://notestock.osa-p.net';
   static final notestockUrl = Uri.parse(notestockBaseUrl);

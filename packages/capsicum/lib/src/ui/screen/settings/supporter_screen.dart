@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../constants.dart';
 import '../../../provider/supporter_purchase_provider.dart';
 import '../../../provider/supporter_status_provider.dart';
+import '../../../url_helper.dart';
 
 /// capsicum サポーター（投げ銭）画面 (#428 段 3)。
 ///
@@ -58,6 +60,16 @@ class SupporterScreen extends ConsumerWidget {
             ),
           const Divider(),
           ..._buildPurchaseSection(context, ref),
+          const Divider(),
+          // 特定商取引法に基づく表記 (#428 C-3)。日本の消費者向け IAP の
+          // 表示義務。capsicum-site 上の法人名義ページ (有限会社ビーショック)
+          // へリンクする。
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('特定商取引法に基づく表記'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => launchUrlSafely(AppConstants.tokushohoUrl),
+          ),
         ],
       ),
     );
