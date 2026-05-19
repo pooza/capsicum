@@ -16,6 +16,25 @@
 
 ---
 
+## 決定事項（2026-05-20 確定）
+
+A（事務手続き）が App Store / Google Play とも完了し、B / C-1 を確定した。
+**以下が正本。B 節内の個別「推奨」記述は本節で上書きされる。**
+
+| 項目 | 決定 | 補足 |
+|---|---|---|
+| B-1 課金形態 | **単発（消耗型 IAP）で開始** | 審査前提を訂正: 機能差別化なし方針では自動更新サブスクは Apple Guideline 3.1.2「継続的価値の提供」に正面から抵触し、むしろ審査が厳しい。capsicum はアプリ本体が完結した実機能を持つため trivial 判定の土台がなく、消耗型 tip jar は前例豊富で素直。「投げ銭」の語感とも一致 |
+| B-2 金額階層 | **3 階層・円基準 ¥150 / ¥500 / ¥800** | 他通貨はストア換算。複数階層は審査対策にも有利 |
+| B-3 特典範囲 | **一度でも投げ銭で生涯サポーターバッジ**（自分のプロフィールに恒久表示） | 機能差別化なしは確定方針。装飾レベルの恒久バッジのみ |
+| B-4 状態保持 | **最終的にサーバー側保持が希望。v1.27 は工数次第で端末ローカルの「投げ銭済み」フラグで開始し、後日サーバーへ汲み上げる段階導入を許容** | 消耗型はストアの購入復元対象外（再インストール・複数端末でレシートが戻らない）。商品タイプ非依存の抽象層（サポーター判定 provider）で包み、保持先を内側に隠す。サーバー化は将来の有償リレー SKU 統合と一本化できる |
+| C-1 特商法主体 | **法人名義 有限会社ビーショック** | CLAUDE.md の特商法表示方針と一致。問い合わせ窓口も法人側集約済みで導線が一貫。ストア発行元（個人）と表示主体（法人）が分かれても法的に矛盾しない |
+
+将来のサブスク追加は破棄でなく追加（別商品タイプの併存）。外部ユーザー向け
+通知リレー利用権と同一 SKU で束ねれば実機能の継続価値が付き、3.1.2 を正面
+突破できる。今回の単発実装はその土台として両立する。
+
+---
+
 ## A. 長納期の事務手続き（決定不要・午後そのまま実行）
 
 実装より先に走らせる必要のあるボトルネック。pooza さんの作業項目。
@@ -150,59 +169,75 @@ CLAUDE.md「運営元」に方針の前提あり：
 ### C-2. "What does this app do?"（審査回答ドラフト・要調整）
 
 > capsicum is a Mastodon / Misskey client for the Fediverse. The in-app
-> subscription is an optional "Supporter" plan offered in multiple monthly
-> tiers. It does not unlock or gate any functionality — all features remain
-> available to every user regardless of subscription. Supporters receive only
-> a cosmetic acknowledgement (a supporter badge). The plan exists so that users
-> who wish to support ongoing development and the operation of the project's
-> push-notification relay infrastructure can do so on a recurring basis.
+> purchase is an optional one-time "Supporter" tip offered in three fixed
+> amounts. It does not unlock or gate any functionality — all features
+> remain available to every user regardless of whether they tip. Supporters
+> receive only a cosmetic acknowledgement: a permanent supporter badge shown
+> on their own profile. The tip exists so that users who wish to support
+> ongoing development and the operation of the project's push-notification
+> relay infrastructure can do so voluntarily.
 
-調整ポイント: 階層数・金額が確定（B-2）したら数値を反映。リレー言及は B-4 の SKU 統合方針に合わせて加減。
+確定済み（2026-05-20）: 単発（消耗型）・3 階層 ¥150/¥500/¥800・生涯バッジ。
+サブスクではないため Guideline 3.1.2（継続価値）の論点は発生しない。
 
-### C-3. 特定商取引法に基づく表記（雛形・C-1 確定後に主体を確定）
+### C-3. 特定商取引法に基づく表記（C-1 確定＝法人名義）
 
 ```text
-販売事業者名     ：（C-1 で確定：有限会社ビーショック ／ または 小石達也）
+販売事業者名     ：有限会社ビーショック
 運営統括責任者   ：小石 達也
 所在地           ：〔法定住所〕（請求があったら遅滞なく開示、の運用も可）
 連絡先           ：〔法人問い合わせ窓口メール（Google Workspace アドレス）〕
-販売価格         ：各サポータープラン購入画面に表示（月額、税込）
+販売価格         ：各サポーター（投げ銭）購入画面に表示（税込・¥150 / ¥500 / ¥800）
 対価以外の必要料金：なし（通信料は利用者負担）
 支払方法         ：Apple App Store ／ Google Play のアプリ内課金
-支払時期         ：購入手続き完了時。サブスクは各更新日に自動課金
-役務提供時期     ：購入手続き完了後ただちに（サポーター表示の有効化）
-返品・キャンセル ：デジタルコンテンツのため購入後の返金は原則不可。
+支払時期         ：購入手続き完了時（単発・消耗型。継続課金なし）
+役務提供時期     ：購入手続き完了後ただちに（サポーターバッジの恒久付与）
+返品・キャンセル ：デジタルコンテンツ（消耗型）のため購入後の返金は原則不可。
                    返金可否は Apple / Google の各ストアポリシーに従う
-解約方法         ：各ストアのサブスクリプション管理から（C-4 参照）
 ```
 
-※ 所在地・連絡先は「請求があれば遅滞なく開示」運用がストア審査・特商法とも許容される場合があるが、IAP では事業者情報の明示を求められやすい。最終文面は C-1 確定後に整える。
+※ 所在地・連絡先は「請求があれば遅滞なく開示」運用がストア審査・特商法とも許容される場合があるが、IAP では事業者情報の明示を求められやすい。法人名義のため法定住所は法人登記住所を用いる。
 
-### C-4. サブスク解約導線（方針）
+### C-4. 解約導線（単発のため不要）
 
-ストア要件上、アプリ内に解約方法の案内が必要。iOS は標準で「設定 > Apple ID > サブスクリプション」、Android は Google Play のサブスク管理へ誘導する。
-
-- サポーター購入画面および設定内に「サブスクリプションの管理・解約はこちら」リンク（各ストアの管理画面 deeplink）を設置
-- StoreKit / Play Billing の標準 API が提供する管理画面遷移を利用（独自解約 UI は作らない）
-- 実装は D で対応
+B-1 確定（単発・消耗型）により継続課金がないため、サブスク解約導線は不要。
+購入は都度完結し、自動更新・解約の概念がない。返金はストアポリシー準拠
+（C-3）。将来サブスクを追加した場合に本節を解約導線方針として復活させる。
 
 ---
 
 ## D. 実装スコープ（設計確定後）
 
-本書 B/C が固まってから着手。現時点では未確定前提のメモ。
+B/C 確定（2026-05-20）を受けた v1.27 実装スコープ。
 
-- iOS: StoreKit 2 ベースの IAP（サブスク商品・レシート検証）
-- Android: Google Play Billing Library
-- 商品 ID（SKU）の命名規約（将来のリレー統合を見据えた前方互換）
-- サポーターバッジの UI 実装（B-3 の選択に依存）
-- 解約・復元（Restore Purchases）導線
-- 審査提出用スクリーンショット・説明文（C 依存）
+- **商品**: iOS は StoreKit 2、Android は Google Play Billing。いずれも
+  **消耗型（consumable）IAP を 3 SKU**（¥150 / ¥500 / ¥800 相当）。サブスク
+  商品は作らない
+- **SKU 命名規約**: 将来のリレー利用権 SKU 統合を見据えた前方互換な命名
+  （例 `supporter.tip.small` / `.medium` / `.large`）
+- **サポーター判定の抽象層**: 商品タイプ・保持先を内側に隠す
+  `SupporterStatus` provider を 1 つ用意。UI（バッジ）はこの抽象層のみ参照。
+  これにより (a) 後日のサーバー側移行、(b) 将来のサブスク追加 が抽象層内に
+  閉じる
+- **状態保持（B-4）**: v1.27 は端末ローカルに「投げ銭済み」フラグを永続化
+  （消耗型はストア購入復元の対象外のため、レシート復元に依存しない）。
+  サーバー側保持は工数を見て後日対応（ローカルフラグをサーバーへ汲み上げる
+  移行経路を抽象層の内側に用意）
+- **バッジ UI**: 自分のプロフィールに恒久表示のサポーターバッジ（B-3）。
+  他者可視・なりすまし対策は対象外（サーバー側移行時に再検討）
+- **特商法表記**: 法人名義（C-3）を capsicum-site に設置し、アプリ内
+  購入導線からリンク参照
+- **審査提出**: 単発投げ銭用の説明文（C-2）・スクリーンショット。サブスク
+  ではないため解約導線・3.1.2 継続価値の論点なし
+- 復元（Restore）UI は消耗型につき不要（サーバー側保持を実装した時点で
+  「サポーター状態の同期」として別途設計）
 
 ---
 
 ## 次アクション
 
-1. pooza さん: A-1（事務手続き着手）の判断
-2. pooza さん: B-1〜B-4・C-1 の選択
-3. Claude: 上記確定後、#428 にスコープ反映＋ C の文言ドラフト作成 → D の実装計画へ
+1. ~~pooza さん: A-1（事務手続き着手）の判断~~ → A 完了（2026-05-20）
+2. ~~pooza さん: B-1〜B-4・C-1 の選択~~ → 確定（2026-05-20、「決定事項」節）
+3. Claude: #428 にスコープ反映（コメント） → D の実装計画を Issue 化／着手
+4. pooza さん: ストア側で消耗型 IAP 3 SKU を作成（商品メタデータ・税区分）、
+   capsicum-site に法人名義の特商法表記を設置
