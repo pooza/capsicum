@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../provider/supporter_status_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../widget/server_badge.dart';
@@ -686,6 +687,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             ),
                           ),
                         ],
+                        // サポーターバッジ (#428 B-3)。装飾のみ・自分のみ
+                        // 可視（他者可視は対象外）。状態は SupporterStatus
+                        // 抽象層 (isSupporterProvider) からのみ取得する。
+                        if (_isOwnProfile &&
+                            ref.watch(isSupporterProvider)) ...[
+                          const SizedBox(width: 6),
+                          const Tooltip(
+                            message: 'サポーター',
+                            child: Icon(
+                              Icons.favorite,
+                              size: 18,
+                              color: Colors.pink,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     Text(
@@ -1002,10 +1018,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             value: 'mention_compose',
             child: Text('メンションして投稿'),
           ),
-          const PopupMenuItem(
-            value: 'copy_acct',
-            child: Text('ユーザー名をコピー'),
-          ),
+          const PopupMenuItem(value: 'copy_acct', child: Text('ユーザー名をコピー')),
           if (widget.user.url != null)
             const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
           if (rel.muting)
@@ -1041,10 +1054,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         }
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(
-          value: 'copy_acct',
-          child: Text('ユーザー名をコピー'),
-        ),
+        const PopupMenuItem(value: 'copy_acct', child: Text('ユーザー名をコピー')),
         if (widget.user.url != null)
           const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
       ],
