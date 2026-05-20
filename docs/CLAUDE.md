@@ -240,7 +240,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 - 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
 - ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
 
-v1.27 マイルストーンに単独配置（大更新のため他項目と並走させない）。商品設計 + 課金経路 + 装飾範囲の検討も同マイルストーン内で扱う。並走する自動化系タスクとして [#470](https://github.com/pooza/capsicum/issues/470)（Flathub manifest 自動更新）と [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）を同マイルストーンに配置。
+v1.27 マイルストーンに単独配置（大更新のため他項目と並走させない）。商品設計 + 課金経路 + 装飾範囲の検討も同マイルストーン内で扱う。並走する自動化系タスクとして [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）を同マイルストーンに配置。Flathub manifest 自動更新（[#470](https://github.com/pooza/capsicum/issues/470)）は Flathub 採択待ちのためマイルストーン未定。
 
 ## 自前サーバー
 
