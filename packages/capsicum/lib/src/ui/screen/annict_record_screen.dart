@@ -199,14 +199,18 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
               const SizedBox(height: 16),
               Text('感想', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
-              TextField(
-                controller: _commentController,
-                enabled: !_submitting,
-                maxLines: 8,
-                minLines: 5,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: '感想を入力 (任意)',
+              Expanded(
+                child: TextField(
+                  controller: _commentController,
+                  enabled: !_submitting,
+                  maxLines: null,
+                  minLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '感想を入力 (任意)',
+                  ),
                 ),
               ),
               if (_submitting) ...[
