@@ -142,7 +142,7 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 - `flutter build macos --release` → `xcodebuild archive` → `-exportArchive` で `.pkg` を生成し、Universal Purchase 済みの App レコードに `platform: 'osx'` で投げる
 - Phase 2 の GitHub Actions に macOS ネイティブ分岐を追加
 
-### Phase 4: Linux 対応（デスクトップ第3段階。Windows は v1.25 で MSIX 自己署名直配を再開）
+### Phase 4: Linux 対応（デスクトップ第3段階。Windows は v1.25 で MSIX 自己署名直配を再開、v1.27 で Microsoft Store 公開達成）
 
 - Linux 側 (#424): **v1.24 で実装済み**
   - `.github/workflows/linux-release.yml` — タグ駆動 + workflow_dispatch + path-filter pull_request トリガ
@@ -150,15 +150,15 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
   - bundle tarball を Releases に同梱 (Flathub 提出 manifest の `type: archive` source 用)
   - flatpak-lint ジョブ (Ubuntu 24.04) で manifest YAML / AppStream metainfo / desktop entry を毎 PR 検証
   - Flathub 提出は v1.24 リリース後の手動 PR (詳細は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md))。レビュー期間中も AppImage は GitHub Releases から配布できる
-- Windows 側 ([#423](https://github.com/pooza/capsicum/issues/423)): **v1.25 で MSIX 自己署名 + GitHub Releases 直配を再開**（Microsoft Store 公開は [#544](https://github.com/pooza/capsicum/issues/544) に切り出し on-hold）
+- Windows 側 ([#423](https://github.com/pooza/capsicum/issues/423) / [#544](https://github.com/pooza/capsicum/issues/544)): **v1.25 で MSIX 自己署名 + GitHub Releases 直配を再開、v1.27 で Microsoft Store 公開達成 (2026-05-20 初回審査通過、[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p))**
   - Phase 1（Windows scaffold）: 完了 — `flutter create` で `packages/capsicum/windows/` 生成
   - Phase 2（MSIX パッケージング設定）: 完了 — `pubspec.yaml` に `msix_config` 追加、`msix: ^3.16.13` 採用
   - Phase 3（Microsoft Partner Center 登録）: 完了 — 個人開発者登録 + アプリ予約。`identity_name` / `publisher` は `pubspec.yaml` 参照
   - Phase 4（GitHub Actions ワークフロー）: 完了 — [.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml) で windows-latest x64 / Flutter 3.41.9 / `dart run msix:create` / draft Release 添付
-  - Phase 5（Microsoft Store 公開、msstore CLI 連携）: **[#544](https://github.com/pooza/capsicum/issues/544) に切り出し on-hold**。ワークフロー側の msstore publish step は実装済み（secrets 未投入時 skip）。Entra ID テナント関連付け UI が個人開発者アカウントでは到達不能のため、法人化（組織 Microsoft アカウント）でテナントが整備されたタイミングで再挑戦
-  - **v1.25 残作業**: CI で self-signed cert 生成 → MSIX 署名 → GitHub Releases 添付、Release notes に PowerShell `Add-AppxPackage` 手順 + 証明書信頼ストア手順を明記、配布対象は「証明書 import を厭わない上級ユーザー」と明示
-  - 実機検証は [#483](https://github.com/pooza/capsicum/issues/483) で v1.25 に同期
-  - 中期（[#534](https://github.com/pooza/capsicum/issues/534), v1.26）: ビーショック名義の OV コード署名証明書取得 ($200-400/年) で SmartScreen 通過な MSIX 直配に格上げ
+  - Phase 5（Microsoft Store 公開）: **v1.27 で達成** — Partner Center Web UI からの手動 publish ルートで成立 ([#544](https://github.com/pooza/capsicum/issues/544))。`msix_config.store: false` の self-signed MSIX をそのまま upload、Store 側で再署名。毎リリースの publish 手順は [store-release-guide.md §4.6](store-release-guide.md)
+  - msstore CLI 自動 publish (ワークフロー側に実装済み・secrets 未投入時 skip) は引き続き保留: Entra ID テナント関連付け UI が個人開発者アカウントでは到達不能。将来の組織テナント整備時に再挑戦できる構造は維持
+  - 実機検証 [#483](https://github.com/pooza/capsicum/issues/483) (v1.25 同期、Parallels VM)、Store 経由インストールでの SmartScreen 警告なし起動も v1.27 で確認済み
+  - 中期施策 ([#534](https://github.com/pooza/capsicum/issues/534)) の OV コード署名証明書取得は Store 経由配布が主ルートになったため **当面不要化** (Store 経由は MS 再署名、自己署名直配は上級者向け補助路線として継続)
   - 関連 on-hold: [#474](https://github.com/pooza/capsicum/issues/474) push 本配線、[#484](https://github.com/pooza/capsicum/issues/484) SMTC NowPlaying（いずれも ship 必須ではない）
 
 ## 未確定事項
