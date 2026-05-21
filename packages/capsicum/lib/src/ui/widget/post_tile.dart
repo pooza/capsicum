@@ -641,9 +641,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       Builder(
                         builder: (_) {
                           final rawContent = displayPost.content ?? '';
-                          final isHtml =
-                              rawContent.contains('<p>') ||
-                              rawContent.contains('<br');
+                          final isHtml = displayPost.isHtml;
                           final parsed = isHtml
                               ? extractTrailingTagsHtml(rawContent)
                               : extractTrailingTagsMfm(rawContent);
@@ -1619,8 +1617,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (account == null || mulukhiya == null) return;
 
     final retagContent = targetPost.content ?? '';
-    final retagIsHtml =
-        retagContent.contains('<p>') || retagContent.contains('<br');
+    final retagIsHtml = targetPost.isHtml;
     final parsed = retagIsHtml
         ? extractTrailingTagsHtml(retagContent)
         : extractTrailingTagsMfm(retagContent);

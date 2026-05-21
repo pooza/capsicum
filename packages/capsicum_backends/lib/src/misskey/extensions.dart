@@ -93,6 +93,7 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       postedAt: createdAt,
       author: user.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       content: text,
+      isHtml: false,
       scope: misskeyVisibilityRosetta[visibility] ?? PostScope.public,
       attachments: (files ?? []).map((f) => f.toCapsicum()).toList(),
       sensitive: (files ?? []).any((f) => f.isSensitive),

@@ -100,6 +100,43 @@ List<String> parseHashtagsForTesting(String input) {
   return result;
 }
 
+/// `_parseHtml`（Mastodon HTML 経路）の結果を単体テストするための helper。
+/// link / url / hashtag ノードと、未変換の生 `<a` タグがテキストとして
+/// 露出していないか（Issue #595）を検証できるようにする。
+@visibleForTesting
+({
+  List<({String text, String url})> links,
+  List<String> urls,
+  List<String> hashtags,
+  bool hasRawTag,
+})
+parseHtmlForTesting(String html) {
+  final links = <({String text, String url})>[];
+  final urls = <String>[];
+  final hashtags = <String>[];
+  var hasRawTag = false;
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      switch (n.type) {
+        case _NodeType.link:
+          links.add((text: n.text, url: n.url ?? ''));
+        case _NodeType.url:
+          urls.add(n.text);
+        case _NodeType.hashtag:
+          hashtags.add(n.text);
+        case _NodeType.text:
+          if (n.text.contains('<a')) hasRawTag = true;
+        default:
+          break;
+      }
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(_parseHtml(html));
+  return (links: links, urls: urls, hashtags: hashtags, hasRawTag: hasRawTag);
+}
+
 class _MfmParser {
   final String input;
   int _pos = 0;
@@ -753,6 +790,28 @@ List<_Node> _parseHtml(String html) {
           dotAll: true,
         ),
         (m) => '<center>${m[1]}</center>',
+      )
+      // <a href="url">text</a> → MFM のリンク / ハッシュタグ / メンション。
+      // Misskey 由来の連合ノートは <a> を含む HTML を素で投げてくるため、
+      // 一括タグ除去で href を失う前に MFM 構文へ変換しておく。Mastodon は
+      // rel / target / class を付与するので属性は緩く読み飛ばす。
+      .replaceAllMapped(
+        RegExp(
+          r'<a\b[^>]*?\bhref="([^"]*)"[^>]*>(.*?)</a>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) {
+          final url = m[1]!;
+          // 内側の <span> 等を除いた可視ラベル。
+          final label = m[2]!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+          // ハッシュタグ / メンション anchor は素のテキストに戻し、MFM
+          // パーサ側で hashtag / mention ノードとして再検出させる。
+          if (label.startsWith('#') || label.startsWith('@')) return label;
+          // ラベルが空 / URL と同一なら裸の URL にして自動リンクに任せる。
+          if (label.isEmpty || label == url) return url;
+          return '[$label]($url)';
+        },
       )
   // Preserve tags the MFM parser understands: <b>, <i>, <s>, <small>,
   // <center>. Strip only their closing/opening from the "remove all" regex

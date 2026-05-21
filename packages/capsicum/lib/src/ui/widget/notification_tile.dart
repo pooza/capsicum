@@ -101,7 +101,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       emojiSize: ref.watch(emojiSizeProvider),
       applyNyaize: post?.author.isCat ?? false,
     );
-    final isHtml = content.contains('<p>') || content.contains('<br');
+    final isHtml = post?.isHtml ?? false;
     return isHtml
         ? _contentRenderer!.renderHtml(content)
         : _contentRenderer!.renderMfm(content);
