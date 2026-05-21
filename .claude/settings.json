@@ -40,7 +40,6 @@
       "Bash(gh run *)",
       "Bash(gh label *)",
       "Bash(gh search *)",
-      "Bash(gh repo *)",
       "Bash(git fetch *)",
       "Bash(git add *)",
       "Bash(git mv *)",
