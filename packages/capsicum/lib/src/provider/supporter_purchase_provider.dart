@@ -8,15 +8,15 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../service/exception_scrub.dart';
 import 'supporter_status_provider.dart';
 
-/// 投げ銭 SKU (#428 B-2: 3 階層・円基準 ¥150 / ¥500 / ¥800)。
+/// 投げ銭 SKU (#428 B-2: 3 階層・円基準 ¥100 / ¥500 / ¥800)。
 ///
 /// 命名は将来のリレー利用権 SKU 統合を見据えた前方互換 (`supporter.*`)。
 /// 実際の表示価格はストアの [ProductDetails.price] を使う（コード側に
 /// 金額をハードコードしない）。リスト順が UI の表示順。
 const supporterTipProductIds = <String>[
-  'supporter.tip.small', // ¥150 相当
+  'supporter.tip.small', // ¥100 相当
   'supporter.tip.medium', // ¥500 相当
-  'supporter.tip.large', // ¥800 相当
+  'supporter.tip.big', // ¥800 相当
 ];
 
 /// 購入導線を出すプラットフォーム (#428 D-1)。iOS / Android のみ。

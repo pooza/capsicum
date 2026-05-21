@@ -7,7 +7,7 @@ void main() {
       expect(supporterTipProductIds, [
         'supporter.tip.small',
         'supporter.tip.medium',
-        'supporter.tip.large',
+        'supporter.tip.big',
       ]);
     });
   });

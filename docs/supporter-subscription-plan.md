@@ -24,7 +24,7 @@ A（事務手続き）が App Store / Google Play とも完了し、B / C-1 を�
 | 項目 | 決定 | 補足 |
 |---|---|---|
 | B-1 課金形態 | **単発（消耗型 IAP）で開始** | 審査前提を訂正: 機能差別化なし方針では自動更新サブスクは Apple Guideline 3.1.2「継続的価値の提供」に正面から抵触し、むしろ審査が厳しい。capsicum はアプリ本体が完結した実機能を持つため trivial 判定の土台がなく、消耗型 tip jar は前例豊富で素直。「投げ銭」の語感とも一致 |
-| B-2 金額階層 | **3 階層・円基準 ¥150 / ¥500 / ¥800** | 他通貨はストア換算。複数階層は審査対策にも有利 |
+| B-2 金額階層 | **3 階層・円基準 ¥100 / ¥500 / ¥800** | 他通貨はストア換算。複数階層は審査対策にも有利。¥150 は App Store の価格ポイントが ¥1,000 まで 100 円刻みのため ¥100 に変更（2026-05-22） |
 | B-3 特典範囲 | **一度でも投げ銭で生涯サポーターバッジ**（自分のプロフィールに恒久表示） | 機能差別化なしは確定方針。装飾レベルの恒久バッジのみ |
 | B-4 状態保持 | **最終的にサーバー側保持が希望。v1.27 は工数次第で端末ローカルの「投げ銭済み」フラグで開始し、後日サーバーへ汲み上げる段階導入を許容** | 消耗型はストアの購入復元対象外（再インストール・複数端末でレシートが戻らない）。商品タイプ非依存の抽象層（サポーター判定 provider）で包み、保持先を内側に隠す。サーバー化は将来の有償リレー SKU 統合と一本化できる |
 | C-1 特商法主体 | **法人名義 有限会社ビーショック** | CLAUDE.md の特商法表示方針と一致。問い合わせ窓口も法人側集約済みで導線が一貫。ストア発行元（個人）と表示主体（法人）が分かれても法的に矛盾しない |
@@ -138,6 +138,8 @@ A-1/A-2 を実施して確定した、B（商品設計）・C（法務）に効�
 推奨: **(a)** で v1.27 を出し、(b)（リレー統合）は別マイルストーンで段階導入。
 ※ docs/CLAUDE.md の「同一 SKU で吸収」案は将来目標として保持しつつ、初版はローカル完結で割り切る。
 
+**起票状況（2026-05-22）**: スマホ＋デスクトップ併用が主流という観測を受け、サーバー側保持（バッジのクロスデバイス同期・狭いスコープ）を [#596](https://github.com/pooza/capsicum/issues/596) として起票し v1.30 にアサイン。有償リレー利用権との SKU 統合は [#597](https://github.com/pooza/capsicum/issues/597)（on-hold）として分離し、#596 完了を前提とする後続に位置づけた。
+
 ---
 
 ## C. ストア審査・法務（要文言整備）
@@ -177,8 +179,59 @@ CLAUDE.md「運営元」に方針の前提あり：
 > ongoing development and the operation of the project's push-notification
 > relay infrastructure can do so voluntarily.
 
-確定済み（2026-05-20）: 単発（消耗型）・3 階層 ¥150/¥500/¥800・生涯バッジ。
+確定済み（2026-05-20）: 単発（消耗型）・3 階層 ¥100/¥500/¥800・生涯バッジ。
 サブスクではないため Guideline 3.1.2（継続価値）の論点は発生しない。
+
+### C-2b. IAP ごとの Review Notes（App Store Connect）
+
+App Store Connect の各 In-App Purchase には「Review Information」があり、レビュー用
+スクリーンショットとあわせて **Review Notes**（購入画面までの導線説明）を入れる。
+機能アンロックを伴わない投げ銭 IAP は導線・性質を書かないと差し戻されやすいため
+必須。下記英文を **3 SKU すべてに同一**で貼る（導線は共通）。導線は実コードで検証
+済み（ドロワー →「設定」→「capsicum をサポート」→ 投げ銭画面、2026-05-22）。
+
+```text
+This in-app purchase is an optional one-time "Supporter" tip. It does NOT
+unlock or gate any feature — every function of the app remains available
+to all users whether or not they tip.
+
+How to reach the purchase screen:
+1. Launch the app and sign in to any Mastodon or Misskey server.
+2. Open the navigation drawer (the menu icon at the top-left of the timeline).
+3. Tap "設定" (Settings).
+4. Tap "capsicum をサポート" (Support capsicum) — the row with a pink heart icon.
+5. The Supporter screen lists three tip amounts (¥100 / ¥500 / ¥800).
+   Tapping a price button starts this in-app purchase.
+
+After a successful tip the only change is a cosmetic, permanent "Supporter"
+badge shown on the user's own profile. This is a one-time purchase — there
+is no subscription and no recurring charge.
+```
+
+- レビュー用スクリーンショットは投げ銭画面（3 階層が見える状態）を添付する。IAP
+  登録後の TestFlight ビルド or StoreKit Configuration で 3 商品が価格付きで読み
+  込まれた状態で撮るときれい。スクリーンショットは IAP の審査提出時にのみ必須で、
+  それまでは "Missing Metadata" 状態で保存しておける
+- 新規 IAP の初回審査提出は App Store Connect の Web UI 操作で、`fastlane release`
+  （`upload_to_app_store`）はバイナリ＋メタデータのみ扱い IAP 提出は行わない。
+  v1.27 の iOS 製品版昇格は IAP 提出を手作業で挟む（初回のみ。承認後は通常フロー）
+- アプリ本体審査の「App Review Information」のデモアカウント／ログイン手順は別欄。
+  v1.27 アプリ提出時に別途用意する
+
+### C-2c. 商品の表示名・説明（IAP ローカリゼーション）
+
+App Store Connect の IAP ローカリゼーション（日本語）に登録した確定文言。表示名・
+説明はアプリの投げ銭画面にそのまま表示される（`product.title` を ListTile の
+タイトル、`product.description` をサブタイトルに使用）。日本語のみで登録（主要
+言語＝日本語のため必須要件を満たす）。文字数上限は表示名 30 字・説明 45 字。
+
+| SKU / 価格 | 表示名 | 説明 |
+|---|---|---|
+| `supporter.tip.small` ¥100 | ちょこっとサポート | capsicum の開発と通知リレー運用へのささやかな応援です。 |
+| `supporter.tip.medium` ¥500 | しっかりサポート | capsicum の開発と通知リレー運用へのしっかりした応援です。 |
+| `supporter.tip.big` ¥800 | たっぷりサポート | capsicum の開発と通知リレー運用への大きな応援です。 |
+
+Google Play 側の商品名・説明も同一文言で揃える。
 
 ### C-3. 特定商取引法に基づく表記（C-1 確定＝法人名義）
 
@@ -187,7 +240,7 @@ CLAUDE.md「運営元」に方針の前提あり：
 運営統括責任者   ：小石 達也
 所在地           ：〔法定住所〕（請求があったら遅滞なく開示、の運用も可）
 連絡先           ：〔法人問い合わせ窓口メール（Google Workspace アドレス）〕
-販売価格         ：各サポーター（投げ銭）購入画面に表示（税込・¥150 / ¥500 / ¥800）
+販売価格         ：各サポーター（投げ銭）購入画面に表示（税込・¥100 / ¥500 / ¥800）
 対価以外の必要料金：なし（通信料は利用者負担）
 支払方法         ：Apple App Store ／ Google Play のアプリ内課金
 支払時期         ：購入手続き完了時（単発・消耗型。継続課金なし）
@@ -211,10 +264,10 @@ B-1 確定（単発・消耗型）により継続課金がないため、サブ�
 B/C 確定（2026-05-20）を受けた v1.27 実装スコープ。
 
 - **商品**: iOS は StoreKit 2、Android は Google Play Billing。いずれも
-  **消耗型（consumable）IAP を 3 SKU**（¥150 / ¥500 / ¥800 相当）。サブスク
+  **消耗型（consumable）IAP を 3 SKU**（¥100 / ¥500 / ¥800 相当）。サブスク
   商品は作らない
 - **SKU 命名規約**: 将来のリレー利用権 SKU 統合を見据えた前方互換な命名
-  （例 `supporter.tip.small` / `.medium` / `.large`）
+  （例 `supporter.tip.small` / `.medium` / `.big`）
 - **サポーター判定の抽象層**: 商品タイプ・保持先を内側に隠す
   `SupporterStatus` provider を 1 つ用意。UI（バッジ）はこの抽象層のみ参照。
   これにより (a) 後日のサーバー側移行、(b) 将来のサブスク追加 が抽象層内に
@@ -261,7 +314,7 @@ StoreKit / Android Play Billing の consumable を統一 API で扱える）を�
 1. `SupporterStatus` 抽象層 + ローカル永続化（shared_preferences の
    「投げ銭済み」フラグ）+ Riverpod provider。UI 非依存で先行
 2. `in_app_purchase` 導入 + 消耗型 3 SKU 定義（`supporter.tip.small`
-   `.medium` `.large`）+ 購入フロー（pending / 成功で flag 立て / 失敗
+   `.medium` `.big`）+ 購入フロー（pending / 成功で flag 立て / 失敗
    ハンドリング / Android consume で再投げ銭可能に）+ Sentry 計装
 3. 投げ銭画面 UI（3 金額・「サポーターになる / 投げ銭」導線）+ 設定 or
    Drawer からのエントリポイント。用語は[用語統一](CLAUDE.md)準拠

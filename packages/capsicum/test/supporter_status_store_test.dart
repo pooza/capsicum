@@ -27,10 +27,10 @@ void main() {
       final r = SupporterRecord(
         firstTippedAt: first,
         tipCount: 1,
-      ).copyWith(tipCount: 2, lastSku: 'supporter.tip.large');
+      ).copyWith(tipCount: 2, lastSku: 'supporter.tip.big');
       expect(r.firstTippedAt, first);
       expect(r.tipCount, 2);
-      expect(r.lastSku, 'supporter.tip.large');
+      expect(r.lastSku, 'supporter.tip.big');
       expect(r.isSupporter, isTrue);
     });
   });
@@ -84,14 +84,14 @@ void main() {
             current.firstTippedAt ??
             DateTime.fromMillisecondsSinceEpoch(1_747_799_999_000),
         tipCount: current.tipCount + 1,
-        lastSku: 'supporter.tip.large',
+        lastSku: 'supporter.tip.big',
       );
       await store.save(current);
 
       final r = await store.load();
       expect(r.firstTippedAt, first);
       expect(r.tipCount, 2);
-      expect(r.lastSku, 'supporter.tip.large');
+      expect(r.lastSku, 'supporter.tip.big');
     });
   });
 }
