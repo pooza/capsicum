@@ -232,6 +232,17 @@ end
 
 v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
 
+#### リリース PR 前のローカル整形・解析チェック
+
+`analyze.yml`（CI の `dart format` / `dart analyze`）は `main` への push / PR でのみ起動し、**`develop` への push では走らない**。そのため `develop` 上では format / analyze の drift が CI 未検出のまま蓄積しうる。リリース PR（`develop` → `main`）を作る前に、リポジトリルートで一度全体をチェックしてリリース PR の CI 不合格を未然に防ぐこと:
+
+```bash
+dart format --output=none --set-exit-if-changed .
+dart analyze --fatal-infos
+```
+
+v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart format` 未追従のまま `develop` に積まれており、リリース直前のレビューで検出して整形した（commit `e377c5f`）。
+
 ### 4.1 バージョン更新・依存関係の更新
 
 ```bash
