@@ -693,12 +693,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         if (_isOwnProfile &&
                             ref.watch(isSupporterProvider)) ...[
                           const SizedBox(width: 6),
-                          const Tooltip(
+                          Tooltip(
                             message: 'サポーター',
-                            child: Icon(
-                              Icons.favorite,
-                              size: 18,
-                              color: Colors.pink,
+                            child: Image.asset(
+                              AppConstants.supporterIconAsset,
+                              width: 20,
+                              height: 20,
                             ),
                           ),
                         ],

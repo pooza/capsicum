@@ -124,7 +124,11 @@ class SupporterScreen extends ConsumerWidget {
     return [
       for (final product in state.products)
         ListTile(
-          leading: const Icon(Icons.favorite, color: Colors.pink),
+          leading: Image.asset(
+            AppConstants.supporterIconAsset,
+            width: 30,
+            height: 30,
+          ),
           title: Text(product.title),
           subtitle: Text(product.description),
           trailing: FilledButton(

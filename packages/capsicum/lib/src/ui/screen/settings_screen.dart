@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../service/push_registration_service.dart';
@@ -57,7 +58,11 @@ class SettingsScreen extends ConsumerWidget {
           // 同じく、対応していないプラットフォームでは設定エントリを隠す。
           if (supporterPurchaseSupported)
             ListTile(
-              leading: const Icon(Icons.favorite, color: Colors.pink),
+              leading: Image.asset(
+                AppConstants.supporterIconAsset,
+                width: 30,
+                height: 30,
+              ),
               title: const Text('capsicum をサポート'),
               subtitle: const Text('投げ銭で開発と通知リレーを応援'),
               trailing: const Icon(Icons.chevron_right),

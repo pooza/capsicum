@@ -53,6 +53,10 @@ class AppConstants {
     'https://capsicum.shrieker.net/tokushoho',
   );
 
+  /// サポーター（投げ銭）UI のアイコン (#428)。ハートではなく capsicum の
+  /// とうがらしを使う。設定エントリ・投げ銭画面・サポーターバッジで共用する。
+  static const supporterIconAsset = 'assets/images/capsicum_icon.webp';
+
   // 外部サービス
   static const notestockBaseUrl = 'https://notestock.osa-p.net';
   static final notestockUrl = Uri.parse(notestockBaseUrl);
