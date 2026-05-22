@@ -1506,10 +1506,7 @@ class AppUpgradeColdStartNotifier extends Notifier<AppUpgradeColdStart> {
       final prefs = await SharedPreferences.getInstance();
       final last = prefs.getString(_lastSeenAppVersionKey);
       final isUpgrade = last != null && last != info.version;
-      state = AppUpgradeColdStart(
-        isUpgrade: isUpgrade,
-        coldStartAt: startedAt,
-      );
+      state = AppUpgradeColdStart(isUpgrade: isUpgrade, coldStartAt: startedAt);
       await prefs.setString(_lastSeenAppVersionKey, info.version);
     } catch (_) {
       // 計装の失敗はアプリ動作に影響させない（黙って既定のまま）。

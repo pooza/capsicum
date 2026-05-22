@@ -292,61 +292,66 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
         final current = state.valueOrNull;
         if (current != null && !current.streamReconnectExhausted) {
-          state = AsyncData(
-            current.copyWith(streamReconnectExhausted: true),
-          );
+          state = AsyncData(current.copyWith(streamReconnectExhausted: true));
         }
       },
     );
-    _streamSubscription = stream.listen((newPost) {
-      final current = state.valueOrNull;
-      if (current == null) return;
-      if (newPost.filterAction == FilterAction.hide) return;
-      final hideLivecure = ref.read(hideLivecureProvider);
-      if (hideLivecure && _hasLivecureTag(newPost)) return;
-      // Avoid duplicates.
-      if (current.posts.any((p) => p.id == newPost.id)) return;
-      if (_pendingPosts.any((p) => p.id == newPost.id)) return;
+    _streamSubscription = stream.listen(
+      (newPost) {
+        final current = state.valueOrNull;
+        if (current == null) return;
+        if (newPost.filterAction == FilterAction.hide) return;
+        final hideLivecure = ref.read(hideLivecureProvider);
+        if (hideLivecure && _hasLivecureTag(newPost)) return;
+        // Avoid duplicates.
+        if (current.posts.any((p) => p.id == newPost.id)) return;
+        if (_pendingPosts.any((p) => p.id == newPost.id)) return;
 
-      if (_isNearTop) {
-        // User is at or near the top — prepend immediately.
-        state = AsyncData(current.copyWith(posts: [newPost, ...current.posts]));
-      } else {
-        // User is scrolling — queue the post to avoid jumping.
-        _pendingPosts.add(newPost);
-        state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
-      }
-    }, onError: (Object e, StackTrace st) {
-      // controller 自体は error を流さない設計だが、adapter 側の .map
-      // (_applyWordFilter 等) が投げると listener の error として届く。
-      // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
-      // (#586)。state は AsyncError にせず (REST 投稿は生きている)
-      // breadcrumb + throttle 付き captureException のみ。
-      Sentry.addBreadcrumb(
-        Breadcrumb(
-          category: 'timeline.stream.listen',
-          level: SentryLevel.warning,
-          message: e.runtimeType.toString(),
-        ),
-      );
-      final now = DateTime.now();
-      if (_lastConnectCapture != null &&
-          now.difference(_lastConnectCapture!) < _captureThrottle) {
-        return;
-      }
-      _lastConnectCapture = now;
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('timeline.stream.listen', 'failed');
-          scope.fingerprint = [
-            'timeline.stream.listen',
-            e.runtimeType.toString(),
-          ];
-        },
-      );
-    });
+        if (_isNearTop) {
+          // User is at or near the top — prepend immediately.
+          state = AsyncData(
+            current.copyWith(posts: [newPost, ...current.posts]),
+          );
+        } else {
+          // User is scrolling — queue the post to avoid jumping.
+          _pendingPosts.add(newPost);
+          state = AsyncData(
+            current.copyWith(pendingCount: _pendingPosts.length),
+          );
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        // controller 自体は error を流さない設計だが、adapter 側の .map
+        // (_applyWordFilter 等) が投げると listener の error として届く。
+        // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
+        // (#586)。state は AsyncError にせず (REST 投稿は生きている)
+        // breadcrumb + throttle 付き captureException のみ。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.listen',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastConnectCapture != null &&
+            now.difference(_lastConnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastConnectCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.listen', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.listen',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+    );
   }
 
   /// Called by the UI when the user's scroll position changes.
