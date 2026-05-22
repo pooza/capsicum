@@ -25,6 +25,13 @@
       "Bash(sort *)",
       "Bash(magick *)",
       "Bash(fastlane beta *)",
+      "Bash(objdump *)",
+      "Bash(ibus *)",
+      "Bash(pgrep *)",
+      "Bash(ps *)",
+      "Bash(flatpak *)",
+      "Bash(scrot *)",
+      "Bash(gh repo *)",
       "Bash(gh api *)",
       "Bash(gh issue *)",
       "Bash(gh pr *)",
@@ -48,11 +55,18 @@
       "Bash(git status *)",
       "Bash(git log *)",
       "Bash(git config *)",
+      "Bash(fvm flutter *)",
       "Bash(python3 -m json.tool)",
       "WebFetch(domain:mstdn.b-shock.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.ssl.com)",
+      "WebFetch(domain:misskey.delmulin.com)",
+      "WebSearch"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "/tmp"
+    ]
   }
 }

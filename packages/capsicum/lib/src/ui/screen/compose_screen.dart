@@ -22,6 +22,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
+import '../util/user_acct.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
@@ -54,6 +55,44 @@ class _OversizeFile {
     required this.size,
     required this.limit,
   });
+}
+
+/// 語字 (Unicode の Letter / Number / アンダースコア)。トリガ直前がこれ以外
+/// なら「語の先頭」とみなす。
+final RegExp _composeWordChar = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+
+/// カーソル位置から後方へ走査し、補完トリガ ([trigger] = `@` / `#` / `:`) の
+/// 直後クエリ文字列を返す。トリガ語でなければ null。
+///
+/// トリガが発火するのは「文頭」または「直前文字が語字でない」場合のみ。
+/// 旧実装は半角空白 / 改行 / 文頭のみを境界としていたため、日本語の
+/// 「。@user」「）#tag」全角空白・タブ等の直後で不発だった (#581 観点1)。
+/// 語字を除外する形なので `foo@bar`(メール) や `12:34`(時刻) を誤発火しない
+/// 旧来の意図は維持される。State から切り出した純粋関数 (テスト対象)。
+String? composeTriggerQuery({
+  required String text,
+  required int cursor,
+  required String trigger,
+}) {
+  if (cursor < 0 || cursor > text.length) return null;
+  var start = cursor - 1;
+  while (start >= 0) {
+    final ch = text[start];
+    if (ch == trigger) {
+      if (start == 0 || !_composeWordChar.hasMatch(text[start - 1])) {
+        final query = text.substring(start + 1, cursor);
+        return query.isNotEmpty ? query : null;
+      }
+      return null;
+    }
+    // クエリ内に空白系が現れたらトリガ語ではない。半角/全角空白・改行・
+    // タブ・CR を区切りとして扱う (#581 観点1: 全角空白等への拡張)。
+    if (ch == ' ' || ch == '　' || ch == '\n' || ch == '\r' || ch == '\t') {
+      return null;
+    }
+    start--;
+  }
+  return null;
 }
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -103,6 +142,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
+
+  // サジェスト取得の世代カウンタ (#581 観点2)。debounce 後に走るサーバー検索は
+  // in-flight キャンセルできないため、発火ごとに採番し await 解決時に最新世代
+  // でなければ後着レスポンスを破棄する。古いクエリの結果が新しい候補を上書き
+  // する race を防ぐ。絵文字はローカル絞り込みのため対象外。
+  int _mentionFetchGen = 0;
+  int _hashtagFetchGen = 0;
 
   // インライン絵文字補完 (#308)。デスクトップ実況用途で「キーボードから手を
   // 離さずカスタム絵文字を入れる」ことを主目的にする。サーバー側で
@@ -267,25 +313,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// Walk backwards from cursor to find [trigger] (`@` or `#`).
   /// Returns the query string after the trigger, or null.
-  String? _currentTriggerQuery(String trigger) {
-    final text = _controller.text;
-    final cursor = _controller.selection.baseOffset;
-    if (cursor < 0 || cursor > text.length) return null;
-    var start = cursor - 1;
-    while (start >= 0) {
-      final ch = text[start];
-      if (ch == trigger) {
-        if (start == 0 || text[start - 1] == ' ' || text[start - 1] == '\n') {
-          final query = text.substring(start + 1, cursor);
-          return query.isNotEmpty ? query : null;
-        }
-        return null;
-      }
-      if (ch == ' ' || ch == '\n') return null;
-      start--;
-    }
-    return null;
-  }
+  String? _currentTriggerQuery(String trigger) => composeTriggerQuery(
+    text: _controller.text,
+    cursor: _controller.selection.baseOffset,
+    trigger: trigger,
+  );
 
   void _onTextChanged() {
     // 既存の debounce は IME 中でも止める (#511): early return より前に
@@ -332,8 +364,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// `:shortcode` 形式の補完トリガを検出する (#308)。
   /// `_currentTriggerQuery(':')` をそのまま使うと `12:34` のような時刻表記も
-  /// 拾い得るが、`:` の前が空白 / 改行 / 文頭であることを要求する元実装の
-  /// 条件で正しく除外できる。
+  /// 拾い得るが、`:` の前が語字 (英数字 / アンダースコア) でないことを要求する
+  /// _currentTriggerQuery の境界条件で正しく除外できる (`12:` は直前が数字)。
   /// ただし `:smi:` のようにクエリ後ろに閉じコロンが続く完成形は補完不要なので
   /// この場合は null を返す。
   String? _currentEmojiTriggerQuery() {
@@ -355,11 +387,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _fetchMentionSuggestions(String query) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! SearchSupport) return;
+    final gen = ++_mentionFetchGen;
     try {
       final users = await (adapter as SearchSupport).searchUsers(
         query,
         limit: 5,
       );
+      // 後着レスポンス破棄 (#581 観点2): await 中に新しい入力で再発火して
+      // いたら世代が進んでいる。古い結果で新しい候補を上書きしない。
+      if (gen != _mentionFetchGen) return;
       if (mounted) setState(() => _mentionSuggestions = users);
     } catch (e) {
       // best-effort なサジェスト系。致命でないので breadcrumb のみ残し、
@@ -378,11 +414,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _fetchHashtagSuggestions(String query) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! SearchSupport) return;
+    final gen = ++_hashtagFetchGen;
     try {
       final tags = await (adapter as SearchSupport).searchHashtags(
         query,
         limit: 5,
       );
+      if (gen != _hashtagFetchGen) return;
       if (mounted) setState(() => _hashtagSuggestions = tags);
     } catch (e) {
       Sentry.addBreadcrumb(
@@ -545,12 +583,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  String _buildAcct(User user) {
-    if (user.host != null && user.host!.isNotEmpty) {
-      return '${user.username}@${user.host}';
-    }
-    return user.username;
-  }
+  String _buildAcct(User user) => userAcct(user);
 
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');

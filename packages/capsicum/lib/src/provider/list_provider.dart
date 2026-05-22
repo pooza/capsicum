@@ -25,15 +25,14 @@ class ListTimelineNotifier
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
-    final posts = await (adapter as ListSupport).getListTimeline(
-      arg,
-      query: const TimelineQuery(limit: _pageSize),
+    return fetchUntilVisible(
+      pageSize: _pageSize,
+      hideLivecure: hideLivecure,
+      fetch: (maxId) => (adapter as ListSupport).getListTimeline(
+        arg,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      ),
     );
-    final visible = hideLivecure
-        ? posts.where((p) => !hasLivecureTag(p)).toList()
-        : posts;
-
-    return TimelineState(posts: visible, hasMore: posts.isNotEmpty);
   }
 
   Future<void> loadMore() async {

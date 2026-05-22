@@ -18,15 +18,14 @@ class ChannelTimelineNotifier
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
-    final posts = await (adapter as ChannelSupport).getChannelTimeline(
-      arg,
-      query: const TimelineQuery(limit: _pageSize),
+    return fetchUntilVisible(
+      pageSize: _pageSize,
+      hideLivecure: hideLivecure,
+      fetch: (maxId) => (adapter as ChannelSupport).getChannelTimeline(
+        arg,
+        query: TimelineQuery(maxId: maxId, limit: _pageSize),
+      ),
     );
-    final visible = hideLivecure
-        ? posts.where((p) => !hasLivecureTag(p)).toList()
-        : posts;
-
-    return TimelineState(posts: visible, hasMore: posts.length >= _pageSize);
   }
 
   Future<void> loadMore() async {

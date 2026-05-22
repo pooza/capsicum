@@ -232,6 +232,17 @@ end
 
 v1.18 のレビューでは、この 5 観点でセキュリティ単独では見つからなかった実害バグを複数検出した（例: [#325](https://github.com/pooza/capsicum/issues/325) の enrichNotifications で unread フラグが失われるデータ破損）。残課題は [#337](https://github.com/pooza/capsicum/issues/337)-[#343](https://github.com/pooza/capsicum/issues/343) に集約。
 
+#### リリース PR 前のローカル整形・解析チェック
+
+`analyze.yml`（CI の `dart format` / `dart analyze`）は `main` への push / PR でのみ起動し、**`develop` への push では走らない**。そのため `develop` 上では format / analyze の drift が CI 未検出のまま蓄積しうる。リリース PR（`develop` → `main`）を作る前に、リポジトリルートで一度全体をチェックしてリリース PR の CI 不合格を未然に防ぐこと:
+
+```bash
+dart format --output=none --set-exit-if-changed .
+dart analyze --fatal-infos
+```
+
+v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart format` 未追従のまま `develop` に積まれており、リリース直前のレビューで検出して整形した（commit `e377c5f`）。
+
 ### 4.1 バージョン更新・依存関係の更新
 
 ```bash
@@ -340,6 +351,14 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+#### サポーター（投げ銭）IAP の審査ノート（[#428](https://github.com/pooza/capsicum/issues/428)、v1.27〜）
+
+消耗型サポータープランを含むビルドを iOS / Android に提出する際は、App Review Information の Notes（App Store）／アプリのアクセス権の説明（Google Play）に [supporter-subscription-plan.md](supporter-subscription-plan.md) C-2 の英文を貼り付ける。機能差別化なし・装飾のみ・単発である旨を明示することで、機能アンロックを伴わない IAP に対する審査員の混乱を回避する。継続課金ではないため Apple Guideline 3.1.2（継続的価値）の論点は発生しない。
+
+**新規 IAP（特に初回）は ASC 上で単独で審査提出しない。** アプリのバージョン提出に紐付けて同時提出する（バージョン提出画面の「App 内課金」欄で対象 IAP を選択）。リリース前レビュー前に IAP だけ先行提出すると、レビュー結果を取り込む前のビルドと審査がちぐはぐになるため。初回 IAP のスクリーンショット等の必須項目は「提出準備完了」状態にしておき、実提出は製品版昇格時のアプリ版提出に合わせる。初回 IAP が承認されれば 2 回目以降は単独提出も可。
+
+投げ銭画面の金額はストアのローカライズ価格（`ProductDetails.price`）をそのまま表示する設計で、コード側に金額をハードコードしない。表示通貨は端末の App Store / Play アカウントのストア地域で決まるため、検証アカウントが日本以外（米国 sandbox 等）だと `$` 表示になる。これは不具合ではなく、日本ストアのユーザーには円で表示される（iPhone 実機で確認済み）。
+
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 
 iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:
@@ -419,9 +438,16 @@ bash packaging/linux/flathub/build.sh     # Flatpak (要 GNOME Platform 49)
 
 ### 4.6 Windows 配布（v1.25〜）
 
-Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は **GitHub Releases 経由の自己署名 MSIX 直配**（[#423](https://github.com/pooza/capsicum/issues/423)）。Microsoft Store 公開は個人開発者アカウントでは Entra ID テナント関連付け UI に到達できないため [#544](https://github.com/pooza/capsicum/issues/544) で on-hold（法人化後に再挑戦）。短期は AppImage と同じく「ストアスキップして GitHub Releases 直配」で配布鶏卵問題を崩す。
+Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は 2 系統:
 
-中期（v1.26、[#534](https://github.com/pooza/capsicum/issues/534)）はビーショック名義で OV コード署名証明書取得 → SmartScreen 通過な MSIX 直配に格上げ予定。
+1. **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。一般ユーザー向けの主要配布経路（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
+2. **GitHub Releases 経由の自己署名 MSIX 直配** ([#423](https://github.com/pooza/capsicum/issues/423)、v1.25〜): 信頼ストア import を厭わない上級ユーザー向け補助路線。draft Release を pooza が即時 publish できるため、Store 認定中の先行配布・先行検証経路としても機能する
+
+msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留。毎リリースの Store publish は **Partner Center Web UI から手動** が前提。
+
+`pubspec.yaml` の `msix_config.store: false` のまま生成した自己署名 MSIX を Web UI に upload する経路で初回審査通過済み（Store 側で再署名されるため self-signed のまま submit 可）。両配布経路で同一 MSIX 成果物を使い回す。
+
+OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534)) は Store 経由配布が主ルートになったため当面不要（Store 経由は MS が再署名、自己署名直配は上級者向け補助路線として継続）。
 
 #### MSIX
 
@@ -432,9 +458,10 @@ Windows は fastlane を使わず GitHub Actions の windows-latest runner ジ�
 3. `dart run msix:create --certificate-path ... --certificate-password ...` で **署名済み** `capsicum.msix` を生成（msix package が内部で signtool を呼ぶ）
 4. PFX から公開鍵 `.cer` を抽出
 5. `capsicum.msix` + `capsicum-signing.cer` を **draft Release** に添付（pooza が GitHub UI で publish 判断）
-6. Microsoft Store credential が投入されていれば msstore CLI で draft submission として送る（現状 on-hold、[#544](https://github.com/pooza/capsicum/issues/544)）
 
-draft で生成・submit するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
+Microsoft Store への publish は msstore CLI 自動化が保留中のため、§「Microsoft Store 手動 publish の毎回手順」に従って Partner Center Web UI から手動で行う（同じ `capsicum.msix` を upload）。
+
+draft で生成するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
 
 #### 自己署名証明書の投入手順（一度だけ、[#423](https://github.com/pooza/capsicum/issues/423)）
 
@@ -487,20 +514,36 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 
 `pubspec.yaml` の `msix_config.publisher` (`CN=0B8EE9C3-…`) を変更すると、Microsoft Store の identity 紐付け (#544) で再申請が必要になるため、ローテーション時の Subject 変更は避ける。
 
-#### Microsoft Store credential 投入手順（[#544](https://github.com/pooza/capsicum/issues/544) が再開した時のみ）
+#### Microsoft Store 手動 publish の毎回手順（毎回・[#544](https://github.com/pooza/capsicum/issues/544)）
 
-[#544](https://github.com/pooza/capsicum/issues/544) の再開トリガー (法人化 → Microsoft 365 Business → 組織契約 Entra ID テナント) が満たされた時点で実施。手順は #544 issue 本文を参照。Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される。
+タグ駆動ビルドで draft Release に添付された `capsicum.msix` を Partner Center Web UI から手動で submission する。初回審査は 2026-05-20 通過、以降は同じ流れで毎リリース回す。
+
+1. **Partner Center にログイン**: <https://partner.microsoft.com/dashboard> → アプリ「capsicum」(`identity_name=9AFBB08E.capsicum` / `publisher_display_name=小石達也`)
+2. **新規 Submission を開始**
+3. **Packages**: draft Release に添付された `capsicum.msix` をそのまま upload（`msix_config.store: false` のままで OK、Store 側で再署名される）
+4. **Submission Options > Notes for Certification**: 毎回必須。確定文面・根本原因・Windows 固有の注意は [msstore-review-notes-login.md](msstore-review-notes-login.md) を single source of truth とする（capsicum は OAuth + 外部サーバー前提のため、書かないと Policy 10.3.1 *App Is Testable - Test Account* で差し戻し）
+5. **System Requirements (推奨環境)**: 「イマーシブヘッドセット」項目に **明示的にチェックを入れる**罠あり（実体としては不要だが、UI が空欄を許容せず submission に進めない仕様。2026-05-16 にはまった経緯あり、参考: <https://mstdn.b-shock.org/@pooza/116586587890264199>）
+6. **Submit for certification**: 認定期間は通常 1-3 日（初回は 3-7 日）。通過後に Store listing が自動で publish される
+7. **動作確認**: Store からインストールして SmartScreen 警告なしで起動できることを確認
+
+msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留のため、毎リリース手動で行う。
+
+#### Microsoft Store credential 投入手順（将来 msstore CLI 自動 publish が再開した時のみ）
+
+現状は §「Microsoft Store 手動 publish の毎回手順」を毎リリース回しているため credential 投入は不要。将来 msstore CLI 自動 publish の再挑戦が成立した時点で、Repository Secrets `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` を投入すると `windows-release.yml` の publish step が自動有効化される構造を残してある（現在 secrets 未投入時 skip 動作）。
 
 #### GitHub Release のリリースノート（Windows セクションテンプレート）
 
 タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
 
 ````markdown
-## Windows (MSIX 自己署名直配)
+## Windows
 
-> ⚠️ 配布対象は「証明書 import を厭わない上級ユーザー」です。Microsoft Store 公開は法人化対応待ちで、当面 GitHub Releases 経由の自己署名配布のみとなります。
+Microsoft Store からのインストールが推奨です: [apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)
 
-本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
+### GitHub Releases から自己署名 MSIX を直接 import（補助・上級者向け）
+
+Store publish 完了前の先行検証用・証明書 import に抵抗のないユーザー向け。本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
 ````
 
 #### Windows ローカルビルド確認

@@ -85,6 +85,7 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       postedAt: createdAt,
       author: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       content: content,
+      isHtml: true,
       scope: mastodonVisibilityRosetta[visibility] ?? PostScope.public,
       attachments: mediaAttachments.map((a) => a.toCapsicum()).toList(),
       favouriteCount: favouritesCount,
@@ -193,6 +194,7 @@ bool _isQuotable(Map<String, dynamic>? quoteApproval) {
         },
       ),
       content: quote['content'] as String? ?? '',
+      isHtml: true,
       spoilerText: (quote['spoiler_text'] as String?)?.isNotEmpty == true
           ? quote['spoiler_text'] as String
           : null,

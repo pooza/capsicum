@@ -109,7 +109,12 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Annict に感想を投稿しました')));
-      context.pop();
+      // pop だと エピソードブラウザ (home→compose→/episodes→/annict/record)
+      // まで戻り、タイムラインに辿り着くのに何度も戻る必要がある (#584)。
+      // 感想投稿の終着点はタイムラインなので stack を畳んで /home へ。
+      // compose_screen の投稿後 (go('/home')) と同じ扱い。EULA/認証通過済みの
+      // 深い画面からの遷移なので #562 の gate bypass には当たらない。
+      context.go('/home');
     } on DioException catch (e, st) {
       if (!mounted) return;
       final status = e.response?.statusCode;
@@ -194,14 +199,18 @@ class _AnnictRecordScreenState extends ConsumerState<AnnictRecordScreen> {
               const SizedBox(height: 16),
               Text('感想', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
-              TextField(
-                controller: _commentController,
-                enabled: !_submitting,
-                maxLines: 8,
-                minLines: 5,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: '感想を入力 (任意)',
+              Expanded(
+                child: TextField(
+                  controller: _commentController,
+                  enabled: !_submitting,
+                  maxLines: null,
+                  minLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '感想を入力 (任意)',
+                  ),
                 ),
               ),
               if (_submitting) ...[

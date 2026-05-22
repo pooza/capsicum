@@ -212,9 +212,16 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             ),
           ),
-          SelectableText(
-            body,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          // コマンドトゥート結果 (JSON/YAML) は長い 1 行を折り返さず横
+          // スクロールで読む。content_parser の codeBlock (#434) と同じ
+          // 扱いに揃える (#585。従来この経路だけ softWrap 抑止が無く、
+          // _isStructuredContent で検出できても折り返していた)。
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SelectableText(
+              body,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -634,9 +641,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       Builder(
                         builder: (_) {
                           final rawContent = displayPost.content ?? '';
-                          final isHtml =
-                              rawContent.contains('<p>') ||
-                              rawContent.contains('<br');
+                          final isHtml = displayPost.isHtml;
                           final parsed = isHtml
                               ? extractTrailingTagsHtml(rawContent)
                               : extractTrailingTagsMfm(rawContent);
@@ -1612,8 +1617,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (account == null || mulukhiya == null) return;
 
     final retagContent = targetPost.content ?? '';
-    final retagIsHtml =
-        retagContent.contains('<p>') || retagContent.contains('<br');
+    final retagIsHtml = targetPost.isHtml;
     final parsed = retagIsHtml
         ? extractTrailingTagsHtml(retagContent)
         : extractTrailingTagsMfm(retagContent);

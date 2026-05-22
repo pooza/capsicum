@@ -323,6 +323,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         postedAt: post.postedAt,
         author: post.author,
         content: post.content,
+        isHtml: post.isHtml,
         scope: post.scope,
         attachments: post.attachments,
         favouriteCount: post.favouriteCount,
@@ -351,6 +352,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         postedAt: post.postedAt,
         author: post.author,
         content: post.content,
+        isHtml: post.isHtml,
         scope: post.scope,
         attachments: post.attachments,
         favouriteCount: post.favouriteCount,
@@ -1236,7 +1238,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // StreamSupport
 
   @override
-  Stream<Post> streamTimeline(TimelineType type) {
+  Stream<Post> streamTimeline(
+    TimelineType type, {
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
     _streaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
@@ -1244,6 +1251,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
     );
     return _streaming!.connect(type).map(_applyWordFilter);
   }

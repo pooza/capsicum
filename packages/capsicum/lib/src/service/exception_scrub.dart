@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 /// DioException や OAuth 例外のメタ情報のみを抜き出した安全な例外に詰め替える。
 ///
@@ -24,6 +25,18 @@ Object scrubException(Object e) {
       'status=${e.response?.statusCode ?? '-'} '
       'path=$path',
     );
+  }
+  if (e is IAPError) {
+    // IAPError.details はプラットフォーム例外の内部情報（StoreKit /
+    // Play Billing の PlatformException details 等）を含みうるため、
+    // 識別子の source / code のみに詰め替える (#428)。
+    return StateError('IAPError source=${e.source} code=${e.code}');
+  }
+  if (e is FormatException) {
+    // FormatException.toString() は source（パース対象の生データ断片）を
+    // 含む。streaming のフレーム parse 失敗時に投稿本文の断片が混入する
+    // ため、message のみ残して source / offset は落とす (#586)。
+    return StateError('FormatException: ${e.message}');
   }
   final text = e.toString();
   if (_sensitiveQueryParam.hasMatch(text)) {

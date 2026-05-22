@@ -11,6 +11,12 @@ class Post {
   final DateTime postedAt;
   final User author;
   final String? content;
+
+  /// `content` が HTML（Mastodon）か MFM（Misskey）かを示す。
+  /// バックエンドが確定的に持つ情報。本文表示側はこのフラグでレンダラを選ぶ
+  /// （`<p>` 有無のヒューリスティックは Misskey 連合ノートで誤判定するため）。
+  final bool isHtml;
+
   final PostScope scope;
   final List<Attachment> attachments;
   final int favouriteCount;
@@ -48,6 +54,7 @@ class Post {
     required this.postedAt,
     required this.author,
     this.content,
+    this.isHtml = false,
     this.scope = PostScope.public,
     this.attachments = const [],
     this.favouriteCount = 0,
@@ -94,6 +101,7 @@ class Post {
     postedAt: postedAt,
     author: author ?? this.author,
     content: content,
+    isHtml: isHtml,
     scope: scope,
     attachments: attachments,
     favouriteCount: favouriteCount,

@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../util/sentry_tag_hash.dart';
 import 'account_manager_provider.dart';
 import 'channel_provider.dart';
 import 'list_provider.dart';
@@ -177,6 +180,13 @@ final lastTabProvider =
     );
 
 class LastTabNotifier extends FamilyNotifier<String?, String> {
+  /// build() 中に走った _load() の SharedPreferences.getInstance() await は
+  /// 初回起動で遅く、その間に login_screen 等が save() を呼ぶと、後から
+  /// 解決した _load() が disk の旧値で明示選択を無条件上書きしてしまう
+  /// (#579: misskey.io でホームのつもりがローカルになる間欠不具合)。
+  /// 明示 save() があったら _load() は復元をスキップし「後勝ち」を防ぐ。
+  bool _explicitlySet = false;
+
   @override
   String? build(String arg) {
     _load();
@@ -185,13 +195,16 @@ class LastTabNotifier extends FamilyNotifier<String?, String> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    // await 中に save() が走っていれば、その明示選択を尊重して復元しない。
+    if (_explicitlySet) return;
     final saved = prefs.getString('$_lastTabPrefix$arg');
-    if (saved != null) {
+    if (saved != null && !_explicitlySet) {
       state = saved;
     }
   }
 
   Future<void> save(String value) async {
+    _explicitlySet = true;
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('$_lastTabPrefix$arg', value);
@@ -238,6 +251,15 @@ final tabConfigProvider =
     );
 
 class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
+  // #579 計装: build() 直後は defaultTabConfig のまま _load() が pending する。
+  // この pre-load 窓で visible 解決が走ったかをスモーキングガンとして 1 度だけ
+  // 記録するためのフラグ。原因確定後に撤去。
+  bool _loaded = false;
+  bool _preLoadReported = false;
+
+  /// _load()（deserialize / migrate いずれか）が完了したか。
+  bool get isLoaded => _loaded;
+
   @override
   List<TabConfigEntry> build(String arg) {
     _load();
@@ -245,14 +267,18 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList('$_tabConfigPrefix$arg');
-    if (saved != null) {
-      state = _deserialize(saved);
-      return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('$_tabConfigPrefix$arg');
+      if (saved != null) {
+        state = _deserialize(saved);
+        return;
+      }
+      // Migrate from legacy providers.
+      state = await _migrate(prefs);
+    } finally {
+      _loaded = true; // #579 計装
     }
-    // Migrate from legacy providers.
-    state = await _migrate(prefs);
   }
 
   /// Migrate from the legacy per-type preferences into the unified format.
@@ -434,6 +460,24 @@ final visibleTabsProvider = Provider.family<List<TabType>, String>((
       ?.map((c) => c.id)
       .toSet();
   final config = ref.watch(tabConfigProvider(storageKey));
+
+  // #579 計装 (スモーキングガン): tab config が _load 未完 (defaultTabConfig の
+  // まま) で visible 解決が走った瞬間を不変条件違反として記録する。pre-migrate
+  // の並び差で home スロットが social に化ける、という pooza 仮説の当否を
+  // フィールドで判定する。notifier インスタンスごとに 1 度だけ発火。
+  final tabCfgNotifier = ref.read(tabConfigProvider(storageKey).notifier);
+  if (!tabCfgNotifier.isLoaded && !tabCfgNotifier._preLoadReported) {
+    tabCfgNotifier._preLoadReported = true;
+    Sentry.captureMessage(
+      'tab_config.pre_load_visible_resolve',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('sensor', 'smoking_gun.tab_config_pre_load');
+        scope.setTag('context', 'visibleTabsProvider');
+        scope.setTag('account_hash', hashForSentryTag(storageKey));
+      },
+    );
+  }
 
   final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
     if (tab is TimelineTab) return supported.contains(tab.type);
@@ -1408,5 +1452,64 @@ class DarkTextColorNotifier extends Notifier<DarkTextColor> {
     state = color;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_darkTextColorKey, color.name);
+  }
+}
+
+// ===========================================================================
+// #579 計装 (フィールド裏取り用 / 原因確定後に 1 コミットで撤去可能)
+//
+// misskey.io でアプリのバージョン更新直後の初回 cold start に限り、ホームが
+// ソーシャル(hybrid)表示になり数回リロードで回復する、という一過性報告
+// (#579) の裏取り。debug 非再現前提のため Sentry 経路で観測する。
+// 撤去時はこのブロック / TabConfigNotifier._loaded まわり / visibleTabsProvider
+// と home_screen の `#579 計装` ブロックをまとめて削除する。
+// ===========================================================================
+
+/// 直近に起動が観測したアプリバージョン。バージョン更新の検知にのみ使う。
+const _lastSeenAppVersionKey = 'last_seen_app_version';
+
+/// バージョン更新後の初回 cold start かどうかと、その cold start 時刻。
+class AppUpgradeColdStart {
+  /// 直前に観測したバージョンが存在し、現バージョンと異なる初回起動。
+  final bool isUpgrade;
+
+  /// この provider が立った時刻 ≒ cold start 時刻（効果側センサの窓判定用）。
+  final DateTime coldStartAt;
+
+  const AppUpgradeColdStart({
+    required this.isUpgrade,
+    required this.coldStartAt,
+  });
+}
+
+/// アプリ起動が「バージョン更新直後の初回 cold start」かを非同期判定する。
+///
+/// build() は同期で「更新ではない」既定を返し、PackageInfo /
+/// SharedPreferences 解決後に状態を確定する。確定と同時に現バージョンを
+/// 保存するので、同一バージョンの 2 回目以降の起動では isUpgrade=false。
+final appUpgradeColdStartProvider =
+    NotifierProvider<AppUpgradeColdStartNotifier, AppUpgradeColdStart>(
+      AppUpgradeColdStartNotifier.new,
+    );
+
+class AppUpgradeColdStartNotifier extends Notifier<AppUpgradeColdStart> {
+  @override
+  AppUpgradeColdStart build() {
+    final startedAt = DateTime.now();
+    _load(startedAt);
+    return AppUpgradeColdStart(isUpgrade: false, coldStartAt: startedAt);
+  }
+
+  Future<void> _load(DateTime startedAt) async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final prefs = await SharedPreferences.getInstance();
+      final last = prefs.getString(_lastSeenAppVersionKey);
+      final isUpgrade = last != null && last != info.version;
+      state = AppUpgradeColdStart(isUpgrade: isUpgrade, coldStartAt: startedAt);
+      await prefs.setString(_lastSeenAppVersionKey, info.version);
+    } catch (_) {
+      // 計装の失敗はアプリ動作に影響させない（黙って既定のまま）。
+    }
   }
 }

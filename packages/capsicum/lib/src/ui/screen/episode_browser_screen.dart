@@ -218,6 +218,18 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
               ).showSnackBar(const SnackBar(content: Text('番組名をコピーしました')));
             },
           ),
+          if (work.hashtag != null)
+            IconButton(
+              icon: const Icon(Icons.tag),
+              tooltip: 'ハッシュタグをコピー',
+              onPressed: () {
+                final tag = '#${work.hashtag!.replaceFirst('#', '')}';
+                Clipboard.setData(ClipboardData(text: tag));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('ハッシュタグをコピーしました')));
+              },
+            ),
         ],
       ),
       body: _buildEpisodesBody(),

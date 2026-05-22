@@ -8,8 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../url_helper.dart';
+import '../../util/sentry_tag_hash.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/hashtag_provider.dart';
@@ -62,6 +64,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
+
+  // #579 計装 (効果側センサ / 原因確定後に 1 コミット撤去): バージョン更新後
+  // 初回 cold start から一定時間内に、保存タブが home（または未保存=home 既定）
+  // なのに選択タブが social に解決された結果を、原因非依存に 1 度だけ記録する。
+  static const _upgradeMismatchWindow = Duration(seconds: 60);
+  bool _upgradeMismatchReported = false;
 
   @override
   void initState() {
@@ -167,6 +175,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedList = ref.watch(selectedListProvider);
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
+
+    // #579 計装 (効果側センサ): 選択タブが social に解決された結果を、原因
+    // 非依存に観測する。発火条件は _maybeReportUpgradeTabMismatch 側で判定。
+    ref.listen(selectedTabProvider, (prev, next) {
+      _maybeReportUpgradeTabMismatch(next);
+    });
 
     // External entry points (notification taps etc.) may request a specific
     // initial tab. Applying it suppresses the saved last-tab restore on cold
@@ -296,6 +310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       account,
       accountState,
       unreadAnnouncements,
+      wideLayout: wideLayout,
     );
 
     return Scaffold(
@@ -426,6 +441,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    // スワイプによるカラム移動はタブ種別に依存しない共通操作なので、
+    // 通知 / お知らせ / リスト等すべてのタブ本体を単一の GestureDetector で
+    // 包む。HitTestBehavior.opaque で空リスト領域上のドラッグも拾う (#573)。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: _onSwipe,
+      child: _buildTabContent(
+        currentTab,
+        selectedList,
+        selectedType,
+        selectedHashtag,
+        timeline,
+      ),
+    );
+  }
+
+  Widget _buildTabContent(
+    TabType currentTab,
+    PostList? selectedList,
+    TimelineType selectedType,
+    String? selectedHashtag,
+    AsyncValue<dynamic> timeline,
+  ) {
     // Non-timeline tabs: render their dedicated views.
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
@@ -459,90 +497,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget body = Column(
       children: [
         Expanded(
-          child: GestureDetector(
-            onHorizontalDragEnd: selectedList == null
-                ? (details) => _onSwipe(details)
-                : null,
-            child: timeline.when(
-              data: (tlState) {
-                // Restore marker position on first load (home timeline only).
-                if (selectedList == null &&
-                    selectedType == TimelineType.home &&
-                    tlState.posts.isNotEmpty) {
-                  _restoreMarker(tlState.posts);
-                }
-                return RefreshIndicator(
-                  onRefresh: () {
-                    _markerRestored = false;
-                    if (selectedHashtag != null) {
-                      return ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
+          child: timeline.when(
+            data: (tlState) {
+              // Restore marker position on first load (home timeline only).
+              if (selectedList == null &&
+                  selectedType == TimelineType.home &&
+                  tlState.posts.isNotEmpty) {
+                _restoreMarker(tlState.posts);
+              }
+              return RefreshIndicator(
+                onRefresh: () {
+                  _markerRestored = false;
+                  if (selectedHashtag != null) {
+                    return ref.refresh(
+                      hashtagTimelineProvider(selectedHashtag).future,
+                    );
+                  }
+                  if (selectedList != null) {
+                    return ref.refresh(
+                      listTimelineProvider(selectedList.id).future,
+                    );
+                  }
+                  return ref.refresh(timelineProvider.future);
+                },
+                child: ScrollablePositionedList.separated(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  itemCount:
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index >= tlState.posts.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    if (selectedList != null) {
-                      return ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    }
-                    return ref.refresh(timelineProvider.future);
+                    return PostTile(post: tlState.posts[index]);
                   },
-                  child: ScrollablePositionedList.separated(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    itemCount:
-                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= tlState.posts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      return PostTile(post: tlState.posts[index]);
-                    },
-                  ),
-                );
-              },
-              loading: () {
-                if (_showScrollTop) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _showScrollTop = false);
-                  });
-                }
-                return const Center(child: CircularProgressIndicator());
-              },
-              error: (error, stack) {
-                final message = _timelineErrorMessage(error);
-                final canRetry = !_isForbiddenError(error);
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(message, textAlign: TextAlign.center),
-                        if (canRetry) ...[
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              if (selectedList != null) {
-                                ref.invalidate(
-                                  listTimelineProvider(selectedList.id),
-                                );
-                              } else {
-                                ref.invalidate(timelineProvider);
-                              }
-                            },
-                            child: const Text('再試行'),
-                          ),
-                        ],
+                ),
+              );
+            },
+            loading: () {
+              if (_showScrollTop) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _showScrollTop = false);
+                });
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+            error: (error, stack) {
+              final message = _timelineErrorMessage(error);
+              final canRetry = !_isForbiddenError(error);
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(message, textAlign: TextAlign.center),
+                      if (canRetry) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (selectedList != null) {
+                              ref.invalidate(
+                                listTimelineProvider(selectedList.id),
+                              );
+                            } else {
+                              ref.invalidate(timelineProvider);
+                            }
+                          },
+                          child: const Text('再試行'),
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
         const SimplePostBar(),
@@ -594,6 +627,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// Apply a saved tab value to the current selection providers.
+  /// #579 計装 (効果側センサ): バージョン更新後初回 cold start の窓内で、保存
+  /// タブが home（または未保存=home 既定）なのに選択タブが social に解決された
+  /// 結果を、原因非依存に 1 度だけ記録する。pooza プランの効果側センサ。
+  /// 原因確定後、このメソッド・呼び出し・関連フィールド・import を撤去する。
+  void _maybeReportUpgradeTabMismatch(TabType next) {
+    if (_upgradeMismatchReported) return;
+    if (next is! TimelineTab || next.type != TimelineType.social) return;
+    final startup = ref.read(appUpgradeColdStartProvider);
+    if (!startup.isUpgrade) return;
+    final elapsed = DateTime.now().difference(startup.coldStartAt);
+    if (elapsed > _upgradeMismatchWindow) return;
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return;
+    final storageKey = account.key.toStorageKey();
+    final saved = ref.read(lastTabProvider(storageKey));
+    final homeKey = const TimelineTab(TimelineType.home).toKey();
+    final intendedHome = saved == null || saved == homeKey;
+    if (!intendedHome) return;
+    _upgradeMismatchReported = true;
+    Sentry.captureMessage(
+      'timeline.home_resolved_social.post_upgrade',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('sensor', 'effect.home_social_mismatch');
+        scope.setTag('selected_type', 'social');
+        scope.setTag('saved_last_tab', saved ?? '<none>');
+        scope.setTag('elapsed_ms', elapsed.inMilliseconds.toString());
+        scope.setTag('account_hash', hashForSentryTag(storageKey));
+      },
+    );
+  }
+
   void _applyLastTab(String saved) {
     final tab = TabType.fromKey(saved);
     if (tab == null) return;
@@ -808,8 +873,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetRef ref,
     Account? current,
     AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
+    int unreadAnnouncements, {
+    bool wideLayout = false,
+  }) {
     final otherAccounts = accountState.accounts
         .where((a) => a.key != current?.key)
         .toList();
@@ -824,6 +890,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
     // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
     return Drawer(
+      // 常駐 (wide) モードでは Row 内の左パネルとして並ぶため、Material
+      // 既定の内容側 (右端) 角丸を消してフラットな仕切りにする (#541
+      // フォローアップ)。オーバーレイ (narrow) モードでは shape: null で
+      // 従来の Material 既定 (角丸あり) を維持する。
+      shape: wideLayout ? const RoundedRectangleBorder() : null,
       child: Builder(
         builder: (innerCtx) {
           void dismiss() => Scaffold.of(innerCtx).closeDrawer();
