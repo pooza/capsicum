@@ -110,6 +110,15 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
             ];
           },
         );
+        // 購入ストリーム自体が崩壊した場合も purchaseInProgress を戻す。
+        // buy() 後にここへ来ると、各購入ステータス分岐を一切経由しないため
+        // フラグがリセットされず投げ銭ボタンが固着する。
+        state = state.copyWith(
+          purchaseInProgress: false,
+          lastOutcome: const SupporterPurchaseOutcome(
+            SupporterPurchaseOutcomeKind.error,
+          ),
+        );
       },
     );
     ref.onDispose(() => _sub?.cancel());
@@ -195,6 +204,9 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
 
   Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final p in purchases) {
+      // 永続化に失敗した購入はストアトランザクションを完了させず、次回
+      // 起動時の再配信に委ねる（下の completePurchase をスキップする）。
+      var persisted = true;
       switch (p.status) {
         case PurchaseStatus.pending:
           state = state.copyWith(purchaseInProgress: true);
@@ -237,19 +249,45 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         case PurchaseStatus.restored:
           // 消耗型につきレシート検証は最小（ストアを信頼）。サーバー側
           // 保持に移行した時点で検証経路を抽象層内に追加する（B-4）。
-          await ref
-              .read(supporterStatusProvider.notifier)
-              .markTipped(sku: p.productID);
-          state = state.copyWith(
-            purchaseInProgress: false,
-            lastOutcome: const SupporterPurchaseOutcome(
-              SupporterPurchaseOutcomeKind.success,
-            ),
-          );
+          try {
+            await ref
+                .read(supporterStatusProvider.notifier)
+                .markTipped(sku: p.productID);
+            state = state.copyWith(
+              purchaseInProgress: false,
+              lastOutcome: const SupporterPurchaseOutcome(
+                SupporterPurchaseOutcomeKind.success,
+              ),
+            );
+          } catch (e, st) {
+            // 課金はストア側で成立済みだが、ローカル記録の永続化に失敗。
+            // purchaseInProgress を必ず戻してボタン固着を防ぐ（#298 同型）。
+            // completePurchase を呼ばないことで、次回起動時にストアが
+            // トランザクションを再配信し markTipped を再試行する。
+            persisted = false;
+            Sentry.captureException(
+              scrubException(e),
+              stackTrace: st,
+              withScope: (scope) {
+                scope.setTag('supporter.purchase', 'mark_tipped_failed');
+                scope.fingerprint = [
+                  'supporter.purchase.mark_tipped',
+                  e.runtimeType.toString(),
+                ];
+              },
+            );
+            state = state.copyWith(
+              purchaseInProgress: false,
+              lastOutcome: const SupporterPurchaseOutcome(
+                SupporterPurchaseOutcomeKind.error,
+              ),
+            );
+          }
           break;
       }
       // ストアトランザクションを完了させる（未完了だと再配信され続ける）。
-      if (p.pendingCompletePurchase) {
+      // 永続化に失敗した購入はあえて完了させず、再配信での再試行に委ねる。
+      if (persisted && p.pendingCompletePurchase) {
         await InAppPurchase.instance.completePurchase(p);
       }
     }
