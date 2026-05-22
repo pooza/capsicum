@@ -229,9 +229,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           Breadcrumb(
             category: 'timeline.stream.parse',
             level: SentryLevel.warning,
-            message: e.toString().length > 200
-                ? '${e.toString().substring(0, 200)}…'
-                : e.toString(),
+            // 例外型のみ。FormatException.toString() はパース対象の生データ
+            // 断片（投稿本文を含みうる）を持つため breadcrumb には載せない。
+            // 詳細は下の captureException(scrubException(e)) で送る。
+            message: e.runtimeType.toString(),
           ),
         );
         final now = DateTime.now();
