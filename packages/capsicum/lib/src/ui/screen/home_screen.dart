@@ -8,9 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import '../../constants.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../url_helper.dart';
+import '../../util/sentry_tag_hash.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/hashtag_provider.dart';
@@ -18,6 +19,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/about_dialog.dart';
 import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
@@ -62,6 +64,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
+
+  // #579 計装 (効果側センサ / 原因確定後に 1 コミット撤去): バージョン更新後
+  // 初回 cold start から一定時間内に、保存タブが home（または未保存=home 既定）
+  // なのに選択タブが social に解決された結果を、原因非依存に 1 度だけ記録する。
+  static const _upgradeMismatchWindow = Duration(seconds: 60);
+  bool _upgradeMismatchReported = false;
 
   @override
   void initState() {
@@ -167,6 +175,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedList = ref.watch(selectedListProvider);
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
+
+    // #579 計装 (効果側センサ): 選択タブが social に解決された結果を、原因
+    // 非依存に観測する。発火条件は _maybeReportUpgradeTabMismatch 側で判定。
+    ref.listen(selectedTabProvider, (prev, next) {
+      _maybeReportUpgradeTabMismatch(next);
+    });
 
     // External entry points (notification taps etc.) may request a specific
     // initial tab. Applying it suppresses the saved last-tab restore on cold
@@ -281,17 +295,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
+    // 「タイムライン本体 (約 600px) + ドロワー 304px」が成り立つ最小ラインを
+    // 採用。タブレット横向き (iPad 1024 / Galaxy Tab 1280) や 13" デスクトップ
+    // (1366+) も常駐側に倒れる。ハンバーガーは AppBar.leading: null + Drawer
+    // 内 `Scaffold.of(context).closeDrawer()` が hasDrawer ガード内蔵で no-op
+    // になることを利用して、wide / narrow 双方を 1 つの _buildDrawer 実装で
+    // 賄う。未読アナウンスメントの badge は Drawer 内の「お知らせ」ListTile に
+    // 既に trailing badge があるため AppBar 側を消しても可視性は失われない。
+    final wideLayout = MediaQuery.of(context).size.width >= 900;
+    final drawerWidget = _buildDrawer(
+      context,
+      ref,
+      account,
+      accountState,
+      unreadAnnouncements,
+      wideLayout: wideLayout,
+    );
+
     return Scaffold(
       appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: Badge(
-              isLabelVisible: unreadAnnouncements > 0,
-              child: const Icon(Icons.menu),
-            ),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
+        automaticallyImplyLeading: false,
+        leading: wideLayout
+            ? null
+            : Builder(
+                builder: (context) => IconButton(
+                  icon: Badge(
+                    isLabelVisible: unreadAnnouncements > 0,
+                    child: const Icon(Icons.menu),
+                  ),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
         title: Row(
           children: [
             if (account != null)
@@ -353,13 +388,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: _buildTimelineTabs(context),
         ),
       ),
-      drawer: _buildDrawer(
-        context,
-        ref,
-        account,
-        accountState,
-        unreadAnnouncements,
-      ),
+      drawer: wideLayout ? null : drawerWidget,
       floatingActionButton: _showScrollTop
           ? Padding(
               padding: const EdgeInsets.only(bottom: 56),
@@ -376,13 +405,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             )
           : null,
-      body: _buildBody(
-        ref.watch(selectedTabProvider),
-        selectedList,
-        selectedType,
-        selectedHashtag,
-        timeline,
-      ),
+      body: wideLayout
+          ? Row(
+              children: [
+                // 常駐モードでも _buildDrawer が返す Drawer ウィジェットを
+                // そのまま流用 (Drawer は Material + elevation のスタイリングを
+                // 内包しているため、Row 内に直接置いても境界線とシャドウで
+                // 自然に左パネルになる)。
+                drawerWidget,
+                Expanded(
+                  child: _buildBody(
+                    ref.watch(selectedTabProvider),
+                    selectedList,
+                    selectedType,
+                    selectedHashtag,
+                    timeline,
+                  ),
+                ),
+              ],
+            )
+          : _buildBody(
+              ref.watch(selectedTabProvider),
+              selectedList,
+              selectedType,
+              selectedHashtag,
+              timeline,
+            ),
     );
   }
 
@@ -393,9 +441,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
+    // スワイプによるカラム移動はタブ種別に依存しない共通操作なので、
+    // 通知 / お知らせ / リスト等すべてのタブ本体を単一の GestureDetector で
+    // 包む。HitTestBehavior.opaque で空リスト領域上のドラッグも拾う (#573)。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: _onSwipe,
+      child: _buildTabContent(
+        currentTab,
+        selectedList,
+        selectedType,
+        selectedHashtag,
+        timeline,
+      ),
+    );
+  }
+
+  Widget _buildTabContent(
+    TabType currentTab,
+    PostList? selectedList,
+    TimelineType selectedType,
+    String? selectedHashtag,
+    AsyncValue<dynamic> timeline,
+  ) {
     // Non-timeline tabs: render their dedicated views.
     if (currentTab is NotificationsTab) return const NotificationView();
     if (currentTab is AnnouncementsTab) return const AnnouncementView();
+    // MessagesTab はフィードを持たず、タップ時に /chat へ push する遷移
+    // トリガー (#439)。アクティブ化されないようタップ側で intercept する
+    // 想定だが、保存された状態の食い違い等で到達した場合は防御的に空表示。
+    if (currentTab is MessagesTab) return const SizedBox.shrink();
     if (currentTab is ChannelTab) {
       // アカウント切替で ChannelSupport を持たない adapter (Mastodon 等) に
       // 移った直後、selectedTabProvider が前アカウントの ChannelTab を
@@ -422,90 +497,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget body = Column(
       children: [
         Expanded(
-          child: GestureDetector(
-            onHorizontalDragEnd: selectedList == null
-                ? (details) => _onSwipe(details)
-                : null,
-            child: timeline.when(
-              data: (tlState) {
-                // Restore marker position on first load (home timeline only).
-                if (selectedList == null &&
-                    selectedType == TimelineType.home &&
-                    tlState.posts.isNotEmpty) {
-                  _restoreMarker(tlState.posts);
-                }
-                return RefreshIndicator(
-                  onRefresh: () {
-                    _markerRestored = false;
-                    if (selectedHashtag != null) {
-                      return ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
+          child: timeline.when(
+            data: (tlState) {
+              // Restore marker position on first load (home timeline only).
+              if (selectedList == null &&
+                  selectedType == TimelineType.home &&
+                  tlState.posts.isNotEmpty) {
+                _restoreMarker(tlState.posts);
+              }
+              return RefreshIndicator(
+                onRefresh: () {
+                  _markerRestored = false;
+                  if (selectedHashtag != null) {
+                    return ref.refresh(
+                      hashtagTimelineProvider(selectedHashtag).future,
+                    );
+                  }
+                  if (selectedList != null) {
+                    return ref.refresh(
+                      listTimelineProvider(selectedList.id).future,
+                    );
+                  }
+                  return ref.refresh(timelineProvider.future);
+                },
+                child: ScrollablePositionedList.separated(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  itemCount:
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index >= tlState.posts.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    if (selectedList != null) {
-                      return ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    }
-                    return ref.refresh(timelineProvider.future);
+                    return PostTile(post: tlState.posts[index]);
                   },
-                  child: ScrollablePositionedList.separated(
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    itemCount:
-                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= tlState.posts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      return PostTile(post: tlState.posts[index]);
-                    },
-                  ),
-                );
-              },
-              loading: () {
-                if (_showScrollTop) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _showScrollTop = false);
-                  });
-                }
-                return const Center(child: CircularProgressIndicator());
-              },
-              error: (error, stack) {
-                final message = _timelineErrorMessage(error);
-                final canRetry = !_isForbiddenError(error);
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(message, textAlign: TextAlign.center),
-                        if (canRetry) ...[
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              if (selectedList != null) {
-                                ref.invalidate(
-                                  listTimelineProvider(selectedList.id),
-                                );
-                              } else {
-                                ref.invalidate(timelineProvider);
-                              }
-                            },
-                            child: const Text('再試行'),
-                          ),
-                        ],
+                ),
+              );
+            },
+            loading: () {
+              if (_showScrollTop) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _showScrollTop = false);
+                });
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+            error: (error, stack) {
+              final message = _timelineErrorMessage(error);
+              final canRetry = !_isForbiddenError(error);
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(message, textAlign: TextAlign.center),
+                      if (canRetry) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (selectedList != null) {
+                              ref.invalidate(
+                                listTimelineProvider(selectedList.id),
+                              );
+                            } else {
+                              ref.invalidate(timelineProvider);
+                            }
+                          },
+                          child: const Text('再試行'),
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
         const SimplePostBar(),
@@ -557,6 +627,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// Apply a saved tab value to the current selection providers.
+  /// #579 計装 (効果側センサ): バージョン更新後初回 cold start の窓内で、保存
+  /// タブが home（または未保存=home 既定）なのに選択タブが social に解決された
+  /// 結果を、原因非依存に 1 度だけ記録する。pooza プランの効果側センサ。
+  /// 原因確定後、このメソッド・呼び出し・関連フィールド・import を撤去する。
+  void _maybeReportUpgradeTabMismatch(TabType next) {
+    if (_upgradeMismatchReported) return;
+    if (next is! TimelineTab || next.type != TimelineType.social) return;
+    final startup = ref.read(appUpgradeColdStartProvider);
+    if (!startup.isUpgrade) return;
+    final elapsed = DateTime.now().difference(startup.coldStartAt);
+    if (elapsed > _upgradeMismatchWindow) return;
+    final account = ref.read(currentAccountProvider);
+    if (account == null) return;
+    final storageKey = account.key.toStorageKey();
+    final saved = ref.read(lastTabProvider(storageKey));
+    final homeKey = const TimelineTab(TimelineType.home).toKey();
+    final intendedHome = saved == null || saved == homeKey;
+    if (!intendedHome) return;
+    _upgradeMismatchReported = true;
+    Sentry.captureMessage(
+      'timeline.home_resolved_social.post_upgrade',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('sensor', 'effect.home_social_mismatch');
+        scope.setTag('selected_type', 'social');
+        scope.setTag('saved_last_tab', saved ?? '<none>');
+        scope.setTag('elapsed_ms', elapsed.inMilliseconds.toString());
+        scope.setTag('account_hash', hashForSentryTag(storageKey));
+      },
+    );
+  }
+
   void _applyLastTab(String saved) {
     final tab = TabType.fromKey(saved);
     if (tab == null) return;
@@ -604,6 +706,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case NotificationsTab():
       case AnnouncementsTab():
         ref.read(selectedTabProvider.notifier).state = tab;
+      case MessagesTab():
+        // MessagesTab はフィードを持たず、push notification 等から飛んで
+        // きた場合も /chat に直接遷移する。selectedTab は変更しない。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.push('/chat');
+        });
     }
   }
 
@@ -655,8 +763,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           ...visible.map((tab) {
             final label = _tabLabel(tab, isMastodon, adapter, allLists);
-            final isSelected = tab == currentTab;
+            // MessagesTab はフィードを持たず /chat に push する遷移トリガー
+            // (#439)。タップでも selectedTabProvider を切り替えない (= 戻った
+            // ときに元のタブが活きている)。
+            final isSelected = tab is! MessagesTab && tab == currentTab;
             return _tabChip(context, label, isSelected, () {
+              if (tab is MessagesTab) {
+                context.push('/chat');
+                return;
+              }
               ref.read(selectedTabProvider.notifier).state = tab;
               _saveLastTab();
             });
@@ -697,6 +812,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ChannelTab(:final id, :final name) => name ?? id,
       NotificationsTab() => '通知',
       AnnouncementsTab() => 'お知らせ',
+      MessagesTab() => 'メッセージ',
     };
   }
 
@@ -757,471 +873,456 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetRef ref,
     Account? current,
     AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
+    int unreadAnnouncements, {
+    bool wideLayout = false,
+  }) {
     final otherAccounts = accountState.accounts
         .where((a) => a.key != current?.key)
         .toList();
 
+    // Drawer 内の各 ListTile から `Scaffold.of(context).closeDrawer()` を
+    // 呼ぶ際、`context` は _buildDrawer が受け取る HomeScreen レベルの
+    // 外側 context のため、Scaffold ancestor が見つからず assertion で
+    // 落ちる (#541 リグレッション、ca98c21 で本格化)。Builder を 1 段
+    // 挟んで Drawer サブツリー内側の `innerCtx` を取得し、それを使う
+    // `dismiss()` を closure ローカルに用意して全 ListTile から呼ぶ。
+    // wide モード (Scaffold.drawer が null、Row で並ぶ inline 配置) でも
+    // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
+    // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          Container(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: current != null
-                        ? () {
-                            Navigator.of(context).pop();
-                            context.push('/profile', extra: current.user);
-                          }
-                        : null,
-                    child: current != null
-                        ? UserAvatar(
-                            user: current.user,
-                            size: 72,
-                            borderRadius: 8,
-                          )
-                        : Container(
-                            width: 72,
-                            height: 72,
-                            color: Theme.of(context).colorScheme.primary,
-                            alignment: Alignment.center,
-                            child: const Text(
-                              '?',
+      // 常駐 (wide) モードでは Row 内の左パネルとして並ぶため、Material
+      // 既定の内容側 (右端) 角丸を消してフラットな仕切りにする (#541
+      // フォローアップ)。オーバーレイ (narrow) モードでは shape: null で
+      // 従来の Material 既定 (角丸あり) を維持する。
+      shape: wideLayout ? const RoundedRectangleBorder() : null,
+      child: Builder(
+        builder: (innerCtx) {
+          void dismiss() => Scaffold.of(innerCtx).closeDrawer();
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: current != null
+                            ? () {
+                                dismiss();
+                                context.push('/profile', extra: current.user);
+                              }
+                            : null,
+                        child: current != null
+                            ? UserAvatar(
+                                user: current.user,
+                                size: 72,
+                                borderRadius: 8,
+                              )
+                            : Container(
+                                width: 72,
+                                height: 72,
+                                color: Theme.of(context).colorScheme.primary,
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  '?',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: current != null
+                            ? () {
+                                dismiss();
+                                context.push('/profile', extra: current.user);
+                              }
+                            : null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            EmojiText(
+                              current?.user.displayName ??
+                                  current?.user.username ??
+                                  '',
+                              emojis: current?.user.emojis ?? const {},
+                              fallbackHost: current?.user.host,
                               style: TextStyle(
-                                fontSize: 24,
-                                color: Colors.white,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                  ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: current != null
-                        ? () {
-                            Navigator.of(context).pop();
-                            context.push('/profile', extra: current.user);
-                          }
-                        : null,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        EmojiText(
-                          current?.user.displayName ??
-                              current?.user.username ??
-                              '',
-                          emojis: current?.user.emojis ?? const {},
-                          fallbackHost: current?.user.host,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
-                          style: const TextStyle(color: Colors.black),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (current != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: _buildServerBadge(
-                              context,
-                              ref,
-                              current.key.host,
+                            Text(
+                              '@${current?.user.username ?? ""}@${current?.key.host ?? ""}',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                      ],
+                            if (current != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: _buildServerBadge(
+                                  context,
+                                  ref,
+                                  current.key.host,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (otherAccounts.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    'アカウント切替',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                ...otherAccounts.map((account) {
+                  final themeColors = ref.watch(hostThemeColorProvider);
+                  final badges = ref.watch(unreadBadgeProvider).valueOrNull;
+                  final badge = badges?[account.key.toStorageKey()];
+                  return ListTile(
+                    leading: Badge(
+                      isLabelVisible: badge != null && badge.hasUnread,
+                      label: badge != null && badge.hasUnread
+                          ? Text('${badge.total}')
+                          : null,
+                      child: UserAvatar(
+                        user: account.user,
+                        size: 32,
+                        compact: true,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (otherAccounts.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                'アカウント切替',
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ),
-            ...otherAccounts.map((account) {
-              final themeColors = ref.watch(hostThemeColorProvider);
-              final badges = ref.watch(unreadBadgeProvider).valueOrNull;
-              final badge = badges?[account.key.toStorageKey()];
-              return ListTile(
-                leading: Badge(
-                  isLabelVisible: badge != null && badge.hasUnread,
-                  label: badge != null && badge.hasUnread
-                      ? Text('${badge.total}')
-                      : null,
-                  child: UserAvatar(
-                    user: account.user,
-                    size: 32,
-                    compact: true,
-                  ),
-                ),
-                title: EmojiText(
-                  account.user.displayName ?? account.user.username,
-                  emojis: account.user.emojis,
-                  fallbackHost: account.user.host,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '@${account.user.username}@${account.key.host}',
+                    title: EmojiText(
+                      account.user.displayName ?? account.user.username,
+                      emojis: account.user.emojis,
+                      fallbackHost: account.user.host,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: ServerBadge.fromHost(
-                        account.key.host,
-                        themeColors: themeColors,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '@${account.user.username}@${account.key.host}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: ServerBadge.fromHost(
+                            account.key.host,
+                            themeColors: themeColors,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                    onTap: () {
+                      ref
+                          .read(accountManagerProvider.notifier)
+                          .switchAccount(account);
+                      dismiss();
+                    },
+                  );
+                }),
+              ],
+              ListTile(
+                leading: const Icon(Icons.person_add),
+                title: const Text('アカウントを追加'),
+                onTap: () {
+                  dismiss();
+                  context.push('/server');
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('検索'),
+                onTap: () {
+                  dismiss();
+                  context.push('/search');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('通知'),
+                onTap: () {
+                  dismiss();
+                  context.push('/notifications');
+                },
+              ),
+              if (accountState.accounts.length > 1)
+                ListTile(
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: const Text('すべての通知'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/notifications/all');
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.bookmark_outline),
+                title: Text(
+                  ref.read(currentAdapterProvider) is ReactionSupport
+                      ? 'お気に入り'
+                      : 'ブックマーク',
                 ),
                 onTap: () {
-                  ref
-                      .read(accountManagerProvider.notifier)
-                      .switchAccount(account);
-                  Navigator.of(context).pop();
+                  dismiss();
+                  context.push('/bookmarks');
                 },
-              );
-            }),
-          ],
-          ListTile(
-            leading: const Icon(Icons.person_add),
-            title: const Text('アカウントを追加'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/server');
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.search),
-            title: const Text('検索'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/search');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications_outlined),
-            title: const Text('通知'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/notifications');
-            },
-          ),
-          if (accountState.accounts.length > 1)
-            ListTile(
-              leading: const Icon(Icons.notifications_active_outlined),
-              title: const Text('すべての通知'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/notifications/all');
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_outline),
-            title: Text(
-              ref.read(currentAdapterProvider) is ReactionSupport
-                  ? 'お気に入り'
-                  : 'ブックマーク',
-            ),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/bookmarks');
-            },
-          ),
-          // Hide drawer item when announcements tab is visible.
-          if (current == null ||
-              !ref.watch(
-                isTabVisibleProvider((
-                  storageKey: current.key.toStorageKey(),
-                  tab: const AnnouncementsTab(),
-                )),
-              ))
-            ListTile(
-              leading: const Icon(Icons.campaign_outlined),
-              title: const Text('お知らせ'),
-              trailing: unreadAnnouncements > 0
-                  ? Badge(label: Text('$unreadAnnouncements'))
-                  : null,
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/announcements');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ListSupport)
-            ListTile(
-              leading: const Icon(Icons.list),
-              title: const Text('リスト'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/lists/manage');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ChannelSupport)
-            ListTile(
-              leading: const Icon(Icons.forum),
-              title: const Text('チャンネル'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showChannelList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ChatSupport &&
-              (ref.read(currentAdapterProvider) as ChatSupport).canUseChat)
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('メッセージ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/chat');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is DriveSupport)
-            ListTile(
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('ドライブ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/drive');
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is ClipSupport)
-            ListTile(
-              leading: const Icon(Icons.content_paste),
-              title: const Text('クリップ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showClipList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is AntennaSupport)
-            ListTile(
-              leading: const Icon(Icons.settings_input_antenna),
-              title: const Text('アンテナ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showAntennaList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is FlashSupport)
-            ListTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: const Text('Play'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showFlashList(context, ref);
-              },
-            ),
-          if (ref.read(currentAdapterProvider) is GallerySupport)
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('ギャラリー'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/gallery');
-              },
-            ),
-          if (ref.read(currentMulukhiyaProvider) != null) ...[
-            ListTile(
-              leading: const Icon(Icons.tag),
-              title: const Text('プロフィールタグ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showFavoriteTags(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('リンク'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showServerLinks(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('メディアカタログ'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/media-catalog');
-              },
-            ),
-          ],
-          if (ref.read(currentAdapterProvider) is ScheduleSupport)
-            ListTile(
-              leading: const Icon(Icons.schedule),
-              title: const Text('予約投稿'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push('/scheduled');
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.dns_outlined),
-            title: const Text('サーバー情報'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/server-info');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('設定'),
-            onTap: () {
-              Navigator.of(context).pop();
-              context.push('/settings');
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('ログアウト'),
-            onTap: () async {
-              Navigator.of(context).pop();
-              if (current == null) return;
+              ),
+              // Hide drawer item when announcements tab is visible.
+              if (current == null ||
+                  !ref.watch(
+                    isTabVisibleProvider((
+                      storageKey: current.key.toStorageKey(),
+                      tab: const AnnouncementsTab(),
+                    )),
+                  ))
+                ListTile(
+                  leading: const Icon(Icons.campaign_outlined),
+                  title: const Text('お知らせ'),
+                  trailing: unreadAnnouncements > 0
+                      ? Badge(label: Text('$unreadAnnouncements'))
+                      : null,
+                  onTap: () {
+                    dismiss();
+                    context.push('/announcements');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ListSupport)
+                ListTile(
+                  leading: const Icon(Icons.list),
+                  title: const Text('リスト'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/lists/manage');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ChannelSupport)
+                ListTile(
+                  leading: const Icon(Icons.forum),
+                  title: const Text('チャンネル'),
+                  onTap: () {
+                    dismiss();
+                    _showChannelList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ChatSupport &&
+                  (ref.read(currentAdapterProvider) as ChatSupport).canReadChat)
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: const Text('メッセージ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/chat');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is DriveSupport)
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: const Text('ドライブ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/drive');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is ClipSupport)
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('クリップ'),
+                  onTap: () {
+                    dismiss();
+                    _showClipList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is AntennaSupport)
+                ListTile(
+                  leading: const Icon(Icons.settings_input_antenna),
+                  title: const Text('アンテナ'),
+                  onTap: () {
+                    dismiss();
+                    _showAntennaList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is FlashSupport)
+                ListTile(
+                  leading: const Icon(Icons.play_circle_outline),
+                  title: const Text('Play'),
+                  onTap: () {
+                    dismiss();
+                    _showFlashList(context, ref);
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is GallerySupport)
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('ギャラリー'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/gallery');
+                  },
+                ),
+              if (ref.read(currentMulukhiyaProvider) != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.tag),
+                  title: const Text('プロフィールタグ'),
+                  onTap: () {
+                    dismiss();
+                    _showFavoriteTags(context, ref);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('リンク'),
+                  onTap: () {
+                    dismiss();
+                    _showServerLinks(context, ref);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('メディアカタログ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/media-catalog');
+                  },
+                ),
+              ],
+              if (ref.read(currentAdapterProvider) is ScheduleSupport)
+                ListTile(
+                  leading: const Icon(Icons.schedule),
+                  title: const Text('予約投稿'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/scheduled');
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: const Text('サーバー情報'),
+                onTap: () {
+                  dismiss();
+                  context.push('/server-info');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('設定'),
+                onTap: () {
+                  dismiss();
+                  context.push('/settings');
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('ログアウト'),
+                onTap: () async {
+                  dismiss();
+                  if (current == null) return;
 
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('ログアウト'),
-                  content: Text(
-                    '@${current.user.username}@${current.key.host} '
-                    'からログアウトしますか？',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('キャンセル'),
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('ログアウト'),
+                      content: Text(
+                        '@${current.user.username}@${current.key.host} '
+                        'からログアウトしますか？',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('キャンセル'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('ログアウト'),
+                        ),
+                      ],
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('ログアウト'),
-                    ),
-                  ],
-                ),
-              );
+                  );
 
-              if (confirmed == true) {
-                await ref.read(accountManagerProvider.notifier).logout(current);
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('capsicum について'),
-            onTap: () async {
-              Navigator.of(context).pop();
-              final info = await PackageInfo.fromPlatform();
-              if (!context.mounted) return;
-              showAboutDialog(
-                context: context,
-                applicationName: AppConstants.appName,
-                applicationVersion: 'v${info.version} (${info.buildNumber})',
-                applicationIcon: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 48,
-                    height: 48,
-                  ),
-                ),
-                applicationLegalese: 'Mastodon / Misskey クライアント',
-                children: [
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.websiteUrl),
-                    child: Text(
-                      AppConstants.websiteUrl.toString(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
+                  if (confirmed == true) {
+                    await ref
+                        .read(accountManagerProvider.notifier)
+                        .logout(current);
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('capsicum について'),
+                onTap: () async {
+                  dismiss();
+                  if (!context.mounted) return;
+                  await showAboutCapsicum(context);
+                },
+              ),
+              const Divider(),
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const SizedBox.shrink();
+                  final info = snapshot.data!;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.communityUrl),
-                    child: Text(
-                      'コミュニティ（PieFed）',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => launchUrlSafely(AppConstants.contactUrl),
-                    child: Text(
-                      'お問い合わせ',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const Divider(),
-          FutureBuilder<PackageInfo>(
-            future: PackageInfo.fromPlatform(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
-              final info = snapshot.data!;
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (current != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '${current.key.host} (${current.key.type.displayName})'
-                          '${current.softwareVersion != null ? ' v${current.softwareVersion}' : ''}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (current != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              '${current.key.host} (${current.key.type.displayName})'
+                              '${current.softwareVersion != null ? ' v${current.softwareVersion}' : ''}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
+                                  ),
+                            ),
+                          ),
+                        Text(
+                          'capsicum v${info.version} (${info.buildNumber})',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,
                               ),
                         ),
-                      ),
-                    Text(
-                      'capsicum v${info.version} (${info.buildNumber})',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1265,7 +1366,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   dense: true,
                   onTap: () {
-                    Navigator.of(context).pop();
+                    Navigator.pop(context);
                     context.push('/hashtag/${tag.name}');
                   },
                 ),
@@ -1325,7 +1426,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   title: Text(link.body),
                   dense: true,
                   onTap: () {
-                    Navigator.of(context).pop();
+                    Navigator.pop(context);
                     final url = link.href.startsWith('/')
                         ? Uri.parse('https://$host${link.href}')
                         : Uri.parse(link.href);
@@ -1393,7 +1494,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : null,
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   if (host != null) {
                     launchUrlSafely(
                       Uri.parse('https://$host/play/${flash.id}'),
@@ -1460,7 +1561,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : null,
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/clip/${clip.id}', extra: clip.name);
                 },
               ),
@@ -1514,7 +1615,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 title: Text(antenna.name),
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/antenna/${antenna.id}', extra: antenna.name);
                 },
               ),
@@ -1568,7 +1669,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 title: Text(ch.name),
                 dense: true,
                 onTap: () {
-                  Navigator.of(context).pop();
+                  Navigator.pop(context);
                   context.push('/channel/${ch.id}', extra: ch.name);
                 },
               ),

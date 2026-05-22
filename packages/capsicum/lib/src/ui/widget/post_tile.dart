@@ -212,9 +212,16 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             ),
           ),
-          SelectableText(
-            body,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          // コマンドトゥート結果 (JSON/YAML) は長い 1 行を折り返さず横
+          // スクロールで読む。content_parser の codeBlock (#434) と同じ
+          // 扱いに揃える (#585。従来この経路だけ softWrap 抑止が無く、
+          // _isStructuredContent で検出できても折り返していた)。
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SelectableText(
+              body,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -426,57 +433,93 @@ class _PostTileState extends ConsumerState<PostTile> {
                           fallbackHost: post.emojiHost,
                         ),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: EmojiText(
-                            displayPost.author.displayName ??
-                                displayPost.author.username,
-                            emojis: displayPost.author.emojis,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            fallbackHost: displayPost.emojiHost,
+                    // 末尾アイコン列 (bot / group / role / scope / localOnly /
+                    // 時刻) はレイアウト幅 60% を上限とした ConstrainedBox に
+                    // 入れて Row 右端に張り付かせる。intrinsic がその上限を
+                    // 超える狭幅ウィンドウでは FittedBox(scaleDown) で縮める。
+                    // 元実装は Flexible(flex:1) で半幅枠を確保していたため、
+                    // intrinsic が小さくても枠が Row 中央に張り付いて見えていた
+                    // (#542)。Wrap で改行する案もあるが行高が動くと TL の
+                    // リズムが崩れるので単行スケールに倒す (#495)。
+                    LayoutBuilder(
+                      builder: (context, constraints) => Row(
+                        children: [
+                          Expanded(
+                            child: EmojiText(
+                              displayPost.author.displayName ??
+                                  displayPost.author.username,
+                              emojis: displayPost.author.emojis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              fallbackHost: displayPost.emojiHost,
+                            ),
                           ),
-                        ),
-                        if (displayPost.author.isBot) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.smart_toy,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: constraints.maxWidth * 0.6,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (displayPost.author.isBot) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.smart_toy,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  if (displayPost.author.isGroup) ...[
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.groups,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  for (final role in displayPost.author.roles)
+                                    ..._buildRoleIcon(context, role),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _scopeIcon(displayPost.scope),
+                                    size: 14,
+                                    color: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.color,
+                                  ),
+                                  if (displayPost.localOnly) ...[
+                                    const SizedBox(width: 2),
+                                    Icon(
+                                      Icons.edit_off,
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
+                                  ],
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatTime(displayPost.postedAt),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
-                        if (displayPost.author.isGroup) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.groups,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                        ],
-                        for (final role in displayPost.author.roles)
-                          ..._buildRoleIcon(context, role),
-                        const SizedBox(width: 4),
-                        Icon(
-                          _scopeIcon(displayPost.scope),
-                          size: 14,
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                        ),
-                        if (displayPost.localOnly) ...[
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.edit_off,
-                            size: 14,
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                          ),
-                        ],
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatTime(displayPost.postedAt),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+                      ),
                     ),
                     Text(
                       _handleText(displayPost.author),
@@ -598,9 +641,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       Builder(
                         builder: (_) {
                           final rawContent = displayPost.content ?? '';
-                          final isHtml =
-                              rawContent.contains('<p>') ||
-                              rawContent.contains('<br');
+                          final isHtml = displayPost.isHtml;
                           final parsed = isHtml
                               ? extractTrailingTagsHtml(rawContent)
                               : extractTrailingTagsMfm(rawContent);
@@ -944,6 +985,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     final currentUser = ref.read(currentAccountProvider)?.user;
     final targetPost = post.reblog ?? post;
     final isOwn = currentUser != null && targetPost.author.id == currentUser.id;
+    final isOwnRenote =
+        post.reblog != null &&
+        currentUser != null &&
+        post.author.id == currentUser.id;
+    final canUnrepeat = isOwnRenote || targetPost.reblogged;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
@@ -1036,6 +1082,41 @@ class _PostTileState extends ConsumerState<PostTile> {
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
                     );
+                  },
+                ),
+              if (canUnrepeat)
+                ListTile(
+                  leading: const Icon(Icons.repeat_on),
+                  title: Text('$boostLabelを取り消す'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      // Misskey: 自分のリノート note 表示そのものを delete。
+                      // Mastodon: 元 status の id で /unreblog。
+                      await adapter.unrepeatPost(
+                        isOwnRenote ? post : targetPost,
+                      );
+                      if (isOwnRenote) {
+                        ref.read(timelineProvider.notifier).removePost(post.id);
+                      }
+                      if (targetPost.reblogged) {
+                        final updated = targetPost.copyWith(
+                          reblogged: false,
+                          reblogCount: targetPost.reblogCount > 0
+                              ? targetPost.reblogCount - 1
+                              : 0,
+                        );
+                        ref.read(timelineProvider.notifier).updatePost(updated);
+                      }
+                      onActionCompleted?.call();
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('$boostLabelを取り消しました')),
+                      );
+                    } catch (_) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('操作に失敗しました')),
+                      );
+                    }
                   },
                 ),
               if (adapter is BookmarkSupport)
@@ -1536,8 +1617,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (account == null || mulukhiya == null) return;
 
     final retagContent = targetPost.content ?? '';
-    final retagIsHtml =
-        retagContent.contains('<p>') || retagContent.contains('<br');
+    final retagIsHtml = targetPost.isHtml;
     final parsed = retagIsHtml
         ? extractTrailingTagsHtml(retagContent)
         : extractTrailingTagsMfm(retagContent);

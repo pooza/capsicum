@@ -59,6 +59,18 @@ class AccountStorage {
       _reportOnce('secret:$accountKey', e, st);
       return null;
     } on PlatformException catch (e, st) {
+      // macOS / iOS の Keychain ロック (errSecInteractionNotAllowed = -25308)
+      // は **transient** で、画面解錠後に再起動すれば読めるはずなので
+      // delete してはいけない。launch-at-login や連続再起動でユーザーが
+      // 画面ロック解除前にアプリが起動した場合などで観測される
+      // (CAPSICUM-1M, #531)。
+      if (_isKeychainTransient(e)) {
+        debugPrint(
+          'capsicum: keychain transient for $accountKey (code=${e.code}): $e',
+        );
+        _reportOnce('secret:$accountKey:transient', e, st);
+        return null;
+      }
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
@@ -229,5 +241,23 @@ class AccountStorage {
     final key = '$stage:${error.runtimeType}';
     if (!_reportedErrors.add(key)) return;
     Sentry.captureException(error, stackTrace: st);
+  }
+
+  /// macOS / iOS の Keychain アクセスで transient (再試行で読めるはず)
+  /// と判定できる `PlatformException` を識別する (#531)。
+  ///
+  /// - `errSecInteractionNotAllowed` (-25308): Keychain ロック中 (画面解錠前)
+  ///
+  /// flutter_secure_storage は code をテキストで返すケースと数値文字列で
+  /// 返すケースが両方ある (`Unexpected security result code` と整数の両方)。
+  /// message にも `-25308` を含むため、両方の経路でマッチさせる。
+  static bool _isKeychainTransient(PlatformException e) {
+    const transientCodes = {'-25308'};
+    if (transientCodes.contains(e.code)) return true;
+    final msg = '${e.message ?? ''} ${e.details ?? ''}';
+    for (final c in transientCodes) {
+      if (msg.contains(c)) return true;
+    }
+    return false;
   }
 }

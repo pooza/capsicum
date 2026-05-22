@@ -58,6 +58,11 @@ class MulukhiyaProgram {
   final bool livecure;
   final int? minutes;
   final List<String> extraTags;
+  // モロヘイヤ #4236 (番組表エディタ) で `annict_work_id` / `annict_episode_id`
+  // を保持できるようになった (#298)。感想投稿先 Annict エピソードを直接
+  // 識別するために capsicum 側でも読み取る。
+  final int? annictWorkId;
+  final int? annictEpisodeId;
 
   const MulukhiyaProgram({
     required this.name,
@@ -69,7 +74,21 @@ class MulukhiyaProgram {
     this.livecure = false,
     this.minutes,
     this.extraTags = const [],
+    this.annictWorkId,
+    this.annictEpisodeId,
   });
+}
+
+/// Annict 視聴記録の評価値 (#298)。
+/// モロヘイヤ #4227 の `POST /api/annict/record` `rating_state` パラメタに
+/// そのまま渡せる Annict GraphQL の RatingState enum と同名。
+enum AnnictRatingState {
+  great,
+  good,
+  average,
+  bad;
+
+  String get apiValue => name.toUpperCase();
 }
 
 /// Extract the first default hashtag (without '#') from the about response.
@@ -320,6 +339,8 @@ class MulukhiyaService {
         minutes: v['minutes'] as int?,
         extraTags:
             (v['extra_tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
+        annictWorkId: v['annict_work_id'] as int?,
+        annictEpisodeId: v['annict_episode_id'] as int?,
       );
     }
     return programs;
@@ -379,6 +400,29 @@ class MulukhiyaService {
           );
         })
         .toList();
+  }
+
+  /// Post a viewing record (感想) to Annict via mulukhiya.
+  ///
+  /// モロヘイヤ #4227 で実装された `POST /api/annict/record` を呼ぶ (#298)。
+  /// Annict OAuth トークンはモロヘイヤ側で保持しているため、ここでは SNS
+  /// 側の access_token を Bearer で渡すだけでよい。レーティングと感想本文は
+  /// 任意 (片方だけ送ることも、両方空で「視聴済み」だけ立てることも可)。
+  Future<void> postAnnictRecord({
+    required String snsToken,
+    required int episodeId,
+    String? comment,
+    AnnictRatingState? ratingState,
+  }) async {
+    await _dio.post(
+      '$baseUrl/annict/record',
+      data: {
+        'episode_id': episodeId,
+        if (comment != null && comment.isNotEmpty) 'comment': comment,
+        if (ratingState != null) 'rating_state': ratingState.apiValue,
+      },
+      options: _bearerOptions(snsToken),
+    );
   }
 
   /// Fetch episodes for a given Annict work ID.

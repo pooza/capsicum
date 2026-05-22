@@ -5,10 +5,12 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:capsicum_core/capsicum_core.dart';
@@ -20,7 +22,9 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
+import 'src/service/about_menu_service.dart';
 import 'src/service/apns_service.dart';
+import 'src/service/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
@@ -28,10 +32,39 @@ import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
+import 'src/service/window_state_service.dart';
 import 'src/util/sentry_tag_hash.dart';
+
+/// SnackBar が SimplePostBar (簡易投稿バー) を覆って投稿のタイミングが
+/// 遅れる事故 (#540) を避けるため、floating + bottom 余白で簡易投稿バー
+/// の上に表示する。SimplePostBar を持たない画面 (compose / settings 等) では
+/// 多少高めに浮くが UX 上の弊害は小さい。
+const _snackBarTheme = SnackBarThemeData(
+  behavior: SnackBarBehavior.floating,
+  insetPadding: EdgeInsets.fromLTRB(16, 0, 16, 72),
+);
+
+/// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
+/// Linux AppImage の AppRun ログ (~/.local/share/capsicum/logs/) に
+/// release のスタートアップ / push 経路の内部情報が流入するのを抑える目的。
+/// release で残したい情報は Sentry breadcrumb / captureException に上げる。
+void _logDev(String message) {
+  if (!kReleaseMode) debugPrint(message);
+}
+
+/// [_logDev] の StackTrace 版。
+void _logDevStack(StackTrace stackTrace) {
+  if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // デスクトップ (macOS / Linux / Windows) のウィンドウ位置・サイズ・最大化
+  // 状態を復元する (#559)。runApp() より前に呼ぶことで、デフォルトサイズで
+  // 一瞬表示されてから saved size に縮む「ちらつき」を最小化する。モバイル
+  // では early return する。
+  await WindowStateService().init();
 
   // v1.20 以前に書き込んだ Web Push 鍵は旧 Keychain accessibility のままで、
   // ロック中の NSE 復号が -25308 で弾かれる (#392)。新 accessibility に
@@ -41,12 +74,18 @@ Future<void> main() async {
   try {
     await PushKeyStore.migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    debugPrint('PushKeyStore migration failed: $e\n$st');
+    _logDev('PushKeyStore migration failed: $e\n$st');
   }
 
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // macOS メニューバー「About capsicum」→ Flutter 側ダイアログを開くための
+  // MethodChannel handler。Drawer の「capsicum について」と同じ表示に統一。
+  if (Platform.isMacOS) {
+    AboutMenuService.initialize();
+  }
 
   // FCM バックグラウンド / キル状態で data-only メッセージを受けた際に、
   // 復号 + ローカル通知を走らせるための top-level ハンドラ登録。
@@ -65,6 +104,26 @@ Future<void> main() async {
   const dsn = String.fromEnvironment('SENTRY_DSN');
 
   if (dsn.isNotEmpty) {
+    // Linux / Windows の sentry-native はデフォルトで CWD 直下に
+    // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
+    // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
+    // path_provider の getApplicationSupportDirectory() で得られる OS 規約
+    // 準拠の app data ディレクトリに明示的に固定する。Linux では
+    // ~/.local/share/capsicum/、Windows MSIX では %LOCALAPPDATA%\Packages\
+    // <PFN>\LocalCache\... に着地し、AppRun wrapper のログ出力先
+    // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃う。
+    String? sentryNativeDbPath;
+    if (Platform.isLinux || Platform.isWindows) {
+      try {
+        final supportDir = await getApplicationSupportDirectory();
+        sentryNativeDbPath = '${supportDir.path}/.sentry-native';
+      } catch (e, st) {
+        // path_provider 失敗時は nativeDatabasePath を未設定のままにし、
+        // sentry-native のフォールバック (CWD 直下) に任せる。起動経路を
+        // 止める要件ではない。
+        _logDev('getApplicationSupportDirectory failed: $e\n$st');
+      }
+    }
     await SentryFlutter.init((options) {
       options.dsn = dsn;
       options.tracesSampleRate = 1.0;
@@ -73,18 +132,23 @@ Future<void> main() async {
         defaultValue: 'debug',
       );
       options.beforeSend = _scrubEvent;
-      // Linux / Windows の sentry-native はデフォルトで CWD 直下に
-      // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
-      // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
-      // XDG_DATA_HOME 配下に明示的に固定する。AppRun wrapper のログ出力先
-      // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃える。
-      if (Platform.isLinux || Platform.isWindows) {
-        final base =
-            Platform.environment['XDG_DATA_HOME'] ??
-            '${Platform.environment['HOME']}/.local/share';
-        options.nativeDatabasePath = '$base/capsicum/.sentry-native';
+      if (sentryNativeDbPath != null) {
+        options.nativeDatabasePath = sentryNativeDbPath;
       }
     }, appRunner: () => _startApp());
+    // Linux / Windows 固有の crashpad_handler 不発 (MSIX の AppContainer 制限
+    // や AppRun 経由の長 path) を Sentry initial event から切り分けられるよう、
+    // 解決済みの sentry-native database path を breadcrumb に積んでおく。
+    if (sentryNativeDbPath != null) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'sentry.native',
+          message: 'database_path resolved',
+          data: {'path': sentryNativeDbPath},
+          level: SentryLevel.info,
+        ),
+      );
+    }
   } else {
     _startApp();
   }
@@ -261,6 +325,7 @@ bool _isSensitiveFieldName(String key) {
     'access_token',
     'refresh_token',
     'token', // FCM / APNs device token in relay register
+    'client_secret', // OAuth completeLogin の exchangeExtra (#528 manual fallback)
     'p256dh', // Web Push ECDH public key
     'auth', // Web Push auth secret
     'endpoint', // push_token が URL に埋め込まれた relay endpoint
@@ -283,7 +348,7 @@ void _startApp() {
   // Sentry が自前で設定済なので ??= で上書きを避ける。
   FlutterError.onError ??= FlutterError.presentError;
   PlatformDispatcher.instance.onError ??= (e, st) {
-    debugPrint('Uncaught: $e\n$st');
+    _logDev('Uncaught: $e\n$st');
     return true;
   };
 
@@ -301,14 +366,14 @@ void _startApp() {
   // `payload` は将来通知ごとにアカウントを埋める可能性があるため、
   // 受けた文字列をそのまま account-aware routing に委譲する（現状は null）。
   notificationSubsystem.initialize(
-    onTap: (payload) => _routeToNotificationsTab(payload),
+    onTap: (payload) => _routeFromNotificationPayload(payload),
   );
 
   // iOS: APNs タップはネイティブ側で userInfo を乗せて送ってくる。Dart 側では
   // ストリーム経由で account-aware routing に委譲する。cold start 時は
   // AppDelegate 側でバッファされ、engine 起動後に発火する。
   ApnsService.onNotificationTap.listen(
-    (userInfo) => _routeToNotificationsTab(userInfo['account'] as String?),
+    (userInfo) => _routeFromNotificationUserInfo(userInfo),
   );
 
   // Check for shared text from external apps (e.g. Spotify, Apple Music).
@@ -367,11 +432,18 @@ Future<void> _flushPushFailureRecord() async {
           // が header 系か鍵不一致 (CryptoKit authenticationFailure) かを分ける。
           if (record.decryptError != null) {
             scope.setTag('push.decrypt.error', record.decryptError!);
+            // 二次タグで Sentry 検索を簡素化する (#436 v1.25 observation):
+            //   - auth_failure: 鍵不一致 (Misskey サーバー側に保存された
+            //     p256dh と capsicum 側の鍵がずれているケース)
+            //   - header: WebPushError 系 (relay → NSE の payload 欠損)
+            //   - other: 上記外
+            final kind = _classifyDecryptErrorKind(record.decryptError!);
+            scope.setTag('push.decrypt.kind', kind);
           }
         },
       );
     }
-    debugPrint(
+    _logDev(
       'capsicum: push.failure_recorder: flushed ${record.code} '
       '(count=${record.count}, at=${record.at.toIso8601String()}, '
       'host=${record.host}, encoding=${record.encoding}, '
@@ -398,6 +470,173 @@ Future<void> _flushPushFailureRecord() async {
 /// この 2 段待ちがないと、restore 中に go('/home') → 認証 redirect で /server
 /// に飛ばされ、SplashScreen が unmount して `!mounted` リターンで以降の
 /// 正規ルーティングが空振り、ユーザーがサーバー選択画面に取り残される。
+/// `record.decryptError` の type+case 名から二次分類タグを生成する (#436 v1.25)。
+///
+/// NSE が記録する文字列は `"\(type(of: error)).\(String(describing: error))"`
+/// の形 (例: `CryptoKitError.authenticationFailure`,
+/// `WebPushError.invalidKeyId`, `WebPushError.payloadTruncated`)。Sentry
+/// 検索で個別の文字列を OR で並べると煩雑なため、3 値に丸めた `push.decrypt.kind`
+/// を一緒に出して filter / facet をしやすくする。
+@visibleForTesting
+String classifyDecryptErrorKind(String reason) {
+  final lower = reason.toLowerCase();
+  if (lower.contains('authenticationfailure')) {
+    return 'auth_failure';
+  }
+  if (lower.contains('webpusherror') || lower.contains('payloadtruncated')) {
+    return 'header';
+  }
+  return 'other';
+}
+
+String _classifyDecryptErrorKind(String reason) =>
+    classifyDecryptErrorKind(reason);
+
+/// 通知タップで届く JSON payload (push_message_dispatcher が encode) を解釈し、
+/// type=newChatMessage なら `/chat/user/<userId>` へ直行、それ以外は通知タブへ
+/// 遷移する (#440)。後方互換: payload が JSON でなく裸の `username@host` だった
+/// 場合 (v1.24.x 以前にスケジュールされて残っている通知) は account-only として扱う。
+void _routeFromNotificationPayload(String? payload) {
+  if (payload == null || payload.isEmpty) {
+    _routeToNotificationsTab(null);
+    return;
+  }
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map<String, dynamic>) {
+      final account = decoded['account'] as String?;
+      final type = decoded['type'] as String?;
+      final userId = decoded['userId'] as String?;
+      if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
+        _routeToChatThread(account, userId);
+        return;
+      }
+      _routeToNotificationsTab(account);
+      return;
+    }
+  } catch (_) {
+    // JSON でない → legacy 形式として扱う。
+  }
+  _routeToNotificationsTab(payload);
+}
+
+/// iOS APNs タップの userInfo dict から JSON 経路と同じ判定を行う。
+void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
+  final account = userInfo['account'] as String?;
+  final type = userInfo['type'] as String?;
+  final userId = userInfo['userId'] as String?;
+  if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
+    _routeToChatThread(account, userId);
+    return;
+  }
+  _routeToNotificationsTab(account);
+}
+
+/// 通知タップで該当 DM スレッドを開く経路 (#440)。account を必要に応じて切り替え、
+/// `getUserById(userId)` で User を解決してから `/chat/user/:userId` に push する。
+/// session restore 完了と Navigator 確立を待つ点は [_routeToNotificationsTab] と
+/// 同じ 2 段待ち構造を踏襲。
+void _routeToChatThread(
+  String? accountString,
+  String userId, {
+  int attempt = 0,
+}) {
+  const maxAttempts = 3600;
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+  if (!container.read(sessionsRestoredProvider)) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToChatThread(accountString, userId, attempt: attempt + 1),
+    );
+    return;
+  }
+  final accounts = container.read(accountManagerProvider).accounts;
+  if (accounts.isEmpty) return;
+  if (accountString != null) {
+    final matched = _findAccountByString(accounts, accountString);
+    if (matched == null) {
+      // payload のアカウントが accounts に存在しない (ログアウト済み等)。
+      // ここで何もせず進むと、現在 adapter (= 無関係なアカウントのサーバー)
+      // に対して getUserById を走らせて 404 になり、結果として通知タブ
+      // フォールバックに化ける (#549)。早期に通知タブへ落とし、observability
+      // タグで頻度を追跡する (#500 の host / user_hash 分離ポリシー準拠)。
+      Sentry.captureMessage(
+        'notification.routing.chat.account_unmatched',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('notification.routing', 'chat.account_unmatched');
+          final atIdx = accountString.indexOf('@');
+          if (atIdx > 0 && atIdx < accountString.length - 1) {
+            final username = accountString.substring(0, atIdx);
+            final host = accountString.substring(atIdx + 1);
+            scope.setTag('payload.host', host);
+            scope.setTag('payload.user_hash', hashForSentryTag(username));
+          } else {
+            scope.setTag('payload', '<malformed>');
+          }
+        },
+      );
+      _routeToNotificationsTab(accountString);
+      return;
+    }
+    container.read(accountManagerProvider.notifier).switchAccount(matched);
+  }
+  // adapter 切替後の `getUserById` を非同期に実行し、解決後に push。
+  unawaited(() async {
+    final adapter = container.read(currentAdapterProvider);
+    if (adapter == null || adapter is! ChatSupport) {
+      // 想定外: chat 非対応アカウントへ切り替わった等。通知タブにフォールバック。
+      _routeToNotificationsTab(accountString);
+      return;
+    }
+    try {
+      final user = await adapter.getUserById(userId);
+      if (!context.mounted) return;
+      // /home に揃えてから push しないと Drawer / 戻る挙動が崩れるが、
+      // /splash や /eula は起動 / EULA 承諾フローのゲート画面であり、
+      // ここで go('/home') を呼ぶとそれらを bypass してしまう (#562)。
+      // ゲート中の chat push は drop し、Sentry に観測タグを残す。
+      // ユーザーは EULA 承諾後に通知から再タップで該当チャットに到達できる。
+      final router = GoRouter.of(context);
+      final currentLocation = router.state.matchedLocation;
+      if (currentLocation == '/splash' || currentLocation == '/eula') {
+        Sentry.captureMessage(
+          'notification.routing.chat.dropped_during_gate',
+          level: SentryLevel.info,
+          withScope: (scope) {
+            scope.setTag('notification.routing', 'chat.dropped_during_gate');
+            scope.setTag('current_location', currentLocation);
+          },
+        );
+        return;
+      }
+      if (currentLocation != '/home') {
+        router.go('/home');
+      }
+      router.push('/chat/user/$userId', extra: user);
+    } catch (e, st) {
+      // user 解決失敗 (削除済み・通信エラー等) は通知タブにフォールバック。
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('notification.routing', 'chat.user_resolve_failed');
+          scope.fingerprint = ['notification.routing.chat.failed'];
+        },
+      );
+      _routeToNotificationsTab(accountString);
+    }
+  }());
+}
+
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
   // 上限: restoreSessions は 1 アカウントあたり getMyself + mulukhiya probe
   // + timeline availability probe を走らせるため、低速回線 + 多アカウント
@@ -426,7 +665,7 @@ void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
     // タップ等）。ここで pendingInitialTabProvider を設定して go('/home')
     // を呼ぶと auth redirect で /server に飛ばされた後も pendingTab が
     // 残留し、次回のログイン後に意図せず通知タブが開かれてしまう。
-    debugPrint('capsicum: notification: routing dropped — no active accounts');
+    _logDev('capsicum: notification: routing dropped — no active accounts');
     return;
   }
 
@@ -463,7 +702,7 @@ void _rescheduleNotificationRoute(
   int maxAttempts,
 ) {
   if (attempt >= maxAttempts) {
-    debugPrint(
+    _logDev(
       'capsicum: notification: routing gave up after $maxAttempts frames',
     );
     // 60 秒空振りは UX バグ (タップで該当画面に遷移しない) だが debugPrint
@@ -552,7 +791,7 @@ String? _lastFcmMessageId;
 void _handleFcmMessage(RemoteMessage message) {
   final messageId = message.messageId;
   if (messageId != null && messageId == _lastFcmMessageId) {
-    debugPrint('capsicum: FCM message dedup hit: $messageId');
+    _logDev('capsicum: FCM message dedup hit: $messageId');
     return;
   }
   _lastFcmMessageId = messageId;
@@ -589,26 +828,50 @@ Future<void> _firebaseBackgroundMessageHandler(RemoteMessage message) async {
       postLabelResolver: NotificationLabelCache.readPost,
     );
   } catch (e, st) {
-    debugPrint('capsicum: push.background: handler failed: $e');
     // Sentry はバックグラウンド isolate では init されていないため、
     // ここでは debugPrint のみ。致命的でも UI を落とさない。
     // 復号失敗等は dispatcher 内で個別記録されているが、ここに落ちる
     // 例外（Firebase init・notification plugin 初期化失敗等）は
     // bg_handler.failed として永続化し、次回 main app 起動時に
     // Sentry へ吸い上げる (#366)。
-    debugPrintStack(stackTrace: st);
-    await PushFailureRecorder.record(PushFailureRecorder.codeHandlerFailed);
+    //
+    // 例外コンテキスト (#551): host + e.runtimeType + 安全な toString を
+    // recorder に乗せ、後段の bg_handler.failed イベントを #436 と同じ
+    // 二次分類で切り分け可能にする。DioException 等が client_secret
+    // を含む URL を toString に持ちうるため scrubException 経由で詰め替え。
+    final scrubbed = scrubException(e);
+    _logDev('capsicum: push.background: handler failed: $scrubbed');
+    _logDevStack(st);
+    final scrubbedText = scrubbed.toString();
+    final truncated = scrubbedText.length > 200
+        ? '${scrubbedText.substring(0, 200)}…'
+        : scrubbedText;
+    await PushFailureRecorder.record(
+      PushFailureRecorder.codeHandlerFailed,
+      host: _hostFromBackgroundMessage(message),
+      decryptError: '${scrubbed.runtimeType}: $truncated',
+    );
   }
+}
+
+/// FCM `RemoteMessage` の `data['account']` (`user@host`) から host のみ抽出。
+/// bg_handler の観測タグ (push.host) と一致させるのに使う。
+String? _hostFromBackgroundMessage(RemoteMessage message) {
+  final account = message.data['account'] as String?;
+  if (account == null) return null;
+  final idx = account.indexOf('@');
+  if (idx <= 0 || idx >= account.length - 1) return null;
+  return account.substring(idx + 1);
 }
 
 Future<void> _initFirebase() async {
   if (!Platform.isAndroid) return;
   try {
-    debugPrint('capsicum: Firebase.initializeApp starting');
+    _logDev('capsicum: Firebase.initializeApp starting');
     await Firebase.initializeApp();
-    debugPrint('capsicum: Firebase.initializeApp done, starting FCM');
+    _logDev('capsicum: Firebase.initializeApp done, starting FCM');
     await FcmService.initialize();
-    debugPrint('capsicum: FCM init done');
+    _logDev('capsicum: FCM init done');
 
     // Android: FCM の system-tray 通知タップは flutter_local_notifications の
     // onTap を経由しない（OS が直接表示するため）。
@@ -625,7 +888,7 @@ Future<void> _initFirebase() async {
     // バックグラウンド / キル時は main() 頭で登録した
     // [_firebaseBackgroundMessageHandler] 側で処理する (#336 Phase 3)。
     FirebaseMessaging.onMessage.listen((message) {
-      debugPrint(
+      _logDev(
         'capsicum: push.onMessage fired: data keys=${message.data.keys.toList()}',
       );
       unawaited(
@@ -636,9 +899,9 @@ Future<void> _initFirebase() async {
         ),
       );
     });
-    debugPrint('capsicum: push.onMessage listener registered');
+    _logDev('capsicum: push.onMessage listener registered');
   } catch (e, st) {
-    debugPrint('capsicum: Firebase initialization failed: $e');
+    _logDev('capsicum: Firebase initialization failed: $e');
     Sentry.captureException(
       e,
       stackTrace: st,
@@ -742,8 +1005,13 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
         useMaterial3: true,
+        snackBarTheme: _snackBarTheme,
       ),
-      darkTheme: ThemeData(colorScheme: darkScheme, useMaterial3: true),
+      darkTheme: ThemeData(
+        colorScheme: darkScheme,
+        useMaterial3: true,
+        snackBarTheme: _snackBarTheme,
+      ),
       themeMode: themeMode,
       builder: (context, child) {
         final fontScale = ref.watch(fontScaleProvider);

@@ -83,11 +83,77 @@ List<_Node> _parseMfm(String input) {
   return _MfmParser(input).parse();
 }
 
+/// 入力文字列から MFM parser がハッシュタグとして抽出した文字列の一覧を返す。
+/// content_parser の private な node tree を外部に晒さず、Issue #566 の挙動を
+/// 単体テストできるようにするための薄い helper。
+@visibleForTesting
+List<String> parseHashtagsForTesting(String input) {
+  final result = <String>[];
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      if (n.type == _NodeType.hashtag) result.add(n.text);
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(_parseMfm(input));
+  return result;
+}
+
+/// `_parseHtml`（Mastodon HTML 経路）の結果を単体テストするための helper。
+/// link / url / hashtag ノードと、未変換の生 `<a` タグがテキストとして
+/// 露出していないか（Issue #595）を検証できるようにする。
+@visibleForTesting
+({
+  List<({String text, String url})> links,
+  List<String> urls,
+  List<String> hashtags,
+  bool hasRawTag,
+})
+parseHtmlForTesting(String html) {
+  final links = <({String text, String url})>[];
+  final urls = <String>[];
+  final hashtags = <String>[];
+  var hasRawTag = false;
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      switch (n.type) {
+        case _NodeType.link:
+          links.add((text: n.text, url: n.url ?? ''));
+        case _NodeType.url:
+          urls.add(n.text);
+        case _NodeType.hashtag:
+          hashtags.add(n.text);
+        case _NodeType.text:
+          if (n.text.contains('<a')) hasRawTag = true;
+        default:
+          break;
+      }
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(_parseHtml(html));
+  return (links: links, urls: urls, hashtags: hashtags, hasRawTag: hasRawTag);
+}
+
 class _MfmParser {
   final String input;
   int _pos = 0;
 
   _MfmParser(this.input);
+
+  // Mastodon HASHTAG_NAME_RE 相当のハッシュタグ仕様 (#566)。
+  //  - 直前境界: Mastodon の lookbehind `(?<![=\/)\w])` に揃え、ASCII word
+  //    (`\w` = [A-Za-z0-9_]) と =, /, ) の直後を不可とする。日本語等の
+  //    Unicode 文字直後はタグ成立を許す (Mastodon と同じ)
+  //  - 許可文字: Unicode L / M / N + _ · -
+  //  - 内容要件: タグ部分に Unicode letter を 1 文字以上含む (数字のみ拒否)
+  // Misskey MFM の括弧ネスト挙動 (「」() 内をタグに含む) は未対応 — 実害報告
+  // が出た段階で別途扱う。
+  static final _hashtagBoundaryBefore = RegExp(r'[=/)\w]');
+  static final _hashtagChar = RegExp(r'[\p{L}\p{N}\p{M}_·\-]', unicode: true);
+  static final _hashtagHasLetter = RegExp(r'\p{L}', unicode: true);
 
   List<_Node> parse() => _parseInline(null);
 
@@ -559,46 +625,26 @@ class _MfmParser {
 
   _Node? _tryHashtag() {
     if (input[_pos] != '#') return null;
+    // 直前境界チェック: =, /, ), word char (L/M/N + _) の直後の # はタグにしない
+    if (_pos > 0 && _hashtagBoundaryBefore.hasMatch(input[_pos - 1])) {
+      return null;
+    }
     final start = _pos;
     _pos++; // skip #
     final tagBuf = StringBuffer();
-    // Hashtags allow word characters (including CJK) but not whitespace or
-    // common punctuation that terminates a tag.
     while (_pos < input.length) {
-      final c = input.codeUnitAt(_pos);
-      // Stop on ASCII whitespace, control characters, or tag-terminating
-      // punctuation: . , ! ? ; : ( ) [ ] { } < > " ' ` # @
-      if (c <= 0x20 ||
-          c == 0x2e || // .
-          c == 0x2c || // ,
-          c == 0x21 || // !
-          c == 0x3f || // ?
-          c == 0x3b || // ;
-          c == 0x3a || // :
-          c == 0x28 || // (
-          c == 0x29 || // )
-          c == 0x5b || // [
-          c == 0x5d || // ]
-          c == 0x7b || // {
-          c == 0x7d || // }
-          c == 0x3c || // <
-          c == 0x3e || // >
-          c == 0x22 || // "
-          c == 0x27 || // '
-          c == 0x60 || // `
-          c == 0x23 || // #
-          c == 0x40) {
-        // @
-        break;
-      }
-      tagBuf.write(input[_pos]);
+      final c = input[_pos];
+      if (!_hashtagChar.hasMatch(c)) break;
+      tagBuf.write(c);
       _pos++;
     }
-    if (tagBuf.isEmpty) {
+    final tag = tagBuf.toString();
+    // 数字 / 記号のみは拒否 (Mastodon は [[:alpha:]_·] を 1 文字以上要求)
+    if (tag.isEmpty || !_hashtagHasLetter.hasMatch(tag)) {
       _pos = start;
       return null;
     }
-    return _Node(type: _NodeType.hashtag, text: tagBuf.toString());
+    return _Node(type: _NodeType.hashtag, text: tag);
   }
 
   _Node? _tryUrl() {
@@ -744,6 +790,28 @@ List<_Node> _parseHtml(String html) {
           dotAll: true,
         ),
         (m) => '<center>${m[1]}</center>',
+      )
+      // <a href="url">text</a> → MFM のリンク / ハッシュタグ / メンション。
+      // Misskey 由来の連合ノートは <a> を含む HTML を素で投げてくるため、
+      // 一括タグ除去で href を失う前に MFM 構文へ変換しておく。Mastodon は
+      // rel / target / class を付与するので属性は緩く読み飛ばす。
+      .replaceAllMapped(
+        RegExp(
+          r'<a\b[^>]*?\bhref="([^"]*)"[^>]*>(.*?)</a>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (m) {
+          final url = m[1]!;
+          // 内側の <span> 等を除いた可視ラベル。
+          final label = m[2]!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+          // ハッシュタグ / メンション anchor は素のテキストに戻し、MFM
+          // パーサ側で hashtag / mention ノードとして再検出させる。
+          if (label.startsWith('#') || label.startsWith('@')) return label;
+          // ラベルが空 / URL と同一なら裸の URL にして自動リンクに任せる。
+          if (label.isEmpty || label == url) return url;
+          return '[$label]($url)';
+        },
       )
   // Preserve tags the MFM parser understands: <b>, <i>, <s>, <small>,
   // <center>. Strip only their closing/opening from the "remove all" regex
@@ -896,11 +964,19 @@ class ContentRenderer {
                         ),
                       ),
                     ),
-                  Text(
-                    node.text,
-                    style: style.copyWith(
-                      fontFamily: 'monospace',
-                      fontSize: (style.fontSize ?? 14) * 0.9,
+                  // コードは折り返さず横スクロール (#434)。コマンドトゥート
+                  // の結果として表示する JSON / YAML も同じ codeBlock 経路で
+                  // 描画されるので、長い 1 行が省略 / 折り返しで読みにくく
+                  // ならないようにする。
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Text(
+                      node.text,
+                      softWrap: false,
+                      style: style.copyWith(
+                        fontFamily: 'monospace',
+                        fontSize: (style.fontSize ?? 14) * 0.9,
+                      ),
                     ),
                   ),
                 ],

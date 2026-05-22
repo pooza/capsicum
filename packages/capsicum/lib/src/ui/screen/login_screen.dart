@@ -36,16 +36,35 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// localhost callback (server impl) 経由で OAuth 認可コードを受けるか
-  /// どうか。`desktop_webview_window` の GLX 系 native crash (#489 / #496)
-  /// を回避するため、Linux のみ true。Windows 対応再開時に true 化する
-  /// 可能性があるため、地域名でなく機能ベース命名を採用 (#507)。
-  bool get _useLocalhostCallback => Platform.isLinux;
+  /// どうか。Linux は `desktop_webview_window` の GLX 系 native crash
+  /// (#489 / #496) を、Windows は MSIX に `flutter_web_auth_2` の native
+  /// plugin が含まれない制約 (#423) を、いずれも localhost callback で
+  /// 回避する。地域名でなく機能ベース命名を採用 (#507)。
+  // Linux / Windows / macOS でこの経路に入れる (#382)。挙動はプラット
+  // フォームで分かれる:
+  // - Linux: desktop_webview_window の GLX 系 native crash 回避 (#489 /
+  //   #496)。flutter_web_auth_2 server impl で localhost callback を受ける
+  // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない
+  //   (#423) ため同じく server impl 経路
+  // - macOS: flutter_web_auth_2 4.x の macOS 実装は ASWebAuthentication
+  //   Session のみで server impl が無い。localhost callback は拾えず
+  //   決定論的に oob fallback (外部デフォルトブラウザ + 手動コード) に
+  //   落ちる。+75 検証で ASWebAuthenticationSession 直行は「無効な
+  //   リダイレクトURI」+ ephemeral で Bitwarden 拡張が効かないと判明、
+  //   逆に oob fallback は実ブラウザで Bitwarden が効き安定だったため、
+  //   macOS は意図的にこの経路に入れて oob に着地させる。
+  // Mac App Store ビルドは Sandbox 下で _checkOAuthPortAvailability の
+  // ServerSocket.bind が成立するために Release.entitlements に
+  // com.apple.security.network.server が必要 (実 OAuth サーバは立てない
+  // が bind プローブ自体に要る)。
+  bool get _useLocalhostCallback =>
+      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
-  /// `linuxOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
+  /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
   /// それ以外は `capsicum://oauth` カスタムスキーム。
   String get _redirectUri => _useLocalhostCallback
-      ? AppConstants.linuxOAuthCallbackUrl
+      ? AppConstants.localhostOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
 
   bool _isLoggingIn = false;
@@ -120,6 +139,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  /// localhost callback 用のポート ([AppConstants.localhostOAuthPort]) が
+  /// 別プロセスに占有されているかを試し、占有時は専用エラー文を返す。
+  /// 空いていれば null を返す。TOCTOU はあるが、flutter_web_auth_2 側で
+  /// EADDRINUSE を握って authorization code を取り逃がす UX 劣化を
+  /// 識別可能な error に置き換えるための実用的な防御 (#503)。
+  Future<String?> _checkOAuthPortAvailability() async {
+    try {
+      final socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        AppConstants.localhostOAuthPort,
+      );
+      await socket.close();
+      return null;
+    } on SocketException catch (e) {
+      _logLoginStep(
+        'oauth_port.occupied',
+        data: {
+          'port': AppConstants.localhostOAuthPort,
+          'error': e.osError?.message ?? e.message,
+        },
+      );
+      return 'OAuth コールバック用ポート ${AppConstants.localhostOAuthPort} が'
+          '他プロセスに占有されています。占有中のアプリを閉じてから再試行してください。';
+    }
+  }
+
   Future<void> _login() async {
     if (_loginCompleted) return;
     setState(() {
@@ -181,6 +226,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
+        // localhost callback 経路では port 7099 が別プロセスで bind 済みだと
+        // flutter_web_auth_2 server impl が internally EADDRINUSE を握って
+        // authorization code を受け取れず、UX が「ログインに失敗しました」と
+        // 出るだけでポート競合と判別できなくなる (#503)。authenticate 呼び出し
+        // 直前に短時間 ServerSocket.bind を試して占有を専用エラーに昇格させる。
+        if (_useLocalhostCallback) {
+          final portError = await _checkOAuthPortAvailability();
+          if (portError != null) {
+            if (mounted) setState(() => _error = portError);
+            return;
+          }
+        }
         // localhost callback では `desktop_webview_window` の GLX 系 native
         // crash (#489 / #496) を回避するため useWebview: false で
         // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
@@ -191,7 +248,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
           callbackUrlScheme: _useLocalhostCallback
-              ? AppConstants.linuxOAuthCallbackUrl
+              ? AppConstants.localhostOAuthCallbackUrl
               : AppConstants.callbackUrlScheme,
           options: _useLocalhostCallback
               ? const FlutterWebAuth2Options(useWebview: false)
@@ -494,24 +551,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       // Accept either a bare code or a full callback URL.
+      //
+      // 旧実装は「capsicum:// 以外は OOB と決め打ち」にしていたが、Linux で
+      // `_redirectUri` が `http://localhost:7099/oauth/callback` (#507) に
+      // なった結果、ユーザーがブラウザのアドレスバーから localhost callback
+      // URL をそのまま貼ると OOB 強制で `invalid_grant` を踏む (#528)。
+      // 「元の redirect_uri (custom scheme or localhost) と一致するか」で
+      // 判定する形に変更。それ以外 (裸コード含む) は OOB 経由扱い。
       final String extractedCode;
-      final bool codeFromCustomScheme;
+      final bool codeFromOriginalRedirect;
       if (code.contains('code=')) {
         final uri = Uri.parse(code);
         extractedCode = uri.queryParameters['code'] ?? code;
-        codeFromCustomScheme = uri.scheme == 'capsicum';
+        final isCustomScheme = uri.scheme == 'capsicum';
+        final isLocalhostCallback =
+            _useLocalhostCallback && uri.toString().startsWith(_redirectUri);
+        codeFromOriginalRedirect = isCustomScheme || isLocalhostCallback;
       } else {
         extractedCode = code;
-        codeFromCustomScheme = false;
+        // 裸コードは OOB ボタン経由とみなす (ブラウザに表示された 6 桁等)。
+        codeFromOriginalRedirect = false;
       }
 
-      // If the code came from a capsicum:// URL, it was issued for the
-      // custom-scheme redirect URI — use the original redirect_uri.
-      // Otherwise assume it came from the OOB browser flow.
+      // 元の redirect_uri 由来のコードなら同じ redirect_uri で交換 (Mastodon
+      // の厳格 match 要件)。OOB 経由なら oobRedirect で交換。
       final exchangeExtra = Map<String, String>.from(extra);
-      if (!codeFromCustomScheme) {
-        exchangeExtra['redirect_uri'] = oobRedirect;
-      }
+      exchangeExtra['redirect_uri'] = codeFromOriginalRedirect
+          ? _redirectUri
+          : oobRedirect;
       exchangeExtra['client_id'] = clientId;
       exchangeExtra['client_secret'] = clientSecret;
       final callbackUri = Uri(queryParameters: {'code': extractedCode});
@@ -592,15 +659,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // Server thumbnail
+          // 横長ビューポート (macOS / タブレット landscape) で box が
+          // 極端に横長になり BoxFit.cover で上下がクリップされていたため、
+          // maxWidth 480 で頭打ちにして中央寄せする (#479)。
           if (_serverThumbnail != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _serverThumbnail!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    _serverThumbnail!,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
           const SizedBox(height: 16),

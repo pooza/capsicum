@@ -3,6 +3,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../service/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 
@@ -29,6 +30,10 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
   return tab is TimelineTab ? tab.type : TimelineType.home;
 });
 
+/// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
+/// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
+const Object _keepLoadMoreError = Object();
+
 /// Paginated timeline state.
 class TimelineState {
   final List<Post> posts;
@@ -42,26 +47,40 @@ class TimelineState {
   /// Number of new posts queued while the user is scrolling.
   final int pendingCount;
 
+  /// streaming の再接続上限に到達して新規投稿が来なくなった状態 (#586)。
+  /// REST で取得済みの投稿はそのまま見えるが、ライブ更新は止まっている。
+  /// pull-to-refresh / タブ再選択で build() が再実行されるとクリアされる。
+  final bool streamReconnectExhausted;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
     this.hasMore = true,
     this.loadMoreError,
     this.pendingCount = 0,
+    this.streamReconnectExhausted = false,
   });
 
+  /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
+  /// 場合はクリア、例外を渡した場合は差し替え、という三状態を区別する
+  /// (#455 / #450 と同型)。
   TimelineState copyWith({
     List<Post>? posts,
     bool? isLoadingMore,
     bool? hasMore,
-    Object? loadMoreError,
+    Object? loadMoreError = _keepLoadMoreError,
     int? pendingCount,
+    bool? streamReconnectExhausted,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
-    loadMoreError: loadMoreError,
+    loadMoreError: identical(loadMoreError, _keepLoadMoreError)
+        ? this.loadMoreError
+        : loadMoreError,
     pendingCount: pendingCount ?? this.pendingCount,
+    streamReconnectExhausted:
+        streamReconnectExhausted ?? this.streamReconnectExhausted,
   );
 }
 
@@ -80,6 +99,46 @@ bool hasLivecureTag(Post post) {
   if (target.author.isBot) return false;
   final content = target.content ?? '';
   return _livecurePattern.hasMatch(content) || content.endsWith('#実況');
+}
+
+/// Fetch pages until at least one post survives client-side filtering, or the
+/// source is exhausted.
+///
+/// Without this, a first page that is entirely #実況 (with hideLivecure on)
+/// yields an empty timeline that never auto-loads the next page, because the
+/// list has nothing to scroll. Shared by the list/hashtag/channel build()s so
+/// they get the same behaviour TimelineNotifier.build() already has (#583; the
+/// original fix for the home timeline was #230).
+///
+/// [fetch] takes the pagination cursor (null for the first page, otherwise the
+/// last fetched post's id) and returns one raw page.
+Future<TimelineState> fetchUntilVisible({
+  required int pageSize,
+  required bool hideLivecure,
+  required Future<List<Post>> Function(String? maxId) fetch,
+}) async {
+  final allVisible = <Post>[];
+  String? maxId;
+  var hasMore = true;
+
+  while (hasMore) {
+    final posts = await fetch(maxId);
+    if (posts.isEmpty) {
+      hasMore = false;
+      break;
+    }
+    maxId = posts.last.id;
+    hasMore = posts.length >= pageSize;
+
+    final visible = hideLivecure
+        ? posts.where((p) => !hasLivecureTag(p)).toList()
+        : posts;
+    allVisible.addAll(visible);
+
+    if (allVisible.isNotEmpty || !hasMore) break;
+  }
+
+  return TimelineState(posts: allVisible, hasMore: hasMore);
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.
@@ -154,9 +213,91 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     return TimelineState(posts: enriched, hasMore: hasMore);
   }
 
+  // streaming 内部の parse / 接続 error を観測層へ流す (#586)。chat_provider
+  // (#448 / #552) と同型: breadcrumb は毎回、captureException は throttle して
+  // 切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通の計装)。
+  DateTime? _lastParseCapture;
+  DateTime? _lastConnectCapture;
+  static const _captureThrottle = Duration(seconds: 60);
+
   void _startStreaming(StreamSupport adapter, TimelineType type) {
     _streamSubscription?.cancel();
-    final stream = adapter.streamTimeline(type);
+    final stream = adapter.streamTimeline(
+      type,
+      onParseError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.parse',
+            level: SentryLevel.warning,
+            message: e.toString().length > 200
+                ? '${e.toString().substring(0, 200)}…'
+                : e.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastParseCapture != null &&
+            now.difference(_lastParseCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastParseCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.parse', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.parse',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onStreamError: (e, st) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'timeline.stream.connect',
+            level: SentryLevel.warning,
+            message: e.runtimeType.toString(),
+          ),
+        );
+        final now = DateTime.now();
+        if (_lastConnectCapture != null &&
+            now.difference(_lastConnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastConnectCapture = now;
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('timeline.stream.connect', 'failed');
+            scope.fingerprint = [
+              'timeline.stream.connect',
+              e.runtimeType.toString(),
+            ];
+          },
+        );
+      },
+      onReconnectExhausted: () {
+        Sentry.captureMessage(
+          'timeline.stream.reconnect_exhausted',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'reconnect_exhausted');
+            scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
+          },
+        );
+        // 無言の「ライブ更新が止まったまま」状態を state に出す。REST 取得済み
+        // 投稿は残るので AsyncError にはせず、フラグだけ立てて UI が気付ける
+        // ようにする。pull-to-refresh / タブ再選択の build() でクリアされる。
+        final current = state.valueOrNull;
+        if (current != null && !current.streamReconnectExhausted) {
+          state = AsyncData(
+            current.copyWith(streamReconnectExhausted: true),
+          );
+        }
+      },
+    );
     _streamSubscription = stream.listen((newPost) {
       final current = state.valueOrNull;
       if (current == null) return;
@@ -175,6 +316,36 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         _pendingPosts.add(newPost);
         state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
       }
+    }, onError: (Object e, StackTrace st) {
+      // controller 自体は error を流さない設計だが、adapter 側の .map
+      // (_applyWordFilter 等) が投げると listener の error として届く。
+      // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
+      // (#586)。state は AsyncError にせず (REST 投稿は生きている)
+      // breadcrumb + throttle 付き captureException のみ。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'timeline.stream.listen',
+          level: SentryLevel.warning,
+          message: e.runtimeType.toString(),
+        ),
+      );
+      final now = DateTime.now();
+      if (_lastConnectCapture != null &&
+          now.difference(_lastConnectCapture!) < _captureThrottle) {
+        return;
+      }
+      _lastConnectCapture = now;
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('timeline.stream.listen', 'failed');
+          scope.fingerprint = [
+            'timeline.stream.listen',
+            e.runtimeType.toString(),
+          ];
+        },
+      );
     });
   }
 

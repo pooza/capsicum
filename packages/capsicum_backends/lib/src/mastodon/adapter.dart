@@ -390,9 +390,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> unrepeatPost(String id) async {
-    final status = await client.unreblogStatus(id);
-    return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  Future<void> unrepeatPost(Post post) async {
+    // Mastodon の /unreblog は「元 status の id」を要求する。
+    // post が自分のブースト status の場合は post.reblog に元 status が入る。
+    final originalId = post.reblog?.id ?? post.id;
+    await client.unreblogStatus(originalId);
   }
 
   @override
@@ -978,14 +980,25 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // StreamSupport
 
   @override
-  Stream<Post> streamTimeline(TimelineType type) {
+  Stream<Post> streamTimeline(
+    TimelineType type, {
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
     _streaming?.dispose();
     // DM timeline has no dedicated stream; avoid falling back to 'user'
     // which would mix non-DM posts into the DM tab.
     if (type == TimelineType.directMessages) return const Stream.empty();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
-    _streaming = MastodonStreaming(host: host, accessToken: token);
+    _streaming = MastodonStreaming(
+      host: host,
+      accessToken: token,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
+    );
     return _streaming!.connect(type);
   }
 

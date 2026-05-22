@@ -340,16 +340,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // アクセス制御次第で運用者以外にユーザ名が見えうる (#500)。tag は host
       // のみに限定し、username は de-identification 用ハッシュに丸めて
       // 別 tag に出す。dedup には fingerprint で対応。
-      final parsed = AccountKey.fromStorageKey(accountKey);
+      //
+      // AccountKey.fromStorageKey は scheme 不正な legacy / 破損 key で
+      // StateError を投げる。parse 失敗時は tag を諦めて元の例外を上げ続ける
+      // (#524)。観測ロストよりは parse 失敗マーカ付きで Sentry に届けるほうが
+      // 価値が高いと判断。
+      AccountKey? parsed;
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        parsed = null;
+      }
       Sentry.captureException(
         e,
         stackTrace: st,
         withScope: (scope) {
-          scope.setTag('account_restore.host', parsed.host);
-          scope.setTag(
-            'account_restore.user_hash',
-            hashForSentryTag(parsed.username),
-          );
+          if (parsed != null) {
+            scope.setTag('account_restore.host', parsed.host);
+            scope.setTag(
+              'account_restore.user_hash',
+              hashForSentryTag(parsed.username),
+            );
+          } else {
+            scope.setTag('account_restore.key_parse', 'failed');
+          }
           scope.fingerprint = ['account_restore', e.runtimeType.toString()];
         },
       );

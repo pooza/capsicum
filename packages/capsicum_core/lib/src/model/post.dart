@@ -11,6 +11,12 @@ class Post {
   final DateTime postedAt;
   final User author;
   final String? content;
+
+  /// `content` が HTML（Mastodon）か MFM（Misskey）かを示す。
+  /// バックエンドが確定的に持つ情報。本文表示側はこのフラグでレンダラを選ぶ
+  /// （`<p>` 有無のヒューリスティックは Misskey 連合ノートで誤判定するため）。
+  final bool isHtml;
+
   final PostScope scope;
   final List<Attachment> attachments;
   final int favouriteCount;
@@ -48,6 +54,7 @@ class Post {
     required this.postedAt,
     required this.author,
     this.content,
+    this.isHtml = false,
     this.scope = PostScope.public,
     this.attachments = const [],
     this.favouriteCount = 0,
@@ -84,19 +91,25 @@ class Post {
   /// 派生オブジェクトを生成する。現状は enrich パイプライン（IsCatEnricher 等）
   /// で author / reblog だけを差し替える用途で使用。フィールド追加時の
   /// 取りこぼし防止のため、新フィールドの追加はここに追従する。
-  Post copyWith({User? author, Post? reblog}) => Post(
+  Post copyWith({
+    User? author,
+    Post? reblog,
+    bool? reblogged,
+    int? reblogCount,
+  }) => Post(
     id: id,
     postedAt: postedAt,
     author: author ?? this.author,
     content: content,
+    isHtml: isHtml,
     scope: scope,
     attachments: attachments,
     favouriteCount: favouriteCount,
-    reblogCount: reblogCount,
+    reblogCount: reblogCount ?? this.reblogCount,
     replyCount: replyCount,
     quoteCount: quoteCount,
     favourited: favourited,
-    reblogged: reblogged,
+    reblogged: reblogged ?? this.reblogged,
     bookmarked: bookmarked,
     sensitive: sensitive,
     reactions: reactions,

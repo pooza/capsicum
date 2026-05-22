@@ -107,18 +107,30 @@ echo "==> Patching plugin RUNPATHs to \$ORIGIN (defensive)"
 shopt -s nullglob
 for so in "$APPDIR/usr/bin/lib/"*.so; do
   current_rpath=$(patchelf --print-rpath "$so" 2>/dev/null || true)
-  # /home /Users /build は手元 / モデルケースの絶対パスを拾うために残し、
-  # それ以外も含めた絶対パス全般 (CI runner の /__w/... や非標準 build dir
-  # 等、未知の配置) を拾えるよう defensive に拡張 (#514)。
-  # $ORIGIN はもとから相対指定なので case で除外すればよい。
-  case "$current_rpath" in
-    '$ORIGIN'|'$ORIGIN'/*|'')
-      ;;
-    /*)
-      patchelf --set-rpath '$ORIGIN' "$so"
-      echo "  patched $(basename "$so") (was: $current_rpath)"
-      ;;
-  esac
+  # patchelf --print-rpath は `/path1:/path2` のようなコロン区切り複合
+  # RUNPATH もそのまま返す。絶対パス全般を `$ORIGIN` 一発に書き換える
+  # 旧実装 (#514) は、`$ORIGIN:/usr/lib/...` のような複合エントリで
+  # 正当な相対部分まで失っていた (#527)。コロン区切りで分割し、各
+  # セグメント単位で絶対パス → `$ORIGIN` に丸めて再結合する。
+  if [ -z "$current_rpath" ]; then
+    continue
+  fi
+  new_rpath=""
+  changed=0
+  IFS=':' read -ra rpath_segments <<< "$current_rpath"
+  for seg in "${rpath_segments[@]}"; do
+    case "$seg" in
+      /*)
+        seg='$ORIGIN'
+        changed=1
+        ;;
+    esac
+    new_rpath="${new_rpath:+$new_rpath:}$seg"
+  done
+  if [ "$changed" -eq 1 ]; then
+    patchelf --set-rpath "$new_rpath" "$so"
+    echo "  patched $(basename "$so") (was: $current_rpath)"
+  fi
 done
 shopt -u nullglob
 
@@ -137,6 +149,35 @@ linuxdeploy \
   --plugin gtk \
   --desktop-file "$APPDIR/usr/share/applications/$APP_ID.desktop" \
   --icon-file "$APPDIR/$APP_ID.png"
+
+# libibus-1.0.so.5 を AppDir に明示コピーする (#532)。
+#
+# 経緯 (v1.24.0 〜 v1.24.3 真因解明):
+# linuxdeploy-plugin-gtk は ldd 経由で im-ibus.so を AppImage に bundle するが、
+# その依存 libibus-1.0.so.5 は (理由不明だが) bundle しない。host 側 libibus
+# を ld.so.cache 経由で引かせると、新しい host libibus が要求する GLib symbol
+# (g_task_set_static_name 等。GLib 2.76 以降) が bundled GLib (build host
+# ubuntu-22.04 = GLib 2.72) で解決できず、IM context 'ibus' のロードに失敗
+# する。具体例: Debian 13 / GLib 2.84 系の host で `Loading IM context type
+# 'ibus' failed` + `undefined symbol: g_task_set_static_name` が stderr に出る。
+#
+# v1.24.0 / v1.24.1 / v1.24.2 まではこの mismatch を見逃しており、当初は
+# 「bundled libibus と host ibus-daemon の DBus protocol drift」「im-ibus.so
+# 不足」と二段階の誤診を経た。真因は GLib version mismatch。
+#
+# 対処として AppImage 内に libibus を明示同梱する。bundled GLib と同世代の
+# libibus (build host = ubuntu-22.04 の libibus-1.0-5) が入るため symbol
+# resolution は成立する。host ibus-daemon との DBus protocol は libibus 1.5
+# 系で安定しており、Flatpak (org.gnome.Platform 提供 libibus + host ibus-daemon)
+# が問題なく動いていることから drift リスクは小さいと判断。
+echo "==> Bundling libibus into AppDir (host libibus 経由の GLib symbol mismatch を避ける)"
+HOST_LIBIBUS_DIR=/usr/lib/x86_64-linux-gnu
+if compgen -G "$HOST_LIBIBUS_DIR/libibus-1.0.so.*" > /dev/null; then
+  cp -av "$HOST_LIBIBUS_DIR"/libibus-1.0.so.* "$APPDIR/usr/lib/" 2>&1 | sed 's/^/  /'
+else
+  echo "ERROR: $HOST_LIBIBUS_DIR/libibus-1.0.so.* not found. Install libibus-1.0-5 (ibus-gtk3 brings it)." >&2
+  exit 1
+fi
 
 echo "==> Replacing AppRun with logging wrapper (#496)"
 # linuxdeploy が生成する AppRun は exec で wrapped を呼ぶだけで、stderr が
@@ -185,6 +226,35 @@ stdbuf -oL -eL "$this_dir"/AppRun.wrapped "$@" 2>&1 | tee -a "$LOG_FILE"
 exit "${PIPESTATUS[0]}"
 APPRUN_EOF
 chmod +x "$APPDIR/AppRun"
+
+# v1.24.1 → v1.24.2 で CI runner image の構成変化により im-ibus.so が
+# 静かに同梱されなくなる事故があった。回帰防止のため、GTK IM module の
+# bundle と immodules.cache 登録を mechanical に検証する (#536)。
+# fcitx5 / uim は best-effort (動作未検証) だが、CI assertion 自体は
+# 同等にかける。
+echo "==> Verifying GTK IM module bundling (regression guard, #536)"
+IM_DIR="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules"
+IM_CACHE="$APPDIR/usr/lib/gtk-3.0/3.0.0/immodules.cache"
+if [ ! -f "$IM_CACHE" ]; then
+  echo "ERROR: immodules.cache not found at $IM_CACHE" >&2
+  exit 1
+fi
+for module in im-ibus.so im-fcitx5.so im-uim.so; do
+  if [ ! -f "$IM_DIR/$module" ]; then
+    echo "ERROR: $module not bundled at $IM_DIR/$module" >&2
+    exit 1
+  fi
+  # immodules.cache のエントリは linuxdeploy-plugin-gtk が basename へ正規化する
+  # (`sed -i "s|.../immodules/||g"`) ため通常は `"im-ibus.so"` 形式になるが、
+  # host の GTK lib path が標準と異なって sed が空振りした場合は
+  # `"/usr/lib/.../im-ibus.so"` のパス形式で残る。どちらでも検出できるよう
+  # 両方の prefix (`"` / `/`) を許す fixed-string 検索にする (#539 Codex P1)。
+  if ! grep -qF -e "\"$module\"" -e "/$module\"" "$IM_CACHE"; then
+    echo "ERROR: $module not registered in immodules.cache" >&2
+    exit 1
+  fi
+  echo "  OK: $module bundled and registered"
+done
 
 echo "==> Sealing AppImage with appimagetool"
 FINAL="$DIST_DIR/${APP_NAME}-${VERSION}-x86_64.AppImage"

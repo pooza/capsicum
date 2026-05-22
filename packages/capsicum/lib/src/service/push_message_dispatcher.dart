@@ -3,12 +3,31 @@ import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../ui/util/notification_type_display.dart';
 import 'notification_init.dart';
 import 'push_failure_recorder.dart';
 import 'push_key_store.dart';
 import 'web_push_decryptor.dart';
+
+/// push 復号フローの途中経過を debugPrint + Sentry breadcrumb の両方に出す
+/// 共通ヘルパ (#460)。後段で `captureException` が走ったときに、復号失敗
+/// 直前のコンテキストが Sentry イベントに自動添付される。
+void _trace(String message) {
+  debugPrint('capsicum: push.dispatcher: $message');
+  try {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'push.dispatcher',
+        level: SentryLevel.info,
+        message: message,
+      ),
+    );
+  } catch (_) {
+    // Sentry 未初期化の background isolate 等で失敗しても本筋を止めない。
+  }
+}
 
 /// FCM から受信した RemoteMessage を復号し、flutter_local_notifications 経由で
 /// 通知を表示する。
@@ -43,7 +62,7 @@ class PushMessageDispatcher {
     final data = message.data;
     final account = data['account'] as String?;
     if (account == null || account.isEmpty) {
-      debugPrint('capsicum: push.dispatcher: missing account');
+      _trace('missing account');
       return;
     }
 
@@ -75,7 +94,14 @@ class PushMessageDispatcher {
       }
     }
 
-    await _showNotification(title: title, body: body, payload: account);
+    // タップ payload は JSON 化して type / userId も伝搬する。chat の場合は
+    // タップで /chat/user/:userId に直行できるよう main.dart 側で分岐 (#440)。
+    final payload = jsonEncode({
+      'account': account,
+      if (decrypted?.type != null) 'type': decrypted!.type,
+      if (decrypted?.userId != null) 'userId': decrypted!.userId,
+    });
+    await _showNotification(title: title, body: body, payload: payload);
   }
 
   static Future<DecryptedPushContent?> _tryDecrypt(
@@ -89,16 +115,13 @@ class PushMessageDispatcher {
     final bodyB64 = data['body'] as String?;
     final encoding = data['encoding'] as String?;
     if (bodyB64 == null || encoding != 'aes128gcm') {
-      debugPrint(
-        'capsicum: push.dispatcher: skipped decrypt '
-        '(body=${bodyB64 != null}, encoding=$encoding)',
-      );
+      _trace('skipped decrypt (body=${bodyB64 != null}, encoding=$encoding)');
       return null;
     }
 
     final keys = await _findKeys(account);
     if (keys == null) {
-      debugPrint('capsicum: push.dispatcher: no push keys for $account');
+      _trace('no push keys for $account');
       await PushFailureRecorder.record(
         PushFailureRecorder.codeNoKeys,
         host: host,
@@ -118,12 +141,10 @@ class PushMessageDispatcher {
         uaPublicKey: base64Url.decode(base64Url.normalize(keys.p256dh)),
         authSecret: base64Url.decode(base64Url.normalize(keys.auth)),
       );
-      debugPrint(
-        'capsicum: push.dispatcher: decrypt ok, ${plaintext.length} bytes',
-      );
+      _trace('decrypt ok, ${plaintext.length} bytes');
       final parsed = parsePayload(plaintext);
-      debugPrint(
-        'capsicum: push.dispatcher: parsed=${parsed != null} '
+      _trace(
+        'parsed=${parsed != null} '
         'titleLen=${parsed?.title?.length} bodyLen=${parsed?.body?.length}',
       );
       if (parsed == null) {
@@ -136,12 +157,16 @@ class PushMessageDispatcher {
       }
       return parsed;
     } catch (e) {
-      debugPrint('capsicum: push.dispatcher: decrypt failed: $e');
+      _trace('decrypt failed: $e');
       await PushFailureRecorder.record(
         PushFailureRecorder.codeDecryptFailed,
         host: host,
         encoding: encoding,
         elapsedMs: elapsed(),
+        // FormatException (bodyB64 異常) や WebPushDecryptor / parsePayload
+        // が投げた exception 文字列を kind 分類 (push.decrypt.kind) のために
+        // recorder に流す (#436 の二次分類タグを実走経路にも適用)。
+        decryptError: e.toString(),
       );
       return null;
     }
@@ -182,14 +207,10 @@ class PushMessageDispatcher {
       final text = utf8.decode(plaintext);
       final json = jsonDecode(text);
       if (json is! Map<String, dynamic>) {
-        debugPrint(
-          'capsicum: push.dispatcher: payload not a Map (${json.runtimeType})',
-        );
+        _trace('payload not a Map (${json.runtimeType})');
         return null;
       }
-      debugPrint(
-        'capsicum: push.dispatcher: payload keys=${json.keys.toList()}',
-      );
+      _trace('payload keys=${json.keys.toList()}');
 
       // Mastodon: top-level に title / body / notification_type
       final mastodonTitle = json['title'];
@@ -225,16 +246,21 @@ class PushMessageDispatcher {
       if (json['type'] == 'newChatMessage') {
         final inner = json['body'];
         if (inner is Map<String, dynamic>) {
+          final fromUser = inner['fromUser'];
+          final userId = fromUser is Map<String, dynamic>
+              ? fromUser['id'] as String?
+              : inner['fromUserId'] as String?;
           return DecryptedPushContent(
             title: null,
             body: _synthesizeMisskeyChatBody(inner),
             type: 'newChatMessage',
+            userId: userId,
           );
         }
       }
       return null;
     } catch (e) {
-      debugPrint('capsicum: push.dispatcher: parse failed: $e');
+      _trace('parse failed: $e');
       return null;
     }
   }
@@ -347,5 +373,10 @@ class DecryptedPushContent {
   final String? title;
   final String? body;
   final String? type;
-  const DecryptedPushContent({this.title, this.body, this.type});
+
+  /// Misskey newChatMessage の `fromUser.id` (タップで `/chat/user/:id`
+  /// に遷移する宛先解決に使う)。type=newChatMessage 以外は null (#440)。
+  final String? userId;
+
+  const DecryptedPushContent({this.title, this.body, this.type, this.userId});
 }

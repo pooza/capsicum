@@ -35,7 +35,7 @@ abstract class BackendAdapter {
   Future<Post> getPostById(String id);
   Future<List<Post>> getThread(String postId);
   Future<Post> repeatPost(String id, {PostScope? visibility});
-  Future<Post> unrepeatPost(String id);
+  Future<void> unrepeatPost(Post post);
   Future<Instance> getInstance();
   Future<Attachment> uploadAttachment(AttachmentDraft draft);
 }

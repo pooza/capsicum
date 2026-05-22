@@ -20,9 +20,12 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
+import '../util/user_acct.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
+import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 
 class _MediaEntry {
@@ -52,6 +55,44 @@ class _OversizeFile {
     required this.size,
     required this.limit,
   });
+}
+
+/// 語字 (Unicode の Letter / Number / アンダースコア)。トリガ直前がこれ以外
+/// なら「語の先頭」とみなす。
+final RegExp _composeWordChar = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+
+/// カーソル位置から後方へ走査し、補完トリガ ([trigger] = `@` / `#` / `:`) の
+/// 直後クエリ文字列を返す。トリガ語でなければ null。
+///
+/// トリガが発火するのは「文頭」または「直前文字が語字でない」場合のみ。
+/// 旧実装は半角空白 / 改行 / 文頭のみを境界としていたため、日本語の
+/// 「。@user」「）#tag」全角空白・タブ等の直後で不発だった (#581 観点1)。
+/// 語字を除外する形なので `foo@bar`(メール) や `12:34`(時刻) を誤発火しない
+/// 旧来の意図は維持される。State から切り出した純粋関数 (テスト対象)。
+String? composeTriggerQuery({
+  required String text,
+  required int cursor,
+  required String trigger,
+}) {
+  if (cursor < 0 || cursor > text.length) return null;
+  var start = cursor - 1;
+  while (start >= 0) {
+    final ch = text[start];
+    if (ch == trigger) {
+      if (start == 0 || !_composeWordChar.hasMatch(text[start - 1])) {
+        final query = text.substring(start + 1, cursor);
+        return query.isNotEmpty ? query : null;
+      }
+      return null;
+    }
+    // クエリ内に空白系が現れたらトリガ語ではない。半角/全角空白・改行・
+    // タブ・CR を区切りとして扱う (#581 観点1: 全角空白等への拡張)。
+    if (ch == ' ' || ch == '　' || ch == '\n' || ch == '\r' || ch == '\t') {
+      return null;
+    }
+    start--;
+  }
+  return null;
 }
 
 class ComposeScreen extends ConsumerStatefulWidget {
@@ -101,6 +142,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
   Timer? _mentionDebounce;
+
+  // サジェスト取得の世代カウンタ (#581 観点2)。debounce 後に走るサーバー検索は
+  // in-flight キャンセルできないため、発火ごとに採番し await 解決時に最新世代
+  // でなければ後着レスポンスを破棄する。古いクエリの結果が新しい候補を上書き
+  // する race を防ぐ。絵文字はローカル絞り込みのため対象外。
+  int _mentionFetchGen = 0;
+  int _hashtagFetchGen = 0;
+
+  // インライン絵文字補完 (#308)。デスクトップ実況用途で「キーボードから手を
+  // 離さずカスタム絵文字を入れる」ことを主目的にする。サーバー側で
+  // CustomEmojiSupport を実装しているアダプタのみ対象。
+  List<CustomEmoji> _emojiSuggestions = [];
+  List<CustomEmoji>? _allEmojis;
 
   // Quote approval policy (Mastodon 4.5+)
   String? _quoteApprovalPolicy;
@@ -230,30 +284,40 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           () => _language = Localizations.localeOf(context).languageCode,
         );
       }
+      // CustomEmojiSupport 対応サーバーなら絵文字を先読み (#308)。
+      // 補完候補のフィルタはローカルで行うため、起動時に 1 回ロードして
+      // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
+      if (adapter is CustomEmojiSupport) {
+        _loadAllEmojis(adapter as CustomEmojiSupport);
+      }
     });
+  }
+
+  Future<void> _loadAllEmojis(CustomEmojiSupport support) async {
+    try {
+      final emojis = await support.getEmojis();
+      if (mounted) {
+        setState(() => _allEmojis = emojis);
+      }
+    } catch (e) {
+      // 失敗しても投稿フォーム自体は使えるので breadcrumb のみ残す。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.emoji.preload',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
+    }
   }
 
   /// Walk backwards from cursor to find [trigger] (`@` or `#`).
   /// Returns the query string after the trigger, or null.
-  String? _currentTriggerQuery(String trigger) {
-    final text = _controller.text;
-    final cursor = _controller.selection.baseOffset;
-    if (cursor < 0 || cursor > text.length) return null;
-    var start = cursor - 1;
-    while (start >= 0) {
-      final ch = text[start];
-      if (ch == trigger) {
-        if (start == 0 || text[start - 1] == ' ' || text[start - 1] == '\n') {
-          final query = text.substring(start + 1, cursor);
-          return query.isNotEmpty ? query : null;
-        }
-        return null;
-      }
-      if (ch == ' ' || ch == '\n') return null;
-      start--;
-    }
-    return null;
-  }
+  String? _currentTriggerQuery(String trigger) => composeTriggerQuery(
+    text: _controller.text,
+    cursor: _controller.selection.baseOffset,
+    trigger: trigger,
+  );
 
   void _onTextChanged() {
     // 既存の debounce は IME 中でも止める (#511): early return より前に
@@ -265,10 +329,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
     if (_controller.value.composing.isValid) return;
 
-    // Check mention trigger first, then hashtag.
+    // Check mention trigger first, then hashtag, then emoji (#308)。
     final mentionQuery = _currentTriggerQuery('@');
     final hashtagQuery = mentionQuery == null
         ? _currentTriggerQuery('#')
+        : null;
+    final emojiQuery = (mentionQuery == null && hashtagQuery == null)
+        ? _currentEmojiTriggerQuery()
         : null;
 
     if (mentionQuery == null && _mentionSuggestions.isNotEmpty) {
@@ -276,6 +343,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (hashtagQuery == null && _hashtagSuggestions.isNotEmpty) {
       setState(() => _hashtagSuggestions = []);
+    }
+    if (emojiQuery == null && _emojiSuggestions.isNotEmpty) {
+      setState(() => _emojiSuggestions = []);
     }
 
     if (mentionQuery != null) {
@@ -286,34 +356,80 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
         _fetchHashtagSuggestions(hashtagQuery);
       });
+    } else if (emojiQuery != null) {
+      // 絵文字はローカル絞り込みのため debounce 不要 (即時反映)。
+      _updateEmojiSuggestions(emojiQuery);
     }
+  }
+
+  /// `:shortcode` 形式の補完トリガを検出する (#308)。
+  /// `_currentTriggerQuery(':')` をそのまま使うと `12:34` のような時刻表記も
+  /// 拾い得るが、`:` の前が語字 (英数字 / アンダースコア) でないことを要求する
+  /// _currentTriggerQuery の境界条件で正しく除外できる (`12:` は直前が数字)。
+  /// ただし `:smi:` のようにクエリ後ろに閉じコロンが続く完成形は補完不要なので
+  /// この場合は null を返す。
+  String? _currentEmojiTriggerQuery() {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    if (cursor < 0 || cursor > text.length) return null;
+    // 直後の文字が `:` (完成形 `:smi:` 等) なら補完不要。
+    if (cursor < text.length && text[cursor] == ':') return null;
+    final query = _currentTriggerQuery(':');
+    if (query == null) return null;
+    // 候補絞り込み用にショートコードに使われる文字 (英数字 / アンダースコア /
+    // ハイフン / プラス) のみ許容。空白以外の記号で始まる「:" や ":@" のような
+    // 入力は補完対象外。
+    final valid = RegExp(r'^[a-zA-Z0-9_\-+]+$');
+    if (!valid.hasMatch(query)) return null;
+    return query;
   }
 
   Future<void> _fetchMentionSuggestions(String query) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! SearchSupport) return;
+    final gen = ++_mentionFetchGen;
     try {
       final users = await (adapter as SearchSupport).searchUsers(
         query,
         limit: 5,
       );
+      // 後着レスポンス破棄 (#581 観点2): await 中に新しい入力で再発火して
+      // いたら世代が進んでいる。古い結果で新しい候補を上書きしない。
+      if (gen != _mentionFetchGen) return;
       if (mounted) setState(() => _mentionSuggestions = users);
-    } catch (_) {
-      // Silently ignore search failures.
+    } catch (e) {
+      // best-effort なサジェスト系。致命でないので breadcrumb のみ残し、
+      // サーバー側 schema 変更や rate-limit を「サジェスト出ない」だけで
+      // 取りこぼさないようにする (#553)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.search.users',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
   Future<void> _fetchHashtagSuggestions(String query) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! SearchSupport) return;
+    final gen = ++_hashtagFetchGen;
     try {
       final tags = await (adapter as SearchSupport).searchHashtags(
         query,
         limit: 5,
       );
+      if (gen != _hashtagFetchGen) return;
       if (mounted) setState(() => _hashtagSuggestions = tags);
-    } catch (_) {
-      // Silently ignore search failures.
+    } catch (e) {
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.search.hashtags',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
@@ -326,6 +442,48 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void _insertHashtag(String tag) {
     _insertTriggerCompletion('#', '#$tag ');
     setState(() => _hashtagSuggestions = []);
+  }
+
+  void _updateEmojiSuggestions(String query) {
+    final all = _allEmojis;
+    if (all == null || all.isEmpty) return;
+    final lower = query.toLowerCase();
+    // 先頭一致を優先し、その後に部分一致 / alias 一致を続ける。Mastodon /
+    // Misskey Web UI と同様の挙動。最大 20 件で打ち切り、横スクロール chips
+    // のレイアウト崩れを防ぐ。
+    final prefix = <CustomEmoji>[];
+    final contain = <CustomEmoji>[];
+    for (final e in all) {
+      final sc = e.shortcode.toLowerCase();
+      if (sc.startsWith(lower)) {
+        prefix.add(e);
+      } else if (sc.contains(lower) ||
+          e.aliases.any((a) => a.toLowerCase().contains(lower))) {
+        contain.add(e);
+      }
+      if (prefix.length >= 20) break;
+    }
+    final merged = [...prefix, ...contain].take(20).toList();
+    setState(() => _emojiSuggestions = merged);
+  }
+
+  void _completeEmojiFromSuggestion(CustomEmoji emoji) {
+    // 部分入力 `:query` を一旦削除してから既存の _insertEmoji を呼ぶ。
+    // 既存ロジックが Mastodon の前後スペース / zwsp / カーソル位置を統一して
+    // 面倒見ているので、EmojiPicker からの挿入と完全に同じ挙動になる。
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    var start = cursor - 1;
+    while (start >= 0 && text[start] != ':') {
+      start--;
+    }
+    if (start < 0) return;
+    _controller.value = TextEditingValue(
+      text: text.replaceRange(start, cursor, ''),
+      selection: TextSelection.collapsed(offset: start),
+    );
+    _insertEmoji(':${emoji.shortcode}:');
+    setState(() => _emojiSuggestions = []);
   }
 
   void _insertTriggerCompletion(String trigger, String replacement) {
@@ -425,12 +583,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  String _buildAcct(User user) {
-    if (user.host != null && user.host!.isNotEmpty) {
-      return '${user.username}@${user.host}';
-    }
-    return user.username;
-  }
+  String _buildAcct(User user) => userAcct(user);
 
   String _extractPlainText(String content) {
     final isHtml = content.contains('<') && content.contains('>');
@@ -802,6 +955,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  // 番組表エントリから直接 Annict 感想投稿画面に遷移する (#298)。
+  // annict_episode_id が埋まっているエントリ (= 実在番組) のみ呼ばれる前提。
+  void _openAnnictRecord(MulukhiyaProgram program) {
+    final episodeId = program.annictEpisodeId;
+    if (episodeId == null) return;
+    final episodeLabel = [
+      if (program.episode != null)
+        '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
+      if (program.subtitle != null) program.subtitle!,
+    ].join(' ');
+    context.push(
+      '/annict/record',
+      extra: AnnictRecordScreenArgs(
+        episodeId: episodeId,
+        workTitle: program.series ?? program.name,
+        episodeLabel: episodeLabel,
+      ),
+    );
+  }
+
   Future<void> _showTagsetSheet() async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
@@ -824,6 +997,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           onEpisodeBrowser: () {
             Navigator.pop(sheetContext);
             _openEpisodeBrowser();
+          },
+          onAnnictRecord: (program) {
+            Navigator.pop(sheetContext);
+            _openAnnictRecord(program);
           },
           onReload: () async {
             try {
@@ -894,8 +1071,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (account == null || mulukhiya == null) return;
     try {
       await mulukhiya.restoreDecoration(account.userSecret.accessToken);
-    } catch (_) {
-      // Decoration restore is best-effort; ignore failures.
+    } catch (e) {
+      // best-effort。失敗してもユーザー操作には支障なし。
+      // モロヘイヤ側の不調・API 変更を breadcrumb で観測可能にする (#553)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.decoration.restore',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
     }
   }
 
@@ -917,8 +1102,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         for (final e in serverEmojis) {
           allEmojis.putIfAbsent(e.shortcode, () => e.url);
         }
-      } catch (_) {
-        // 取得失敗時はユーザー絵文字のみでフォールバック
+      } catch (e) {
+        // 取得失敗時はユーザー絵文字のみでフォールバック。サーバー側 API 変更・
+        // rate-limit を breadcrumb で観測可能にする (#553)。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.emoji.fetch',
+            message: e.runtimeType.toString(),
+            level: SentryLevel.warning,
+          ),
+        );
       }
     }
     if (!mounted) return;
@@ -1176,7 +1369,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
 
       final spoilerText = _cwEnabled ? _cwController.text.trim() : null;
-      await adapter.postStatus(
+      final posted = await adapter.postStatus(
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
@@ -1218,6 +1411,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           if (channelId != null) {
             ref.invalidate(channelTimelineProvider(channelId));
           }
+          // #433: hideLivecure ON 中に #実況 を含む投稿をすると TL から
+          // 除外されるため SnackBar で告知。検出はモロヘイヤ handler が
+          // タグを追記した後の rendered content (= postStatus 戻り値) で
+          // 行うため、ユーザー入力に #実況 がない自動付与経路もカバーする。
+          maybeShowHideLivecureSnackBar(context, ref, posted);
         }
         if (context.canPop()) {
           context.pop(true);
@@ -1430,6 +1628,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       avatar: const Icon(Icons.tag, size: 18),
                       label: Text('#$tag', overflow: TextOverflow.ellipsis),
                       onPressed: () => _insertHashtag(tag),
+                    );
+                  },
+                ),
+              ),
+            if (_emojiSuggestions.isNotEmpty)
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _emojiSuggestions.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final emoji = _emojiSuggestions[index];
+                    return ActionChip(
+                      avatar: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Image.network(
+                          emoji.url,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.emoji_emotions, size: 18),
+                        ),
+                      ),
+                      label: Text(
+                        ':${emoji.shortcode}:',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () => _completeEmojiFromSuggestion(emoji),
                     );
                   },
                 ),
@@ -1804,6 +2031,7 @@ class _TagsetSheet extends StatefulWidget {
   final void Function(MulukhiyaProgram program) onSelect;
   final VoidCallback onClear;
   final VoidCallback? onEpisodeBrowser;
+  final void Function(MulukhiyaProgram program) onAnnictRecord;
   final VoidCallback onReload;
 
   const _TagsetSheet({
@@ -1812,6 +2040,7 @@ class _TagsetSheet extends StatefulWidget {
     required this.onSelect,
     required this.onClear,
     this.onEpisodeBrowser,
+    required this.onAnnictRecord,
     required this.onReload,
   });
 
@@ -1911,6 +2140,21 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         leading: const Icon(Icons.live_tv),
                         title: Text(_programLabel(entry.value)),
                         subtitle: Text(_programSublabel(entry.value)),
+                        // annict_episode_id を持つ番組表エントリは Annict 感想
+                        // 投稿への動線も提供する (#298)。判定は ID の有無のみで、
+                        // air フラグ (= 公式放送が無い作品を「放送中のテイ」で
+                        // 実況する番組) は独立した軸。エア番組も作品自体は実在し
+                        // Annict にエントリがあるため annict_episode_id が
+                        // 埋まっていれば普通に感想投稿対象になる
+                        // (project_air_program_concept)。
+                        trailing: entry.value.annictEpisodeId != null
+                            ? IconButton(
+                                icon: const Icon(Icons.rate_review_outlined),
+                                tooltip: 'Annict に感想投稿',
+                                onPressed: () =>
+                                    widget.onAnnictRecord(entry.value),
+                              )
+                            : null,
                         onTap: () => widget.onSelect(entry.value),
                       ),
                   if (widget.annictEnabled && widget.onEpisodeBrowser != null)

@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.24.0+64
+version: 1.27.0+77
 
 environment:
   sdk: ^3.11.0
@@ -34,7 +34,7 @@ dependencies:
   dio: ^5.8.0+1
   flutter_web_auth_2: ^4.0.0
   url_launcher: ^6.3.1
-  flutter_local_notifications: ^18.0.0
+  flutter_local_notifications: ^21.0.0
   image_picker: ^1.2.1
   # Linux / Windows のメディア選択は image_picker 非対応のため file_selector を
   # 経由する。MediaPicker 抽象層 (#329) でプラットフォームごとに実装を
@@ -55,6 +55,16 @@ dependencies:
   pointycastle: ^3.9.1
   firebase_core: ^3.13.0
   firebase_messaging: ^15.2.4
+  # デスクトップ (macOS / Linux / Windows) のウィンドウ位置・サイズ・最大化状態
+  # を起動間で記録 / 復元するために使用 (#559)。実況用途で「アプリを同じ場所に
+  # 置く」運用 (e.g. Amazon Prime Video と左右並列) を支える。モバイルは
+  # OS がウィンドウを持たないため対象外。
+  window_manager: ^0.5.1
+  # サポーター（投げ銭）の消耗型 IAP (#428)。iOS StoreKit / Android Play
+  # Billing を統一 API で扱う。購入導線は iOS / Android のみ（macOS は後日、
+  # Linux / Windows はストア IAP 不在）。商品タイプ・保持先は
+  # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
+  in_app_purchase: ^3.2.0
 
 dev_dependencies:
   flutter_test:
@@ -66,6 +76,11 @@ dev_dependencies:
   # 通常は shared_preferences 経由の transitive だが、lint
   # (depend_on_referenced_packages) 回避のため明示する。
   shared_preferences_platform_interface: ^2.4.0
+  # Windows MSIX パッケージング (#423)。dart run msix:create で
+  # build/windows/x64/runner/Release/ 配下に capsicum.msix を生成する。
+  # Microsoft Store 提出時は store: true により未署名のままアップロード、
+  # ストア側で再署名される。
+  msix: ^3.16.13
 
 sentry:
   upload_debug_symbols: true
@@ -77,3 +92,45 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+# Windows MSIX パッケージング設定 (#423)。
+#
+# identity_name / publisher は Microsoft Partner Center で capsicum を
+# アプリ予約した時点で確定した識別子。MSIX 提出時にこの値が一致しないと
+# ストア側でバリデーション失敗するため固定値で埋めている。
+#
+# 配布アーキは v1.24 リリース時点で x64 1 本（ARM64 ユーザーは Windows の
+# x64 emulation 経由で動作）。後日 ARM64 を追加する場合は同一プロダクトに
+# 別 MSIX として bundle する（Microsoft Store 側で arch 振り分け）。
+msix_config:
+  display_name: capsicum
+  # 3 ストア（Apple / Google / Microsoft）すべて個人発行元 (小石達也) で
+  # 整合させる方針。法人 (有限会社ビーショック) への切替は税務・ブランド
+  # 要請が顕在化した時点で一括移行する。詳細は CLAUDE.md「運営元」節参照。
+  publisher_display_name: 小石達也
+  identity_name: 9AFBB08E.capsicum
+  publisher: CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42
+  logo_path: windows/runner/resources/app_icon.png
+  capabilities: internetClient
+  architecture: x64
+  languages: ja-jp, en-us
+  # 自己署名 MSIX 直配 (#423) では false 必須。msix:create は
+  # `signMsix && !store` の条件で signtool を呼ぶため、true のままだと
+  # --certificate-path を渡しても署名 step が skip され AppxSignature.p7x が
+  # 生成されない (実機で `Add-AppxPackage` が拒否される)。Microsoft Store
+  # 公開 (#544) を再開する際は別経路で --store を渡す。
+  store: false
+  # CI には TTY がないため、msix:create の証明書インストール確認プロンプト
+  # (y/N) が呼ばれると Prompter で stdin null → 'Null is not a subtype of
+  # FutureOr<String>' で落ちる。CI 上でローカルに cert を import する用途は
+  # ないので無効化する。
+  install_certificate: false
+  output_name: capsicum
+  # 通知アクティベータの COM CLSID。flutter_local_notifications_windows が
+  # 通知タップ時にこの CLSID を介してアプリにコールバックする。
+  # `lib/src/platform/notification_subsystem/flutter_local_notification_subsystem.dart`
+  # の WindowsInitializationSettings.guid と完全一致させること (#423)。
+  toast_activator:
+    clsid: 'c97e7770-db27-4202-96cc-739a44734e65'
+    arguments: '----AppNotificationActivationServer'
+    display_name: 'capsicum'

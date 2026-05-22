@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/chat_provider.dart';
+import '../../provider/preferences_provider.dart';
+import '../../util/oauth_scope_error.dart';
+import '../util/chat_error.dart';
+import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
 class ChatThreadListScreen extends ConsumerWidget {
@@ -35,37 +39,39 @@ class ChatThreadListScreen extends ConsumerWidget {
                 ),
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(
-                  '読み込みに失敗しました\n$error',
-                  textAlign: TextAlign.center,
+        error: (error, _) => isOAuthScopeError(error)
+            ? const OAuthScopeErrorView()
+            : Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(
+                        '読み込みに失敗しました\n${summarizeChatError(error)}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref.invalidate(chatThreadListProvider),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(chatThreadListProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
   }
 }
 
-class _ChatThreadTile extends StatelessWidget {
+class _ChatThreadTile extends ConsumerWidget {
   final ChatThread thread;
 
   const _ChatThreadTile({required this.thread});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final preview = _previewText(thread.lastMessage);
     return ListTile(
       leading: UserAvatar(user: thread.otherUser, size: 40),
@@ -85,7 +91,7 @@ class _ChatThreadTile extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            _formatTime(thread.lastMessage.createdAt),
+            _formatTime(ref, thread.lastMessage.createdAt),
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (thread.isUnread)
@@ -126,7 +132,14 @@ class _ChatThreadTile extends StatelessWidget {
     return '';
   }
 
-  String _formatTime(DateTime createdAt) {
+  // chat_thread_screen / post_tile / notification_tile と同じ表示モード
+  // (display_settings の absoluteTimeProvider) に追従する (#560)。
+  String _formatTime(WidgetRef ref, DateTime createdAt) {
+    if (ref.watch(absoluteTimeProvider)) {
+      final local = createdAt.toLocal();
+      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
     final diff = DateTime.now().toUtc().difference(createdAt);
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分前';

@@ -100,7 +100,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   List<List<String>> _hardMutedWords = [];
   final Set<String> _adminRoleIds = {};
   User? _myUser;
-  bool _canUseChat = true;
+  // _canWriteChat は user.canChat (chatAvailability == 'available') と一致。
+  // readonly / unavailable はどちらも false。
+  // 読み取り側は permissive に倒す方針なので flag を持たず、`canReadChat`
+  // は常に true を返す (#446)。
+  bool _canWriteChat = true;
 
   void applyAdminRoleIds(List<String> ids) => _adminRoleIds.addAll(ids);
 
@@ -160,9 +164,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     _hardMutedWords = user.hardMutedWords ?? [];
     // canChat は roleService.getUserPolicies(...).chatAvailability === 'available'
     // をサーバー側で boolean 化したもの (UserEntityService.ts:561)。Misskey が
-    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる
-    // ため、null は「不可」寄りに倒して隠す。
-    _canUseChat = user.canChat ?? false;
+    // フィールドを返さない古いフォーク・bot 不許可ロール等では null になる。
+    // 書き込み (canWriteChat) は strictly available のみ true。読み取り側
+    // (canReadChat) は permissive 方針で常に true (#446)。
+    _canWriteChat = user.canChat ?? false;
     final me = user.toCapsicum(host, adminRoleIds: _adminRoleIds);
     _myUser = me;
     return me;
@@ -318,6 +323,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         postedAt: post.postedAt,
         author: post.author,
         content: post.content,
+        isHtml: post.isHtml,
         scope: post.scope,
         attachments: post.attachments,
         favouriteCount: post.favouriteCount,
@@ -346,6 +352,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         postedAt: post.postedAt,
         author: post.author,
         content: post.content,
+        isHtml: post.isHtml,
         scope: post.scope,
         attachments: post.attachments,
         favouriteCount: post.favouriteCount,
@@ -434,7 +441,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<Post> unrepeatPost(String id) => throw UnimplementedError();
+  Future<void> unrepeatPost(Post post) => client.deleteNote(post.id);
 
   @override
   Future<Instance> getInstance() async {
@@ -477,6 +484,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       comment: draft.description,
       mimeType: draft.mimeType,
       isSensitive: draft.sensitive ? true : null,
+      folderId: draft.folderId,
     );
     return Attachment(
       id: file['id'] as String,
@@ -1141,6 +1149,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     await client.updateDriveFolder(folderId, name: newName);
   }
 
+  @override
+  Future<void> moveDriveFolder(String folderId, String? parentId) async {
+    // Misskey API はキー省略=変更なし、明示的 null=ルートへ移動。
+    // updateDriveFolder は null-aware で省略するため、直接 POST する。
+    //
+    // 単階層前提: caller (drive_manager_screen._promptMoveFolder) は現在
+    // 開いているフォルダの直下の子だけを候補に出し、folderId 自身と祖先は
+    // 候補から除外しているため、ここで循環防止のサーバーチェック (Misskey
+    // は子孫を parentId に渡すと 400/422) を踏まないことを前提にしている。
+    // 将来 candidate に親フォルダや遠縁を含めるなら、Misskey の error
+    // ハンドリング (DioException response) を caller 側で吸収すること。
+    await client.dio.post(
+      '/api/drive/folders/update',
+      data: client.createBody({'folderId': folderId, 'parentId': parentId}),
+    );
+  }
+
   // AntennaSupport
 
   @override
@@ -1213,7 +1238,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // StreamSupport
 
   @override
-  Stream<Post> streamTimeline(TimelineType type) {
+  Stream<Post> streamTimeline(
+    TimelineType type, {
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
     _streaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
@@ -1221,6 +1251,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
     );
     return _streaming!.connect(type).map(_applyWordFilter);
   }
@@ -1376,8 +1409,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // -- ChatSupport --
 
+  // readonly ロールでも履歴閲覧は試させる方針 (#446)。実際の 403 は UI 側
+  // で error builder が処理する。
   @override
-  bool get canUseChat => _canUseChat;
+  bool get canReadChat => true;
+
+  @override
+  bool get canWriteChat => _canWriteChat;
 
   Future<User> _ensureMyUser() async {
     final cached = _myUser;
@@ -1388,10 +1426,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<ChatThread>> getChatHistory({TimelineQuery? query}) async {
     final me = await _ensureMyUser();
-    final entries = await client.getChatHistory(
-      untilId: query?.maxId,
-      limit: query?.limit,
-    );
+    // /api/chat/history はサーバー側ページング非対応 (#445)。query.maxId は
+    // 無視し、limit のみ通す。
+    final entries = await client.getChatHistory(limit: query?.limit);
     return entries
         .map(
           (e) => misskeyChatThreadFromHistoryEntry(
@@ -1428,6 +1465,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
             selfUser: me,
             counterpartyUser: counterparty,
+            // user-timeline は呼び出し時点で既読更新されるため、isRead を
+            // 持たない lite スキーマでは既読扱いに倒す (#447)。
+            defaultIsRead: true,
           ),
         )
         .toList();
@@ -1461,7 +1501,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Stream<ChatMessage> streamChatMessages() {
+  Stream<ChatMessage> streamChatMessages({
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
     _chatStreaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
@@ -1470,6 +1514,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       accessToken: token,
       adminRoleIds: _adminRoleIds,
       selfUser: _myUser,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
     );
     return _chatStreaming!.connect();
   }
