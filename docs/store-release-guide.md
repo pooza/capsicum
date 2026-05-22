@@ -344,6 +344,10 @@ cd macos && fastlane release && cd ..
 
 消耗型サポータープランを含むビルドを iOS / Android に提出する際は、App Review Information の Notes（App Store）／アプリのアクセス権の説明（Google Play）に [supporter-subscription-plan.md](supporter-subscription-plan.md) C-2 の英文を貼り付ける。機能差別化なし・装飾のみ・単発である旨を明示することで、機能アンロックを伴わない IAP に対する審査員の混乱を回避する。継続課金ではないため Apple Guideline 3.1.2（継続的価値）の論点は発生しない。
 
+**新規 IAP（特に初回）は ASC 上で単独で審査提出しない。** アプリのバージョン提出に紐付けて同時提出する（バージョン提出画面の「App 内課金」欄で対象 IAP を選択）。リリース前レビュー前に IAP だけ先行提出すると、レビュー結果を取り込む前のビルドと審査がちぐはぐになるため。初回 IAP のスクリーンショット等の必須項目は「提出準備完了」状態にしておき、実提出は製品版昇格時のアプリ版提出に合わせる。初回 IAP が承認されれば 2 回目以降は単独提出も可。
+
+投げ銭画面の金額はストアのローカライズ価格（`ProductDetails.price`）をそのまま表示する設計で、コード側に金額をハードコードしない。表示通貨は端末の App Store / Play アカウントのストア地域で決まるため、検証アカウントが日本以外（米国 sandbox 等）だと `$` 表示になる。これは不具合ではなく、日本ストアのユーザーには円で表示される（iPhone 実機で確認済み）。
+
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 
 iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:
