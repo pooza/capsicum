@@ -17,6 +17,11 @@ class MastodonStreaming {
   final String host;
   final String accessToken;
 
+  /// role ID ベースの管理者判定に使う。REST 経路 (`MastodonAdapter._adminRoleIds`)
+  /// と同じ値を渡し、streaming 経由でライブ追加された投稿でも同一管理者が
+  /// 一貫してマーキングされるようにする (#600)。
+  final Set<String> adminRoleIds;
+
   /// 本線タイムライン streaming の観測コールバック (#586)。chat_streaming
   /// (#448 / #552) と同型。null なら無視。原因対処はせず計器のみ生やす。
   final void Function(Object error, StackTrace stack)? onParseError;
@@ -37,6 +42,7 @@ class MastodonStreaming {
   MastodonStreaming({
     required this.host,
     required this.accessToken,
+    this.adminRoleIds = const {},
     this.onParseError,
     this.onStreamError,
     this.onReconnectExhausted,
@@ -104,7 +110,7 @@ class MastodonStreaming {
           ? jsonDecode(payload) as Map<String, dynamic>
           : payload as Map<String, dynamic>;
       final status = MastodonStatus.fromJson(statusJson);
-      _controller?.add(status.toCapsicum(host));
+      _controller?.add(status.toCapsicum(host, adminRoleIds: adminRoleIds));
     } catch (e, st) {
       // raw payload を捨てる前に観測層へ流す。サーバー側 schema 変更や
       // パース失敗を「ストリーミング来ない」だけで気付けなくなるのを避ける

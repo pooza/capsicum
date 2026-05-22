@@ -995,6 +995,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     _streaming = MastodonStreaming(
       host: host,
       accessToken: token,
+      adminRoleIds: _adminRoleIds,
       onParseError: onParseError,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
