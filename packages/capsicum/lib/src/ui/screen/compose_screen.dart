@@ -1831,6 +1831,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
+                  // ソフトキーボードが出ている時だけ「しまう」ボタンを出す (#594)。
+                  // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
+                  // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐
+                  // 不要 (desktop では viewInsets.bottom が 0 で常に非表示)。
+                  if (MediaQuery.of(context).viewInsets.bottom > 0)
+                    IconButton(
+                      onPressed: () => FocusScope.of(context).unfocus(),
+                      icon: const Icon(Icons.keyboard_hide),
+                      tooltip: 'キーボードをしまう',
+                      visualDensity: VisualDensity.compact,
+                    ),
                   IconButton(
                     onPressed: _sending ? null : _pickMedia,
                     icon: const Icon(Icons.photo),
