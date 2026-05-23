@@ -1,3 +1,4 @@
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/livecure_snackbar.dart';
+import '../util/shortcode_warning_controller.dart';
 
 class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel ID to post into (Misskey channels).
@@ -35,14 +37,43 @@ class SimplePostBar extends ConsumerStatefulWidget {
 }
 
 class _SimplePostBarState extends ConsumerState<SimplePostBar> {
-  final _controller = TextEditingController();
+  final _controller = ShortcodeWarningController();
   bool _sending = false;
   bool _paletteOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    // テキスト編集のたびに未登録 shortcode を再評価する (#609 / compose_screen
+    // の _onTextChanged と同等)。IME 変換中は controller 側の guard で警告
+    // 装飾が抑えられるので、ここでは値が変わるたび無条件に流す。
+    _controller.addListener(_updateShortcodeWarnings);
+  }
+
+  @override
   void dispose() {
+    _controller.removeListener(_updateShortcodeWarnings);
     _controller.dispose();
     super.dispose();
+  }
+
+  /// 自サーバー custom_emojis に未登録の shortcode を controller に渡す (#609)。
+  /// adapter が MastodonAdapter かつ custom_emojis ロード済みの時だけ作動し、
+  /// それ以外 (Misskey ・ ロード前) は空集合で警告を出さない。
+  void _updateShortcodeWarnings() {
+    final adapter = ref.read(currentAdapterProvider);
+    final emojis = ref.read(customEmojisProvider).valueOrNull;
+    if (adapter is! MastodonAdapter || emojis == null) {
+      _controller.setUnknownShortcodes(const {});
+      return;
+    }
+    final known = {for (final e in emojis) e.shortcode};
+    final unknown = <String>{};
+    for (final match in shortcodePattern.allMatches(_controller.text)) {
+      final code = match.group(1)!;
+      if (!known.contains(code)) unknown.add(code);
+    }
+    _controller.setUnknownShortcodes(unknown);
   }
 
   Future<void> _submit() async {
@@ -138,6 +169,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
 
   @override
   Widget build(BuildContext context) {
+    // customEmojis ロード完了 / アカウント切替で再評価する (#609)。テキスト
+    // 編集由来の再評価は controller listener が拾うので、ここはロード状態の
+    // 変化のみ拾えば十分。
+    ref.listen(customEmojisProvider, (_, _) => _updateShortcodeWarnings());
     final postLabel = ref.watch(postLabelProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final recents = ref.watch(recentEmojisProvider);
