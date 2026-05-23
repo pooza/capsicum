@@ -88,14 +88,16 @@ class Post {
     this.url,
   });
 
-  /// 派生オブジェクトを生成する。現状は enrich パイプライン（IsCatEnricher 等）
-  /// で author / reblog だけを差し替える用途で使用。フィールド追加時の
-  /// 取りこぼし防止のため、新フィールドの追加はここに追従する。
+  /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
+  /// author / reblog 差し替え、添付説明（ALT）編集後の attachments 差し替え等で
+  /// 使用。フィールド追加時の取りこぼし防止のため、新フィールドの追加はここに
+  /// 追従する。
   Post copyWith({
     User? author,
     Post? reblog,
     bool? reblogged,
     int? reblogCount,
+    List<Attachment>? attachments,
   }) => Post(
     id: id,
     postedAt: postedAt,
@@ -103,7 +105,7 @@ class Post {
     content: content,
     isHtml: isHtml,
     scope: scope,
-    attachments: attachments,
+    attachments: attachments ?? this.attachments,
     favouriteCount: favouriteCount,
     reblogCount: reblogCount ?? this.reblogCount,
     replyCount: replyCount,
