@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import 'dart:developer' as developer;
 
+import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
 import 'extensions.dart';
@@ -95,6 +96,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ChatSupport {
   MisskeyStreaming? _streaming;
   MisskeyChatStreaming? _chatStreaming;
+  // ルーム毎に 1 本ずつ WebSocket を張る (chatRoom channel は roomId 必須で
+  // aggregate 不可、#438)。表示中のルームに対して都度購読 / 切断する。
+  final Map<String, MisskeyChatRoomStreaming> _chatRoomStreamings = {};
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
@@ -1772,5 +1776,41 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           ),
         )
         .toList();
+  }
+
+  @override
+  Stream<ChatMessage> streamRoomMessages({
+    required String roomId,
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
+    _chatRoomStreamings.remove(roomId)?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    final streaming = MisskeyChatRoomStreaming(
+      host: host,
+      accessToken: token,
+      roomId: roomId,
+      adminRoleIds: _adminRoleIds,
+      selfUser: _myUser,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
+    );
+    _chatRoomStreamings[roomId] = streaming;
+    return streaming.connect();
+  }
+
+  @override
+  void disposeRoomChatStream({String? roomId}) {
+    if (roomId == null) {
+      for (final s in _chatRoomStreamings.values) {
+        s.dispose();
+      }
+      _chatRoomStreamings.clear();
+      return;
+    }
+    _chatRoomStreamings.remove(roomId)?.dispose();
   }
 }
