@@ -61,6 +61,74 @@ class _OversizeFile {
 /// なら「語の先頭」とみなす。
 final RegExp _composeWordChar = RegExp(r'[\p{L}\p{N}_]', unicode: true);
 
+/// shortcode 候補 `:foo:` (#609)。前後を ASCII の \w でガードして `12:34` や
+/// `foo:bar:baz` の中切れを拾わない。Mastodon の shortcode は `[a-zA-Z0-9_]` の
+/// みで構成される (custom_emojis API の制約に追従)。
+final RegExp _shortcodePattern = RegExp(r'(?<![\w]):([a-zA-Z0-9_]+):(?![\w])');
+
+/// 自サーバー custom_emojis に未登録の shortcode を赤波下線で装飾する
+/// TextEditingController (#609)。Mastodon の shortcode は投稿先サーバーに
+/// 未登録だと raw text として表示される (「絵文字失敗芸」)。プレビュー押下を
+/// 要求せず compose 中に気付ける UI を提供する。
+class _ShortcodeWarningController extends TextEditingController {
+  Set<String> _unknownShortcodes = const {};
+
+  void setUnknownShortcodes(Set<String> codes) {
+    if (_unknownShortcodes.length == codes.length &&
+        _unknownShortcodes.containsAll(codes)) {
+      return;
+    }
+    _unknownShortcodes = codes;
+    notifyListeners();
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    // IME 変換中は composing 下線が出るので警告装飾を重ねない。super 実装の
+    // composing ハイライトを優先する。確定後に再度 _onTextChanged が走るので
+    // そこで警告装飾が乗る。
+    if (_unknownShortcodes.isEmpty ||
+        (withComposing && value.isComposingRangeValid)) {
+      return super.buildTextSpan(
+        context: context,
+        style: style,
+        withComposing: withComposing,
+      );
+    }
+
+    final text = this.text;
+    final warningStyle = (style ?? const TextStyle()).copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: Colors.red,
+      decorationStyle: TextDecorationStyle.wavy,
+    );
+    final children = <TextSpan>[];
+    var lastEnd = 0;
+    for (final match in _shortcodePattern.allMatches(text)) {
+      final code = match.group(1)!;
+      if (!_unknownShortcodes.contains(code)) continue;
+      if (match.start > lastEnd) {
+        children.add(TextSpan(text: text.substring(lastEnd, match.start)));
+      }
+      children.add(
+        TextSpan(
+          text: text.substring(match.start, match.end),
+          style: warningStyle,
+        ),
+      );
+      lastEnd = match.end;
+    }
+    if (lastEnd < text.length) {
+      children.add(TextSpan(text: text.substring(lastEnd)));
+    }
+    return TextSpan(style: style, children: children);
+  }
+}
+
 /// カーソル位置から後方へ走査し、補完トリガ ([trigger] = `@` / `#` / `:`) の
 /// 直後クエリ文字列を返す。トリガ語でなければ null。
 ///
@@ -129,7 +197,7 @@ const _draftCwEnabledKey = 'compose_draft_cw_enabled';
 
 class _ComposeScreenState extends ConsumerState<ComposeScreen>
     with WidgetsBindingObserver {
-  final _controller = TextEditingController();
+  final _controller = _ShortcodeWarningController();
   final _cwController = TextEditingController();
   final List<_MediaEntry> _attachments = [];
   PostScope _scope = PostScope.public;
@@ -298,6 +366,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       final emojis = await support.getEmojis();
       if (mounted) {
         setState(() => _allEmojis = emojis);
+        // 既に入力済みの shortcode に警告を当て直す (#609)。
+        _updateShortcodeWarnings();
       }
     } catch (e) {
       // 失敗しても投稿フォーム自体は使えるので breadcrumb のみ残す。
@@ -328,6 +398,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
     // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
     if (_controller.value.composing.isValid) return;
+
+    // 入力中に未登録 shortcode を赤波下線で警告 (#609)。Mastodon 限定。
+    _updateShortcodeWarnings();
 
     // Check mention trigger first, then hashtag, then emoji (#308)。
     final mentionQuery = _currentTriggerQuery('@');
@@ -360,6 +433,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 絵文字はローカル絞り込みのため debounce 不要 (即時反映)。
       _updateEmojiSuggestions(emojiQuery);
     }
+  }
+
+  /// 自サーバー custom_emojis に未登録の shortcode 集合を controller に渡し、
+  /// 赤波下線装飾を更新する (#609)。adapter が Mastodon でない、または絵文字
+  /// 一覧がまだ読み込まれていない場合は警告を出さない (false positive 回避)。
+  void _updateShortcodeWarnings() {
+    final adapter = ref.read(currentAdapterProvider);
+    final allEmojis = _allEmojis;
+    if (adapter is! MastodonAdapter || allEmojis == null) {
+      _controller.setUnknownShortcodes(const {});
+      return;
+    }
+    final known = {for (final e in allEmojis) e.shortcode};
+    final unknown = <String>{};
+    for (final match in _shortcodePattern.allMatches(_controller.text)) {
+      final code = match.group(1)!;
+      if (!known.contains(code)) unknown.add(code);
+    }
+    _controller.setUnknownShortcodes(unknown);
   }
 
   /// `:shortcode` 形式の補完トリガを検出する (#308)。
