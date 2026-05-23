@@ -15,7 +15,7 @@ import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 import 'chat_room_edit_screen.dart';
 
-enum _RoomMenuAction { toggleMute, edit, leave, delete }
+enum _RoomMenuAction { members, toggleMute, edit, leave, delete }
 
 /// Misskey chat ルーム (グループチャット) のタイムライン画面 (#438)。DM 用
 /// [ChatThreadScreen] と UI 構成は揃えるが、provider は
@@ -278,6 +278,11 @@ class _ChatRoomTimelineScreenState
           PopupMenuButton<_RoomMenuAction>(
             onSelected: (action) {
               switch (action) {
+                case _RoomMenuAction.members:
+                  context.push(
+                    '/chat/room/${_room.id}/members',
+                    extra: _room,
+                  );
                 case _RoomMenuAction.toggleMute:
                   _toggleMute();
                 case _RoomMenuAction.edit:
@@ -289,6 +294,14 @@ class _ChatRoomTimelineScreenState
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _RoomMenuAction.members,
+                child: ListTile(
+                  leading: Icon(Icons.people),
+                  title: Text('メンバー'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               PopupMenuItem(
                 value: _RoomMenuAction.toggleMute,
                 child: ListTile(

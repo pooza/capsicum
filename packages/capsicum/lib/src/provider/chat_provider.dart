@@ -253,6 +253,35 @@ final joiningChatRoomsProvider =
       }
     });
 
+/// 特定ルームのメンバー一覧 (`family<roomId>`)。
+final chatRoomMembersProvider = FutureProvider.autoDispose
+    .family<List<ChatRoomMember>, String>((ref, roomId) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChatSupport) return const [];
+      try {
+        return await (adapter as ChatSupport).getRoomMembers(
+          roomId: roomId,
+          query: const TimelineQuery(limit: 100),
+        );
+      } on UnsupportedError {
+        return const [];
+      }
+    });
+
+/// 受信招待箱。invitations/inbox 相当。
+final chatInvitationInboxProvider =
+    FutureProvider.autoDispose<List<ChatRoomInvitation>>((ref) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChatSupport) return const [];
+      try {
+        return await (adapter as ChatSupport).getInvitationInbox(
+          query: const TimelineQuery(limit: 100),
+        );
+      } on UnsupportedError {
+        return const [];
+      }
+    });
+
 /// 特定ルームのメッセージタイムライン。DM 用 [ChatThreadNotifier] の room 版。
 /// state は [ChatThreadState] を流用し、`messages` 配列は「先頭が最新、末尾が古い」
 /// 順序で保持する (room-timeline も降順返却)。

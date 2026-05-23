@@ -47,10 +47,27 @@ class ChatThreadListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final threads = ref.watch(chatThreadListProvider);
+    final invitations = ref.watch(chatInvitationInboxProvider);
+    final invitationCount = invitations.maybeWhen(
+      data: (list) => list.length,
+      orElse: () => 0,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('メッセージ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            tooltip: 'ルーム招待',
+            onPressed: () => context.push('/chat/invitations'),
+            icon: invitationCount > 0
+                ? Badge(
+                    label: Text(invitationCount.toString()),
+                    child: const Icon(Icons.mail),
+                  )
+                : const Icon(Icons.mail_outline),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showNewMenu(context),
