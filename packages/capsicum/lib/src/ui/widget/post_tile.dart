@@ -244,39 +244,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     Post displayPost,
     List<Attachment> updatedAttachments,
   ) {
-    final updatedPost = Post(
-      id: displayPost.id,
-      postedAt: displayPost.postedAt,
-      author: displayPost.author,
-      content: displayPost.content,
-      scope: displayPost.scope,
-      attachments: updatedAttachments,
-      favouriteCount: displayPost.favouriteCount,
-      reblogCount: displayPost.reblogCount,
-      replyCount: displayPost.replyCount,
-      quoteCount: displayPost.quoteCount,
-      favourited: displayPost.favourited,
-      reblogged: displayPost.reblogged,
-      bookmarked: displayPost.bookmarked,
-      sensitive: displayPost.sensitive,
-      reactions: displayPost.reactions,
-      myReaction: displayPost.myReaction,
-      reactionEmojis: displayPost.reactionEmojis,
-      inReplyToId: displayPost.inReplyToId,
-      reblog: displayPost.reblog,
-      quote: displayPost.quote,
-      spoilerText: displayPost.spoilerText,
-      emojis: displayPost.emojis,
-      emojiHost: displayPost.emojiHost,
-      card: displayPost.card,
-      poll: displayPost.poll,
-      filterAction: displayPost.filterAction,
-      filterTitle: displayPost.filterTitle,
-      pinned: displayPost.pinned,
-      channelId: displayPost.channelId,
-      channelName: displayPost.channelName,
-      localOnly: displayPost.localOnly,
-    );
+    final updatedPost = displayPost.copyWith(attachments: updatedAttachments);
     ref.read(timelineProvider.notifier).updatePost(updatedPost);
   }
 
