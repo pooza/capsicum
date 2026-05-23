@@ -222,11 +222,15 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     return TimelineState(posts: enriched, hasMore: hasMore);
   }
 
-  // streaming 内部の parse / 接続 error を観測層へ流す (#586)。chat_provider
-  // (#448 / #552) と同型: breadcrumb は毎回、captureException は throttle して
-  // 切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通の計装)。
+  // streaming 内部の parse / 接続 / listen error を観測層へ流す (#586)。
+  // chat_provider (#448 / #552) と同型: breadcrumb は毎回、captureException は
+  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
+  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
+  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
+  // _lastListenCapture を独立に持つ。
   DateTime? _lastParseCapture;
   DateTime? _lastConnectCapture;
+  DateTime? _lastListenCapture;
   static const _captureThrottle = Duration(seconds: 60);
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -336,6 +340,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
         // (#586)。state は AsyncError にせず (REST 投稿は生きている)
         // breadcrumb + throttle 付き captureException のみ。
+        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
+        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
+        // 異常等) を取りこぼさないようにする。
         Sentry.addBreadcrumb(
           Breadcrumb(
             category: 'timeline.stream.listen',
@@ -344,11 +351,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           ),
         );
         final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
+        if (_lastListenCapture != null &&
+            now.difference(_lastListenCapture!) < _captureThrottle) {
           return;
         }
-        _lastConnectCapture = now;
+        _lastListenCapture = now;
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
