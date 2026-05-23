@@ -14,6 +14,7 @@ import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
 import 'ui/screen/chat_new_thread_screen.dart';
+import 'ui/screen/chat_room_timeline_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
@@ -299,6 +300,23 @@ final routerProvider = Provider<GoRouter>((ref) {
             return const SizedBox.shrink();
           }
           return ChatThreadScreen(otherUser: user);
+        },
+      ),
+      GoRoute(
+        path: '/chat/room/:roomId',
+        builder: (context, state) {
+          // /chat/user/:userId と同じく rebuild / push 通知由来で extra が
+          // 失われるケースに備え、null なら一覧へ戻す。roomId からの ChatRoom
+          // 復元 (/chat/rooms/show 直叩き) は Phase E で push 通知タップ動線を
+          // 整える際に扱う (#438)。
+          final room = state.extra as ChatRoom?;
+          if (room == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/chat');
+            });
+            return const SizedBox.shrink();
+          }
+          return ChatRoomTimelineScreen(room: room);
         },
       ),
       GoRoute(

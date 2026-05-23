@@ -102,6 +102,7 @@ class ChatThreadListNotifier
     ref.onDispose(() => _streamSub?.cancel());
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter is! ChatSupport) return const [];
+    final chat = adapter as ChatSupport;
 
     final stream = ref.watch(chatMessageStreamProvider);
     if (stream != null) {
@@ -109,9 +110,25 @@ class ChatThreadListNotifier
       _streamSub = stream.listen(_handleStreamMessage);
     }
 
-    return (adapter as ChatSupport).getChatHistory(
+    // DM (chat/history?room=false) とルーム (chat/history?room=true) を同一
+    // 履歴画面に出すため両方取得してマージし、lastMessage.createdAt の降順で
+    // 並べる。Misskey 側 WebUI も同じ振る舞い (#438)。room 非対応の adapter
+    // (Mastodon 等) は getRoomHistory のデフォルト実装が UnsupportedError を
+    // 投げるので空配列にフォールバック。
+    final dmThreads = await chat.getChatHistory(
       query: const TimelineQuery(limit: 100),
     );
+    List<ChatThread> roomThreads = const [];
+    try {
+      roomThreads = await chat.getRoomHistory(
+        query: const TimelineQuery(limit: 100),
+      );
+    } on UnsupportedError {
+      // chat はあるが rooms 非対応の adapter (DM only) は静かに DM のみで継続。
+    }
+    final merged = [...dmThreads, ...roomThreads]
+      ..sort((a, b) => b.lastMessage.createdAt.compareTo(a.lastMessage.createdAt));
+    return merged;
   }
 
   void _handleStreamMessage(ChatMessage message) {
@@ -136,6 +153,254 @@ class ChatThreadListNotifier
     state = AsyncData([updated, ...filtered]);
   }
 }
+
+/// 特定ルーム (roomId) の chatRoom channel 由来の新着メッセージ broadcast
+/// ストリーム。ChatSupport を持ち、かつ accessToken が引ける adapter のみ
+/// 実体を返し、null だと購読側はスキップ。onCancel で adapter 側の WebSocket
+/// を切る。DM 用 [chatMessageStreamProvider] と同じ観測設計 (#438)。
+final chatRoomMessageStreamProvider = Provider.autoDispose
+    .family<Stream<ChatMessage>?, String>((ref, roomId) {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChatSupport) return null;
+      if (!(adapter as ChatSupport).canReadChat) return null;
+      DateTime? lastParseCapture;
+      DateTime? lastConnectCapture;
+      const captureThrottle = Duration(seconds: 60);
+      final stream = (adapter as ChatSupport).streamRoomMessages(
+        roomId: roomId,
+        onParseError: (e, st) {
+          Sentry.addBreadcrumb(
+            Breadcrumb(
+              category: 'chat.room.stream.parse',
+              level: SentryLevel.warning,
+              message: e.toString().length > 200
+                  ? '${e.toString().substring(0, 200)}…'
+                  : e.toString(),
+            ),
+          );
+          final now = DateTime.now();
+          if (lastParseCapture != null &&
+              now.difference(lastParseCapture!) < captureThrottle) {
+            return;
+          }
+          lastParseCapture = now;
+          Sentry.captureException(
+            scrubException(e),
+            stackTrace: st,
+            withScope: (scope) {
+              scope.setTag('chat.room.stream.parse', 'failed');
+              scope.fingerprint = [
+                'chat.room.stream.parse',
+                e.runtimeType.toString(),
+              ];
+            },
+          );
+        },
+        onStreamError: (e, st) {
+          Sentry.addBreadcrumb(
+            Breadcrumb(
+              category: 'chat.room.stream.connect',
+              level: SentryLevel.warning,
+              message: e.runtimeType.toString(),
+            ),
+          );
+          final now = DateTime.now();
+          if (lastConnectCapture != null &&
+              now.difference(lastConnectCapture!) < captureThrottle) {
+            return;
+          }
+          lastConnectCapture = now;
+          Sentry.captureException(
+            scrubException(e),
+            stackTrace: st,
+            withScope: (scope) {
+              scope.setTag('chat.room.stream.connect', 'failed');
+              scope.fingerprint = [
+                'chat.room.stream.connect',
+                e.runtimeType.toString(),
+              ];
+            },
+          );
+        },
+        onReconnectExhausted: () {
+          Sentry.captureMessage(
+            'chat.room.stream.reconnect_exhausted',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('chat.room.stream', 'reconnect_exhausted');
+              scope.fingerprint = ['chat.room.stream.reconnect_exhausted'];
+            },
+          );
+        },
+      );
+      ref.onDispose(
+        () => (adapter as ChatSupport).disposeRoomChatStream(roomId: roomId),
+      );
+      return stream;
+    });
+
+/// 自分が参加しているルーム一覧。ChatSupport / room 非対応 adapter は空配列。
+final joiningChatRoomsProvider =
+    FutureProvider.autoDispose<List<ChatRoom>>((ref) async {
+      final adapter = ref.watch(currentAdapterProvider);
+      if (adapter is! ChatSupport) return const [];
+      try {
+        return await (adapter as ChatSupport).getJoiningRooms(
+          query: const TimelineQuery(limit: 100),
+        );
+      } on UnsupportedError {
+        return const [];
+      }
+    });
+
+/// 特定ルームのメッセージタイムライン。DM 用 [ChatThreadNotifier] の room 版。
+/// state は [ChatThreadState] を流用し、`messages` 配列は「先頭が最新、末尾が古い」
+/// 順序で保持する (room-timeline も降順返却)。
+class ChatRoomTimelineNotifier
+    extends AutoDisposeFamilyAsyncNotifier<ChatThreadState, String> {
+  static const _pageSize = 30;
+  StreamSubscription<ChatMessage>? _streamSub;
+
+  @override
+  Future<ChatThreadState> build(String arg) async {
+    ref.onDispose(() => _streamSub?.cancel());
+    final adapter = ref.watch(currentAdapterProvider);
+    if (adapter is! ChatSupport) {
+      return const ChatThreadState(hasMore: false);
+    }
+    final chat = adapter as ChatSupport;
+
+    final stream = ref.watch(chatRoomMessageStreamProvider(arg));
+    if (stream != null) {
+      _streamSub?.cancel();
+      _streamSub = stream.listen((m) => _handleStreamMessage(m, arg));
+    }
+
+    final List<ChatMessage> messages;
+    try {
+      messages = await chat.getRoomMessages(
+        roomId: arg,
+        query: const TimelineQuery(limit: _pageSize),
+      );
+    } on UnsupportedError {
+      return const ChatThreadState(hasMore: false);
+    }
+    return ChatThreadState(
+      messages: messages,
+      hasMore: messages.length >= _pageSize,
+    );
+  }
+
+  void _handleStreamMessage(ChatMessage message, String roomId) {
+    // 別ルーム宛 or DM は無視。ルーム streaming は roomId を絞って購読している
+    // ので普通は他ルームが来ないが、サーバー側 race / 取り違え保険。
+    if (!message.isRoomMessage) return;
+    if (message.toRoomId != null && message.toRoomId != roomId) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (current.messages.any((m) => m.id == message.id)) return;
+    state = AsyncData(
+      current.copyWith(messages: [message, ...current.messages]),
+    );
+  }
+
+  Future<void> loadMore() async {
+    final current = state.valueOrNull;
+    if (current == null || current.isLoadingMore || !current.hasMore) return;
+    if (current.messages.isEmpty) return;
+    if (current.loadMoreError != null) return;
+
+    state = AsyncData(current.copyWith(isLoadingMore: true));
+
+    for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
+      try {
+        final adapter = ref.read(currentAdapterProvider);
+        if (adapter is! ChatSupport) {
+          state = AsyncData(current.copyWith(isLoadingMore: false));
+          return;
+        }
+        final base = state.valueOrNull ?? current;
+        final lastId = base.messages.last.id;
+        final older = await (adapter as ChatSupport).getRoomMessages(
+          roomId: arg,
+          query: TimelineQuery(maxId: lastId, limit: _pageSize),
+        );
+        state = AsyncData(
+          base.copyWith(
+            messages: [...base.messages, ...older],
+            isLoadingMore: false,
+            hasMore: older.length >= _pageSize,
+            loadMoreError: null,
+          ),
+        );
+        return;
+      } catch (e, st) {
+        if (attempt < loadMoreMaxRetries) {
+          await Future<void>.delayed(loadMoreRetryDelay);
+          continue;
+        }
+        try {
+          await Sentry.captureException(
+            e,
+            stackTrace: st,
+            withScope: (scope) {
+              scope.setTag('chat.room.load_more', 'failed');
+              scope.fingerprint = [
+                'chat.room.load_more',
+                e.runtimeType.toString(),
+              ];
+            },
+          );
+        } catch (_) {}
+        state = AsyncData(
+          (state.valueOrNull ?? current).copyWith(
+            isLoadingMore: false,
+            loadMoreError: e,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<ChatMessage> send(String text) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) {
+      throw StateError('Adapter does not support chat');
+    }
+    final message = await (adapter as ChatSupport).sendRoomMessage(
+      roomId: arg,
+      text: text,
+    );
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(
+        current.copyWith(messages: [message, ...current.messages]),
+      );
+    }
+    ref.invalidate(chatThreadListProvider);
+    return message;
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    await (adapter as ChatSupport).deleteChatMessage(messageId);
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(
+        current.copyWith(
+          messages: current.messages.where((m) => m.id != messageId).toList(),
+        ),
+      );
+    }
+    ref.invalidate(chatThreadListProvider);
+  }
+}
+
+final chatRoomTimelineProvider = AsyncNotifierProvider.autoDispose
+    .family<ChatRoomTimelineNotifier, ChatThreadState, String>(
+      ChatRoomTimelineNotifier.new,
+    );
 
 final chatThreadListProvider =
     AsyncNotifierProvider.autoDispose<ChatThreadListNotifier, List<ChatThread>>(
