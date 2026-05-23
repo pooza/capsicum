@@ -13,6 +13,37 @@ import '../widget/user_avatar.dart';
 class ChatThreadListScreen extends ConsumerWidget {
   const ChatThreadListScreen({super.key});
 
+  Future<void> _showNewMenu(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('新しいメッセージ'),
+              subtitle: const Text('特定の相手に DM を送る'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.push('/chat/new');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.groups),
+              title: const Text('新しいルーム'),
+              subtitle: const Text('グループチャットを作る (Misskey のみ)'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.push('/chat/room/new');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final threads = ref.watch(chatThreadListProvider);
@@ -22,9 +53,9 @@ class ChatThreadListScreen extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/chat/new'),
-        tooltip: '新しいメッセージ',
-        child: const Icon(Icons.edit),
+        onPressed: () => _showNewMenu(context),
+        tooltip: '新規',
+        child: const Icon(Icons.add),
       ),
       body: threads.when(
         data: (list) => list.isEmpty

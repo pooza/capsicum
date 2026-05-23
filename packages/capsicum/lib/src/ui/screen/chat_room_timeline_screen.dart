@@ -13,6 +13,9 @@ import '../util/chat_error.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
+import 'chat_room_edit_screen.dart';
+
+enum _RoomMenuAction { toggleMute, edit, leave, delete }
 
 /// Misskey chat ルーム (グループチャット) のタイムライン画面 (#438)。DM 用
 /// [ChatThreadScreen] と UI 構成は揃えるが、provider は
@@ -32,6 +35,10 @@ class _ChatRoomTimelineScreenState
   final _scrollController = ScrollController();
   final _textController = TextEditingController();
   bool _sending = false;
+  // initialRoom は immutable な widget.room を起点に、編集 / ミュート結果で
+  // ローカル更新する mutable cache。AppBar タイトルや overflow メニューの
+  // 既読は再 build で反映される。
+  late ChatRoom _room = widget.room;
 
   @override
   void initState() {
@@ -71,6 +78,129 @@ class _ChatRoomTimelineScreenState
       );
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    final target = !_room.isMuted;
+    try {
+      await (adapter as ChatSupport).setRoomMute(
+        roomId: _room.id,
+        mute: target,
+      );
+      // ChatRoom には copyWith が無いので再構築。Phase E.1 範囲では他経路で
+      // ミュート状態の参照は無いが、AppBar アイコン切替のため反映する。
+      if (!mounted) return;
+      setState(
+        () => _room = ChatRoom(
+          id: _room.id,
+          createdAt: _room.createdAt,
+          name: _room.name,
+          description: _room.description,
+          ownerId: _room.ownerId,
+          owner: _room.owner,
+          isMuted: target,
+          invitationExists: _room.invitationExists,
+        ),
+      );
+      ref.invalidate(chatThreadListProvider);
+    } catch (e, st) {
+      reportChatOpFailure('toggle_room_mute', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${target ? "ミュート" : "ミュート解除"}に失敗しました (${summarizeChatError(e)})',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _edit() async {
+    final updated = await Navigator.of(context).push<ChatRoom?>(
+      MaterialPageRoute(
+        builder: (_) => ChatRoomEditScreen(initialRoom: _room),
+      ),
+    );
+    if (updated != null && mounted) {
+      setState(() => _room = updated);
+    }
+  }
+
+  Future<void> _confirmLeave() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ルームを退出しますか？'),
+        content: Text('${_room.name} から退出します。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    try {
+      await (adapter as ChatSupport).leaveRoom(_room.id);
+      ref.invalidate(joiningChatRoomsProvider);
+      ref.invalidate(chatThreadListProvider);
+      if (!mounted) return;
+      context.go('/chat');
+    } catch (e, st) {
+      reportChatOpFailure('leave_room', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('退出に失敗しました (${summarizeChatError(e)})')),
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteRoom() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ルームを削除しますか？'),
+        content: Text(
+          '${_room.name} を削除します。\nこの操作は取り消せず、全メンバーから見えなくなります。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    try {
+      await (adapter as ChatSupport).deleteRoom(_room.id);
+      ref.invalidate(joiningChatRoomsProvider);
+      ref.invalidate(chatThreadListProvider);
+      if (!mounted) return;
+      context.go('/chat');
+    } catch (e, st) {
+      reportChatOpFailure('delete_room', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+      );
     }
   }
 
@@ -114,6 +244,11 @@ class _ChatRoomTimelineScreenState
     final canSend =
         adapter is ChatSupport && (adapter as ChatSupport).canWriteChat;
 
+    final myUserIdForOwnerCheck =
+        ref.watch(currentAccountProvider)?.user.id;
+    final isOwner =
+        myUserIdForOwnerCheck != null && _room.ownerId == myUserIdForOwnerCheck;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -125,7 +260,7 @@ class _ChatRoomTimelineScreenState
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                widget.room.name,
+                _room.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -133,6 +268,69 @@ class _ChatRoomTimelineScreenState
           ],
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (_room.isMuted)
+            IconButton(
+              icon: const Icon(Icons.notifications_off),
+              tooltip: 'ミュート中',
+              onPressed: _toggleMute,
+            ),
+          PopupMenuButton<_RoomMenuAction>(
+            onSelected: (action) {
+              switch (action) {
+                case _RoomMenuAction.toggleMute:
+                  _toggleMute();
+                case _RoomMenuAction.edit:
+                  _edit();
+                case _RoomMenuAction.leave:
+                  _confirmLeave();
+                case _RoomMenuAction.delete:
+                  _confirmDeleteRoom();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _RoomMenuAction.toggleMute,
+                child: ListTile(
+                  leading: Icon(
+                    _room.isMuted
+                        ? Icons.notifications_active
+                        : Icons.notifications_off,
+                  ),
+                  title: Text(_room.isMuted ? 'ミュート解除' : 'ミュート'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.edit,
+                  child: ListTile(
+                    leading: Icon(Icons.edit),
+                    title: Text('編集'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (!isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.leave,
+                  child: ListTile(
+                    leading: Icon(Icons.logout),
+                    title: Text('退出'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.delete,
+                  child: ListTile(
+                    leading: Icon(Icons.delete_forever),
+                    title: Text('ルームを削除'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [

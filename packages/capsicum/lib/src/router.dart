@@ -14,6 +14,7 @@ import 'ui/screen/compose_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
 import 'ui/screen/channel_timeline_screen.dart';
 import 'ui/screen/chat_new_thread_screen.dart';
+import 'ui/screen/chat_room_edit_screen.dart';
 import 'ui/screen/chat_room_timeline_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
@@ -300,6 +301,24 @@ final routerProvider = Provider<GoRouter>((ref) {
             return const SizedBox.shrink();
           }
           return ChatThreadScreen(otherUser: user);
+        },
+      ),
+      GoRoute(
+        // ':roomId' より先に登録しないと "new" が roomId として吸われる。
+        path: '/chat/room/new',
+        builder: (context, state) => const ChatRoomEditScreen(),
+      ),
+      GoRoute(
+        path: '/chat/room/:roomId/edit',
+        builder: (context, state) {
+          final room = state.extra as ChatRoom?;
+          if (room == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/chat');
+            });
+            return const SizedBox.shrink();
+          }
+          return ChatRoomEditScreen(initialRoom: room);
         },
       ),
       GoRoute(
