@@ -117,8 +117,13 @@ class ChatThreadListNotifier
   void _handleStreamMessage(ChatMessage message) {
     final myUserId = ref.read(currentAccountProvider)?.user.id;
     if (myUserId == null) return;
+    // 現状の chatMessageStreamProvider は main channel 由来の DM のみを emit する。
+    // ルーム宛は chatRoom channel 別購読で別経路 (#438) のため、念のため弾く。
+    if (message.isRoomMessage) return;
+    final toUser = message.toUser;
+    if (toUser == null) return;
     final isIncoming = message.fromUser.id != myUserId;
-    final otherUser = isIncoming ? message.fromUser : message.toUser;
+    final otherUser = isIncoming ? message.fromUser : toUser;
     final current = state.valueOrNull ?? const <ChatThread>[];
     final updated = ChatThread(
       otherUser: otherUser,
@@ -126,7 +131,7 @@ class ChatThreadListNotifier
       isUnread: isIncoming && !message.isRead,
     );
     final filtered = current
-        .where((t) => t.otherUser.id != otherUser.id)
+        .where((t) => t.otherUser?.id != otherUser.id)
         .toList();
     state = AsyncData([updated, ...filtered]);
   }
@@ -208,9 +213,11 @@ class ChatThreadNotifier
   }
 
   void _handleStreamMessage(ChatMessage message, String userId) {
-    // このスレッド (= userId) と関係ないメッセージは無視。
+    // このスレッド (= userId DM) と関係ないメッセージは無視。ルーム宛
+    // (toUser == null) は別 provider で扱うので常にスキップ。
+    if (message.isRoomMessage) return;
     final relevant =
-        message.fromUser.id == userId || message.toUser.id == userId;
+        message.fromUser.id == userId || message.toUser?.id == userId;
     if (!relevant) return;
     final current = state.valueOrNull;
     if (current == null) return;

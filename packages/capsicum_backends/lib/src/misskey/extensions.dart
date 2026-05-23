@@ -216,6 +216,13 @@ ChatMessage misskeyChatMessageFromMap(
     return User(id: id, username: '?');
   }
 
+  User? resolveOptionalUser(String userIdKey, String userObjKey) {
+    final embedded = data[userObjKey] as Map<String, dynamic>?;
+    final id = data[userIdKey] as String?;
+    if (embedded == null && id == null) return null;
+    return resolveUser(userIdKey, userObjKey);
+  }
+
   final fileMap = data['file'] as Map<String, dynamic>?;
   final rawEmojis = data['emojis'];
   final emojis = rawEmojis is Map
@@ -225,11 +232,21 @@ ChatMessage misskeyChatMessageFromMap(
               .map((e) => MapEntry(e.key as String, e.value as String)),
         )
       : const <String, String>{};
+  final toRoomId = data['toRoomId'] as String?;
+  final toRoomMap = data['toRoom'] as Map<String, dynamic>?;
   return ChatMessage(
     id: data['id'] as String,
     createdAt: DateTime.parse(data['createdAt'] as String),
     fromUser: resolveUser('fromUserId', 'fromUser'),
-    toUser: resolveUser('toUserId', 'toUser'),
+    toUser: resolveOptionalUser('toUserId', 'toUser'),
+    toRoom: toRoomMap != null
+        ? misskeyChatRoomFromMap(
+            toRoomMap,
+            localHost,
+            adminRoleIds: adminRoleIds,
+          )
+        : null,
+    toRoomId: toRoomId,
     text: data['text'] as String?,
     file: fileMap != null
         ? MisskeyDriveFile.fromJson(fileMap).toCapsicum()
@@ -250,11 +267,114 @@ ChatThread misskeyChatThreadFromHistoryEntry(
     localHost,
     adminRoleIds: adminRoleIds,
   );
+  if (lastMessage.isRoomMessage) {
+    // chat/history?room=true から来るルームスレッド。toRoom は packMessageDetailed
+    // 側で populate されている前提だが、極稀に欠落しても roomId だけで仮設の
+    // ChatRoom を作って表示は維持する。
+    final room =
+        lastMessage.toRoom ??
+        ChatRoom(
+          id: lastMessage.toRoomId!,
+          createdAt: lastMessage.createdAt,
+          name: '?',
+          description: '',
+          ownerId: '',
+          owner: User(id: '', username: '?'),
+        );
+    final isIncoming = lastMessage.fromUser.id != myUserId;
+    return ChatThread(
+      room: room,
+      lastMessage: lastMessage,
+      isUnread: isIncoming && !lastMessage.isRead,
+    );
+  }
   final isIncoming = lastMessage.fromUser.id != myUserId;
   return ChatThread(
     otherUser: isIncoming ? lastMessage.fromUser : lastMessage.toUser,
     lastMessage: lastMessage,
     isUnread: isIncoming && !lastMessage.isRead,
+  );
+}
+
+/// Misskey の `ChatRoom` レスポンスを capsicum 型に変換する。
+ChatRoom misskeyChatRoomFromMap(
+  Map<String, dynamic> data,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final ownerMap = data['owner'] as Map<String, dynamic>?;
+  final ownerId = data['ownerId'] as String? ?? ownerMap?['id'] as String? ?? '';
+  final owner = ownerMap != null
+      ? MisskeyUser.fromJson(
+          ownerMap,
+        ).toCapsicum(localHost, adminRoleIds: adminRoleIds)
+      : User(id: ownerId, username: '?');
+  return ChatRoom(
+    id: data['id'] as String,
+    createdAt: DateTime.parse(data['createdAt'] as String),
+    name: data['name'] as String? ?? '',
+    description: data['description'] as String? ?? '',
+    ownerId: ownerId,
+    owner: owner,
+    isMuted: data['isMuted'] as bool? ?? false,
+    invitationExists: data['invitationExists'] as bool? ?? false,
+  );
+}
+
+/// `ChatRoomMembership` レスポンス → capsicum [ChatRoomMember]。
+ChatRoomMember misskeyChatRoomMemberFromMap(
+  Map<String, dynamic> data,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final roomMap = data['room'] as Map<String, dynamic>?;
+  final userMap = data['user'] as Map<String, dynamic>?;
+  return ChatRoomMember(
+    id: data['id'] as String,
+    createdAt: DateTime.parse(data['createdAt'] as String),
+    roomId: data['roomId'] as String,
+    userId: data['userId'] as String,
+    isMuted: data['isMuted'] as bool? ?? false,
+    room: roomMap != null
+        ? misskeyChatRoomFromMap(
+            roomMap,
+            localHost,
+            adminRoleIds: adminRoleIds,
+          )
+        : null,
+    user: userMap != null
+        ? MisskeyUser.fromJson(
+            userMap,
+          ).toCapsicum(localHost, adminRoleIds: adminRoleIds)
+        : null,
+  );
+}
+
+/// `ChatRoomInvitation` レスポンス → capsicum [ChatRoomInvitation]。
+ChatRoomInvitation misskeyChatRoomInvitationFromMap(
+  Map<String, dynamic> data,
+  String localHost, {
+  Set<String> adminRoleIds = const {},
+}) {
+  final roomMap = data['room'] as Map<String, dynamic>?;
+  final userMap = data['user'] as Map<String, dynamic>?;
+  return ChatRoomInvitation(
+    id: data['id'] as String,
+    createdAt: DateTime.parse(data['createdAt'] as String),
+    roomId: data['roomId'] as String,
+    userId: data['userId'] as String,
+    room: roomMap != null
+        ? misskeyChatRoomFromMap(
+            roomMap,
+            localHost,
+            adminRoleIds: adminRoleIds,
+          )
+        : null,
+    user: userMap != null
+        ? MisskeyUser.fromJson(
+            userMap,
+          ).toCapsicum(localHost, adminRoleIds: adminRoleIds)
+        : null,
   );
 }
 

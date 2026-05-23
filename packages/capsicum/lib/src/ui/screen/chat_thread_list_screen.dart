@@ -73,12 +73,15 @@ class _ChatThreadTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = _previewText(thread.lastMessage);
+    // Phase A 時点では room 含む history はまだ取得経路がない (#438 Phase D で
+    // ルーム dispatch を追加)。ここでは DM 前提で otherUser を decompose する。
+    final otherUser = thread.otherUser!;
     return ListTile(
-      leading: UserAvatar(user: thread.otherUser, size: 40),
+      leading: UserAvatar(user: otherUser, size: 40),
       title: Text(
-        thread.otherUser.displayName?.isNotEmpty == true
-            ? thread.otherUser.displayName!
-            : thread.otherUser.username,
+        otherUser.displayName?.isNotEmpty == true
+            ? otherUser.displayName!
+            : otherUser.username,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -107,8 +110,8 @@ class _ChatThreadTile extends ConsumerWidget {
         ],
       ),
       onTap: () => context.push(
-        '/chat/user/${thread.otherUser.id}',
-        extra: thread.otherUser,
+        '/chat/user/${otherUser.id}',
+        extra: otherUser,
       ),
     );
   }
