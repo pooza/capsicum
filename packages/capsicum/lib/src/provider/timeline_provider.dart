@@ -34,6 +34,11 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
 const Object _keepLoadMoreError = Object();
 
+/// build() / fetchUntilVisible のページ取得ループの試行ページ数上限 (#601)。
+/// 実況フィルタ ON で API が満杯ページを返し続けると、可視投稿が 1 件見つかる
+/// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
+const int kMaxVisibilityPageFetches = 10;
+
 /// Paginated timeline state.
 class TimelineState {
   final List<Post> posts;
@@ -120,8 +125,10 @@ Future<TimelineState> fetchUntilVisible({
   final allVisible = <Post>[];
   String? maxId;
   var hasMore = true;
+  var fetches = 0;
 
-  while (hasMore) {
+  while (hasMore && fetches < kMaxVisibilityPageFetches) {
+    fetches++;
     final posts = await fetch(maxId);
     if (posts.isEmpty) {
       hasMore = false;
@@ -167,8 +174,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final allVisible = <Post>[];
     String? maxId;
     bool hasMore = true;
+    var fetches = 0;
 
-    while (hasMore) {
+    while (hasMore && fetches < kMaxVisibilityPageFetches) {
+      fetches++;
       final response = await adapter.getTimeline(
         type,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
