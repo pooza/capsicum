@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:capsicum_core/capsicum_core.dart';
 
@@ -34,6 +35,7 @@ import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/service/window_state_service.dart';
 import 'src/util/sentry_tag_hash.dart';
+import 'src/util/shared_preferences_cache.dart';
 
 /// SnackBar が SimplePostBar (簡易投稿バー) を覆って投稿のタイミングが
 /// 遅れる事故 (#540) を避けるため、floating + bottom 余白で簡易投稿バー
@@ -59,6 +61,11 @@ void _logDevStack(StackTrace stackTrace) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // SharedPreferences を pre-warm し、グローバルキャッシュに載せる (#579)。
+  // tabConfigProvider 等の Notifier.build() を完全同期化するための前提条件。
+  // 同期参照ヘルパは util/shared_preferences_cache.dart を参照。
+  initSharedPreferencesCache(await SharedPreferences.getInstance());
 
   // デスクトップ (macOS / Linux / Windows) のウィンドウ位置・サイズ・最大化
   // 状態を復元する (#559)。runApp() より前に呼ぶことで、デフォルトサイズで
