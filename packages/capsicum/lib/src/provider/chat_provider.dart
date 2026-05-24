@@ -127,7 +127,9 @@ class ChatThreadListNotifier
       // chat はあるが rooms 非対応の adapter (DM only) は静かに DM のみで継続。
     }
     final merged = [...dmThreads, ...roomThreads]
-      ..sort((a, b) => b.lastMessage.createdAt.compareTo(a.lastMessage.createdAt));
+      ..sort(
+        (a, b) => b.lastMessage.createdAt.compareTo(a.lastMessage.createdAt),
+      );
     return merged;
   }
 
@@ -240,18 +242,19 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
     });
 
 /// 自分が参加しているルーム一覧。ChatSupport / room 非対応 adapter は空配列。
-final joiningChatRoomsProvider =
-    FutureProvider.autoDispose<List<ChatRoom>>((ref) async {
-      final adapter = ref.watch(currentAdapterProvider);
-      if (adapter is! ChatSupport) return const [];
-      try {
-        return await (adapter as ChatSupport).getJoiningRooms(
-          query: const TimelineQuery(limit: 100),
-        );
-      } on UnsupportedError {
-        return const [];
-      }
-    });
+final joiningChatRoomsProvider = FutureProvider.autoDispose<List<ChatRoom>>((
+  ref,
+) async {
+  final adapter = ref.watch(currentAdapterProvider);
+  if (adapter is! ChatSupport) return const [];
+  try {
+    return await (adapter as ChatSupport).getJoiningRooms(
+      query: const TimelineQuery(limit: 100),
+    );
+  } on UnsupportedError {
+    return const [];
+  }
+});
 
 /// 特定ルームのメンバー一覧 (`family<roomId>`)。
 final chatRoomMembersProvider = FutureProvider.autoDispose
@@ -623,12 +626,24 @@ final chatThreadProvider = AsyncNotifierProvider.autoDispose
       ChatThreadNotifier.new,
     );
 
-/// 新規 DM 相手をユーザー検索で探すための provider。
+/// 新規 DM / ルーム招待相手をユーザー検索で探すための provider。
 /// 空クエリなら空配列を返す。SearchSupport を持たない adapter でも空配列。
+///
+/// Misskey の chat (DM / ルーム) は同一サーバー内でのみ成立する仕様のため、
+/// `users/search` がリモートユーザーを返してきても同サーバーのみに絞って
+/// 表示する。`user.host == null` (local) または現アカウントと同じ host のみ
+/// 通す。
 final chatUserSearchProvider = FutureProvider.autoDispose
     .family<List<User>, String>((ref, query) async {
       if (query.trim().isEmpty) return const [];
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is! SearchSupport) return const [];
-      return (adapter as SearchSupport).searchUsers(query, limit: 20);
+      final account = ref.watch(currentAccountProvider);
+      final selfHost = account?.key.host;
+      final users = await (adapter as SearchSupport).searchUsers(
+        query,
+        limit: 20,
+      );
+      if (selfHost == null) return users;
+      return users.where((u) => u.host == null || u.host == selfHost).toList();
     });

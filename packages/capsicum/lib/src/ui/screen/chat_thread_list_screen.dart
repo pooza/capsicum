@@ -32,7 +32,7 @@ class ChatThreadListScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.groups),
               title: const Text('新しいルーム'),
-              subtitle: const Text('グループチャットを作る (Misskey のみ)'),
+              subtitle: const Text('グループチャットを作る'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 context.push('/chat/room/new');
@@ -166,10 +166,7 @@ class _ChatThreadTile extends ConsumerWidget {
       ),
       subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: _ThreadMetaColumn(thread: thread, ref: ref),
-      onTap: () => context.push(
-        '/chat/user/${otherUser.id}',
-        extra: otherUser,
-      ),
+      onTap: () => context.push('/chat/user/${otherUser.id}', extra: otherUser),
     );
   }
 
