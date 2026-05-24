@@ -27,6 +27,11 @@ class Page {
   /// アイキャッチ画像 (任意)。
   final Attachment? eyeCatchingImage;
 
+  /// ページ内 image ブロックが参照する DriveFile 集合 (fileId → Attachment)。
+  /// Misskey の `pages/show` レスポンス `attachedFiles` をマップ化して保持する。
+  /// 画像ブロックは fileId で本マップを引いて表示する。
+  final Map<String, Attachment> attachedFiles;
+
   final int likedCount;
 
   /// 認証ユーザーが like 済みかどうか。like 対応 (#615) で参照する。
@@ -42,6 +47,7 @@ class Page {
     required this.createdAt,
     required this.updatedAt,
     this.eyeCatchingImage,
+    this.attachedFiles = const {},
     this.likedCount = 0,
     this.isLiked = false,
   });

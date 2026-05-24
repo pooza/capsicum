@@ -1084,6 +1084,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     final eyeCatchingAttachment = eyeCatching == null
         ? null
         : MisskeyDriveFile.fromJson(eyeCatching).toCapsicum();
+    // pages/show のレスポンスに含まれる attachedFiles を fileId→Attachment
+    // で索引化する。ブロックレンダラが image ブロックの fileId で引く。
+    // users/pages では空のことがあるが、ページ詳細表示 (getPageById /
+    // getPageByName) で必要十分。
+    final attachedFiles = <String, Attachment>{};
+    for (final raw in (p['attachedFiles'] as List? ?? const [])) {
+      if (raw is! Map<String, dynamic>) continue;
+      final file = MisskeyDriveFile.fromJson(raw).toCapsicum();
+      attachedFiles[file.id] = file;
+    }
     return Page(
       id: p['id'] as String,
       name: p['name'] as String? ?? '',
@@ -1101,6 +1111,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             '1970-01-01T00:00:00Z',
       ),
       eyeCatchingImage: eyeCatchingAttachment,
+      attachedFiles: attachedFiles,
       likedCount: p['likedCount'] as int? ?? 0,
       isLiked: p['isLiked'] as bool? ?? false,
     );
