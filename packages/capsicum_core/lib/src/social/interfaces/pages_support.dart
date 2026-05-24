@@ -25,4 +25,10 @@ abstract mixin class PagesSupport {
   /// サーバーが featured 扱いしているページ一覧 (任意)。
   /// 実装が override しなければ空リストを返す (= ピックアップ表示を出さない)。
   Future<List<Page>> getFeaturedPages({TimelineQuery? query}) async => const [];
+
+  /// 認証ユーザーが like 済みのページ一覧。
+  ///
+  /// Misskey の `POST /api/i/page-likes` 相当。サーバーが認証ユーザーの
+  /// like 履歴を保持していない場合は空リストを返す。
+  Future<List<Page>> getLikedPages({TimelineQuery? query}) async => const [];
 }

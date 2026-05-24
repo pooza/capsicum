@@ -867,6 +867,26 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/i/page-likes
+  ///
+  /// Returns an array of `{ id, page }` entries. Caller is responsible for
+  /// extracting `page` from each entry.
+  Future<List<Map<String, dynamic>>> getMyPageLikes({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/i/page-likes',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));

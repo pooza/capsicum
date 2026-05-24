@@ -16,11 +16,11 @@ import '../../service/tco_resolver.dart';
 import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
-import 'page_view_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
@@ -720,7 +720,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         const SliverFillRemaining(child: Center(child: Text('ページはありません'))),
       ];
     }
-    final theme = Theme.of(context);
     return [
       SliverPadding(
         padding: const EdgeInsets.all(8),
@@ -732,66 +731,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 child: Center(child: CircularProgressIndicator()),
               );
             }
-            final page = _pages[index];
-            final thumbnail = page.eyeCatchingImage?.url;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PageViewScreen(initialPage: page),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (thumbnail != null && thumbnail.isNotEmpty)
-                        AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: Image.network(
-                            thumbnail,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              child: const Center(
-                                child: Icon(Icons.broken_image),
-                              ),
-                            ),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              page.title,
-                              style: theme.textTheme.titleMedium,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (page.summary != null &&
-                                page.summary!.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                page.summary!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
+            return PageCard(page: _pages[index]);
           }, childCount: _pages.length + (_loadingMorePages ? 1 : 0)),
         ),
       ),

@@ -1149,6 +1149,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return data.map(_mapPage).toList();
   }
 
+  @override
+  Future<List<Page>> getLikedPages({TimelineQuery? query}) async {
+    final data = await client.getMyPageLikes(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    // /api/i/page-likes は {id, page} の配列を返すため page を取り出す。
+    return data
+        .map((e) => e['page'] as Map<String, dynamic>?)
+        .whereType<Map<String, dynamic>>()
+        .map(_mapPage)
+        .toList();
+  }
+
   // DriveSupport
 
   @override
