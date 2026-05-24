@@ -93,6 +93,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ScheduleSupport,
         TranslationSupport,
         DriveSupport,
+        PagesSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
   MisskeyChatStreaming? _chatStreaming;
@@ -1075,6 +1076,68 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return data.map(_mapGalleryPost).toList();
   }
 
+  // PagesSupport (#186)
+
+  Page _mapPage(Map<String, dynamic> p) {
+    final user = MisskeyUser.fromJson(p['user'] as Map<String, dynamic>);
+    final eyeCatching = p['eyeCatchingImage'] as Map<String, dynamic>?;
+    final eyeCatchingAttachment = eyeCatching == null
+        ? null
+        : MisskeyDriveFile.fromJson(eyeCatching).toCapsicum();
+    return Page(
+      id: p['id'] as String,
+      name: p['name'] as String? ?? '',
+      title: p['title'] as String? ?? '',
+      summary: p['summary'] as String?,
+      content: ((p['content'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>(),
+      author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      createdAt: DateTime.parse(
+        p['createdAt'] as String? ?? '1970-01-01T00:00:00Z',
+      ),
+      updatedAt: DateTime.parse(
+        p['updatedAt'] as String? ??
+            p['createdAt'] as String? ??
+            '1970-01-01T00:00:00Z',
+      ),
+      eyeCatchingImage: eyeCatchingAttachment,
+      likedCount: p['likedCount'] as int? ?? 0,
+      isLiked: p['isLiked'] as bool? ?? false,
+    );
+  }
+
+  @override
+  Future<List<Page>> getUserPages(String userId, {TimelineQuery? query}) async {
+    final data = await client.getUserPages(
+      userId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapPage).toList();
+  }
+
+  @override
+  Future<Page> getPageById(String pageId) async {
+    final data = await client.getPageById(pageId);
+    return _mapPage(data);
+  }
+
+  @override
+  Future<Page> getPageByName({
+    required String username,
+    required String name,
+  }) async {
+    final data = await client.getPageByName(username: username, name: name);
+    return _mapPage(data);
+  }
+
+  @override
+  Future<List<Page>> getFeaturedPages({TimelineQuery? query}) async {
+    final data = await client.getFeaturedPages(limit: query?.limit);
+    return data.map(_mapPage).toList();
+  }
+
   // DriveSupport
 
   @override
@@ -1590,11 +1653,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     );
     return rooms
         .map(
-          (r) => misskeyChatRoomFromMap(
-            r,
-            host,
-            adminRoleIds: _adminRoleIds,
-          ),
+          (r) => misskeyChatRoomFromMap(r, host, adminRoleIds: _adminRoleIds),
         )
         .toList();
   }
@@ -1718,10 +1777,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<void> setRoomMute({
-    required String roomId,
-    required bool mute,
-  }) async {
+  Future<void> setRoomMute({required String roomId, required bool mute}) async {
     await client.setChatRoomMute(roomId: roomId, mute: mute);
   }
 

@@ -818,6 +818,55 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/users/pages
+  Future<List<Map<String, dynamic>>> getUserPages(
+    String userId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/pages',
+      data: createBody({
+        'userId': userId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/pages/show (by id)
+  Future<Map<String, dynamic>> getPageById(String pageId) async {
+    final response = await dio.post(
+      '/api/pages/show',
+      data: createBody({'pageId': pageId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/pages/show (by username + name)
+  Future<Map<String, dynamic>> getPageByName({
+    required String username,
+    required String name,
+  }) async {
+    final response = await dio.post(
+      '/api/pages/show',
+      data: createBody({'username': username, 'name': name}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/pages/featured
+  Future<List<Map<String, dynamic>>> getFeaturedPages({int? limit}) async {
+    final response = await dio.post(
+      '/api/pages/featured',
+      data: createBody({'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));
