@@ -30,8 +30,8 @@ import 'ui/screen/gallery_detail_screen.dart';
 import 'ui/screen/gallery_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
 import 'ui/screen/home_screen.dart';
-import 'ui/screen/liked_pages_screen.dart';
 import 'ui/screen/login_screen.dart';
+import 'ui/screen/pages_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
 import 'ui/screen/page_view_screen.dart';
@@ -387,11 +387,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           return GalleryDetailScreen(post: post);
         },
       ),
-      // 認証ユーザーが like 済みのページ一覧 (#186)。drawer から開く。
-      GoRoute(
-        path: '/pages/liked',
-        builder: (context, state) => const LikedPagesScreen(),
-      ),
+      // Misskey ページのハブ画面 (#186)。drawer から開く。v1 では
+      // 「いいねしたページ」のみ表示するが、将来 WebUI の『人気』『自分のページ』
+      // を同画面に追加する想定で `/pages` 単一ルートに集約する。
+      GoRoute(path: '/pages', builder: (context, state) => const PagesScreen()),
       // Misskey ページ (#186) by-id 直接遷移。push 通知や future deeplink で
       // 使う想定。state.extra に Page を渡せばその場で表示し、無ければ
       // pageId から adapter 経由で fetch する。

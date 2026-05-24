@@ -1205,11 +1205,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               if (ref.read(currentAdapterProvider) is PagesSupport)
                 ListTile(
-                  leading: const Icon(Icons.favorite_border),
-                  title: const Text('いいねしたページ'),
+                  leading: const Icon(Icons.article_outlined),
+                  title: const Text('ページ'),
                   onTap: () {
                     dismiss();
-                    context.push('/pages/liked');
+                    context.push('/pages');
                   },
                 ),
               if (ref.read(currentMulukhiyaProvider) != null) ...[
