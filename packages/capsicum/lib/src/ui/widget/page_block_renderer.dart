@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -171,56 +172,136 @@ class _ImageBlock extends StatelessWidget {
 
   const _ImageBlock({required this.block, required this.attachedFiles});
 
+  void _openMediaViewer(BuildContext context, Attachment file) {
+    context.push(
+      '/media',
+      extra: {
+        'attachments': <Attachment>[file],
+        'initialIndex': 0,
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // image ブロックの fileId は pages/show の attachedFiles に同梱されており、
-    // _mapPage で id→Attachment マップ化されている。URL はそこから引く。
+    // Misskey の「image」ブロックは命名と裏腹にドライブ内の任意ファイル
+    // (動画 / 音声含む) を貼れる仕様。Attachment.type で分岐し、post_tile の
+    // 動画/音声サムネ規約 (previewUrl 優先・無し動画は黒フレーム回避の
+    // プレースホルダ・タップで MediaViewer) と揃える。
     final fileId = block['fileId'] as String? ?? '';
     final file = attachedFiles[fileId];
     final theme = Theme.of(context);
     if (file == null || file.url.isEmpty) {
+      return _placeholder(
+        context: context,
+        icon: Icons.image_not_supported,
+        text: '画像を読み込めません',
+      );
+    }
+    if (file.type == AttachmentType.audio) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.image_not_supported, color: theme.colorScheme.outline),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  '画像を読み込めません',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+        child: GestureDetector(
+          onTap: () => _openMediaViewer(context, file),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.music_note, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    file.description ?? file.name ?? '音声',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
     }
+    final isVideoLike =
+        file.type == AttachmentType.video || file.type == AttachmentType.gifv;
+    final hasPreview = file.previewUrl != null && file.previewUrl!.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          file.url,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stack) => Container(
-            padding: const EdgeInsets.all(16),
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Text(
-              '画像の表示に失敗しました',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+      child: GestureDetector(
+        onTap: () => _openMediaViewer(context, file),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // 動画 / gifv で preview_url が無いと Image.network が黒フレーム
+              // を返す (post_tile の #491 と同じ事象)。プレースホルダに倒す。
+              if (isVideoLike && !hasPreview)
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Container(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                )
+              else
+                Image.network(
+                  file.previewUrl ?? file.url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stack) => Container(
+                    padding: const EdgeInsets.all(16),
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: Text(
+                      isVideoLike ? '動画を表示できません' : '画像の表示に失敗しました',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              if (isVideoLike)
+                const Icon(
+                  Icons.play_circle_outline,
+                  color: Colors.white70,
+                  size: 48,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder({
+    required BuildContext context,
+    required IconData icon,
+    required String text,
+  }) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: theme.colorScheme.outline),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
