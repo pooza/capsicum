@@ -1,6 +1,9 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/widgets.dart';
+// capsicum_core の `Page` (Misskey ページ) と Flutter の `Page` (Navigator)
+// が衝突するため Flutter 側を hide する。ルーター本体は GoRoute / GoRouter
+// のみ使うため Flutter Page は不要。
+import 'package:flutter/widgets.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -30,6 +33,7 @@ import 'ui/screen/home_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
+import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
@@ -380,6 +384,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final post = state.extra as GalleryPost;
           return GalleryDetailScreen(post: post);
+        },
+      ),
+      // Misskey ページ (#186) by-id 直接遷移。push 通知や future deeplink で
+      // 使う想定。state.extra に Page を渡せばその場で表示し、無ければ
+      // pageId から adapter 経由で fetch する。
+      GoRoute(
+        path: '/page/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final page = state.extra as Page?;
+          return PageViewScreen(
+            initialPage: page,
+            pageId: page == null ? id : null,
+          );
+        },
+      ),
+      // Misskey の正規 URL `https://host/@username/pages/<name>` 形式を
+      // そのまま path として扱うルート。in-app から context.push する経路と、
+      // 将来の OS 経由 deeplink の双方で使う。
+      GoRoute(
+        path: '/@:username/pages/:name',
+        builder: (context, state) {
+          final username = state.pathParameters['username']!;
+          final name = state.pathParameters['name']!;
+          return PageViewScreen(username: username, name: name);
         },
       ),
       GoRoute(
