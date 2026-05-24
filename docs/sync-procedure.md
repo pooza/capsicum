@@ -25,9 +25,10 @@
 - `gh issue list --state closed --limit 10` — 最近クローズされた Issue（前回同期以降の進捗把握）
 - マイルストーン未割り当ての open Issue を一覧として列挙する（割り当てを促す文言は不要）
 
-## 4. ユーザーフィードバックの確認（#capsicum タグタイムライン）
+## 4. ユーザーフィードバックの確認（#capsicum タグ + ダイスキー capsicum チャンネル）
 
 - 美食丼の `#capsicum` タグタイムラインを取得: `curl -s "https://mstdn.b-shock.org/api/v1/timelines/tag/capsicum?limit=20"`
+- ダイスキーの capsicum チャンネル（delmulin 固有の capsicum 話題、`channelId=ak31f5utjv`、<https://misskey.delmulin.com/channels/ak31f5utjv>）を取得: `curl -s -X POST https://misskey.delmulin.com/api/channels/timeline -H 'Content-Type: application/json' -d '{"channelId":"ak31f5utjv","limit":20}'`
 - バグ報告・機能要望・ユーザーからの質問がないか確認する
 - 未起票のバグ報告があれば GitHub Issue を起票する（報告元の投稿 URL を記載）
 - 好評・感想は報告のみ（Issue 化不要）
