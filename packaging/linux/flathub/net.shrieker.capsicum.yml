@@ -32,10 +32,6 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   # アカウントトークン保存 (libsecret / gnome-keyring)
   - --talk-name=org.freedesktop.secrets
-  # 画像添付 (image_picker / file_selector)
-  - --filesystem=xdg-pictures
-  # 動画 / その他添付・ダウンロード
-  - --filesystem=xdg-download
 
 modules:
   - name: capsicum
