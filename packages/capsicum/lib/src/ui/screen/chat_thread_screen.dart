@@ -189,28 +189,41 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     ChatThreadState data,
     String? myUserId,
   ) {
-    if (data.messages.isEmpty) {
-      return const Center(child: Text('メッセージはありません'));
-    }
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      itemCount: data.messages.length + (data.isLoadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= data.messages.length) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final message = data.messages[index];
-        final isMine = myUserId != null && message.fromUser.id == myUserId;
-        return _MessageBubble(
-          message: message,
-          isMine: isMine,
-          onLongPress: isMine ? () => _confirmDelete(message) : null,
-        );
-      },
+    // ストリーミングが切れている / バックグラウンド復帰直後などで取りこぼしが
+    // 起こり得るため、引っぱり更新で能動的に再取得できる経路を用意する。
+    return RefreshIndicator(
+      onRefresh: () =>
+          ref.refresh(chatThreadProvider(widget.otherUser.id).future),
+      child: data.messages.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 160),
+                Center(child: Text('メッセージはありません')),
+              ],
+            )
+          : ListView.builder(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              reverse: true,
+              itemCount: data.messages.length + (data.isLoadingMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= data.messages.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final message = data.messages[index];
+                final isMine =
+                    myUserId != null && message.fromUser.id == myUserId;
+                return _MessageBubble(
+                  message: message,
+                  isMine: isMine,
+                  onLongPress: isMine ? () => _confirmDelete(message) : null,
+                );
+              },
+            ),
     );
   }
 }

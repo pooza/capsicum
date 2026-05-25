@@ -121,9 +121,7 @@ class _ChatRoomTimelineScreenState
 
   Future<void> _edit() async {
     final updated = await Navigator.of(context).push<ChatRoom?>(
-      MaterialPageRoute(
-        builder: (_) => ChatRoomEditScreen(initialRoom: _room),
-      ),
+      MaterialPageRoute(builder: (_) => ChatRoomEditScreen(initialRoom: _room)),
     );
     if (updated != null && mounted) {
       setState(() => _room = updated);
@@ -171,9 +169,7 @@ class _ChatRoomTimelineScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('ルームを削除しますか？'),
-        content: Text(
-          '${_room.name} を削除します。\nこの操作は取り消せず、全メンバーから見えなくなります。',
-        ),
+        content: Text('${_room.name} を削除します。\nこの操作は取り消せず、全メンバーから見えなくなります。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -244,8 +240,7 @@ class _ChatRoomTimelineScreenState
     final canSend =
         adapter is ChatSupport && (adapter as ChatSupport).canWriteChat;
 
-    final myUserIdForOwnerCheck =
-        ref.watch(currentAccountProvider)?.user.id;
+    final myUserIdForOwnerCheck = ref.watch(currentAccountProvider)?.user.id;
     final isOwner =
         myUserIdForOwnerCheck != null && _room.ownerId == myUserIdForOwnerCheck;
 
@@ -253,10 +248,7 @@ class _ChatRoomTimelineScreenState
       appBar: AppBar(
         title: Row(
           children: [
-            Icon(
-              Icons.groups,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(Icons.groups, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -279,10 +271,7 @@ class _ChatRoomTimelineScreenState
             onSelected: (action) {
               switch (action) {
                 case _RoomMenuAction.members:
-                  context.push(
-                    '/chat/room/${_room.id}/members',
-                    extra: _room,
-                  );
+                  context.push('/chat/room/${_room.id}/members', extra: _room);
                 case _RoomMenuAction.toggleMute:
                   _toggleMute();
                 case _RoomMenuAction.edit:
@@ -403,28 +392,41 @@ class _ChatRoomTimelineScreenState
     ChatThreadState data,
     String? myUserId,
   ) {
-    if (data.messages.isEmpty) {
-      return const Center(child: Text('メッセージはありません'));
-    }
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      itemCount: data.messages.length + (data.isLoadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= data.messages.length) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final message = data.messages[index];
-        final isMine = myUserId != null && message.fromUser.id == myUserId;
-        return _RoomMessageBubble(
-          message: message,
-          isMine: isMine,
-          onLongPress: isMine ? () => _confirmDelete(message) : null,
-        );
-      },
+    // DM タイムラインと同じく、ストリーミング取りこぼし対策として引っぱり
+    // 更新を入れておく。
+    return RefreshIndicator(
+      onRefresh: () =>
+          ref.refresh(chatRoomTimelineProvider(widget.room.id).future),
+      child: data.messages.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 160),
+                Center(child: Text('メッセージはありません')),
+              ],
+            )
+          : ListView.builder(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              reverse: true,
+              itemCount: data.messages.length + (data.isLoadingMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= data.messages.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final message = data.messages[index];
+                final isMine =
+                    myUserId != null && message.fromUser.id == myUserId;
+                return _RoomMessageBubble(
+                  message: message,
+                  isMine: isMine,
+                  onLongPress: isMine ? () => _confirmDelete(message) : null,
+                );
+              },
+            ),
     );
   }
 }
