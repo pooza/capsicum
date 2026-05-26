@@ -166,28 +166,17 @@ class _UserTile extends StatelessWidget {
         : '@${user.username}';
     return ListTile(
       leading: UserAvatar(user: user, size: 40),
-      title: Text(
-        displayName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        handle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(handle, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: invited
           ? const Chip(label: Text('招待済'))
           : pending
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : FilledButton.tonal(
-                  onPressed: onInvite,
-                  child: const Text('招待'),
-                ),
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : FilledButton.tonal(onPressed: onInvite, child: const Text('招待')),
     );
   }
 }

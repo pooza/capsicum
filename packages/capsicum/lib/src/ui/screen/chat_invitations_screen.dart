@@ -36,9 +36,9 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
         // 参加直後に room timeline へ。一覧から戻る導線は context.go で確保。
         context.pushReplacement('/chat/room/${room.id}', extra: room);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ルームに参加しました')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ルームに参加しました')));
       }
     } catch (e, st) {
       reportChatOpFailure('accept_invitation', e, st);
@@ -94,8 +94,9 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
                 final pending = _pendingRoomId == invitation.roomId;
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer,
                     child: Icon(
                       Icons.groups,
                       color: Theme.of(context).colorScheme.primary,

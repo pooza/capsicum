@@ -83,7 +83,11 @@ class _ChatRoomEditScreenState extends ConsumerState<ChatRoomEditScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${widget.isEditing ? "更新" : "作成"}に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(
+          content: Text(
+            '${widget.isEditing ? "更新" : "作成"}に失敗しました (${summarizeChatError(e)})',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);

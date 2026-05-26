@@ -303,7 +303,8 @@ ChatRoom misskeyChatRoomFromMap(
   Set<String> adminRoleIds = const {},
 }) {
   final ownerMap = data['owner'] as Map<String, dynamic>?;
-  final ownerId = data['ownerId'] as String? ?? ownerMap?['id'] as String? ?? '';
+  final ownerId =
+      data['ownerId'] as String? ?? ownerMap?['id'] as String? ?? '';
   final owner = ownerMap != null
       ? MisskeyUser.fromJson(
           ownerMap,
@@ -336,11 +337,7 @@ ChatRoomMember misskeyChatRoomMemberFromMap(
     userId: data['userId'] as String,
     isMuted: data['isMuted'] as bool? ?? false,
     room: roomMap != null
-        ? misskeyChatRoomFromMap(
-            roomMap,
-            localHost,
-            adminRoleIds: adminRoleIds,
-          )
+        ? misskeyChatRoomFromMap(roomMap, localHost, adminRoleIds: adminRoleIds)
         : null,
     user: userMap != null
         ? MisskeyUser.fromJson(
@@ -364,11 +361,7 @@ ChatRoomInvitation misskeyChatRoomInvitationFromMap(
     roomId: data['roomId'] as String,
     userId: data['userId'] as String,
     room: roomMap != null
-        ? misskeyChatRoomFromMap(
-            roomMap,
-            localHost,
-            adminRoleIds: adminRoleIds,
-          )
+        ? misskeyChatRoomFromMap(roomMap, localHost, adminRoleIds: adminRoleIds)
         : null,
     user: userMap != null
         ? MisskeyUser.fromJson(

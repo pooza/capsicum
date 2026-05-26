@@ -95,18 +95,14 @@ abstract mixin class ChatSupport {
   Future<ChatRoom> createRoom({
     required String name,
     String? description,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// ルーム情報を更新する (オーナーのみ)。
   Future<ChatRoom> updateRoom({
     required String roomId,
     String? name,
     String? description,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// ルームを削除する (オーナーのみ)。
   Future<void> deleteRoom(String roomId) async =>
@@ -124,42 +120,32 @@ abstract mixin class ChatSupport {
   Future<List<ChatRoomMember>> getRoomMembers({
     required String roomId,
     TimelineQuery? query,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// 指定ルームのメッセージ一覧 (timeline)。
   Future<List<ChatMessage>> getRoomMessages({
     required String roomId,
     TimelineQuery? query,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// ルーム宛にメッセージを送信する。
   Future<ChatMessage> sendRoomMessage({
     required String roomId,
     String? text,
     String? fileId,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// ルームのミュート / アンミュート (自分の view から)。
   Future<void> setRoomMute({
     required String roomId,
     required bool mute,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// ユーザーをルームに招待する (オーナーのみ)。
   Future<void> inviteToRoom({
     required String roomId,
     required String userId,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// 自分宛の招待を無視する (受信箱から取り除く)。
   Future<void> ignoreInvitation(String roomId) async =>
@@ -168,16 +154,12 @@ abstract mixin class ChatSupport {
   /// 自分宛の招待受信箱。
   Future<List<ChatRoomInvitation>> getInvitationInbox({
     TimelineQuery? query,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// 自分が送った招待の送信箱。
   Future<List<ChatRoomInvitation>> getInvitationOutbox({
     TimelineQuery? query,
-  }) async => throw UnsupportedError(
-    'rooms are not supported by this backend',
-  );
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
 
   /// 特定ルームの新着メッセージを通知するストリーム。Misskey の
   /// `chatRoom` channel + `{roomId}` param 相当。listen で接続、onCancel で切断。
