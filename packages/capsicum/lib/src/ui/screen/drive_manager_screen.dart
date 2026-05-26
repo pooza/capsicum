@@ -60,6 +60,11 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   bool _selectionMode = false;
   final Set<String> _selectedFileIds = {};
 
+  /// 一括移動の二重実行ガード。フォルダピッカー表示中・移動 API 呼び出し中
+  /// に IconButton が再タップされた場合、await 中に同じ N 件をもう一度
+  /// move する事故を防ぐ。
+  bool _bulkMoving = false;
+
   String? get _currentFolderId =>
       _folderStack.isEmpty ? null : _folderStack.last.id;
 
@@ -239,11 +244,17 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   Future<void> _promptMoveSelectedFiles() async {
     if (_selectedFileIds.isEmpty) return;
-    final picked = await _showFolderPickerDialog(
-      title: '${_selectedFileIds.length} 件のファイルの移動先',
-    );
-    if (picked == null) return;
-    await _moveSelectedFilesToFolder(picked.id);
+    if (_bulkMoving) return;
+    _bulkMoving = true;
+    try {
+      final picked = await _showFolderPickerDialog(
+        title: '${_selectedFileIds.length} 件のファイルの移動先',
+      );
+      if (picked == null) return;
+      await _moveSelectedFilesToFolder(picked.id);
+    } finally {
+      if (mounted) _bulkMoving = false;
+    }
   }
 
   /// 一括移動 (#567)。エラーは件ごとに握り、最終 SnackBar で N/M 件成功を出す。
