@@ -85,8 +85,11 @@ class MastodonStreaming {
         _scheduleReconnect();
       },
       onDone: () {
-        _reconnectAttempts = 0;
-        _reconnectExhaustedNotified = false;
+        // onDone でバックオフをリセットしてしまうと「接続→onDone→reset→
+        // 再接続→onDone→reset」のループでバックオフが基底値のまま動かず、
+        // 上限到達による `onReconnectExhausted` 通知も出なくなる。リセット
+        // は `ready.then` の接続成功時のみ行い、DM (`chat_streaming.dart`) /
+        // ルーム (`chat_room_streaming.dart`) と挙動を揃える。
         _scheduleReconnect();
       },
     );
