@@ -165,7 +165,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _login() async {
+  Future<void> _login({bool isRetry = false}) async {
     if (_loginCompleted) return;
     setState(() {
       _isLoggingIn = true;
@@ -177,8 +177,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     var reachedAuthenticate = false;
     var authenticateReturned = false;
     var fallbackAttempted = false;
+    var usedCachedCreds = false;
 
-    _logLoginStep('login.start');
+    _logLoginStep('login.start', data: {'isRetry': isRetry});
 
     try {
       adapter = await widget.backendType.createAdapter(widget.host);
@@ -186,18 +187,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       // Reuse cached client credentials to avoid calling POST /api/v1/apps
       // (rate-limit prone). Check: 1) existing accounts, 2) host-level storage.
-      if (adapter is MastodonAdapter) {
+      // isRetry=true は #620 silent recovery で cache を破棄した直後の経路。
+      // ここで再び cache を読むと無限ループになるので skip して fresh
+      // registration を強制する。
+      if (adapter is MastodonAdapter && !isRetry) {
         final accounts = ref.read(accountManagerProvider).accounts;
         final existing = accounts
             .where((a) => a.key.host == widget.host && a.clientSecret != null)
             .firstOrNull;
         if (existing != null) {
           adapter.setCachedClientCredentials(existing.clientSecret);
+          usedCachedCreds = true;
         } else {
           final storage = ref.read(accountStorageProvider);
           final hostCreds = await storage.getHostClientCredentials(widget.host);
           if (hostCreds != null) {
             adapter.setCachedClientCredentials(hostCreds);
+            usedCachedCreds = true;
           }
         }
       }
@@ -308,8 +314,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           'isCancelled': isCancelled,
           'reachedAuthenticate': reachedAuthenticate,
           'authenticateReturned': authenticateReturned,
+          'usedCachedCreds': usedCachedCreds,
+          'isRetry': isRetry,
         },
       );
+
+      // #620 silent recovery: cached client_id が古い redirect_uri (例:
+      // capsicum://oauth) で登録されていると、新版 (http://localhost:7099/
+      // oauth/callback) で /oauth/authorize を叩いた瞬間に Mastodon が
+      // 「invalid_redirect_uri」エラーページを返し、ユーザーには CANCEL
+      // としてしか観測できない。cache 由来かつ初回の cancel に限って、
+      // cache を破棄して POST /api/v1/apps からやり直す。retry 後の cancel
+      // は usedCachedCreds=false (isRetry=true 経路は cache 読みを skip)
+      // なのでループしない。
+      if (isCancelled &&
+          usedCachedCreds &&
+          _isMastodon &&
+          !isRetry &&
+          reachedAuthenticate &&
+          !authenticateReturned) {
+        _logLoginStep('login.silent_retry.begin');
+        try {
+          final storage = ref.read(accountStorageProvider);
+          await storage.deleteHostClientCredentials(widget.host);
+        } catch (clearErr) {
+          _logLoginStep(
+            'login.silent_retry.clear_failed',
+            data: {'type': clearErr.runtimeType.toString()},
+          );
+        }
+        await _login(isRetry: true);
+        _logLoginStep(
+          'login.silent_retry.end',
+          data: {'completed': _loginCompleted},
+        );
+        return;
+      }
 
       // User cancelled the browser or redirect failed.
       var fallbackSucceeded = false;
