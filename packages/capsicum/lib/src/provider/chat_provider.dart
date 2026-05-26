@@ -182,7 +182,10 @@ class ChatThreadListNotifier
     final updated = ChatThread(
       room: existing.room,
       lastMessage: message,
-      isUnread: isIncoming,
+      // DM 経路と同じ式に揃える (#632 review)。room は chat_room_streaming
+      // 側で `defaultIsRead: true` を強制しているため通常は read 扱いだが、
+      // 将来サーバーが unread を返すよう変わっても整合する。
+      isUnread: isIncoming && !message.isRead,
     );
     final filtered = current.where((t) => t.room?.id != roomId).toList();
     state = AsyncData([updated, ...filtered]);

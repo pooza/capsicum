@@ -28,6 +28,9 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   bool _loadingLiked = true;
   bool _loadingMoreLiked = false;
   bool _hasMoreLiked = true;
+  // _refresh が走った瞬間に in-flight の _loadMoreLiked が古い cursor 由来
+  // の結果を空配列にマージしてしまう race を防ぐ generation token (#631)。
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -85,24 +88,26 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
 
   Future<void> _loadMoreLiked() async {
     if (_loadingMoreLiked || !_hasMoreLiked || _likedEntries.isEmpty) return;
+    final gen = _loadGeneration;
     setState(() => _loadingMoreLiked = true);
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! PagesSupport) {
-      if (mounted) setState(() => _loadingMoreLiked = false);
+      if (mounted && gen == _loadGeneration) {
+        setState(() => _loadingMoreLiked = false);
+      }
       return;
     }
     try {
       final older = await (adapter as PagesSupport).getLikedPages(
         query: TimelineQuery(maxId: _likedEntries.last.likeId, limit: 20),
       );
-      if (mounted) {
-        setState(() {
-          _likedEntries = [..._likedEntries, ...older];
-          _loadingMoreLiked = false;
-          _hasMoreLiked = older.length >= 20;
-        });
-      }
+      if (!mounted || gen != _loadGeneration) return;
+      setState(() {
+        _likedEntries = [..._likedEntries, ...older];
+        _loadingMoreLiked = false;
+        _hasMoreLiked = older.length >= 20;
+      });
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -111,7 +116,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
           scope.setTag('pages.op', 'load_more_liked');
         },
       );
-      if (!mounted) return;
+      if (!mounted || gen != _loadGeneration) return;
       setState(() => _loadingMoreLiked = false);
       ScaffoldMessenger.of(
         context,
@@ -121,7 +126,9 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
 
   Future<void> _refresh() async {
     setState(() {
+      _loadGeneration++;
       _loadingLiked = true;
+      _loadingMoreLiked = false;
       _likedEntries = [];
       _hasMoreLiked = true;
     });
