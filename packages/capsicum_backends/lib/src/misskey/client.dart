@@ -818,6 +818,75 @@ class MisskeyClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/users/pages
+  Future<List<Map<String, dynamic>>> getUserPages(
+    String userId, {
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/users/pages',
+      data: createBody({
+        'userId': userId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/pages/show (by id)
+  Future<Map<String, dynamic>> getPageById(String pageId) async {
+    final response = await dio.post(
+      '/api/pages/show',
+      data: createBody({'pageId': pageId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/pages/show (by username + name)
+  Future<Map<String, dynamic>> getPageByName({
+    required String username,
+    required String name,
+  }) async {
+    final response = await dio.post(
+      '/api/pages/show',
+      data: createBody({'username': username, 'name': name}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/pages/featured
+  Future<List<Map<String, dynamic>>> getFeaturedPages({int? limit}) async {
+    final response = await dio.post(
+      '/api/pages/featured',
+      data: createBody({'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/i/page-likes
+  ///
+  /// Returns an array of `{ id, page }` entries. Caller is responsible for
+  /// extracting `page` from each entry.
+  Future<List<Map<String, dynamic>>> getMyPageLikes({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/i/page-likes',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));
@@ -1076,10 +1145,16 @@ class MisskeyClient {
   /// Misskey 本家 endpoints/chat/history.ts の paramDef は `{limit, room}` のみで、
   /// `untilId` はサーバー側で paramDef に無く Ajv が黙殺するため受け付けない
   /// (#445)。ページングは非対応。`limit=100` 程度の一回取り運用が想定。
-  Future<List<Map<String, dynamic>>> getChatHistory({int? limit}) async {
+  ///
+  /// [room] を true にするとルームスレッドの履歴 (ChatMessageDetailed の
+  /// `toRoomId` / `toRoom` 形) を返す (#438)。
+  Future<List<Map<String, dynamic>>> getChatHistory({
+    int? limit,
+    bool room = false,
+  }) async {
     final response = await dio.post(
       '/api/chat/history',
-      data: createBody({'limit': ?limit}),
+      data: createBody({'limit': ?limit, 'room': room}),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
   }
@@ -1131,6 +1206,228 @@ class MisskeyClient {
   /// POST /api/chat/read-all
   Future<void> markAllChatRead() async {
     await dio.post('/api/chat/read-all', data: createBody());
+  }
+
+  // === chat rooms (#438) =====================================================
+
+  /// POST /api/chat/messages/room-timeline
+  Future<List<Map<String, dynamic>>> getChatRoomMessages({
+    required String roomId,
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/room-timeline',
+      data: createBody({
+        'roomId': roomId,
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/messages/create-to-room
+  Future<Map<String, dynamic>> createChatMessageToRoom({
+    required String toRoomId,
+    String? text,
+    String? fileId,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/messages/create-to-room',
+      data: createBody({
+        'toRoomId': toRoomId,
+        'text': ?text,
+        'fileId': ?fileId,
+      }),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/create
+  Future<Map<String, dynamic>> createChatRoom({
+    required String name,
+    String? description,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/create',
+      data: createBody({'name': name, 'description': ?description}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/show
+  Future<Map<String, dynamic>> getChatRoom(String roomId) async {
+    final response = await dio.post(
+      '/api/chat/rooms/show',
+      data: createBody({'roomId': roomId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/update
+  Future<Map<String, dynamic>> updateChatRoom({
+    required String roomId,
+    String? name,
+    String? description,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/update',
+      data: createBody({
+        'roomId': roomId,
+        'name': ?name,
+        'description': ?description,
+      }),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/delete
+  Future<void> deleteChatRoom(String roomId) async {
+    await dio.post(
+      '/api/chat/rooms/delete',
+      data: createBody({'roomId': roomId}),
+    );
+  }
+
+  /// POST /api/chat/rooms/join
+  Future<Map<String, dynamic>> joinChatRoom(String roomId) async {
+    final response = await dio.post(
+      '/api/chat/rooms/join',
+      data: createBody({'roomId': roomId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/leave
+  Future<void> leaveChatRoom(String roomId) async {
+    await dio.post(
+      '/api/chat/rooms/leave',
+      data: createBody({'roomId': roomId}),
+    );
+  }
+
+  /// POST /api/chat/rooms/joining
+  Future<List<Map<String, dynamic>>> getJoiningChatRooms({
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/joining',
+      data: createBody({
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/rooms/owned
+  Future<List<Map<String, dynamic>>> getOwnedChatRooms({
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/owned',
+      data: createBody({
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/rooms/members
+  Future<List<Map<String, dynamic>>> getChatRoomMembers({
+    required String roomId,
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/members',
+      data: createBody({
+        'roomId': roomId,
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/rooms/mute
+  ///
+  /// 自分の view から指定ルームをミュート / アンミュート。Misskey 本家 mute.ts の
+  /// paramDef は `{ roomId, mute: boolean }`。
+  Future<void> setChatRoomMute({
+    required String roomId,
+    required bool mute,
+  }) async {
+    await dio.post(
+      '/api/chat/rooms/mute',
+      data: createBody({'roomId': roomId, 'mute': mute}),
+    );
+  }
+
+  /// POST /api/chat/rooms/invitations/create
+  Future<Map<String, dynamic>> createChatRoomInvitation({
+    required String roomId,
+    required String userId,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/invitations/create',
+      data: createBody({'roomId': roomId, 'userId': userId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/chat/rooms/invitations/ignore
+  Future<void> ignoreChatRoomInvitation(String roomId) async {
+    await dio.post(
+      '/api/chat/rooms/invitations/ignore',
+      data: createBody({'roomId': roomId}),
+    );
+  }
+
+  /// POST /api/chat/rooms/invitations/inbox
+  Future<List<Map<String, dynamic>>> getChatRoomInvitationInbox({
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/invitations/inbox',
+      data: createBody({
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/chat/rooms/invitations/outbox
+  Future<List<Map<String, dynamic>>> getChatRoomInvitationOutbox({
+    String? untilId,
+    String? sinceId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/chat/rooms/invitations/outbox',
+      data: createBody({
+        'untilId': ?untilId,
+        'sinceId': ?sinceId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// Web Push サブスクリプション登録。POST /api/sw/register

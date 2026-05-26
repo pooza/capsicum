@@ -13,31 +13,91 @@ import '../widget/user_avatar.dart';
 class ChatThreadListScreen extends ConsumerWidget {
   const ChatThreadListScreen({super.key});
 
+  Future<void> _showNewMenu(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('新しいメッセージ'),
+              subtitle: const Text('特定の相手に DM を送る'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.push('/chat/new');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.groups),
+              title: const Text('新しいルーム'),
+              subtitle: const Text('複数人でメッセージをやり取りする'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.push('/chat/room/new');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final threads = ref.watch(chatThreadListProvider);
+    final invitations = ref.watch(chatInvitationInboxProvider);
+    final invitationCount = invitations.maybeWhen(
+      data: (list) => list.length,
+      orElse: () => 0,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('メッセージ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            tooltip: 'ルーム招待',
+            onPressed: () => context.push('/chat/invitations'),
+            icon: invitationCount > 0
+                ? Badge(
+                    label: Text(invitationCount.toString()),
+                    child: const Icon(Icons.mail),
+                  )
+                : const Icon(Icons.mail_outline),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/chat/new'),
-        tooltip: '新しいメッセージ',
-        child: const Icon(Icons.edit),
+        onPressed: () => _showNewMenu(context),
+        tooltip: '新規',
+        child: const Icon(Icons.add),
       ),
       body: threads.when(
-        data: (list) => list.isEmpty
-            ? const Center(child: Text('メッセージはありません'))
-            : RefreshIndicator(
-                onRefresh: () => ref.refresh(chatThreadListProvider.future),
-                child: ListView.separated(
+        data: (list) => RefreshIndicator(
+          onRefresh: () => ref.refresh(chatThreadListProvider.future),
+          // empty でも pull-to-refresh を効かせるため LayoutBuilder +
+          // AlwaysScrollableScrollPhysics で常にスクロール可能にする。
+          child: list.isEmpty
+              ? LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: const Center(child: Text('メッセージはありません')),
+                    ),
+                  ),
+                )
+              : ListView.separated(
                   itemCount: list.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) =>
                       _ChatThreadTile(thread: list[index]),
                 ),
-              ),
+        ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => isOAuthScopeError(error)
             ? const OAuthScopeErrorView()
@@ -73,12 +133,43 @@ class _ChatThreadTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = _previewText(thread.lastMessage);
+    // DM とルーム (#438) を同一履歴画面に出すため、isRoom / isDm で leading・
+    // title・遷移先を分岐する。Misskey 側 WebUI と同じ並べ方。
+    if (thread.isRoom) {
+      final room = thread.room!;
+      return ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            Icons.groups,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        title: Text(
+          room.name.isNotEmpty ? room.name : '(無題のルーム)',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: thread.isUnread ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        subtitle: Text(
+          // ルームは発信者が毎メッセージ変わるので、先頭に発信者名を補う。
+          '${_senderShortName(thread.lastMessage)}: $preview',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: _ThreadMetaColumn(thread: thread, ref: ref),
+        onTap: () => context.push('/chat/room/${room.id}', extra: room),
+      );
+    }
+    final otherUser = thread.otherUser!;
     return ListTile(
-      leading: UserAvatar(user: thread.otherUser, size: 40),
+      leading: UserAvatar(user: otherUser, size: 40),
       title: Text(
-        thread.otherUser.displayName?.isNotEmpty == true
-            ? thread.otherUser.displayName!
-            : thread.otherUser.username,
+        otherUser.displayName?.isNotEmpty == true
+            ? otherUser.displayName!
+            : otherUser.username,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -86,31 +177,15 @@ class _ChatThreadTile extends ConsumerWidget {
         ),
       ),
       subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _formatTime(ref, thread.lastMessage.createdAt),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (thread.isUnread)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
-            ),
-        ],
-      ),
-      onTap: () => context.push(
-        '/chat/user/${thread.otherUser.id}',
-        extra: thread.otherUser,
-      ),
+      trailing: _ThreadMetaColumn(thread: thread, ref: ref),
+      onTap: () => context.push('/chat/user/${otherUser.id}', extra: otherUser),
     );
+  }
+
+  String _senderShortName(ChatMessage message) {
+    final dn = message.fromUser.displayName;
+    if (dn != null && dn.isNotEmpty) return dn;
+    return message.fromUser.username;
   }
 
   String _previewText(ChatMessage message) {
@@ -130,6 +205,37 @@ class _ChatThreadTile extends ConsumerWidget {
       }
     }
     return '';
+  }
+}
+
+class _ThreadMetaColumn extends StatelessWidget {
+  final ChatThread thread;
+  final WidgetRef ref;
+
+  const _ThreadMetaColumn({required this.thread, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          _formatTime(ref, thread.lastMessage.createdAt),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (thread.isUnread)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+      ],
+    );
   }
 
   // chat_thread_screen / post_tile / notification_tile と同じ表示モード

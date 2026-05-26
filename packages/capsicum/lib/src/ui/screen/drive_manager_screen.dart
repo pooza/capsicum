@@ -55,6 +55,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   // ためのラッチ (#459)。folder 移動 / refresh で false に戻す。
   bool _autoLoadRequested = false;
 
+  /// 複数ファイル選択モード (#567)。v1 は現フォルダ内のファイルのみ対象とし、
+  /// フォルダの一括移動・フォルダ間の横断選択は範囲外。
+  bool _selectionMode = false;
+  final Set<String> _selectedFileIds = {};
+
+  /// 一括移動の二重実行ガード。フォルダピッカー表示中・移動 API 呼び出し中
+  /// に IconButton が再タップされた場合、await 中に同じ N 件をもう一度
+  /// move する事故を防ぐ。
+  bool _bulkMoving = false;
+
   String? get _currentFolderId =>
       _folderStack.isEmpty ? null : _folderStack.last.id;
 
@@ -208,6 +218,79 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         );
       }
     }
+  }
+
+  void _enterSelectionMode() {
+    setState(() {
+      _selectionMode = true;
+      _selectedFileIds.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedFileIds.clear();
+    });
+  }
+
+  void _toggleFileSelected(String id) {
+    setState(() {
+      if (!_selectedFileIds.remove(id)) {
+        _selectedFileIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _promptMoveSelectedFiles() async {
+    if (_selectedFileIds.isEmpty) return;
+    if (_bulkMoving) return;
+    _bulkMoving = true;
+    try {
+      final picked = await _showFolderPickerDialog(
+        title: '${_selectedFileIds.length} 件のファイルの移動先',
+      );
+      if (picked == null) return;
+      await _moveSelectedFilesToFolder(picked.id);
+    } finally {
+      // unmount 後でも内部フラグだけ無条件に降ろす。setState を伴わないので
+      // dispose 済み State でも安全 (2 回目レビュー追従)。
+      _bulkMoving = false;
+    }
+  }
+
+  /// 一括移動 (#567)。エラーは件ごとに握り、最終 SnackBar で N/M 件成功を出す。
+  /// 移動先 == 現在のフォルダなら #563 と同様 no-op。
+  Future<void> _moveSelectedFilesToFolder(String? folderId) async {
+    if (folderId == _currentFolderId) {
+      _exitSelectionMode();
+      return;
+    }
+    final ids = _selectedFileIds.toList();
+    final notifier = ref.read(driveContentsProvider(_currentFolderId).notifier);
+    var success = 0;
+    Object? lastError;
+    StackTrace? lastSt;
+    for (final id in ids) {
+      try {
+        await _drive?.moveDriveFile(id, folderId);
+        notifier.moveFileOut(id);
+        success++;
+      } catch (e, st) {
+        lastError = e;
+        lastSt = st;
+      }
+    }
+    if (lastError != null && lastSt != null) {
+      _reportDriveOpFailure('move_files_bulk', lastError, lastSt);
+    }
+    if (mounted) {
+      final msg = lastError == null
+          ? '$success 件のファイルを移動しました'
+          : '$success / ${ids.length} 件移動しました (${_summarizeDriveError(lastError)})';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+    _exitSelectionMode();
   }
 
   Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
@@ -571,46 +654,77 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     });
 
     return PopScope(
-      canPop: _folderStack.isEmpty,
+      canPop: _folderStack.isEmpty && !_selectionMode,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goBack();
+        if (didPop) return;
+        if (_selectionMode) {
+          _exitSelectionMode();
+        } else {
+          _goBack();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
-          title: _isDragging && _folderStack.isNotEmpty
-              ? Text(
-                  '← 親フォルダへ移動',
-                  style: TextStyle(color: theme.colorScheme.primary),
-                )
-              : Text(_currentTitle),
+          title: _selectionMode
+              ? Text('${_selectedFileIds.length} 件選択中')
+              : (_isDragging && _folderStack.isNotEmpty
+                    ? Text(
+                        '← 親フォルダへ移動',
+                        style: TextStyle(color: theme.colorScheme.primary),
+                      )
+                    : Text(_currentTitle)),
           backgroundColor: theme.colorScheme.inversePrimary,
-          leading: _folderStack.isEmpty
-              ? IconButton(icon: const Icon(Icons.close), onPressed: _goBack)
-              : DragTarget<Attachment>(
-                  onWillAcceptWithDetails: (_) => true,
-                  onAcceptWithDetails: (details) {
-                    final parentId = _folderStack.length >= 2
-                        ? _folderStack[_folderStack.length - 2].id
-                        : null;
-                    _moveFileToFolder(details.data, parentId);
-                  },
-                  builder: (context, candidateData, _) => IconButton(
-                    icon: Icon(
-                      Icons.arrow_back,
-                      color: candidateData.isNotEmpty || _isDragging
-                          ? theme.colorScheme.primary
-                          : null,
-                    ),
-                    onPressed: _goBack,
+          leading: _selectionMode
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: '選択を解除',
+                  onPressed: _exitSelectionMode,
+                )
+              : (_folderStack.isEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: _goBack,
+                      )
+                    : DragTarget<Attachment>(
+                        onWillAcceptWithDetails: (_) => true,
+                        onAcceptWithDetails: (details) {
+                          final parentId = _folderStack.length >= 2
+                              ? _folderStack[_folderStack.length - 2].id
+                              : null;
+                          _moveFileToFolder(details.data, parentId);
+                        },
+                        builder: (context, candidateData, _) => IconButton(
+                          icon: Icon(
+                            Icons.arrow_back,
+                            color: candidateData.isNotEmpty || _isDragging
+                                ? theme.colorScheme.primary
+                                : null,
+                          ),
+                          onPressed: _goBack,
+                        ),
+                      )),
+          actions: _selectionMode
+              ? [
+                  IconButton(
+                    icon: const Icon(Icons.drive_file_move_outline),
+                    tooltip: '移動',
+                    onPressed: _selectedFileIds.isEmpty
+                        ? null
+                        : _promptMoveSelectedFiles,
                   ),
-                ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.create_new_folder_outlined),
-              tooltip: 'フォルダを作成',
-              onPressed: _createFolder,
-            ),
-          ],
+                ]
+              : [
+                  IconButton(
+                    icon: const Icon(Icons.checklist),
+                    tooltip: '複数選択',
+                    onPressed: _enterSelectionMode,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    tooltip: 'フォルダを作成',
+                    onPressed: _createFolder,
+                  ),
+                ],
         ),
         body: drive.when(
           data: (state) {
@@ -666,6 +780,18 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                 itemBuilder: (context, index) {
                   if (index < totalFolders) {
                     final folder = state.folders[index];
+                    if (_selectionMode) {
+                      // 選択モード中はフォルダ操作を無効化 (現フォルダ内のファイルだけ
+                      // 対象。フォルダ複数選択は v1 範囲外、#567)。
+                      return Opacity(
+                        opacity: 0.4,
+                        child: _FolderTile(
+                          folder: folder,
+                          onTap: () {},
+                          onLongPress: () {},
+                        ),
+                      );
+                    }
                     return DragTarget<Attachment>(
                       key: ValueKey('folder-${folder.id}'),
                       onWillAcceptWithDetails: (_) => true,
@@ -689,6 +815,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                     );
                   }
                   final file = state.files[fileIndex];
+                  if (_selectionMode) {
+                    // 選択モード中は drag を起動させず、tap で選択切り替え (#567)。
+                    return _FileTile(
+                      key: ValueKey('file-${file.id}'),
+                      file: file,
+                      isSelectionMode: true,
+                      isSelected: _selectedFileIds.contains(file.id),
+                      onTap: () => _toggleFileSelected(file.id),
+                    );
+                  }
                   return LongPressDraggable<Attachment>(
                     key: ValueKey('file-${file.id}'),
                     data: file,
@@ -810,10 +946,17 @@ class _FileTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onMorePressed;
 
+  /// 選択モード中なら true。選択状態は [isSelected] で別途渡す (#567)。
+  final bool isSelectionMode;
+  final bool isSelected;
+
   const _FileTile({
+    super.key,
     required this.file,
     required this.onTap,
     this.onMorePressed,
+    this.isSelectionMode = false,
+    this.isSelected = false,
   });
 
   @override
@@ -875,7 +1018,7 @@ class _FileTile extends StatelessWidget {
                 ),
               ),
             ),
-          if (onMorePressed != null)
+          if (!isSelectionMode && onMorePressed != null)
             Positioned(
               top: 2,
               right: 2,
@@ -895,6 +1038,40 @@ class _FileTile extends StatelessWidget {
                 ),
               ),
             ),
+          // 選択モード時のオーバーレイ (#567)。選択中はチェック、未選択は枠のみ。
+          if (isSelectionMode) ...[
+            if (isSelected)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isSelected ? Icons.check : Icons.radio_button_unchecked,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

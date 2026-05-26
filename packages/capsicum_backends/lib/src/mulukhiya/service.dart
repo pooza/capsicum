@@ -221,6 +221,11 @@ class MulukhiyaService {
   final String? defaultHashtag;
   final String? reblogLabel;
   final bool annictEnabled;
+
+  /// モロヘイヤ 5.23.0+ の `features.media_catalog` フラグ (#606)。
+  /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
+  /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
+  final bool mediaCatalogEnabled;
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -235,6 +240,7 @@ class MulukhiyaService {
     this.defaultHashtag,
     this.reblogLabel,
     this.annictEnabled = false,
+    this.mediaCatalogEnabled = false,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -292,6 +298,7 @@ class MulukhiyaService {
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
+        mediaCatalogEnabled: features?['media_catalog'] == true,
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );

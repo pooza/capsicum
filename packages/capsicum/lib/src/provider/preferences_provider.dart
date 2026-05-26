@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:capsicum_core/capsicum_core.dart';
@@ -5,10 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../util/sentry_tag_hash.dart';
+import '../util/shared_preferences_cache.dart';
 import 'account_manager_provider.dart';
 import 'channel_provider.dart';
 import 'list_provider.dart';
@@ -251,38 +251,31 @@ final tabConfigProvider =
     );
 
 class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
-  // #579 計装: build() 直後は defaultTabConfig のまま _load() が pending する。
-  // この pre-load 窓で visible 解決が走ったかをスモーキングガンとして 1 度だけ
-  // 記録するためのフラグ。原因確定後に撤去。
-  bool _loaded = false;
-  bool _preLoadReported = false;
-
-  /// _load()（deserialize / migrate いずれか）が完了したか。
-  bool get isLoaded => _loaded;
-
   @override
   List<TabConfigEntry> build(String arg) {
-    _load();
-    return defaultTabConfig;
-  }
-
-  Future<void> _load() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList('$_tabConfigPrefix$arg');
-      if (saved != null) {
-        state = _deserialize(saved);
-        return;
-      }
-      // Migrate from legacy providers.
-      state = await _migrate(prefs);
-    } finally {
-      _loaded = true; // #579 計装
+    // pre-warm 済み SharedPreferences から同期で読む (#579)。build() が
+    // 同期戻りした直後に visibleTabsProvider が解決するため、ここで非同期
+    // ロードを挟むと「pre-migrate の defaultTabConfig が一瞬見える → social
+    // 化する」race が発生する。main() で initSharedPreferencesCache() を呼ぶ
+    // 前提で同期化している。
+    final prefs = sharedPrefsOrThrow;
+    final saved = prefs.getStringList('$_tabConfigPrefix$arg');
+    if (saved != null) {
+      return _deserialize(saved);
     }
+    // Migrate from legacy providers (synchronous).
+    final entries = _migrate(prefs);
+    // 永続化は fire-and-forget。失敗しても次回起動で再度 migrate するだけで
+    // ユーザー影響なし (idempotent)。await すると build() が async 化して
+    // race が復活するため意図的に unawaited。
+    unawaited(
+      prefs.setStringList('$_tabConfigPrefix$arg', _serialize(entries)),
+    );
+    return entries;
   }
 
   /// Migrate from the legacy per-type preferences into the unified format.
-  Future<List<TabConfigEntry>> _migrate(SharedPreferences prefs) async {
+  List<TabConfigEntry> _migrate(SharedPreferences prefs) {
     final entries = <TabConfigEntry>[];
 
     // 1. Timeline tabs (order + hidden).
@@ -342,8 +335,8 @@ class TabConfigNotifier extends FamilyNotifier<List<TabConfigEntry>, String> {
     // Messages tab — Misskey 限定動線 (#439)。デフォルト hidden。
     entries.add(const TabConfigEntry(tab: MessagesTab(), visible: false));
 
-    // Persist the migrated config.
-    await _save(entries, prefs);
+    // 永続化は build() 側で fire-and-forget。ここで await すると build() が
+    // async 化して #579 の race が復活するため、entries 構築のみに留める。
     return entries;
   }
 
@@ -460,24 +453,6 @@ final visibleTabsProvider = Provider.family<List<TabType>, String>((
       ?.map((c) => c.id)
       .toSet();
   final config = ref.watch(tabConfigProvider(storageKey));
-
-  // #579 計装 (スモーキングガン): tab config が _load 未完 (defaultTabConfig の
-  // まま) で visible 解決が走った瞬間を不変条件違反として記録する。pre-migrate
-  // の並び差で home スロットが social に化ける、という pooza 仮説の当否を
-  // フィールドで判定する。notifier インスタンスごとに 1 度だけ発火。
-  final tabCfgNotifier = ref.read(tabConfigProvider(storageKey).notifier);
-  if (!tabCfgNotifier.isLoaded && !tabCfgNotifier._preLoadReported) {
-    tabCfgNotifier._preLoadReported = true;
-    Sentry.captureMessage(
-      'tab_config.pre_load_visible_resolve',
-      level: SentryLevel.warning,
-      withScope: (scope) {
-        scope.setTag('sensor', 'smoking_gun.tab_config_pre_load');
-        scope.setTag('context', 'visibleTabsProvider');
-        scope.setTag('account_hash', hashForSentryTag(storageKey));
-      },
-    );
-  }
 
   final tabs = config.where((e) => e.visible).map((e) => e.tab).where((tab) {
     if (tab is TimelineTab) return supported.contains(tab.type);
@@ -1456,13 +1431,16 @@ class DarkTextColorNotifier extends Notifier<DarkTextColor> {
 }
 
 // ===========================================================================
-// #579 計装 (フィールド裏取り用 / 原因確定後に 1 コミットで撤去可能)
+// #579 効果側センサ (post-fix 検証用 / fix 動作確認後に撤去)
 //
-// misskey.io でアプリのバージョン更新直後の初回 cold start に限り、ホームが
-// ソーシャル(hybrid)表示になり数回リロードで回復する、という一過性報告
-// (#579) の裏取り。debug 非再現前提のため Sentry 経路で観測する。
-// 撤去時はこのブロック / TabConfigNotifier._loaded まわり / visibleTabsProvider
-// と home_screen の `#579 計装` ブロックをまとめて削除する。
+// TabConfigNotifier.build() 同期化 + SharedPreferences pre-warm で race を
+// 構造的に解消したあと、想定外の経路で「home → social」化が再発しないかを
+// 1 リリース観測するための残置センサ。home_screen の
+// `timeline.home_resolved_social.post_upgrade` がこの provider の coldStartAt
+// と組み合わさって発火する。
+// スモーキングガン側 (TabConfigNotifier._loaded / visibleTabsProvider 計装)
+// は構造的修正に取り込まれて撤去済み。本ブロックも v1.29 で発火 0 確認後に
+// 撤去予定。
 // ===========================================================================
 
 /// 直近に起動が観測したアプリバージョン。バージョン更新の検知にのみ使う。

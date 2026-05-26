@@ -13,20 +13,32 @@ import '../util/chat_error.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
+import 'chat_room_edit_screen.dart';
 
-class ChatThreadScreen extends ConsumerStatefulWidget {
-  final User otherUser;
+enum _RoomMenuAction { members, toggleMute, edit, leave, delete }
 
-  const ChatThreadScreen({super.key, required this.otherUser});
+/// Misskey chat ルーム (グループチャット) のタイムライン画面 (#438)。DM 用
+/// [ChatThreadScreen] と UI 構成は揃えるが、provider は
+/// [chatRoomTimelineProvider]、送信は sendRoomMessage 経由。
+class ChatRoomTimelineScreen extends ConsumerStatefulWidget {
+  final ChatRoom room;
+
+  const ChatRoomTimelineScreen({super.key, required this.room});
 
   @override
-  ConsumerState<ChatThreadScreen> createState() => _ChatThreadScreenState();
+  ConsumerState<ChatRoomTimelineScreen> createState() =>
+      _ChatRoomTimelineScreenState();
 }
 
-class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
+class _ChatRoomTimelineScreenState
+    extends ConsumerState<ChatRoomTimelineScreen> {
   final _scrollController = ScrollController();
   final _textController = TextEditingController();
   bool _sending = false;
+  // initialRoom は immutable な widget.room を起点に、編集 / ミュート結果で
+  // ローカル更新する mutable cache。AppBar タイトルや overflow メニューの
+  // 既読は再 build で反映される。
+  late ChatRoom _room = widget.room;
 
   @override
   void initState() {
@@ -45,7 +57,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
-      ref.read(chatThreadProvider(widget.otherUser.id).notifier).loadMore();
+      ref.read(chatRoomTimelineProvider(widget.room.id).notifier).loadMore();
     }
   }
 
@@ -55,17 +67,136 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     setState(() => _sending = true);
     try {
       await ref
-          .read(chatThreadProvider(widget.otherUser.id).notifier)
+          .read(chatRoomTimelineProvider(widget.room.id).notifier)
           .send(text);
       _textController.clear();
     } catch (e, st) {
-      reportChatOpFailure('send_message', e, st);
+      reportChatOpFailure('send_room_message', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    final target = !_room.isMuted;
+    try {
+      await (adapter as ChatSupport).setRoomMute(
+        roomId: _room.id,
+        mute: target,
+      );
+      // ChatRoom には copyWith が無いので再構築。Phase E.1 範囲では他経路で
+      // ミュート状態の参照は無いが、AppBar アイコン切替のため反映する。
+      if (!mounted) return;
+      setState(
+        () => _room = ChatRoom(
+          id: _room.id,
+          createdAt: _room.createdAt,
+          name: _room.name,
+          description: _room.description,
+          ownerId: _room.ownerId,
+          owner: _room.owner,
+          isMuted: target,
+          invitationExists: _room.invitationExists,
+        ),
+      );
+      ref.invalidate(chatThreadListProvider);
+    } catch (e, st) {
+      reportChatOpFailure('toggle_room_mute', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${target ? "ミュート" : "ミュート解除"}に失敗しました (${summarizeChatError(e)})',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _edit() async {
+    final updated = await Navigator.of(context).push<ChatRoom?>(
+      MaterialPageRoute(builder: (_) => ChatRoomEditScreen(initialRoom: _room)),
+    );
+    if (updated != null && mounted) {
+      setState(() => _room = updated);
+    }
+  }
+
+  Future<void> _confirmLeave() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ルームを退出しますか？'),
+        content: Text('${_room.name} から退出します。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    try {
+      await (adapter as ChatSupport).leaveRoom(_room.id);
+      ref.invalidate(joiningChatRoomsProvider);
+      ref.invalidate(chatThreadListProvider);
+      if (!mounted) return;
+      context.go('/chat');
+    } catch (e, st) {
+      reportChatOpFailure('leave_room', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('退出に失敗しました (${summarizeChatError(e)})')),
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteRoom() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ルームを削除しますか？'),
+        content: Text('${_room.name} を削除します。\nこの操作は取り消せず、全メンバーから見えなくなります。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ChatSupport) return;
+    try {
+      await (adapter as ChatSupport).deleteRoom(_room.id);
+      ref.invalidate(joiningChatRoomsProvider);
+      ref.invalidate(chatThreadListProvider);
+      if (!mounted) return;
+      context.go('/chat');
+    } catch (e, st) {
+      reportChatOpFailure('delete_room', e, st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+      );
     }
   }
 
@@ -90,10 +221,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     if (!mounted) return;
     try {
       await ref
-          .read(chatThreadProvider(widget.otherUser.id).notifier)
+          .read(chatRoomTimelineProvider(widget.room.id).notifier)
           .deleteMessage(message.id);
     } catch (e, st) {
-      reportChatOpFailure('delete_message', e, st);
+      reportChatOpFailure('delete_room_message', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
@@ -104,24 +235,24 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final myUserId = ref.watch(currentAccountProvider)?.user.id;
-    final state = ref.watch(chatThreadProvider(widget.otherUser.id));
+    final state = ref.watch(chatRoomTimelineProvider(widget.room.id));
     final adapter = ref.watch(currentAdapterProvider);
-    // readonly ロールでは送信不可。compose row 自体を隠す (#446)。
     final canSend =
         adapter is ChatSupport && (adapter as ChatSupport).canWriteChat;
-    final displayName = widget.otherUser.displayName?.isNotEmpty == true
-        ? widget.otherUser.displayName!
-        : widget.otherUser.username;
+
+    final myUserIdForOwnerCheck = ref.watch(currentAccountProvider)?.user.id;
+    final isOwner =
+        myUserIdForOwnerCheck != null && _room.ownerId == myUserIdForOwnerCheck;
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            UserAvatar(user: widget.otherUser, size: 32),
+            Icon(Icons.groups, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                displayName,
+                _room.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -129,6 +260,79 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           ],
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (_room.isMuted)
+            IconButton(
+              icon: const Icon(Icons.notifications_off),
+              tooltip: 'ミュート中',
+              onPressed: _toggleMute,
+            ),
+          PopupMenuButton<_RoomMenuAction>(
+            onSelected: (action) {
+              switch (action) {
+                case _RoomMenuAction.members:
+                  context.push('/chat/room/${_room.id}/members', extra: _room);
+                case _RoomMenuAction.toggleMute:
+                  _toggleMute();
+                case _RoomMenuAction.edit:
+                  _edit();
+                case _RoomMenuAction.leave:
+                  _confirmLeave();
+                case _RoomMenuAction.delete:
+                  _confirmDeleteRoom();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _RoomMenuAction.members,
+                child: ListTile(
+                  leading: Icon(Icons.people),
+                  title: Text('メンバー'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: _RoomMenuAction.toggleMute,
+                child: ListTile(
+                  leading: Icon(
+                    _room.isMuted
+                        ? Icons.notifications_active
+                        : Icons.notifications_off,
+                  ),
+                  title: Text(_room.isMuted ? 'ミュート解除' : 'ミュート'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.edit,
+                  child: ListTile(
+                    leading: Icon(Icons.edit),
+                    title: Text('編集'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (!isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.leave,
+                  child: ListTile(
+                    leading: Icon(Icons.logout),
+                    title: Text('退出'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (isOwner)
+                const PopupMenuItem(
+                  value: _RoomMenuAction.delete,
+                  child: ListTile(
+                    leading: Icon(Icons.delete_forever),
+                    title: Text('ルームを削除'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -151,7 +355,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: () => ref.invalidate(
-                                chatThreadProvider(widget.otherUser.id),
+                                chatRoomTimelineProvider(widget.room.id),
                               ),
                               child: const Text('再試行'),
                             ),
@@ -168,7 +372,6 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
               onSend: _send,
             )
           else
-            // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
             Container(
               padding: const EdgeInsets.all(12),
               alignment: Alignment.center,
@@ -189,11 +392,11 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     ChatThreadState data,
     String? myUserId,
   ) {
-    // ストリーミングが切れている / バックグラウンド復帰直後などで取りこぼしが
-    // 起こり得るため、引っぱり更新で能動的に再取得できる経路を用意する。
+    // DM タイムラインと同じく、ストリーミング取りこぼし対策として引っぱり
+    // 更新を入れておく。
     return RefreshIndicator(
       onRefresh: () =>
-          ref.refresh(chatThreadProvider(widget.otherUser.id).future),
+          ref.refresh(chatRoomTimelineProvider(widget.room.id).future),
       child: data.messages.isEmpty
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -217,7 +420,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                 final message = data.messages[index];
                 final isMine =
                     myUserId != null && message.fromUser.id == myUserId;
-                return _MessageBubble(
+                return _RoomMessageBubble(
                   message: message,
                   isMine: isMine,
                   onLongPress: isMine ? () => _confirmDelete(message) : null,
@@ -228,22 +431,22 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   }
 }
 
-class _MessageBubble extends ConsumerStatefulWidget {
+class _RoomMessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
   final bool isMine;
   final VoidCallback? onLongPress;
 
-  const _MessageBubble({
+  const _RoomMessageBubble({
     required this.message,
     required this.isMine,
     this.onLongPress,
   });
 
   @override
-  ConsumerState<_MessageBubble> createState() => _MessageBubbleState();
+  ConsumerState<_RoomMessageBubble> createState() => _RoomMessageBubbleState();
 }
 
-class _MessageBubbleState extends ConsumerState<_MessageBubble> {
+class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
   ContentRenderer? _contentRenderer;
 
   @override
@@ -252,9 +455,6 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
     super.dispose();
   }
 
-  /// メッセージ本文を post_tile と同じ ContentRenderer (MFM) でレンダリング
-  /// する (#449)。Misskey の chat は MFM のみで HTML は来ない。emojis は
-  /// メッセージ自体の `emojis` と送信者の `emojis` をマージ。
   TextSpan _renderContent(String content, TextStyle baseStyle) {
     _contentRenderer?.dispose();
     final message = widget.message;
@@ -300,8 +500,25 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
     final textColor = isMine
         ? scheme.onPrimaryContainer
         : scheme.onSurfaceVariant;
+    // DM と違い、ルームでは送信者がメッセージごとに変わる。バブル上に
+    // 送信者名 (自分以外) を出して誰の発言か分かるようにする。
+    final senderName = message.fromUser.displayName?.isNotEmpty == true
+        ? message.fromUser.displayName!
+        : message.fromUser.username;
 
     final children = <Widget>[];
+    if (!isMine) {
+      children.add(
+        Text(
+          senderName,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: textColor.withValues(alpha: 0.8),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+      children.add(const SizedBox(height: 4));
+    }
     if (message.file != null) {
       children.add(_FilePreview(file: message.file!));
       if (message.text != null && message.text!.isNotEmpty) {
@@ -361,9 +578,6 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
     );
   }
 
-  // post_tile / notification_tile と同じ表示モード (display_settings の
-  // absoluteTimeProvider) に追従する (#560)。日付が分からないと「いつの
-  // メッセージか」が読み取れないため、時刻のみの表示は廃止する。
   String _formatTime(DateTime t) {
     if (ref.watch(absoluteTimeProvider)) {
       final local = t.toLocal();

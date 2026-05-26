@@ -1,4 +1,5 @@
-import 'package:capsicum_core/capsicum_core.dart';
+import 'package:capsicum_core/capsicum_core.dart' as cc;
+import 'package:capsicum_core/capsicum_core.dart' hide Page;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ import '../../service/tco_resolver.dart';
 import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
@@ -52,7 +54,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _hasMoreGallery = true;
   bool _galleryTabLoaded = false;
 
+  List<cc.Page> _pages = [];
+  bool _loadingPages = true;
+  bool _loadingMorePages = false;
+  bool _hasMorePages = true;
+  bool _pagesTabLoaded = false;
+
   bool get _hasGalleryTab => ref.read(currentAdapterProvider) is GallerySupport;
+  bool get _hasPagesTab => ref.read(currentAdapterProvider) is PagesSupport;
+  int get _pagesTabIndex => _hasGalleryTab ? 3 : 2;
+  int get _tabCount => 2 + (_hasGalleryTab ? 1 : 0) + (_hasPagesTab ? 1 : 0);
 
   UserRelationship? _relationship;
   bool _relationshipLoading = false;
@@ -85,7 +96,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _hasGalleryTab ? 3 : 2, vsync: this);
+    _tabController = TabController(length: _tabCount, vsync: this);
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
@@ -115,8 +126,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     if (_tabController.index == 1 && !_mediaTabLoaded) {
       _loadMediaPosts();
     }
-    if (_tabController.index == 2 && !_galleryTabLoaded) {
+    if (_hasGalleryTab && _tabController.index == 2 && !_galleryTabLoaded) {
       _loadGalleryPosts();
+    }
+    if (_hasPagesTab &&
+        _tabController.index == _pagesTabIndex &&
+        !_pagesTabLoaded) {
+      _loadPages();
     }
   }
 
@@ -133,12 +149,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
-      if (_tabController.index == 0) {
+      final i = _tabController.index;
+      if (i == 0) {
         _loadMorePosts();
-      } else if (_tabController.index == 1) {
+      } else if (i == 1) {
         _loadMoreMediaPosts();
-      } else if (_tabController.index == 2) {
+      } else if (_hasGalleryTab && i == 2) {
         _loadMoreGalleryPosts();
+      } else if (_hasPagesTab && i == _pagesTabIndex) {
+        _loadMorePages();
       }
     }
   }
@@ -311,6 +330,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  Future<void> _loadPages() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! PagesSupport) return;
+
+    _pagesTabLoaded = true;
+    try {
+      final pages = await (adapter as PagesSupport).getUserPages(
+        widget.user.id,
+        query: const TimelineQuery(limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _pages = pages;
+          _loadingPages = false;
+          _hasMorePages = pages.length >= 20;
+        });
+      }
+    } catch (e) {
+      _pagesTabLoaded = false;
+      if (mounted) setState(() => _loadingPages = false);
+    }
+  }
+
+  Future<void> _loadMorePages() async {
+    if (_loadingMorePages || !_hasMorePages || _pages.isEmpty) return;
+
+    setState(() => _loadingMorePages = true);
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! PagesSupport) return;
+
+    try {
+      final older = await (adapter as PagesSupport).getUserPages(
+        widget.user.id,
+        query: TimelineQuery(maxId: _pages.last.id, limit: 20),
+      );
+      if (mounted) {
+        setState(() {
+          _pages = [..._pages, ...older];
+          _loadingMorePages = false;
+          _hasMorePages = older.length >= 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingMorePages = false);
+    }
+  }
+
   Future<void> _loadRelationship() async {
     if (_isOwnProfile) return;
     final adapter = ref.read(currentAdapterProvider);
@@ -432,6 +499,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   const Tab(text: '投稿'),
                   const Tab(text: 'メディア'),
                   if (_hasGalleryTab) const Tab(text: 'ギャラリー'),
+                  if (_hasPagesTab) const Tab(text: 'ページ'),
                 ],
               ),
               colorScheme.surface,
@@ -444,13 +512,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   List<Widget> _buildTabContent(ColorScheme colorScheme) {
-    if (_tabController.index == 0) {
+    final i = _tabController.index;
+    if (i == 0) {
       return _buildPostsTab(colorScheme);
-    } else if (_tabController.index == 1) {
+    } else if (i == 1) {
       return _buildMediaTab();
-    } else {
+    } else if (_hasGalleryTab && i == 2) {
       return _buildGalleryTab();
+    } else if (_hasPagesTab && i == _pagesTabIndex) {
+      return _buildPagesTab();
     }
+    return [const SliverFillRemaining(child: SizedBox.shrink())];
   }
 
   List<Widget> _buildPostsTab(ColorScheme colorScheme) {
@@ -630,6 +702,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             );
           }, childCount: _galleryPosts.length + (_loadingMoreGallery ? 1 : 0)),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildPagesTab() {
+    if (_loadingPages) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_pages.isEmpty) {
+      return [
+        const SliverFillRemaining(child: Center(child: Text('ページはありません'))),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.all(8),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            if (index >= _pages.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return PageCard(page: _pages[index]);
+          }, childCount: _pages.length + (_loadingMorePages ? 1 : 0)),
         ),
       ),
     ];

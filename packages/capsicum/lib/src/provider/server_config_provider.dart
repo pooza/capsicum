@@ -133,9 +133,13 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
   try {
     return await (adapter as CustomEmojiSupport).getEmojis();
   } catch (e, st) {
+    // 失敗時に `const []` を返すと consumer (shortcode 警告) からは
+    // 「本当に空」と区別できず、すべての `:foo:` を unknown 扱いで赤波下線
+    // 化してしまう (#609 false positive)。AsyncError として伝播させて
+    // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
     debugPrint('getEmojis failed: $e');
     Sentry.captureException(e, stackTrace: st);
-    return const [];
+    rethrow;
   }
 });
 

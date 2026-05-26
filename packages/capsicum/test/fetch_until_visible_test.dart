@@ -108,5 +108,29 @@ void main() {
 
       expect(seenCursors, [null, 'b']);
     });
+
+    /// #601: API が満杯ページを返し続けても kMaxVisibilityPageFetches で打ち切る。
+    test('満杯ページが続いても上限ページ数で打ち切る', () async {
+      var calls = 0;
+      final state = await fetchUntilVisible(
+        pageSize: 2,
+        hideLivecure: true,
+        fetch: (maxId) async {
+          calls++;
+          return [
+            _post('a$calls', livecure: true),
+            _post('b$calls', livecure: true),
+          ];
+        },
+      );
+
+      expect(calls, kMaxVisibilityPageFetches, reason: '上限ページ数で打ち切る');
+      expect(state.posts, isEmpty);
+      expect(
+        state.hasMore,
+        isTrue,
+        reason: 'API はまだデータを持っているので hasMore は true',
+      );
+    });
   });
 }

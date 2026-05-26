@@ -42,6 +42,10 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
 
   MulukhiyaService? get _mulukhiya => ref.read(currentMulukhiyaProvider);
 
+  /// モロヘイヤ 5.23.0+ の features.media_catalog で gate (#606)。false の間は
+  /// `getMediaCatalog` を呼ばず placeholder のみ出す。
+  bool get _featureEnabled => _mulukhiya?.mediaCatalogEnabled ?? false;
+
   void _onScroll() {
     if (_loadingMore || !_hasMore) return;
     if (_scrollController.position.pixels >=
@@ -53,6 +57,17 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
   Future<void> _load() async {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null) return;
+    if (!_featureEnabled) {
+      if (mounted) {
+        setState(() {
+          _items = const [];
+          _hasMore = false;
+          _loading = false;
+          _error = null;
+        });
+      }
+      return;
+    }
 
     setState(() {
       _loading = true;
@@ -84,6 +99,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
   Future<void> _loadMore() async {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null || _loadingMore || !_hasMore) return;
+    if (!_featureEnabled) return;
 
     setState(() => _loadingMore = true);
 
@@ -143,6 +159,25 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
   }
 
   Widget _buildBody() {
+    if (!_featureEnabled) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'このサーバーではメディアカタログを現在無効にしています',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }

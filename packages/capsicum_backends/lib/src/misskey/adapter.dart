@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import 'dart:developer' as developer;
 
+import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
 import 'extensions.dart';
@@ -92,9 +93,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         ScheduleSupport,
         TranslationSupport,
         DriveSupport,
+        PagesSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
   MisskeyChatStreaming? _chatStreaming;
+  // ルーム毎に 1 本ずつ WebSocket を張る (chatRoom channel は roomId 必須で
+  // aggregate 不可、#438)。表示中のルームに対して都度購読 / 切断する。
+  final Map<String, MisskeyChatRoomStreaming> _chatRoomStreamings = {};
   final MisskeyClient client;
   List<List<String>> _mutedWords = [];
   List<List<String>> _hardMutedWords = [];
@@ -1071,6 +1076,94 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return data.map(_mapGalleryPost).toList();
   }
 
+  // PagesSupport (#186)
+
+  Page _mapPage(Map<String, dynamic> p) {
+    final user = MisskeyUser.fromJson(p['user'] as Map<String, dynamic>);
+    final eyeCatching = p['eyeCatchingImage'] as Map<String, dynamic>?;
+    final eyeCatchingAttachment = eyeCatching == null
+        ? null
+        : MisskeyDriveFile.fromJson(eyeCatching).toCapsicum();
+    // pages/show のレスポンスに含まれる attachedFiles を fileId→Attachment
+    // で索引化する。ブロックレンダラが image ブロックの fileId で引く。
+    // users/pages では空のことがあるが、ページ詳細表示 (getPageById /
+    // getPageByName) で必要十分。
+    final attachedFiles = <String, Attachment>{};
+    for (final raw in (p['attachedFiles'] as List? ?? const [])) {
+      if (raw is! Map<String, dynamic>) continue;
+      final file = MisskeyDriveFile.fromJson(raw).toCapsicum();
+      attachedFiles[file.id] = file;
+    }
+    return Page(
+      id: p['id'] as String,
+      name: p['name'] as String? ?? '',
+      title: p['title'] as String? ?? '',
+      summary: p['summary'] as String?,
+      content: ((p['content'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>(),
+      author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      createdAt: DateTime.parse(
+        p['createdAt'] as String? ?? '1970-01-01T00:00:00Z',
+      ),
+      updatedAt: DateTime.parse(
+        p['updatedAt'] as String? ??
+            p['createdAt'] as String? ??
+            '1970-01-01T00:00:00Z',
+      ),
+      eyeCatchingImage: eyeCatchingAttachment,
+      attachedFiles: attachedFiles,
+      likedCount: p['likedCount'] as int? ?? 0,
+      isLiked: p['isLiked'] as bool? ?? false,
+    );
+  }
+
+  @override
+  Future<List<Page>> getUserPages(String userId, {TimelineQuery? query}) async {
+    final data = await client.getUserPages(
+      userId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapPage).toList();
+  }
+
+  @override
+  Future<Page> getPageById(String pageId) async {
+    final data = await client.getPageById(pageId);
+    return _mapPage(data);
+  }
+
+  @override
+  Future<Page> getPageByName({
+    required String username,
+    required String name,
+  }) async {
+    final data = await client.getPageByName(username: username, name: name);
+    return _mapPage(data);
+  }
+
+  @override
+  Future<List<Page>> getFeaturedPages({TimelineQuery? query}) async {
+    final data = await client.getFeaturedPages(limit: query?.limit);
+    return data.map(_mapPage).toList();
+  }
+
+  @override
+  Future<List<Page>> getLikedPages({TimelineQuery? query}) async {
+    final data = await client.getMyPageLikes(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    // /api/i/page-likes は {id, page} の配列を返すため page を取り出す。
+    return data
+        .map((e) => e['page'] as Map<String, dynamic>?)
+        .whereType<Map<String, dynamic>>()
+        .map(_mapPage)
+        .toList();
+  }
+
   // DriveSupport
 
   @override
@@ -1492,6 +1585,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       adminRoleIds: _adminRoleIds,
       selfUser: me,
       counterpartyUser: counterparty,
+      // create のレスポンス (ChatMessageLiteFor1on1) には `isRead` が無く、
+      // 自分が送ったメッセージなので未読扱いにすると自前未読バッジに乗る。
+      defaultIsRead: true,
     );
   }
 
@@ -1530,5 +1626,279 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> markAllChatRead() async {
     await client.markAllChatRead();
+  }
+
+  // -- ChatSupport (rooms, #438) ---------------------------------------------
+
+  @override
+  Future<List<ChatThread>> getRoomHistory({TimelineQuery? query}) async {
+    final me = await _ensureMyUser();
+    // /api/chat/history はサーバー側ページング非対応 (#445)。query.maxId は
+    // 無視し、limit のみ通す。room: true でルーム履歴を取得。
+    final entries = await client.getChatHistory(
+      limit: query?.limit,
+      room: true,
+    );
+    return entries
+        .map(
+          (e) => misskeyChatThreadFromHistoryEntry(
+            e,
+            host,
+            me.id,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChatRoom>> getJoiningRooms({TimelineQuery? query}) async {
+    // /joining は ChatRoomMembership を返し、room が populate されている。
+    // 呼び出し側はルーム本体を欲しているので unwrap する。
+    final memberships = await client.getJoiningChatRooms(
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return memberships
+        .map(
+          (m) => misskeyChatRoomMemberFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .map((m) => m.room)
+        .whereType<ChatRoom>()
+        .toList();
+  }
+
+  @override
+  Future<List<ChatRoom>> getOwnedRooms({TimelineQuery? query}) async {
+    final rooms = await client.getOwnedChatRooms(
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return rooms
+        .map(
+          (r) => misskeyChatRoomFromMap(r, host, adminRoleIds: _adminRoleIds),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ChatRoom> getRoom(String roomId) async {
+    final data = await client.getChatRoom(roomId);
+    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<ChatRoom> createRoom({
+    required String name,
+    String? description,
+  }) async {
+    final data = await client.createChatRoom(
+      name: name,
+      description: description,
+    );
+    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<ChatRoom> updateRoom({
+    required String roomId,
+    String? name,
+    String? description,
+  }) async {
+    final data = await client.updateChatRoom(
+      roomId: roomId,
+      name: name,
+      description: description,
+    );
+    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<void> deleteRoom(String roomId) async {
+    await client.deleteChatRoom(roomId);
+  }
+
+  @override
+  Future<void> joinRoom(String roomId) async {
+    await client.joinChatRoom(roomId);
+  }
+
+  @override
+  Future<void> leaveRoom(String roomId) async {
+    await client.leaveChatRoom(roomId);
+  }
+
+  @override
+  Future<List<ChatRoomMember>> getRoomMembers({
+    required String roomId,
+    TimelineQuery? query,
+  }) async {
+    final members = await client.getChatRoomMembers(
+      roomId: roomId,
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return members
+        .map(
+          (m) => misskeyChatRoomMemberFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChatMessage>> getRoomMessages({
+    required String roomId,
+    TimelineQuery? query,
+  }) async {
+    final me = await _ensureMyUser();
+    final messages = await client.getChatRoomMessages(
+      roomId: roomId,
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return messages
+        .map(
+          (m) => misskeyChatMessageFromMap(
+            m,
+            host,
+            adminRoleIds: _adminRoleIds,
+            selfUser: me,
+            // room-timeline はサーバー側で既読更新済み (room-timeline.ts
+            // readRoomChatMessage)。isRead を持たない lite スキーマ
+            // (`ChatMessageLiteForRoom`) なので true に倒す (DM の
+            // user-timeline と同方針 #447)。
+            defaultIsRead: true,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String roomId,
+    String? text,
+    String? fileId,
+  }) async {
+    final me = await _ensureMyUser();
+    final data = await client.createChatMessageToRoom(
+      toRoomId: roomId,
+      text: text,
+      fileId: fileId,
+    );
+    return misskeyChatMessageFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+      selfUser: me,
+      // create のレスポンス (ChatMessageLiteForRoom) には `isRead` が無く、
+      // 自分が送ったメッセージなので未読扱いにすると自前未読バッジに乗る。
+      defaultIsRead: true,
+    );
+  }
+
+  @override
+  Future<void> setRoomMute({required String roomId, required bool mute}) async {
+    await client.setChatRoomMute(roomId: roomId, mute: mute);
+  }
+
+  @override
+  Future<void> inviteToRoom({
+    required String roomId,
+    required String userId,
+  }) async {
+    await client.createChatRoomInvitation(roomId: roomId, userId: userId);
+  }
+
+  @override
+  Future<void> ignoreInvitation(String roomId) async {
+    await client.ignoreChatRoomInvitation(roomId);
+  }
+
+  @override
+  Future<List<ChatRoomInvitation>> getInvitationInbox({
+    TimelineQuery? query,
+  }) async {
+    final invitations = await client.getChatRoomInvitationInbox(
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return invitations
+        .map(
+          (i) => misskeyChatRoomInvitationFromMap(
+            i,
+            host,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChatRoomInvitation>> getInvitationOutbox({
+    TimelineQuery? query,
+  }) async {
+    final invitations = await client.getChatRoomInvitationOutbox(
+      untilId: query?.maxId,
+      sinceId: query?.sinceId,
+      limit: query?.limit,
+    );
+    return invitations
+        .map(
+          (i) => misskeyChatRoomInvitationFromMap(
+            i,
+            host,
+            adminRoleIds: _adminRoleIds,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Stream<ChatMessage> streamRoomMessages({
+    required String roomId,
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
+    _chatRoomStreamings.remove(roomId)?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    final streaming = MisskeyChatRoomStreaming(
+      host: host,
+      accessToken: token,
+      roomId: roomId,
+      adminRoleIds: _adminRoleIds,
+      selfUser: _myUser,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
+    );
+    _chatRoomStreamings[roomId] = streaming;
+    return streaming.connect();
+  }
+
+  @override
+  void disposeRoomChatStream({String? roomId}) {
+    if (roomId == null) {
+      for (final s in _chatRoomStreamings.values) {
+        s.dispose();
+      }
+      _chatRoomStreamings.clear();
+      return;
+    }
+    _chatRoomStreamings.remove(roomId)?.dispose();
   }
 }

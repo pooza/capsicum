@@ -295,6 +295,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // streaming 再接続上限到達時に silent failure にならないよう SnackBar
+    // 表示 (#602)。フラグは pull-to-refresh / タブ再選択の build() でクリア
+    // されるため、復帰経路もユーザーに伝わる文言にする。
+    ref.listen(listenTarget, (prev, next) {
+      final exhausted = next.valueOrNull?.streamReconnectExhausted ?? false;
+      final prevExhausted =
+          prev?.valueOrNull?.streamReconnectExhausted ?? false;
+      if (exhausted && !prevExhausted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ライブ更新が停止しました。下に引いて再接続してください'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
+
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
     // 「タイムライン本体 (約 600px) + ドロワー 304px」が成り立つ最小ラインを
     // 採用。タブレット横向き (iPad 1024 / Galaxy Tab 1280) や 13" デスクトップ
@@ -1182,6 +1201,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onTap: () {
                     dismiss();
                     context.push('/gallery');
+                  },
+                ),
+              if (ref.read(currentAdapterProvider) is PagesSupport)
+                ListTile(
+                  leading: const Icon(Icons.article_outlined),
+                  title: const Text('ページ'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/pages');
                   },
                 ),
               if (ref.read(currentMulukhiyaProvider) != null) ...[

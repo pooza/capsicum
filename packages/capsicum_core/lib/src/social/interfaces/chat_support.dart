@@ -1,4 +1,7 @@
 import '../../model/chat_message.dart';
+import '../../model/chat_room.dart';
+import '../../model/chat_room_invitation.dart';
+import '../../model/chat_room_member.dart';
 import '../../model/chat_thread.dart';
 import '../../model/timeline_query.dart';
 
@@ -61,4 +64,112 @@ abstract mixin class ChatSupport {
   /// streamChatMessages で立てた接続を明示的に切断する。アカウント切り替え
   /// 時などライフサイクルが複数 listener を超えて変わる場面で呼ぶ。
   void disposeChatStream();
+
+  // === chat rooms (#438) =====================================================
+  //
+  // ルーム (グループチャット) は DM と同じ ChatMessage 型を使う。DM ・ルームの
+  // 識別は ChatMessage.isRoomMessage で行う。サーバーがルーム機能自体に対応
+  // していない場合 (Misskey でないアダプタ) はデフォルト実装が
+  // UnsupportedError を投げる。
+
+  /// 自分が参加しているルームスレッドの履歴 (1 ルーム = 1 スレッド、最新メッセージを
+  /// 同梱)。Misskey の `/api/chat/history?room=true` 相当。
+  ///
+  /// 戻り値の [ChatThread] は `isRoom == true` で `room` が populate されている。
+  Future<List<ChatThread>> getRoomHistory({TimelineQuery? query}) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 自分が参加しているルーム一覧 (最終メッセージは含まず、ルーム本体のみ)。
+  Future<List<ChatRoom>> getJoiningRooms({TimelineQuery? query}) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 自分が所有しているルーム一覧 (作成者 = self)。
+  Future<List<ChatRoom>> getOwnedRooms({TimelineQuery? query}) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 指定ルームの情報を取得。
+  Future<ChatRoom> getRoom(String roomId) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 新規ルームを作成する。
+  Future<ChatRoom> createRoom({
+    required String name,
+    String? description,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルーム情報を更新する (オーナーのみ)。
+  Future<ChatRoom> updateRoom({
+    required String roomId,
+    String? name,
+    String? description,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルームを削除する (オーナーのみ)。
+  Future<void> deleteRoom(String roomId) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルームに参加する (招待を受けている場合 / 公開ルームの場合)。
+  Future<void> joinRoom(String roomId) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルームから退出する。
+  Future<void> leaveRoom(String roomId) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルームのメンバー一覧を取得する。
+  Future<List<ChatRoomMember>> getRoomMembers({
+    required String roomId,
+    TimelineQuery? query,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 指定ルームのメッセージ一覧 (timeline)。
+  Future<List<ChatMessage>> getRoomMessages({
+    required String roomId,
+    TimelineQuery? query,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルーム宛にメッセージを送信する。
+  Future<ChatMessage> sendRoomMessage({
+    required String roomId,
+    String? text,
+    String? fileId,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ルームのミュート / アンミュート (自分の view から)。
+  Future<void> setRoomMute({
+    required String roomId,
+    required bool mute,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// ユーザーをルームに招待する (オーナーのみ)。
+  Future<void> inviteToRoom({
+    required String roomId,
+    required String userId,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 自分宛の招待を無視する (受信箱から取り除く)。
+  Future<void> ignoreInvitation(String roomId) async =>
+      throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 自分宛の招待受信箱。
+  Future<List<ChatRoomInvitation>> getInvitationInbox({
+    TimelineQuery? query,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 自分が送った招待の送信箱。
+  Future<List<ChatRoomInvitation>> getInvitationOutbox({
+    TimelineQuery? query,
+  }) async => throw UnsupportedError('rooms are not supported by this backend');
+
+  /// 特定ルームの新着メッセージを通知するストリーム。Misskey の
+  /// `chatRoom` channel + `{roomId}` param 相当。listen で接続、onCancel で切断。
+  Stream<ChatMessage> streamRoomMessages({
+    required String roomId,
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) => const Stream.empty();
+
+  /// streamRoomMessages で立てた接続を明示的に切断する。
+  void disposeRoomChatStream({String? roomId}) {}
 }

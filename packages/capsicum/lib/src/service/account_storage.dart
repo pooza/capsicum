@@ -206,6 +206,17 @@ class AccountStorage {
     await _storage.write(key: 'client_creds_$host', value: data);
   }
 
+  /// Drop the cached OAuth client credentials for a host.
+  ///
+  /// Mastodon は client_id ごとに登録済 redirect_uris を厳格 match する。
+  /// 旧版 (#489 前) に capsicum://oauth のみで登録された cache が残ったまま
+  /// 新版 (http://localhost:7099/oauth/callback) でログインしようとすると
+  /// `invalid_redirect_uri` でサーバ側がエラーページを返す (#620)。
+  /// login_screen のサイレント再登録経路で使う。
+  Future<void> deleteHostClientCredentials(String host) async {
+    await _storage.delete(key: 'client_creds_$host');
+  }
+
   /// Retrieve OAuth client credentials for a host.
   Future<ClientSecretData?> getHostClientCredentials(String host) async {
     try {

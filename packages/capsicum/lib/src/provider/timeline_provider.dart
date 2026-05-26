@@ -34,6 +34,34 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
 const Object _keepLoadMoreError = Object();
 
+/// build() / fetchUntilVisible のページ取得ループの試行ページ数上限 (#601)。
+/// 実況フィルタ ON で API が満杯ページを返し続けると、可視投稿が 1 件見つかる
+/// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
+const int kMaxVisibilityPageFetches = 10;
+
+/// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
+/// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
+/// 同じ category を全 3 経路 (build / fetchUntilVisible / loadMore) で共有する。
+void _recordPageCapHit({
+  required String site,
+  required int visibleCollected,
+  required bool hasMore,
+}) {
+  Sentry.addBreadcrumb(
+    Breadcrumb(
+      message: 'timeline page cap hit',
+      category: 'timeline.page_cap',
+      level: SentryLevel.info,
+      data: {
+        'site': site,
+        'cap': kMaxVisibilityPageFetches,
+        'visibleCollected': visibleCollected,
+        'hasMore': hasMore,
+      },
+    ),
+  );
+}
+
 /// Paginated timeline state.
 class TimelineState {
   final List<Post> posts;
@@ -120,8 +148,10 @@ Future<TimelineState> fetchUntilVisible({
   final allVisible = <Post>[];
   String? maxId;
   var hasMore = true;
+  var fetches = 0;
 
-  while (hasMore) {
+  while (hasMore && fetches < kMaxVisibilityPageFetches) {
+    fetches++;
     final posts = await fetch(maxId);
     if (posts.isEmpty) {
       hasMore = false;
@@ -136,6 +166,14 @@ Future<TimelineState> fetchUntilVisible({
     allVisible.addAll(visible);
 
     if (allVisible.isNotEmpty || !hasMore) break;
+  }
+
+  if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+    _recordPageCapHit(
+      site: 'fetchUntilVisible',
+      visibleCollected: 0,
+      hasMore: true,
+    );
   }
 
   return TimelineState(posts: allVisible, hasMore: hasMore);
@@ -167,8 +205,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final allVisible = <Post>[];
     String? maxId;
     bool hasMore = true;
+    var fetches = 0;
 
-    while (hasMore) {
+    while (hasMore && fetches < kMaxVisibilityPageFetches) {
+      fetches++;
       final response = await adapter.getTimeline(
         type,
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
@@ -197,6 +237,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (allVisible.isNotEmpty || !hasMore) break;
     }
 
+    if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+      _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
+    }
+
     // Start streaming if supported.
     if (adapter is StreamSupport) {
       _startStreaming(adapter as StreamSupport, type);
@@ -213,11 +257,15 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     return TimelineState(posts: enriched, hasMore: hasMore);
   }
 
-  // streaming 内部の parse / 接続 error を観測層へ流す (#586)。chat_provider
-  // (#448 / #552) と同型: breadcrumb は毎回、captureException は throttle して
-  // 切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通の計装)。
+  // streaming 内部の parse / 接続 / listen error を観測層へ流す (#586)。
+  // chat_provider (#448 / #552) と同型: breadcrumb は毎回、captureException は
+  // throttle して切断中の連発 spam を防ぐ。host 分岐は入れない (全サーバー共通
+  // の計装)。バケットは性質ごとに分離 (#602): connect エラー後 60s 以内に
+  // listener 経路の例外 (_applyWordFilter 異常等) が出ても抑制しないように、
+  // _lastListenCapture を独立に持つ。
   DateTime? _lastParseCapture;
   DateTime? _lastConnectCapture;
+  DateTime? _lastListenCapture;
   static const _captureThrottle = Duration(seconds: 60);
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -327,6 +375,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         // 握り潰すと「ストリーミング来ない」だけになるので観測層へ流す
         // (#586)。state は AsyncError にせず (REST 投稿は生きている)
         // breadcrumb + throttle 付き captureException のみ。
+        // throttle バケットは _lastListenCapture を独立に持つ (#602): connect
+        // エラーの throttle に巻き込まれて listener 側の例外 (_applyWordFilter
+        // 異常等) を取りこぼさないようにする。
         Sentry.addBreadcrumb(
           Breadcrumb(
             category: 'timeline.stream.listen',
@@ -335,11 +386,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           ),
         );
         final now = DateTime.now();
-        if (_lastConnectCapture != null &&
-            now.difference(_lastConnectCapture!) < _captureThrottle) {
+        if (_lastListenCapture != null &&
+            now.difference(_lastListenCapture!) < _captureThrottle) {
           return;
         }
-        _lastConnectCapture = now;
+        _lastListenCapture = now;
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
@@ -454,8 +505,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         String? maxId = base.posts.lastOrNull?.id;
         final allVisible = <Post>[];
         bool hasMore = true;
+        // build() / fetchUntilVisible と同じ #601 ガード。全件 livecure な
+        // ページが連続するサーバで client filter が allVisible を埋められず
+        // 無限ページ取得 → レートリミット暴走になるのを防ぐ。
+        var fetches = 0;
 
-        while (hasMore) {
+        while (hasMore && fetches < kMaxVisibilityPageFetches) {
+          fetches++;
           final response = await adapter.getTimeline(
             type,
             query: TimelineQuery(maxId: maxId, limit: _pageSize),
@@ -491,6 +547,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
           // Stop when visible posts are found or the server has no more data.
           if (allVisible.isNotEmpty || !hasMore) break;
+        }
+
+        if (fetches >= kMaxVisibilityPageFetches &&
+            allVisible.isEmpty &&
+            hasMore) {
+          _recordPageCapHit(
+            site: 'loadMore',
+            visibleCollected: 0,
+            hasMore: true,
+          );
         }
 
         final enrichedMore = await _enrichIsCat(allVisible);
