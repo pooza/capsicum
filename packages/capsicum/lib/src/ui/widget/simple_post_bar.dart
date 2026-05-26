@@ -36,12 +36,9 @@ class SimplePostBar extends ConsumerStatefulWidget {
   ConsumerState<SimplePostBar> createState() => _SimplePostBarState();
 }
 
-class _SimplePostBarState extends ConsumerState<SimplePostBar> {
+class _SimplePostBarState extends ConsumerState<SimplePostBar>
+    with WidgetsBindingObserver {
   final _controller = ShortcodeWarningController();
-  // テキスト欄のフォーカス検出用。MediaQuery.viewInsets は Scaffold body 内で
-  // 剥がされて 0 になるため使えない (#594 の compose_screen 流用が効かない)。
-  // モバイルでフォーカス中 = ソフトキーボード表示中とみなして「しまう」ボタン
-  // を出す。
   final _focusNode = FocusNode();
   bool _sending = false;
   bool _paletteOpen = false;
@@ -49,23 +46,26 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
   @override
   void initState() {
     super.initState();
+    // ソフトキーボード表示中だけ「しまう」ボタンを出すため、metrics 変化を
+    // 受けて rebuild する (#594 / #630)。
+    WidgetsBinding.instance.addObserver(this);
     // テキスト編集のたびに未登録 shortcode を再評価する (#609 / compose_screen
     // の _onTextChanged と同等)。IME 変換中は controller 側の guard で警告
     // 装飾が抑えられるので、ここでは値が変わるたび無条件に流す。
     _controller.addListener(_updateShortcodeWarnings);
-    _focusNode.addListener(_onFocusChanged);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_updateShortcodeWarnings);
     _controller.dispose();
-    _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _onFocusChanged() {
+  @override
+  void didChangeMetrics() {
     if (mounted) setState(() {});
   }
 
@@ -247,13 +247,13 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar> {
                 ),
               ),
               const SizedBox(width: 4),
-              // テキスト欄がフォーカス中 = モバイルでソフトキーボード表示中の
-              // ときだけ「しまう」ボタンを出す (#594)。常駐アイコンを増やさず、
-              // IME 側に dismiss ボタンが無い環境 (Android ATOK 等) の fallback。
-              // MediaQuery.viewInsets は Scaffold body 内で剥がされて使えない
-              // ので focus 状態で代替する。デスクトップでもフォーカス時に出るが
-              // クリックで unfocus できるので無害。
-              if (_focusNode.hasFocus)
+              // ソフトキーボードが画面に出ているときだけ「しまう」ボタンを
+              // 出す (#594)。IME 側に dismiss ボタンが無い環境 (Android ATOK
+              // 等) の fallback。Scaffold body 内では MediaQuery.viewInsets
+              // が剥がれて 0 になるため、View.of(context) で root view から
+              // 拾う。focus 判定だと desktop / iPad + 物理キーボード時に
+              // ボタン列が 1 個右にずれて誤投稿が起きていた (#630)。
+              if (View.of(context).viewInsets.bottom > 0)
                 IconButton(
                   icon: const Icon(Icons.keyboard_hide, size: 20),
                   tooltip: 'キーボードをしまう',
