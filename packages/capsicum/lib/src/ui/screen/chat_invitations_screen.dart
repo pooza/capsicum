@@ -22,9 +22,12 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
 
   Future<void> _accept(ChatRoomInvitation invitation) async {
     if (_pendingRoomId != null) return;
-    setState(() => _pendingRoomId = invitation.roomId);
+    // adapter チェックは setState より前に行う。アカウント切替の race で
+    // ChatSupport でなくなった瞬間に setState 後の early return を踏むと、
+    // _pendingRoomId が null に戻らずボタンが固着する (#298 系の chat 版)。
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) return;
+    setState(() => _pendingRoomId = invitation.roomId);
     try {
       await (adapter as ChatSupport).joinRoom(invitation.roomId);
       ref.invalidate(chatInvitationInboxProvider);
@@ -53,9 +56,9 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
 
   Future<void> _ignore(ChatRoomInvitation invitation) async {
     if (_pendingRoomId != null) return;
-    setState(() => _pendingRoomId = invitation.roomId);
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) return;
+    setState(() => _pendingRoomId = invitation.roomId);
     try {
       await (adapter as ChatSupport).ignoreInvitation(invitation.roomId);
       ref.invalidate(chatInvitationInboxProvider);

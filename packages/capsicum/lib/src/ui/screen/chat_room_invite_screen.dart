@@ -46,9 +46,11 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
 
   Future<void> _invite(User user) async {
     if (_pendingUserId != null) return;
-    setState(() => _pendingUserId = user.id);
+    // adapter チェックは setState より前。race で ChatSupport でなくなった
+    // 瞬間に early return すると _pendingUserId が固着する。
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) return;
+    setState(() => _pendingUserId = user.id);
     try {
       await (adapter as ChatSupport).inviteToRoom(
         roomId: widget.room.id,

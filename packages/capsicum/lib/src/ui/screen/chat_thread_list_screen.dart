@@ -32,7 +32,7 @@ class ChatThreadListScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.groups),
               title: const Text('新しいルーム'),
-              subtitle: const Text('グループチャットを作る'),
+              subtitle: const Text('複数人でメッセージをやり取りする'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 context.push('/chat/room/new');

@@ -1585,6 +1585,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       adminRoleIds: _adminRoleIds,
       selfUser: me,
       counterpartyUser: counterparty,
+      // create のレスポンス (ChatMessageLiteFor1on1) には `isRead` が無く、
+      // 自分が送ったメッセージなので未読扱いにすると自前未読バッジに乗る。
+      defaultIsRead: true,
     );
   }
 
@@ -1799,6 +1802,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       host,
       adminRoleIds: _adminRoleIds,
       selfUser: me,
+      // create のレスポンス (ChatMessageLiteForRoom) には `isRead` が無く、
+      // 自分が送ったメッセージなので未読扱いにすると自前未読バッジに乗る。
+      defaultIsRead: true,
     );
   }
 
