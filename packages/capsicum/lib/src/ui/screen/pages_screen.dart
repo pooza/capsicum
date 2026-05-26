@@ -2,8 +2,10 @@ import 'package:capsicum_core/capsicum_core.dart' as cc;
 import 'package:capsicum_core/capsicum_core.dart' hide Page;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/exception_scrub.dart';
 import '../widget/page_card.dart';
 
 /// Misskey ページのハブ画面 (#186)。
@@ -64,8 +66,19 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
           _hasMoreLiked = pages.length >= 20;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() => _loadingLiked = false);
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('pages.op', 'load_liked');
+        },
+      );
+      if (!mounted) return;
+      setState(() => _loadingLiked = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('いいねしたページの読み込みに失敗しました')));
     }
   }
 
@@ -89,8 +102,19 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
           _hasMoreLiked = older.length >= 20;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() => _loadingMoreLiked = false);
+    } catch (e, st) {
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('pages.op', 'load_more_liked');
+        },
+      );
+      if (!mounted) return;
+      setState(() => _loadingMoreLiked = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('追加読み込みに失敗しました')));
     }
   }
 

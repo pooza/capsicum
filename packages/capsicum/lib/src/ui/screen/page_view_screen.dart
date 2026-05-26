@@ -3,8 +3,10 @@ import 'package:capsicum_core/capsicum_core.dart';
 // 衝突するため Flutter 側を hide する。本画面では Misskey ページのみ扱う。
 import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/exception_scrub.dart';
 import '../widget/page_block_renderer.dart';
 import '../widget/user_avatar.dart';
 
@@ -49,16 +51,35 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
   }
 
   Future<Page> _resolve() async {
-    if (widget.initialPage != null) return widget.initialPage!;
-    final raw = ref.read(currentAdapterProvider);
-    if (raw is! PagesSupport) {
-      throw StateError('current adapter does not support Pages');
+    try {
+      if (widget.initialPage != null) return widget.initialPage!;
+      final raw = ref.read(currentAdapterProvider);
+      if (raw is! PagesSupport) {
+        throw StateError('current adapter does not support Pages');
+      }
+      final pages = raw as PagesSupport;
+      if (widget.pageId != null) {
+        return await pages.getPageById(widget.pageId!);
+      }
+      return await pages.getPageByName(
+        username: widget.username!,
+        name: widget.name!,
+      );
+    } catch (e, st) {
+      // 失敗時の例外 (典型は DioException) は requestOptions.uri に
+      // Misskey の `?i=<accessToken>` が載るため、scrubException で詰め替えて
+      // から rethrow する。UI 側 (FutureBuilder の error branch) では
+      // snapshot.error を表示せず汎用文言にとどめ、画面スクショ経由でも
+      // token が漏れない経路に揃える (#460 と同型を回避)。
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('pages.op', 'view');
+        },
+      );
+      rethrow;
     }
-    final pages = raw as PagesSupport;
-    if (widget.pageId != null) {
-      return pages.getPageById(widget.pageId!);
-    }
-    return pages.getPageByName(username: widget.username!, name: widget.name!);
   }
 
   @override
@@ -81,10 +102,7 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'ページの読み込みに失敗しました\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
+                    const Text('ページの読み込みに失敗しました', textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: () => setState(() => _future = _resolve()),
