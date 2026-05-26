@@ -154,6 +154,42 @@ class ChatThreadListNotifier
         .toList();
     state = AsyncData([updated, ...filtered]);
   }
+
+  /// chatRoom channel 経由で受信した room message を thread list に反映する
+  /// (#632)。閉じているルームのメッセージは元々届かないが、開いているルームで
+  /// 他メンバーが発言した際に thread list が並び替わらない / 未読が更新され
+  /// ない問題を解消する。room 入室画面 (ChatRoomTimelineNotifier) から呼び
+  /// 出される。
+  void applyRoomMessage(ChatMessage message) {
+    if (!message.isRoomMessage) return;
+    final myUserId = ref.read(currentAccountProvider)?.user.id;
+    if (myUserId == null) return;
+    final roomId = message.toRoom?.id ?? message.toRoomId;
+    if (roomId == null) return;
+    final current = state.valueOrNull ?? const <ChatThread>[];
+    ChatThread? existing;
+    for (final t in current) {
+      if (t.room?.id == roomId) {
+        existing = t;
+        break;
+      }
+    }
+    // 未掲載のルーム = 自分が所属しているが getRoomHistory の結果に含まれない
+    // (空ルーム新規参加直後など)。履歴側を refresh するのが筋だが、ホット
+    // フィックスでは既知 thread のみ更新するに留める。
+    if (existing == null) return;
+    final isIncoming = message.fromUser.id != myUserId;
+    final updated = ChatThread(
+      room: existing.room,
+      lastMessage: message,
+      // DM 経路と同じ式に揃える (#632 review)。room は chat_room_streaming
+      // 側で `defaultIsRead: true` を強制しているため通常は read 扱いだが、
+      // 将来サーバーが unread を返すよう変わっても整合する。
+      isUnread: isIncoming && !message.isRead,
+    );
+    final filtered = current.where((t) => t.room?.id != roomId).toList();
+    state = AsyncData([updated, ...filtered]);
+  }
 }
 
 /// 特定ルーム (roomId) の chatRoom channel 由来の新着メッセージ broadcast
@@ -328,6 +364,10 @@ class ChatRoomTimelineNotifier
     // ので普通は他ルームが来ないが、サーバー側 race / 取り違え保険。
     if (!message.isRoomMessage) return;
     if (message.toRoomId != null && message.toRoomId != roomId) return;
+    // thread list (chat 履歴) にも反映して並び替え / 未読更新を起こす (#632)。
+    // ChatThreadListNotifier 単独では chatRoom channel を購読しないため、
+    // 開いている room 側から都度流す経路。
+    ref.read(chatThreadListProvider.notifier).applyRoomMessage(message);
     final current = state.valueOrNull;
     if (current == null) return;
     if (current.messages.any((m) => m.id == message.id)) return;
