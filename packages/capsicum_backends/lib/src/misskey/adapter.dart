@@ -1150,18 +1150,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Page>> getLikedPages({TimelineQuery? query}) async {
+  Future<List<LikedPageEntry>> getLikedPages({TimelineQuery? query}) async {
     final data = await client.getMyPageLikes(
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    // /api/i/page-likes は {id, page} の配列を返すため page を取り出す。
-    return data
-        .map((e) => e['page'] as Map<String, dynamic>?)
-        .whereType<Map<String, dynamic>>()
-        .map(_mapPage)
-        .toList();
+    // /api/i/page-likes は {id, page} の配列を返す。`id` はライクエントリ
+    // 自体の ID で、pagination cursor として渡すべきはこちら (#631)。
+    final entries = <LikedPageEntry>[];
+    for (final e in data) {
+      final likeId = e['id'] as String?;
+      final pageMap = e['page'] as Map<String, dynamic>?;
+      if (likeId == null || pageMap == null) continue;
+      entries.add((likeId: likeId, page: _mapPage(pageMap)));
+    }
+    return entries;
   }
 
   // DriveSupport

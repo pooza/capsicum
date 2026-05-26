@@ -1,5 +1,4 @@
-import 'package:capsicum_core/capsicum_core.dart' as cc;
-import 'package:capsicum_core/capsicum_core.dart' hide Page;
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -23,7 +22,9 @@ class PagesScreen extends ConsumerStatefulWidget {
 
 class _PagesScreenState extends ConsumerState<PagesScreen> {
   final _scrollController = ScrollController();
-  List<cc.Page> _likedPages = [];
+  // ライクエントリ単位で保持する (#631)。pagination cursor として渡すべきは
+  // ページ ID ではなく `LikedPageEntry.likeId` の方。
+  List<LikedPageEntry> _likedEntries = [];
   bool _loadingLiked = true;
   bool _loadingMoreLiked = false;
   bool _hasMoreLiked = true;
@@ -56,14 +57,14 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
       return;
     }
     try {
-      final pages = await (adapter as PagesSupport).getLikedPages(
+      final entries = await (adapter as PagesSupport).getLikedPages(
         query: const TimelineQuery(limit: 20),
       );
       if (mounted) {
         setState(() {
-          _likedPages = pages;
+          _likedEntries = entries;
           _loadingLiked = false;
-          _hasMoreLiked = pages.length >= 20;
+          _hasMoreLiked = entries.length >= 20;
         });
       }
     } catch (e, st) {
@@ -83,7 +84,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   }
 
   Future<void> _loadMoreLiked() async {
-    if (_loadingMoreLiked || !_hasMoreLiked || _likedPages.isEmpty) return;
+    if (_loadingMoreLiked || !_hasMoreLiked || _likedEntries.isEmpty) return;
     setState(() => _loadingMoreLiked = true);
 
     final adapter = ref.read(currentAdapterProvider);
@@ -93,11 +94,11 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     }
     try {
       final older = await (adapter as PagesSupport).getLikedPages(
-        query: TimelineQuery(maxId: _likedPages.last.id, limit: 20),
+        query: TimelineQuery(maxId: _likedEntries.last.likeId, limit: 20),
       );
       if (mounted) {
         setState(() {
-          _likedPages = [..._likedPages, ...older];
+          _likedEntries = [..._likedEntries, ...older];
           _loadingMoreLiked = false;
           _hasMoreLiked = older.length >= 20;
         });
@@ -121,7 +122,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   Future<void> _refresh() async {
     setState(() {
       _loadingLiked = true;
-      _likedPages = [];
+      _likedEntries = [];
       _hasMoreLiked = true;
     });
     await _loadLiked();
@@ -157,7 +158,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
             ),
           ),
         ),
-        if (_likedPages.isEmpty)
+        if (_likedEntries.isEmpty)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(16),
@@ -168,15 +169,18 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                if (index >= _likedPages.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return PageCard(page: _likedPages[index]);
-              }, childCount: _likedPages.length + (_loadingMoreLiked ? 1 : 0)),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  if (index >= _likedEntries.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return PageCard(page: _likedEntries[index].page);
+                },
+                childCount: _likedEntries.length + (_loadingMoreLiked ? 1 : 0),
+              ),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),

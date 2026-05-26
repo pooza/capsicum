@@ -1,6 +1,12 @@
 import '../../model/page.dart';
 import '../../model/timeline_query.dart';
 
+/// like 履歴 1 件分のエントリ。`likeId` はライクエントリ自体の ID で、
+/// `page` がそのライクが指すページ本体。`/api/i/page-likes` の payload は
+/// `{id, page}` 構造で、ここでの `id` は **ライクエントリ ID** であり
+/// ページ ID とは別物 (#631)。
+typedef LikedPageEntry = ({String likeId, Page page});
+
 /// Misskey の Pages 機能 (#186) サポートを宣言する mixin。
 ///
 /// v1 (#186) は読み取り専用。like / unlike は #615、AiScript 動的ブロック
@@ -28,7 +34,10 @@ abstract mixin class PagesSupport {
 
   /// 認証ユーザーが like 済みのページ一覧。
   ///
-  /// Misskey の `POST /api/i/page-likes` 相当。サーバーが認証ユーザーの
+  /// Misskey の `POST /api/i/page-likes` 相当。戻り値は
+  /// `{likeId, page}` の組 (#631): pagination cursor として渡すべきは
+  /// ページ ID ではなくライクエントリ ID。サーバーが認証ユーザーの
   /// like 履歴を保持していない場合は空リストを返す。
-  Future<List<Page>> getLikedPages({TimelineQuery? query}) async => const [];
+  Future<List<LikedPageEntry>> getLikedPages({TimelineQuery? query}) async =>
+      const [];
 }
