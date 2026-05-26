@@ -470,8 +470,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         String? maxId = base.posts.lastOrNull?.id;
         final allVisible = <Post>[];
         bool hasMore = true;
+        // build() / fetchUntilVisible と同じ #601 ガード。全件 livecure な
+        // ページが連続するサーバで client filter が allVisible を埋められず
+        // 無限ページ取得 → レートリミット暴走になるのを防ぐ。
+        var fetches = 0;
 
-        while (hasMore) {
+        while (hasMore && fetches < kMaxVisibilityPageFetches) {
+          fetches++;
           final response = await adapter.getTimeline(
             type,
             query: TimelineQuery(maxId: maxId, limit: _pageSize),
