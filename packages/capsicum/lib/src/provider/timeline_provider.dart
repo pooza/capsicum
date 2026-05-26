@@ -39,6 +39,29 @@ const Object _keepLoadMoreError = Object();
 /// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
 const int kMaxVisibilityPageFetches = 10;
 
+/// ページ取得上限に達したことを Sentry breadcrumb に残す (#601 2 回目レビュー追従)。
+/// 「全件フィルタで空一覧になる」ユーザー報告を後から切り分けるための観測ライン。
+/// 同じ category を全 3 経路 (build / fetchUntilVisible / loadMore) で共有する。
+void _recordPageCapHit({
+  required String site,
+  required int visibleCollected,
+  required bool hasMore,
+}) {
+  Sentry.addBreadcrumb(
+    Breadcrumb(
+      message: 'timeline page cap hit',
+      category: 'timeline.page_cap',
+      level: SentryLevel.info,
+      data: {
+        'site': site,
+        'cap': kMaxVisibilityPageFetches,
+        'visibleCollected': visibleCollected,
+        'hasMore': hasMore,
+      },
+    ),
+  );
+}
+
 /// Paginated timeline state.
 class TimelineState {
   final List<Post> posts;
@@ -145,6 +168,14 @@ Future<TimelineState> fetchUntilVisible({
     if (allVisible.isNotEmpty || !hasMore) break;
   }
 
+  if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+    _recordPageCapHit(
+      site: 'fetchUntilVisible',
+      visibleCollected: 0,
+      hasMore: true,
+    );
+  }
+
   return TimelineState(posts: allVisible, hasMore: hasMore);
 }
 
@@ -204,6 +235,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       allVisible.addAll(visible);
 
       if (allVisible.isNotEmpty || !hasMore) break;
+    }
+
+    if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+      _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
     }
 
     // Start streaming if supported.
@@ -512,6 +547,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
           // Stop when visible posts are found or the server has no more data.
           if (allVisible.isNotEmpty || !hasMore) break;
+        }
+
+        if (fetches >= kMaxVisibilityPageFetches &&
+            allVisible.isEmpty &&
+            hasMore) {
+          _recordPageCapHit(
+            site: 'loadMore',
+            visibleCollected: 0,
+            hasMore: true,
+          );
         }
 
         final enrichedMore = await _enrichIsCat(allVisible);

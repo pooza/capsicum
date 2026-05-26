@@ -43,11 +43,23 @@ class PageViewScreen extends ConsumerStatefulWidget {
 
 class _PageViewScreenState extends ConsumerState<PageViewScreen> {
   late Future<Page> _future;
+  // 「再試行」連打で _resolve() が並走し Sentry に重複イベントが乗らないよう
+  // 直近の Future が完走するまで次の _resolve() を発火しない (2 回目レビュー追従)。
+  bool _resolving = true;
 
   @override
   void initState() {
     super.initState();
-    _future = _resolve();
+    _future = _trackResolve();
+  }
+
+  Future<Page> _trackResolve() async {
+    _resolving = true;
+    try {
+      return await _resolve();
+    } finally {
+      _resolving = false;
+    }
   }
 
   Future<Page> _resolve() async {
@@ -105,7 +117,9 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
                     const Text('ページの読み込みに失敗しました', textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () => setState(() => _future = _resolve()),
+                      onPressed: _resolving
+                          ? null
+                          : () => setState(() => _future = _trackResolve()),
                       child: const Text('再試行'),
                     ),
                   ],

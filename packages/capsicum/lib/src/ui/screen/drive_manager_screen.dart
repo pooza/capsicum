@@ -253,7 +253,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       if (picked == null) return;
       await _moveSelectedFilesToFolder(picked.id);
     } finally {
-      if (mounted) _bulkMoving = false;
+      // unmount 後でも内部フラグだけ無条件に降ろす。setState を伴わないので
+      // dispose 済み State でも安全 (2 回目レビュー追従)。
+      _bulkMoving = false;
     }
   }
 
