@@ -75,17 +75,29 @@ class ChatThreadListScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
       body: threads.when(
-        data: (list) => list.isEmpty
-            ? const Center(child: Text('メッセージはありません'))
-            : RefreshIndicator(
-                onRefresh: () => ref.refresh(chatThreadListProvider.future),
-                child: ListView.separated(
+        data: (list) => RefreshIndicator(
+          onRefresh: () => ref.refresh(chatThreadListProvider.future),
+          // empty でも pull-to-refresh を効かせるため LayoutBuilder +
+          // AlwaysScrollableScrollPhysics で常にスクロール可能にする。
+          child: list.isEmpty
+              ? LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: const Center(child: Text('メッセージはありません')),
+                    ),
+                  ),
+                )
+              : ListView.separated(
                   itemCount: list.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) =>
                       _ChatThreadTile(thread: list[index]),
                 ),
-              ),
+        ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => isOAuthScopeError(error)
             ? const OAuthScopeErrorView()
