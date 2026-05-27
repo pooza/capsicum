@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1427,67 +1426,5 @@ class DarkTextColorNotifier extends Notifier<DarkTextColor> {
     state = color;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_darkTextColorKey, color.name);
-  }
-}
-
-// ===========================================================================
-// #579 効果側センサ (post-fix 検証用 / fix 動作確認後に撤去)
-//
-// TabConfigNotifier.build() 同期化 + SharedPreferences pre-warm で race を
-// 構造的に解消したあと、想定外の経路で「home → social」化が再発しないかを
-// 1 リリース観測するための残置センサ。home_screen の
-// `timeline.home_resolved_social.post_upgrade` がこの provider の coldStartAt
-// と組み合わさって発火する。
-// スモーキングガン側 (TabConfigNotifier._loaded / visibleTabsProvider 計装)
-// は構造的修正に取り込まれて撤去済み。本ブロックも v1.29 で発火 0 確認後に
-// 撤去予定。
-// ===========================================================================
-
-/// 直近に起動が観測したアプリバージョン。バージョン更新の検知にのみ使う。
-const _lastSeenAppVersionKey = 'last_seen_app_version';
-
-/// バージョン更新後の初回 cold start かどうかと、その cold start 時刻。
-class AppUpgradeColdStart {
-  /// 直前に観測したバージョンが存在し、現バージョンと異なる初回起動。
-  final bool isUpgrade;
-
-  /// この provider が立った時刻 ≒ cold start 時刻（効果側センサの窓判定用）。
-  final DateTime coldStartAt;
-
-  const AppUpgradeColdStart({
-    required this.isUpgrade,
-    required this.coldStartAt,
-  });
-}
-
-/// アプリ起動が「バージョン更新直後の初回 cold start」かを非同期判定する。
-///
-/// build() は同期で「更新ではない」既定を返し、PackageInfo /
-/// SharedPreferences 解決後に状態を確定する。確定と同時に現バージョンを
-/// 保存するので、同一バージョンの 2 回目以降の起動では isUpgrade=false。
-final appUpgradeColdStartProvider =
-    NotifierProvider<AppUpgradeColdStartNotifier, AppUpgradeColdStart>(
-      AppUpgradeColdStartNotifier.new,
-    );
-
-class AppUpgradeColdStartNotifier extends Notifier<AppUpgradeColdStart> {
-  @override
-  AppUpgradeColdStart build() {
-    final startedAt = DateTime.now();
-    _load(startedAt);
-    return AppUpgradeColdStart(isUpgrade: false, coldStartAt: startedAt);
-  }
-
-  Future<void> _load(DateTime startedAt) async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      final prefs = await SharedPreferences.getInstance();
-      final last = prefs.getString(_lastSeenAppVersionKey);
-      final isUpgrade = last != null && last != info.version;
-      state = AppUpgradeColdStart(isUpgrade: isUpgrade, coldStartAt: startedAt);
-      await prefs.setString(_lastSeenAppVersionKey, info.version);
-    } catch (_) {
-      // 計装の失敗はアプリ動作に影響させない（黙って既定のまま）。
-    }
   }
 }
