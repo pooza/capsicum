@@ -48,18 +48,24 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   List<CustomEmoji>? _customEmojis;
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   String _searchQuery = '';
   final _unicodeSearchController = TextEditingController();
+  final _unicodeSearchFocusNode = FocusNode();
   String _unicodeSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
     final hasCustom = widget.adapter is CustomEmojiSupport;
-    _tabController = TabController(length: hasCustom ? 2 : 1, vsync: this);
+    _tabController = TabController(length: hasCustom ? 2 : 1, vsync: this)
+      ..addListener(_onTabChanged);
     if (hasCustom) {
       _loadCustomEmojis();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusActiveTabSearch();
+    });
   }
 
   Future<void> _loadCustomEmojis() async {
@@ -73,15 +79,44 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     } catch (_) {
       if (mounted) setState(() => _customEmojis = []);
     } finally {
-      if (mounted) setState(() => _loadingCustom = false);
+      if (mounted) {
+        setState(() => _loadingCustom = false);
+        // loading 中は検索欄が build されていないため、完了後に再度試みる。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _focusActiveTabSearch();
+        });
+      }
+    }
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (mounted) _focusActiveTabSearch();
+  }
+
+  void _focusActiveTabSearch() {
+    final hasCustom = widget.adapter is CustomEmojiSupport;
+    final isCustomTab = hasCustom && _tabController.index == 0;
+    if (isCustomTab) {
+      // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
+      if (!_loadingCustom &&
+          _customEmojis != null &&
+          _customEmojis!.isNotEmpty) {
+        _searchFocusNode.requestFocus();
+      }
+    } else {
+      _unicodeSearchFocusNode.requestFocus();
     }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _unicodeSearchController.dispose();
+    _unicodeSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -115,6 +150,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
             controller: _unicodeSearchController,
+            focusNode: _unicodeSearchFocusNode,
             decoration: InputDecoration(
               hintText: '絵文字を検索…',
               prefixIcon: const Icon(Icons.search),
@@ -263,6 +299,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
             controller: _searchController,
+            focusNode: _searchFocusNode,
             decoration: InputDecoration(
               hintText: '絵文字を検索…',
               prefixIcon: const Icon(Icons.search),
