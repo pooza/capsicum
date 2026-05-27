@@ -53,8 +53,9 @@
 ## 7. Sentry の新規イシュー確認
 
 - `sentry-cli --auth-token <調査用トークン> issues list -p capsicum` で未解決イシューを確認（トークンは `~/.sentryclirc` から取得: `awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'`）
+- 同じトークンで `sentry-cli --auth-token <調査用トークン> issues list -p capsicum-relay` も確認（capsicum-relay#10 で 2026-05-28 から計装開始。Phase A 段階では smoke test 起点で、Phase B 以降で APNs/FCM/socket_loop の本格計装が乗る）
 - 各イシューの過去コメント（対応経緯）を確認する: `curl -sH "Authorization: Bearer $TOKEN" https://sentry.io/api/0/issues/{issue_id}/comments/ | python3 -m json.tool`
-- 新規・未解決のイシューがあれば内容を確認し、対応が必要か判断する（対応が必要なら GitHub Issue を起票）
+- 新規・未解決のイシューがあれば内容を確認し、対応が必要か判断する（対応が必要なら GitHub Issue を起票。capsicum-relay 側のイシューは pooza/capsicum-relay リポに起票）
 - 判断結果や対応経緯はコメントとして記録する: `curl -sX POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"text":"コメント内容"}' https://sentry.io/api/0/issues/{issue_id}/comments/`
 - `$TOKEN` は `~/.sentryclirc` の `[auth]` セクションから取得する（capsicum では `.sentryclirc` がデプロイ用トークンで占有されているため、`awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'` で調査用トークンを別途取得する）
 - resolved 済みのイシューは報告不要
@@ -63,6 +64,7 @@
 
 - **mulukhiya-toot-proxy**: `cd ~/repos/mulukhiya-toot-proxy && git fetch origin` + `git log HEAD..origin/develop --oneline` でリモートとの差分を確認。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `cd ~/repos/chubo2 && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
+- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。flauros デプロイ管理は Claude 担当 (メモリ `feedback_capsicum_relay_deploy_delegation` 参照)、main 進行があり flauros の HEAD が遅れていたら `ssh deploy@flauros.b-shock.co.jp 'cd ~/repos/capsicum-relay && git pull && bundle install'` → `sudo -n systemctl restart capsicum-relay` → `/health` 確認まで一連で実行
 
 ## 9. MEMORY.md の更新
 
