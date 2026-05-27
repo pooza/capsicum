@@ -13,6 +13,7 @@ enum NotificationType {
   login,
   createToken,
   chat,
+  announcement,
   other,
 }
 

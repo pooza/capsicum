@@ -226,6 +226,12 @@ class MulukhiyaService {
   /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
   final bool mediaCatalogEnabled;
+
+  /// `features.announcement_push` フラグ (#477)。`true` のサーバーは capsicum-relay
+  /// が `/api/v1/announcements` (または Misskey 相当) を polling して push を発火
+  /// する経路に対応している。capsicum 側は probing 結果に基づき設定 UI のスイッチを
+  /// 出し分け、true の時のみ subscription 登録経路を有効化する。
+  final bool announcementPushEnabled;
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -241,6 +247,7 @@ class MulukhiyaService {
     this.reblogLabel,
     this.annictEnabled = false,
     this.mediaCatalogEnabled = false,
+    this.announcementPushEnabled = false,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -299,6 +306,7 @@ class MulukhiyaService {
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
         mediaCatalogEnabled: features?['media_catalog'] == true,
+        announcementPushEnabled: features?['announcement_push'] == true,
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
