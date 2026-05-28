@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../model/account.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/push_registration_status_provider.dart';
+import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
@@ -88,22 +89,35 @@ class _AccountStatusTile extends ConsumerWidget {
       snapshot?.reason,
     );
 
-    return ListTile(
-      leading: Icon(statusIcon, color: statusColor),
-      title: Text(label),
-      subtitle: Text(
-        [
-          statusText,
-          if (snapshot?.errorMessage != null) snapshot!.errorMessage!,
-        ].join('\n'),
-      ),
-      isThreeLine: snapshot?.errorMessage != null,
-      trailing: _isRetryable(state, eligible)
-          ? TextButton(
-              onPressed: () => _retry(account),
-              child: const Text('再試行'),
-            )
-          : null,
+    // お知らせ通知 (#477) は registered な親 subscription と
+    // features.announcement_push: true のモロヘイヤが揃ったときだけ
+    // 出す。それ以外 (登録未完 / 機能無効 / 古い mulukhiya) では非表示。
+    final announcementSupported =
+        state == PushRegistrationState.registered &&
+        (account.mulukhiya?.announcementPushEnabled ?? false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: Icon(statusIcon, color: statusColor),
+          title: Text(label),
+          subtitle: Text(
+            [
+              statusText,
+              if (snapshot?.errorMessage != null) snapshot!.errorMessage!,
+            ].join('\n'),
+          ),
+          isThreeLine: snapshot?.errorMessage != null,
+          trailing: _isRetryable(state, eligible)
+              ? TextButton(
+                  onPressed: () => _retry(account),
+                  child: const Text('再試行'),
+                )
+              : null,
+        ),
+        if (announcementSupported) _AnnouncementToggle(account: account),
+      ],
     );
   }
 
@@ -117,5 +131,109 @@ class _AccountStatusTile extends ConsumerWidget {
   void _retry(Account account) {
     // hasPreset は親 tile から props 経由で渡されているため再計算不要。
     PushRegistrationService.registerAccount(account, eligible: hasPreset);
+  }
+}
+
+/// お知らせ通知 (#477) の opt-in トグル。capsicum-relay#14 の
+/// `POST/DELETE /announcement_subscriptions` を叩く。
+/// SharedPreferences 経由の状態を初回 build で読み込み、ON/OFF 時に
+/// relay 通信を行う間はスイッチを disabled 化する。
+class _AnnouncementToggle extends StatefulWidget {
+  const _AnnouncementToggle({required this.account});
+
+  final Account account;
+
+  @override
+  State<_AnnouncementToggle> createState() => _AnnouncementToggleState();
+}
+
+class _AnnouncementToggleState extends State<_AnnouncementToggle> {
+  bool? _enabled;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final enabled = await AnnouncementSubscriptionService.isEnabled(
+      widget.account.key.toStorageKey(),
+    );
+    if (mounted) setState(() => _enabled = enabled);
+  }
+
+  Future<void> _toggle(bool next) async {
+    final accountKey = widget.account.key.toStorageKey();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (next) {
+        await AnnouncementSubscriptionService.enable(widget.account);
+      } else {
+        await AnnouncementSubscriptionService.disable(
+          accountKey,
+          host: widget.account.key.host,
+        );
+      }
+      if (mounted) setState(() => _enabled = next);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = _shortMessage(e));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _shortMessage(Object e) {
+    final text = e.toString();
+    return text.length > 120 ? '${text.substring(0, 120)}…' : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = _enabled;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 0, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('お知らせ通知を受け取る', style: TextStyle(fontSize: 14)),
+              ),
+              if (_busy)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Switch(
+                  value: enabled ?? false,
+                  onChanged: enabled == null ? null : _toggle,
+                ),
+            ],
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
