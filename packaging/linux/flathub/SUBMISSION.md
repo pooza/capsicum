@@ -130,6 +130,54 @@ PR を出す形:
 - `<release>` セクションの date と version が pubspec と一致しているか
 - アイコンが SVG または最低 256x256 PNG か (本 manifest は OK)
 
+## デモ録画: 初回起動状態へのリセット
+
+Flathub PR テンプレートは **Linux Flatpak 上で動作するデモ動画 (必須)** を
+要求する。新規ユーザー視点 (EULA 表示 → プリセットサーバー選択 → OAuth →
+ホーム TL) を録るには、アプリを「真の初回起動状態」に戻す必要がある。
+
+### なぜログアウトだけでは不十分か
+
+初回フローのゲートは `splash_screen.dart`:
+
+```text
+eula_accepted == false  → /eula 表示 → 承諾後 nextRoute へ
+nextRoute = hasAccount ? '/home' : '/server'   // アカウント無し → /server
+```
+
+保存先が非対称なので、片方だけ消しても初回状態にならない:
+
+- **EULA 同意フラグ** (`eula_accepted`, bool): `shared_preferences`
+  = アプリデータ側 (`~/.var/app/net.shrieker.capsicum/`)
+- **アカウント** (`secret_<key>` / `client_creds_<host>`):
+  `flutter_secure_storage` → Linux は libsecret = **ホストのキーリング側**
+  (manifest の `--talk-name=org.freedesktop.secrets`)。`rm -rf ~/.var/app`
+  しても残る
+
+ログアウトだけ → EULA が戻らない。アプリデータ消去だけ → アカウントが
+キーリングに残り EULA 通過後に `/home` へ飛んでログイン導線が録れない。
+**両方** 必要。
+
+### リセット手順
+
+```sh
+# 1. capsicum を起動し、アプリ内で全アカウントをログアウト
+#    (v1.29.0 以降は #621 修正済みで keyring の secret_* が綺麗に消える)
+# 2. アプリを終了
+# 3. アプリデータを消去 (eula_accepted / キャッシュ / ウィンドウ位置をリセット)
+rm -rf ~/.var/app/net.shrieker.capsicum
+# 4. 再起動 → EULA → 承諾 → /server (プリセット一覧) が出れば成功。ここから録画
+```
+
+手順3はアプリ本体を消さない (`~/.var/app` はユーザーデータのみ。インス
+トール済み Flatpak は別の場所)。
+
+### フォールバック
+
+手順4で EULA 後に `/home` へ飛んだら、キーリングにアカウントが残存して
+いる。seahorse (パスワードと鍵) を開き `capsicum` / `net.shrieker.capsicum`
+ラベルのエントリを削除して再起動。手順1のログアウトが効いていれば不要。
+
 ## 採択後の運用
 
 採択されると `flathub/net.shrieker.capsicum` リポジトリが Flathub 側で
