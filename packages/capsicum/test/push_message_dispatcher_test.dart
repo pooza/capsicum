@@ -163,4 +163,34 @@ void main() {
       },
     );
   });
+
+  group('PushMessageDispatcher.synthesizeAnnouncementBody', () {
+    test('HTML タグを剥がしてそのまま返す (短い場合)', () {
+      final body = PushMessageDispatcher.synthesizeAnnouncementBody(
+        '<p>メンテナンスのお知らせです。</p>',
+      );
+      expect(body, 'メンテナンスのお知らせです。');
+    });
+
+    test('連続空白を 1 つに正規化する', () {
+      final body = PushMessageDispatcher.synthesizeAnnouncementBody(
+        '<p>テスト</p>\n\n<p>本文</p>',
+      );
+      expect(body, 'テスト 本文');
+    });
+
+    test('max を超えた場合は省略記号付きで切る', () {
+      final long = '<p>${'あ' * 200}</p>';
+      final body = PushMessageDispatcher.synthesizeAnnouncementBody(long);
+      expect(body.length, 81); // 80 + '…'
+      expect(body.endsWith('…'), isTrue);
+    });
+
+    test('空 HTML は空文字を返す', () {
+      expect(
+        PushMessageDispatcher.synthesizeAnnouncementBody(''),
+        '',
+      );
+    });
+  });
 }
