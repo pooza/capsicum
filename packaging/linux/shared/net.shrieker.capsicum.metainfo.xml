@@ -48,6 +48,8 @@
   </screenshots>
 
   <releases>
+    <release version="1.29.0" date="2026-05-28"/>
+    <release version="1.28.1" date="2026-05-26"/>
     <release version="1.28.0" date="2026-05-26"/>
     <release version="1.27.1" date="2026-05-23"/>
     <release version="1.27.0" date="2026-05-22"/>
