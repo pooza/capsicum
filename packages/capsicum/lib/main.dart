@@ -518,6 +518,12 @@ void _routeFromNotificationPayload(String? payload) {
         _routeToChatThread(account, userId);
         return;
       }
+      // お知らせ通知 (#477)。dispatcher が payload に type='announcement' を
+      // 埋めている。account を切り替えてから /announcements へ push。
+      if (type == 'announcement') {
+        _routeToAnnouncements(account);
+        return;
+      }
       _routeToNotificationsTab(account);
       return;
     }
@@ -534,6 +540,13 @@ void _routeFromNotificationUserInfo(Map<String, dynamic> userInfo) {
   final userId = userInfo['userId'] as String?;
   if (type == 'newChatMessage' && userId != null && userId.isNotEmpty) {
     _routeToChatThread(account, userId);
+    return;
+  }
+  // お知らせ通知 (#477)。iOS APNs では NSE / dispatcher を経由せず relay の
+  // custom_payload (notification_type='announcement') がそのまま userInfo に
+  // 乗るため、Android 経路 (decoded['type']) と判定キーが異なる。
+  if (userInfo['notification_type'] == 'announcement') {
+    _routeToAnnouncements(account);
     return;
   }
   _routeToNotificationsTab(account);
@@ -642,6 +655,63 @@ void _routeToChatThread(
       _routeToNotificationsTab(accountString);
     }
   }());
+}
+
+/// 通知タップで `/announcements` を開く経路 (#477)。
+///
+/// [_routeToChatThread] と同じ 2 段待ち (Navigator 確立 + session restore)
+/// 構造を踏襲し、ゲート画面 (/splash / /eula) 中の発火は drop する
+/// (Sentry に観測タグだけ残す)。account が一致しない (ログアウト済み等) は
+/// 現在アカウントのまま `/announcements` を開く — 通知タブ系と違って遷移先
+/// 自体は無効化しない方が UX として近い (画面は空表示になる)。
+void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
+  const maxAttempts = 3600;
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToAnnouncements(accountString, attempt: attempt + 1),
+    );
+    return;
+  }
+  final container = ProviderScope.containerOf(context);
+  if (!container.read(sessionsRestoredProvider)) {
+    if (attempt >= maxAttempts) return;
+    WidgetsBinding.instance.scheduleFrameCallback(
+      (_) => _routeToAnnouncements(accountString, attempt: attempt + 1),
+    );
+    return;
+  }
+  final accounts = container.read(accountManagerProvider).accounts;
+  if (accounts.isEmpty) return;
+
+  if (accountString != null) {
+    final matched = _findAccountByString(accounts, accountString);
+    if (matched != null) {
+      container.read(accountManagerProvider.notifier).switchAccount(matched);
+    }
+  }
+
+  final router = GoRouter.of(context);
+  final currentLocation = router.state.matchedLocation;
+  if (currentLocation == '/splash' || currentLocation == '/eula') {
+    Sentry.captureMessage(
+      'notification.routing.announcement.dropped_during_gate',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag(
+          'notification.routing',
+          'announcement.dropped_during_gate',
+        );
+        scope.setTag('current_location', currentLocation);
+      },
+    );
+    return;
+  }
+  if (currentLocation != '/home') {
+    router.go('/home');
+  }
+  router.push('/announcements');
 }
 
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
