@@ -353,6 +353,7 @@ class _UnifiedNotificationTileState
     NotificationType.login => (Icons.login, 'ログイン'),
     NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
     NotificationType.chat => (Icons.chat_bubble_outline, 'メッセージ'),
+    NotificationType.announcement => (Icons.campaign, 'お知らせ'),
     NotificationType.other => (Icons.notifications, '通知'),
   };
 
