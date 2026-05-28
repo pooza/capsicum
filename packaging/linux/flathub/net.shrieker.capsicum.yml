@@ -42,6 +42,9 @@ modules:
       # 機能する (AppImage と同じ方針)。
       - install -d /app/bin
       - cp -r bundle/. /app/bin/
+      # crashpad_handler は release tarball で実行ビットが落ちる (#639)。
+      # 付け直さないと posix_spawn EACCES で Sentry ネイティブクラッシュが無効。
+      - chmod +x /app/bin/lib/crashpad_handler
 
       # Desktop entry / AppStream metainfo (AppImage と共有)
       - install -Dm644 net.shrieker.capsicum.desktop -t /app/share/applications/

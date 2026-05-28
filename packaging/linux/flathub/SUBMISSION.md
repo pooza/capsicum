@@ -91,6 +91,18 @@ manifest 内で走らせることはできないため、Flutter で予め作っ
 v1.29.0 提出時は commit `f2ffc7c` (metainfo に 1.28.1 / 1.29.0 追記) を
 ピン先に使用した。
 
+#### ③ crashpad_handler に `chmod +x` する (#639)
+
+release tarball (`capsicum-bundle-<ver>-x86_64.tar.gz`) 内の
+`lib/crashpad_handler` は実行ビットが落ちている (`-rw-r--r--`)。
+`cp -r bundle/. /app/bin/` でそのままコピーすると `/app/bin/lib/
+crashpad_handler` が実行不可となり、起動時に posix_spawn が EACCES で
+失敗 → Sentry のネイティブクラッシュレポートが無効になる。`build-commands`
+の cp 直後に `chmod +x /app/bin/lib/crashpad_handler` を入れて回避する
+(ローカル manifest / 派生元に既に追加済み)。AppImage 側は #510 で AppRun
+が起動時 chmod する形で対処済み。根治は linux-release.yml の tarball 化で
+実行ビットを保持すること (#639)。
+
 ### sha256 の計算方法
 
 linux-release.yml の `appimage` ジョブで生成された tarball を Releases から
