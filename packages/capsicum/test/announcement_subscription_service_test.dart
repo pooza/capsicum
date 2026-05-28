@@ -146,6 +146,36 @@ void main() {
       );
     });
   });
+
+  group('AnnouncementSubscriptionService.hasLocalState', () {
+    test('id も opt-out marker も無ければ false', () async {
+      expect(
+        await AnnouncementSubscriptionService.hasLocalState('mastodon://a@h'),
+        isFalse,
+      );
+    });
+
+    test('subscription id だけ存在 (auto-enable 済み) なら true', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyPrefix}mastodon://a@h': 42,
+      });
+      expect(
+        await AnnouncementSubscriptionService.hasLocalState('mastodon://a@h'),
+        isTrue,
+      );
+    });
+
+    test('opt-out marker だけ存在 (明示 OFF 済み) なら true', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyOptOutPrefix}mastodon://a@h':
+            true,
+      });
+      expect(
+        await AnnouncementSubscriptionService.hasLocalState('mastodon://a@h'),
+        isTrue,
+      );
+    });
+  });
 }
 
 class _FakeRelayClient extends PushRelayClient {

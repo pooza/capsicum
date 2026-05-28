@@ -53,6 +53,15 @@ class AnnouncementSubscriptionService {
     return prefs.getBool('$prefsKeyOptOutPrefix$accountStorageKey') ?? false;
   }
 
+  /// ローカルに subscription id か opt-out marker のいずれかが残っているか。
+  /// 設定画面の opt-out トグル表示判定に使う — register snapshot が registered
+  /// でなくても、relay 側 subscription が active なら OFF にする経路を保つ。
+  static Future<bool> hasLocalState(String accountStorageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey('$prefsKeyPrefix$accountStorageKey') ||
+        prefs.containsKey('$prefsKeyOptOutPrefix$accountStorageKey');
+  }
+
   /// 登録未済かつ明示 OFF でもないアカウントを、サーバー側が
   /// features.announcement_push をサポートしていれば自動的に enable する。
   /// registerAccount 成功直後に呼び出され、デフォルト ON 化を実現する。

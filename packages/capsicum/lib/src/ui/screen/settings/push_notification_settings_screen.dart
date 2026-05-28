@@ -59,7 +59,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
   }
 }
 
-class _AccountStatusTile extends ConsumerWidget {
+class _AccountStatusTile extends ConsumerStatefulWidget {
   const _AccountStatusTile({
     required this.account,
     required this.snapshot,
@@ -71,7 +71,32 @@ class _AccountStatusTile extends ConsumerWidget {
   final bool hasPreset;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AccountStatusTile> createState() => _AccountStatusTileState();
+}
+
+class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
+  bool _hasAnnouncementLocalState = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnnouncementLocalState();
+  }
+
+  Future<void> _loadAnnouncementLocalState() async {
+    final hasState = await AnnouncementSubscriptionService.hasLocalState(
+      widget.account.key.toStorageKey(),
+    );
+    if (mounted && hasState != _hasAnnouncementLocalState) {
+      setState(() => _hasAnnouncementLocalState = hasState);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    final snapshot = widget.snapshot;
+    final hasPreset = widget.hasPreset;
     final label = '@${account.key.username}@${account.key.host}';
     final state = snapshot?.state ?? PushRegistrationState.idle;
     // プリセットサーバー本体か、プリセットがあって「連れて登録」される側か
@@ -89,12 +114,16 @@ class _AccountStatusTile extends ConsumerWidget {
       snapshot?.reason,
     );
 
-    // お知らせ通知 (#477) は registered な親 subscription と
-    // features.announcement_push: true のモロヘイヤが揃ったときだけ
-    // 出す。それ以外 (登録未完 / 機能無効 / 古い mulukhiya) では非表示。
+    // お知らせ通知 (#477) は features.announcement_push: true のモロヘイヤが
+    // 必須。そのうえで、(a) 親 push subscription が registered (新規 enable
+    // 操作の入口) または (b) ローカルに saved subscription / opt-out marker が
+    // ある (relay 側 active subscription を OFF にする経路を保つ) なら表示する。
+    // (b) は register snapshot が一時的に idle/failed でも、既存の subscription
+    // で push が届き続ける状況で UI から OFF にできないと事故るため (Codex 指摘)。
     final announcementSupported =
-        state == PushRegistrationState.registered &&
-        (account.mulukhiya?.announcementPushEnabled ?? false);
+        (account.mulukhiya?.announcementPushEnabled ?? false) &&
+        (state == PushRegistrationState.registered ||
+            _hasAnnouncementLocalState);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -130,7 +159,10 @@ class _AccountStatusTile extends ConsumerWidget {
 
   void _retry(Account account) {
     // hasPreset は親 tile から props 経由で渡されているため再計算不要。
-    PushRegistrationService.registerAccount(account, eligible: hasPreset);
+    PushRegistrationService.registerAccount(
+      account,
+      eligible: widget.hasPreset,
+    );
   }
 }
 
