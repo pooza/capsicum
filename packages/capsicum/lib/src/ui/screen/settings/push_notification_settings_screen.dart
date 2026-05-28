@@ -175,9 +175,12 @@ class _AnnouncementToggleState extends State<_AnnouncementToggle> {
       if (next) {
         await AnnouncementSubscriptionService.enable(widget.account);
       } else {
+        // ユーザーが明示的に OFF にしたので opt-out marker を立て、
+        // 以降の auto-enable で再 ON されないようにする。
         await AnnouncementSubscriptionService.disable(
           accountKey,
           host: widget.account.key.host,
+          explicit: true,
         );
       }
       if (mounted) setState(() => _enabled = next);

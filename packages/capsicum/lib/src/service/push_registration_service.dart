@@ -204,6 +204,12 @@ class PushRegistrationService {
         'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
       );
       store.update(accountKey, PushRegistrationState.registered);
+
+      // お知らせ通知 (#477) はデフォルト ON。features.announcement_push が
+      // true で明示 OFF 履歴も無いアカウントは register 完了直後に自動で
+      // subscription を発行する。失敗はサービス側でログ + Sentry に流すだけで
+      // 本筋は止めない (relay 障害で push 全体を失敗にする筋ではない)。
+      await AnnouncementSubscriptionService.autoEnableIfDefault(account);
     } catch (e, st) {
       debugPrint(
         'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
@@ -455,45 +461,20 @@ class PushRegistrationService {
     );
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
-    // お知らせ通知 (#477) の opt-in 状態は SharedPreferences に保存されている
-    // が、unregisterAccount → PushKeyStore.delete + relay subscription 失効で
-    // 局所的に整合性が崩れるため、refresh 前のスナップショットを取って
-    // re-register 後に手作業で再有効化する。token rotation は user 操作では
-    // ないので、opt-in 状態を黙って失うのは UX として不適切。
-    final previouslyEnabled = <String>{};
-    for (final account in accounts) {
-      if (await AnnouncementSubscriptionService.isEnabled(
-        account.key.toStorageKey(),
-      )) {
-        previouslyEnabled.add(account.key.toStorageKey());
-      }
-    }
-
     // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
     // relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
     // unregisterAccount では削除せず、最後に unregisterDevice で 1 回だけ
     // 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
     // ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
+    //
+    // お知らせ通知 (#477) は opt-out モデルに移行したので、明示 OFF 履歴の
+    // 無いアカウントは [_registerAccountImpl] 末尾の autoEnableIfDefault で
+    // 自動的に復活する。手動 restore は不要。
     for (final account in accounts) {
       await unregisterAccount(account);
     }
     await unregisterDevice(accounts);
     await registerAllAccounts(accounts);
-
-    // 元々 opt-in していたアカウントを再有効化。registerAccount 失敗で
-    // endpoint が無いアカウントでは enable が StateError を投げるため、
-    // 1 アカウント単位で try する (#477)。
-    for (final account in accounts) {
-      if (!previouslyEnabled.contains(account.key.toStorageKey())) continue;
-      try {
-        await AnnouncementSubscriptionService.enable(account);
-      } catch (e) {
-        debugPrint(
-          'capsicum: push.registration: announcement re-enable failed for '
-          '${account.key.host}: $e',
-        );
-      }
-    }
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。

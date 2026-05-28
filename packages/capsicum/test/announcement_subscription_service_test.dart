@@ -86,6 +86,65 @@ void main() {
         isFalse,
       );
     });
+
+    test('explicit=false ではログアウト経路扱いで opt-out marker を立てない', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyPrefix}mastodon://a@h': 5,
+      });
+      AnnouncementSubscriptionService.client = _FakeRelayClient();
+
+      await AnnouncementSubscriptionService.disable('mastodon://a@h');
+
+      expect(
+        await AnnouncementSubscriptionService.isExplicitlyOptedOut(
+          'mastodon://a@h',
+        ),
+        isFalse,
+      );
+    });
+
+    test('explicit=true は opt-out marker を立てて auto-enable をブロックする', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyPrefix}mastodon://a@h': 7,
+      });
+      AnnouncementSubscriptionService.client = _FakeRelayClient();
+
+      await AnnouncementSubscriptionService.disable(
+        'mastodon://a@h',
+        explicit: true,
+      );
+
+      expect(
+        await AnnouncementSubscriptionService.isExplicitlyOptedOut(
+          'mastodon://a@h',
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('AnnouncementSubscriptionService.isExplicitlyOptedOut', () {
+    test('marker が無ければ false', () async {
+      expect(
+        await AnnouncementSubscriptionService.isExplicitlyOptedOut(
+          'mastodon://a@h',
+        ),
+        isFalse,
+      );
+    });
+
+    test('marker が立っていれば true', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyOptOutPrefix}mastodon://a@h':
+            true,
+      });
+      expect(
+        await AnnouncementSubscriptionService.isExplicitlyOptedOut(
+          'mastodon://a@h',
+        ),
+        isTrue,
+      );
+    });
   });
 }
 

@@ -13,6 +13,11 @@ import 'push_relay_client.dart';
 /// id を SharedPreferences に保存し、ユーザーがトグルを OFF にしたとき
 /// `DELETE /announcement_subscriptions/:id` で解除する。
 ///
+/// セマンティクスは「**デフォルト ON / 明示 OFF を記録**」の opt-out モデル。
+/// 自前サーバーのアナウンスを聞き逃して欲しくない意図 (pooza の要望) で、
+/// features.announcement_push 対応サーバーに対しては
+/// [autoEnableIfDefault] が registerAccount 後に自動で enable する。
+///
 /// 前提として親 push subscription ([PushRegistrationService.registerAccount]
 /// が完了した状態) と保存済み endpoint が必要。relay 側 FK の関係で
 /// 親が無いと 404 が返る。
@@ -21,6 +26,12 @@ class AnnouncementSubscriptionService {
   /// 値の型は int。存在 = 有効、不在 = 無効。
   @visibleForTesting
   static const prefsKeyPrefix = 'capsicum_announcement_sub_';
+
+  /// 明示的に OFF にしたかを記録する marker (SharedPreferences key prefix)。
+  /// 値は単に true を入れる。存在 = 明示 OFF (auto-enable しない)、不在 =
+  /// 未操作 (auto-enable 対象)。
+  @visibleForTesting
+  static const prefsKeyOptOutPrefix = 'capsicum_announcement_optout_';
 
   static PushRelayClient _client = PushRelayClient();
 
@@ -34,6 +45,33 @@ class AnnouncementSubscriptionService {
   static Future<bool> isEnabled(String accountStorageKey) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.containsKey('$prefsKeyPrefix$accountStorageKey');
+  }
+
+  /// 明示的に OFF にされているか (auto-enable をブロックするマーカー)。
+  static Future<bool> isExplicitlyOptedOut(String accountStorageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('$prefsKeyOptOutPrefix$accountStorageKey') ?? false;
+  }
+
+  /// 登録未済かつ明示 OFF でもないアカウントを、サーバー側が
+  /// features.announcement_push をサポートしていれば自動的に enable する。
+  /// registerAccount 成功直後に呼び出され、デフォルト ON 化を実現する。
+  ///
+  /// 失敗時もログ + Sentry に流すだけで本筋 (push registration) は止めない。
+  static Future<void> autoEnableIfDefault(Account account) async {
+    if (account.mulukhiya?.announcementPushEnabled != true) return;
+    final accountStorageKey = account.key.toStorageKey();
+    if (await isExplicitlyOptedOut(accountStorageKey)) return;
+    if (await isEnabled(accountStorageKey)) return;
+    try {
+      await enable(account);
+    } catch (e) {
+      // enable 内で Sentry 報告済み。本筋は止めない。
+      debugPrint(
+        'capsicum: announcement_subscription: auto-enable skipped for '
+        '${account.key.host}: $e',
+      );
+    }
   }
 
   /// アカウントの announcement push を有効化する。
@@ -71,6 +109,9 @@ class AnnouncementSubscriptionService {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('$prefsKeyPrefix$accountStorageKey', id);
+      // 過去に明示 OFF にしていた場合の marker を解除 — 再 ON で
+      // auto-enable が将来また通せるようにする。
+      await prefs.remove('$prefsKeyOptOutPrefix$accountStorageKey');
       debugPrint(
         'capsicum: announcement_subscription: enabled '
         '${account.key.username}@${account.key.host} (id=$id)',
@@ -86,16 +127,28 @@ class AnnouncementSubscriptionService {
   /// 保存済み id があれば relay に DELETE を投げ、SharedPreferences の
   /// 該当キーを削除する。relay 側エラーは log + Sentry に流し本筋は止めない
   /// (ローカル削除は必ず行う = ユーザーから見て OFF になる)。
-  static Future<void> disable(String accountStorageKey, {String? host}) async {
+  ///
+  /// [explicit] が true の場合は opt-out marker を立て、以降の
+  /// [autoEnableIfDefault] でも自動 ON されないようにする。ログアウト等の
+  /// システム経路では false を渡し、ユーザーの再ログイン時に default ON
+  /// を継続できるようにする。
+  static Future<void> disable(
+    String accountStorageKey, {
+    String? host,
+    bool explicit = false,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getInt('$prefsKeyPrefix$accountStorageKey');
     await prefs.remove('$prefsKeyPrefix$accountStorageKey');
+    if (explicit) {
+      await prefs.setBool('$prefsKeyOptOutPrefix$accountStorageKey', true);
+    }
     if (id == null) return;
     try {
       await _client.unregisterAnnouncementSubscription(id);
       debugPrint(
         'capsicum: announcement_subscription: disabled '
-        '$accountStorageKey (id=$id)',
+        '$accountStorageKey (id=$id, explicit=$explicit)',
       );
     } catch (e, st) {
       _captureFailure(e, st, host ?? '(unknown)', phase: 'disable');
