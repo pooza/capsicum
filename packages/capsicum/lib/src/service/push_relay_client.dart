@@ -45,23 +45,77 @@ class PushRelayClient {
     required String deviceType,
     required String account,
     required String server,
+  }) {
+    return _postWithRetry(
+      path: '/register',
+      operation: 'register',
+      data: {
+        'token': token,
+        'device_type': deviceType,
+        'account': account,
+        'server': server,
+      },
+      server: server,
+    );
+  }
+
+  /// リレーサーバーからデバイストークン登録を解除する。
+  Future<void> unregister(int id) async {
+    await _dio.delete(
+      '/register/$id',
+      options: Options(headers: {'X-Relay-Secret': _secret}),
+    );
+  }
+
+  /// お知らせ通知の subscription をリレーに登録する (#477)。
+  ///
+  /// `pushToken` は [register] が返した値 (Web Push エンドポイント末尾の
+  /// device-scoped token) を渡す。リレー側で FK 制約を持っているため、
+  /// 親 subscription が存在しないと 404 が返る。
+  ///
+  /// 戻り値に `id` (登録解除用) と `push_token` / `server` / `account` が
+  /// 含まれる。retry は [register] と同じ transient ポリシー。
+  Future<Map<String, dynamic>> registerAnnouncementSubscription({
+    required String pushToken,
+    required String account,
+    required String server,
+  }) {
+    return _postWithRetry(
+      path: '/announcement_subscriptions',
+      operation: 'announcement_register',
+      data: {'push_token': pushToken, 'account': account, 'server': server},
+      server: server,
+    );
+  }
+
+  /// お知らせ通知の subscription を解除する (#477)。`id` は
+  /// [registerAnnouncementSubscription] が返した値。
+  Future<void> unregisterAnnouncementSubscription(int id) async {
+    await _dio.delete(
+      '/announcement_subscriptions/$id',
+      options: Options(headers: {'X-Relay-Secret': _secret}),
+    );
+  }
+
+  /// POST + transient retry の共通実装。register / announcement_register
+  /// 等、リトライ対象の登録系 endpoint で共有する。
+  Future<Map<String, dynamic>> _postWithRetry({
+    required String path,
+    required String operation,
+    required Map<String, Object?> data,
+    required String server,
   }) async {
     DioException? lastError;
     for (var attempt = 0; attempt <= _registerRetryDelays.length; attempt++) {
       try {
         final response = await _dio.post<Map<String, dynamic>>(
-          '/register',
-          data: {
-            'token': token,
-            'device_type': deviceType,
-            'account': account,
-            'server': server,
-          },
+          path,
+          data: data,
           options: Options(headers: {'X-Relay-Secret': _secret}),
         );
         if (attempt > 0) {
           _breadcrumb(
-            'register succeeded after retry',
+            '$operation succeeded after retry',
             data: {'attempt': attempt, 'server': server},
             level: SentryLevel.info,
           );
@@ -74,7 +128,7 @@ class PushRelayClient {
         }
         final delay = _registerRetryDelays[attempt];
         _breadcrumb(
-          'register transient, retrying',
+          '$operation transient, retrying',
           data: {
             'attempt': attempt + 1,
             'max': _registerRetryDelays.length,
@@ -86,28 +140,19 @@ class PushRelayClient {
           level: SentryLevel.warning,
         );
         debugPrint(
-          'capsicum: push.relay: register transient (${e.type.name}); '
+          'capsicum: push.relay: $operation transient (${e.type.name}); '
           'retry ${attempt + 1}/${_registerRetryDelays.length} in '
           '${delay.inSeconds}s',
         );
         await Future<void>.delayed(delay);
       }
     }
-    // ここに到達するのは _registerRetryDelays が空のときのみ (現状起こらない)。
     throw lastError ??
         DioException(
-          requestOptions: RequestOptions(path: '/register'),
+          requestOptions: RequestOptions(path: path),
           type: DioExceptionType.unknown,
-          message: 'register exhausted retries with no error captured',
+          message: '$operation exhausted retries with no error captured',
         );
-  }
-
-  /// リレーサーバーからデバイストークン登録を解除する。
-  Future<void> unregister(int id) async {
-    await _dio.delete(
-      '/register/$id',
-      options: Options(headers: {'X-Relay-Secret': _secret}),
-    );
   }
 
   /// 接続段階の transient エラーか判定する。`badResponse` (4xx/5xx) は
