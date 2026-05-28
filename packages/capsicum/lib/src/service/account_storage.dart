@@ -187,10 +187,46 @@ class AccountStorage {
 
   /// Remove an account.
   Future<void> removeAccount(String accountKey) async {
-    await _storage.delete(key: 'secret_$accountKey');
+    await _deleteSecretWithObservability(accountKey);
     final list = await getAccountKeys();
     list.remove(accountKey);
     await _writeIndex(list);
+  }
+
+  /// `_storage.delete` の例外を握り潰さず観測し、delete 後に残骸が残れば
+  /// 1 度だけ再 delete を試みる (#621)。flutter_secure_storage_linux が
+  /// key に `:` / `/` / `@` を含む URL 形式で delete を non-op で帰す挙動
+  /// が疑われるが、コード読みだけでは真因不能のため、実機で踏んだ際に
+  /// Sentry イベントとして残すのが目的。verify 自体の失敗は本筋の delete
+  /// を阻害しないので握り潰してよい。
+  Future<void> _deleteSecretWithObservability(String accountKey) async {
+    final key = 'secret_$accountKey';
+    try {
+      await _storage.delete(key: key);
+    } on MissingPluginException catch (e, st) {
+      debugPrint(
+        'capsicum: plugin register race on delete for $accountKey: $e',
+      );
+      _reportOnce('secret:$accountKey:delete', e, st);
+    } on PlatformException catch (e, st) {
+      debugPrint('capsicum: failed to delete secret for $accountKey: $e');
+      _reportOnce('secret:$accountKey:delete', e, st);
+    }
+    try {
+      if (await _storage.containsKey(key: key)) {
+        await _storage.delete(key: key);
+        if (await _storage.containsKey(key: key)) {
+          _reportOnce(
+            'secret:$accountKey:delete_no_op',
+            StateError('secure_storage delete returned non-op for $key'),
+            StackTrace.current,
+          );
+        }
+      }
+    } catch (e, st) {
+      debugPrint('capsicum: verify after delete failed for $accountKey: $e');
+      _reportOnce('secret:$accountKey:verify', e, st);
+    }
   }
 
   /// Save OAuth client credentials for a host (survives account deletion).

@@ -10,6 +10,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
+import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'exception_scrub.dart';
 import 'fcm_service.dart';
@@ -138,7 +139,7 @@ class PushRegistrationService {
         server: account.key.host,
       );
 
-      relayId = _parseRelayId(sub['id']);
+      relayId = PushRelayClient.parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
         debugPrint(
@@ -203,6 +204,12 @@ class PushRegistrationService {
         'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
       );
       store.update(accountKey, PushRegistrationState.registered);
+
+      // お知らせ通知 (#477) はデフォルト ON。features.announcement_push が
+      // true で明示 OFF 履歴も無いアカウントは register 完了直後に自動で
+      // subscription を発行する。失敗はサービス側でログ + Sentry に流すだけで
+      // 本筋は止めない (relay 障害で push 全体を失敗にする筋ではない)。
+      await AnnouncementSubscriptionService.autoEnableIfDefault(account);
     } catch (e, st) {
       debugPrint(
         'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
@@ -340,6 +347,16 @@ class PushRegistrationService {
       debugPrint('capsicum: push.registration: keystore delete failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
+
+    // お知らせ通知 (#477) の subscription 解除。relay 側 schema は
+    // FK(push_token) → subscriptions に ON DELETE CASCADE が張られて
+    // いるため [unregisterDevice] 経由ならば自動掃除されるが、ログアウト
+    // 経路 (relay row は残す) ではここで明示 DELETE が必要。disable 内部で
+    // relay エラーは握り潰すため例外は伝播しない。
+    await AnnouncementSubscriptionService.disable(
+      accountKey,
+      host: account.key.host,
+    );
   }
 
   /// デバイスの relay row を削除する。token rotation 時など、共有 row を
@@ -449,6 +466,10 @@ class PushRegistrationService {
     // unregisterAccount では削除せず、最後に unregisterDevice で 1 回だけ
     // 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
     // ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
+    //
+    // お知らせ通知 (#477) は opt-out モデルに移行したので、明示 OFF 履歴の
+    // 無いアカウントは [_registerAccountImpl] 末尾の autoEnableIfDefault で
+    // 自動的に復活する。手動 restore は不要。
     for (final account in accounts) {
       await unregisterAccount(account);
     }
@@ -553,14 +574,6 @@ class PushRegistrationService {
           status == AuthorizationStatus.notDetermined;
     }
     return false;
-  }
-
-  /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
-  /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
-  static int? _parseRelayId(Object? raw) {
-    if (raw is int) return raw;
-    if (raw == null) return null;
-    return int.tryParse(raw.toString());
   }
 
   /// mulukhiya proxy が `/sw/register` をホスト可能か（v5.19.0 以降）を判定。

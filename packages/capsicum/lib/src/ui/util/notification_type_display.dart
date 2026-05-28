@@ -63,6 +63,8 @@ NotificationTypeDisplay notificationTypeDisplay(
         icon: Icons.chat_bubble_outline,
         label: 'メッセージ',
       );
+    case NotificationType.announcement:
+      return const NotificationTypeDisplay(icon: Icons.campaign, label: 'お知らせ');
     case NotificationType.other:
       return const NotificationTypeDisplay(
         icon: Icons.notifications,
@@ -107,6 +109,10 @@ NotificationType notificationTypeFromString(String? raw) {
     // 来ないが push payload 経由で届く。
     case 'newChatMessage':
       return NotificationType.chat;
+    // capsicum-relay 経由で配信される「お知らせ」push (#477)。Mastodon /
+    // Misskey 標準の通知 type には存在せず、capsicum-relay が独自に発火する。
+    case 'announcement':
+      return NotificationType.announcement;
     default:
       return NotificationType.other;
   }

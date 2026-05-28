@@ -30,6 +30,13 @@ void main() {
         'リアクション',
       );
     });
+
+    test('announcement は「お知らせ」(#477)', () {
+      expect(
+        notificationTypeDisplay(NotificationType.announcement).label,
+        'お知らせ',
+      );
+    });
   });
 
   group('notificationTypeFromString', () {
@@ -63,6 +70,13 @@ void main() {
     test('未知 / null は other', () {
       expect(notificationTypeFromString(null), NotificationType.other);
       expect(notificationTypeFromString('unknown'), NotificationType.other);
+    });
+
+    test('announcement は NotificationType.announcement (#477)', () {
+      expect(
+        notificationTypeFromString('announcement'),
+        NotificationType.announcement,
+      );
     });
   });
 }

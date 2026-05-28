@@ -8,10 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../url_helper.dart';
-import '../../util/sentry_tag_hash.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/hashtag_provider.dart';
@@ -64,12 +62,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
-
-  // #579 計装 (効果側センサ / 原因確定後に 1 コミット撤去): バージョン更新後
-  // 初回 cold start から一定時間内に、保存タブが home（または未保存=home 既定）
-  // なのに選択タブが social に解決された結果を、原因非依存に 1 度だけ記録する。
-  static const _upgradeMismatchWindow = Duration(seconds: 60);
-  bool _upgradeMismatchReported = false;
 
   @override
   void initState() {
@@ -175,12 +167,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final selectedList = ref.watch(selectedListProvider);
     final selectedHashtag = ref.watch(selectedHashtagProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
-
-    // #579 計装 (効果側センサ): 選択タブが social に解決された結果を、原因
-    // 非依存に観測する。発火条件は _maybeReportUpgradeTabMismatch 側で判定。
-    ref.listen(selectedTabProvider, (prev, next) {
-      _maybeReportUpgradeTabMismatch(next);
-    });
 
     // External entry points (notification taps etc.) may request a specific
     // initial tab. Applying it suppresses the saved last-tab restore on cold
@@ -643,39 +629,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final storageKey = account.key.toStorageKey();
     final tab = ref.read(selectedTabProvider);
     ref.read(lastTabProvider(storageKey).notifier).save(tab.toKey());
-  }
-
-  /// Apply a saved tab value to the current selection providers.
-  /// #579 計装 (効果側センサ): バージョン更新後初回 cold start の窓内で、保存
-  /// タブが home（または未保存=home 既定）なのに選択タブが social に解決された
-  /// 結果を、原因非依存に 1 度だけ記録する。pooza プランの効果側センサ。
-  /// 原因確定後、このメソッド・呼び出し・関連フィールド・import を撤去する。
-  void _maybeReportUpgradeTabMismatch(TabType next) {
-    if (_upgradeMismatchReported) return;
-    if (next is! TimelineTab || next.type != TimelineType.social) return;
-    final startup = ref.read(appUpgradeColdStartProvider);
-    if (!startup.isUpgrade) return;
-    final elapsed = DateTime.now().difference(startup.coldStartAt);
-    if (elapsed > _upgradeMismatchWindow) return;
-    final account = ref.read(currentAccountProvider);
-    if (account == null) return;
-    final storageKey = account.key.toStorageKey();
-    final saved = ref.read(lastTabProvider(storageKey));
-    final homeKey = const TimelineTab(TimelineType.home).toKey();
-    final intendedHome = saved == null || saved == homeKey;
-    if (!intendedHome) return;
-    _upgradeMismatchReported = true;
-    Sentry.captureMessage(
-      'timeline.home_resolved_social.post_upgrade',
-      level: SentryLevel.warning,
-      withScope: (scope) {
-        scope.setTag('sensor', 'effect.home_social_mismatch');
-        scope.setTag('selected_type', 'social');
-        scope.setTag('saved_last_tab', saved ?? '<none>');
-        scope.setTag('elapsed_ms', elapsed.inMilliseconds.toString());
-        scope.setTag('account_hash', hashForSentryTag(storageKey));
-      },
-    );
   }
 
   void _applyLastTab(String saved) {

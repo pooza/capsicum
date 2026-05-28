@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -66,6 +67,15 @@ class PushMessageDispatcher {
       return;
     }
 
+    // capsicum-relay#14 由来の announcement push は Web Push 暗号化を経由せず
+    // relay が直接 FCM data を組み立てて送ってくる (#477)。`body`/`encoding`
+    // が無いため _tryDecrypt は何もせず通過するが、その先の fallback 文面では
+    // 「お知らせ」と表示されないので、ここで早期に分岐する。
+    if (data['notification_type'] == 'announcement') {
+      await _dispatchAnnouncement(account, data);
+      return;
+    }
+
     var title = 'capsicum';
     var body = '$account に通知があります';
 
@@ -102,6 +112,45 @@ class PushMessageDispatcher {
       if (decrypted?.userId != null) 'userId': decrypted!.userId,
     });
     await _showNotification(title: title, body: body, payload: payload);
+  }
+
+  /// capsicum-relay が組み立てた announcement push (#477) を表示する。
+  /// payload には `account` / `notification_type='announcement'` のほか
+  /// `server` / `announcement_id` / `announcement_content` (HTML) を含む。
+  /// タップ後の遷移は main.dart で payload を見て分岐する想定。
+  static Future<void> _dispatchAnnouncement(
+    String account,
+    Map<String, dynamic> data,
+  ) async {
+    final title = notificationTypeDisplay(NotificationType.announcement).label;
+    final body = synthesizeAnnouncementBody(
+      data['announcement_content'] as String? ?? '',
+    );
+    final payload = jsonEncode({
+      'account': account,
+      'type': 'announcement',
+      if (data['server'] is String) 'server': data['server'],
+      if (data['announcement_id'] is String)
+        'announcement_id': data['announcement_id'],
+    });
+    _trace(
+      'announcement: server=${data['server']} id=${data['announcement_id']}',
+    );
+    await _showNotification(title: title, body: body, payload: payload);
+  }
+
+  /// HTML タグを大雑把に剥がしてプレビュー長 (既定 80 文字) に切る。
+  /// relay 側 [AnnouncementWorker#summarize_content] の Dart 版で、
+  /// FCM data に乗ってくる full HTML を Android 通知バルーンに収まる長さに
+  /// 整形する。完全レンダリングはタップ後の announcement_screen 側で行う。
+  @visibleForTesting
+  static String synthesizeAnnouncementBody(String html, {int max = 80}) {
+    final plain = html
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (plain.length <= max) return plain;
+    return '${plain.substring(0, max)}…';
   }
 
   static Future<DecryptedPushContent?> _tryDecrypt(
