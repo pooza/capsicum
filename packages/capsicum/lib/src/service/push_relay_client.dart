@@ -97,6 +97,15 @@ class PushRelayClient {
     );
   }
 
+  /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
+  /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
+  /// register / announcement_subscriptions の両系統で共有する。
+  static int? parseRelayId(Object? raw) {
+    if (raw is int) return raw;
+    if (raw == null) return null;
+    return int.tryParse(raw.toString());
+  }
+
   /// POST + transient retry の共通実装。register / announcement_register
   /// 等、リトライ対象の登録系 endpoint で共有する。
   Future<Map<String, dynamic>> _postWithRetry({

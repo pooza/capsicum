@@ -187,10 +187,7 @@ void main() {
     });
 
     test('空 HTML は空文字を返す', () {
-      expect(
-        PushMessageDispatcher.synthesizeAnnouncementBody(''),
-        '',
-      );
+      expect(PushMessageDispatcher.synthesizeAnnouncementBody(''), '');
     });
   });
 }

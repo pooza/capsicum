@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
+import '../util/notification_type_display.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
@@ -341,21 +342,14 @@ class _UnifiedNotificationTileState
     }
   }
 
-  (IconData, String) _iconAndLabel(NotificationType type) => switch (type) {
-    NotificationType.mention => (Icons.alternate_email, 'メンション'),
-    NotificationType.reblog => (Icons.repeat, widget.reblogLabel),
-    NotificationType.favourite => (Icons.star, 'お気に入り'),
-    NotificationType.follow => (Icons.person_add, 'フォロー'),
-    NotificationType.followRequest => (Icons.person_add_alt, 'フォローリクエスト'),
-    NotificationType.reaction => (Icons.emoji_emotions, 'リアクション'),
-    NotificationType.poll => (Icons.poll, 'アンケート終了'),
-    NotificationType.update => (Icons.edit, '${widget.postLabel}を編集'),
-    NotificationType.login => (Icons.login, 'ログイン'),
-    NotificationType.createToken => (Icons.key, 'アクセストークン作成'),
-    NotificationType.chat => (Icons.chat_bubble_outline, 'メッセージ'),
-    NotificationType.announcement => (Icons.campaign, 'お知らせ'),
-    NotificationType.other => (Icons.notifications, '通知'),
-  };
+  (IconData, String) _iconAndLabel(NotificationType type) {
+    final display = notificationTypeDisplay(
+      type,
+      reblogLabel: widget.reblogLabel,
+      postLabel: widget.postLabel,
+    );
+    return (display.icon, display.label);
+  }
 
   String _formatTime(DateTime time, bool useAbsoluteTime) {
     if (useAbsoluteTime) {

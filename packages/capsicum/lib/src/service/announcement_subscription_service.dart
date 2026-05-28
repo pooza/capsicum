@@ -101,7 +101,7 @@ class AnnouncementSubscriptionService {
         account: '${account.key.username}@${account.key.host}',
         server: account.key.host,
       );
-      final id = _parseRelayId(result['id']);
+      final id = PushRelayClient.parseRelayId(result['id']);
       if (id == null) {
         throw StateError(
           'announcement_subscription: relay response missing id',
@@ -161,14 +161,6 @@ class AnnouncementSubscriptionService {
     final lastSlash = endpoint.lastIndexOf('/');
     if (lastSlash < 0 || lastSlash == endpoint.length - 1) return null;
     return endpoint.substring(lastSlash + 1);
-  }
-
-  /// relay 応答の `id` は int / 数値文字列の両方を許容する。
-  /// [PushRegistrationService._parseRelayId] と同仕様。
-  static int? _parseRelayId(Object? raw) {
-    if (raw is int) return raw;
-    if (raw == null) return null;
-    return int.tryParse(raw.toString());
   }
 
   static void _captureFailure(

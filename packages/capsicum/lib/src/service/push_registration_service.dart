@@ -139,7 +139,7 @@ class PushRegistrationService {
         server: account.key.host,
       );
 
-      relayId = _parseRelayId(sub['id']);
+      relayId = PushRelayClient.parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
         debugPrint(
@@ -574,14 +574,6 @@ class PushRegistrationService {
           status == AuthorizationStatus.notDetermined;
     }
     return false;
-  }
-
-  /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
-  /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
-  static int? _parseRelayId(Object? raw) {
-    if (raw is int) return raw;
-    if (raw == null) return null;
-    return int.tryParse(raw.toString());
   }
 
   /// mulukhiya proxy が `/sw/register` をホスト可能か（v5.19.0 以降）を判定。

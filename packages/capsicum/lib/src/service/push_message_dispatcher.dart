@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -121,9 +122,7 @@ class PushMessageDispatcher {
     String account,
     Map<String, dynamic> data,
   ) async {
-    final title = notificationTypeDisplay(
-      notificationTypeFromString('announcement'),
-    ).label;
+    final title = notificationTypeDisplay(NotificationType.announcement).label;
     final body = synthesizeAnnouncementBody(
       data['announcement_content'] as String? ?? '',
     );
@@ -134,7 +133,9 @@ class PushMessageDispatcher {
       if (data['announcement_id'] is String)
         'announcement_id': data['announcement_id'],
     });
-    _trace('announcement: server=${data['server']} id=${data['announcement_id']}');
+    _trace(
+      'announcement: server=${data['server']} id=${data['announcement_id']}',
+    );
     await _showNotification(title: title, body: body, payload: payload);
   }
 

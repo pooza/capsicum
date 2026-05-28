@@ -64,10 +64,7 @@ NotificationTypeDisplay notificationTypeDisplay(
         label: 'メッセージ',
       );
     case NotificationType.announcement:
-      return const NotificationTypeDisplay(
-        icon: Icons.campaign,
-        label: 'お知らせ',
-      );
+      return const NotificationTypeDisplay(icon: Icons.campaign, label: 'お知らせ');
     case NotificationType.other:
       return const NotificationTypeDisplay(
         icon: Icons.notifications,
