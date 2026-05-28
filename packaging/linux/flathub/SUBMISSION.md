@@ -41,11 +41,12 @@ manifest 内で走らせることはできないため、Flutter で予め作っ
      - type: archive
        url: https://github.com/pooza/capsicum/releases/download/v1.24.0/capsicum-bundle-1.24.0-x86_64.tar.gz
        sha256: <tarball の sha256>
+       strip-components: 0   # ← 必須。落とし穴①を参照
        dest: bundle
      - type: file
-       url: https://raw.githubusercontent.com/pooza/capsicum/v1.24.0/packaging/linux/shared/net.shrieker.capsicum.desktop
+       url: https://raw.githubusercontent.com/pooza/capsicum/<commit SHA>/packaging/linux/shared/net.shrieker.capsicum.desktop
        sha256: <desktop の sha256>
-     # metainfo / icons も同様に raw URL に変更
+     # metainfo / icons も同様に raw URL に変更 (URL の ref は落とし穴②を参照)
    ```
 
 2. icon ファイルも各サイズの `type: file` を、macOS asset の raw URL から
@@ -57,6 +58,38 @@ manifest 内で走らせることはできないため、Flutter で予め作っ
      sha256: <sha256>
      dest-filename: icon-256.png
    ```
+
+### 落とし穴 (2026-05-29 v1.29.0 提出準備で判明)
+
+提出 manifest を派生する際、必ず踏む2点。
+
+#### ① flat tarball には `strip-components: 0` を明示する
+
+`capsicum-bundle-<ver>-x86_64.tar.gz` は `tar -C bundle .` で作られており、
+中身 (`./capsicum` / `./lib/` / `./data/`) がラッパーディレクトリなしで
+ルート直下に入っている。flatpak-builder の `type: archive` は
+**`strip-components` がデフォルト 1** なので、未指定だと最上位
+(`capsicum` 実行ファイル・`lib/`・`data/`) が剥がされて `bundle/` が空に
+なり、`cp -r bundle/. /app/bin/` が無意味になる。`strip-components: 0` を
+明示して回避する。
+
+#### ② metadata/icon の raw URL は「リリースタグ」でなく「commit SHA」にピンする
+
+`<release version="x.y.z">` を metainfo に追記するのは通常タグを切った後
+なので、`raw.githubusercontent.com/pooza/capsicum/vX.Y.Z/...metainfo.xml`
+(タグ参照) だと **その版の `<release>` entry を含まない古い metainfo を
+引いてしまう** (Flathub レビューは `<release>` の最新版と pubspec の一致を
+見るため不可)。手順:
+
+1. metainfo に当該リリースの `<release>` を追記して develop に commit + push
+2. その commit SHA を `raw.githubusercontent.com/pooza/capsicum/<SHA>/...`
+   の ref に使う (タグでなく SHA)。sha256 pin する以上、可変なタグより
+   不変な SHA の方が自然
+3. bundle tarball は Release 資産なのでタグ由来の URL のままでよい
+   (metadata だけ SHA 参照になる = ref が混在するが問題ない)
+
+v1.29.0 提出時は commit `f2ffc7c` (metainfo に 1.28.1 / 1.29.0 追記) を
+ピン先に使用した。
 
 ### sha256 の計算方法
 
