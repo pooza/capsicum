@@ -10,6 +10,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
+import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'exception_scrub.dart';
 import 'fcm_service.dart';
@@ -340,6 +341,16 @@ class PushRegistrationService {
       debugPrint('capsicum: push.registration: keystore delete failed: $e');
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
+
+    // お知らせ通知 (#477) の subscription 解除。relay 側 schema は
+    // FK(push_token) → subscriptions に ON DELETE CASCADE が張られて
+    // いるため [unregisterDevice] 経由ならば自動掃除されるが、ログアウト
+    // 経路 (relay row は残す) ではここで明示 DELETE が必要。disable 内部で
+    // relay エラーは握り潰すため例外は伝播しない。
+    await AnnouncementSubscriptionService.disable(
+      accountKey,
+      host: account.key.host,
+    );
   }
 
   /// デバイスの relay row を削除する。token rotation 時など、共有 row を
@@ -444,6 +455,20 @@ class PushRegistrationService {
     );
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
+    // お知らせ通知 (#477) の opt-in 状態は SharedPreferences に保存されている
+    // が、unregisterAccount → PushKeyStore.delete + relay subscription 失効で
+    // 局所的に整合性が崩れるため、refresh 前のスナップショットを取って
+    // re-register 後に手作業で再有効化する。token rotation は user 操作では
+    // ないので、opt-in 状態を黙って失うのは UX として不適切。
+    final previouslyEnabled = <String>{};
+    for (final account in accounts) {
+      if (await AnnouncementSubscriptionService.isEnabled(
+        account.key.toStorageKey(),
+      )) {
+        previouslyEnabled.add(account.key.toStorageKey());
+      }
+    }
+
     // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
     // relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
     // unregisterAccount では削除せず、最後に unregisterDevice で 1 回だけ
@@ -454,6 +479,21 @@ class PushRegistrationService {
     }
     await unregisterDevice(accounts);
     await registerAllAccounts(accounts);
+
+    // 元々 opt-in していたアカウントを再有効化。registerAccount 失敗で
+    // endpoint が無いアカウントでは enable が StateError を投げるため、
+    // 1 アカウント単位で try する (#477)。
+    for (final account in accounts) {
+      if (!previouslyEnabled.contains(account.key.toStorageKey())) continue;
+      try {
+        await AnnouncementSubscriptionService.enable(account);
+      } catch (e) {
+        debugPrint(
+          'capsicum: push.registration: announcement re-enable failed for '
+          '${account.key.host}: $e',
+        );
+      }
+    }
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
