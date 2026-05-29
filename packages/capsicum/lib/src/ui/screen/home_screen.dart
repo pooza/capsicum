@@ -300,6 +300,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // REST ページ取得上限到達 (フィルタで全件除外) を SnackBar 表示 (#624)。
+    // streamReconnectExhausted と同じく false → true 遷移時に出し、
+    // pull-to-refresh / タブ再選択の build() でクリアされる。
+    ref.listen(listenTarget, (prev, next) {
+      final capHit = next.valueOrNull?.pageCapHit ?? false;
+      final prevCapHit = prev?.valueOrNull?.pageCapHit ?? false;
+      if (capHit && !prevCapHit) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('フィルタで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
+
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
     // 「タイムライン本体 (約 600px) + ドロワー 304px」が成り立つ最小ラインを
     // 採用。タブレット横向き (iPad 1024 / Galaxy Tab 1280) や 13" デスクトップ

@@ -80,6 +80,13 @@ class TimelineState {
   /// pull-to-refresh / タブ再選択で build() が再実行されるとクリアされる。
   final bool streamReconnectExhausted;
 
+  /// REST ページ取得が [kMaxVisibilityPageFetches] の上限に到達して、可視投稿が
+  /// 1 件も取れないまま打ち切られた状態 (#624)。実況フィルタ ON で全件除外
+  /// された場合のサイレント終了を UI に出すための目印。
+  /// `streamReconnectExhausted` と同じく pull-to-refresh / タブ再選択で
+  /// build() が再実行されるとクリアされる。
+  final bool pageCapHit;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -87,6 +94,7 @@ class TimelineState {
     this.loadMoreError,
     this.pendingCount = 0,
     this.streamReconnectExhausted = false,
+    this.pageCapHit = false,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -99,6 +107,7 @@ class TimelineState {
     Object? loadMoreError = _keepLoadMoreError,
     int? pendingCount,
     bool? streamReconnectExhausted,
+    bool? pageCapHit,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -109,6 +118,7 @@ class TimelineState {
     pendingCount: pendingCount ?? this.pendingCount,
     streamReconnectExhausted:
         streamReconnectExhausted ?? this.streamReconnectExhausted,
+    pageCapHit: pageCapHit ?? this.pageCapHit,
   );
 }
 
@@ -168,7 +178,9 @@ Future<TimelineState> fetchUntilVisible({
     if (allVisible.isNotEmpty || !hasMore) break;
   }
 
-  if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+  final pageCapHit =
+      fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore;
+  if (pageCapHit) {
     _recordPageCapHit(
       site: 'fetchUntilVisible',
       visibleCollected: 0,
@@ -176,7 +188,11 @@ Future<TimelineState> fetchUntilVisible({
     );
   }
 
-  return TimelineState(posts: allVisible, hasMore: hasMore);
+  return TimelineState(
+    posts: allVisible,
+    hasMore: hasMore,
+    pageCapHit: pageCapHit,
+  );
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.
@@ -237,7 +253,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (allVisible.isNotEmpty || !hasMore) break;
     }
 
-    if (fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore) {
+    final pageCapHit =
+        fetches >= kMaxVisibilityPageFetches && allVisible.isEmpty && hasMore;
+    if (pageCapHit) {
       _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
     }
 
@@ -254,7 +272,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     });
 
     final enriched = await _enrichIsCat(allVisible);
-    return TimelineState(posts: enriched, hasMore: hasMore);
+    return TimelineState(
+      posts: enriched,
+      hasMore: hasMore,
+      pageCapHit: pageCapHit,
+    );
   }
 
   // streaming 内部の parse / 接続 / listen error を観測層へ流す (#586)。
@@ -549,9 +571,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           if (allVisible.isNotEmpty || !hasMore) break;
         }
 
-        if (fetches >= kMaxVisibilityPageFetches &&
+        final pageCapHit =
+            fetches >= kMaxVisibilityPageFetches &&
             allVisible.isEmpty &&
-            hasMore) {
+            hasMore;
+        if (pageCapHit) {
           _recordPageCapHit(
             site: 'loadMore',
             visibleCollected: 0,
@@ -568,6 +592,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
             isLoadingMore: false,
             hasMore: hasMore,
             loadMoreError: null,
+            pageCapHit: pageCapHit,
           ),
         );
         return; // Success — exit retry loop.
