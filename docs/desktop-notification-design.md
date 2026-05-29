@@ -4,7 +4,7 @@
 
 - 対象 OS: macOS / Linux / Windows の 3 OS 共通
 - ネイティブ push (APNs / WNS) と**併存**する設計。本書はアプリ起動中の通知配信を担う中間解
-- [push-relay-plan.md](push-relay-plan.md) は mobile / capsicum-relay 経路の話。本書はそれと別レイヤー
+- mobile / capsicum-relay 経路 ([pooza/capsicum-relay](https://github.com/pooza/capsicum-relay)、設計経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md)) は別レイヤー。本書はアプリ起動中のデスクトップ通知配信を扱う
 
 ## 背景
 
@@ -234,6 +234,6 @@ Phase 1〜4 は依存関係上 1 PR にまとめるのが妥当。Phase 5 は内
 - #475 Linux push 方針決定（本設計で結論、close）
 - #476 お知らせ通知 A 案 polling（本設計の announcement event 処理で実質代替、close 候補）
 - #477 お知らせ通知 C 案 capsicum-relay（mobile 対象、存続）
-- #468 macOS push 本配線（v1.30、本設計と併存）
+- #468 macOS push 本配線（v1.34、本設計と併存）
 - #474 Windows push 本配線（on-hold、本設計と併存）
-- [push-relay-plan.md](push-relay-plan.md) mobile / relay 経路（直接の依存はないが背景知識として）
+- mobile / relay 経路の背景: [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリ、初期設計は [archive/push-relay-plan.md](archive/push-relay-plan.md)

@@ -54,8 +54,8 @@ macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicu
 
 ### 1.5 プライバシーポリシー
 
-- [x] プライバシーポリシーの作成（`docs/privacy-policy.md`）
-- [x] `capsicum.shrieker.net/privacy-policy` で公開
+- [x] プライバシーポリシーの作成
+- [x] [capsicum.shrieker.net/privacy-policy](https://capsicum.shrieker.net/privacy-policy) で公開（正本は [capsicum-site](https://github.com/pooza/capsicum-site) の `privacy-policy/index.md`）
 - [x] URL をストアの掲載情報に設定
 
 ### 1.6 コンテンツレーティング

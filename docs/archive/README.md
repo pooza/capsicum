@@ -18,3 +18,10 @@ v1.0 前後の初回審査時に遭遇したリジェクトへの対応記録。
 - [appstore-review-notes-login.md](appstore-review-notes-login.md) — App Store Guideline 2.1（デモアカウントログイン）リジェクトへの返信文
 - [appstore-review-notes-ugc.md](appstore-review-notes-ugc.md) — App Store Guideline 1.2（UGC）リジェクトへの返信文と操作説明
 - [googleplay-review-notes-login.md](googleplay-review-notes-login.md) — Google Play 審査員の OAuth ログイン失敗への対応記録
+
+### 設計判断の経緯記録
+
+実装が完了し正本が別の場所に移ったため、設計判断の経緯のみが歴史的価値として残るドキュメント。
+
+- [push-relay-plan.md](push-relay-plan.md) — プッシュ通知リレー (capsicum-relay) の初期計画書。Ruby / Linode / Linode Nanode / flauros.b-shock.co.jp 等の選定根拠を含む。v1.18 で実装済、本番は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本。Stage 3 (外部ユーザー向け有償提供) は [#597](https://github.com/pooza/capsicum/issues/597) で継続
+- [privacy-policy.md](privacy-policy.md) — capsicum 初期 (v1.0) のプライバシーポリシー草稿。現行は [capsicum.shrieker.net/privacy-policy](https://capsicum.shrieker.net/privacy-policy) ([capsicum-site](https://github.com/pooza/capsicum-site) の `privacy-policy/index.md`) が正本
