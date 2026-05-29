@@ -32,7 +32,7 @@ body:
         - label: Android
         - label: iOS / iPadOS
         - label: macOS
-        - label: Linux (AppImage / Flatpak)
+        - label: Linux (AppImage)
         - label: Windows (MSIX)
         - label: 未確認 / 不明
   - type: textarea

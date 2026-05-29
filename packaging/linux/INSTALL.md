@@ -1,6 +1,6 @@
 # Linux インストール手順 (AppImage 直配)
 
-> 配布対象は **x86_64 アーキの主要なデスクトップ Linux ディストロ**です。AppImage 形式での単独実行ファイル配布のため、システムへの導入は不要・削除はファイル削除のみで完結します。Flathub 公開は申請中で、採択後は `flatpak install flathub net.shrieker.capsicum` でも導入できるようになります。
+> 配布対象は **x86_64 アーキの主要なデスクトップ Linux ディストロ**です。AppImage 形式での単独実行ファイル配布のため、システムへの導入は不要・削除はファイル削除のみで完結します。
 
 ## インストール手順
 
@@ -89,14 +89,3 @@ rm ~/Applications/capsicum-1.25.0-x86_64.AppImage
 rm -rf ~/.local/share/capsicum
 rm -rf ~/.config/capsicum
 ```
-
-## Flathub について
-
-Flathub への申請手続き中です。採択後は以下のコマンドで導入可能になります:
-
-```sh
-flatpak install flathub net.shrieker.capsicum
-flatpak run net.shrieker.capsicum
-```
-
-Flatpak 版は Flathub 提供 runtime (`org.gnome.Platform//49`) で動作し、サンドボックス内で完結します。

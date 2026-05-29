@@ -11,22 +11,11 @@ on:
       - 'packages/capsicum/pubspec.yaml'
       - '.github/workflows/linux-release.yml'
   workflow_dispatch:
-    inputs:
-      build_kind:
-        description: 'Which artifacts to build'
-        required: true
-        default: 'both'
-        type: choice
-        options:
-          - appimage
-          - flatpak
-          - both
 
 jobs:
   # Phase 4a: portable AppImage を組み立てて GitHub Releases (draft) に添付。
   # Ubuntu 22.04 を使うのは glibc 2.35 (Ubuntu LTS 全代で動く AppImage) 確保のため。
   appimage:
-    if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'appimage' || inputs.build_kind == 'both'
     runs-on: ubuntu-22.04
     permissions:
       # softprops/action-gh-release の draft Release 作成 + 添付に必要 (タグ駆動時のみ実行)
@@ -113,26 +102,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Pack Flutter bundle as tarball (for Flathub source)
-        # Flathub のサンドボックスはネットワーク無し。提出 manifest は
-        # GitHub Releases に上げた bundle tarball を type: archive で取り込む。
-        # 詳細: packaging/linux/flathub/SUBMISSION.md
-        run: |
-          VERSION=$(awk -F'[ +]' '/^version:/{print $2; exit}' packages/capsicum/pubspec.yaml)
-          mkdir -p build/linux/dist
-          tar -czf "build/linux/dist/capsicum-bundle-${VERSION}-x86_64.tar.gz" \
-            -C packages/capsicum/build/linux/x64/release/bundle .
-          ( cd build/linux/dist && sha256sum "capsicum-bundle-${VERSION}-x86_64.tar.gz" )
-
-      - name: Upload bundle tarball as workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: capsicum-bundle-tarball
-          path: build/linux/dist/*.tar.gz
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Attach AppImage and bundle tarball to GitHub Release
+      - name: Attach AppImage to GitHub Release
         # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
         # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
         if: startsWith(github.ref, 'refs/tags/')
@@ -140,19 +110,13 @@ jobs:
         with:
           files: |
             build/linux/dist/*.AppImage
-            build/linux/dist/*.tar.gz
           fail_on_unmatched_files: true
           draft: true
 
-  # Phase 4b: Flathub manifest の syntax / 構造をチェック (Phase 5a の事前検証)。
-  # 本格的な flatpak-builder ビルドはオフライン対応の Phase 5a manifest が
-  # 整ってから別 job で実施。この job は YAML / AppStream / desktop entry の
-  # 整合性を低コストで毎回検証する。
-  flatpak-lint:
-    if: github.event_name != 'workflow_dispatch' || inputs.build_kind == 'flatpak' || inputs.build_kind == 'both'
-    # appimage と違い実バイナリは作らないので glibc 互換性は不要。
-    # 新しい appstreamcli (developer タグの新形式・vcs-browser url type 等) を
-    # 使うために 24.04 を採用。
+  # AppImage に同梱する metainfo / desktop entry の整合性を低コストで毎回検証する。
+  # AppImage ビルド側でも build.sh が embed するため最終的には弾かれるが、早期検知で
+  # 失敗を appimage job の終盤まで持ち越さずに済む。
+  assets-lint:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -160,36 +124,10 @@ jobs:
       - name: Install lint tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y appstream desktop-file-utils python3-yaml pipx
-          pipx install flatpak-builder-lint || true
-
-      - name: Validate manifest YAML syntax
-        run: |
-          python3 - <<'EOF'
-          import sys, yaml
-          path = 'packaging/linux/flathub/net.shrieker.capsicum.yml'
-          with open(path) as fh:
-              data = yaml.safe_load(fh)
-          required = ['app-id', 'runtime', 'runtime-version', 'sdk', 'command', 'modules']
-          missing = [k for k in required if k not in data]
-          if missing:
-              print(f'ERROR: missing keys: {missing}', file=sys.stderr)
-              sys.exit(1)
-          print(f'OK: app-id={data["app-id"]} runtime={data["runtime"]}//{data["runtime-version"]}')
-          EOF
+          sudo apt-get install -y appstream desktop-file-utils
 
       - name: Validate AppStream metainfo
         run: appstreamcli validate --no-net packaging/linux/shared/net.shrieker.capsicum.metainfo.xml
 
       - name: Validate desktop entry
         run: desktop-file-validate packaging/linux/shared/net.shrieker.capsicum.desktop
-
-      - name: Run flatpak-builder-lint (best-effort)
-        # Phase 5a で公式 OCI image (ghcr.io/flathub-infra/flatpak-builder-lint)
-        # を使う形に強化する。本 job は available なら呼び、無ければ skip。
-        run: |
-          if command -v flatpak-builder-lint >/dev/null 2>&1; then
-            flatpak-builder-lint manifest packaging/linux/flathub/net.shrieker.capsicum.yml || true
-          else
-            echo "flatpak-builder-lint not installed; skipping"
-          fi

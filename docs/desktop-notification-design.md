@@ -181,7 +181,7 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 
 #### Linux
 
-- AppImage / Flathub どちらも `flutter_local_notifications_linux` (libnotify 経由) が動作 (#493 で plugin 登録の bug 解消済み)
+- AppImage で `flutter_local_notifications_linux` (libnotify 経由) が動作 (#493 で plugin 登録の bug 解消済み)
 - Sandbox 制約: なし（user session で動作するため）
 - 既知の懸念: Wayland セッションで libnotify バックエンドが GTK 経由になる場合がある（GNOME / KDE どちらも対応）
 

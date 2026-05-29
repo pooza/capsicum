@@ -64,17 +64,7 @@ sudo apt install -y \
 - `default-jdk-headless`: `sentry_flutter` が transitive で引く `jni` のヘッダ (ビルド時のみ。実行時は使われない)
 - `libfuse2t64` / `patchelf`: AppImage 起動と linuxdeploy の依存解決
 
-配布パイプライン作業時は追加で:
-
-```sh
-sudo apt install -y flatpak flatpak-builder
-flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
-```
-
-`linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md)。
-
-Flathub アカウント（pooza 個人）は最初の submission ([packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md)) で必要。
+配布パイプライン作業時の `linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md)。
 
 ### Windows 固有
 
