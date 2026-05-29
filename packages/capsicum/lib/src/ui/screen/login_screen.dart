@@ -53,6 +53,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //   リダイレクトURI」+ ephemeral で Bitwarden 拡張が効かないと判明、
   //   逆に oob fallback は実ブラウザで Bitwarden が効き安定だったため、
   //   macOS は意図的にこの経路に入れて oob に着地させる。
+  //   ただし FlutterWebAuth2.authenticate に渡す callbackUrlScheme は
+  //   `_authCallbackUrlScheme` で `capsicum` (scheme として valid な値)
+  //   に分離する (#642)。これは Mastodon 登録の redirect_uri (localhost)
+  //   と意図的に一致させず、ASWebAuthenticationSession を必ず CANCELED に
+  //   して fallback に流すため。以前は localhost URL を直渡しして
+  //   _assertCallbackScheme の ArgumentError 経由で fallback に流していたが
+  //   その例外が Sentry CAPSICUM-1R として連発していた。
   // Mac App Store ビルドは Sandbox 下で _checkOAuthPortAvailability の
   // ServerSocket.bind が成立するために Release.entitlements に
   // com.apple.security.network.server が必要 (実 OAuth サーバは立てない
@@ -66,6 +73,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String get _redirectUri => _useLocalhostCallback
       ? AppConstants.localhostOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
+
+  /// `FlutterWebAuth2.authenticate` の `callbackUrlScheme` 引数。
+  ///
+  /// flutter_web_auth_2 4.1.0 の `_assertCallbackScheme` は Linux / Windows
+  /// のみスキップ対象で、それ以外 (macOS 含む) では URI scheme regex
+  /// (`^[a-z][a-z\d+.-]*$`) に通らないと `ArgumentError` を投げる。Linux /
+  /// Windows は `http://localhost:{port}/{path}` 形式を server impl が
+  /// callback URL として直接受けるが、macOS は ASWebAuthenticationSession
+  /// 経由のため、ここに渡すのは scheme として valid な文字列でなければ
+  /// ならない。
+  ///
+  /// macOS は意図的に「ASWebAuthenticationSession で `capsicum://` を待つ
+  /// が、Mastodon 側は `_redirectUri` (localhost) でリダイレクトするため
+  /// 必ず一致せず CANCELED → fallback (`_tryManualCodeFallback` の oob
+  /// 経路) に流す」設計を採るため、redirect_uri (localhost) と
+  /// callbackUrlScheme (custom scheme) を別物として扱う (#642)。
+  String get _authCallbackUrlScheme {
+    if (_useLocalhostCallback && !Platform.isMacOS) {
+      return AppConstants.localhostOAuthCallbackUrl;
+    }
+    return AppConstants.callbackUrlScheme;
+  }
 
   bool _isLoggingIn = false;
   bool _loginCompleted = false;
@@ -249,13 +278,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
         // で受ける。callbackUrlScheme は server impl では完全な
         // http://localhost:{port}/{path} URL を期待する仕様 (flutter_web_auth_2
-        // 4.1.0 の server.dart 参照)。
-        // 現状 Linux のみ true (Windows 対応再開時に true 化検討)。
+        // 4.1.0 の server.dart 参照)。macOS は scheme として valid な文字列を
+        // 要求されるため `_authCallbackUrlScheme` で分離 (#642)。
         final resultUrl = await FlutterWebAuth2.authenticate(
           url: startResult.authorizationUrl.toString(),
-          callbackUrlScheme: _useLocalhostCallback
-              ? AppConstants.localhostOAuthCallbackUrl
-              : AppConstants.callbackUrlScheme,
+          callbackUrlScheme: _authCallbackUrlScheme,
           options: _useLocalhostCallback
               ? const FlutterWebAuth2Options(useWebview: false)
               : const FlutterWebAuth2Options(preferEphemeral: true),
