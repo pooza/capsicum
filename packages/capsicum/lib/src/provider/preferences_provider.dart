@@ -39,6 +39,7 @@ const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
+const _updateCheckEnabledKey = 'update_check_enabled';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -782,6 +783,38 @@ class MouseDragScrollNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_mouseDragScrollKey, value);
+  }
+}
+
+/// 直配チャネル (Linux AppImage / Windows 自己署名 MSIX) の起動時更新検知
+/// を行うか (#641)。default ON。ストア配布ビルドでは
+/// `kIsDirectChannelBuild` 側でゲートされて何も起きないため、この設定の
+/// 表示自体を直配ビルドに限定する側で出し分ける (UI 側責務)。
+final updateCheckEnabledProvider =
+    NotifierProvider<UpdateCheckEnabledNotifier, bool>(
+      UpdateCheckEnabledNotifier.new,
+    );
+
+class UpdateCheckEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_updateCheckEnabledKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_updateCheckEnabledKey, value);
   }
 }
 

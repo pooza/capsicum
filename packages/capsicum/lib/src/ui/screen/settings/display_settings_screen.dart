@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../provider/preferences_provider.dart';
+import '../../../service/update_checker.dart';
 
 class DisplaySettingsScreen extends ConsumerWidget {
   const DisplaySettingsScreen({super.key});
@@ -74,6 +75,20 @@ class DisplaySettingsScreen extends ConsumerWidget {
               value: ref.watch(mouseDragScrollProvider),
               onChanged: (value) =>
                   ref.read(mouseDragScrollProvider.notifier).setEnabled(value),
+            ),
+          // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX 直配) のみ
+          // 意味がある設定 (#641)。ストア配布ビルドでは
+          // [kIsDirectChannelBuild] が false なので、設定エントリ自体を隠す。
+          if (kIsDirectChannelBuild)
+            SwitchListTile(
+              title: const Text('起動時に新しいバージョンを確認'),
+              subtitle: const Text(
+                'GitHub Releases の最新版を確認し、新しいバージョンがあれば通知します',
+              ),
+              value: ref.watch(updateCheckEnabledProvider),
+              onChanged: (value) => ref
+                  .read(updateCheckEnabledProvider.notifier)
+                  .setEnabled(value),
             ),
         ],
       ),

@@ -22,6 +22,8 @@ import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
+import '../../provider/update_check_provider.dart';
+import '../../service/update_checker.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -317,6 +319,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         }
       }
+    });
+
+    // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX) の新版検知を
+    // SnackBar で控えめに通知し、Release ページへの導線を出す (#641)。
+    // FutureProvider が AsyncLoading → AsyncData(UpdateInfo) に遷移した
+    // タイミングを拾うので、起動時に 1 回だけ出る。ストアビルド (= dart-
+    // define DIRECT_CHANNEL 未指定) や設定 OFF では provider が `null`
+    // を即返すため何も起きない。
+    ref.listen<AsyncValue<UpdateInfo?>>(updateCheckProvider, (prev, next) {
+      final info = next.valueOrNull;
+      if (info == null) return;
+      if (prev?.valueOrNull?.latestVersion == info.latestVersion) return;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('新しいバージョン v${info.latestVersion} があります'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'リリースページ',
+            onPressed: () => launchUrlSafely(info.releaseUrl),
+          ),
+        ),
+      );
     });
 
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
