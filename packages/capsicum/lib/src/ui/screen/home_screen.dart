@@ -18,6 +18,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/about_dialog.dart';
+import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
@@ -747,7 +748,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Resolve list names for ListTab entries.
     final allLists = ref.watch(listsProvider).valueOrNull ?? [];
 
-    return SingleChildScrollView(
+    // マウスドラッグでタブ列を掴んで横スクロールできるよう、設定 ON 時のみ
+    // ScrollBehavior を override (#574)。OFF (default) はトラックパッド
+    // 2 本指スワイプの既存挙動を維持。
+    final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
+    final tabsScroll = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
@@ -777,6 +782,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+    return mouseDragEnabled
+        ? ScrollConfiguration(
+            behavior: const MouseDragScrollBehavior(),
+            child: tabsScroll,
+          )
+        : tabsScroll;
   }
 
   String _tabLabel(
@@ -879,6 +890,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // wide モード (Scaffold.drawer が null、Row で並ぶ inline 配置) でも
     // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
     // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
+    // Drawer 内 ListView をマウスドラッグでスクロールできるよう、設定 ON
+    // 時のみ ScrollBehavior を override (#574)。タブ列と同じ取り回し。
+    final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
     return Drawer(
       // 常駐 (wide) モードでは Row 内の左パネルとして並ぶため、Material
       // 既定の内容側 (右端) 角丸を消してフラットな仕切りにする (#541
@@ -888,7 +902,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Builder(
         builder: (innerCtx) {
           void dismiss() => Scaffold.of(innerCtx).closeDrawer();
-          return ListView(
+          final list = ListView(
             padding: EdgeInsets.zero,
             children: [
               Container(
@@ -1321,6 +1335,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ],
           );
+          return mouseDragEnabled
+              ? ScrollConfiguration(
+                  behavior: const MouseDragScrollBehavior(),
+                  child: list,
+                )
+              : list;
         },
       ),
     );

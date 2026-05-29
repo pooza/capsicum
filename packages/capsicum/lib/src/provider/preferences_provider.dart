@@ -38,6 +38,7 @@ const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
+const _mouseDragScrollKey = 'mouse_drag_scroll';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -748,6 +749,39 @@ class HideLivecureNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideLivecureKey, value);
+  }
+}
+
+/// Drawer / TabBar 等の横スクロール要素をマウスドラッグでも掴めるように
+/// するか (#574)。OFF (default) なら従来通り mouse / trackpad はホイール
+/// 操作のみで、ドラッグはタッチ / スタイラスに限定。ON にすると mouse も
+/// dragDevices に追加され「掴んで横へ引く」操作が可能になる代わりに、
+/// macOS / Linux のトラックパッド 2 本指スワイプとの両立が崩れるケースが
+/// あるため明示的なオプトイン扱い。
+final mouseDragScrollProvider = NotifierProvider<MouseDragScrollNotifier, bool>(
+  MouseDragScrollNotifier.new,
+);
+
+class MouseDragScrollNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_mouseDragScrollKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_mouseDragScrollKey, value);
   }
 }
 
