@@ -2,11 +2,52 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/pages_error.dart';
 import 'content_parser.dart';
 import 'post_tile.dart';
+
+/// Pages の image/audio/video ブロック読み込み失敗の captureException 抑制用
+/// throttle (#629)。breadcrumb は毎回出すが、同種失敗 spam で Sentry が
+/// 埋まるのを避けるため exception 送信側だけ間引く。
+DateTime? _lastBlockMediaCapture;
+const _blockMediaCaptureThrottle = Duration(seconds: 60);
+
+/// Misskey Page の image / audio / video ブロックの素材ロード失敗を観測する
+/// (#629)。breadcrumb は毎回、`reportPagesOpFailure` (= captureException) は
+/// throttle して送る。URL は host のみを breadcrumb data に載せ (full URL は
+/// クエリパラメータに `?i=<token>` が乗りうるため避ける)、自前サーバの CDN
+/// 失敗か外部ファイルかの切り分けに使う。
+void _reportPageBlockMediaLoadFailure({
+  required String url,
+  required AttachmentType attachmentType,
+  required Object error,
+  required StackTrace stackTrace,
+  required Account? account,
+}) {
+  Sentry.addBreadcrumb(
+    Breadcrumb(
+      category: 'pages.block.media_load',
+      level: SentryLevel.warning,
+      message: error.runtimeType.toString(),
+      data: {
+        'attachment_type': attachmentType.name,
+        'url_host': Uri.tryParse(url)?.host ?? '',
+      },
+    ),
+  );
+  final now = DateTime.now();
+  if (_lastBlockMediaCapture != null &&
+      now.difference(_lastBlockMediaCapture!) < _blockMediaCaptureThrottle) {
+    return;
+  }
+  _lastBlockMediaCapture = now;
+  reportPagesOpFailure('block_media_load', error, stackTrace, account: account);
+}
 
 /// Misskey Page (#186) のブロック配列を再帰的にレンダリングするウィジェット。
 ///
@@ -69,7 +110,11 @@ class _PageBlock extends ConsumerWidget {
       case 'text':
         return _TextBlock(block: block, host: host);
       case 'image':
-        return _ImageBlock(block: block, attachedFiles: attachedFiles);
+        return _ImageBlock(
+          block: block,
+          attachedFiles: attachedFiles,
+          host: host,
+        );
       case 'note':
         return _NoteBlock(block: block);
       default:
@@ -166,11 +211,16 @@ class _TextBlockState extends ConsumerState<_TextBlock> {
   }
 }
 
-class _ImageBlock extends StatelessWidget {
+class _ImageBlock extends ConsumerWidget {
   final Map<String, dynamic> block;
   final Map<String, Attachment> attachedFiles;
+  final String? host;
 
-  const _ImageBlock({required this.block, required this.attachedFiles});
+  const _ImageBlock({
+    required this.block,
+    required this.attachedFiles,
+    this.host,
+  });
 
   void _openMediaViewer(BuildContext context, Attachment file) {
     context.push(
@@ -183,7 +233,7 @@ class _ImageBlock extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Misskey の「image」ブロックは命名と裏腹にドライブ内の任意ファイル
     // (動画 / 音声含む) を貼れる仕様。Attachment.type で分岐し、post_tile の
     // 動画/音声サムネ規約 (previewUrl 優先・無し動画は黒フレーム回避の
@@ -251,16 +301,25 @@ class _ImageBlock extends StatelessWidget {
                 Image.network(
                   file.previewUrl ?? file.url,
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stack) => Container(
-                    padding: const EdgeInsets.all(16),
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: Text(
-                      isVideoLike ? '動画を表示できません' : '画像の表示に失敗しました',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
+                  errorBuilder: (context, error, stack) {
+                    _reportPageBlockMediaLoadFailure(
+                      url: file.previewUrl ?? file.url,
+                      attachmentType: file.type,
+                      error: error,
+                      stackTrace: stack ?? StackTrace.current,
+                      account: ref.read(currentAccountProvider),
+                    );
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: Text(
+                        isVideoLike ? '動画を表示できません' : '画像の表示に失敗しました',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               if (isVideoLike)
                 const Icon(
