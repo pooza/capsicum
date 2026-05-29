@@ -66,7 +66,12 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
         ),
       );
     } catch (e, st) {
-      reportChatOpFailure('invite_to_room', e, st);
+      reportChatOpFailure(
+        'invite_to_room',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('招待に失敗しました (${summarizeChatError(e)})')),

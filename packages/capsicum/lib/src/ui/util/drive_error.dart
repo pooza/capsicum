@@ -3,10 +3,9 @@ import 'package:dio/dio.dart';
 import '../../model/account.dart';
 import '../../service/sentry_op_failure.dart';
 
-/// chat 操作系 SnackBar / エラーパネルに流す短い人間向け要約。
-/// DioException の URL / ヘッダ / Authorization / push_token 等の機微情報を
-/// 流さず、status code / type だけ含める (#460 の drive 版と同型)。
-String summarizeChatError(Object error) {
+/// drive 操作系 SnackBar に流す短い人間向け要約。DioException の URL や
+/// ヘッダ等の機微情報を流さず、status code / type だけ含める (#460)。
+String summarizeDriveError(Object error) {
   if (error is DioException) {
     final status = error.response?.statusCode;
     if (status != null) return 'サーバーエラー (HTTP $status)';
@@ -15,17 +14,17 @@ String summarizeChatError(Object error) {
   return 'エラーが発生しました';
 }
 
-/// chat 操作失敗時に Sentry へ詳細を流す共通フック (#460 の drive 版と同型)。
-/// 共通ヘルパ [reportOpFailure] に委譲し、`chat.op` tag + host/backend tag +
+/// drive 操作失敗時に Sentry へ詳細を流す共通フック (#460)。共通ヘルパ
+/// [reportOpFailure] に委譲し、`drive.op` tag + host/backend tag +
 /// scrubException を一括適用する (#625)。
-void reportChatOpFailure(
+void reportDriveOpFailure(
   String operation,
   Object error,
   StackTrace st, {
   Account? account,
 }) {
   reportOpFailure(
-    tagKey: 'chat.op',
+    tagKey: 'drive.op',
     operation: operation,
     error: error,
     stackTrace: st,

@@ -3,10 +3,9 @@ import 'package:capsicum_core/capsicum_core.dart';
 // 衝突するため Flutter 側を hide する。本画面では Misskey ページのみ扱う。
 import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
-import '../../service/exception_scrub.dart';
+import '../util/pages_error.dart';
 import '../widget/page_block_renderer.dart';
 import '../widget/user_avatar.dart';
 
@@ -83,12 +82,11 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
       // から rethrow する。UI 側 (FutureBuilder の error branch) では
       // snapshot.error を表示せず汎用文言にとどめ、画面スクショ経由でも
       // token が漏れない経路に揃える (#460 と同型を回避)。
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('pages.op', 'view');
-        },
+      reportPagesOpFailure(
+        'view',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
       );
       rethrow;
     }

@@ -59,7 +59,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           .send(text);
       _textController.clear();
     } catch (e, st) {
-      reportChatOpFailure('send_message', e, st);
+      reportChatOpFailure(
+        'send_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
@@ -93,7 +98,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
           .read(chatThreadProvider(widget.otherUser.id).notifier)
           .deleteMessage(message.id);
     } catch (e, st) {
-      reportChatOpFailure('delete_message', e, st);
+      reportChatOpFailure(
+        'delete_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),

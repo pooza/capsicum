@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/exception_scrub.dart';
+import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
@@ -431,19 +432,13 @@ class ChatRoomTimelineNotifier
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
-        try {
-          await Sentry.captureException(
-            e,
-            stackTrace: st,
-            withScope: (scope) {
-              scope.setTag('chat.room.load_more', 'failed');
-              scope.fingerprint = [
-                'chat.room.load_more',
-                e.runtimeType.toString(),
-              ];
-            },
-          );
-        } catch (_) {}
+        reportOpFailure(
+          tagKey: 'chat.room.load_more',
+          operation: 'failed',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(
             isLoadingMore: false,
@@ -624,18 +619,13 @@ class ChatThreadNotifier
         }
         // 最終失敗: Sentry へ計装し、loadMoreError 番兵で次回スクロール再入
         // を止める。drive_provider と同じ形 (#442 / #430 と同型)。
-        try {
-          await Sentry.captureException(
-            e,
-            stackTrace: st,
-            withScope: (scope) {
-              scope.setTag('chat.load_more', 'failed');
-              scope.fingerprint = ['chat.load_more', e.runtimeType.toString()];
-            },
-          );
-        } catch (_) {
-          // Sentry 失敗で UI 更新を止めない。
-        }
+        reportOpFailure(
+          tagKey: 'chat.load_more',
+          operation: 'failed',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(
             isLoadingMore: false,

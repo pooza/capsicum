@@ -44,7 +44,12 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
         ).showSnackBar(const SnackBar(content: Text('ルームに参加しました')));
       }
     } catch (e, st) {
-      reportChatOpFailure('accept_invitation', e, st);
+      reportChatOpFailure(
+        'accept_invitation',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('参加に失敗しました (${summarizeChatError(e)})')),
@@ -63,7 +68,12 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
       await (adapter as ChatSupport).ignoreInvitation(invitation.roomId);
       ref.invalidate(chatInvitationInboxProvider);
     } catch (e, st) {
-      reportChatOpFailure('ignore_invitation', e, st);
+      reportChatOpFailure(
+        'ignore_invitation',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('操作に失敗しました (${summarizeChatError(e)})')),
