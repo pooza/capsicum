@@ -170,6 +170,24 @@ enum LabelCache {
 
 // MARK: - Failure recorder
 
+/// Dart 側の `PushFailureKey` と完全同名で対応する App Group UserDefaults
+/// キー集合。新しい項目を増やすときは両側を揃えること。
+enum PushFailureKey: String {
+    case code = "capsicum_push_failure_last_code"
+    case at = "capsicum_push_failure_last_at_ms"
+    case count = "capsicum_push_failure_count"
+    case host = "capsicum_push_failure_last_host"
+    case encoding = "capsicum_push_failure_last_encoding"
+    case elapsedMs = "capsicum_push_failure_last_elapsed_ms"
+    /// #436: nse.no_keys の根本原因切り分け用。Keychain OSStatus と
+    /// 試行したストレージキープレフィックス（"mastodon,misskey" 等）。
+    case keychainStatus = "capsicum_push_failure_last_keychain_status"
+    case triedPrefixes = "capsicum_push_failure_last_tried_prefixes"
+    /// #436: nse.decrypt_failed の切り分け用。WebPushDecryptor / CryptoKit が
+    /// 投げた error の type + case 名（"WebPushError.invalidKeyId" 等）。
+    case decryptError = "capsicum_push_failure_last_decrypt_error"
+}
+
 /// NSE で起きた fallback 起因（鍵不在・base64 失敗・復号失敗・parse 失敗）を
 /// App Group UserDefaults に書き、次回 main app 起動時に Dart 側の
 /// [PushFailureRecorder] が読み出して Sentry へ送る (#366)。
@@ -180,22 +198,6 @@ enum LabelCache {
 /// 即時失敗か）を Sentry tag/extra で見るために使う。
 enum FailureRecorder {
     private static let suiteName = "group.jp.co.b-shock.capsicum"
-    private static let codeKey = "capsicum_push_failure_last_code"
-    private static let atKey = "capsicum_push_failure_last_at_ms"
-    private static let countKey = "capsicum_push_failure_count"
-    private static let hostKey = "capsicum_push_failure_last_host"
-    private static let encodingKey = "capsicum_push_failure_last_encoding"
-    private static let elapsedKey = "capsicum_push_failure_last_elapsed_ms"
-    /// #436: nse.no_keys の根本原因切り分け用。Keychain OSStatus と
-    /// 試行したストレージキープレフィックス（"mastodon,misskey" 等）。
-    private static let keychainStatusKey =
-        "capsicum_push_failure_last_keychain_status"
-    private static let triedPrefixesKey =
-        "capsicum_push_failure_last_tried_prefixes"
-    /// #436: nse.decrypt_failed の切り分け用。WebPushDecryptor / CryptoKit が
-    /// 投げた error の type + case 名（"WebPushError.invalidKeyId" 等）。
-    private static let decryptErrorKey =
-        "capsicum_push_failure_last_decrypt_error"
 
     static func record(
         code: String,
@@ -207,39 +209,30 @@ enum FailureRecorder {
         decryptError: String? = nil
     ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
-        defaults.set(code, forKey: codeKey)
-        defaults.set(Int(Date().timeIntervalSince1970 * 1000), forKey: atKey)
-        let next = defaults.integer(forKey: countKey) + 1
-        defaults.set(next, forKey: countKey)
-        if let host = host {
-            defaults.set(host, forKey: hostKey)
+        defaults.set(code, forKey: PushFailureKey.code.rawValue)
+        defaults.set(
+            Int(Date().timeIntervalSince1970 * 1000),
+            forKey: PushFailureKey.at.rawValue
+        )
+        let next = defaults.integer(forKey: PushFailureKey.count.rawValue) + 1
+        defaults.set(next, forKey: PushFailureKey.count.rawValue)
+        writeOptional(defaults, .host, host)
+        writeOptional(defaults, .encoding, encoding)
+        writeOptional(defaults, .elapsedMs, elapsedMs)
+        writeOptional(defaults, .keychainStatus, keychainStatus)
+        writeOptional(defaults, .triedPrefixes, triedPrefixes)
+        writeOptional(defaults, .decryptError, decryptError)
+    }
+
+    private static func writeOptional(
+        _ defaults: UserDefaults,
+        _ key: PushFailureKey,
+        _ value: Any?
+    ) {
+        if let value = value {
+            defaults.set(value, forKey: key.rawValue)
         } else {
-            defaults.removeObject(forKey: hostKey)
-        }
-        if let encoding = encoding {
-            defaults.set(encoding, forKey: encodingKey)
-        } else {
-            defaults.removeObject(forKey: encodingKey)
-        }
-        if let elapsedMs = elapsedMs {
-            defaults.set(elapsedMs, forKey: elapsedKey)
-        } else {
-            defaults.removeObject(forKey: elapsedKey)
-        }
-        if let keychainStatus = keychainStatus {
-            defaults.set(keychainStatus, forKey: keychainStatusKey)
-        } else {
-            defaults.removeObject(forKey: keychainStatusKey)
-        }
-        if let triedPrefixes = triedPrefixes {
-            defaults.set(triedPrefixes, forKey: triedPrefixesKey)
-        } else {
-            defaults.removeObject(forKey: triedPrefixesKey)
-        }
-        if let decryptError = decryptError {
-            defaults.set(decryptError, forKey: decryptErrorKey)
-        } else {
-            defaults.removeObject(forKey: decryptErrorKey)
+            defaults.removeObject(forKey: key.rawValue)
         }
     }
 }
