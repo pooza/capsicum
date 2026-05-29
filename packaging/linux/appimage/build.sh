@@ -55,7 +55,8 @@ cd "$APP_DIR"
 flutter build linux --release \
   ${SENTRY_DSN_VAL:+--dart-define=SENTRY_DSN="$SENTRY_DSN_VAL"} \
   ${RELAY_SECRET_VAL:+--dart-define=RELAY_SECRET="$RELAY_SECRET_VAL"} \
-  --dart-define=SENTRY_ENV=production
+  --dart-define=SENTRY_ENV=production \
+  --dart-define=DIRECT_CHANNEL=true
 
 BUNDLE_DIR="$APP_DIR/build/linux/x64/release/bundle"
 APPDIR="$APP_DIR/build/linux/AppDir"

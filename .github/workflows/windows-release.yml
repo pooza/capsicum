@@ -73,7 +73,14 @@ jobs:
         # 未設定なら省略 (起動可能、Sentry 送信無効・push 通知無効)。
         # Linux 側 (packaging/linux/appimage/build.sh) と同じ運用。
         run: |
-          $defines = @('--dart-define=SENTRY_ENV=production')
+          # 自己署名 MSIX 直配は GitHub Releases から手動 DL する非ストア経路
+          # のため、起動時に GitHub Release API で新版検知する (#641)。
+          # Microsoft Store 配信側は SubmissionsAPI 経由で push される
+          # 別ビルド経路に乗っており、本ワークフローではない。
+          $defines = @(
+            '--dart-define=SENTRY_ENV=production',
+            '--dart-define=DIRECT_CHANNEL=true'
+          )
           if ($env:SENTRY_DSN)   { $defines += "--dart-define=SENTRY_DSN=$env:SENTRY_DSN" }
           if ($env:RELAY_SECRET) { $defines += "--dart-define=RELAY_SECRET=$env:RELAY_SECRET" }
           Push-Location packages/capsicum
