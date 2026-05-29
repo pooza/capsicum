@@ -790,21 +790,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             ),
                           ),
                         ],
-                        // サポーターバッジ (#428 B-3)。装飾のみ・自分のみ
-                        // 可視（他者可視は対象外）。状態は SupporterStatus
-                        // 抽象層 (isSupporterProvider) からのみ取得する。
-                        if (_isOwnProfile &&
-                            ref.watch(isSupporterProvider)) ...[
-                          const SizedBox(width: 6),
-                          Tooltip(
-                            message: 'サポーター',
-                            child: Image.asset(
-                              AppConstants.supporterIconAsset,
-                              width: 20,
-                              height: 20,
-                            ),
-                          ),
-                        ],
+                        // サポーターバッジは下のロール Chip 列に移動 (#605)。
+                        // 名前横の素アイコンだけでは意味が伝わりにくく、ロール
+                        // と並列に Chip 化することで「サポーター」のラベル付き
+                        // で示し可読性を上げる。capsicum アイコンは Chip の
+                        // avatar に残してブランド一貫性を保つ。
                       ],
                     ),
                     Text(
@@ -891,58 +881,92 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             const SizedBox(height: 8),
             const PushRegistrationStatusSection(),
           ],
-          if (user.roles.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: user.roles.map((role) {
-                Color? chipColor;
-                if (role.color != null &&
-                    role.color!.startsWith('#') &&
-                    role.color!.length >= 7) {
-                  try {
-                    chipColor = Color(
-                      0xFF000000 |
-                          int.parse(role.color!.substring(1, 7), radix: 16),
+          // サポーターバッジ (#428 B-3 / #605) は装飾のみ・自分のみ可視で、
+          // ロール chip 列と統合表示する。状態は SupporterStatus 抽象層
+          // (isSupporterProvider) からのみ取得し、他者プロフィールには出さない。
+          () {
+            final showSupporterChip =
+                _isOwnProfile && ref.watch(isSupporterProvider);
+            if (user.roles.isEmpty && !showSupporterChip) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ...user.roles.map((role) {
+                    Color? chipColor;
+                    if (role.color != null &&
+                        role.color!.startsWith('#') &&
+                        role.color!.length >= 7) {
+                      try {
+                        chipColor = Color(
+                          0xFF000000 |
+                              int.parse(role.color!.substring(1, 7), radix: 16),
+                        );
+                      } catch (_) {}
+                    }
+                    Widget? avatar;
+                    if (role.iconUrl != null) {
+                      avatar = Image.network(
+                        role.iconUrl!,
+                        width: 16,
+                        height: 16,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      );
+                    } else if (role.isAdmin) {
+                      final sabacanUrl = ref
+                          .watch(sabacanUrlProvider)
+                          .valueOrNull;
+                      avatar = sabacanUrl != null
+                          ? Image.network(
+                              sabacanUrl,
+                              width: 16,
+                              height: 16,
+                              errorBuilder: (_, _, _) =>
+                                  const Icon(Icons.shield, size: 16),
+                            )
+                          : const Icon(Icons.shield, size: 16);
+                    }
+                    return Chip(
+                      avatar: avatar,
+                      label: Text(
+                        role.name,
+                        style: TextStyle(fontSize: 12, color: chipColor),
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      side: chipColor != null
+                          ? BorderSide(color: chipColor.withValues(alpha: 0.5))
+                          : null,
                     );
-                  } catch (_) {}
-                }
-                Widget? avatar;
-                if (role.iconUrl != null) {
-                  avatar = Image.network(
-                    role.iconUrl!,
-                    width: 16,
-                    height: 16,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  );
-                } else if (role.isAdmin) {
-                  final sabacanUrl = ref.watch(sabacanUrlProvider).valueOrNull;
-                  avatar = sabacanUrl != null
-                      ? Image.network(
-                          sabacanUrl,
-                          width: 16,
-                          height: 16,
-                          errorBuilder: (_, _, _) =>
-                              const Icon(Icons.shield, size: 16),
-                        )
-                      : const Icon(Icons.shield, size: 16);
-                }
-                return Chip(
-                  avatar: avatar,
-                  label: Text(
-                    role.name,
-                    style: TextStyle(fontSize: 12, color: chipColor),
-                  ),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  side: chipColor != null
-                      ? BorderSide(color: chipColor.withValues(alpha: 0.5))
-                      : null,
-                );
-              }).toList(),
-            ),
-          ],
+                  }),
+                  if (showSupporterChip)
+                    Chip(
+                      avatar: Image.asset(
+                        AppConstants.supporterIconAsset,
+                        width: 16,
+                        height: 16,
+                      ),
+                      label: Text(
+                        'サポーター',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      side: BorderSide(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }(),
           if (user.fields.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...user.fields.map(
