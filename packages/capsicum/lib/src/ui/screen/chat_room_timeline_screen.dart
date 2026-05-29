@@ -244,6 +244,24 @@ class _ChatRoomTimelineScreenState
     final isOwner =
         myUserIdForOwnerCheck != null && _room.ownerId == myUserIdForOwnerCheck;
 
+    // chatRoom streaming の再接続上限到達を SnackBar 表示 (#623)。
+    // DM 側 ([chatStreamReconnectExhaustedProvider]) と同型。
+    ref.listen(chatRoomStreamReconnectExhaustedProvider(widget.room.id), (
+      prev,
+      next,
+    ) {
+      if (next && prev != true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ルームのライブ更新が停止しました。下に引いて再接続してください'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: Row(

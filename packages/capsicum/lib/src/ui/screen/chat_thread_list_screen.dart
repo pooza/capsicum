@@ -52,6 +52,22 @@ class ChatThreadListScreen extends ConsumerWidget {
       data: (list) => list.length,
       orElse: () => 0,
     );
+
+    // chat (DM) streaming の再接続上限到達を SnackBar 表示 (#623)。
+    // timeline 側 (#602) と同型。flag は autoDispose で再購読時にクリアされる。
+    ref.listen(chatStreamReconnectExhaustedProvider, (prev, next) {
+      if (next && prev != true) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('メッセージのライブ更新が停止しました。下に引いて再接続してください'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('メッセージ'),

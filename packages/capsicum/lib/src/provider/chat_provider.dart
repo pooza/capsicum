@@ -8,6 +8,19 @@ import '../service/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
+/// chat (DM) streaming の再接続上限到達フラグ (#623)。timeline 側の
+/// [TimelineState.streamReconnectExhausted] と同型で、UI 画面で `ref.listen`
+/// して SnackBar で可視化する。stream provider が autoDispose されるタイミ
+/// ングで自動的に false に戻る (画面遷移 / アカウント切替 / pull-to-refresh
+/// による再購読のいずれでもクリア)。
+final chatStreamReconnectExhaustedProvider = StateProvider.autoDispose<bool>(
+  (ref) => false,
+);
+
+/// 特定 roomId の chatRoom streaming の再接続上限到達フラグ (#623)。
+final chatRoomStreamReconnectExhaustedProvider = StateProvider.autoDispose
+    .family<bool, String>((ref, _) => false);
+
 /// chat ストリーミング (newChatMessage) の broadcast ストリーム。
 /// ChatSupport を持つ adapter のみ実体を返し、null だと購読側はスキップ。
 /// onCancel で adapter 側の WebSocket を切る。
@@ -74,8 +87,8 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         },
       );
     },
-    // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。UI 側で
-    // ストリーミング停止を可視化したくなったらここに繋ぐ (#552)。
+    // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。Sentry に
+    // 残しつつ、UI 側で SnackBar 表示するためのフラグも立てる (#623)。
     onReconnectExhausted: () {
       Sentry.captureMessage(
         'chat.stream.reconnect_exhausted',
@@ -85,6 +98,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
           scope.fingerprint = ['chat.stream.reconnect_exhausted'];
         },
       );
+      ref.read(chatStreamReconnectExhaustedProvider.notifier).state = true;
     },
   );
   ref.onDispose(() => (adapter as ChatSupport).disposeChatStream());
@@ -269,6 +283,12 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
               scope.fingerprint = ['chat.room.stream.reconnect_exhausted'];
             },
           );
+          ref
+                  .read(
+                    chatRoomStreamReconnectExhaustedProvider(roomId).notifier,
+                  )
+                  .state =
+              true;
         },
       );
       ref.onDispose(
