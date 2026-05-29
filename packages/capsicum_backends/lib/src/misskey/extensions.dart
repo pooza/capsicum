@@ -297,11 +297,21 @@ ChatThread misskeyChatThreadFromHistoryEntry(
 }
 
 /// Misskey の `ChatRoom` レスポンスを capsicum 型に変換する。
-ChatRoom misskeyChatRoomFromMap(
+/// 必須フィールド (`id` / `createdAt`) が欠落 / 不正なら `null`。Misskey 本家の
+/// packer は必ず埋めるが、フォーク / 将来の schema 変更で欠けた場合に streaming
+/// parse 失敗や UI に reach する TypeError を起こさないための防御 (#626)。
+ChatRoom? misskeyChatRoomFromMap(
   Map<String, dynamic> data,
   String localHost, {
   Set<String> adminRoleIds = const {},
 }) {
+  final id = data['id'] as String?;
+  final createdAtStr = data['createdAt'] as String?;
+  if (id == null) return null;
+  final createdAt = createdAtStr != null
+      ? DateTime.tryParse(createdAtStr)
+      : null;
+  if (createdAt == null) return null;
   final ownerMap = data['owner'] as Map<String, dynamic>?;
   final ownerId =
       data['ownerId'] as String? ?? ownerMap?['id'] as String? ?? '';
@@ -311,8 +321,8 @@ ChatRoom misskeyChatRoomFromMap(
         ).toCapsicum(localHost, adminRoleIds: adminRoleIds)
       : User(id: ownerId, username: '?');
   return ChatRoom(
-    id: data['id'] as String,
-    createdAt: DateTime.parse(data['createdAt'] as String),
+    id: id,
+    createdAt: createdAt,
     name: data['name'] as String? ?? '',
     description: data['description'] as String? ?? '',
     ownerId: ownerId,
@@ -323,18 +333,28 @@ ChatRoom misskeyChatRoomFromMap(
 }
 
 /// `ChatRoomMembership` レスポンス → capsicum [ChatRoomMember]。
-ChatRoomMember misskeyChatRoomMemberFromMap(
+/// 必須フィールド (`id` / `createdAt` / `roomId` / `userId`) 欠落時は `null` (#626)。
+ChatRoomMember? misskeyChatRoomMemberFromMap(
   Map<String, dynamic> data,
   String localHost, {
   Set<String> adminRoleIds = const {},
 }) {
+  final id = data['id'] as String?;
+  final createdAtStr = data['createdAt'] as String?;
+  final roomId = data['roomId'] as String?;
+  final userId = data['userId'] as String?;
+  if (id == null || roomId == null || userId == null) return null;
+  final createdAt = createdAtStr != null
+      ? DateTime.tryParse(createdAtStr)
+      : null;
+  if (createdAt == null) return null;
   final roomMap = data['room'] as Map<String, dynamic>?;
   final userMap = data['user'] as Map<String, dynamic>?;
   return ChatRoomMember(
-    id: data['id'] as String,
-    createdAt: DateTime.parse(data['createdAt'] as String),
-    roomId: data['roomId'] as String,
-    userId: data['userId'] as String,
+    id: id,
+    createdAt: createdAt,
+    roomId: roomId,
+    userId: userId,
     isMuted: data['isMuted'] as bool? ?? false,
     room: roomMap != null
         ? misskeyChatRoomFromMap(roomMap, localHost, adminRoleIds: adminRoleIds)
@@ -348,18 +368,28 @@ ChatRoomMember misskeyChatRoomMemberFromMap(
 }
 
 /// `ChatRoomInvitation` レスポンス → capsicum [ChatRoomInvitation]。
-ChatRoomInvitation misskeyChatRoomInvitationFromMap(
+/// 必須フィールド (`id` / `createdAt` / `roomId` / `userId`) 欠落時は `null` (#626)。
+ChatRoomInvitation? misskeyChatRoomInvitationFromMap(
   Map<String, dynamic> data,
   String localHost, {
   Set<String> adminRoleIds = const {},
 }) {
+  final id = data['id'] as String?;
+  final createdAtStr = data['createdAt'] as String?;
+  final roomId = data['roomId'] as String?;
+  final userId = data['userId'] as String?;
+  if (id == null || roomId == null || userId == null) return null;
+  final createdAt = createdAtStr != null
+      ? DateTime.tryParse(createdAtStr)
+      : null;
+  if (createdAt == null) return null;
   final roomMap = data['room'] as Map<String, dynamic>?;
   final userMap = data['user'] as Map<String, dynamic>?;
   return ChatRoomInvitation(
-    id: data['id'] as String,
-    createdAt: DateTime.parse(data['createdAt'] as String),
-    roomId: data['roomId'] as String,
-    userId: data['userId'] as String,
+    id: id,
+    createdAt: createdAt,
+    roomId: roomId,
+    userId: userId,
     room: roomMap != null
         ? misskeyChatRoomFromMap(roomMap, localHost, adminRoleIds: adminRoleIds)
         : null,
