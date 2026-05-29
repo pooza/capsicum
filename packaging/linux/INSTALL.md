@@ -4,25 +4,48 @@
 
 ## インストール手順
 
+### 推奨: `install.sh` でメニュー登録までまとめて行う
+
+本 Release のアセットから `capsicum-<version>-x86_64.AppImage` と
+`install.sh` の 2 ファイルをダウンロードして同じディレクトリに置き、
+次を実行:
+
+```sh
+chmod +x install.sh
+./install.sh capsicum-<version>-x86_64.AppImage
+```
+
+スクリプトは次を行います:
+
+- AppImage を `~/Applications/` に配置 (+ `chmod +x`)
+- `.desktop` を `~/.local/share/applications/` に展開 (Exec を実体パスに書き換え)
+- hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
+- `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
+
+完了後、アプリメニュー / ランチャーから「capsicum」を起動できます。
+書き込み先はすべてユーザー領域 (`$HOME` 配下) なので `sudo` は不要です。
+
+### 手動配置 (スクリプトを使わない場合)
+
 1. 本 Release のアセットから `capsicum-<version>-x86_64.AppImage` をダウンロード
 
 2. 実行権限を付与:
 
    ```sh
-   chmod +x capsicum-1.25.0-x86_64.AppImage
+   chmod +x capsicum-<version>-x86_64.AppImage
    ```
 
 3. 任意の場所に配置 (例: `~/Applications/` や `~/bin/`):
 
    ```sh
    mkdir -p ~/Applications
-   mv capsicum-1.25.0-x86_64.AppImage ~/Applications/
+   mv capsicum-<version>-x86_64.AppImage ~/Applications/
    ```
 
 4. ダブルクリック または ターミナルから起動:
 
    ```sh
-   ~/Applications/capsicum-1.25.0-x86_64.AppImage
+   ~/Applications/capsicum-<version>-x86_64.AppImage
    ```
 
 5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
@@ -75,11 +98,25 @@ ibus-mozc 以外の組み合わせは未検証のため、問題があれば [Is
 
 ## アンインストール
 
+### `install.sh` でメニュー登録した場合
+
+同梱の `uninstall.sh` で `~/Applications/` の AppImage + メニュー登録 +
+hicolor アイコンをまとめて削除できます:
+
+```sh
+chmod +x uninstall.sh
+./uninstall.sh
+```
+
+### 手動配置の場合
+
 AppImage ファイル本体を削除するだけです:
 
 ```sh
-rm ~/Applications/capsicum-1.25.0-x86_64.AppImage
+rm ~/Applications/capsicum-<version>-x86_64.AppImage
 ```
+
+### アカウント情報・ログ・設定の削除 (任意)
 
 `flutter_secure_storage` がホスト鍵管理 (libsecret / GNOME Keyring 等) を介して保存しているデータも削除する場合は、Seahorse 等のキーチェーン管理ツールで `capsicum` 関連エントリを手動削除してください (アカウント情報 / OAuth トークン)。
 
