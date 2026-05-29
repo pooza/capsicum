@@ -476,9 +476,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 先頭一致を優先し、その後に部分一致 / alias 一致を続ける。Mastodon /
     // Misskey Web UI と同様の挙動。最大 20 件で打ち切り、横スクロール chips
     // のレイアウト崩れを防ぐ。
+    // 補完は picker と同じく visible_in_picker=false を除外する (#622)。
+    // 警告判定用に `_allEmojis` 自体は全件保持しているため、ここでフィルタする。
     final prefix = <CustomEmoji>[];
     final contain = <CustomEmoji>[];
     for (final e in all) {
+      if (!e.visibleInPicker) continue;
       final sc = e.shortcode.toLowerCase();
       if (sc.startsWith(lower)) {
         prefix.add(e);

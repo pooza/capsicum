@@ -4,11 +4,19 @@ class CustomEmoji {
   final String? category;
   final List<String> aliases;
 
+  /// Mastodon の `visible_in_picker`。`false` の絵文字は emoji picker UI には
+  /// 出さないが、shortcode を直接書けば投稿には使えるサーバー設定。
+  /// `getEmojis()` は picker / 警告判定 / プレビュー / 探索を兼ねるため全件返し、
+  /// picker 側で `visibleInPicker` を見てフィルタする (#622)。Misskey 等この概念が
+  /// 無いバックエンドは default true のまま。
+  final bool visibleInPicker;
+
   const CustomEmoji({
     required this.shortcode,
     required this.url,
     this.category,
     this.aliases = const [],
+    this.visibleInPicker = true,
   });
 }
 
