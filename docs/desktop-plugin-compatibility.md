@@ -43,7 +43,7 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 | プラグイン | 用途 | 問題 | 対応案 |
 | --- | --- | --- | --- |
 | ~~workmanager~~ | ~~バックグラウンドポーリング~~ | v1.19 (#348) で撤去済み。通知リレー（#52）への完全移行に伴いモバイル側も不要になった | デスクトップ対応でバックグラウンド相当の仕組みが要る場合は `BackgroundTaskScheduler` 抽象層（#328）の実装として Dart `Timer` + 常駐で組む |
-| **video_player** | 動画再生 | macOS は公式対応（v1.21 TestFlight Internal で再生・添付・投稿の動作を確認済み）。**Linux / Windows は非対応** | Linux / Windows 着手時に各プラットフォーム対応を再評価し、必要に応じて `media_kit` へ置き換える。事前調査は本書 §2 に保存済み |
+| ~~video_player~~ → **media_kit** | 動画 / 音声再生 | v1.30 (#492) で `media_kit` (libmpv) に移行済み。iOS / Android / macOS / Windows / Linux 全対応となり、従来非対応だった Linux / Windows でも再生可能に | 完了。経緯と API 対応表は本書 §2 に保存 |
 
 ## 影響度の大きい順と対応タイミング
 
@@ -53,9 +53,17 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 ただしデスクトップは push 受信経路がないため、[#328](https://github.com/pooza/capsicum/issues/328) の `BackgroundTaskScheduler` 抽象層を第2段階で導入し、デスクトップ実装としては Dart `Timer` + アプリ常駐前提の軽量ポーリングを入れる。モバイル側は抽象層の no-op 実装で十分。
 
-### 2. video_player → media_kit 移行（保留: Linux / Windows 着手時に再判断）
+### 2. video_player → media_kit 移行（実施済み: v1.30 / #492）
 
-[#306](https://github.com/pooza/capsicum/issues/306) の事前調査結果。**結論: 移行可能だが緊急性は低い**。影響範囲は媒体ビューワー 1 ファイルに収まり、API 置き換えのみで対応できる。実装は [Linux / Windows 対応着手時（v1.24 想定）](CLAUDE.md#長期構想-デスクトップ対応) に当該プラットフォームでの video_player 対応状況を改めて棚卸し、必要があれば実施する。
+[#306](https://github.com/pooza/capsicum/issues/306) の事前調査を経て、v1.30 で [#492](https://github.com/pooza/capsicum/issues/492) として実装完了。Flathub 断念で Linux 配布が AppImage 単独に確定し、Linux 動画再生不可の解消優先度が上がったため格上げした。事前調査どおり影響範囲は媒体ビューワー 1 ファイル（[media_viewer_screen.dart](../packages/capsicum/lib/src/ui/screen/media_viewer_screen.dart)）に収まり、API 置き換えのみで完了。以下は調査内容（実装の手引きとして使用）。
+
+#### 実装メモ（v1.30 で確定した方針）
+
+- video_player を完全撤去し media_kit に一本化（抽象層は挟まない）。
+- 既存の独自プレイヤー UI（タップで controls トグル / 3 秒で自動非表示 / 中央 play ボタン / 下部進捗バー）はそのまま維持。`VideoProgressIndicator` は `Slider` ベースの `_MediaProgressBar` に置き換え。
+- 状態更新は `StreamBuilder` ではなく `player.stream.*` を `StreamSubscription` で購読し `setState` する方式を採用（既存コードの構造を踏襲。dispose で subscription を cancel + `player.dispose()`）。
+- aspect ratio は `player.stream.width` / `height` から算出。未取得の間は 16:9 フォールバック。
+- `main()` で `MediaKit.ensureInitialized()` を runApp() 前に呼ぶ。
 
 #### 使用範囲
 
@@ -111,9 +119,8 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 
 #### 実施タイミングと優先度
 
-- v1.21 の TestFlight Internal 検証で macOS 上の video_player は再生・添付・投稿いずれも問題なく動作することを確認済み（pooza が動画つき投稿で意図的に検証）。これにより v1.24 必須スコープからは外し、**Linux / Windows 対応着手時に再評価して必要なら移行**する位置付けにする
-- 当面は現行 video_player のまま運用（macOS / iOS / Android は既にカバー済み）
-- 上記の API 置き換え対応・プラットフォーム別影響・失う/得る機能の調査結果は、移行決定時にそのまま実装の手引きとして使える状態を保つ
+- （履歴）v1.21 の TestFlight Internal 検証で macOS 上の video_player は再生・添付・投稿いずれも問題なく動作することを確認済みだったため、当初は v1.24 必須スコープから外し「Linux / Windows 対応着手時に再評価」の位置付けだった
+- その後 Flathub 断念で Linux 配布が AppImage 単独に確定し、Linux 動画再生不可の解消優先度が上がったため v1.30 (#492) で移行を実施。上記 API 置き換え対応・プラットフォーム別影響・失う/得る機能の調査結果がそのまま実装の手引きになった
 
 ### 3. image_picker ↔ file_selector 抽象化（第2段階）
 

@@ -115,7 +115,10 @@ chmod +x capsicum-1.24.0-x86_64.AppImage
   library 互換性に縛られる**。Debian 13 (glibc 2.41) で組み立てたものは
   Ubuntu 24.04 LTS (glibc 2.39) 以下では動かない。Ubuntu LTS まで広く
   動かせる portable AppImage は Phase 4 の Ubuntu 22.04 runner で生成する。
-- video_player は Linux 非対応のため、メディアビューワーで動画を開く
-  経路ではエラーになる。詳細は
+- 動画 / 音声再生は v1.30 で `video_player` から `media_kit` (libmpv) に
+  移行済み ([#492](https://github.com/pooza/capsicum/issues/492))。Linux でも
+  メディアビューワーで再生できる。`media_kit_libs_video` がネイティブ libmpv
+  を同梱するため、AppImage 内に .so がバンドルされ system 依存なしで動く。
+  詳細は
   [`docs/desktop-plugin-compatibility.md`](../../../docs/desktop-plugin-compatibility.md)
-  §2 (`video_player → media_kit 移行`) 参照。
+  §2 参照。

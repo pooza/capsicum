@@ -37,12 +37,18 @@ jobs:
           # ただし pooza 検証環境は ibus-mozc のみで、fcitx5 / uim は **未検証**。
           # libfcitx5* / libuim* の明示同梱 (libibus と同型の GLib symbol mismatch
           # 対策) は配布後の不具合報告ベースで対応する best-effort 方針。
+          # libmpv-dev: media_kit (#492) の Linux ビルドが要求する。
+          # media_kit_libs_linux は libmpv を同梱せず、ビルド時の pkg-config
+          # `mpv` と実行時 libmpv.so.2 をシステムに依存する。ビルド時にここで
+          # 入れ、実行時 libmpv.so.2 (+ ffmpeg 等の依存) は linuxdeploy が ldd
+          # 経由で AppImage に同梱する。
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
             libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
             libcurl4-openssl-dev default-jdk-headless \
             libfuse2 patchelf \
+            libmpv-dev \
             ibus-gtk3 \
             fcitx5-frontend-gtk3 \
             uim-gtk3-immodule

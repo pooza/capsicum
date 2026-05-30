@@ -38,6 +38,15 @@ for cmd in linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool patchelf; do
   fi
 done
 
+# media_kit (#492) の Linux ビルドは libmpv の pkg-config を要求する。
+# media_kit_libs_linux は libmpv を同梱しないため、build host に libmpv-dev が
+# 無いと CMake が `PkgConfig::mpv` 未検出で失敗する。実行時 libmpv.so.2 (+ ffmpeg
+# 等の依存) は後段の linuxdeploy が ldd 経由で AppDir に同梱する。
+if ! pkg-config --exists mpv; then
+  echo "ERROR: libmpv (pkg-config 'mpv') not found. Install libmpv-dev (Debian/Ubuntu: sudo apt-get install libmpv-dev)." >&2
+  exit 1
+fi
+
 # Sentry / capsicum-relay 連携は ~/.config/capsicum/secrets.env から取得 (任意)
 SENTRY_DSN_VAL=""
 RELAY_SECRET_VAL=""

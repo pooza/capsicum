@@ -45,7 +45,6 @@ dependencies:
   # transitive 依存だが直接 import するため明示する。
   cross_file: ^0.3.4
   path_provider: ^2.1.0
-  video_player: ^2.11.0
   package_info_plus: ^8.3.0
   sentry_flutter: ^9.14.0
   scrollable_positioned_list: ^0.3.8
@@ -71,6 +70,14 @@ dependencies:
   # crop_your_image を採用する。Uint8List をメモリ上で処理するため macOS /
   # Windows / Linux でも動作する。モバイルのトリミング (#568) とは別経路。
   crop_your_image: ^2.0.0
+  # 動画 / 音声再生 (#492)。旧 video_player は Linux 実装が無く Windows も
+  # 棚上げで、デスクトップ 2 OS で再生が機能しなかった。media_kit は libmpv
+  # ベースで iOS / Android / macOS / Windows / Linux 全対応のため一本化する。
+  # media_kit_libs_video が各 OS のネイティブ libmpv を同梱する (Linux/Windows
+  # でもシステム依存なしで動く)。MediaKit.ensureInitialized() を main で呼ぶ。
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
 
 dev_dependencies:
   flutter_test:
