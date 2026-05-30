@@ -24,33 +24,104 @@ APPLICATIONS_DIR="$HOME/Applications"
 DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_BASE="$HOME/.local/share/icons/hicolor"
 
+REPO="pooza/capsicum"
+LATEST_API="https://api.github.com/repos/$REPO/releases/latest"
+# `curl … | bash` のワンライナー配信時、uninstall.sh は手元に無いので
+# 同じ raw URL を案内する。capsicum-site (shrieker.net) で短縮配信する
+# のはリリース後 (#640)。
+RAW_BASE="https://raw.githubusercontent.com/$REPO/main/packaging/linux"
+
 usage() {
   cat <<EOF
-Usage: $0 <path-to-capsicum-*.AppImage>
+Usage: $0 [path-to-capsicum-*.AppImage]
 
-Installs the AppImage into ~/Applications/, registers the .desktop entry
-and hicolor icons under your user XDG directories, and refreshes the
-desktop / icon caches.
+With NO argument, downloads the latest capsicum AppImage from GitHub
+Releases and installs it (designed for \`curl … | bash\` one-liner use).
+With a path, installs that local AppImage instead.
 
-The AppImage file itself is moved (not copied) — pass a copy if you want
-to keep the original in place.
+Either way it places the AppImage into ~/Applications/, registers the
+.desktop entry and hicolor icons under your user XDG directories, and
+refreshes the desktop / icon caches.
+
+A locally-passed AppImage is moved (not copied) — pass a copy if you
+want to keep the original in place.
 EOF
 }
+
+# HTTP 取得は curl 優先・wget フォールバック。`curl … | bash` で起動できて
+# いる時点で curl は居るはずだが、wget だけの環境でも自己ダウンロードを通す。
+fetch_stdout() {
+  local url="$1"
+  if command -v curl >/dev/null; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null; then
+    wget -qO- "$url"
+  else
+    echo "error: neither curl nor wget is available" >&2
+    return 1
+  fi
+}
+
+download_to() {
+  local url="$1" out="$2"
+  if command -v curl >/dev/null; then
+    curl -fSL --progress-bar "$url" -o "$out"
+  elif command -v wget >/dev/null; then
+    wget -q --show-progress -O "$out" "$url"
+  else
+    echo "error: neither curl nor wget is available" >&2
+    return 1
+  fi
+}
+
+# 一時ディレクトリは複数 (ダウンロード用 / 展開用) 作るのでまとめて掃除する。
+CLEANUP_DIRS=()
+cleanup() {
+  local d
+  for d in "${CLEANUP_DIRS[@]:-}"; do
+    [[ -n "$d" ]] && rm -rf "$d"
+  done
+}
+trap cleanup EXIT
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -gt 1 ]]; then
   usage >&2
   exit 1
 fi
 
-SRC="$1"
-if [[ ! -f "$SRC" ]]; then
-  echo "error: $SRC is not a file" >&2
-  exit 1
+if [[ $# -eq 1 ]]; then
+  # ローカル指定モード: 既存の使い方 (引数で AppImage パスを渡す)。
+  SRC="$1"
+  if [[ ! -f "$SRC" ]]; then
+    echo "error: $SRC is not a file" >&2
+    exit 1
+  fi
+else
+  # 自己ダウンロードモード: 最新 Release の x86_64 AppImage を取得する。
+  ARCH=$(uname -m)
+  if [[ "$ARCH" != "x86_64" ]]; then
+    echo "error: only an x86_64 AppImage is provided (your arch: $ARCH)" >&2
+    exit 1
+  fi
+  echo "==> Looking up the latest release"
+  RELEASE_JSON=$(fetch_stdout "$LATEST_API")
+  DOWNLOAD_URL=$(printf '%s\n' "$RELEASE_JSON" \
+    | grep -m1 -oE 'https://[^"]+-x86_64\.AppImage' || true)
+  if [[ -z "$DOWNLOAD_URL" ]]; then
+    echo "error: could not find an x86_64 AppImage asset in the latest release" >&2
+    echo "       see $RAW_BASE/INSTALL.md for manual steps" >&2
+    exit 1
+  fi
+  DL_DIR=$(mktemp -d -t capsicum-download-XXXXXX)
+  CLEANUP_DIRS+=("$DL_DIR")
+  SRC="$DL_DIR/$(basename "$DOWNLOAD_URL")"
+  echo "==> Downloading $(basename "$DOWNLOAD_URL")"
+  download_to "$DOWNLOAD_URL" "$SRC"
 fi
 
 # AppImage に展開コマンド (`--appimage-extract`) を渡せるよう、まず実行
@@ -77,7 +148,7 @@ chmod +x "$DEST"
 # して再利用する。リポジトリのファイル構成を仮定しないので、AppImage 単独
 # + install.sh だけで動く。
 EXTRACT_DIR=$(mktemp -d -t capsicum-install-XXXXXX)
-trap 'rm -rf "$EXTRACT_DIR"' EXIT
+CLEANUP_DIRS+=("$EXTRACT_DIR")
 
 echo "==> Extracting AppImage payload to $EXTRACT_DIR"
 pushd "$EXTRACT_DIR" >/dev/null
@@ -133,6 +204,7 @@ Icons: $ICON_BASE/*/apps/$APP_ID.png
 You should now see $APP_NAME in your application menu.
 If not, log out and log back in to refresh the launcher.
 
-To uninstall, run:
-  ./uninstall.sh
+To uninstall:
+  curl -fsSL $RAW_BASE/uninstall.sh | bash
+  (or run ./uninstall.sh if you downloaded it alongside this script)
 EOF

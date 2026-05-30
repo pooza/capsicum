@@ -4,7 +4,25 @@
 
 ## インストール手順
 
-### 推奨: `install.sh` でメニュー登録までまとめて行う
+### 最も簡単: ワンライナー (最新版を自動ダウンロード + 統合)
+
+`install.sh` は引数なしで実行すると、最新 Release の AppImage を自分で
+ダウンロードしてからメニュー登録まで行います。次の 1 行で完結します:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+```
+
+`curl` が無ければ `wget` でも動きます:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+```
+
+> システム領域には書き込みません (`sudo` 不要)。書き込み先はすべて
+> `$HOME` 配下です。x86_64 専用 (ARM64 は未提供)。
+
+### ローカルにダウンロード済みの AppImage を使う場合
 
 本 Release のアセットから `capsicum-<version>-x86_64.AppImage` と
 `install.sh` の 2 ファイルをダウンロードして同じディレクトリに置き、
@@ -15,7 +33,7 @@ chmod +x install.sh
 ./install.sh capsicum-<version>-x86_64.AppImage
 ```
 
-スクリプトは次を行います:
+いずれの場合もスクリプトは次を行います:
 
 - AppImage を `~/Applications/` に配置 (+ `chmod +x`)
 - `.desktop` を `~/.local/share/applications/` に展開 (Exec を実体パスに書き換え)
@@ -100,8 +118,14 @@ ibus-mozc 以外の組み合わせは未検証のため、問題があれば [Is
 
 ### `install.sh` でメニュー登録した場合
 
-同梱の `uninstall.sh` で `~/Applications/` の AppImage + メニュー登録 +
-hicolor アイコンをまとめて削除できます:
+`~/Applications/` の AppImage + メニュー登録 + hicolor アイコンをまとめて
+削除できます。ワンライナー:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/uninstall.sh | bash
+```
+
+ローカルに `uninstall.sh` がある場合はそれを実行しても同じです:
 
 ```sh
 chmod +x uninstall.sh
