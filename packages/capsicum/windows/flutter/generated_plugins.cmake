@@ -14,6 +14,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   screen_retriever_windows
   sentry_flutter
   url_launcher_windows
+  volume_controller
   window_manager
   window_to_front
 )

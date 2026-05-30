@@ -76,7 +76,13 @@ dependencies:
   # media_kit_libs_video が各 OS のネイティブ libmpv を同梱する (Linux/Windows
   # でもシステム依存なしで動く)。MediaKit.ensureInitialized() を main で呼ぶ。
   media_kit: ^1.2.6
-  media_kit_video: ^2.0.1
+  # media_kit_video は 1.3.x にピン（2.0.x は避ける）。2.0.0/2.0.1 (2025-11/12) は
+  # Linux の VideoOutput を書き直し、生成時 (プラットフォームスレッド＝EGL
+  # コンテキスト非 current) に eglGetCurrentContext で Flutter の EGL を掴もうと
+  # して失敗 → S/W fallback でも映像が出ない回帰がある (#492 で Intel iHD/X11/
+  # AppImage で再現)。1.3.1 は描画スレッドのテクスチャコールバック内で GL を
+  # 扱う成熟実装で、media_kit ^1.2.1 要求のため core 1.2.6 と互換。
+  media_kit_video: ">=1.3.1 <2.0.0"
   media_kit_libs_video: ^1.0.7
 
 dev_dependencies:
