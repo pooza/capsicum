@@ -1,10 +1,16 @@
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/media_filename.dart';
 
 class MediaViewerScreen extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
@@ -129,6 +135,47 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     }
   }
 
+  /// メディア保存はデスクトップ 3 OS のみ対応 (#572 第一弾)。モバイルは
+  /// ギャラリー保存に別パッケージ + ネイティブ権限が必要なため別 issue
+  /// (#646)、ファイラーへの drag-out も別 issue (#645)。
+  bool get _canSaveToDisk =>
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+  /// 現在表示中のメディアを OS のファイル保存ダイアログ経由でローカルに
+  /// ダウンロードする (#572)。file_selector の保存ダイアログで保存先を選び、
+  /// dio で取得して書き出す。
+  Future<void> _saveMedia() async {
+    final attachment = _attachments[_currentIndex];
+    final suggestedName = suggestedMediaFileName(attachment);
+
+    final FileSaveLocation? location = await getSaveLocation(
+      suggestedName: suggestedName,
+    );
+    if (location == null || !mounted) return; // ユーザーがキャンセル
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('保存しています…')));
+
+    try {
+      final response = await Dio().get<List<int>>(
+        attachment.url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final bytes = response.data;
+      if (bytes == null) {
+        throw const FormatException('empty response body');
+      }
+      await File(location.path).writeAsBytes(bytes);
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('保存しました')));
+    } catch (_) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final attachment = _attachments[_currentIndex];
@@ -152,6 +199,12 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
               ? Text('${_currentIndex + 1} / ${widget.attachments.length}')
               : null,
           actions: [
+            if (_canSaveToDisk)
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                tooltip: '保存',
+                onPressed: _saveMedia,
+              ),
             if (_canEdit)
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
