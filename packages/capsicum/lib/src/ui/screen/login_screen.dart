@@ -16,6 +16,7 @@ import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/exception_scrub.dart';
+import '../../util/login_error.dart';
 import '../widget/content_parser.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -430,9 +431,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
         }
       } else {
-        debugPrint('Login error: $e');
-        Sentry.captureException(e, stackTrace: st);
-        if (mounted) setState(() => _error = '通信に失敗しました');
+        // #644: キャンセル以外の例外を例外種別で分類し、文言を出し分ける。
+        // 旧実装はすべて「通信に失敗しました」とし、Keychain 保存失敗
+        // (#643) 等を通信エラーと誤診させていた。
+        final failure = classifyLoginFailure(e);
+        debugPrint('Login error (${failure.kind.name}): $e');
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) =>
+              scope.setTag('login.failure_kind', failure.kind.name),
+        );
+        if (mounted) setState(() => _error = failure.message);
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
