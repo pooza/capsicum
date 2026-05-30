@@ -65,6 +65,7 @@ dependencies:
   # Linux / Windows はストア IAP 不在）。商品タイプ・保持先は
   # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
   in_app_purchase: ^3.2.0
+  desktop_drop: ^0.7.1
 
 dev_dependencies:
   flutter_test:
