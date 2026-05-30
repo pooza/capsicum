@@ -1851,7 +1851,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
                       // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐
                       // 不要 (desktop では viewInsets.bottom が 0 で常に非表示)。
-                      if (MediaQuery.of(context).viewInsets.bottom > 0)
+                      //
+                      // Scaffold(resizeToAvoidBottomInset:true) は body を
+                      // MediaQuery.removeViewInsets でラップするため、body 配下の
+                      // ここでは MediaQuery.viewInsets.bottom が 0 に剥がれて常に
+                      // 非表示になっていた。simple_post_bar と判定軸を揃え、
+                      // View.of(context) で root view から直接拾う (#635 / #630)。
+                      if (View.of(context).viewInsets.bottom > 0)
                         IconButton(
                           onPressed: () => FocusScope.of(context).unfocus(),
                           icon: const Icon(Icons.keyboard_hide),
