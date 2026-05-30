@@ -327,17 +327,6 @@ String _formatDuration(Duration d) {
   return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
 }
 
-/// #492 診断用: Linux AppImage の映像描画問題の切り分けのため、mpv の内部ログ
-/// レベルを上げて stderr (AppRun のログファイル) に流す。原因確定後に縮小する。
-const MPVLogLevel _mpvLogLevel = MPVLogLevel.info;
-
-/// mpv の内部ログを stderr に転送する購読を返す (#492 診断用)。
-StreamSubscription<PlayerLog> _attachMpvLog(Player player) {
-  return player.stream.log.listen((log) {
-    debugPrint('mpv[${log.level}] ${log.prefix}: ${log.text}');
-  });
-}
-
 class _VideoPage extends StatefulWidget {
   final String url;
 
@@ -369,7 +358,7 @@ class _VideoPageState extends State<_VideoPage> {
     // 噛み合わない。そこで Linux のみ hwdec='no' でソフトデコードを強制し、
     // 描画も enableHardwareAcceleration=false の S/W 描画にして host の
     // GL/EGL/VAAPI に一切依存させない。macOS/Windows/モバイルは既定の H/W。
-    _player = Player(configuration: const PlayerConfiguration(logLevel: _mpvLogLevel));
+    _player = Player();
     _controller = VideoController(
       _player,
       configuration: Platform.isLinux
@@ -379,7 +368,6 @@ class _VideoPageState extends State<_VideoPage> {
             )
           : const VideoControllerConfiguration(),
     );
-    _subs.add(_attachMpvLog(_player));
     _subs.add(
       _player.stream.playing.listen((playing) {
         if (mounted) setState(() => _playing = playing);
@@ -579,8 +567,7 @@ class _AudioPageState extends State<_AudioPage> {
   @override
   void initState() {
     super.initState();
-    _player = Player(configuration: const PlayerConfiguration(logLevel: _mpvLogLevel));
-    _subs.add(_attachMpvLog(_player));
+    _player = Player();
     _subs.add(
       _player.stream.playing.listen((playing) {
         if (mounted) setState(() => _playing = playing);

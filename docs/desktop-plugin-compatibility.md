@@ -75,6 +75,15 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 - 代償: AppImage の glibc 下限が 2.35 → 2.39 に上がり、Ubuntu 22.04 / Debian 12 以前を切る（#492 で pooza 判断）。
 - 開発機 (新しめのディストロ) でローカル build した AppImage は起動・UI は動くが「動画再生だけ」クラッシュしうる。動画検証は CI 生成 AppImage で行う。
 
+#### Linux の映像描画・デコード（重要・pooza 実機検証で確定）
+
+libmpv バージョンを解決 (noble/0.37) してクラッシュは消えたが、AppImage 上の Intel iHD / Mesa / X11 環境で映像フレームが描画されない（音声のみ）問題が続いた。pooza 実機での mpv 詳細ログ (`logLevel: info`) により段階的に切り分けて確定:
+
+1. **media_kit_video は 1.3.x にピン**（`">=1.3.1 <2.0.0"`）。2.0.0/2.0.1 (2025-11/12) は Linux VideoOutput を書き直し、生成時（プラットフォームスレッド＝EGL コンテキスト非 current）に `eglGetCurrentContext` で Flutter の EGL を掴もうとして失敗し、映像が出ない回帰がある。1.3.1 は描画スレッドのテクスチャコールバック内で GL を扱う成熟実装で `media_kit ^1.2.1` 要求のため core 1.2.6 と互換。→ これで `Using H/W rendering` まで到達。
+2. それでも映像が出ず、mpv ログで真因判明: media_kit ネイティブ既定の `hwdec='auto'` が vulkan/VAAPI/v4l2m2m/cuda を順に試して**全滅**し、ソフトデコードにフォールバックせず `vd: Could not open codec`（映像トラック未デコード、VO は 720x540 で用意済み）。→ **Linux のみ `VideoControllerConfiguration.hwdec='no'` でソフトデコード強制**。組込み h264 デコーダで確実にデコードでき、`VideoOutput.Resize` が実寸 (960x540) になり再生成立。
+3. 描画も **Linux のみ `enableHardwareAcceleration=false`（S/W 描画）**にして host の GL/EGL/VAAPI に一切依存させない（GPU ドライバ系 lib はバンドルすると ABI 不一致、ホスト fallback すると pthread クラッシュ、というジレンマを回避）。CPU でフレームをテクスチャに書くため負荷は上がるが、Fediverse の短尺添付動画では許容。
+4. macOS / Windows / モバイルは既定（H/W デコード + H/W 描画）のまま。これらは libs パッケージが libmpv を同梱し、Windows は ANGLE で EGL が通る。
+
 #### 使用範囲
 
 | ファイル | 用途 | 内訳 |
