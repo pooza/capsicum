@@ -327,6 +327,17 @@ String _formatDuration(Duration d) {
   return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
 }
 
+/// #492 診断用: Linux AppImage の映像描画問題の切り分けのため、mpv の内部ログ
+/// レベルを上げて stderr (AppRun のログファイル) に流す。原因確定後に縮小する。
+const MPVLogLevel _mpvLogLevel = MPVLogLevel.info;
+
+/// mpv の内部ログを stderr に転送する購読を返す (#492 診断用)。
+StreamSubscription<PlayerLog> _attachMpvLog(Player player) {
+  return player.stream.log.listen((log) {
+    debugPrint('mpv[${log.level}] ${log.prefix}: ${log.text}');
+  });
+}
+
 class _VideoPage extends StatefulWidget {
   final String url;
 
@@ -351,8 +362,18 @@ class _VideoPageState extends State<_VideoPage> {
   @override
   void initState() {
     super.initState();
-    _player = Player();
-    _controller = VideoController(_player);
+    // Linux では media_kit の H/W 映像描画 (GL/EGL/VAAPI 経路) が AppImage 上の
+    // GPU ドライバ環境と噛み合わず、フレームがテクスチャに来ない (#492)。CPU で
+    // フレームをテクスチャに書く S/W 描画に切り替えると host GL/EGL/VAAPI に
+    // 依存せず安定する。macOS/Windows/モバイルは H/W 描画のまま (既定)。
+    _player = Player(configuration: const PlayerConfiguration(logLevel: _mpvLogLevel));
+    _controller = VideoController(
+      _player,
+      configuration: VideoControllerConfiguration(
+        enableHardwareAcceleration: !Platform.isLinux,
+      ),
+    );
+    _subs.add(_attachMpvLog(_player));
     _subs.add(
       _player.stream.playing.listen((playing) {
         if (mounted) setState(() => _playing = playing);
@@ -552,7 +573,8 @@ class _AudioPageState extends State<_AudioPage> {
   @override
   void initState() {
     super.initState();
-    _player = Player();
+    _player = Player(configuration: const PlayerConfiguration(logLevel: _mpvLogLevel));
+    _subs.add(_attachMpvLog(_player));
     _subs.add(
       _player.stream.playing.listen((playing) {
         if (mounted) setState(() => _playing = playing);
