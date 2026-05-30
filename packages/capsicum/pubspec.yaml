@@ -66,6 +66,11 @@ dependencies:
   # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
   in_app_purchase: ^3.2.0
   desktop_drop: ^0.7.1
+  # 添付画像のトリミング (#577)。image_cropper は iOS/Android/Web のみ対応で
+  # デスクトップ非対応のため、platform channel 不要の純 Flutter 実装である
+  # crop_your_image を採用する。Uint8List をメモリ上で処理するため macOS /
+  # Windows / Linux でも動作する。モバイルのトリミング (#568) とは別経路。
+  crop_your_image: ^2.0.0
 
 dev_dependencies:
   flutter_test:

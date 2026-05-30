@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,9 +30,11 @@ import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
+import 'image_crop_screen.dart';
 
 class _MediaEntry {
-  final XFile? file;
+  // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
+  XFile? file;
   final Attachment? driveFile;
   String description = '';
   bool sensitive = false;
@@ -803,6 +806,81 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   void _removeAttachment(int index) {
     setState(() => _attachments.removeAt(index));
+  }
+
+  /// 画像トリミングを提供するのはデスクトップ (macOS / Windows / Linux) のみ。
+  /// モバイルのトリミング (#568) は image_picker ベースの別経路で対応する想定の
+  /// ため、ここでは導線を出さない (#577)。
+  static final bool _supportsCrop =
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+
+  /// トリミング対象にできるのはローカルの静止画のみ。動画 / 音声 / ドライブ
+  /// ファイルは対象外。GIF はアニメーションが失われるため除外する。
+  bool _isCroppableImage(_MediaEntry entry) {
+    if (entry.isDrive || entry.file == null) return false;
+    final file = entry.file!;
+    final mime = file.mimeType;
+    if (mime != null && mime.isNotEmpty) {
+      return mime.startsWith('image/') && mime != 'image/gif';
+    }
+    final ext = file.path.toLowerCase().split('.').last;
+    return _imageExtensions.contains(ext) && ext != 'gif';
+  }
+
+  /// 添付済みのローカル画像をトリミングし、結果で元の添付を差し替える (#577)。
+  /// 説明 (ALT) と閲覧注意フラグは引き継ぐ。トリミング結果は一時ディレクトリに
+  /// 書き出し、元のフォーマット (拡張子) と MIME タイプを維持する。
+  Future<void> _cropImage(int index) async {
+    final entry = _attachments[index];
+    final original = entry.file;
+    if (original == null) return;
+
+    final Uint8List bytes;
+    try {
+      bytes = await original.readAsBytes();
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('画像を読み込めませんでした')));
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final cropped = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ImageCropScreen(imageData: bytes),
+        fullscreenDialog: true,
+      ),
+    );
+    if (cropped == null || !mounted) return;
+
+    final XFile croppedFile;
+    try {
+      final dir = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final baseName = original.name.isNotEmpty ? original.name : 'image';
+      final path = '${dir.path}/crop_${stamp}_$baseName';
+      final out = File(path);
+      await out.writeAsBytes(cropped, flush: true);
+      croppedFile = XFile(path, mimeType: original.mimeType, name: baseName);
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('トリミング結果を保存できませんでした')));
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
+      entry.file = croppedFile;
+    });
   }
 
   static const _videoExtensions = {
@@ -1818,6 +1896,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                                         color: Colors.white,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              // Crop button (デスクトップのローカル静止画のみ)
+                              if (_supportsCrop && _isCroppableImage(entry))
+                                Positioned(
+                                  top: 4,
+                                  left: 4,
+                                  child: GestureDetector(
+                                    onTap: _sending
+                                        ? null
+                                        : () => _cropImage(index),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(4),
+                                      child: const Icon(
+                                        Icons.crop,
+                                        size: 16,
+                                        color: Colors.white,
                                       ),
                                     ),
                                   ),
