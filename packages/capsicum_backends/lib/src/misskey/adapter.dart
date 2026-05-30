@@ -709,14 +709,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
 
+  /// [type] を渡すと特定の絵文字でリアクションしたユーザーのみを取得する。
   Future<({List<User> users, String? nextCursor})> getReactedBy(
     String noteId, {
     TimelineQuery? query,
+    String? type,
   }) async {
     final reactions = await client.getNoteReactions(
       noteId,
       untilId: query?.maxId,
       limit: query?.limit,
+      type: type,
     );
     final users = reactions.where((r) => r['user'] is Map<String, dynamic>).map(
       (r) {

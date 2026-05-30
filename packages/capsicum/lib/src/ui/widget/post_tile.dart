@@ -1839,6 +1839,19 @@ class _CountChip extends StatelessWidget {
   }
 }
 
+/// 短時間に同じリアクションへ繰り返しホバーしても API を叩き直さないための
+/// インメモリキャッシュ。key は `noteId reactionKey`。
+class _ReactionUsersCache {
+  static final Map<String, List<User>> _cache = {};
+
+  static List<User>? get(String key) => _cache[key];
+
+  static void put(String key, List<User> users) {
+    if (_cache.length > 200) _cache.clear();
+    _cache[key] = users;
+  }
+}
+
 class _ReactionChips extends StatelessWidget {
   final Post post;
   final ValueChanged<String> onToggle;
@@ -1847,14 +1860,12 @@ class _ReactionChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
         children: post.reactions.entries.map((entry) {
-          final isMyReaction = post.myReaction == entry.key;
           // Misskey reaction keys: ":name@.:" for custom, unicode for built-in.
           // reactionEmojis keys vary: "name@." or "name" (without colons).
           final isCustomEmoji =
@@ -1885,54 +1896,219 @@ class _ReactionChips extends StatelessWidget {
               emojiUrl = 'https://$emojiHost/emoji/$nameOnly.webp';
             }
           }
-          return ActionChip(
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            side: isMyReaction
-                ? BorderSide(color: theme.colorScheme.primary)
-                : null,
-            backgroundColor: isMyReaction
-                ? theme.colorScheme.primaryContainer
-                : null,
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (emojiUrl != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxHeight: 18,
-                        maxWidth: 54,
-                      ),
-                      child: Image.network(
-                        emojiUrl,
-                        height: 18,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => Text(
-                          entry.key,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Image.network(
-                      _twemojiUrl(entry.key),
-                      width: 18,
-                      height: 18,
-                      errorBuilder: (_, _, _) =>
-                          Text(entry.key, style: const TextStyle(fontSize: 14)),
-                    ),
-                  ),
-                Text('${entry.value}', style: theme.textTheme.labelSmall),
-              ],
-            ),
-            onPressed: () => onToggle(entry.key),
+          return _ReactionChip(
+            post: post,
+            reactionKey: entry.key,
+            count: entry.value,
+            isMyReaction: post.myReaction == entry.key,
+            emojiUrl: emojiUrl,
+            onToggle: onToggle,
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+/// 単一のリアクションチップ。ポインタ環境（デスクトップや iPad + マウス等）
+/// ではホバーで「誰がこのリアクションをしたか」をオーバーレイ表示する (#575)。
+/// タッチ環境では [MouseRegion] のホバーイベントが発火しないため、プラット
+/// フォームや画面幅による出し分けは不要。
+class _ReactionChip extends ConsumerStatefulWidget {
+  final Post post;
+  final String reactionKey;
+  final int count;
+  final bool isMyReaction;
+  final String? emojiUrl;
+  final ValueChanged<String> onToggle;
+
+  const _ReactionChip({
+    required this.post,
+    required this.reactionKey,
+    required this.count,
+    required this.isMyReaction,
+    required this.emojiUrl,
+    required this.onToggle,
+  });
+
+  @override
+  ConsumerState<_ReactionChip> createState() => _ReactionChipState();
+}
+
+class _ReactionChipState extends ConsumerState<_ReactionChip> {
+  static const _hoverDelay = Duration(milliseconds: 350);
+  static const _maxAvatars = 10;
+
+  Timer? _hoverTimer;
+  OverlayEntry? _overlay;
+  bool _loading = false;
+  bool _failed = false;
+  bool _fetching = false;
+  List<User>? _users;
+
+  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    _removeOverlay();
+    super.dispose();
+  }
+
+  void _onEnter() {
+    final adapter = ref.read(currentAdapterProvider);
+    // 「誰がリアクションしたか」を取得できるのは Misskey のみ。
+    if (adapter is! MisskeyAdapter) return;
+    _hoverTimer?.cancel();
+    _hoverTimer = Timer(_hoverDelay, () => _showOverlay(adapter));
+  }
+
+  void _onExit() {
+    _hoverTimer?.cancel();
+    _removeOverlay();
+  }
+
+  Future<void> _showOverlay(MisskeyAdapter adapter) async {
+    if (!mounted) return;
+    final cached = _ReactionUsersCache.get(_cacheKey);
+    if (cached != null) {
+      _users = cached;
+      _failed = false;
+      _loading = false;
+    } else {
+      _loading = true;
+      _failed = false;
+    }
+    _insertOverlay();
+
+    if (cached == null && !_fetching) {
+      _fetching = true;
+      try {
+        final result = await adapter.getReactedBy(
+          widget.post.id,
+          type: widget.reactionKey,
+          query: const TimelineQuery(limit: _maxAvatars + 1),
+        );
+        _ReactionUsersCache.put(_cacheKey, result.users);
+        if (!mounted) return;
+        _users = result.users;
+        _loading = false;
+      } catch (_) {
+        if (!mounted) return;
+        _failed = true;
+        _loading = false;
+      } finally {
+        _fetching = false;
+      }
+      // オーバーレイがまだ表示中なら内容を更新。
+      _overlay?.markNeedsBuild();
+    }
+  }
+
+  void _insertOverlay() {
+    if (_overlay != null) {
+      _overlay!.markNeedsBuild();
+      return;
+    }
+    final overlayState = Overlay.maybeOf(context);
+    if (overlayState == null) return;
+    _overlay = OverlayEntry(builder: _buildOverlay);
+    overlayState.insert(_overlay!);
+  }
+
+  void _removeOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  Widget _buildOverlay(BuildContext overlayContext) {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlayBox == null || !box.attached) {
+      return const SizedBox.shrink();
+    }
+    final chipOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final chipSize = box.size;
+    final overlaySize = overlayBox.size;
+    const overlayWidth = 220.0;
+    const margin = 8.0;
+    var left = chipOffset.dx;
+    if (left + overlayWidth + margin > overlaySize.width) {
+      left = overlaySize.width - overlayWidth - margin;
+    }
+    if (left < margin) left = margin;
+    // チップの上に出す。上端に余裕がなければ下に出す。
+    final showAbove = chipOffset.dy > 160;
+    return Positioned(
+      left: left,
+      top: showAbove ? null : chipOffset.dy + chipSize.height + 4,
+      bottom: showAbove ? overlaySize.height - chipOffset.dy + 4 : null,
+      width: overlayWidth,
+      child: IgnorePointer(
+        child: _ReactionUsersTooltip(
+          loading: _loading,
+          failed: _failed,
+          users: _users ?? const [],
+          totalCount: widget.count,
+          maxAvatars: _maxAvatars,
+          fallbackHost: widget.post.emojiHost ?? widget.post.author.host,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return MouseRegion(
+      onEnter: (_) => _onEnter(),
+      onExit: (_) => _onExit(),
+      child: ActionChip(
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        side: widget.isMyReaction
+            ? BorderSide(color: theme.colorScheme.primary)
+            : null,
+        backgroundColor: widget.isMyReaction
+            ? theme.colorScheme.primaryContainer
+            : null,
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.emojiUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 18, maxWidth: 54),
+                  child: Image.network(
+                    widget.emojiUrl!,
+                    height: 18,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => Text(
+                      widget.reactionKey,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Image.network(
+                  _twemojiUrl(widget.reactionKey),
+                  width: 18,
+                  height: 18,
+                  errorBuilder: (_, _, _) => Text(
+                    widget.reactionKey,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ),
+            Text('${widget.count}', style: theme.textTheme.labelSmall),
+          ],
+        ),
+        onPressed: () => widget.onToggle(widget.reactionKey),
       ),
     );
   }
@@ -1944,6 +2120,104 @@ class _ReactionChips extends StatelessWidget {
         .map((r) => r.toRadixString(16))
         .join('-');
     return '${AppConstants.twemojiBaseUrl}/$codepoints.png';
+  }
+}
+
+/// ホバー時に表示する「リアクションした人」一覧の中身。
+class _ReactionUsersTooltip extends StatelessWidget {
+  final bool loading;
+  final bool failed;
+  final List<User> users;
+  final int totalCount;
+  final int maxAvatars;
+  final String? fallbackHost;
+
+  const _ReactionUsersTooltip({
+    required this.loading,
+    required this.failed,
+    required this.users,
+    required this.totalCount,
+    required this.maxAvatars,
+    required this.fallbackHost,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Widget body;
+    if (loading) {
+      body = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Text('読み込み中…', style: theme.textTheme.bodySmall),
+        ],
+      );
+    } else if (failed) {
+      body = Text('取得できませんでした', style: theme.textTheme.bodySmall);
+    } else if (users.isEmpty) {
+      body = Text('リアクションした人はいません', style: theme.textTheme.bodySmall);
+    } else {
+      final shown = users.take(maxAvatars).toList();
+      final remaining = totalCount - shown.length;
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final user in shown)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  UserAvatar(user: user, size: 20, compact: true),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: EmojiText(
+                      user.displayName?.isNotEmpty == true
+                          ? user.displayName!
+                          : user.username,
+                      emojis: user.emojis,
+                      fallbackHost: fallbackHost,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (remaining > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('ほか $remaining 人', style: theme.textTheme.bodySmall),
+            ),
+        ],
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: body,
+      ),
+    );
   }
 }
 
