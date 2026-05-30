@@ -362,16 +362,22 @@ class _VideoPageState extends State<_VideoPage> {
   @override
   void initState() {
     super.initState();
-    // Linux では media_kit の H/W 映像描画 (GL/EGL/VAAPI 経路) が AppImage 上の
-    // GPU ドライバ環境と噛み合わず、フレームがテクスチャに来ない (#492)。CPU で
-    // フレームをテクスチャに書く S/W 描画に切り替えると host GL/EGL/VAAPI に
-    // 依存せず安定する。macOS/Windows/モバイルは H/W 描画のまま (既定)。
+    // Linux (AppImage) では media_kit 既定の hwdec='auto' が vulkan/VAAPI/v4l2m2m
+    // 等のハードウェアデコーダを試して全滅し、ソフトデコードに落ちず映像が
+    // デコードされない (#492。mpv ログで `vd: Could not open codec` を確認)。
+    // host GPU ドライバ (Intel iHD 等) と AppImage 同梱ライブラリの ABI も
+    // 噛み合わない。そこで Linux のみ hwdec='no' でソフトデコードを強制し、
+    // 描画も enableHardwareAcceleration=false の S/W 描画にして host の
+    // GL/EGL/VAAPI に一切依存させない。macOS/Windows/モバイルは既定の H/W。
     _player = Player(configuration: const PlayerConfiguration(logLevel: _mpvLogLevel));
     _controller = VideoController(
       _player,
-      configuration: VideoControllerConfiguration(
-        enableHardwareAcceleration: !Platform.isLinux,
-      ),
+      configuration: Platform.isLinux
+          ? const VideoControllerConfiguration(
+              enableHardwareAcceleration: false,
+              hwdec: 'no',
+            )
+          : const VideoControllerConfiguration(),
     );
     _subs.add(_attachMpvLog(_player));
     _subs.add(
