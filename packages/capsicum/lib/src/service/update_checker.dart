@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../constants.dart';
@@ -50,7 +51,7 @@ class UpdateChecker {
       final latestVersion = tagName.startsWith('v')
           ? tagName.substring(1)
           : tagName;
-      if (!_isNewer(latestVersion, currentVersion)) return null;
+      if (!isNewer(latestVersion, currentVersion)) return null;
       return UpdateInfo(
         currentVersion: currentVersion,
         latestVersion: latestVersion,
@@ -66,7 +67,8 @@ class UpdateChecker {
   /// 単純 semver 比較。`pubspec` の `1.30.0+85` / GitHub tag の `1.30.0` の
   /// どちらが渡されても `+` 以降は無視して dotted 数値比較する。pre-release
   /// (rc / beta 等) は capsicum では使っていないので扱わない。
-  static bool _isNewer(String latest, String current) {
+  @visibleForTesting
+  static bool isNewer(String latest, String current) {
     final latestParts = _parseVersion(latest);
     final currentParts = _parseVersion(current);
     final len = latestParts.length > currentParts.length
