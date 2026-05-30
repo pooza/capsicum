@@ -546,6 +546,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   @override
+  void didChangeMetrics() {
+    // ソフトキーボード開閉 (metrics 変化) で「しまう」ボタンの出し分けを
+    // 反映するため rebuild する (#594 / #635)。View.of(context).viewInsets を
+    // 見る判定がキーボード開閉に追従するように。addObserver は initState で
+    // 登録済み。
+    if (mounted) setState(() {});
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     // The OS may dispose the activity while backgrounded; persist the draft
