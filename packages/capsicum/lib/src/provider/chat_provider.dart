@@ -388,7 +388,17 @@ class ChatRoomTimelineNotifier
     // thread list (chat 履歴) にも反映して並び替え / 未読更新を起こす (#632)。
     // ChatThreadListNotifier 単独では chatRoom channel を購読しないため、
     // 開いている room 側から都度流す経路。
-    ref.read(chatThreadListProvider.notifier).applyRoomMessage(message);
+    //
+    // ただし chatThreadListProvider は autoDispose で、thread list を誰も
+    // watch していない (room を開いて即 pop した直後など) と既に dispose
+    // 済み。その状態で `ref.read(...notifier)` すると provider が build() で
+    // resurrect し、getChatHistory + getRoomHistory のネットワーク 2 本を
+    // 意図せず叩いてしまう (#636)。生きているときだけ反映する。閉じている
+    // 間の並び替え / 未読は、次に thread list を開いた際の build() が最新を
+    // 取り直すので取りこぼさない。
+    if (ref.exists(chatThreadListProvider)) {
+      ref.read(chatThreadListProvider.notifier).applyRoomMessage(message);
+    }
     final current = state.valueOrNull;
     if (current == null) return;
     if (current.messages.any((m) => m.id == message.id)) return;
