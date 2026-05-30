@@ -10,8 +10,42 @@ import '../util/chat_error.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
-class ChatThreadListScreen extends ConsumerWidget {
+class ChatThreadListScreen extends ConsumerStatefulWidget {
   const ChatThreadListScreen({super.key});
+
+  @override
+  ConsumerState<ChatThreadListScreen> createState() =>
+      _ChatThreadListScreenState();
+}
+
+class _ChatThreadListScreenState extends ConsumerState<ChatThreadListScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // OS 復帰時に thread list を再取得して最新化する (#637)。
+  // chatRoomMessageStreamProvider は入室画面でしか購読されないため、閉じている
+  // ルームに来た新着では thread list が並び替わらない。全所属ルームを常時購読
+  // すると WebSocket 接続数がルーム数だけ増えサーバー / バッテリーに響くため、
+  // 完全 realtime は諦め「復帰時に getChatHistory(room) を再 fetch する」妥協
+  // ラインを採る。一覧を前面で開いたまま新着が来るケースは既存の
+  // pull-to-refresh で補う。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        ref.exists(chatThreadListProvider)) {
+      ref.invalidate(chatThreadListProvider);
+    }
+  }
 
   Future<void> _showNewMenu(BuildContext context) async {
     await showModalBottomSheet<void>(
@@ -45,7 +79,7 @@ class ChatThreadListScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final threads = ref.watch(chatThreadListProvider);
     final invitations = ref.watch(chatInvitationInboxProvider);
     final invitationCount = invitations.maybeWhen(
