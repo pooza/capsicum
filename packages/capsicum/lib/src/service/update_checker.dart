@@ -3,12 +3,16 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../constants.dart';
 
-/// 直配ビルド (Linux AppImage / Windows 自己署名 MSIX 直配) の判定 (#641)。
+/// 自動更新の無い直配ビルドの判定 (#641)。実運用では Linux AppImage の
+/// ビルド (packaging/linux/appimage/build.sh) でのみ
+/// `--dart-define=DIRECT_CHANNEL=true` を渡す。
 ///
 /// ストア配布 (iOS / Android / Mac App Store / Microsoft Store) は OS が
 /// 自動更新するため「新版あり」通知を出すと「手動更新できないのに毎回出る」
-/// 状態になり混乱の元。CI で直配アーティファクトをビルドする際だけ
-/// `--dart-define=DIRECT_CHANNEL=true` を渡してこの分岐を真にする。
+/// 状態になり混乱の元。Windows は Store 版と自己署名 MSIX 直配が同じ build
+/// 出力を共有していて実行時に区別できないため、多数派の Store ユーザーへの
+/// 誤通知を避けて全 Windows ビルドでこの define を渡さない (Linux AppImage
+/// だけが「自動更新なし & 唯一の配布経路」で、ここが本機能の対象)。
 const bool kIsDirectChannelBuild = bool.fromEnvironment(
   'DIRECT_CHANNEL',
   defaultValue: false,
