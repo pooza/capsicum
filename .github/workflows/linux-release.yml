@@ -14,9 +14,19 @@ on:
 
 jobs:
   # Phase 4a: portable AppImage を組み立てて GitHub Releases (draft) に添付。
-  # Ubuntu 22.04 を使うのは glibc 2.35 (Ubuntu LTS 全代で動く AppImage) 確保のため。
+  #
+  # ビルドホストは ubuntu-24.04 (noble)。以前は glibc 2.35 (Ubuntu LTS 全代で
+  # 動く AppImage) 確保のため ubuntu-22.04 だったが、media_kit (#492) が要求する
+  # libmpv (mpv ~0.36/0.37, libmpv.so.2, 0.38 破壊的変更より前) は 22.04 の
+  # libmpv (mpv 0.34 / libmpv.so.1) では満たせず非互換クラッシュする
+  # (m_config_cache_from_shadow assertion)。noble の libmpv は mpv 0.37 で
+  # media_kit 互換のため、linuxdeploy が一貫した依存 closure (libmpv + ffmpeg
+  # 6.1 + コーデック群) を丸ごと自動同梱できる。
+  # トレードオフ: AppImage の glibc 下限が 2.35 → 2.39 に上がり、Ubuntu 22.04 /
+  # Debian 12 以前では動かなくなる (AppImage は glibc を同梱しない)。Linux 動画
+  # 再生を成立させるための判断 (#492、build on noble)。
   appimage:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       # softprops/action-gh-release の draft Release 作成 + 添付に必要 (タグ駆動時のみ実行)
       contents: write
@@ -28,7 +38,7 @@ jobs:
           # GTK IM module を host から入れる理由 (#532 真因対応 / v1.24.2 + #536 / v1.24.4):
           # GTK の IM module (im-ibus.so / im-fcitx5.so / im-uim.so) は host に
           # インストールされていないと linuxdeploy-plugin-gtk が AppImage に
-          # bundle できない。CI runner (ubuntu-22.04) には標準で入っていないため、
+          # bundle できない。CI runner (ubuntu-24.04) には標準で入っていないため、
           # 配布 AppImage の immodules.cache から該当エントリが欠落し、
           # GTK_IM_MODULE=ibus / fcitx5 / uim を立てても解決できず日本語入力が
           # 一切効かない状態だった。
@@ -39,15 +49,18 @@ jobs:
           # 対策) は配布後の不具合報告ベースで対応する best-effort 方針。
           # libmpv-dev: media_kit (#492) の Linux ビルドが要求する。
           # media_kit_libs_linux は libmpv を同梱せず、ビルド時の pkg-config
-          # `mpv` と実行時 libmpv.so.2 をシステムに依存する。ビルド時にここで
-          # 入れ、実行時 libmpv.so.2 (+ ffmpeg 等の依存) は linuxdeploy が ldd
-          # 経由で AppImage に同梱する。
+          # `mpv` と実行時 libmpv.so.2 をシステムに依存する。noble の libmpv は
+          # mpv 0.37 で media_kit 互換。ビルド時にここで入れ、実行時 libmpv.so.2
+          # (+ ffmpeg 6.1 / コーデック群の依存) は linuxdeploy が ldd 経由で
+          # AppImage に一貫同梱する。
+          # libfuse2t64: noble で libfuse2 は t64 移行により libfuse2t64 に改名。
+          # linuxdeploy / appimagetool (AppImage 形式) の実行に FUSE2 が要る。
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
             libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
             libcurl4-openssl-dev default-jdk-headless \
-            libfuse2 patchelf \
+            libfuse2t64 patchelf \
             libmpv-dev \
             ibus-gtk3 \
             fcitx5-frontend-gtk3 \

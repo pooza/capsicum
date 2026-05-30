@@ -113,12 +113,23 @@ chmod +x capsicum-1.24.0-x86_64.AppImage
 
 - 本スクリプトで生成した AppImage は **build した OS の glibc / system
   library 互換性に縛られる**。Debian 13 (glibc 2.41) で組み立てたものは
-  Ubuntu 24.04 LTS (glibc 2.39) 以下では動かない。Ubuntu LTS まで広く
-  動かせる portable AppImage は Phase 4 の Ubuntu 22.04 runner で生成する。
+  それ未満の glibc では動かない。配布用 portable AppImage は CI の
+  **ubuntu-24.04 (noble) runner** で生成する (glibc 下限 2.39。#492 で
+  ubuntu-22.04 から変更 ─ 後述の libmpv 互換のため)。
 - 動画 / 音声再生は v1.30 で `video_player` から `media_kit` (libmpv) に
   移行済み ([#492](https://github.com/pooza/capsicum/issues/492))。Linux でも
-  メディアビューワーで再生できる。`media_kit_libs_video` がネイティブ libmpv
-  を同梱するため、AppImage 内に .so がバンドルされ system 依存なしで動く。
-  詳細は
-  [`docs/desktop-plugin-compatibility.md`](../../../docs/desktop-plugin-compatibility.md)
-  §2 参照。
+  メディアビューワーで再生できる。**ただし `media_kit_libs_linux` は
+  (Windows/macOS と違い) libmpv を同梱しない**ため、ビルドホストの system
+  libmpv が同梱され、そのバージョン互換が重要になる:
+  - media_kit は mpv ~0.36/0.37 (libmpv API 2.2.x、0.38 破壊的変更より前) で
+    テスト済み。新しすぎる libmpv (mpv 0.38+。例: Debian 13 = mpv 0.40) を
+    同梱した AppImage は動画再生時に `m_config_cache_from_shadow` assertion で
+    クラッシュする。
+  - このため配布ビルドは mpv 0.37 を持つ **noble (ubuntu-24.04)** で行い、
+    linuxdeploy が libmpv + ffmpeg 6.1 + コーデック群を一貫同梱する。
+  - **開発機 (新しめのディストロ) でローカル build した AppImage は、起動と
+    UI は動くが「動画再生だけ」クラッシュしうる**。動画再生の検証は CI 生成
+    AppImage で行うこと。
+  - 詳細は
+    [`docs/desktop-plugin-compatibility.md`](../../../docs/desktop-plugin-compatibility.md)
+    §2 参照。

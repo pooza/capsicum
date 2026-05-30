@@ -47,6 +47,23 @@ if ! pkg-config --exists mpv; then
   exit 1
 fi
 
+# libmpv のバージョン互換に注意 (#492)。media_kit は mpv ~0.36/0.37 (libmpv
+# API 2.2.x, 0.38 破壊的変更より前) でテストされており、新しすぎる libmpv
+# (mpv 0.38+ = libmpv API 2.3.0 以上。例: Debian 13 = mpv 0.40 / API 2.5.0) を
+# 同梱した AppImage は動画再生時に m_config_cache_from_shadow assertion で
+# クラッシュする。配布 AppImage は CI (ubuntu-24.04 / noble = mpv 0.37) で
+# ビルドするのが正。開発機 (新しめのディストロ) でローカル build した AppImage
+# は起動・UI は動くが「動画再生だけ」クラッシュしうる ─ 動画再生の検証は
+# CI 生成 AppImage で行うこと。下記は早期警告のみ (ビルドは止めない)。
+MPV_API_VER=$(pkg-config --modversion mpv 2>/dev/null || echo "0.0.0")
+case "$MPV_API_VER" in
+  2.0.*|2.1.*|2.2.*) : ;; # media_kit 互換レンジ
+  *)
+    echo "WARN: libmpv API version $MPV_API_VER detected. media_kit は ~2.2.x (mpv 0.37) でテスト済み。" >&2
+    echo "WARN: これより新しい libmpv を同梱した AppImage は動画再生でクラッシュしうる。動画検証は CI (noble) 生成 AppImage で。" >&2
+    ;;
+esac
+
 # Sentry / capsicum-relay 連携は ~/.config/capsicum/secrets.env から取得 (任意)
 SENTRY_DSN_VAL=""
 RELAY_SECRET_VAL=""

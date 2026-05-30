@@ -65,6 +65,16 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 - aspect ratio は `player.stream.width` / `height` から算出。未取得の間は 16:9 フォールバック。
 - `main()` で `MediaKit.ensureInitialized()` を runApp() 前に呼ぶ。
 
+#### Linux の libmpv バージョン互換（重要・実装中に判明）
+
+`media_kit_libs_linux` は (Windows/macOS の libs と違い) **libmpv を同梱せず**、ビルドホストの system libmpv に依存する。そして media_kit は **mpv ~0.36/0.37 (libmpv API 2.2.x、0.38 破壊的変更より前) でテストされている**。
+
+- 新しすぎる libmpv (mpv 0.38+。例: Debian 13 = mpv 0.40 / libmpv API 2.5.0) を同梱した AppImage は、動画再生時に libmpv 内部の `m_config_cache_from_shadow: Assertion group_index >= 0 failed` でクラッシュする（FFI バインディング生成元のオプショングループ定義と実行時 libmpv のズレ）。media_kit 1.2.6 / video 2.0.1 が最新で、更新で直す道はない。
+- 古すぎる libmpv (ubuntu-22.04 = mpv 0.34 / `libmpv.so.1`) も soname / API が合わず不可。
+- 対処: **配布 AppImage を mpv 0.37 を持つ noble (ubuntu-24.04) でビルド**し、linuxdeploy に libmpv + ffmpeg 6.1 + コーデック群の一貫した依存 closure を自動同梱させる（`.github/workflows/linux-release.yml`）。他ディストロ製の libmpv だけを後付けで混ぜる方式は glibc / スレッド ABI 混在でクラッシュ (`pthread_mutex_lock` assertion) するため不可 ─ 一貫ビルドが必須。
+- 代償: AppImage の glibc 下限が 2.35 → 2.39 に上がり、Ubuntu 22.04 / Debian 12 以前を切る（#492 で pooza 判断）。
+- 開発機 (新しめのディストロ) でローカル build した AppImage は起動・UI は動くが「動画再生だけ」クラッシュしうる。動画検証は CI 生成 AppImage で行う。
+
 #### 使用範囲
 
 | ファイル | 用途 | 内訳 |
