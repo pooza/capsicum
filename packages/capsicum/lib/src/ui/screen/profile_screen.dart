@@ -897,17 +897,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 runSpacing: 4,
                 children: [
                   ...user.roles.map((role) {
-                    Color? chipColor;
+                    Color? roleColor;
                     if (role.color != null &&
                         role.color!.startsWith('#') &&
                         role.color!.length >= 7) {
                       try {
-                        chipColor = Color(
+                        roleColor = Color(
                           0xFF000000 |
                               int.parse(role.color!.substring(1, 7), radix: 16),
                         );
                       } catch (_) {}
                     }
+                    // ラベルと境界線で同じ色を使う。サーバー指定色が無いロールは
+                    // サポーター chip と同じ primary にフォールバックし、境界線が
+                    // 見えなくなる (side: null) のを防ぐ (#605)。
+                    final chipColor = roleColor ?? theme.colorScheme.primary;
                     Widget? avatar;
                     if (role.iconUrl != null) {
                       avatar = Image.network(
@@ -938,9 +942,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
-                      side: chipColor != null
-                          ? BorderSide(color: chipColor.withValues(alpha: 0.5))
-                          : null,
+                      side: BorderSide(color: chipColor.withValues(alpha: 0.5)),
                     );
                   }),
                   if (showSupporterChip)
