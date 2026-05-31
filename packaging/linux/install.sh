@@ -81,6 +81,10 @@ cleanup() {
   for d in "${CLEANUP_DIRS[@]:-}"; do
     [[ -n "$d" ]] && rm -rf "$d"
   done
+  # 最後の [[ -n "$d" ]] が空配列で false (=1) になると、その戻り値が
+  # `exit 0` 等の終了コードを上書きしてしまう (bash の EXIT トラップの
+  # 仕様)。明示的に 0 を返して終了コードを保護する。
+  return 0
 }
 trap cleanup EXIT
 
