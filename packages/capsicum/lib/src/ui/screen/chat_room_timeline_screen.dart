@@ -71,7 +71,12 @@ class _ChatRoomTimelineScreenState
           .send(text);
       _textController.clear();
     } catch (e, st) {
-      reportChatOpFailure('send_room_message', e, st);
+      reportChatOpFailure(
+        'send_room_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
@@ -107,7 +112,12 @@ class _ChatRoomTimelineScreenState
       );
       ref.invalidate(chatThreadListProvider);
     } catch (e, st) {
-      reportChatOpFailure('toggle_room_mute', e, st);
+      reportChatOpFailure(
+        'toggle_room_mute',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -156,7 +166,12 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure('leave_room', e, st);
+      reportChatOpFailure(
+        'leave_room',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('退出に失敗しました (${summarizeChatError(e)})')),
@@ -192,7 +207,12 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure('delete_room', e, st);
+      reportChatOpFailure(
+        'delete_room',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
@@ -224,7 +244,12 @@ class _ChatRoomTimelineScreenState
           .read(chatRoomTimelineProvider(widget.room.id).notifier)
           .deleteMessage(message.id);
     } catch (e, st) {
-      reportChatOpFailure('delete_room_message', e, st);
+      reportChatOpFailure(
+        'delete_room_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
@@ -243,6 +268,24 @@ class _ChatRoomTimelineScreenState
     final myUserIdForOwnerCheck = ref.watch(currentAccountProvider)?.user.id;
     final isOwner =
         myUserIdForOwnerCheck != null && _room.ownerId == myUserIdForOwnerCheck;
+
+    // chatRoom streaming の再接続上限到達を SnackBar 表示 (#623)。
+    // DM 側 ([chatStreamReconnectExhaustedProvider]) と同型。
+    ref.listen(chatRoomStreamReconnectExhaustedProvider(widget.room.id), (
+      prev,
+      next,
+    ) {
+      if (next && prev != true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ルームのライブ更新が停止しました。下に引いて再接続してください'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(

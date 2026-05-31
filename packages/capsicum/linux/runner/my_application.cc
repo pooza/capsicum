@@ -25,6 +25,16 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
+  // Assign the window icon by its themed name so window managers that read
+  // _NET_WM_ICON directly (e.g. LXQt panels) get the full multi-size icon
+  // instead of GTK's generic 48x48 fallback. The default Flutter Linux template
+  // never sets a window icon, so without this only DEs that map the window to
+  // its .desktop via StartupWMClass (#587) show the correct icon; this covers
+  // the _NET_WM_ICON path for the rest (#589). The icon is shipped in the
+  // hicolor theme under both the user XDG dir and the AppImage's bundled
+  // usr/share, so the lookup resolves in either launch mode.
+  gtk_window_set_icon_name(window, APPLICATION_ID);
+
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
   // desktop).

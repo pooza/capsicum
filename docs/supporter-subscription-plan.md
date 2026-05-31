@@ -1,7 +1,7 @@
 # サポーターサブスクリプション（投げ銭）設計判断ドラフト
 
 関連 Issue: [#428](https://github.com/pooza/capsicum/issues/428)（v1.27）
-関連: [push-relay-plan.md](push-relay-plan.md)、docs/CLAUDE.md「運営元」「プッシュ通知」節
+関連: [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay)（初期設計経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md)）、docs/CLAUDE.md「運営元」「プッシュ通知」節
 
 ## このドキュメントの位置づけ
 

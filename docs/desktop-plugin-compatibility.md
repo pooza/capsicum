@@ -33,9 +33,9 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 | プラグイン | 用途 | 問題 | 対応案 |
 | --- | --- | --- | --- |
-| flutter_secure_storage | 機密情報保存 | Linux は `libsecret-1-dev` 必須。AppImage / Flatpak それぞれサンドボックス越しの keyring アクセス経路が独立で、debug ビルド・AppImage・Flatpak 三者で別 keyring を見ることになる (相互不可視) | そのまま使用。AppImage は `--talk-name=org.freedesktop.secrets` で gnome-keyring と接続。永続性は #424/#425 で確認 |
+| flutter_secure_storage | 機密情報保存 | Linux は `libsecret-1-dev` 必須。debug ビルドと AppImage で別 keyring を見ることになる (相互不可視) | そのまま使用。AppImage は gnome-keyring と接続。永続性は #424/#425 で確認 |
 | flutter_local_notifications | ローカル通知 | macOS / Linux / Windows 対応済みだが機能差あり。Linux は libnotify、Windows は Toast XML。アクションボタン等はプラットフォーム依存 | 通知サブシステム抽象化層を介して機能差を吸収 |
-| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、Linux / Windows は localhost コールバック (#382 方式)、macOS は当面 WebView (将来 #382 で切替予定)。Linux では transitive で `desktop_webview_window` を引き、`libwebkit2gtk-4.1.so.0` をリンクするため Flathub では `org.gnome.Platform//49` ベース必須 (`org.freedesktop.Platform` には webkit が無い)。Windows は v4.1.0 時点で native plugin が無く MSIX に同梱されないため、Linux と同じ server impl 経路で回避。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | **Linux / Windows は `useWebview: false` + `http://localhost:7099/oauth/callback` で server impl 経由** (Linux は #489 / #496 の `desktop_webview_window` GLX assertion native crash 回避、Windows は #423 の native plugin 同梱欠落回避。0aaa2f9 / feature/423-windows-distribution で実装、`AppConstants.localhostOAuthPort` 参照)。macOS は引き続き WebView 経由 (現状致命 crash 報告無し)。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポートは固定。OAuth client_secret cache の URI と新 redirect_uri が不一致になる場合は再ログインで解消する |
+| flutter_web_auth_2 | OAuth 認証 | モバイルはカスタムスキーム、Linux / Windows は localhost コールバック (#382 方式)、macOS は当面 WebView (将来 #382 で切替予定)。Linux では transitive で `desktop_webview_window` を引き、`libwebkit2gtk-4.1.so.0` をリンクする。Windows は v4.1.0 時点で native plugin が無く MSIX に同梱されないため、Linux と同じ server impl 経路で回避。Android エミュレータ不安定の既知問題（[tech-notes.md](tech-notes.md) の認証フロー節を参照） | **Linux / Windows は `useWebview: false` + `http://localhost:7099/oauth/callback` で server impl 経由** (Linux は #489 / #496 の `desktop_webview_window` GLX assertion native crash 回避、Windows は #423 の native plugin 同梱欠落回避。0aaa2f9 / feature/423-windows-distribution で実装、`AppConstants.localhostOAuthPort` 参照)。macOS は引き続き WebView 経由 (現状致命 crash 報告無し)。Mastodon は createApplication 時に redirect_uri を完全一致登録するためポートは固定。OAuth client_secret cache の URI と新 redirect_uri が不一致になる場合は再ログインで解消する |
 | image_picker | 画像選択 | iOS/Android/macOS は対応、**Linux/Windows は未対応** | デスクトップは `file_selector` に置き換え。抽象層（例: `MediaPicker`）で使い分け |
 
 ## Tier C: 要抽象化・要置き換え（ブロッカー）
@@ -43,7 +43,7 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 | プラグイン | 用途 | 問題 | 対応案 |
 | --- | --- | --- | --- |
 | ~~workmanager~~ | ~~バックグラウンドポーリング~~ | v1.19 (#348) で撤去済み。通知リレー（#52）への完全移行に伴いモバイル側も不要になった | デスクトップ対応でバックグラウンド相当の仕組みが要る場合は `BackgroundTaskScheduler` 抽象層（#328）の実装として Dart `Timer` + 常駐で組む |
-| **video_player** | 動画再生 | macOS は公式対応（v1.21 TestFlight Internal で再生・添付・投稿の動作を確認済み）。**Linux / Windows は非対応** | Linux / Windows 着手時に各プラットフォーム対応を再評価し、必要に応じて `media_kit` へ置き換える。事前調査は本書 §2 に保存済み |
+| ~~video_player~~ → **media_kit** | 動画 / 音声再生 | v1.30 (#492) で `media_kit` (libmpv) に移行済み。iOS / Android / macOS / Windows / Linux 全対応となり、従来非対応だった Linux / Windows でも再生可能に | 完了。経緯と API 対応表は本書 §2 に保存 |
 
 ## 影響度の大きい順と対応タイミング
 
@@ -53,9 +53,36 @@ capsicum が依存している Flutter プラグインの macOS / Linux / Window
 
 ただしデスクトップは push 受信経路がないため、[#328](https://github.com/pooza/capsicum/issues/328) の `BackgroundTaskScheduler` 抽象層を第2段階で導入し、デスクトップ実装としては Dart `Timer` + アプリ常駐前提の軽量ポーリングを入れる。モバイル側は抽象層の no-op 実装で十分。
 
-### 2. video_player → media_kit 移行（保留: Linux / Windows 着手時に再判断）
+### 2. video_player → media_kit 移行（実施済み: v1.30 / #492）
 
-[#306](https://github.com/pooza/capsicum/issues/306) の事前調査結果。**結論: 移行可能だが緊急性は低い**。影響範囲は媒体ビューワー 1 ファイルに収まり、API 置き換えのみで対応できる。実装は [Linux / Windows 対応着手時（v1.24 想定）](CLAUDE.md#長期構想-デスクトップ対応) に当該プラットフォームでの video_player 対応状況を改めて棚卸し、必要があれば実施する。
+[#306](https://github.com/pooza/capsicum/issues/306) の事前調査を経て、v1.30 で [#492](https://github.com/pooza/capsicum/issues/492) として実装完了。Flathub 断念で Linux 配布が AppImage 単独に確定し、Linux 動画再生不可の解消優先度が上がったため格上げした。事前調査どおり影響範囲は媒体ビューワー 1 ファイル（[media_viewer_screen.dart](../packages/capsicum/lib/src/ui/screen/media_viewer_screen.dart)）に収まり、API 置き換えのみで完了。以下は調査内容（実装の手引きとして使用）。
+
+#### 実装メモ（v1.30 で確定した方針）
+
+- video_player を完全撤去し media_kit に一本化（抽象層は挟まない）。
+- 既存の独自プレイヤー UI（タップで controls トグル / 3 秒で自動非表示 / 中央 play ボタン / 下部進捗バー）はそのまま維持。`VideoProgressIndicator` は `Slider` ベースの `_MediaProgressBar` に置き換え。
+- 状態更新は `StreamBuilder` ではなく `player.stream.*` を `StreamSubscription` で購読し `setState` する方式を採用（既存コードの構造を踏襲。dispose で subscription を cancel + `player.dispose()`）。
+- aspect ratio は `player.stream.width` / `height` から算出。未取得の間は 16:9 フォールバック。
+- `main()` で `MediaKit.ensureInitialized()` を runApp() 前に呼ぶ。
+
+#### Linux の libmpv バージョン互換（重要・実装中に判明）
+
+`media_kit_libs_linux` は (Windows/macOS の libs と違い) **libmpv を同梱せず**、ビルドホストの system libmpv に依存する。そして media_kit は **mpv ~0.36/0.37 (libmpv API 2.2.x、0.38 破壊的変更より前) でテストされている**。
+
+- 新しすぎる libmpv (mpv 0.38+。例: Debian 13 = mpv 0.40 / libmpv API 2.5.0) を同梱した AppImage は、動画再生時に libmpv 内部の `m_config_cache_from_shadow: Assertion group_index >= 0 failed` でクラッシュする（FFI バインディング生成元のオプショングループ定義と実行時 libmpv のズレ）。media_kit 1.2.6 / video 2.0.1 が最新で、更新で直す道はない。
+- 古すぎる libmpv (ubuntu-22.04 = mpv 0.34 / `libmpv.so.1`) も soname / API が合わず不可。
+- 対処: **配布 AppImage を mpv 0.37 を持つ noble (ubuntu-24.04) でビルド**し、linuxdeploy に libmpv + ffmpeg 6.1 + コーデック群の一貫した依存 closure を自動同梱させる（`.github/workflows/linux-release.yml`）。他ディストロ製の libmpv だけを後付けで混ぜる方式は glibc / スレッド ABI 混在でクラッシュ (`pthread_mutex_lock` assertion) するため不可 ─ 一貫ビルドが必須。
+- 代償: AppImage の glibc 下限が 2.35 → 2.39 に上がり、Ubuntu 22.04 / Debian 12 以前を切る（#492 で pooza 判断）。
+- 開発機 (新しめのディストロ) でローカル build した AppImage は起動・UI は動くが「動画再生だけ」クラッシュしうる。動画検証は CI 生成 AppImage で行う。
+
+#### Linux の映像描画・デコード（重要・pooza 実機検証で確定）
+
+libmpv バージョンを解決 (noble/0.37) してクラッシュは消えたが、AppImage 上の Intel iHD / Mesa / X11 環境で映像フレームが描画されない（音声のみ）問題が続いた。pooza 実機での mpv 詳細ログ (`logLevel: info`) により段階的に切り分けて確定:
+
+1. **media_kit_video は 1.3.x にピン**（`">=1.3.1 <2.0.0"`）。2.0.0/2.0.1 (2025-11/12) は Linux VideoOutput を書き直し、生成時（プラットフォームスレッド＝EGL コンテキスト非 current）に `eglGetCurrentContext` で Flutter の EGL を掴もうとして失敗し、映像が出ない回帰がある。1.3.1 は描画スレッドのテクスチャコールバック内で GL を扱う成熟実装で `media_kit ^1.2.1` 要求のため core 1.2.6 と互換。→ これで `Using H/W rendering` まで到達。
+2. それでも映像が出ず、mpv ログで真因判明: media_kit ネイティブ既定の `hwdec='auto'` が vulkan/VAAPI/v4l2m2m/cuda を順に試して**全滅**し、ソフトデコードにフォールバックせず `vd: Could not open codec`（映像トラック未デコード、VO は 720x540 で用意済み）。→ **Linux のみ `VideoControllerConfiguration.hwdec='no'` でソフトデコード強制**。組込み h264 デコーダで確実にデコードでき、`VideoOutput.Resize` が実寸 (960x540) になり再生成立。
+3. 描画も **Linux のみ `enableHardwareAcceleration=false`（S/W 描画）**にして host の GL/EGL/VAAPI に一切依存させない（GPU ドライバ系 lib はバンドルすると ABI 不一致、ホスト fallback すると pthread クラッシュ、というジレンマを回避）。CPU でフレームをテクスチャに書くため負荷は上がるが、Fediverse の短尺添付動画では許容。
+4. macOS / Windows / モバイルは既定（H/W デコード + H/W 描画）のまま。これらは libs パッケージが libmpv を同梱し、Windows は ANGLE で EGL が通る。
 
 #### 使用範囲
 
@@ -97,7 +124,7 @@ State 管理がリスナー方式から Stream 方式に変わるため、現状
 | Android | `media_kit_libs_android_video` を AAR で取り込み | 特別設定不要 |
 | macOS | バンドル増 +12〜15 MB（libmpv） | CocoaPods 経由 |
 | Windows | バンドル増 +20〜30 MB（`libmpv-2.dll` 同梱） | MSIX パッケージング時に DLL 同梱を確認 |
-| Linux | libmpv 依存。Flatpak の `finish-args` / dependencies に追記必要 | AppImage は同梱、配布形態ごとに調整 |
+| Linux | libmpv 依存 | AppImage に同梱 |
 | Web | HTML5 video 経路、別実装 | 当面 capsicum の対象外 |
 
 #### 失う機能 / 得る機能
@@ -111,9 +138,8 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 
 #### 実施タイミングと優先度
 
-- v1.21 の TestFlight Internal 検証で macOS 上の video_player は再生・添付・投稿いずれも問題なく動作することを確認済み（pooza が動画つき投稿で意図的に検証）。これにより v1.24 必須スコープからは外し、**Linux / Windows 対応着手時に再評価して必要なら移行**する位置付けにする
-- 当面は現行 video_player のまま運用（macOS / iOS / Android は既にカバー済み）
-- 上記の API 置き換え対応・プラットフォーム別影響・失う/得る機能の調査結果は、移行決定時にそのまま実装の手引きとして使える状態を保つ
+- （履歴）v1.21 の TestFlight Internal 検証で macOS 上の video_player は再生・添付・投稿いずれも問題なく動作することを確認済みだったため、当初は v1.24 必須スコープから外し「Linux / Windows 対応着手時に再評価」の位置付けだった
+- その後 Flathub 断念で Linux 配布が AppImage 単独に確定し、Linux 動画再生不可の解消優先度が上がったため v1.30 (#492) で移行を実施。上記 API 置き換え対応・プラットフォーム別影響・失う/得る機能の調査結果がそのまま実装の手引きになった
 
 ### 3. image_picker ↔ file_selector 抽象化（第2段階）
 
@@ -128,7 +154,6 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 - **image_picker_macos**: 本体経由で自動的に動くが、内部実装は `file_selector` 相当。UX が iOS とやや異なる
 - **flutter_local_notifications の Windows 実装**: Windows 10/11 の Toast 通知を使う。MSIX パッケージングが必須で、素の exe 配布だと通知が出ない。Microsoft Store 経由推奨の根拠のひとつ
 - **MSIX パッケージング (`msix: ^3.16.13`)**: dev_dependency として導入。`pubspec.yaml` の `msix_config` セクションから `dart run msix:create` で `capsicum.msix` を生成する。Microsoft Store 経由配布のため `store: true` で未署名出力（ストア側で再署名）。詳細は [#423](https://github.com/pooza/capsicum/issues/423) と [release-pipeline.md](release-pipeline.md) Phase 4
-- **Linux で Flathub 配布する場合のサンドボックス制約**: secure_storage / notifications / file access 等、必要な権限（finish-args）を manifest に明示する必要がある
 
 ## 更新時の注意
 

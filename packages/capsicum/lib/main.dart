@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,6 +62,11 @@ void _logDevStack(StackTrace stackTrace) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // media_kit (libmpv) のネイティブバックエンドを初期化する (#492)。
+  // メディアビューアの動画 / 音声再生に使う。runApp() より前の単一ポイントで
+  // 一度だけ呼ぶ。
+  MediaKit.ensureInitialized();
 
   // SharedPreferences を pre-warm し、グローバルキャッシュに載せる (#579)。
   // tabConfigProvider 等の Notifier.build() を完全同期化するための前提条件。

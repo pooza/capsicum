@@ -1,28 +1,69 @@
 # Linux インストール手順 (AppImage 直配)
 
-> 配布対象は **x86_64 アーキの主要なデスクトップ Linux ディストロ**です。AppImage 形式での単独実行ファイル配布のため、システムへの導入は不要・削除はファイル削除のみで完結します。Flathub 公開は申請中で、採択後は `flatpak install flathub net.shrieker.capsicum` でも導入できるようになります。
+> 配布対象は **x86_64 アーキの主要なデスクトップ Linux ディストロ**です。AppImage 形式での単独実行ファイル配布のため、システムへの導入は不要・削除はファイル削除のみで完結します。
 
 ## インストール手順
+
+### 最も簡単: ワンライナー (最新版を自動ダウンロード + 統合)
+
+`install.sh` は引数なしで実行すると、最新 Release の AppImage を自分で
+ダウンロードしてからメニュー登録まで行います。次の 1 行で完結します:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+```
+
+`curl` が無ければ `wget` でも動きます:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+```
+
+> システム領域には書き込みません (`sudo` 不要)。書き込み先はすべて
+> `$HOME` 配下です。x86_64 専用 (ARM64 は未提供)。
+
+### ローカルにダウンロード済みの AppImage を使う場合
+
+本 Release のアセットから `capsicum-<version>-x86_64.AppImage` と
+`install.sh` の 2 ファイルをダウンロードして同じディレクトリに置き、
+次を実行:
+
+```sh
+chmod +x install.sh
+./install.sh capsicum-<version>-x86_64.AppImage
+```
+
+いずれの場合もスクリプトは次を行います:
+
+- AppImage を `~/Applications/` に配置 (+ `chmod +x`)
+- `.desktop` を `~/.local/share/applications/` に展開 (Exec を実体パスに書き換え)
+- hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
+- `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
+
+完了後、アプリメニュー / ランチャーから「capsicum」を起動できます。
+書き込み先はすべてユーザー領域 (`$HOME` 配下) なので `sudo` は不要です。
+
+### 手動配置 (スクリプトを使わない場合)
 
 1. 本 Release のアセットから `capsicum-<version>-x86_64.AppImage` をダウンロード
 
 2. 実行権限を付与:
 
    ```sh
-   chmod +x capsicum-1.25.0-x86_64.AppImage
+   chmod +x capsicum-<version>-x86_64.AppImage
    ```
 
 3. 任意の場所に配置 (例: `~/Applications/` や `~/bin/`):
 
    ```sh
    mkdir -p ~/Applications
-   mv capsicum-1.25.0-x86_64.AppImage ~/Applications/
+   mv capsicum-<version>-x86_64.AppImage ~/Applications/
    ```
 
 4. ダブルクリック または ターミナルから起動:
 
    ```sh
-   ~/Applications/capsicum-1.25.0-x86_64.AppImage
+   ~/Applications/capsicum-<version>-x86_64.AppImage
    ```
 
 5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
@@ -75,11 +116,31 @@ ibus-mozc 以外の組み合わせは未検証のため、問題があれば [Is
 
 ## アンインストール
 
+### `install.sh` でメニュー登録した場合
+
+`~/Applications/` の AppImage + メニュー登録 + hicolor アイコンをまとめて
+削除できます。ワンライナー:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/uninstall.sh | bash
+```
+
+ローカルに `uninstall.sh` がある場合はそれを実行しても同じです:
+
+```sh
+chmod +x uninstall.sh
+./uninstall.sh
+```
+
+### 手動配置の場合
+
 AppImage ファイル本体を削除するだけです:
 
 ```sh
-rm ~/Applications/capsicum-1.25.0-x86_64.AppImage
+rm ~/Applications/capsicum-<version>-x86_64.AppImage
 ```
+
+### アカウント情報・ログ・設定の削除 (任意)
 
 `flutter_secure_storage` がホスト鍵管理 (libsecret / GNOME Keyring 等) を介して保存しているデータも削除する場合は、Seahorse 等のキーチェーン管理ツールで `capsicum` 関連エントリを手動削除してください (アカウント情報 / OAuth トークン)。
 
@@ -89,14 +150,3 @@ rm ~/Applications/capsicum-1.25.0-x86_64.AppImage
 rm -rf ~/.local/share/capsicum
 rm -rf ~/.config/capsicum
 ```
-
-## Flathub について
-
-Flathub への申請手続き中です。採択後は以下のコマンドで導入可能になります:
-
-```sh
-flatpak install flathub net.shrieker.capsicum
-flatpak run net.shrieker.capsicum
-```
-
-Flatpak 版は Flathub 提供 runtime (`org.gnome.Platform//49`) で動作し、サンドボックス内で完結します。

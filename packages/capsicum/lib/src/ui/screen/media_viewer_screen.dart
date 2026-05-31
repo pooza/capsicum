@@ -1,10 +1,18 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/media_filename.dart';
 
 class MediaViewerScreen extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
@@ -129,6 +137,47 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     }
   }
 
+  /// メディア保存はデスクトップ 3 OS のみ対応 (#572 第一弾)。モバイルは
+  /// ギャラリー保存に別パッケージ + ネイティブ権限が必要なため別 issue
+  /// (#646)、ファイラーへの drag-out も別 issue (#645)。
+  bool get _canSaveToDisk =>
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+  /// 現在表示中のメディアを OS のファイル保存ダイアログ経由でローカルに
+  /// ダウンロードする (#572)。file_selector の保存ダイアログで保存先を選び、
+  /// dio で取得して書き出す。
+  Future<void> _saveMedia() async {
+    final attachment = _attachments[_currentIndex];
+    final suggestedName = suggestedMediaFileName(attachment);
+
+    final FileSaveLocation? location = await getSaveLocation(
+      suggestedName: suggestedName,
+    );
+    if (location == null || !mounted) return; // ユーザーがキャンセル
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('保存しています…')));
+
+    try {
+      final response = await Dio().get<List<int>>(
+        attachment.url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final bytes = response.data;
+      if (bytes == null) {
+        throw const FormatException('empty response body');
+      }
+      await File(location.path).writeAsBytes(bytes);
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('保存しました')));
+    } catch (_) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final attachment = _attachments[_currentIndex];
@@ -152,6 +201,12 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
               ? Text('${_currentIndex + 1} / ${widget.attachments.length}')
               : null,
           actions: [
+            if (_canSaveToDisk)
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                tooltip: '保存',
+                onPressed: _saveMedia,
+              ),
             if (_canEdit)
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
@@ -226,6 +281,50 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   }
 }
 
+/// 動画 / 音声で共通の進捗バー。media_kit の position / duration を Slider で
+/// 表示し、スクラブで seek する。旧 video_player の VideoProgressIndicator
+/// 置き換え (#492)。
+class _MediaProgressBar extends StatelessWidget {
+  final Duration position;
+  final Duration duration;
+  final ValueChanged<Duration> onSeek;
+
+  const _MediaProgressBar({
+    required this.position,
+    required this.duration,
+    required this.onSeek,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxMs = duration.inMilliseconds > 0
+        ? duration.inMilliseconds.toDouble()
+        : 1.0;
+    final value = position.inMilliseconds.clamp(0, maxMs.toInt()).toDouble();
+    return SliderTheme(
+      data: const SliderThemeData(
+        trackHeight: 2,
+        thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+        overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
+        activeTrackColor: Colors.white,
+        inactiveTrackColor: Colors.white24,
+        thumbColor: Colors.white,
+      ),
+      child: Slider(
+        value: value,
+        max: maxMs,
+        onChanged: (v) => onSeek(Duration(milliseconds: v.round())),
+      ),
+    );
+  }
+}
+
+String _formatDuration(Duration d) {
+  final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
+}
+
 class _VideoPage extends StatefulWidget {
   final String url;
 
@@ -236,36 +335,83 @@ class _VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<_VideoPage> {
-  late final VideoPlayerController _controller;
+  late final Player _player;
+  late final VideoController _controller;
+  final List<StreamSubscription<dynamic>> _subs = [];
   bool _initialized = false;
+  bool _playing = false;
   bool _showControls = true;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  double _aspectRatio = 16 / 9;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize()
-          .then((_) {
-            if (mounted) {
-              setState(() => _initialized = true);
-              _controller.addListener(_onVideoUpdate);
-              _controller.play();
-              _hideControlsAfterDelay();
-            }
-          })
-          .catchError((e) {
-            if (mounted) setState(() => _error = e.toString());
-          });
+    // Linux (AppImage) では media_kit 既定の hwdec='auto' が vulkan/VAAPI/v4l2m2m
+    // 等のハードウェアデコーダを試して全滅し、ソフトデコードに落ちず映像が
+    // デコードされない (#492。mpv ログで `vd: Could not open codec` を確認)。
+    // host GPU ドライバ (Intel iHD 等) と AppImage 同梱ライブラリの ABI も
+    // 噛み合わない。そこで Linux のみ hwdec='no' でソフトデコードを強制し、
+    // 描画も enableHardwareAcceleration=false の S/W 描画にして host の
+    // GL/EGL/VAAPI に一切依存させない。macOS/Windows/モバイルは既定の H/W。
+    _player = Player();
+    _controller = VideoController(
+      _player,
+      configuration: Platform.isLinux
+          ? const VideoControllerConfiguration(
+              enableHardwareAcceleration: false,
+              hwdec: 'no',
+            )
+          : const VideoControllerConfiguration(),
+    );
+    _subs.add(
+      _player.stream.playing.listen((playing) {
+        if (mounted) setState(() => _playing = playing);
+      }),
+    );
+    _subs.add(
+      _player.stream.position.listen((position) {
+        if (mounted) setState(() => _position = position);
+      }),
+    );
+    _subs.add(
+      _player.stream.duration.listen((duration) {
+        if (mounted) setState(() => _duration = duration);
+      }),
+    );
+    _subs.add(_player.stream.width.listen((_) => _updateAspectRatio()));
+    _subs.add(_player.stream.height.listen((_) => _updateAspectRatio()));
+    _subs.add(
+      _player.stream.error.listen((error) {
+        if (mounted) setState(() => _error = error);
+      }),
+    );
+    _player
+        .open(Media(widget.url))
+        .then((_) {
+          if (mounted) {
+            setState(() => _initialized = true);
+            _hideControlsAfterDelay();
+          }
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = e.toString());
+        });
   }
 
-  void _onVideoUpdate() {
-    if (mounted) setState(() {});
+  void _updateAspectRatio() {
+    final w = _player.state.width;
+    final h = _player.state.height;
+    if (mounted && w != null && h != null && w > 0 && h > 0) {
+      setState(() => _aspectRatio = w / h);
+    }
   }
 
   void _hideControlsAfterDelay() {
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _controller.value.isPlaying) {
+      if (mounted && _playing) {
         setState(() => _showControls = false);
       }
     });
@@ -273,25 +419,21 @@ class _VideoPageState extends State<_VideoPage> {
 
   @override
   void dispose() {
-    _controller.removeListener(_onVideoUpdate);
-    _controller.dispose();
+    for (final sub in _subs) {
+      sub.cancel();
+    }
+    unawaited(_player.dispose());
     super.dispose();
   }
 
   void _togglePlayPause() {
-    if (_controller.value.isPlaying) {
-      _controller.pause();
+    if (_playing) {
+      _player.pause();
       setState(() => _showControls = true);
     } else {
-      _controller.play();
+      _player.play();
       _hideControlsAfterDelay();
     }
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
 
   @override
@@ -315,13 +457,17 @@ class _VideoPageState extends State<_VideoPage> {
 
     return Center(
       child: AspectRatio(
-        aspectRatio: _controller.value.aspectRatio,
+        aspectRatio: _aspectRatio,
         child: GestureDetector(
           onTap: () => setState(() => _showControls = !_showControls),
           child: Stack(
             alignment: Alignment.center,
             children: [
-              VideoPlayer(_controller),
+              Video(
+                controller: _controller,
+                controls: NoVideoControls,
+                fill: Colors.black,
+              ),
               // Play/pause button
               AnimatedOpacity(
                 opacity: _showControls ? 1.0 : 0.0,
@@ -335,9 +481,7 @@ class _VideoPageState extends State<_VideoPage> {
                     ),
                     padding: const EdgeInsets.all(12),
                     child: Icon(
-                      _controller.value.isPlaying
-                          ? Icons.pause
-                          : Icons.play_arrow,
+                      _playing ? Icons.pause : Icons.play_arrow,
                       color: Colors.white,
                       size: 48,
                     ),
@@ -362,28 +506,24 @@ class _VideoPageState extends State<_VideoPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        VideoProgressIndicator(
-                          _controller,
-                          allowScrubbing: true,
-                          colors: const VideoProgressColors(
-                            playedColor: Colors.white,
-                            bufferedColor: Colors.white24,
-                            backgroundColor: Colors.white10,
-                          ),
+                        _MediaProgressBar(
+                          position: _position,
+                          duration: _duration,
+                          onSeek: _player.seek,
                         ),
                         const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              _formatDuration(_controller.value.position),
+                              _formatDuration(_position),
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
                               ),
                             ),
                             Text(
-                              _formatDuration(_controller.value.duration),
+                              _formatDuration(_duration),
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
@@ -414,42 +554,55 @@ class _AudioPage extends StatefulWidget {
 }
 
 class _AudioPageState extends State<_AudioPage> {
-  late final VideoPlayerController _controller;
+  late final Player _player;
+  final List<StreamSubscription<dynamic>> _subs = [];
   bool _initialized = false;
+  bool _playing = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize()
-          .then((_) {
-            if (mounted) {
-              setState(() => _initialized = true);
-              _controller.addListener(_onUpdate);
-              _controller.play();
-            }
-          })
-          .catchError((e) {
-            if (mounted) setState(() => _error = e.toString());
-          });
-  }
-
-  void _onUpdate() {
-    if (mounted) setState(() {});
+    _player = Player();
+    _subs.add(
+      _player.stream.playing.listen((playing) {
+        if (mounted) setState(() => _playing = playing);
+      }),
+    );
+    _subs.add(
+      _player.stream.position.listen((position) {
+        if (mounted) setState(() => _position = position);
+      }),
+    );
+    _subs.add(
+      _player.stream.duration.listen((duration) {
+        if (mounted) setState(() => _duration = duration);
+      }),
+    );
+    _subs.add(
+      _player.stream.error.listen((error) {
+        if (mounted) setState(() => _error = error);
+      }),
+    );
+    _player
+        .open(Media(widget.url))
+        .then((_) {
+          if (mounted) setState(() => _initialized = true);
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = e.toString());
+        });
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onUpdate);
-    _controller.dispose();
+    for (final sub in _subs) {
+      sub.cancel();
+    }
+    unawaited(_player.dispose());
     super.dispose();
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
 
   @override
@@ -480,11 +633,7 @@ class _AudioPageState extends State<_AudioPage> {
             const Icon(Icons.music_note, color: Colors.white38, size: 96),
             const SizedBox(height: 32),
             GestureDetector(
-              onTap: () {
-                _controller.value.isPlaying
-                    ? _controller.pause()
-                    : _controller.play();
-              },
+              onTap: _player.playOrPause,
               child: Container(
                 decoration: const BoxDecoration(
                   color: Colors.white12,
@@ -492,32 +641,28 @@ class _AudioPageState extends State<_AudioPage> {
                 ),
                 padding: const EdgeInsets.all(16),
                 child: Icon(
-                  _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                  _playing ? Icons.pause : Icons.play_arrow,
                   color: Colors.white,
                   size: 48,
                 ),
               ),
             ),
             const SizedBox(height: 24),
-            VideoProgressIndicator(
-              _controller,
-              allowScrubbing: true,
-              colors: const VideoProgressColors(
-                playedColor: Colors.white,
-                bufferedColor: Colors.white24,
-                backgroundColor: Colors.white10,
-              ),
+            _MediaProgressBar(
+              position: _position,
+              duration: _duration,
+              onSeek: _player.seek,
             ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _formatDuration(_controller.value.position),
+                  _formatDuration(_position),
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 Text(
-                  _formatDuration(_controller.value.duration),
+                  _formatDuration(_duration),
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],

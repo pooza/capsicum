@@ -18,9 +18,12 @@ import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/about_dialog.dart';
+import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
+import '../../provider/update_check_provider.dart';
+import '../../service/update_checker.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -298,6 +301,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         }
       }
+    });
+
+    // REST ページ取得上限到達 (フィルタで全件除外) を SnackBar 表示 (#624)。
+    // streamReconnectExhausted と同じく false → true 遷移時に出し、
+    // pull-to-refresh / タブ再選択の build() でクリアされる。
+    ref.listen(listenTarget, (prev, next) {
+      final capHit = next.valueOrNull?.pageCapHit ?? false;
+      final prevCapHit = prev?.valueOrNull?.pageCapHit ?? false;
+      if (capHit && !prevCapHit) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('フィルタで多くの投稿が除外されています。条件を見直すと表示されるかもしれません'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    });
+
+    // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX) の新版検知を
+    // SnackBar で控えめに通知し、Release ページへの導線を出す (#641)。
+    // FutureProvider が AsyncLoading → AsyncData(UpdateInfo) に遷移した
+    // タイミングを拾うので、起動時に 1 回だけ出る。ストアビルド (= dart-
+    // define DIRECT_CHANNEL 未指定) や設定 OFF では provider が `null`
+    // を即返すため何も起きない。
+    ref.listen<AsyncValue<UpdateInfo?>>(updateCheckProvider, (prev, next) {
+      final info = next.valueOrNull;
+      if (info == null) return;
+      if (prev?.valueOrNull?.latestVersion == info.latestVersion) return;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('新しいバージョン v${info.latestVersion} があります'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'リリースページ',
+            onPressed: () => launchUrlSafely(info.releaseUrl),
+          ),
+        ),
+      );
     });
 
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
@@ -729,7 +773,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Resolve list names for ListTab entries.
     final allLists = ref.watch(listsProvider).valueOrNull ?? [];
 
-    return SingleChildScrollView(
+    // マウスドラッグでタブ列を掴んで横スクロールできるよう、設定 ON 時のみ
+    // ScrollBehavior を override (#574)。OFF (default) はトラックパッド
+    // 2 本指スワイプの既存挙動を維持。
+    final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
+    final tabsScroll = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
@@ -759,6 +807,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+    return mouseDragEnabled
+        ? ScrollConfiguration(
+            behavior: const MouseDragScrollBehavior(),
+            child: tabsScroll,
+          )
+        : tabsScroll;
   }
 
   String _tabLabel(
@@ -861,6 +915,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // wide モード (Scaffold.drawer が null、Row で並ぶ inline 配置) でも
     // Scaffold.of は親 Scaffold を見つけられるが、その Scaffold に
     // drawer が無いため `closeDrawer()` 自体が hasDrawer ガードで no-op。
+    // Drawer 内 ListView をマウスドラッグでスクロールできるよう、設定 ON
+    // 時のみ ScrollBehavior を override (#574)。タブ列と同じ取り回し。
+    final mouseDragEnabled = ref.watch(mouseDragScrollProvider);
     return Drawer(
       // 常駐 (wide) モードでは Row 内の左パネルとして並ぶため、Material
       // 既定の内容側 (右端) 角丸を消してフラットな仕切りにする (#541
@@ -870,7 +927,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Builder(
         builder: (innerCtx) {
           void dismiss() => Scaffold.of(innerCtx).closeDrawer();
-          return ListView(
+          final list = ListView(
             padding: EdgeInsets.zero,
             children: [
               Container(
@@ -1303,6 +1360,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ],
           );
+          return mouseDragEnabled
+              ? ScrollConfiguration(
+                  behavior: const MouseDragScrollBehavior(),
+                  child: list,
+                )
+              : list;
         },
       ),
     );

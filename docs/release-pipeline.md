@@ -43,14 +43,12 @@ flowchart TB
 
     actions -->|macOS runner| fastlane
     actions -->|windows runner| win[MSIX build + msstore CLI]
-    actions -->|ubuntu runner| flat[flatpak-builder + Flathub PR]
     actions -->|ubuntu runner| appimg[appimagetool + GitHub Releases]
 
     ios_lane --> appstore[App Store / TestFlight]
     and_lane --> playstore[Google Play]
     mac_lane --> macstore[Mac App Store]
     win --> msstore[Microsoft Store]
-    flat --> flathub[Flathub]
     appimg --> ghrel[GitHub Releases]
 ```
 
@@ -62,7 +60,6 @@ flowchart TB
 | Android | fastlane (`android/fastlane/Fastfile`) | macOS / Linux runner | Play Store internal → production |
 | macOS | fastlane (`macos/fastlane/Fastfile`) | macOS runner | TestFlight → Mac App Store |
 | Windows (Store) | `msstore` CLI + MSIX packaging | Windows runner | Microsoft Store |
-| Linux (Flathub) | `flatpak-builder` + Flathub マニフェスト PR | Ubuntu runner | Flathub |
 | Linux (AppImage) | `appimagetool` / `linuxdeploy` | Ubuntu runner | GitHub Releases |
 
 Snap Store は[採用しない方針](CLAUDE.md#長期構想-デスクトップ対応)。
@@ -105,7 +102,6 @@ GitHub Actions のワークフロー側で `v*.*.*` にマッチさせる、ま�
 | Google Play サービスアカウント JSON | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` |
 | Sentry Auth Token（dSYM / マッピング用） | `SENTRY_AUTH_TOKEN` |
 | Microsoft Store Partner Center credentials | `MS_STORE_CLIENT_ID` / `MS_STORE_CLIENT_SECRET` / `MS_STORE_TENANT_ID` |
-| Flathub PR 用トークン | `FLATHUB_GITHUB_TOKEN` |
 
 macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesign-certs` 等のアクションで Base64 エンコードした p12 を Secret として渡す方式を想定。
 
@@ -144,12 +140,10 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 
 ### Phase 4: Linux 対応（デスクトップ第3段階。Windows は v1.25 で MSIX 自己署名直配を再開、v1.27 で Microsoft Store 公開達成）
 
-- Linux 側 (#424): **v1.24 で実装済み**
+- Linux 側 (#424): **v1.24 で実装済み**、配布形態は AppImage 単独 (Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念。経緯は CLAUDE.md デスクトップ対応節を参照)
   - `.github/workflows/linux-release.yml` — タグ駆動 + workflow_dispatch + path-filter pull_request トリガ
   - Ubuntu 22.04 runner で `linuxdeploy + linuxdeploy-plugin-gtk + appimagetool` 経由で AppImage 生成 → GitHub Releases (draft) 添付
-  - bundle tarball を Releases に同梱 (Flathub 提出 manifest の `type: archive` source 用)
-  - flatpak-lint ジョブ (Ubuntu 24.04) で manifest YAML / AppStream metainfo / desktop entry を毎 PR 検証
-  - Flathub 提出は v1.24 リリース後の手動 PR (詳細は [packaging/linux/flathub/SUBMISSION.md](../packaging/linux/flathub/SUBMISSION.md))。レビュー期間中も AppImage は GitHub Releases から配布できる
+  - assets-lint ジョブ (Ubuntu 24.04) で AppStream metainfo / desktop entry を毎 PR 検証
 - Windows 側 ([#423](https://github.com/pooza/capsicum/issues/423) / [#544](https://github.com/pooza/capsicum/issues/544)): **v1.25 で MSIX 自己署名 + GitHub Releases 直配を再開、v1.27 で Microsoft Store 公開達成 (2026-05-20 初回審査通過、[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p))**
   - Phase 1（Windows scaffold）: 完了 — `flutter create` で `packages/capsicum/windows/` 生成
   - Phase 2（MSIX パッケージング設定）: 完了 — `pubspec.yaml` に `msix_config` 追加、`msix: ^3.16.13` 採用

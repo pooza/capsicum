@@ -709,14 +709,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
 
+  /// [type] を渡すと特定の絵文字でリアクションしたユーザーのみを取得する。
   Future<({List<User> users, String? nextCursor})> getReactedBy(
     String noteId, {
     TimelineQuery? query,
+    String? type,
   }) async {
     final reactions = await client.getNoteReactions(
       noteId,
       untilId: query?.maxId,
       limit: query?.limit,
+      type: type,
     );
     final users = reactions.where((r) => r['user'] is Map<String, dynamic>).map(
       (r) {
@@ -1672,6 +1675,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
           ),
         )
+        .whereType<ChatRoomMember>()
         .map((m) => m.room)
         .whereType<ChatRoom>()
         .toList();
@@ -1688,13 +1692,24 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         .map(
           (r) => misskeyChatRoomFromMap(r, host, adminRoleIds: _adminRoleIds),
         )
+        .whereType<ChatRoom>()
         .toList();
   }
 
   @override
   Future<ChatRoom> getRoom(String roomId) async {
     final data = await client.getChatRoom(roomId);
-    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+    final room = misskeyChatRoomFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    if (room == null) {
+      throw const FormatException(
+        'Misskey chat room response missing required fields',
+      );
+    }
+    return room;
   }
 
   @override
@@ -1706,7 +1721,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       name: name,
       description: description,
     );
-    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+    final room = misskeyChatRoomFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    if (room == null) {
+      throw const FormatException(
+        'Misskey chat room create response missing required fields',
+      );
+    }
+    return room;
   }
 
   @override
@@ -1720,7 +1745,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       name: name,
       description: description,
     );
-    return misskeyChatRoomFromMap(data, host, adminRoleIds: _adminRoleIds);
+    final room = misskeyChatRoomFromMap(
+      data,
+      host,
+      adminRoleIds: _adminRoleIds,
+    );
+    if (room == null) {
+      throw const FormatException(
+        'Misskey chat room update response missing required fields',
+      );
+    }
+    return room;
   }
 
   @override
@@ -1757,6 +1792,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
           ),
         )
+        .whereType<ChatRoomMember>()
         .toList();
   }
 
@@ -1847,6 +1883,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
           ),
         )
+        .whereType<ChatRoomInvitation>()
         .toList();
   }
 
@@ -1867,6 +1904,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
             adminRoleIds: _adminRoleIds,
           ),
         )
+        .whereType<ChatRoomInvitation>()
         .toList();
   }
 

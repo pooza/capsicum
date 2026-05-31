@@ -73,8 +73,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     try {
       final support = widget.adapter as CustomEmojiSupport;
       final emojis = await support.getEmojis();
+      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker UI には
+      // visible_in_picker=true のものだけ並べる (#622)。
+      final pickerEmojis = emojis.where((e) => e.visibleInPicker).toList();
       if (mounted) {
-        setState(() => _customEmojis = emojis);
+        setState(() => _customEmojis = pickerEmojis);
       }
     } catch (_) {
       if (mounted) setState(() => _customEmojis = []);

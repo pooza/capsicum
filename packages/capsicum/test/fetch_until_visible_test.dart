@@ -131,6 +131,11 @@ void main() {
         isTrue,
         reason: 'API はまだデータを持っているので hasMore は true',
       );
+      expect(
+        state.pageCapHit,
+        isTrue,
+        reason: '上限到達 + 全件フィルタ除外なので #624 のフラグが立つ',
+      );
     });
   });
 }

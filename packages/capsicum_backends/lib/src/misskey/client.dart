@@ -520,10 +520,14 @@ class MisskeyClient {
   }
 
   /// POST /api/notes/reactions
+  ///
+  /// [type] を渡すと特定の絵文字でリアクションしたユーザーのみに絞り込む
+  /// （リアクションキーをそのまま渡す。例: `:name@.:` / unicode）。
   Future<List<Map<String, dynamic>>> getNoteReactions(
     String noteId, {
     String? untilId,
     int? limit,
+    String? type,
   }) async {
     final response = await dio.post(
       '/api/notes/reactions',
@@ -531,6 +535,7 @@ class MisskeyClient {
         'noteId': noteId,
         'untilId': ?untilId,
         'limit': ?limit,
+        'type': ?type,
       }),
     );
     return (response.data as List).cast<Map<String, dynamic>>();

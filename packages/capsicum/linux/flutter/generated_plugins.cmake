@@ -3,13 +3,17 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_drop
   desktop_webview_window
   emoji_picker_flutter
   file_selector_linux
   flutter_secure_storage_linux
+  media_kit_libs_linux
+  media_kit_video
   screen_retriever_linux
   sentry_flutter
   url_launcher_linux
+  volume_controller
   window_manager
   window_to_front
 )

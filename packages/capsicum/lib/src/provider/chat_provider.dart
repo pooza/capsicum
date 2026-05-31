@@ -5,8 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/exception_scrub.dart';
+import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
+
+/// chat (DM) streaming の再接続上限到達フラグ (#623)。timeline 側の
+/// [TimelineState.streamReconnectExhausted] と同型で、UI 画面で `ref.listen`
+/// して SnackBar で可視化する。stream provider が autoDispose されるタイミ
+/// ングで自動的に false に戻る (画面遷移 / アカウント切替 / pull-to-refresh
+/// による再購読のいずれでもクリア)。
+final chatStreamReconnectExhaustedProvider = StateProvider.autoDispose<bool>(
+  (ref) => false,
+);
+
+/// 特定 roomId の chatRoom streaming の再接続上限到達フラグ (#623)。
+final chatRoomStreamReconnectExhaustedProvider = StateProvider.autoDispose
+    .family<bool, String>((ref, _) => false);
 
 /// chat ストリーミング (newChatMessage) の broadcast ストリーム。
 /// ChatSupport を持つ adapter のみ実体を返し、null だと購読側はスキップ。
@@ -74,8 +88,8 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         },
       );
     },
-    // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。UI 側で
-    // ストリーミング停止を可視化したくなったらここに繋ぐ (#552)。
+    // 再接続上限 (10 回) に到達した時点で 1 回だけ通知される。Sentry に
+    // 残しつつ、UI 側で SnackBar 表示するためのフラグも立てる (#623)。
     onReconnectExhausted: () {
       Sentry.captureMessage(
         'chat.stream.reconnect_exhausted',
@@ -85,6 +99,7 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
           scope.fingerprint = ['chat.stream.reconnect_exhausted'];
         },
       );
+      ref.read(chatStreamReconnectExhaustedProvider.notifier).state = true;
     },
   );
   ref.onDispose(() => (adapter as ChatSupport).disposeChatStream());
@@ -269,6 +284,12 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
               scope.fingerprint = ['chat.room.stream.reconnect_exhausted'];
             },
           );
+          ref
+                  .read(
+                    chatRoomStreamReconnectExhaustedProvider(roomId).notifier,
+                  )
+                  .state =
+              true;
         },
       );
       ref.onDispose(
@@ -367,7 +388,17 @@ class ChatRoomTimelineNotifier
     // thread list (chat 履歴) にも反映して並び替え / 未読更新を起こす (#632)。
     // ChatThreadListNotifier 単独では chatRoom channel を購読しないため、
     // 開いている room 側から都度流す経路。
-    ref.read(chatThreadListProvider.notifier).applyRoomMessage(message);
+    //
+    // ただし chatThreadListProvider は autoDispose で、thread list を誰も
+    // watch していない (room を開いて即 pop した直後など) と既に dispose
+    // 済み。その状態で `ref.read(...notifier)` すると provider が build() で
+    // resurrect し、getChatHistory + getRoomHistory のネットワーク 2 本を
+    // 意図せず叩いてしまう (#636)。生きているときだけ反映する。閉じている
+    // 間の並び替え / 未読は、次に thread list を開いた際の build() が最新を
+    // 取り直すので取りこぼさない。
+    if (ref.exists(chatThreadListProvider)) {
+      ref.read(chatThreadListProvider.notifier).applyRoomMessage(message);
+    }
     final current = state.valueOrNull;
     if (current == null) return;
     if (current.messages.any((m) => m.id == message.id)) return;
@@ -411,19 +442,13 @@ class ChatRoomTimelineNotifier
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
-        try {
-          await Sentry.captureException(
-            e,
-            stackTrace: st,
-            withScope: (scope) {
-              scope.setTag('chat.room.load_more', 'failed');
-              scope.fingerprint = [
-                'chat.room.load_more',
-                e.runtimeType.toString(),
-              ];
-            },
-          );
-        } catch (_) {}
+        reportOpFailure(
+          tagKey: 'chat.room.load_more',
+          operation: 'failed',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(
             isLoadingMore: false,
@@ -604,18 +629,13 @@ class ChatThreadNotifier
         }
         // 最終失敗: Sentry へ計装し、loadMoreError 番兵で次回スクロール再入
         // を止める。drive_provider と同じ形 (#442 / #430 と同型)。
-        try {
-          await Sentry.captureException(
-            e,
-            stackTrace: st,
-            withScope: (scope) {
-              scope.setTag('chat.load_more', 'failed');
-              scope.fingerprint = ['chat.load_more', e.runtimeType.toString()];
-            },
-          );
-        } catch (_) {
-          // Sentry 失敗で UI 更新を止めない。
-        }
+        reportOpFailure(
+          tagKey: 'chat.load_more',
+          operation: 'failed',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(
             isLoadingMore: false,

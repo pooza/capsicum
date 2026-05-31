@@ -819,14 +819,18 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<List<CustomEmoji>> getEmojis() async {
+    // visible_in_picker フィルタは picker 側に閉じ込めて、ここでは全件返す。
+    // shortcode 警告判定 / プレビュー / sabacan 探索は picker 非表示の絵文字も
+    // 投稿に使えるため、フィルタ済みリストを共有すると #609 警告で false
+    // positive が出ていた (#622)。
     final emojis = await client.getCustomEmojis();
     return emojis
-        .where((e) => e['visible_in_picker'] != false)
         .map(
           (e) => CustomEmoji(
             shortcode: e['shortcode'] as String,
             url: (e['static_url'] as String?) ?? (e['url'] as String?) ?? '',
             category: e['category'] as String?,
+            visibleInPicker: e['visible_in_picker'] != false,
           ),
         )
         .toList();

@@ -1,10 +1,9 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
-import '../../service/exception_scrub.dart';
+import '../util/pages_error.dart';
 import '../widget/page_card.dart';
 
 /// Misskey ページのハブ画面 (#186)。
@@ -71,12 +70,11 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         });
       }
     } catch (e, st) {
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('pages.op', 'load_liked');
-        },
+      reportPagesOpFailure(
+        'load_liked',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
       );
       if (!mounted) return;
       setState(() => _loadingLiked = false);
@@ -109,12 +107,11 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         _hasMoreLiked = older.length >= 20;
       });
     } catch (e, st) {
-      Sentry.captureException(
-        scrubException(e),
-        stackTrace: st,
-        withScope: (scope) {
-          scope.setTag('pages.op', 'load_more_liked');
-        },
+      reportPagesOpFailure(
+        'load_more_liked',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
       );
       if (!mounted || gen != _loadGeneration) return;
       setState(() => _loadingMoreLiked = false);

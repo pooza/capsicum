@@ -247,7 +247,7 @@ GoRouter による宣言的ルーティング。認証状態に応じたリダ�
 
 ## プッシュ通知シーケンス
 
-リレーサーバーを介した Web Push → APNs / FCM 変換で実現する。背景・インフラ・課金方針等は [push-relay-plan.md](push-relay-plan.md) を参照。
+リレーサーバーを介した Web Push → APNs / FCM 変換で実現する。リレーの実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本。初期設計判断の経緯（Ruby / Linode / Linode Nanode / flauros 選定根拠等）は歴史記録として [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。
 
 ### 登場コンポーネント
 
