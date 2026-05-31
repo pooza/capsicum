@@ -2080,7 +2080,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 18, maxWidth: 54),
+                  constraints: const BoxConstraints(
+                    maxHeight: 18,
+                    maxWidth: 54,
+                  ),
                   child: Image.network(
                     widget.emojiUrl!,
                     height: 18,

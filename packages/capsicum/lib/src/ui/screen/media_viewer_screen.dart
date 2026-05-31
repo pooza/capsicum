@@ -300,9 +300,7 @@ class _MediaProgressBar extends StatelessWidget {
     final maxMs = duration.inMilliseconds > 0
         ? duration.inMilliseconds.toDouble()
         : 1.0;
-    final value = position.inMilliseconds
-        .clamp(0, maxMs.toInt())
-        .toDouble();
+    final value = position.inMilliseconds.clamp(0, maxMs.toInt()).toDouble();
     return SliderTheme(
       data: const SliderThemeData(
         trackHeight: 2,

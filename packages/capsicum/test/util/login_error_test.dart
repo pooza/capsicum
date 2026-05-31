@@ -27,7 +27,10 @@ void main() {
 
     test('Keychain と無関係な PlatformException → unknown', () {
       final r = classifyLoginFailure(
-        PlatformException(code: 'no_activity', message: 'no foreground activity'),
+        PlatformException(
+          code: 'no_activity',
+          message: 'no foreground activity',
+        ),
       );
       expect(r.kind, LoginFailureKind.unknown);
       expect(r.message, 'ログインに失敗しました');
