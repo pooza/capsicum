@@ -1,6 +1,6 @@
 # Windows インストール手順 (MSIX 自己署名直配)
 
-> ⚠️ 配布対象は「証明書 import を厭わない上級ユーザー」です。Microsoft Store 公開は法人化対応待ちで、当面 GitHub Releases 経由の自己署名配布のみとなります。
+> ℹ️ 一般のユーザーは [Microsoft Store](https://apps.microsoft.com/detail/9np2gr7m2w6p) からの導入を推奨します（証明書 import 不要、v1.27 で公開）。本手順は Store publish 完了前の先行検証や、最新ビルドをいち早く試したい上級ユーザー向けの GitHub Releases 経由・自己署名 MSIX 直配です。
 
 ## インストール手順
 
@@ -35,6 +35,6 @@
 - Windows 10 (1809+) / Windows 11 x64
 - 管理者権限 (証明書 import + MSIX install のため、初回のみ)
 
-## 中期的な改善予定
+## コード署名証明書について
 
-[#534](https://github.com/pooza/capsicum/issues/534) (v1.26 想定) でビーショック名義の OV コード署名証明書取得を予定しています。OV 署名 MSIX への切り替え後は SmartScreen を通過するため、上記 `Import-Certificate` ステップが不要になります。
+OV コード署名証明書の取得（[#534](https://github.com/pooza/capsicum/issues/534)）は、Microsoft Store 公開達成（v1.27、2026-05-20 審査通過）により当面不要となっています。Store 経由のインストールでは Microsoft 側で再署名されるため SmartScreen を通過し、証明書 import も発生しません。本ページの自己署名 MSIX 直配は、その Store 配信を補完する上級者向けルートです。
