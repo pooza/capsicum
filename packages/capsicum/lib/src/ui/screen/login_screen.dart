@@ -313,7 +313,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
           Sentry.captureException(
-            completeResult.error,
+            scrubException(completeResult.error),
             stackTrace: completeResult.stackTrace,
           );
           if (mounted) setState(() => _error = 'ログインに失敗しました');
@@ -321,7 +321,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
         Sentry.captureException(
-          startResult.error,
+          scrubException(startResult.error),
           stackTrace: startResult.stackTrace,
         );
         final errorMsg = startResult.error;
@@ -418,7 +418,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // we actually want to investigate.
         if (fallbackAttempted && !fallbackSucceeded) {
           Sentry.captureException(
-            e,
+            scrubException(e),
             stackTrace: st,
             withScope: (scope) {
               scope.setTag('login.stage', 'fallback_failed_after_cancel');
@@ -437,7 +437,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final failure = classifyLoginFailure(e);
         debugPrint('Login error (${failure.kind.name}): $e');
         Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           withScope: (scope) =>
               scope.setTag('login.failure_kind', failure.kind.name),
