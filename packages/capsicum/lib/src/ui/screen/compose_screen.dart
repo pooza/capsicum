@@ -861,11 +861,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       final dir = await getTemporaryDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch;
+      // トリミング結果は常に PNG で返るため、拡張子・MIME を PNG に揃える。
+      // 元が WebP/HEIC 等でもサーバー (モロヘイヤ) 側で再変換されるので問題ない。
       final baseName = original.name.isNotEmpty ? original.name : 'image';
-      final path = '${dir.path}/crop_${stamp}_$baseName';
+      final dotIndex = baseName.lastIndexOf('.');
+      final stem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+      final pngName = '$stem.png';
+      final path = '${dir.path}/crop_${stamp}_$pngName';
       final out = File(path);
+      // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
+      // 親ディレクトリを作らないため明示的に作成する。
+      await out.create(recursive: true);
       await out.writeAsBytes(cropped, flush: true);
-      croppedFile = XFile(path, mimeType: original.mimeType, name: baseName);
+      croppedFile = XFile(path, mimeType: 'image/png', name: pngName);
     } catch (e, st) {
       await Sentry.captureException(e, stackTrace: st);
       if (mounted) {
