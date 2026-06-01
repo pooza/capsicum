@@ -798,16 +798,12 @@ final updateCheckEnabledProvider =
 class UpdateCheckEnabledNotifier extends Notifier<bool> {
   @override
   bool build() {
-    _load();
-    return true;
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_updateCheckEnabledKey);
-    if (saved != null) {
-      state = saved;
-    }
+    // pre-warm 済み SharedPreferences から同期で読む (#652)。非同期ロードで
+    // 初期値 true を返すと、updateCheckProvider がその隙に GitHub 更新
+    // チェックを走らせ、オプトアウト済みユーザーでも通信 + 更新スナック
+    // バーが出てしまう。#579 / TabConfigNotifier と同じく同期化して race を
+    // 構造的に消す。
+    return sharedPrefsOrThrow.getBool(_updateCheckEnabledKey) ?? true;
   }
 
   Future<void> setEnabled(bool value) async {
