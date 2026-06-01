@@ -760,6 +760,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (mime.startsWith('audio/')) return AttachmentType.audio;
     }
     if (_isVideo(mime, file.path)) return AttachmentType.video;
+    // MIME 不明の path ベースドロップ (#653) は拡張子で audio を判定する。
+    // ここで拾い損ねると .mp3 / .flac 等が下の image 扱いに落ち、
+    // image_size_limit と比較され、サムネも Image.file で音声を画像描画
+    // しようとする。
+    if (_isAudio(mime, file.path)) return AttachmentType.audio;
     // pickMultipleMedia の戻り値は image / video のいずれかなので、ここに
     // 落ちるのは MIME 不明の画像が大半。image を仮定して image_size_limit と
     // 比較する。
@@ -936,6 +941,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return false;
   }
 
+  bool _isAudio(String? mimeType, [String? path]) {
+    if (mimeType != null && mimeType.startsWith('audio/')) return true;
+    if (path != null) {
+      final ext = path.toLowerCase().split('.').last;
+      return _audioExtensions.contains(ext);
+    }
+    return false;
+  }
+
   Widget _buildThumbnail(_MediaEntry entry) {
     const size = 100.0;
     if (entry.isDrive) {
@@ -978,13 +992,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     // Local file
     final isVideo = _isVideo(entry.file!.mimeType, entry.file!.path);
-    if (isVideo) {
+    // MIME 不明で audio がここに落ちると Image.file で音声を画像描画して
+    // しまう (#653)。video と同じくアイコン表示にフォールバックする。
+    final isAudio =
+        !isVideo && _isAudio(entry.file!.mimeType, entry.file!.path);
+    if (isVideo || isAudio) {
       return Container(
         width: size,
         height: size,
         color: Colors.black87,
-        child: const Center(
-          child: Icon(Icons.videocam, color: Colors.white, size: 36),
+        child: Center(
+          child: Icon(
+            isVideo ? Icons.videocam : Icons.audio_file,
+            color: Colors.white,
+            size: 36,
+          ),
         ),
       );
     }
