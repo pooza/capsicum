@@ -15,6 +15,19 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/media_filename.dart';
 
+/// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
+/// プロキシ token を含みうる）を落として host + path のみに切り詰める。
+/// attachment.url は通例公開 CDN URL だが、token 付き URL を返す実装でも
+/// 機密がそのまま Sentry に転載されないようにする (#649 followup)。
+String _scrubMediaUrl(String url) {
+  try {
+    final uri = Uri.parse(url);
+    return '${uri.host}${uri.path}';
+  } catch (_) {
+    return '(unparsable)';
+  }
+}
+
 class MediaViewerScreen extends ConsumerStatefulWidget {
   final List<Attachment> attachments;
   final int initialIndex;
@@ -397,7 +410,7 @@ class _VideoPageState extends State<_VideoPage> {
             category: 'media',
             message: 'video stream error',
             level: SentryLevel.warning,
-            data: {'error': error, 'url': widget.url},
+            data: {'error': error, 'url': _scrubMediaUrl(widget.url)},
           ),
         );
       }),
@@ -605,7 +618,7 @@ class _AudioPageState extends State<_AudioPage> {
             category: 'media',
             message: 'audio stream error',
             level: SentryLevel.warning,
-            data: {'error': error, 'url': widget.url},
+            data: {'error': error, 'url': _scrubMediaUrl(widget.url)},
           ),
         );
       }),
