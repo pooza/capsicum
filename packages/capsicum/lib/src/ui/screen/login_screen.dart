@@ -97,11 +97,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// 経由のため、ここに渡すのは scheme として valid な文字列でなければ
   /// ならない。
   ///
-  /// macOS は意図的に「ASWebAuthenticationSession で `capsicum://` を待つ
-  /// が、Mastodon 側は `_redirectUri` (localhost) でリダイレクトするため
-  /// 必ず一致せず CANCELED → fallback (`_tryManualCodeFallback` の oob
-  /// 経路) に流す」設計を採るため、redirect_uri (localhost) と
-  /// callbackUrlScheme (custom scheme) を別物として扱う (#642)。
+  /// #654 で macOS は [_authenticateViaLocalhostServer]（システムブラウザ +
+  /// 自前 localhost HTTP サーバ）に切り替えたため、このゲッターは
+  /// `!Platform.isMacOS` 分岐でのみ消費される。Linux / Windows の localhost
+  /// callback では flutter_web_auth_2 の server impl が完全な
+  /// `http://localhost:{port}/{path}` URL を期待するため、その URL を返す。
+  /// （macOS で本ゲッターが評価された場合のフォールバック値として custom
+  /// scheme を残すが、現状 macOS では参照されない。）
   String get _authCallbackUrlScheme {
     if (_useLocalhostCallback && !Platform.isMacOS) {
       return AppConstants.localhostOAuthCallbackUrl;
