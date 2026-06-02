@@ -17,6 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AccountStorage {
   static const _legacyAccountListKey = 'capsicum_account_keys';
   static const _accountListKey = 'capsicum_account_keys_v2';
+  static const _accessibilityMigrationFlagKey =
+      'account_storage_accessibility_migrated_v1';
 
   final FlutterSecureStorage _storage;
 
@@ -26,7 +28,24 @@ class AccountStorage {
   static final Set<String> _reportedErrors = {};
 
   AccountStorage([FlutterSecureStorage? storage])
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // macOS / iOS の Keychain アクセスを「再起動後の最初のアンロック
+            // 以降ならロック中でも read/write 可」にする (#643)。既定の
+            // unlocked だと launch-at-login や画面ロック中の起動でアカウント
+            // secret 読み出しが -25308 errSecInteractionNotAllowed で弾かれ、
+            // catch-all で「通信に失敗しました」と誤表示される。PushKeyStore
+            // (#392) と同じ accessibility。NSE 共有は不要なので groupId は
+            // 付けない（Keychain partition を変えると既存 item の読み出しに
+            // 影響しうるため）。
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+            mOptions: MacOsOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+          );
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -174,6 +193,42 @@ class AccountStorage {
     // ここまで来たら新 index への書き込みが完了している。legacy を削除。
     await _storage.delete(key: _legacyAccountListKey);
     return list;
+  }
+
+  /// v1.30 以前に書き込んだアカウント secret / client credentials は旧 Keychain
+  /// accessibility (`kSecAttrAccessibleWhenUnlocked`) のまま。
+  /// flutter_secure_storage は既存 item の attribute を書き換えないため、起動時に
+  /// 一度だけ read → delete → re-write して新 accessibility (first_unlock) に
+  /// 焼き直す (#643)。[PushKeyStore.migrateAccessibilityIfNeeded] (#392) と同手順。
+  ///
+  /// Android (EncryptedSharedPreferences) は accessibility 概念がないため実質
+  /// no-op だが、フラグを立てるためには走らせる。migration 自体の失敗
+  /// （ロック中の -25308 等）では flag を立てず、次回起動で再試行する。
+  Future<void> migrateAccessibilityIfNeeded() async {
+    final prefs = await _prefs();
+    if (prefs.getBool(_accessibilityMigrationFlagKey) ?? false) return;
+    try {
+      final all = await _storage.readAll();
+      for (final entry in all.entries) {
+        // AccountStorage 所有の key のみ焼き直す（同じ partition を共有しうる
+        // 他用途の item には触れない）。
+        final isOwned =
+            entry.key.startsWith('secret_') ||
+            entry.key.startsWith('client_creds_') ||
+            entry.key == _legacyAccountListKey;
+        if (!isOwned) continue;
+        await _storage.delete(key: entry.key);
+        await _storage.write(key: entry.key, value: entry.value);
+      }
+      await prefs.setBool(_accessibilityMigrationFlagKey, true);
+    } on PlatformException catch (e, st) {
+      // ロック中 (-25308) 等で readAll / write が失敗しても起動は止めない。
+      // flag を立てないので次回起動で再試行される。
+      debugPrint(
+        'capsicum: account storage accessibility migration failed: $e',
+      );
+      _reportOnce('accessibility_migration', e, st);
+    }
   }
 
   /// Move an account key to the front of the list (MRU tracking).
