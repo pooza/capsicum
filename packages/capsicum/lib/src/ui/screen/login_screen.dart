@@ -238,19 +238,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         throw StateError('failed to launch system browser for OAuth');
       }
 
+      // redirect_uri のパス (例: /oauth/callback)。コールバック判定はクエリ名
+      // ではなくこのパスで行う。Mastodon は `?code=` / `?error=`、Misskey
+      // MiAuth は `?session=` を付けて戻るため、`code`/`error` 限定だと Misskey
+      // の session を取り逃して 5 分ハングしていた (内部ベータ 1.31.0+88 で実証)。
+      final callbackPath = Uri.parse(
+        AppConstants.localhostOAuthCallbackUrl,
+      ).path;
       final completer = Completer<Uri>();
       final subscription = server.listen((request) async {
         final uri = request.uri;
-        final hasResult =
-            uri.queryParameters.containsKey('code') ||
-            uri.queryParameters.containsKey('error');
-        // 認可リダイレクト以外 (favicon 等) のノイズ要求は 404 で受け流す。
+        // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトとみなす。
+        // favicon 等パスの異なるノイズ要求は 404 で受け流す。
+        final isCallback =
+            uri.path == callbackPath && uri.queryParameters.isNotEmpty;
         request.response
-          ..statusCode = hasResult ? HttpStatus.ok : HttpStatus.notFound
+          ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
           ..headers.contentType = ContentType.html
-          ..write(hasResult ? _oauthCallbackHtml : '<!doctype html>');
+          ..write(isCallback ? _oauthCallbackHtml : '<!doctype html>');
         await request.response.close();
-        if (hasResult && !completer.isCompleted) {
+        if (isCallback && !completer.isCompleted) {
           completer.complete(uri);
         }
       });
@@ -386,6 +393,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _logLoginStep('authenticate.end');
 
         final callbackUri = Uri.parse(resultUrl);
+
+        // 認可サーバが `code` ではなく `?error=` でリダイレクトしてきたケース
+        // (内部ベータ 1.31.0+88 で Mastodon が観測)。キャッシュ済みクライアント
+        // 資格情報が古いスコープ等で登録されていると、再ログイン時に
+        // `invalid_scope` 等で即リダイレクトされ、従来は generic な
+        // 「No code in callback」で失敗していた。cache 由来かつ初回に限り、
+        // cache を破棄して POST /api/v1/apps からやり直す (#620 と同型の自己回復)。
+        // Misskey MiAuth は `?session=` で戻り error も code も無いため対象外。
+        if (callbackUri.queryParameters.containsKey('error') &&
+            !callbackUri.queryParameters.containsKey('code')) {
+          final oauthError = callbackUri.queryParameters['error'];
+          _logLoginStep(
+            'authenticate.error_redirect',
+            data: {'error': oauthError, 'usedCachedCreds': usedCachedCreds},
+          );
+          if (usedCachedCreds && _isMastodon && !isRetry) {
+            _logLoginStep('login.error_retry.begin');
+            try {
+              final storage = ref.read(accountStorageProvider);
+              await storage.deleteHostClientCredentials(widget.host);
+            } catch (clearErr) {
+              _logLoginStep(
+                'login.error_retry.clear_failed',
+                data: {'type': clearErr.runtimeType.toString()},
+              );
+            }
+            await _login(isRetry: true);
+            _logLoginStep(
+              'login.error_retry.end',
+              data: {'completed': _loginCompleted},
+            );
+            return;
+          }
+          if (mounted) {
+            setState(
+              () => _error =
+                  'サーバーが認証を拒否しました（$oauthError）。'
+                  'しばらく時間をおいて再度お試しください。',
+            );
+          }
+          return;
+        }
+
         _logLoginStep(
           'completeLogin.begin',
           data: {
