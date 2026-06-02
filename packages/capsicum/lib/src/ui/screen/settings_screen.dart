@@ -44,6 +44,13 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/display'),
           ),
+          ListTile(
+            leading: const Icon(Icons.touch_app),
+            title: const Text('タッチ操作'),
+            subtitle: const Text('投稿のボタンをタイル上に表示する'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/touch'),
+          ),
           // macOS / Linux / Windows は push 通知を本配線していない
           // (#467 / #471 / #423)。本配線が入るまで設定エントリも隠す。
           if (PushRegistrationService.isPushBackendWired)
