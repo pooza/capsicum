@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../util/media_filename.dart';
@@ -383,9 +384,22 @@ class _VideoPageState extends State<_VideoPage> {
     );
     _subs.add(_player.stream.width.listen((_) => _updateAspectRatio()));
     _subs.add(_player.stream.height.listen((_) => _updateAspectRatio()));
+    // 再生中ストリームの error では画面エラー固定にしない (#649)。mpv は再生中に
+    // transient な非致命 error を流すことがあり (特に Linux ソフトデコード経路で
+    // ログ警告が error として上がる)、これで `_error` を立てると画面全体が
+    // 「動画を読み込めません」に固定され、クリア経路がないまま復帰しなくなる。
+    // 致命的な失敗は下の open().catchError で拾えるため、ここでは Sentry の
+    // breadcrumb を残すに留め、回帰調査の手がかりだけ確保する。
     _subs.add(
       _player.stream.error.listen((error) {
-        if (mounted) setState(() => _error = error);
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'media',
+            message: 'video stream error',
+            level: SentryLevel.warning,
+            data: {'error': error, 'url': widget.url},
+          ),
+        );
       }),
     );
     _player
@@ -581,9 +595,19 @@ class _AudioPageState extends State<_AudioPage> {
         if (mounted) setState(() => _duration = duration);
       }),
     );
+    // 再生中ストリームの error では画面エラー固定にしない (#649)。動画側と同じく
+    // transient error で「音声を読み込めません」に固定されるのを防ぐ。致命的な
+    // 失敗は open().catchError で拾い、ここは breadcrumb のみ。
     _subs.add(
       _player.stream.error.listen((error) {
-        if (mounted) setState(() => _error = error);
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'media',
+            message: 'audio stream error',
+            level: SentryLevel.warning,
+            data: {'error': error, 'url': widget.url},
+          ),
+        );
       }),
     );
     _player
