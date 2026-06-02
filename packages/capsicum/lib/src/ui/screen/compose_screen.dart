@@ -813,12 +813,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     setState(() => _attachments.removeAt(index));
   }
 
-  /// 画像トリミングを提供するのはデスクトップ (macOS / Windows / Linux) のみ。
-  /// モバイルのトリミング (#568) は image_picker ベースの別経路で対応する想定の
-  /// ため、ここでは導線を出さない (#577)。
-  static final bool _supportsCrop =
-      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-
   /// トリミング対象にできるのはローカルの静止画のみ。動画 / 音声 / ドライブ
   /// ファイルは対象外。GIF はアニメーションが失われるため除外する。
   bool _isCroppableImage(_MediaEntry entry) {
@@ -1930,8 +1924,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                                     ),
                                   ),
                                 ),
-                              // Crop button (デスクトップのローカル静止画のみ)
-                              if (_supportsCrop && _isCroppableImage(entry))
+                              // Crop button (ローカル静止画のみ)。crop_your_image
+                              // は純 Flutter 実装で全プラットフォーム動作する
+                              // ため、デスクトップ (#577) に加えモバイル
+                              // (iOS / Android) でも導線を出す (#647)。
+                              if (_isCroppableImage(entry))
                                 Positioned(
                                   top: 4,
                                   left: 4,
