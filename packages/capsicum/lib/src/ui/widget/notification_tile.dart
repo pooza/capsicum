@@ -153,7 +153,155 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  if (notification.post != null)
+                    ..._buildTouchActions(
+                      context,
+                      notification.post!.reblog ?? notification.post!,
+                    ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 通知タイル上に直接出すタッチ操作ボタン行 (#565)。
+  ///
+  /// post_tile と同じく [postTouchActionsProvider] で有効化され、かつ
+  /// adapter が対応しているアクションのみ [IconButton] として並べる。長押し
+  /// メニュー / 「…」ボタンは設定に関係なく常に併存する。
+  List<Widget> _buildTouchActions(BuildContext context, Post targetPost) {
+    final enabled = ref.watch(postTouchActionsProvider);
+    if (enabled.isEmpty) return const [];
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return const [];
+
+    final messenger = ScaffoldMessenger.of(context);
+    final buttons = <Widget>[];
+
+    void add(IconData icon, String tooltip, VoidCallback onPressed) {
+      buttons.add(
+        IconButton(
+          icon: Icon(icon, size: 20),
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(),
+          color: Theme.of(context).textTheme.bodySmall?.color,
+          onPressed: onPressed,
+        ),
+      );
+    }
+
+    if (enabled.contains(PostTouchAction.reply)) {
+      add(Icons.reply, 'リプライ', () {
+        context.push('/compose', extra: {'replyTo': targetPost});
+      });
+    }
+    if (enabled.contains(PostTouchAction.favorite) &&
+        adapter is FavoriteSupport) {
+      // 状態に応じて追加 / 解除をトグルする (#565)。
+      if (targetPost.favourited) {
+        add(Icons.star, 'お気に入りを解除', () {
+          _runAction(
+            messenger,
+            () => (adapter as FavoriteSupport).unfavoritePost(targetPost.id),
+            'お気に入りを解除しました',
+          );
+        });
+      } else {
+        add(Icons.star_outline, 'お気に入り', () {
+          _runAction(
+            messenger,
+            () => (adapter as FavoriteSupport).favoritePost(targetPost.id),
+            'お気に入りに追加しました',
+          );
+        });
+      }
+    }
+    if (enabled.contains(PostTouchAction.reaction) &&
+        adapter is ReactionSupport) {
+      add(Icons.add_reaction_outlined, 'リアクション', () {
+        _showEmojiPicker(context);
+      });
+    }
+    if (enabled.contains(PostTouchAction.boost) &&
+        (targetPost.scope == PostScope.public ||
+            targetPost.scope == PostScope.unlisted)) {
+      final boostLabel = ref.read(reblogLabelProvider);
+      add(Icons.repeat, boostLabel, () {
+        _runTouchBoost(context, targetPost, adapter, boostLabel);
+      });
+    }
+    if (enabled.contains(PostTouchAction.quote) && targetPost.quotable) {
+      add(Icons.format_quote, '引用', () {
+        context.push('/compose', extra: {'quoteTo': targetPost});
+      });
+    }
+
+    if (buttons.isEmpty) return const [];
+
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
+      ),
+    ];
+  }
+
+  /// タッチ操作からのブースト / リノート (#565)。公開範囲を選べる場合は
+  /// 長押しメニューと同じ chip シートを開いてから実行、それ以外は即時実行。
+  void _runTouchBoost(
+    BuildContext context,
+    Post targetPost,
+    BackendAdapter adapter,
+    String boostLabel,
+  ) {
+    final messenger = ScaffoldMessenger.of(context);
+    final scopes = boostableScopes(targetPost.scope);
+    if (scopes.isEmpty) {
+      _runAction(
+        messenger,
+        () => adapter.repeatPost(targetPost.id),
+        '$boostLabelしました',
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: Text('$boostLabelの公開範囲'),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Wrap(
+                spacing: 8,
+                children: scopes.map((scope) {
+                  final display = postScopeDisplay(scope, adapter);
+                  return ActionChip(
+                    avatar: Icon(display.icon, size: 16),
+                    label: Text(display.label),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _runAction(
+                        messenger,
+                        () => adapter.repeatPost(
+                          targetPost.id,
+                          visibility: scope,
+                        ),
+                        '$boostLabelしました（${display.label}）',
+                      );
+                    },
+                  );
+                }).toList(),
               ),
             ),
           ],

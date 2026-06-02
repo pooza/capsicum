@@ -40,6 +40,7 @@ const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
 const _updateCheckEnabledKey = 'update_check_enabled';
+const _postTouchActionsKey = 'post_touch_actions';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -798,16 +799,12 @@ final updateCheckEnabledProvider =
 class UpdateCheckEnabledNotifier extends Notifier<bool> {
   @override
   bool build() {
-    _load();
-    return true;
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_updateCheckEnabledKey);
-    if (saved != null) {
-      state = saved;
-    }
+    // pre-warm 済み SharedPreferences から同期で読む (#652)。非同期ロードで
+    // 初期値 true を返すと、updateCheckProvider がその隙に GitHub 更新
+    // チェックを走らせ、オプトアウト済みユーザーでも通信 + 更新スナック
+    // バーが出てしまう。#579 / TabConfigNotifier と同じく同期化して race を
+    // 構造的に消す。
+    return sharedPrefsOrThrow.getBool(_updateCheckEnabledKey) ?? true;
   }
 
   Future<void> setEnabled(bool value) async {
@@ -1137,6 +1134,84 @@ class AbsoluteTimeNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_absoluteTimeKey, state);
+  }
+}
+
+/// タイムライン上の投稿タイルに直接表示する「タッチ操作」ボタンの種別 (#565)。
+///
+/// 既定では誤タッチ防止のため全アクションが長押しメニュー（および右上の
+/// 「…」ボタン）からのみ操作可能だが、端末ごと・アクション別にオプトインで
+/// タイル上の小ボタンを露出できる。Mastodon / Misskey の機能差は描画側で
+/// adapter の mixin (FavoriteSupport / ReactionSupport) を見て出し分ける。
+///
+/// ブックマーク（Misskey では「お気に入り」= i/favorites）はタッチ操作に
+/// 含めない: ブックマーク操作はモロヘイヤが PieFed ブックマークという重い
+/// 処理にフックするため、デスクトップでも 1 タップで気軽に走らせたくない
+/// （#565 背景の「指が触れて重い処理が走る事故」そのもの）。加えて Misskey は
+/// お気に入り状態をタイムラインに返さず二重付与で 400 になる事情もある。
+/// ブックマークは長押しメニューからの意図的操作に限定する。
+enum PostTouchAction {
+  /// リプライ。
+  reply,
+
+  /// お気に入り (Mastodon の FavoriteSupport)。
+  favorite,
+
+  /// リアクション (Misskey の ReactionSupport)。
+  reaction,
+
+  /// ブースト / リノート。
+  boost,
+
+  /// 引用。
+  quote,
+}
+
+/// 投稿タイルでタッチ操作を有効化するアクションの集合 (#565)。
+///
+/// **端末ごと** (SharedPreferences) に保持し、既定は全アクション OFF
+/// （これまでの「誤タッチ防止のため塞ぐ」仕様を尊重）。長押しメニュー /
+/// 「…」ボタンは有効・無効に関係なく常に併存する。
+final postTouchActionsProvider =
+    NotifierProvider<PostTouchActionsNotifier, Set<PostTouchAction>>(
+      PostTouchActionsNotifier.new,
+    );
+
+class PostTouchActionsNotifier extends Notifier<Set<PostTouchAction>> {
+  @override
+  Set<PostTouchAction> build() {
+    // pre-warm 済み SharedPreferences から同期で読む。非同期ロードにすると
+    // 初回描画でボタンが空 → 直後に出現とちらつくため、updateCheckEnabled /
+    // TabConfig と同じく同期化する。
+    final saved = sharedPrefsOrThrow.getStringList(_postTouchActionsKey);
+    if (saved == null) {
+      return const <PostTouchAction>{};
+    }
+    final byName = {for (final a in PostTouchAction.values) a.name: a};
+    return saved
+        .map((name) => byName[name])
+        .whereType<PostTouchAction>()
+        .toSet();
+  }
+
+  bool isEnabled(PostTouchAction action) => state.contains(action);
+
+  Future<void> setEnabled(PostTouchAction action, bool enabled) async {
+    if (state.contains(action) == enabled) {
+      return;
+    }
+    final next = {...state};
+    if (enabled) {
+      next.add(action);
+    } else {
+      next.remove(action);
+    }
+    state = next;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _postTouchActionsKey,
+      state.map((a) => a.name).toList(),
+    );
   }
 }
 

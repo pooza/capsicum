@@ -17,6 +17,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AccountStorage {
   static const _legacyAccountListKey = 'capsicum_account_keys';
   static const _accountListKey = 'capsicum_account_keys_v2';
+  // _v1 は #643 の初版で導入したが、当時の migration / write が旧 item を
+  // accessibility 取りこぼしで救えておらず（後述）空振りでフラグだけ立てて
+  // いた。修正版を全員に再実行させるため _v2 に上げる (内部ベータ
+  // 1.31.0+90 で -25299 を実証)。
+  static const _accessibilityMigrationFlagKey =
+      'account_storage_accessibility_migrated_v2';
+
+  /// #643 以前は `const FlutterSecureStorage()`（既定 accessibility =
+  /// `kSecAttrAccessibleWhenUnlocked` = [KeychainAccessibility.unlocked]）で
+  /// 書き込んでいた。flutter_secure_storage の macOS / iOS 実装は delete /
+  /// readAll / containsKey のクエリに `kSecAttrAccessible` を含めるため、
+  /// 現行 [_storage]（first_unlock）からは旧 accessibility の item が
+  /// **見えない / 消せない**。旧 item を列挙・削除するときはこの options を
+  /// 明示する。
+  static const _legacyIosOptions = IOSOptions(
+    accessibility: KeychainAccessibility.unlocked,
+  );
+  static const _legacyMacOptions = MacOsOptions(
+    accessibility: KeychainAccessibility.unlocked,
+  );
 
   final FlutterSecureStorage _storage;
 
@@ -26,7 +46,24 @@ class AccountStorage {
   static final Set<String> _reportedErrors = {};
 
   AccountStorage([FlutterSecureStorage? storage])
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // macOS / iOS の Keychain アクセスを「再起動後の最初のアンロック
+            // 以降ならロック中でも read/write 可」にする (#643)。既定の
+            // unlocked だと launch-at-login や画面ロック中の起動でアカウント
+            // secret 読み出しが -25308 errSecInteractionNotAllowed で弾かれ、
+            // catch-all で「通信に失敗しました」と誤表示される。PushKeyStore
+            // (#392) と同じ accessibility。NSE 共有は不要なので groupId は
+            // 付けない（Keychain partition を変えると既存 item の読み出しに
+            // 影響しうるため）。
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+            mOptions: MacOsOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+          );
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -35,7 +72,10 @@ class AccountStorage {
     String accountKey,
     Map<String, String> secrets,
   ) async {
-    await _storage.write(key: 'secret_$accountKey', value: jsonEncode(secrets));
+    await _writeWithDuplicateRecovery(
+      'secret_$accountKey',
+      jsonEncode(secrets),
+    );
     final list = await getAccountKeys();
     if (!list.contains(accountKey)) {
       list.add(accountKey);
@@ -176,6 +216,70 @@ class AccountStorage {
     return list;
   }
 
+  /// v1.30 以前に書き込んだアカウント secret / client credentials は旧 Keychain
+  /// accessibility (`kSecAttrAccessibleWhenUnlocked`) のまま。
+  /// flutter_secure_storage は既存 item の attribute を書き換えないため、起動時に
+  /// 一度だけ read → delete → re-write して新 accessibility (first_unlock) に
+  /// 焼き直す (#643)。[PushKeyStore.migrateAccessibilityIfNeeded] (#392) と同手順。
+  ///
+  /// Android (EncryptedSharedPreferences) は accessibility 概念がないため実質
+  /// no-op だが、フラグを立てるためには走らせる。migration 自体の失敗
+  /// （ロック中の -25308 等）では flag を立てず、次回起動で再試行する。
+  Future<void> migrateAccessibilityIfNeeded() async {
+    final prefs = await _prefs();
+    if (prefs.getBool(_accessibilityMigrationFlagKey) ?? false) return;
+    try {
+      // 旧 item は default accessibility (unlocked) で書かれており、現行
+      // first_unlock の readAll はクエリに kSecAttrAccessible を含むため
+      // それらを返さない。旧 accessibility を明示して legacy item を列挙する。
+      final all = await _storage.readAll(
+        iOptions: _legacyIosOptions,
+        mOptions: _legacyMacOptions,
+      );
+      for (final entry in all.entries) {
+        // AccountStorage 所有の key のみ焼き直す（同じ partition を共有しうる
+        // 他用途の item には触れない）。
+        final isOwned =
+            entry.key.startsWith('secret_') ||
+            entry.key.startsWith('client_creds_') ||
+            entry.key == _legacyAccountListKey;
+        if (!isOwned) continue;
+        // 旧 accessibility を明示して delete（first_unlock の delete では
+        // 旧 item にマッチせず no-op になる）→ first_unlock で書き直す。
+        await _storage.delete(
+          key: entry.key,
+          iOptions: _legacyIosOptions,
+          mOptions: _legacyMacOptions,
+        );
+        try {
+          await _storage.write(key: entry.key, value: entry.value);
+        } on PlatformException {
+          // delete 成功直後に write が transient error（ロック中 -25308 等）
+          // で落ちると、その item は既に Keychain から消え、in-memory の値も
+          // 再起動で失われ、次回 readAll にも現れず secret / client_creds が
+          // 永久喪失する（getAccountKeys が legacy を write 成功まで残して
+          // 避けているのと同じ事故）。旧 accessibility で値を書き戻して
+          // 保全してから rethrow し、flag を立てずに次回起動で再試行させる。
+          await _storage.write(
+            key: entry.key,
+            value: entry.value,
+            iOptions: _legacyIosOptions,
+            mOptions: _legacyMacOptions,
+          );
+          rethrow;
+        }
+      }
+      await prefs.setBool(_accessibilityMigrationFlagKey, true);
+    } on PlatformException catch (e, st) {
+      // ロック中 (-25308) 等で readAll / write が失敗しても起動は止めない。
+      // flag を立てないので次回起動で再試行される。
+      debugPrint(
+        'capsicum: account storage accessibility migration failed: $e',
+      );
+      _reportOnce('accessibility_migration', e, st);
+    }
+  }
+
   /// Move an account key to the front of the list (MRU tracking).
   Future<void> touchAccount(String accountKey) async {
     final list = await getAccountKeys();
@@ -230,16 +334,56 @@ class AccountStorage {
   }
 
   /// Save OAuth client credentials for a host (survives account deletion).
+  ///
+  /// [redirectUri] は登録時に使った redirect_uri。Mastodon は client_id ごとに
+  /// 登録済 redirect_uri を厳格 match するため、再利用時に現在の redirect_uri
+  /// と一致するかを判定できるよう一緒に保存する（era 違いの stale client を
+  /// 使うと `invalid_redirect_uri`、#620 / #654）。
   Future<void> saveHostClientCredentials(
     String host,
     String clientId,
     String clientSecret,
+    String redirectUri,
   ) async {
     final data = jsonEncode({
       'client_id': clientId,
       'client_secret': clientSecret,
+      'redirect_uri': redirectUri,
     });
-    await _storage.write(key: 'client_creds_$host', value: data);
+    await _writeWithDuplicateRecovery('client_creds_$host', data);
+  }
+
+  /// `_storage.write` を実行し、macOS / iOS の Keychain が既存 item を
+  /// 更新できず -25299 (errSecDuplicateItem) を投げた場合に delete してから
+  /// 書き直す。
+  ///
+  /// #643 で Keychain accessibility (first_unlock) を導入した結果、旧
+  /// accessibility (`WhenUnlocked`) で残っている既存 item に対して
+  /// flutter_secure_storage の write が SecItemUpdate に落ちず SecItemAdd →
+  /// 重複で -25299 になるケースがある（ログイン成功直後の saveAccount /
+  /// saveHostClientCredentials で発火し、内部ベータ 1.31.0+89 で
+  /// `CAPSICUM-2E` として観測）。[migrateAccessibilityIfNeeded] と同じ
+  /// delete→write 戦略で、衝突 item を除去してから新しい属性で焼き直す。
+  Future<void> _writeWithDuplicateRecovery(String key, String value) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } on PlatformException catch (e) {
+      if (!_isKeychainDuplicate(e)) rethrow;
+      debugPrint(
+        'capsicum: keychain duplicate (-25299) on write $key; delete+retry',
+      );
+      // 衝突相手は #643 以前の default accessibility (unlocked) で書かれた旧
+      // item。現行 first_unlock の delete はクエリに kSecAttrAccessible を
+      // 含むため旧 item にマッチせず no-op になり、再 write が再び -25299 に
+      // なる（内部ベータ 1.31.0+90 で実証）。旧 accessibility を明示して
+      // 衝突 item を確実に除去してから書き直す。
+      await _storage.delete(
+        key: key,
+        iOptions: _legacyIosOptions,
+        mOptions: _legacyMacOptions,
+      );
+      await _storage.write(key: key, value: value);
+    }
   }
 
   /// Drop the cached OAuth client credentials for a host.
@@ -250,19 +394,36 @@ class AccountStorage {
   /// `invalid_redirect_uri` でサーバ側がエラーページを返す (#620)。
   /// login_screen のサイレント再登録経路で使う。
   Future<void> deleteHostClientCredentials(String host) async {
+    // 旧 accessibility (unlocked) で残る古い cache も確実に消すため両方で
+    // delete する（first_unlock だけだと #643 以前の item にマッチしない）。
+    await _storage.delete(
+      key: 'client_creds_$host',
+      iOptions: _legacyIosOptions,
+      mOptions: _legacyMacOptions,
+    );
     await _storage.delete(key: 'client_creds_$host');
   }
 
   /// Retrieve OAuth client credentials for a host.
-  Future<ClientSecretData?> getHostClientCredentials(String host) async {
+  ///
+  /// [expectedRedirectUri] と保存済 redirect_uri が一致するものだけ返す。
+  /// 旧版で `capsicum://oauth` 等の別 era で登録された client や、redirect_uri
+  /// を保存していない古い cache は、現在の redirect_uri (localhost) と一致せず
+  /// `invalid_redirect_uri` を招くため再利用せず null を返し、呼び出し側で
+  /// 新規登録させる (#620 / #654)。
+  Future<ClientSecretData?> getHostClientCredentials(
+    String host,
+    String expectedRedirectUri,
+  ) async {
     try {
       final raw = await _storage.read(key: 'client_creds_$host');
       if (raw == null) return null;
-      final map = Map<String, String>.from(jsonDecode(raw) as Map);
-      return ClientSecretData(
-        clientId: map['client_id']!,
-        clientSecret: map['client_secret']!,
-      );
+      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      if (map['redirect_uri'] != expectedRedirectUri) return null;
+      final clientId = map['client_id'];
+      final clientSecret = map['client_secret'];
+      if (clientId is! String || clientSecret is! String) return null;
+      return ClientSecretData(clientId: clientId, clientSecret: clientSecret);
     } catch (e, st) {
       // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
       // (BadPaddingException) が host_credentials 側で発火しても観測できる
@@ -306,5 +467,15 @@ class AccountStorage {
       if (msg.contains(c)) return true;
     }
     return false;
+  }
+
+  /// macOS / iOS の Keychain で「item が既に存在する」(errSecDuplicateItem =
+  /// -25299) を表す `PlatformException` を識別する。`_isKeychainTransient` と
+  /// 同様、code が数値文字列のケースと message に埋め込まれるケースの両方を
+  /// 拾う。
+  static bool _isKeychainDuplicate(PlatformException e) {
+    if (e.code == '-25299') return true;
+    final msg = '${e.message ?? ''} ${e.details ?? ''}';
+    return msg.contains('-25299');
   }
 }

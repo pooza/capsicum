@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.30.0+87
+version: 1.31.0+93
 
 environment:
   sdk: ^3.11.0
@@ -65,10 +65,11 @@ dependencies:
   # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
   in_app_purchase: ^3.2.0
   desktop_drop: ^0.7.1
-  # 添付画像のトリミング (#577)。image_cropper は iOS/Android/Web のみ対応で
-  # デスクトップ非対応のため、platform channel 不要の純 Flutter 実装である
-  # crop_your_image を採用する。Uint8List をメモリ上で処理するため macOS /
-  # Windows / Linux でも動作する。モバイルのトリミング (#568) とは別経路。
+  # 添付画像のトリミング (#577 デスクトップ / #647 モバイル)。image_cropper は
+  # iOS/Android/Web のみ対応でデスクトップ非対応のため、platform channel 不要の
+  # 純 Flutter 実装である crop_your_image を採用する。Uint8List をメモリ上で
+  # 処理するため全プラットフォーム (iOS / Android / macOS / Windows / Linux) で
+  # 同一経路で動作する。
   crop_your_image: ^2.0.0
   # 動画 / 音声再生 (#492)。旧 video_player は Linux 実装が無く Windows も
   # 棚上げで、デスクトップ 2 OS で再生が機能しなかった。media_kit は libmpv

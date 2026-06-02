@@ -6,12 +6,13 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- OAuth ログイン前の _checkOAuthPortAvailability が
-	     ServerSocket.bind(127.0.0.1:7099) を Sandbox 下で実行するために
-	     必要 (#382)。macOS は flutter_web_auth_2 に server impl が無く
-	     実 OAuth サーバは立たないが、bind プローブ自体にこの entitlement
-	     が要る。無いと bind が SocketException → ログインが oob fallback
-	     に到達する前に中断する。 -->
+	<!-- OAuth ログインの自前 localhost コールバックサーバ (#654) が
+	     HttpServer.bind(127.0.0.1:7099) を Sandbox 下で listen / accept する
+	     ために必要。事前の _checkOAuthPortAvailability の bind プローブも
+	     同じ entitlement に依存する。内部ベータ 1.31.0+88 の実機ログで、
+	     外部ブラウザ → localhost:7099 のループバック接続が Sandbox 下でも
+	     成立する（6 秒で callback 受信）ことを実証済み。無いと bind が
+	     SocketException でログイン開始時に中断する。 -->
 	<key>com.apple.security.network.server</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>

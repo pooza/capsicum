@@ -25,6 +25,7 @@ import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
 import 'src/service/about_menu_service.dart';
+import 'src/service/account_storage.dart';
 import 'src/service/apns_service.dart';
 import 'src/service/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
@@ -88,6 +89,18 @@ Future<void> main() async {
     await PushKeyStore.migrateAccessibilityIfNeeded();
   } catch (e, st) {
     _logDev('PushKeyStore migration failed: $e\n$st');
+  }
+
+  // アカウント secret / client credentials も v1.30 以前は旧 Keychain
+  // accessibility のままで、macOS のロック中起動 (launch-at-login 等) で
+  // 読み出しが -25308 で弾かれログイン不可・「通信に失敗しました」誤表示に
+  // なる (#643)。PushKeyStore (#392) と同じく新 accessibility に焼き直す
+  // one-shot migration を、セッション復元 (restoreSessions) より前に実行。
+  // 失敗しても起動は止めない（flag を立てないので次回再試行）。
+  try {
+    await AccountStorage().migrateAccessibilityIfNeeded();
+  } catch (e, st) {
+    _logDev('AccountStorage migration failed: $e\n$st');
   }
 
   // Register the APNs MethodChannel handler before runApp() so that
