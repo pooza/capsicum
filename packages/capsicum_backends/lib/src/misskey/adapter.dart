@@ -588,6 +588,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // Misskey はタイムラインにお気に入り状態を返さず事前判定できないため、
       // 長押しメニューからの二重実行で 400 が出るのを握りつぶす (#565)。
       // それ以外の 400 (rate limit 等) は通常どおり surface させる。
+      //
+      // 注意: mulukhiya 経由のサーバーでは Ginseng::HTTP が上流の 400 を
+      // `{error: "Bad response 400"}` にフラット化して code を捨てるため、
+      // この判定は一致せず素通りする。その経路は mulukhiya 側で冪等化する
+      // (mulukhiya #4380)。本判定は vanilla Misskey 直結時のみ効く。
       if (!_isAlreadyFavorited(e)) rethrow;
     }
     final note = await client.getNote(id);
