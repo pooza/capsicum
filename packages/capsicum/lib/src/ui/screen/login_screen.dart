@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
@@ -18,6 +19,26 @@ import '../../provider/preferences_provider.dart';
 import '../../service/exception_scrub.dart';
 import '../../util/login_error.dart';
 import '../widget/content_parser.dart';
+
+/// OAuth コールバック受信後にシステムブラウザへ表示する完了ページ (#654)。
+const _oauthCallbackHtml =
+    '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    '<title>capsicum</title></head>'
+    '<body style="font-family:-apple-system,sans-serif;text-align:center;'
+    'padding:48px"><h2>ログイン処理が完了しました</h2>'
+    '<p>このタブを閉じて capsicum に戻ってください。</p></body></html>';
+
+/// macOS の自前 localhost OAuth フロー (#654) で、ユーザーが完了しなかった
+/// （ブラウザを閉じた / タイムアウトした）ことを表す。既存の cancel 判定
+/// (`e.toString().contains('CANCELED')`) に合流させるため、toString に
+/// CANCELED を含める。
+class _OAuthCancelledException implements Exception {
+  const _OAuthCancelledException();
+
+  @override
+  String toString() => 'OAuth flow cancelled (CANCELED)';
+}
 
 class LoginScreen extends ConsumerStatefulWidget {
   final String host;
@@ -48,23 +69,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // - Windows: MSIX に flutter_web_auth_2 の native plugin が含まれない
   //   (#423) ため同じく server impl 経路
   // - macOS: flutter_web_auth_2 4.x の macOS 実装は ASWebAuthentication
-  //   Session のみで server impl が無い。localhost callback は拾えず
-  //   決定論的に oob fallback (外部デフォルトブラウザ + 手動コード) に
-  //   落ちる。+75 検証で ASWebAuthenticationSession 直行は「無効な
-  //   リダイレクトURI」+ ephemeral で Bitwarden 拡張が効かないと判明、
-  //   逆に oob fallback は実ブラウザで Bitwarden が効き安定だったため、
-  //   macOS は意図的にこの経路に入れて oob に着地させる。
-  //   ただし FlutterWebAuth2.authenticate に渡す callbackUrlScheme は
-  //   `_authCallbackUrlScheme` で `capsicum` (scheme として valid な値)
-  //   に分離する (#642)。これは Mastodon 登録の redirect_uri (localhost)
-  //   と意図的に一致させず、ASWebAuthenticationSession を必ず CANCELED に
-  //   して fallback に流すため。以前は localhost URL を直渡しして
-  //   _assertCallbackScheme の ArgumentError 経由で fallback に流していたが
-  //   その例外が Sentry CAPSICUM-1R として連発していた。
-  // Mac App Store ビルドは Sandbox 下で _checkOAuthPortAvailability の
-  // ServerSocket.bind が成立するために Release.entitlements に
-  // com.apple.security.network.server が必要 (実 OAuth サーバは立てない
-  // が bind プローブ自体に要る)。
+  //   Session のみで localhost callback の server impl が無い。そこで
+  //   FlutterWebAuth2 を使わず `_authenticateViaLocalhostServer` で自前の
+  //   HTTP サーバを立てて受ける (#654)。システムブラウザを使うので
+  //   Bitwarden / 1Password 拡張が効く (#382)。
+  //   （旧実装は #642 で ASWebAuthenticationSession を意図的に CANCELED に
+  //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
+  // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
+  // ために Release.entitlements に com.apple.security.network.server が必要。
   bool get _useLocalhostCallback =>
       Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
@@ -195,6 +207,77 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  /// macOS の OAuth コールバックを自前 localhost HTTP サーバで受ける (#654)。
+  ///
+  /// [authorizationUrl] をシステムブラウザ (url_launcher) で開き、
+  /// `http://localhost:7099/oauth/callback?code=...` へのリダイレクトを自前の
+  /// [HttpServer] で受けて認可コードを取り出す。flutter_web_auth_2 の macOS
+  /// 実装 (ASWebAuthenticationSession・localhost server impl 無し) に依存せず、
+  /// Linux / Windows の server impl 相当を自前化したもの。システムブラウザを
+  /// 使うので Bitwarden / 1Password 等の拡張が効く (#382)。OOB の手動コード
+  /// 入力を廃止する。
+  ///
+  /// loopback の listen には Release.entitlements の
+  /// `com.apple.security.network.server` が必要。ポート占有は呼び出し前に
+  /// [_checkOAuthPortAvailability] で弾く前提。
+  Future<String> _authenticateViaLocalhostServer(Uri authorizationUrl) async {
+    // 127.0.0.1 で listen する。redirect_uri は `localhost` だが、macOS の
+    // getaddrinfo は ::1 と 127.0.0.1 の両方を返し、ブラウザは Happy Eyeballs
+    // で IPv4 にフォールバックするため loopbackIPv4 で受けられる。
+    final server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      AppConstants.localhostOAuthPort,
+    );
+    _logLoginStep('oauth_server.listening');
+    try {
+      final launched = await launchUrlSafely(
+        authorizationUrl,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        throw StateError('failed to launch system browser for OAuth');
+      }
+
+      final completer = Completer<Uri>();
+      final subscription = server.listen((request) async {
+        final uri = request.uri;
+        final hasResult =
+            uri.queryParameters.containsKey('code') ||
+            uri.queryParameters.containsKey('error');
+        // 認可リダイレクト以外 (favicon 等) のノイズ要求は 404 で受け流す。
+        request.response
+          ..statusCode = hasResult ? HttpStatus.ok : HttpStatus.notFound
+          ..headers.contentType = ContentType.html
+          ..write(hasResult ? _oauthCallbackHtml : '<!doctype html>');
+        await request.response.close();
+        if (hasResult && !completer.isCompleted) {
+          completer.complete(uri);
+        }
+      });
+
+      try {
+        final callbackUri = await completer.future.timeout(
+          const Duration(minutes: 5),
+        );
+        _logLoginStep('oauth_server.callback_received');
+        // completeLogin は code クエリだけ参照するので、redirect_uri と同じ
+        // localhost URL に受信クエリを載せ替えて返す。
+        return Uri.parse(
+          AppConstants.localhostOAuthCallbackUrl,
+        ).replace(queryParameters: callbackUri.queryParameters).toString();
+      } on TimeoutException {
+        // 5 分以内に戻らなかった（ブラウザを閉じた等）。既存の cancel
+        // ハンドリングに合流させる。
+        _logLoginStep('oauth_server.timeout');
+        throw const _OAuthCancelledException();
+      } finally {
+        await subscription.cancel();
+      }
+    } finally {
+      await server.close(force: true);
+    }
+  }
+
   Future<void> _login({bool isRetry = false}) async {
     if (_loginCompleted) return;
     setState(() {
@@ -274,20 +357,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             return;
           }
         }
-        // localhost callback では `desktop_webview_window` の GLX 系 native
-        // crash (#489 / #496) を回避するため useWebview: false で
-        // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
-        // で受ける。callbackUrlScheme は server impl では完全な
-        // http://localhost:{port}/{path} URL を期待する仕様 (flutter_web_auth_2
-        // 4.1.0 の server.dart 参照)。macOS は scheme として valid な文字列を
-        // 要求されるため `_authCallbackUrlScheme` で分離 (#642)。
-        final resultUrl = await FlutterWebAuth2.authenticate(
-          url: startResult.authorizationUrl.toString(),
-          callbackUrlScheme: _authCallbackUrlScheme,
-          options: _useLocalhostCallback
-              ? const FlutterWebAuth2Options(useWebview: false)
-              : const FlutterWebAuth2Options(preferEphemeral: true),
-        );
+        final String resultUrl;
+        if (Platform.isMacOS) {
+          // #654: macOS は flutter_web_auth_2 に localhost callback の server
+          // impl が無く、ASWebAuthenticationSession は ephemeral でパスワード
+          // マネージャ拡張も効かない。Linux / Windows の server impl 相当を
+          // 自前化し、システムブラウザ + 自前 localhost HTTP サーバで code を
+          // 受ける（OOB の手動コード入力を廃止）。
+          resultUrl = await _authenticateViaLocalhostServer(
+            startResult.authorizationUrl,
+          );
+        } else {
+          // localhost callback では `desktop_webview_window` の GLX 系 native
+          // crash (#489 / #496) を回避するため useWebview: false で
+          // システムブラウザ + 自前 HTTP サーバ (flutter_web_auth_2 server impl)
+          // で受ける。callbackUrlScheme は server impl では完全な
+          // http://localhost:{port}/{path} URL を期待する仕様 (flutter_web_auth_2
+          // 4.1.0 の server.dart 参照)。
+          resultUrl = await FlutterWebAuth2.authenticate(
+            url: startResult.authorizationUrl.toString(),
+            callbackUrlScheme: _authCallbackUrlScheme,
+            options: _useLocalhostCallback
+                ? const FlutterWebAuth2Options(useWebview: false)
+                : const FlutterWebAuth2Options(preferEphemeral: true),
+          );
+        }
         authenticateReturned = true;
         _logLoginStep('authenticate.end');
 
