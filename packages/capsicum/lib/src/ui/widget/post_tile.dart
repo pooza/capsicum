@@ -1030,28 +1030,6 @@ class _PostTileState extends ConsumerState<PostTile> {
         });
       }
     }
-    if (enabled.contains(PostTouchAction.bookmark) &&
-        adapter is BookmarkSupport) {
-      final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
-      // 状態に応じて追加 / 解除をトグルする (#565)。
-      if (targetPost.bookmarked) {
-        add(Icons.bookmark, '$bookmarkLabelを解除', () {
-          _runAction(
-            messenger,
-            () => (adapter as BookmarkSupport).unbookmarkPost(targetPost.id),
-            '$bookmarkLabelを解除しました',
-          );
-        });
-      } else {
-        add(Icons.bookmark_outline, bookmarkLabel, () {
-          _runAction(
-            messenger,
-            () => (adapter as BookmarkSupport).bookmarkPost(targetPost.id),
-            '$bookmarkLabelに追加しました',
-          );
-        });
-      }
-    }
     if (enabled.contains(PostTouchAction.quote) && targetPost.quotable) {
       add(Icons.format_quote, '引用', () {
         context.push('/compose', extra: {'quoteTo': targetPost});

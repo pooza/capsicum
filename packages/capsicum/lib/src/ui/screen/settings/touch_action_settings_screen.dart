@@ -52,7 +52,6 @@ class TouchActionSettingsScreen extends ConsumerWidget {
       PostTouchAction.favorite => 'お気に入り',
       PostTouchAction.reaction => 'リアクション',
       PostTouchAction.boost => 'ブースト / リノート',
-      PostTouchAction.bookmark => 'ブックマーク',
       PostTouchAction.quote => '引用',
     };
   }

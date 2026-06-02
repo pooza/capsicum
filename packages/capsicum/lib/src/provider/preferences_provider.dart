@@ -1142,8 +1142,14 @@ class AbsoluteTimeNotifier extends Notifier<bool> {
 /// 既定では誤タッチ防止のため全アクションが長押しメニュー（および右上の
 /// 「…」ボタン）からのみ操作可能だが、端末ごと・アクション別にオプトインで
 /// タイル上の小ボタンを露出できる。Mastodon / Misskey の機能差は描画側で
-/// adapter の mixin (FavoriteSupport / ReactionSupport / BookmarkSupport) を
-/// 見て出し分ける。
+/// adapter の mixin (FavoriteSupport / ReactionSupport) を見て出し分ける。
+///
+/// ブックマーク（Misskey では「お気に入り」= i/favorites）はタッチ操作に
+/// 含めない: ブックマーク操作はモロヘイヤが PieFed ブックマークという重い
+/// 処理にフックするため、デスクトップでも 1 タップで気軽に走らせたくない
+/// （#565 背景の「指が触れて重い処理が走る事故」そのもの）。加えて Misskey は
+/// お気に入り状態をタイムラインに返さず二重付与で 400 になる事情もある。
+/// ブックマークは長押しメニューからの意図的操作に限定する。
 enum PostTouchAction {
   /// リプライ。
   reply,
@@ -1156,9 +1162,6 @@ enum PostTouchAction {
 
   /// ブースト / リノート。
   boost,
-
-  /// ブックマーク。
-  bookmark,
 
   /// 引用。
   quote,
