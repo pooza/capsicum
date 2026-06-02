@@ -1,4 +1,5 @@
 import 'package:capsicum/src/service/account_storage.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,10 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> _data;
   final List<String> deletes = [];
   final List<String> writes = [];
+
+  /// これらの key への次回 write で 1 度だけ -25299 を投げる（重複リカバリ
+  /// 経路の検証用）。発火後に key を除去するので、delete→再 write は成功する。
+  final Set<String> throwDuplicateOnceFor = {};
 
   @override
   Future<Map<String, String>> readAll({
@@ -34,6 +39,12 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (throwDuplicateOnceFor.remove(key)) {
+      throw PlatformException(
+        code: '-25299',
+        message: '指定された項目はキーチェーン内にすでに存在します。',
+      );
+    }
     writes.add(key);
     if (value == null) {
       _data.remove(key);
@@ -98,5 +109,31 @@ void main() {
 
     expect(fake.deletes, isEmpty);
     expect(fake.writes, isEmpty);
+  });
+
+  test('saveAccount: write が -25299 を投げたら delete してから書き直す', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final fake = _FakeSecureStorage({});
+    const key = 'secret_mastodon://a@h';
+    fake.throwDuplicateOnceFor.add(key);
+
+    await AccountStorage(fake).saveAccount('mastodon://a@h', {'token': 't'});
+
+    // 初回 write が -25299 → delete → 再 write で成立。
+    expect(fake.deletes, contains(key));
+    expect(fake.writes, contains(key));
+    expect(fake._data[key], '{"token":"t"}');
+  });
+
+  test('saveHostClientCredentials: -25299 でも delete+retry で書き込める', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final fake = _FakeSecureStorage({});
+    const key = 'client_creds_h';
+    fake.throwDuplicateOnceFor.add(key);
+
+    await AccountStorage(fake).saveHostClientCredentials('h', 'cid', 'csecret');
+
+    expect(fake.deletes, contains(key));
+    expect(fake._data[key], isNotNull);
   });
 }

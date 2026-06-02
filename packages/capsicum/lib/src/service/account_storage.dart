@@ -54,7 +54,10 @@ class AccountStorage {
     String accountKey,
     Map<String, String> secrets,
   ) async {
-    await _storage.write(key: 'secret_$accountKey', value: jsonEncode(secrets));
+    await _writeWithDuplicateRecovery(
+      'secret_$accountKey',
+      jsonEncode(secrets),
+    );
     final list = await getAccountKeys();
     if (!list.contains(accountKey)) {
       list.add(accountKey);
@@ -294,7 +297,31 @@ class AccountStorage {
       'client_id': clientId,
       'client_secret': clientSecret,
     });
-    await _storage.write(key: 'client_creds_$host', value: data);
+    await _writeWithDuplicateRecovery('client_creds_$host', data);
+  }
+
+  /// `_storage.write` を実行し、macOS / iOS の Keychain が既存 item を
+  /// 更新できず -25299 (errSecDuplicateItem) を投げた場合に delete してから
+  /// 書き直す。
+  ///
+  /// #643 で Keychain accessibility (first_unlock) を導入した結果、旧
+  /// accessibility (`WhenUnlocked`) で残っている既存 item に対して
+  /// flutter_secure_storage の write が SecItemUpdate に落ちず SecItemAdd →
+  /// 重複で -25299 になるケースがある（ログイン成功直後の saveAccount /
+  /// saveHostClientCredentials で発火し、内部ベータ 1.31.0+89 で
+  /// `CAPSICUM-2E` として観測）。[migrateAccessibilityIfNeeded] と同じ
+  /// delete→write 戦略で、衝突 item を除去してから新しい属性で焼き直す。
+  Future<void> _writeWithDuplicateRecovery(String key, String value) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } on PlatformException catch (e) {
+      if (!_isKeychainDuplicate(e)) rethrow;
+      debugPrint(
+        'capsicum: keychain duplicate (-25299) on write $key; delete+retry',
+      );
+      await _storage.delete(key: key);
+      await _storage.write(key: key, value: value);
+    }
   }
 
   /// Drop the cached OAuth client credentials for a host.
@@ -361,5 +388,15 @@ class AccountStorage {
       if (msg.contains(c)) return true;
     }
     return false;
+  }
+
+  /// macOS / iOS の Keychain で「item が既に存在する」(errSecDuplicateItem =
+  /// -25299) を表す `PlatformException` を識別する。`_isKeychainTransient` と
+  /// 同様、code が数値文字列のケースと message に埋め込まれるケースの両方を
+  /// 拾う。
+  static bool _isKeychainDuplicate(PlatformException e) {
+    if (e.code == '-25299') return true;
+    final msg = '${e.message ?? ''} ${e.details ?? ''}';
+    return msg.contains('-25299');
   }
 }
