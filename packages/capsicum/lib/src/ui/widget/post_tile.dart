@@ -998,13 +998,26 @@ class _PostTileState extends ConsumerState<PostTile> {
         _showEmojiPicker(context);
       });
     }
-    if (enabled.contains(PostTouchAction.boost) &&
-        (targetPost.scope == PostScope.public ||
-            targetPost.scope == PostScope.unlisted)) {
+    if (enabled.contains(PostTouchAction.boost)) {
       final boostLabel = ref.read(reblogLabelProvider);
-      add(Icons.repeat, boostLabel, () {
-        _runTouchBoost(context, targetPost, adapter, boostLabel);
-      });
+      final currentUser = ref.read(currentAccountProvider)?.user;
+      final isOwnRenote =
+          post.reblog != null &&
+          currentUser != null &&
+          post.author.id == currentUser.id;
+      final canUnrepeat = isOwnRenote || targetPost.reblogged;
+      // 既にブースト済み（自分のリノート or reblogged）なら取り消しに切り替える
+      // (#561 のタッチ操作側対応)。長押しメニューと同じトグル挙動。
+      if (canUnrepeat) {
+        add(Icons.repeat_on, '$boostLabelを取り消す', () {
+          _unrepeat(messenger, adapter, targetPost, isOwnRenote, boostLabel);
+        });
+      } else if (targetPost.scope == PostScope.public ||
+          targetPost.scope == PostScope.unlisted) {
+        add(Icons.repeat, boostLabel, () {
+          _runTouchBoost(context, targetPost, adapter, boostLabel);
+        });
+      }
     }
     if (enabled.contains(PostTouchAction.bookmark) &&
         adapter is BookmarkSupport) {
@@ -1090,6 +1103,37 @@ class _PostTileState extends ConsumerState<PostTile> {
         ),
       ),
     );
+  }
+
+  /// ブースト / リノートの取り消し (#561)。長押しメニューとタッチ操作の
+  /// 両方から使う共通ロジック。Misskey は自分のリノート note 表示そのものを
+  /// delete、Mastodon は元 status の id で /unreblog する。
+  Future<void> _unrepeat(
+    ScaffoldMessengerState messenger,
+    BackendAdapter adapter,
+    Post targetPost,
+    bool isOwnRenote,
+    String boostLabel,
+  ) async {
+    try {
+      await adapter.unrepeatPost(isOwnRenote ? post : targetPost);
+      if (isOwnRenote) {
+        ref.read(timelineProvider.notifier).removePost(post.id);
+      }
+      if (targetPost.reblogged) {
+        final updated = targetPost.copyWith(
+          reblogged: false,
+          reblogCount: targetPost.reblogCount > 0
+              ? targetPost.reblogCount - 1
+              : 0,
+        );
+        ref.read(timelineProvider.notifier).updatePost(updated);
+      }
+      onActionCompleted?.call();
+      messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    }
   }
 
   void _showActionMenu(BuildContext context) {
@@ -1202,35 +1246,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ListTile(
                   leading: const Icon(Icons.repeat_on),
                   title: Text('$boostLabelを取り消す'),
-                  onTap: () async {
+                  onTap: () {
                     Navigator.pop(sheetContext);
-                    try {
-                      // Misskey: 自分のリノート note 表示そのものを delete。
-                      // Mastodon: 元 status の id で /unreblog。
-                      await adapter.unrepeatPost(
-                        isOwnRenote ? post : targetPost,
-                      );
-                      if (isOwnRenote) {
-                        ref.read(timelineProvider.notifier).removePost(post.id);
-                      }
-                      if (targetPost.reblogged) {
-                        final updated = targetPost.copyWith(
-                          reblogged: false,
-                          reblogCount: targetPost.reblogCount > 0
-                              ? targetPost.reblogCount - 1
-                              : 0,
-                        );
-                        ref.read(timelineProvider.notifier).updatePost(updated);
-                      }
-                      onActionCompleted?.call();
-                      messenger.showSnackBar(
-                        SnackBar(content: Text('$boostLabelを取り消しました')),
-                      );
-                    } catch (_) {
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('操作に失敗しました')),
-                      );
-                    }
+                    _unrepeat(
+                      messenger,
+                      adapter,
+                      targetPost,
+                      isOwnRenote,
+                      boostLabel,
+                    );
                   },
                 ),
               if (adapter is BookmarkSupport)
