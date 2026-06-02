@@ -581,9 +581,29 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<Post> bookmarkPost(String id) async {
-    await client.favoriteNote(id);
+    try {
+      await client.favoriteNote(id);
+    } on DioException catch (e) {
+      // 既にお気に入り済み (ALREADY_FAVORITED) は冪等に成功扱いとする。
+      // Misskey はタイムラインにお気に入り状態を返さず事前判定できないため、
+      // 長押しメニューからの二重実行で 400 が出るのを握りつぶす (#565)。
+      // それ以外の 400 (rate limit 等) は通常どおり surface させる。
+      if (!_isAlreadyFavorited(e)) rethrow;
+    }
     final note = await client.getNote(id);
     return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  bool _isAlreadyFavorited(DioException e) {
+    if (e.response?.statusCode != 400) return false;
+    final data = e.response?.data;
+    if (data is Map) {
+      final error = data['error'];
+      if (error is Map && error['code'] == 'ALREADY_FAVORITED') {
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
