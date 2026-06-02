@@ -203,13 +203,24 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     }
     if (enabled.contains(PostTouchAction.favorite) &&
         adapter is FavoriteSupport) {
-      add(Icons.star_outline, 'お気に入り', () {
-        _runAction(
-          messenger,
-          () => (adapter as FavoriteSupport).favoritePost(targetPost.id),
-          'お気に入りに追加しました',
-        );
-      });
+      // 状態に応じて追加 / 解除をトグルする (#565)。
+      if (targetPost.favourited) {
+        add(Icons.star, 'お気に入りを解除', () {
+          _runAction(
+            messenger,
+            () => (adapter as FavoriteSupport).unfavoritePost(targetPost.id),
+            'お気に入りを解除しました',
+          );
+        });
+      } else {
+        add(Icons.star_outline, 'お気に入り', () {
+          _runAction(
+            messenger,
+            () => (adapter as FavoriteSupport).favoritePost(targetPost.id),
+            'お気に入りに追加しました',
+          );
+        });
+      }
     }
     if (enabled.contains(PostTouchAction.reaction) &&
         adapter is ReactionSupport) {
@@ -228,13 +239,24 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     if (enabled.contains(PostTouchAction.bookmark) &&
         adapter is BookmarkSupport) {
       final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
-      add(Icons.bookmark_outline, bookmarkLabel, () {
-        _runAction(
-          messenger,
-          () => (adapter as BookmarkSupport).bookmarkPost(targetPost.id),
-          '$bookmarkLabelに追加しました',
-        );
-      });
+      // 状態に応じて追加 / 解除をトグルする (#565)。
+      if (targetPost.bookmarked) {
+        add(Icons.bookmark, '$bookmarkLabelを解除', () {
+          _runAction(
+            messenger,
+            () => (adapter as BookmarkSupport).unbookmarkPost(targetPost.id),
+            '$bookmarkLabelを解除しました',
+          );
+        });
+      } else {
+        add(Icons.bookmark_outline, bookmarkLabel, () {
+          _runAction(
+            messenger,
+            () => (adapter as BookmarkSupport).bookmarkPost(targetPost.id),
+            '$bookmarkLabelに追加しました',
+          );
+        });
+      }
     }
     if (enabled.contains(PostTouchAction.quote) && targetPost.quotable) {
       add(Icons.format_quote, '引用', () {
