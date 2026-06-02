@@ -180,10 +180,9 @@ void main() {
       'client_creds_h': '{"client_id":"old","client_secret":"s"}',
     });
     expect(
-      await AccountStorage(fake).getHostClientCredentials(
-        'h',
-        'http://localhost:7099/oauth/callback',
-      ),
+      await AccountStorage(
+        fake,
+      ).getHostClientCredentials('h', 'http://localhost:7099/oauth/callback'),
       isNull,
     );
   });
