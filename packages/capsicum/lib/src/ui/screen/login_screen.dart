@@ -320,7 +320,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           usedCachedCreds = true;
         } else {
           final storage = ref.read(accountStorageProvider);
-          final hostCreds = await storage.getHostClientCredentials(widget.host);
+          final hostCreds = await storage.getHostClientCredentials(
+            widget.host,
+            _redirectUri,
+          );
           if (hostCreds != null) {
             adapter.setCachedClientCredentials(hostCreds);
             usedCachedCreds = true;
@@ -657,10 +660,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ClientSecretData(clientId: clientId, clientSecret: clientSecret),
         );
         final storage = ref.read(accountStorageProvider);
+        // OOB 再登録は `$_redirectUri\n$oobRedirect` の両方を登録するので、
+        // 通常フローの redirect_uri (_redirectUri) でも再利用可能。
         await storage.saveHostClientCredentials(
           widget.host,
           clientId,
           clientSecret,
+          _redirectUri,
         );
       } catch (e) {
         debugPrint('capsicum: OOB app re-registration failed: $e');
@@ -857,6 +863,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         widget.host,
         result.clientSecret!.clientId,
         result.clientSecret!.clientSecret,
+        _redirectUri,
       );
     }
 

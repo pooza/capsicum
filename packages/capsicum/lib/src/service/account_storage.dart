@@ -318,14 +318,21 @@ class AccountStorage {
   }
 
   /// Save OAuth client credentials for a host (survives account deletion).
+  ///
+  /// [redirectUri] は登録時に使った redirect_uri。Mastodon は client_id ごとに
+  /// 登録済 redirect_uri を厳格 match するため、再利用時に現在の redirect_uri
+  /// と一致するかを判定できるよう一緒に保存する（era 違いの stale client を
+  /// 使うと `invalid_redirect_uri`、#620 / #654）。
   Future<void> saveHostClientCredentials(
     String host,
     String clientId,
     String clientSecret,
+    String redirectUri,
   ) async {
     final data = jsonEncode({
       'client_id': clientId,
       'client_secret': clientSecret,
+      'redirect_uri': redirectUri,
     });
     await _writeWithDuplicateRecovery('client_creds_$host', data);
   }
@@ -371,19 +378,36 @@ class AccountStorage {
   /// `invalid_redirect_uri` でサーバ側がエラーページを返す (#620)。
   /// login_screen のサイレント再登録経路で使う。
   Future<void> deleteHostClientCredentials(String host) async {
+    // 旧 accessibility (unlocked) で残る古い cache も確実に消すため両方で
+    // delete する（first_unlock だけだと #643 以前の item にマッチしない）。
+    await _storage.delete(
+      key: 'client_creds_$host',
+      iOptions: _legacyIosOptions,
+      mOptions: _legacyMacOptions,
+    );
     await _storage.delete(key: 'client_creds_$host');
   }
 
   /// Retrieve OAuth client credentials for a host.
-  Future<ClientSecretData?> getHostClientCredentials(String host) async {
+  ///
+  /// [expectedRedirectUri] と保存済 redirect_uri が一致するものだけ返す。
+  /// 旧版で `capsicum://oauth` 等の別 era で登録された client や、redirect_uri
+  /// を保存していない古い cache は、現在の redirect_uri (localhost) と一致せず
+  /// `invalid_redirect_uri` を招くため再利用せず null を返し、呼び出し側で
+  /// 新規登録させる (#620 / #654)。
+  Future<ClientSecretData?> getHostClientCredentials(
+    String host,
+    String expectedRedirectUri,
+  ) async {
     try {
       final raw = await _storage.read(key: 'client_creds_$host');
       if (raw == null) return null;
-      final map = Map<String, String>.from(jsonDecode(raw) as Map);
-      return ClientSecretData(
-        clientId: map['client_id']!,
-        clientSecret: map['client_secret']!,
-      );
+      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      if (map['redirect_uri'] != expectedRedirectUri) return null;
+      final clientId = map['client_id'];
+      final clientSecret = map['client_secret'];
+      if (clientId is! String || clientSecret is! String) return null;
+      return ClientSecretData(clientId: clientId, clientSecret: clientSecret);
     } catch (e, st) {
       // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
       // (BadPaddingException) が host_credentials 側で発火しても観測できる

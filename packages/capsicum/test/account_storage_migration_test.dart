@@ -19,6 +19,17 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   final Set<String> throwDuplicateOnceFor = {};
 
   @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _data[key];
+
+  @override
   Future<Map<String, String>> readAll({
     IOSOptions? iOptions,
     AndroidOptions? aOptions,
@@ -131,9 +142,49 @@ void main() {
     const key = 'client_creds_h';
     fake.throwDuplicateOnceFor.add(key);
 
-    await AccountStorage(fake).saveHostClientCredentials('h', 'cid', 'csecret');
+    await AccountStorage(
+      fake,
+    ).saveHostClientCredentials('h', 'cid', 'csecret', 'capsicum://oauth');
 
     expect(fake.deletes, contains(key));
     expect(fake._data[key], isNotNull);
+  });
+
+  test('getHostClientCredentials: redirect_uri 一致時のみ返す', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final fake = _FakeSecureStorage({});
+    final storage = AccountStorage(fake);
+    await storage.saveHostClientCredentials(
+      'h',
+      'cid',
+      'csec',
+      'capsicum://oauth',
+    );
+
+    // 別 era の redirect_uri では stale 扱いで null。
+    expect(
+      await storage.getHostClientCredentials(
+        'h',
+        'http://localhost:7099/oauth/callback',
+      ),
+      isNull,
+    );
+    // 一致すれば返す。
+    final ok = await storage.getHostClientCredentials('h', 'capsicum://oauth');
+    expect(ok?.clientId, 'cid');
+  });
+
+  test('getHostClientCredentials: redirect_uri 欄の無い旧 cache は null', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final fake = _FakeSecureStorage({
+      'client_creds_h': '{"client_id":"old","client_secret":"s"}',
+    });
+    expect(
+      await AccountStorage(fake).getHostClientCredentials(
+        'h',
+        'http://localhost:7099/oauth/callback',
+      ),
+      isNull,
+    );
   });
 }
