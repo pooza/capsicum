@@ -18,6 +18,11 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   /// 経路の検証用）。発火後に key を除去するので、delete→再 write は成功する。
   final Set<String> throwDuplicateOnceFor = {};
 
+  /// これらの key への次回 write で 1 度だけ transient error (-25308) を投げる
+  /// （migration の delete→write 失敗時の値保全検証用）。発火後に除去するので
+  /// 旧 accessibility での書き戻しは成功する。
+  final Set<String> throwOnWriteOnceFor = {};
+
   @override
   Future<String?> read({
     required String key,
@@ -54,6 +59,12 @@ class _FakeSecureStorage extends FlutterSecureStorage {
       throw PlatformException(
         code: '-25299',
         message: '指定された項目はキーチェーン内にすでに存在します。',
+      );
+    }
+    if (throwOnWriteOnceFor.remove(key)) {
+      throw PlatformException(
+        code: '-25308',
+        message: 'errSecInteractionNotAllowed',
       );
     }
     writes.add(key);
@@ -110,6 +121,23 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(flagKey), isTrue);
+  });
+
+  test('migration: delete 後の write が落ちても旧 item を書き戻し flag を立てない', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    const key = 'secret_mastodon://a@h';
+    final fake = _FakeSecureStorage({key: 's1'});
+    // first_unlock への焼き直し write を 1 度だけ transient error で落とす。
+    fake.throwOnWriteOnceFor.add(key);
+
+    await AccountStorage(fake).migrateAccessibilityIfNeeded();
+
+    // delete は走ったが、write 失敗時に旧 accessibility で書き戻すため値は保全。
+    expect(fake.deletes, contains(key));
+    expect(fake._data[key], 's1');
+    // flag は立たず、次回起動で再試行される（永久喪失しない）。
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(flagKey), isNot(true));
   });
 
   test('flag が既に立っていれば no-op', () async {

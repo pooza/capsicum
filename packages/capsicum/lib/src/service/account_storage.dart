@@ -251,7 +251,23 @@ class AccountStorage {
           iOptions: _legacyIosOptions,
           mOptions: _legacyMacOptions,
         );
-        await _storage.write(key: entry.key, value: entry.value);
+        try {
+          await _storage.write(key: entry.key, value: entry.value);
+        } on PlatformException {
+          // delete 成功直後に write が transient error（ロック中 -25308 等）
+          // で落ちると、その item は既に Keychain から消え、in-memory の値も
+          // 再起動で失われ、次回 readAll にも現れず secret / client_creds が
+          // 永久喪失する（getAccountKeys が legacy を write 成功まで残して
+          // 避けているのと同じ事故）。旧 accessibility で値を書き戻して
+          // 保全してから rethrow し、flag を立てずに次回起動で再試行させる。
+          await _storage.write(
+            key: entry.key,
+            value: entry.value,
+            iOptions: _legacyIosOptions,
+            mOptions: _legacyMacOptions,
+          );
+          rethrow;
+        }
       }
       await prefs.setBool(_accessibilityMigrationFlagKey, true);
     } on PlatformException catch (e, st) {
