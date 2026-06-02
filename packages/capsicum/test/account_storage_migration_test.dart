@@ -71,7 +71,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const flagKey = 'account_storage_accessibility_migrated_v1';
+  const flagKey = 'account_storage_accessibility_migrated_v2';
 
   test('owned key のみ焼き直し（非 owned key には触れない）、flag を立てる', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});

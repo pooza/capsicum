@@ -17,8 +17,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AccountStorage {
   static const _legacyAccountListKey = 'capsicum_account_keys';
   static const _accountListKey = 'capsicum_account_keys_v2';
+  // _v1 は #643 の初版で導入したが、当時の migration / write が旧 item を
+  // accessibility 取りこぼしで救えておらず（後述）空振りでフラグだけ立てて
+  // いた。修正版を全員に再実行させるため _v2 に上げる (内部ベータ
+  // 1.31.0+90 で -25299 を実証)。
   static const _accessibilityMigrationFlagKey =
-      'account_storage_accessibility_migrated_v1';
+      'account_storage_accessibility_migrated_v2';
+
+  /// #643 以前は `const FlutterSecureStorage()`（既定 accessibility =
+  /// `kSecAttrAccessibleWhenUnlocked` = [KeychainAccessibility.unlocked]）で
+  /// 書き込んでいた。flutter_secure_storage の macOS / iOS 実装は delete /
+  /// readAll / containsKey のクエリに `kSecAttrAccessible` を含めるため、
+  /// 現行 [_storage]（first_unlock）からは旧 accessibility の item が
+  /// **見えない / 消せない**。旧 item を列挙・削除するときはこの options を
+  /// 明示する。
+  static const _legacyIosOptions = IOSOptions(
+    accessibility: KeychainAccessibility.unlocked,
+  );
+  static const _legacyMacOptions = MacOsOptions(
+    accessibility: KeychainAccessibility.unlocked,
+  );
 
   final FlutterSecureStorage _storage;
 
@@ -211,7 +229,13 @@ class AccountStorage {
     final prefs = await _prefs();
     if (prefs.getBool(_accessibilityMigrationFlagKey) ?? false) return;
     try {
-      final all = await _storage.readAll();
+      // 旧 item は default accessibility (unlocked) で書かれており、現行
+      // first_unlock の readAll はクエリに kSecAttrAccessible を含むため
+      // それらを返さない。旧 accessibility を明示して legacy item を列挙する。
+      final all = await _storage.readAll(
+        iOptions: _legacyIosOptions,
+        mOptions: _legacyMacOptions,
+      );
       for (final entry in all.entries) {
         // AccountStorage 所有の key のみ焼き直す（同じ partition を共有しうる
         // 他用途の item には触れない）。
@@ -220,7 +244,13 @@ class AccountStorage {
             entry.key.startsWith('client_creds_') ||
             entry.key == _legacyAccountListKey;
         if (!isOwned) continue;
-        await _storage.delete(key: entry.key);
+        // 旧 accessibility を明示して delete（first_unlock の delete では
+        // 旧 item にマッチせず no-op になる）→ first_unlock で書き直す。
+        await _storage.delete(
+          key: entry.key,
+          iOptions: _legacyIosOptions,
+          mOptions: _legacyMacOptions,
+        );
         await _storage.write(key: entry.key, value: entry.value);
       }
       await prefs.setBool(_accessibilityMigrationFlagKey, true);
@@ -319,7 +349,16 @@ class AccountStorage {
       debugPrint(
         'capsicum: keychain duplicate (-25299) on write $key; delete+retry',
       );
-      await _storage.delete(key: key);
+      // 衝突相手は #643 以前の default accessibility (unlocked) で書かれた旧
+      // item。現行 first_unlock の delete はクエリに kSecAttrAccessible を
+      // 含むため旧 item にマッチせず no-op になり、再 write が再び -25299 に
+      // なる（内部ベータ 1.31.0+90 で実証）。旧 accessibility を明示して
+      // 衝突 item を確実に除去してから書き直す。
+      await _storage.delete(
+        key: key,
+        iOptions: _legacyIosOptions,
+        mOptions: _legacyMacOptions,
+      );
       await _storage.write(key: key, value: value);
     }
   }
