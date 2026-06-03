@@ -1151,6 +1151,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
     final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+    // メニューを開いた時点の locale を確定させておく。BottomSheet の rebuild 時に
+    // 外側 PostTile の context が deactivate 済みだと Localizations.localeOf が
+    // null check で落ちるため、ここで一度だけ解決して閉包に取り込む（#659）。
+    final locale = Localizations.localeOf(context);
 
     showModalBottomSheet(
       context: context,
@@ -1289,8 +1293,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       adapter.isTranslationAvailable) &&
                   targetPost.scope != PostScope.direct &&
                   post.reblog == null &&
-                  targetPost.language !=
-                      Localizations.localeOf(context).languageCode)
+                  targetPost.language != locale.languageCode)
                 ListTile(
                   leading: const Icon(Icons.translate),
                   title: const Text('翻訳'),
