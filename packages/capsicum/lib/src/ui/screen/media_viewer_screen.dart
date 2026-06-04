@@ -13,6 +13,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
@@ -184,7 +185,16 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(content: Text('保存しました')));
-    } catch (_) {
+    } catch (e, st) {
+      // #572 は新機能のため初期は計装する。権限・ディスク full・サーバ 4xx 等の
+      // ダウンロード / 書き込み失敗を host/backend tag 付きで観測する (#648)。
+      reportOpFailure(
+        tagKey: 'media.op',
+        operation: 'save',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
