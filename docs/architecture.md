@@ -168,6 +168,8 @@ enum BackendType {
 
 `MulukhiyaService` は Adapter とは独立したオプショナルなサービス。Adapter が SNS 本体の API を担当し、MulukhiyaService がモロヘイヤ固有のエンドポイントを担当する。
 
+**モロヘイヤは原則「読み取り専用」として扱う**（features 宣言・タグ検索・設定取得など）。モロヘイヤには「DB 書き込みは原則 SELECT のみ」という運用ポリシーがあり、Misskey push 通知対応で一度だけ破った経緯がある。そのため通知系の新機能を設計する際、**状態を持つ処理（subscription 管理・dedup 状態・配信履歴・push 発火など）の置き場は [capsicum-relay](https://github.com/pooza/capsicum-relay) を第一候補にする**。capsicum-relay は元々 subscriptions テーブルに INSERT する設計なので、通知系の状態追加は capsicum-relay 内に寄せる方が責務として自然。新機能で「モロヘイヤ INSERT が要るか」を判断軸にし、要るなら capsicum-relay 側に寄せられないか先に検討する。フォーク改造（pooza/mastodon, pooza/misskey）は原則行わない。
+
 ### MulukhiyaService
 
 ```dart

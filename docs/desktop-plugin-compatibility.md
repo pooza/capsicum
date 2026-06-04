@@ -154,6 +154,7 @@ iOS / Android は media_kit 側がモバイル対応しているため動作自�
 - **image_picker_macos**: 本体経由で自動的に動くが、内部実装は `file_selector` 相当。UX が iOS とやや異なる
 - **flutter_local_notifications の Windows 実装**: Windows 10/11 の Toast 通知を使う。MSIX パッケージングが必須で、素の exe 配布だと通知が出ない。Microsoft Store 経由推奨の根拠のひとつ
 - **MSIX パッケージング (`msix: ^3.16.13`)**: dev_dependency として導入。`pubspec.yaml` の `msix_config` セクションから `dart run msix:create` で `capsicum.msix` を生成する。Microsoft Store 経由配布のため `store: true` で未署名出力（ストア側で再署名）。詳細は [#423](https://github.com/pooza/capsicum/issues/423) と [release-pipeline.md](release-pipeline.md) Phase 4
+- **狭幅ウィンドウ運用は必須要件**: デスクトップ版の主用途は動画アプリ（Amazon Prime Video 等）との横並び実況で、capsicum 側のウィンドウ幅は普段から 900 / 800px 未満で運用される。`WindowStateService` の最小ウィンドウサイズ（現状 640x480）を引き上げる変更はこの運用を壊すため入れない。`wideLayout = MediaQuery.size.width >= 900` を前提に UI を改修する場合も、narrow モード（overlay Drawer）の体験が同等に成立するよう設計する（#574 で確定した制約）
 
 ## 更新時の注意
 

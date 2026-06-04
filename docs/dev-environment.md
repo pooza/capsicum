@@ -73,6 +73,7 @@ sudo apt install -y \
 - MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
 - Microsoft Partner Center アカウント（Microsoft Store 登録用）
 - 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内でダウンロード → [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) に従って `Import-Certificate` + `Add-AppxPackage`。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる（リリース後のエンドユーザー手順とも完全同一）
+- **ローカルソースビルド（`flutter run -d windows` / `flutter build windows`）は ARM Windows では通らない**ため、検証は上記 CI artifact の MSIX で行う。詰まる箇所: `flutter_secure_storage_windows` / `flutter_local_notifications_windows` が ATL ヘッダ（`atlstr.h` / `atlbase.h`、VS Build Tools に「C++ ATL for v143」追加が必要）、`jni` が `jni.h`（JDK 未導入）、`sentry-native`（crashpad）が x64 ターゲットビルド中に ARM64 専用 marmasm targets を踏む。前 2 つは追加導入で解決余地があるが crashpad の ARM/x64 不整合が残るため深追いしない。MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
 
 ### 持ち込まないもの
 

@@ -402,6 +402,25 @@ gh issue list --label bug --state open
 
 この結果をもとにリリースノートの「既知の不具合」を構築する。
 
+#### 公開状況の外形確認（App Store lookup API）
+
+iOS / macOS の「審査提出済み」と「公開済み」の差は、Apple の iTunes Search API (lookup) で認証なしに確認できる。`currentVersionReleaseDate` が最新版のストア反映日時。
+
+```bash
+# iOS / iPadOS（bundleId は Universal Purchase 共通）
+curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.capsicum&country=jp" | python3 -m json.tool
+
+# macOS（Mac App Store、entity=macSoftware）
+curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.capsicum&country=jp&entity=macSoftware" | python3 -m json.tool
+```
+
+注目フィールド: `version`（最新公開バージョン）/ `currentVersionReleaseDate`（ストア反映時刻 UTC）/ `releaseDate`（初公開日）/ `trackViewUrl`。
+
+注意:
+
+- User-Agent がないと空応答になることがあるため `-A "Mozilla/5.0"` を付ける。`country=us` 等で他ストアも確認できる
+- **片方ストアが長期停滞中だと lookup の `version` が実態と乖離する**。Universal Purchase の `trackId` 共有の都合で、iOS と macOS のどちらか古い方の公開バージョンが優先表示されることがある（例: iOS が新版公開済みでも macOS が審査停滞中だと両 storefront とも古い方を返し続ける）。**pooza が App Store Connect / ストア Web UI で直接確認した事実を lookup より優先**し、lookup は CLAUDE.md 反映の唯一根拠にせず口頭報告と突き合わせる
+
 ### 4.5 Linux 配布（v1.24〜）
 
 Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.github/workflows/linux-release.yml](../.github/workflows/linux-release.yml)) でビルドする。配布形態は AppImage 単独（Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念、経緯は CLAUDE.md デスクトップ対応節を参照）。
