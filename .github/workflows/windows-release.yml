@@ -87,6 +87,18 @@ jobs:
           flutter build windows --release @defines
           Pop-Location
 
+      - name: Guard tag-driven build against ephemeral cert
+        # タグ駆動 (リリース) build なのに PFX secret が未投入だと、再現性の
+        # ない ephemeral cert で署名した MSIX が draft Release に添付されうる。
+        # 誤って publish するとユーザーの TrustedPeople import が次回 build で
+        # 別 cert に変わり無効化されるため、ここで明示的に fail させる (#558)。
+        # PR / 非タグ build は build 確認用の ephemeral fallback を許容する。
+        if: ${{ startsWith(github.ref, 'refs/tags/') && env.WINDOWS_SELFSIGNED_PFX_BASE64 == '' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Tag-driven build requires WINDOWS_SELFSIGNED_PFX_BASE64. Refusing to sign a release MSIX with a non-reproducible ephemeral certificate."
+          exit 1
+
       - name: Prepare signing certificate
         # 自己署名 MSIX 直配 (#423) 用の PFX を準備する。
         # Subject は MSIX の publisher 識別子 (pubspec.yaml の
