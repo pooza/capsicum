@@ -25,3 +25,4 @@ v1.0 前後の初回審査時に遭遇したリジェクトへの対応記録。
 
 - [push-relay-plan.md](push-relay-plan.md) — プッシュ通知リレー (capsicum-relay) の初期計画書。Ruby / Linode / Linode Nanode / flauros.b-shock.co.jp 等の選定根拠を含む。v1.18 で実装済、本番は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本。Stage 3 (外部ユーザー向け有償提供) は [#597](https://github.com/pooza/capsicum/issues/597) で継続
 - [privacy-policy.md](privacy-policy.md) — capsicum 初期 (v1.0) のプライバシーポリシー草稿。現行は [capsicum.shrieker.net/privacy-policy](https://capsicum.shrieker.net/privacy-policy) ([capsicum-site](https://github.com/pooza/capsicum-site) の `privacy-policy/index.md`) が正本
+- [release-pipeline.md](release-pipeline.md) — リリースパイプライン構想（fastlane + GitHub Actions）。Phase 1〜4（iOS/Android 自動化 → macOS → Linux → Windows）が v1.32 までに全て実現済みで、構想としての役目を終えた。日々の運用手順は [store-release-guide.md](../store-release-guide.md) が正本。タグ命名規則・責務分担・macOS の Mac App Store 一本化方針などの設計経緯の記録として保持

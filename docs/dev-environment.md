@@ -16,15 +16,14 @@ Debug ビルドは「コードを動かしてみるための環境」であり�
 
 - **App Group / Keychain Access Group**: Debug ビルドは Release と同じ App Group ID (`group.jp.co.b-shock.capsicum`) と keychain-access-groups を共有しているため、Debug で動かした capsicum が ShareExtension 用 App Group コンテナへ書いたファイルを Release インスタンスが読む経路ができる ([#504](https://github.com/pooza/capsicum/issues/504))。本来は Debug 用に別 App Group ID (`group.jp.co.b-shock.capsicum.debug`) を分離すべきだが、開発機限定で同居する debug + release のクロス参照は実害が薄く、Xcode / Apple Developer Portal 側の provisioning 作業コストに見合わない。TestFlight 経由の検証で sandbox 境界の挙動は担保される
 - **macOS Debug の sandbox オフ**: ad-hoc 署名 + sandbox の組み合わせで ASWebAuthenticationSession / Keychain (`flutter_secure_storage`) が `errSecMissingEntitlement` (-34018) で動かないため、Debug は `com.apple.security.app-sandbox=false` で運用している。これも sandbox 挙動の検証は TestFlight で行う前提で運用ルール化されている
-- **APNs / FCM / dart-define 機密値**: 本物の値が必要なケースは Debug では検証成立しないため、TestFlight 経由で検証する（[MEMORY.md](../../../Users/pooza/.claude/projects/-Volumes-extdata-repos-capsicum/memory/MEMORY.md) の "OS ネイティブ機能変更は内部ベータで検証する" 参照）
+- **APNs / FCM / dart-define 機密値**: 本物の値が必要なケースは Debug では検証成立しないため、TestFlight / 内部ベータ経由で検証する
 
 判断ルール: 「Debug で再現しないからどうにかしたい」となったら、まず **TestFlight 経由で検証する経路があるか** を確認する。あるなら Debug を本番並みに引き上げるコストはかけない。
 
 ## メイン (macOS) セットアップ
 
-- `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に App Store Connect API Key を配置（Fastfile から参照）
-- `~/.config/capsicum/google-play-service-account.json` に Google Play サービスアカウント JSON キーを配置
-- `~/.config/capsicum/secrets.env` を Google Drive 上の実体（`/Volumes/extdata/gdrive/プライベート共有/Documents/b-shock/capsicum/secrets.env`）への symlink で配置（`SENTRY_DSN` / `RELAY_SECRET` を複数 PC で共有するため）
+- `~/.config/capsicum/` に App Store Connect API Key（`.p8`）と Google Play サービスアカウント JSON キーを配置（Fastfile から参照。具体的なファイル名・Key ID 等は非公開）
+- `~/.config/capsicum/secrets.env` を Google Drive 上の実体への symlink で配置（`SENTRY_DSN` / `RELAY_SECRET` を複数 PC で共有するため。実体パスは非公開）
 - Xcode → Settings → Accounts で Apple ID 追加 → Manage Certificates → Apple Distribution 証明書を作成
 - `gem install fastlane`（rbenv の Ruby を使用）
 - Android 署名鍵 `android/key.properties` を配置（git 管理外、手動配置）
@@ -85,9 +84,7 @@ sudo apt install -y \
 
 ## Sentry
 
-- ダッシュボード: <https://b-shock-co-ltd.sentry.io/>
-- プロジェクト: `capsicum`
-- 有料プラン（安価なサブスクリプション）契約済み（2026-03-13）
+- 組織アカウントの Sentry を利用（プロジェクト `capsicum`、有料プラン契約済み。ダッシュボード URL は非公開）
 - DSN は公開鍵相当（送信専用）なのでビルドへの埋め込みは問題なし
 - 環境切り替え: `--dart-define=SENTRY_ENV=production`（デフォルト `debug`）
 - dSYM / ProGuard マッピング自動アップロード: `sentry_dart_plugin` 導入済み。リポジトリルートの `.sentryclirc`（git 管理外）でトークン管理。環境変数 `SENTRY_AUTH_TOKEN` はプロジェクトごとのトークン使い分けのため使わない
@@ -107,26 +104,15 @@ sudo apt install -y \
 
 ## iOS 実機環境
 
-- デバイス: iPhone 13 mini「金星魔術郷」(iOS 26.2.1)
-- UDID: `00008110-0019442101B9801E`
-- Parallels Desktop が USB デバイスを横取りするため、実機接続時は Parallels を終了させること
+- 実機接続時は Parallels Desktop を終了させること（Parallels が USB デバイスを横取りするため）
 - iOS アップデート後にデベロッパモードがリセットされることがある → 設定 → プライバシーとセキュリティ → デベロッパモード で再有効化
 
 ## Android エミュレータ環境
 
-- `ANDROID_SDK_ROOT`: `~/Library/Android/sdk`
-- `JAVA_HOME`: `/Applications/Android Studio.app/Contents/jbr/Contents/Home`
-- エミュレータ起動: `$ANDROID_SDK_ROOT/emulator/emulator -avd Medium_Phone_API_35`
-- AVD: `Medium_Phone_API_35` (API 35, arm64)
+- `ANDROID_SDK_ROOT` / `JAVA_HOME` を設定し、`$ANDROID_SDK_ROOT/emulator/emulator -avd <AVD>` でエミュレータを起動（arm64 AVD を使用）
 
 ### エミュレータで既知の問題
 
 - カスタムスキーム `capsicum://oauth` のリダイレクトが Android エミュレータで動作しない（OOB 方式で代用中）。[tech-notes.md](tech-notes.md) の認証フロー節も参照
 
-## Android 検証端末
-
-| 端末 | 用途 |
-| --- | --- |
-| iPhone 13 mini | 日常使用 + iOS テスト |
-| Pixel 8 | 日常使用。検証兼用は避ける方針 |
-| Pixel 6a（SIM なし） | Android 検証専用端末 |
+（個々の検証端末・UDID・AVD 名・SDK パスといった端末固有の具体値は、public リポジトリには置かず別途管理する）
