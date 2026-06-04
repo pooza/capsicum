@@ -11,7 +11,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,6 +18,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 
 import 'src/constants.dart';
 import 'src/model/account.dart';
+import 'src/platform/paths.dart';
 import 'src/provider/account_manager_provider.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
@@ -133,22 +133,15 @@ Future<void> main() async {
     // Linux / Windows の sentry-native はデフォルトで CWD 直下に
     // .sentry-native/ を作る (#496)。CWD は AppImage 起動経路で不定
     // (ターミナル起動なら repo dir、デスクトップ起動なら $HOME 等) のため、
-    // path_provider の getApplicationSupportDirectory() で得られる OS 規約
-    // 準拠の app data ディレクトリに明示的に固定する。Linux では
-    // ~/.local/share/capsicum/、Windows MSIX では %LOCALAPPDATA%\Packages\
-    // <PFN>\LocalCache\... に着地し、AppRun wrapper のログ出力先
-    // (~/.local/share/capsicum/logs/) と同じディレクトリ階層に揃う。
+    // OS 規約準拠の app data ディレクトリに明示的に固定する。パス解決は
+    // platform/paths.dart に集約済み (#522)。path_provider 失敗時は未設定の
+    // ままにし、sentry-native のフォールバック (CWD 直下) に任せる。起動
+    // 経路を止める要件ではない。
     String? sentryNativeDbPath;
-    if (Platform.isLinux || Platform.isWindows) {
-      try {
-        final supportDir = await getApplicationSupportDirectory();
-        sentryNativeDbPath = '${supportDir.path}/.sentry-native';
-      } catch (e, st) {
-        // path_provider 失敗時は nativeDatabasePath を未設定のままにし、
-        // sentry-native のフォールバック (CWD 直下) に任せる。起動経路を
-        // 止める要件ではない。
-        _logDev('getApplicationSupportDirectory failed: $e\n$st');
-      }
+    try {
+      sentryNativeDbPath = await resolveSentryNativeDatabasePath();
+    } catch (e, st) {
+      _logDev('resolveSentryNativeDatabasePath failed: $e\n$st');
     }
     await SentryFlutter.init((options) {
       options.dsn = dsn;
