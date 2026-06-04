@@ -52,6 +52,11 @@ public class ShareIntentPlugin: NSObject, FlutterPlugin {
       try FileManager.default.removeItem(at: fileURL)
       return text.isEmpty ? nil : text
     } catch {
+      // 既知の race (#517): Splash 起動時の consume と
+      // AppLifecycleState.resumed からの再 consume が同時に走ると、
+      // 先に removeItem した側に負けて NSFileNoSuchFileError になりうる。
+      // 失った側は nil を返すだけで、共有テキストは勝った側が処理済みのため
+      // 実害はない（二重処理ではなく取りこぼしでもない）。
       return nil
     }
   }

@@ -78,7 +78,8 @@
       "Bash(sed -n '155,160p' lib/src/ui/screen/media_viewer_screen.dart)",
       "Bash(sed -n '64,72p' lib/src/ui/screen/settings/display_settings_screen.dart)",
       "Bash(sed -n '1,20p' lib/src/platform/background_task/background_task_scheduler_factory.dart)",
-      "Bash(sed -n '28,40p' lib/src/service/window_state_service.dart)"
+      "Bash(sed -n '28,40p' lib/src/service/window_state_service.dart)",
+      "Bash(xcrun swiftc *)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [

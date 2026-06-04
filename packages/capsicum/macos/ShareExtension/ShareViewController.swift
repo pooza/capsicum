@@ -163,6 +163,10 @@ class ShareViewController: NSViewController {
     )
   }
 
+  /// 既知の制約 (#517): 共有先は単一の `shared_text.txt` で、本体が
+  /// 消費する前にユーザーが続けて 2 回共有すると 2 件目が 1 件目を上書きし、
+  /// 1 件目は失われる（直近 1 件のみ仕様）。連番ファイル化による queue 化は
+  /// 中期課題。実況の共有は単発が大半で実害が出ていないため現状は許容する。
   private func saveSharedText(_ text: String) {
     guard let containerURL = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroupId
