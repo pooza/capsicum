@@ -15,10 +15,11 @@ import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
 import 'emoji_picker.dart';
 
-/// 投稿 / 通知タイル上に直接出すタッチ操作ボタン行 (#565)。
+/// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
 ///
-/// post_tile と notification_tile で約 90 行が重複していたため共有 widget に
-/// 集約した (#657)。[postTouchActionsProvider] で端末ごとに有効化され、かつ
+/// 機能自体は #565（タッチ操作のオプトイン）由来で、post_tile と
+/// notification_tile に約 90 行が重複していたため本 widget に集約した。
+/// [postTouchActionsProvider] で端末ごとに有効化され、かつ
 /// adapter が対応しているアクションだけを小さな [IconButton] として並べる。
 /// 該当が無ければ [SizedBox.shrink]。長押しメニュー / 「…」ボタンは設定に
 /// 関係なく各タイル側に併存する。
@@ -208,10 +209,14 @@ class PostTouchActionRow extends ConsumerWidget {
     bool isOwnRenote,
     String boostLabel,
   ) async {
+    // notifier は await の前（= ボタン押下時、確実に mounted）に取得する。
+    // この widget は ConsumerWidget で、await 中にタイルがスクロールアウト等で
+    // dispose されると await 後の `ref.read` が StateError を投げうるため。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await adapter.unrepeatPost(isOwnRenote ? outerPost : targetPost);
       if (isOwnRenote) {
-        ref.read(timelineProvider.notifier).removePost(outerPost.id);
+        timeline.removePost(outerPost.id);
       }
       if (targetPost.reblogged) {
         final updated = targetPost.copyWith(
@@ -220,7 +225,7 @@ class PostTouchActionRow extends ConsumerWidget {
               ? targetPost.reblogCount - 1
               : 0,
         );
-        ref.read(timelineProvider.notifier).updatePost(updated);
+        timeline.updatePost(updated);
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
@@ -272,11 +277,13 @@ class PostTouchActionRow extends ConsumerWidget {
     Future<void> Function() action,
     String successMessage,
   ) async {
+    // notifier は await の前に取得する（_unrepeat と同じ理由）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await action();
       // 投稿を取り直してタイムラインへ反映する。
       final updated = await adapter.getPostById(targetPost.id);
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
@@ -303,9 +310,11 @@ class PostTouchActionRow extends ConsumerWidget {
     Future<Post> Function() action,
     String successMessage,
   ) async {
+    // notifier は await の前に取得する（_unrepeat と同じ理由）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       final updated = await action();
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
