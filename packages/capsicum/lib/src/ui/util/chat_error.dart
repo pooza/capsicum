@@ -1,19 +1,5 @@
-import 'package:dio/dio.dart';
-
 import '../../model/account.dart';
 import '../../service/sentry_op_failure.dart';
-
-/// chat 操作系 SnackBar / エラーパネルに流す短い人間向け要約。
-/// DioException の URL / ヘッダ / Authorization / push_token 等の機微情報を
-/// 流さず、status code / type だけ含める (#460 の drive 版と同型)。
-String summarizeChatError(Object error) {
-  if (error is DioException) {
-    final status = error.response?.statusCode;
-    if (status != null) return 'サーバーエラー (HTTP $status)';
-    return 'ネットワークエラー (${error.type.name})';
-  }
-  return 'エラーが発生しました';
-}
 
 /// chat 操作失敗時に Sentry へ詳細を流す共通フック (#460 の drive 版と同型)。
 /// 共通ヘルパ [reportOpFailure] に委譲し、`chat.op` tag + host/backend tag +

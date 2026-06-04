@@ -14,6 +14,7 @@ import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/exception_scrub.dart';
@@ -77,8 +78,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
   // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
   // ために Release.entitlements に com.apple.security.network.server が必要。
-  bool get _useLocalhostCallback =>
-      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  bool get _useLocalhostCallback => isDesktop;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、

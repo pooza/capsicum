@@ -10,6 +10,7 @@ import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
+import '../util/op_error.dart';
 import '../util/relative_time.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
@@ -80,7 +81,7 @@ class _ChatRoomTimelineScreenState
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('送信に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('送信に失敗しました (${summarizeOpError(e)})')),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -123,7 +124,7 @@ class _ChatRoomTimelineScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${target ? "ミュート" : "ミュート解除"}に失敗しました (${summarizeChatError(e)})',
+            '${target ? "ミュート" : "ミュート解除"}に失敗しました (${summarizeOpError(e)})',
           ),
         ),
       );
@@ -175,7 +176,7 @@ class _ChatRoomTimelineScreenState
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('退出に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('退出に失敗しました (${summarizeOpError(e)})')),
       );
     }
   }
@@ -216,7 +217,7 @@ class _ChatRoomTimelineScreenState
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
       );
     }
   }
@@ -253,7 +254,7 @@ class _ChatRoomTimelineScreenState
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('削除に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
       );
     }
   }
@@ -393,7 +394,7 @@ class _ChatRoomTimelineScreenState
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SelectableText(
-                              '読み込みに失敗しました\n${summarizeChatError(error)}',
+                              '読み込みに失敗しました\n${summarizeOpError(error)}',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 16),

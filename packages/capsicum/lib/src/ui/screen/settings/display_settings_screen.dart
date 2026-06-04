@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../platform/platform_info.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../../service/update_checker.dart';
 
@@ -65,7 +64,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
           ),
           // マウスドラッグでのスクロールはデスクトップ専用 (#574)。トラック
           // パッド 2 本指スワイプとの両立が崩れるケースがあるためオプトイン。
-          if (Platform.isMacOS || Platform.isLinux || Platform.isWindows)
+          if (isDesktop)
             SwitchListTile(
               title: const Text('マウスドラッグでスクロール'),
               subtitle: const Text(

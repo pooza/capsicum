@@ -73,7 +73,12 @@
       "Bash(perl -pi -e \"s{src/service/exception_scrub.dart}{src/util/exception_scrub.dart}\" lib/main.dart)",
       "Bash(perl -pi -e \"s{\\\\.\\\\./\\\\.\\\\./service/exception_scrub.dart}{../../util/exception_scrub.dart}\" lib/src/ui/util/annict_link.dart lib/src/ui/screen/login_screen.dart lib/src/ui/screen/annict_record_screen.dart)",
       "Bash(perl -pi -e \"s{\\\\.\\\\./service/exception_scrub.dart}{../util/exception_scrub.dart}\" lib/src/provider/chat_provider.dart lib/src/provider/supporter_purchase_provider.dart lib/src/provider/timeline_provider.dart)",
-      "Bash(perl -pi -e \"s{import 'exception_scrub.dart';}{import '../util/exception_scrub.dart';}\" lib/src/service/announcement_subscription_service.dart lib/src/service/sentry_op_failure.dart lib/src/service/push_registration_service.dart)"
+      "Bash(perl -pi -e \"s{import 'exception_scrub.dart';}{import '../util/exception_scrub.dart';}\" lib/src/service/announcement_subscription_service.dart lib/src/service/sentry_op_failure.dart lib/src/service/push_registration_service.dart)",
+      "Bash(sed -n '78,84p' lib/src/ui/screen/login_screen.dart)",
+      "Bash(sed -n '155,160p' lib/src/ui/screen/media_viewer_screen.dart)",
+      "Bash(sed -n '64,72p' lib/src/ui/screen/settings/display_settings_screen.dart)",
+      "Bash(sed -n '1,20p' lib/src/platform/background_task/background_task_scheduler_factory.dart)",
+      "Bash(sed -n '28,40p' lib/src/service/window_state_service.dart)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [

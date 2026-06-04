@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
+
+import '../platform/platform_info.dart';
 
 /// デスクトップ (macOS / Linux / Windows) のウィンドウ位置・サイズ・最大化
 /// 状態を起動間で記録 / 復元するサービス (#559)。
@@ -28,11 +29,8 @@ class WindowStateService with WindowListener {
   Timer? _saveTimer;
   bool _initialized = false;
 
-  static bool get _isDesktop =>
-      Platform.isLinux || Platform.isMacOS || Platform.isWindows;
-
   Future<void> init() async {
-    if (!_isDesktop) return;
+    if (!isDesktop) return;
     await windowManager.ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
+import '../util/op_error.dart';
 
 /// 新規ルーム作成 / 既存ルーム編集を兼ねる画面 (#438)。[initialRoom] が null
 /// なら作成、それ以外なら編集。Misskey の `/chat/rooms/{create,update}` を叩く。
@@ -86,7 +87,7 @@ class _ChatRoomEditScreenState extends ConsumerState<ChatRoomEditScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${widget.isEditing ? "更新" : "作成"}に失敗しました (${summarizeChatError(e)})',
+            '${widget.isEditing ? "更新" : "作成"}に失敗しました (${summarizeOpError(e)})',
           ),
         ),
       );

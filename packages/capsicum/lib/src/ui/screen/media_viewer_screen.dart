@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +11,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/media_filename.dart';
 
@@ -154,8 +154,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   /// メディア保存はデスクトップ 3 OS のみ対応 (#572 第一弾)。モバイルは
   /// ギャラリー保存に別パッケージ + ネイティブ権限が必要なため別 issue
   /// (#646)、ファイラーへの drag-out も別 issue (#645)。
-  bool get _canSaveToDisk =>
-      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+  bool get _canSaveToDisk => isDesktop;
 
   /// 現在表示中のメディアを OS のファイル保存ダイアログ経由でローカルに
   /// ダウンロードする (#572)。file_selector の保存ダイアログで保存先を選び、

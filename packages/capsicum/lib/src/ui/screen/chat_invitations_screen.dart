@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
+import '../util/op_error.dart';
 
 /// 自分宛のルーム招待一覧 (#438)。Accept (= join) で参加、Ignore で受信箱から
 /// 取り除く。
@@ -52,7 +53,7 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('参加に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('参加に失敗しました (${summarizeOpError(e)})')),
       );
     } finally {
       if (mounted) setState(() => _pendingRoomId = null);
@@ -76,7 +77,7 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('操作に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
       );
     } finally {
       if (mounted) setState(() => _pendingRoomId = null);
@@ -160,7 +161,7 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 SelectableText(
-                  '読み込みに失敗しました\n${summarizeChatError(error)}',
+                  '読み込みに失敗しました\n${summarizeOpError(error)}',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),

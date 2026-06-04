@@ -9,6 +9,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../constants.dart';
 import '../model/account.dart';
+import '../platform/platform_info.dart';
 import '../preset_servers.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
@@ -43,8 +44,7 @@ class PushRegistrationService {
   /// が本配線済みか。macOS / Linux / Windows は本配線未対応のため
   /// (#468 / #475 / #474 で確定後に切り替え予定)、UI と service 層で push
   /// 機能を gate するときの単一の真実源とする (#502)。
-  static bool get isPushBackendWired =>
-      !(Platform.isMacOS || Platform.isLinux || Platform.isWindows);
+  static bool get isPushBackendWired => !isDesktop;
 
   static final _client = PushRelayClient();
 

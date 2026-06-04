@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
-import '../util/chat_error.dart';
+import '../util/op_error.dart';
 import '../widget/user_avatar.dart';
 
 /// 指定ルームのメンバー一覧 (#438)。owner は招待ボタンも表示される。
@@ -105,7 +105,7 @@ class ChatRoomMembersScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 SelectableText(
-                  '読み込みに失敗しました\n${summarizeChatError(error)}',
+                  '読み込みに失敗しました\n${summarizeOpError(error)}',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
