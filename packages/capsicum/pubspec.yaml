@@ -128,6 +128,9 @@ msix_config:
   # 整合させる方針。法人 (有限会社ビーショック) への切替は税務・ブランド
   # 要請が顕在化した時点で一括移行する。詳細は CLAUDE.md「運営元」節参照。
   publisher_display_name: 小石達也
+  # identity_name は通知の appUserModelId と一致が必須。コード側の
+  # single source of truth は constants.dart の WindowsIdentifiers.appUserModelId
+  # (#554)。変更時は両方を更新すること。
   identity_name: 9AFBB08E.capsicum
   publisher: CN=0B8EE9C3-CB07-4EBE-B8B8-B73E973AEE42
   logo_path: windows/runner/resources/app_icon.png
@@ -147,9 +150,10 @@ msix_config:
   install_certificate: false
   output_name: capsicum
   # 通知アクティベータの COM CLSID。flutter_local_notifications_windows が
-  # 通知タップ時にこの CLSID を介してアプリにコールバックする。
-  # `lib/src/platform/notification_subsystem/flutter_local_notification_subsystem.dart`
-  # の WindowsInitializationSettings.guid と完全一致させること (#423)。
+  # 通知タップ時にこの CLSID を介してアプリにコールバックする。コード側の
+  # single source of truth は constants.dart の
+  # WindowsIdentifiers.toastActivatorClsid (#554)。
+  # WindowsInitializationSettings.guid と完全一致させること (#423)。
   toast_activator:
     clsid: 'c97e7770-db27-4202-96cc-739a44734e65'
     arguments: '----AppNotificationActivationServer'
