@@ -1,0 +1,316 @@
+import 'dart:async';
+
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
+
+import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
+import '../../provider/timeline_provider.dart';
+import '../util/post_action_error.dart';
+import '../util/post_scope_display.dart';
+import 'emoji_picker.dart';
+
+/// 投稿 / 通知タイル上に直接出すタッチ操作ボタン行 (#565)。
+///
+/// post_tile と notification_tile で約 90 行が重複していたため共有 widget に
+/// 集約した (#657)。[postTouchActionsProvider] で端末ごとに有効化され、かつ
+/// adapter が対応しているアクションだけを小さな [IconButton] として並べる。
+/// 該当が無ければ [SizedBox.shrink]。長押しメニュー / 「…」ボタンは設定に
+/// 関係なく各タイル側に併存する。
+class PostTouchActionRow extends ConsumerWidget {
+  /// アクション対象（reblog 解決済みの投稿）。
+  final Post targetPost;
+
+  /// タイムライン上の外側 post。自分のリノートの取り消し判定と、取り消し時の
+  /// `removePost` に使う。reblog でない場合は [targetPost] と同じものを渡す。
+  final Post outerPost;
+
+  /// favorite / boost 等で post が更新されたとき親へ通知する（任意）。
+  final ValueChanged<Post>? onPostUpdated;
+
+  /// アクション完了後のフック（任意。タイムライン再取得等）。
+  final VoidCallback? onActionCompleted;
+
+  const PostTouchActionRow({
+    super.key,
+    required this.targetPost,
+    required this.outerPost,
+    this.onPostUpdated,
+    this.onActionCompleted,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(postTouchActionsProvider);
+    if (enabled.isEmpty) return const SizedBox.shrink();
+
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return const SizedBox.shrink();
+
+    final messenger = ScaffoldMessenger.of(context);
+    final buttons = <Widget>[];
+
+    void add(IconData icon, String tooltip, VoidCallback onPressed) {
+      buttons.add(
+        IconButton(
+          icon: Icon(icon, size: 20),
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(),
+          color: Theme.of(context).textTheme.bodySmall?.color,
+          onPressed: onPressed,
+        ),
+      );
+    }
+
+    if (enabled.contains(PostTouchAction.reply)) {
+      add(Icons.reply, 'リプライ', () {
+        context.push('/compose', extra: {'replyTo': targetPost});
+      });
+    }
+    if (enabled.contains(PostTouchAction.favorite) &&
+        adapter is FavoriteSupport) {
+      // 状態に応じて追加 / 解除をトグルする (#565)。
+      if (targetPost.favourited) {
+        add(Icons.star, 'お気に入りを解除', () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as FavoriteSupport).unfavoritePost(targetPost.id),
+            'お気に入りを解除しました',
+          );
+        });
+      } else {
+        add(Icons.star_outline, 'お気に入り', () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as FavoriteSupport).favoritePost(targetPost.id),
+            'お気に入りに追加しました',
+          );
+        });
+      }
+    }
+    if (enabled.contains(PostTouchAction.reaction) &&
+        adapter is ReactionSupport) {
+      add(Icons.add_reaction_outlined, 'リアクション', () {
+        _showEmojiPicker(context, ref);
+      });
+    }
+    if (enabled.contains(PostTouchAction.boost)) {
+      final boostLabel = ref.read(reblogLabelProvider);
+      final currentUser = ref.read(currentAccountProvider)?.user;
+      final isOwnRenote =
+          outerPost.reblog != null &&
+          currentUser != null &&
+          outerPost.author.id == currentUser.id;
+      final canUnrepeat = isOwnRenote || targetPost.reblogged;
+      // 既にブースト済み（自分のリノート or reblogged）なら取り消しに切り替える
+      // (#561 のタッチ操作側対応)。長押しメニューと同じトグル挙動。
+      if (canUnrepeat) {
+        add(Icons.repeat_on, '$boostLabelを取り消す', () {
+          _unrepeat(ref, messenger, adapter, isOwnRenote, boostLabel);
+        });
+      } else if (targetPost.scope == PostScope.public ||
+          targetPost.scope == PostScope.unlisted) {
+        add(Icons.repeat, boostLabel, () {
+          _runTouchBoost(context, ref, adapter, boostLabel);
+        });
+      }
+    }
+    if (enabled.contains(PostTouchAction.quote) && targetPost.quotable) {
+      add(Icons.format_quote, '引用', () {
+        context.push('/compose', extra: {'quoteTo': targetPost});
+      });
+    }
+
+    if (buttons.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
+    );
+  }
+
+  /// タッチ操作からのブースト / リノート (#565)。公開範囲を選べる場合
+  /// （元投稿が public）は長押しメニューと同じ chip シートを開いてから実行、
+  /// それ以外は即時実行する。
+  void _runTouchBoost(
+    BuildContext context,
+    WidgetRef ref,
+    BackendAdapter adapter,
+    String boostLabel,
+  ) {
+    final messenger = ScaffoldMessenger.of(context);
+    final scopes = boostableScopes(targetPost.scope);
+    if (scopes.isEmpty) {
+      _runAction(
+        ref,
+        messenger,
+        () => adapter.repeatPost(targetPost.id),
+        '$boostLabelしました',
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: Text('$boostLabelの公開範囲'),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Wrap(
+                spacing: 8,
+                children: scopes.map((scope) {
+                  final display = postScopeDisplay(scope, adapter);
+                  return ActionChip(
+                    avatar: Icon(display.icon, size: 16),
+                    label: Text(display.label),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _runAction(
+                        ref,
+                        messenger,
+                        () => adapter.repeatPost(
+                          targetPost.id,
+                          visibility: scope,
+                        ),
+                        '$boostLabelしました（${display.label}）',
+                      );
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ブースト / リノートの取り消し (#561)。Misskey は自分のリノート note 表示
+  /// そのものを delete、Mastodon は元 status の id で /unreblog する。
+  Future<void> _unrepeat(
+    WidgetRef ref,
+    ScaffoldMessengerState messenger,
+    BackendAdapter adapter,
+    bool isOwnRenote,
+    String boostLabel,
+  ) async {
+    try {
+      await adapter.unrepeatPost(isOwnRenote ? outerPost : targetPost);
+      if (isOwnRenote) {
+        ref.read(timelineProvider.notifier).removePost(outerPost.id);
+      }
+      if (targetPost.reblogged) {
+        final updated = targetPost.copyWith(
+          reblogged: false,
+          reblogCount: targetPost.reblogCount > 0
+              ? targetPost.reblogCount - 1
+              : 0,
+        );
+        ref.read(timelineProvider.notifier).updatePost(updated);
+      }
+      onActionCompleted?.call();
+      messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    }
+  }
+
+  void _showEmojiPicker(BuildContext context, WidgetRef ref) {
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
+    if (adapter is! ReactionSupport) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: EmojiPicker(
+          adapter: adapter as BackendAdapter,
+          host: account!.key.host,
+          mulukhiya: account.mulukhiya,
+          accessToken: account.userSecret.accessToken,
+          forReaction: true,
+          onSelected: (emoji) {
+            Navigator.pop(context);
+            _runReactionAction(
+              ref,
+              messenger,
+              adapter as BackendAdapter,
+              () => (adapter as ReactionSupport).addReaction(
+                targetPost.id,
+                emoji,
+              ),
+              'リアクションしました',
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runReactionAction(
+    WidgetRef ref,
+    ScaffoldMessengerState messenger,
+    BackendAdapter adapter,
+    Future<void> Function() action,
+    String successMessage,
+  ) async {
+    try {
+      await action();
+      // 投稿を取り直してタイムラインへ反映する。
+      final updated = await adapter.getPostById(targetPost.id);
+      ref.read(timelineProvider.notifier).updatePost(updated);
+      onActionCompleted?.call();
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e, st) {
+      debugPrint('_runReactionAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
+    }
+  }
+
+  Future<void> _runAction(
+    WidgetRef ref,
+    ScaffoldMessengerState messenger,
+    Future<Post> Function() action,
+    String successMessage,
+  ) async {
+    try {
+      final updated = await action();
+      ref.read(timelineProvider.notifier).updatePost(updated);
+      onPostUpdated?.call(updated);
+      onActionCompleted?.call();
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e) {
+      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    }
+  }
+}
