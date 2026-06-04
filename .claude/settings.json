@@ -67,7 +67,9 @@
       "WebFetch(domain:mk.precure.fun)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:gist.github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(perl -0pi -e 's/_formatTime\\\\\\(createdAt, useAbsoluteTime\\\\\\)/formatTimestamp\\(createdAt, absolute: useAbsoluteTime\\)/g' packages/capsicum/lib/src/ui/screen/unified_notification_screen.dart)",
+      "Bash(command -v flutter)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [
