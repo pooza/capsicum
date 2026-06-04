@@ -30,33 +30,26 @@ class ShareViewController: UIViewController {
     }
     os_log("inputItems count=%d", log: log, type: .debug, items.count)
 
+    // 共有ペイロードを取り出す typeIdentifier を優先度順に列挙する。
+    // URL を優先し、無ければプレーンテキストにフォールバックする。
+    let orderedTypes = [(typeURL, "typeURL"), (typeText, "typeText")]
+
     for item in items {
       guard let attachments = item.attachments else { continue }
       for provider in attachments {
-        if provider.hasItemConformingToTypeIdentifier(typeURL) {
-          provider.loadItem(forTypeIdentifier: typeURL, options: nil) { [weak self] data, error in
+        // typeURL / typeText で完全に同一だった loadItem 処理を
+        // typeIdentifier ループに 1 本化した (#520)。
+        for (typeId, label) in orderedTypes {
+          guard provider.hasItemConformingToTypeIdentifier(typeId) else { continue }
+          provider.loadItem(forTypeIdentifier: typeId, options: nil) { [weak self] data, error in
             if let error = error {
               os_log(
-                "loadItem(URL) error: %{public}@",
+                "loadItem(%{public}@) error: %{public}@",
                 log: self?.log ?? .default, type: .error,
-                error.localizedDescription
+                label, error.localizedDescription
               )
             }
-            self?.handleLoadedItem(data, label: "typeURL")
-            self?.close()
-          }
-          return
-        }
-        if provider.hasItemConformingToTypeIdentifier(typeText) {
-          provider.loadItem(forTypeIdentifier: typeText, options: nil) { [weak self] data, error in
-            if let error = error {
-              os_log(
-                "loadItem(text) error: %{public}@",
-                log: self?.log ?? .default, type: .error,
-                error.localizedDescription
-              )
-            }
-            self?.handleLoadedItem(data, label: "typeText")
+            self?.handleLoadedItem(data, label: label)
             self?.close()
           }
           return
