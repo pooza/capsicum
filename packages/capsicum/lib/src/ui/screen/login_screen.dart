@@ -955,7 +955,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          if (Platform.isAndroid) ...[
+          if (requiresManualCodeFallbackCard) ...[
             const SizedBox(height: 16),
             Card(
               child: Padding(
