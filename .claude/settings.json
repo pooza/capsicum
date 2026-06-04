@@ -69,7 +69,11 @@
       "WebFetch(domain:gist.github.com)",
       "WebSearch",
       "Bash(perl -0pi -e 's/_formatTime\\\\\\(createdAt, useAbsoluteTime\\\\\\)/formatTimestamp\\(createdAt, absolute: useAbsoluteTime\\)/g' packages/capsicum/lib/src/ui/screen/unified_notification_screen.dart)",
-      "Bash(command -v flutter)"
+      "Bash(command -v flutter)",
+      "Bash(perl -pi -e \"s{src/service/exception_scrub.dart}{src/util/exception_scrub.dart}\" lib/main.dart)",
+      "Bash(perl -pi -e \"s{\\\\.\\\\./\\\\.\\\\./service/exception_scrub.dart}{../../util/exception_scrub.dart}\" lib/src/ui/util/annict_link.dart lib/src/ui/screen/login_screen.dart lib/src/ui/screen/annict_record_screen.dart)",
+      "Bash(perl -pi -e \"s{\\\\.\\\\./service/exception_scrub.dart}{../util/exception_scrub.dart}\" lib/src/provider/chat_provider.dart lib/src/provider/supporter_purchase_provider.dart lib/src/provider/timeline_provider.dart)",
+      "Bash(perl -pi -e \"s{import 'exception_scrub.dart';}{import '../util/exception_scrub.dart';}\" lib/src/service/announcement_subscription_service.dart lib/src/service/sentry_op_failure.dart lib/src/service/push_registration_service.dart)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [

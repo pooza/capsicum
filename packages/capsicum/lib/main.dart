@@ -27,7 +27,7 @@ import 'src/router.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
 import 'src/service/apns_service.dart';
-import 'src/service/exception_scrub.dart';
+import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';

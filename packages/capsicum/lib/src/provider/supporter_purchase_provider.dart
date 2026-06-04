@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import '../service/exception_scrub.dart';
+import '../util/exception_scrub.dart';
 import 'supporter_status_provider.dart';
 
 /// 投げ銭 SKU (#428 B-2: 3 階層・円基準 ¥100 / ¥500 / ¥800)。

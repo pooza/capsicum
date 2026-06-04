@@ -3,7 +3,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/account.dart';
-import 'exception_scrub.dart';
+import '../util/exception_scrub.dart';
 import 'push_key_store.dart';
 import 'push_relay_client.dart';
 

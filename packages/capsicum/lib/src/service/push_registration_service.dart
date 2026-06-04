@@ -12,7 +12,7 @@ import '../model/account.dart';
 import '../preset_servers.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
-import 'exception_scrub.dart';
+import '../util/exception_scrub.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';

@@ -1,7 +1,7 @@
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
-import 'exception_scrub.dart';
+import '../util/exception_scrub.dart';
 
 /// chat / drive / pages 等の UI 操作失敗を Sentry に流す共通ヘルパ (#625)。
 ///
