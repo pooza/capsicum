@@ -66,3 +66,23 @@ class AppConstants {
   static const twemojiBaseUrl =
       'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72';
 }
+
+/// Windows MSIX 配布で使う識別子（#423 / #554）。
+///
+/// **これらは `pubspec.yaml` の `msix_config` と完全一致が必須**で、ずれると
+/// 通知タップ時のアプリ前面化 / payload 受け取りが死ぬ。コード側の single
+/// source of truth をここに置き、pubspec 側は文字列のまま手で同期する
+/// （pubspec は YAML のため Dart 定数を参照できない）。変更時は必ず両方を
+/// 更新すること:
+///
+/// - [appUserModelId] ↔ `msix_config.identity_name`
+/// - [toastActivatorClsid] ↔ `msix_config.toast_activator.clsid`
+class WindowsIdentifiers {
+  /// アクションセンタ上での通知グルーピングに使う AppUserModelID。
+  /// `msix_config.identity_name` と一致させる。
+  static const appUserModelId = '9AFBB08E.capsicum';
+
+  /// 通知アクティベータ COM の CLSID。
+  /// `msix_config.toast_activator.clsid` と完全一致が必須。
+  static const toastActivatorClsid = 'c97e7770-db27-4202-96cc-739a44734e65';
+}

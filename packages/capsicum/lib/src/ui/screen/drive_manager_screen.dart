@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import '../util/drive_error.dart';
+import '../util/op_error.dart';
 import 'media_viewer_screen.dart';
 
 class DriveManagerScreen extends ConsumerStatefulWidget {
@@ -187,7 +188,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('移動に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('移動に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -265,7 +266,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     if (mounted) {
       final msg = lastError == null
           ? '$success 件のファイルを移動しました'
-          : '$success / ${ids.length} 件移動しました (${summarizeDriveError(lastError)})';
+          : '$success / ${ids.length} 件移動しました (${summarizeOpError(lastError)})';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
     _exitSelectionMode();
@@ -295,7 +296,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('移動に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('移動に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -488,7 +489,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -511,7 +512,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -555,7 +556,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('削除に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -578,7 +579,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -617,7 +618,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }
@@ -638,7 +639,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作に失敗しました (${summarizeDriveError(e)})')),
+          SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
         );
       }
     }

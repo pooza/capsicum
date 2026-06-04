@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import 'notification_subsystem.dart';
 
 /// 全プラットフォーム共通の flutter_local_notifications ベース実装。
@@ -50,14 +51,12 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       // package (flutter_local_notifications_windows) で MSIX に同梱される
       // (#423)。
       // - appName: アクションセンタ上での通知グルーピング表示名
-      // - appUserModelId: msix_config の identity_name と一致させる
-      // - guid: 通知アクティベータ COM CLSID。pubspec.yaml の
-      //   msix_config.toast_activator.clsid と完全一致が必須 (一致しないと
-      //   タップ時のアプリ前面化 / payload 受け取りが動かない)
+      // - appUserModelId / guid: pubspec.yaml の msix_config と完全一致が必須。
+      //   定数は constants.dart の WindowsIdentifiers に集約済み (#554)。
       const windowsSettings = WindowsInitializationSettings(
-        appName: 'capsicum',
-        appUserModelId: '9AFBB08E.capsicum',
-        guid: 'c97e7770-db27-4202-96cc-739a44734e65',
+        appName: AppConstants.appName,
+        appUserModelId: WindowsIdentifiers.appUserModelId,
+        guid: WindowsIdentifiers.toastActivatorClsid,
       );
       await _plugin.initialize(
         settings: const InitializationSettings(

@@ -179,6 +179,14 @@ class _TextBlock extends ConsumerStatefulWidget {
 
 class _TextBlockState extends ConsumerState<_TextBlock> {
   ContentRenderer? _renderer;
+  // ContentRenderer の生成入力をキャッシュし、変化したときだけ作り直す (#628)。
+  // build ごとの dispose + 再生成は emojiSize provider 変更等で頻発し GC 負荷に
+  // なる。emojiSize は Riverpod 依存で InheritedWidget ではないため
+  // didChangeDependencies では拾えず、入力メモ化で「依存変化時のみ再生成」を
+  // 実現する。
+  TextStyle? _baseStyle;
+  double? _emojiSize;
+  String? _host;
 
   @override
   void dispose() {
@@ -193,17 +201,26 @@ class _TextBlockState extends ConsumerState<_TextBlock> {
     if (text.isEmpty) return const SizedBox.shrink();
 
     final baseStyle = theme.textTheme.bodyMedium ?? const TextStyle();
-    _renderer?.dispose();
-    _renderer = ContentRenderer(
-      baseStyle: baseStyle,
-      resolveEmoji: (shortcode) {
-        if (widget.host != null) {
-          return 'https://${widget.host}/emoji/$shortcode.webp';
-        }
-        return null;
-      },
-      emojiSize: ref.watch(emojiSizeProvider),
-    );
+    final emojiSize = ref.watch(emojiSizeProvider);
+    if (_renderer == null ||
+        _baseStyle != baseStyle ||
+        _emojiSize != emojiSize ||
+        _host != widget.host) {
+      _renderer?.dispose();
+      _renderer = ContentRenderer(
+        baseStyle: baseStyle,
+        resolveEmoji: (shortcode) {
+          if (widget.host != null) {
+            return 'https://${widget.host}/emoji/$shortcode.webp';
+          }
+          return null;
+        },
+        emojiSize: emojiSize,
+      );
+      _baseStyle = baseStyle;
+      _emojiSize = emojiSize;
+      _host = widget.host;
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Text.rich(_renderer!.renderMfm(text)),

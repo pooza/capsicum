@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
+import '../util/op_error.dart';
 import '../widget/user_avatar.dart';
 
 /// ルームに招待するユーザーを検索 → 招待を送信する画面 (#438)。owner のみ
@@ -74,7 +75,7 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('招待に失敗しました (${summarizeChatError(e)})')),
+        SnackBar(content: Text('招待に失敗しました (${summarizeOpError(e)})')),
       );
     } finally {
       if (mounted) setState(() => _pendingUserId = null);
@@ -137,7 +138,7 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: SelectableText(
-                    '検索に失敗しました\n${summarizeChatError(error)}',
+                    '検索に失敗しました\n${summarizeOpError(error)}',
                     textAlign: TextAlign.center,
                   ),
                 ),

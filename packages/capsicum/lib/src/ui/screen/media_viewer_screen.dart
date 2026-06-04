@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +11,9 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
@@ -154,8 +155,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   /// メディア保存はデスクトップ 3 OS のみ対応 (#572 第一弾)。モバイルは
   /// ギャラリー保存に別パッケージ + ネイティブ権限が必要なため別 issue
   /// (#646)、ファイラーへの drag-out も別 issue (#645)。
-  bool get _canSaveToDisk =>
-      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+  bool get _canSaveToDisk => isDesktop;
 
   /// 現在表示中のメディアを OS のファイル保存ダイアログ経由でローカルに
   /// ダウンロードする (#572)。file_selector の保存ダイアログで保存先を選び、
@@ -185,7 +185,16 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(content: Text('保存しました')));
-    } catch (_) {
+    } catch (e, st) {
+      // #572 は新機能のため初期は計装する。権限・ディスク full・サーバ 4xx 等の
+      // ダウンロード / 書き込み失敗を host/backend tag 付きで観測する (#648)。
+      reportOpFailure(
+        tagKey: 'media.op',
+        operation: 'save',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));

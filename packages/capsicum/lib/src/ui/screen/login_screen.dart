@@ -14,9 +14,10 @@ import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
-import '../../service/exception_scrub.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
 import '../widget/content_parser.dart';
 
@@ -77,8 +78,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
   // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
   // ために Release.entitlements に com.apple.security.network.server が必要。
-  bool get _useLocalhostCallback =>
-      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  bool get _useLocalhostCallback => isDesktop;
 
   /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
@@ -830,7 +830,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // DioException の場合 requestOptions.uri に client_secret が載る
       // Mastodon サーバ実装があるため、そのまま debugPrint すると AppImage
       // の AppRun ログ (~/.local/share/capsicum/logs/) に平文で残る (#499)。
-      // service/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
+      // util/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
       debugPrint('Manual code fallback error: ${scrubException(e)}');
       if (mounted) {
         setState(() => _error = '認証コードが正しくありません');
@@ -955,7 +955,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          if (Platform.isAndroid) ...[
+          if (requiresManualCodeFallbackCard) ...[
             const SizedBox(height: 16),
             Card(
               child: Padding(

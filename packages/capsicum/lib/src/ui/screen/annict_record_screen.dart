@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
-import '../../service/exception_scrub.dart';
+import '../../util/exception_scrub.dart';
 import '../util/annict_link.dart';
 
 /// Annict 視聴記録 (感想・レーティング) を投稿する画面 (#298)。

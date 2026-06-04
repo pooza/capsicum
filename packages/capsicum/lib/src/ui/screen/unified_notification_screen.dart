@@ -11,6 +11,7 @@ import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../util/notification_type_display.dart';
+import '../util/relative_time.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
@@ -252,7 +253,7 @@ class _UnifiedNotificationTileState
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
           Text(
-            _formatTime(createdAt, useAbsoluteTime),
+            formatTimestamp(createdAt, absolute: useAbsoluteTime),
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -280,7 +281,7 @@ class _UnifiedNotificationTileState
         ),
         const SizedBox(width: 8),
         Text(
-          _formatTime(createdAt, useAbsoluteTime),
+          formatTimestamp(createdAt, absolute: useAbsoluteTime),
           style: theme.textTheme.bodySmall,
         ),
       ],
@@ -349,22 +350,6 @@ class _UnifiedNotificationTileState
       postLabel: widget.postLabel,
     );
     return (display.icon, display.label);
-  }
-
-  String _formatTime(DateTime time, bool useAbsoluteTime) {
-    if (useAbsoluteTime) {
-      final local = time.toLocal();
-      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
-          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-    }
-    final diff = DateTime.now().toUtc().difference(time);
-    if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
-    if (diff.inHours < 24) return '${diff.inHours}時間前';
-    if (diff.inDays < 30) return '${diff.inDays}日前';
-    final months = diff.inDays ~/ 30;
-    if (months < 12) return '$monthsヶ月前';
-    return '${diff.inDays ~/ 365}年前';
   }
 }
 

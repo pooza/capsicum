@@ -6,7 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
-import '../util/chat_error.dart';
+import '../util/op_error.dart';
+import '../util/relative_time.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
 
@@ -158,7 +159,7 @@ class _ChatThreadListScreenState extends ConsumerState<ChatThreadListScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SelectableText(
-                        '読み込みに失敗しました\n${summarizeChatError(error)}',
+                        '読み込みに失敗しました\n${summarizeOpError(error)}',
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 16),
@@ -271,7 +272,12 @@ class _ThreadMetaColumn extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          _formatTime(ref, thread.lastMessage.createdAt),
+          // chat_thread_screen / post_tile / notification_tile と同じ表示モード
+          // (display_settings の absoluteTimeProvider) に追従する (#560)。
+          formatTimestamp(
+            thread.lastMessage.createdAt,
+            absolute: ref.watch(absoluteTimeProvider),
+          ),
           style: Theme.of(context).textTheme.bodySmall,
         ),
         if (thread.isUnread)
@@ -286,23 +292,5 @@ class _ThreadMetaColumn extends StatelessWidget {
           ),
       ],
     );
-  }
-
-  // chat_thread_screen / post_tile / notification_tile と同じ表示モード
-  // (display_settings の absoluteTimeProvider) に追従する (#560)。
-  String _formatTime(WidgetRef ref, DateTime createdAt) {
-    if (ref.watch(absoluteTimeProvider)) {
-      final local = createdAt.toLocal();
-      return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
-          '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-    }
-    final diff = DateTime.now().toUtc().difference(createdAt);
-    if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
-    if (diff.inHours < 24) return '${diff.inHours}時間前';
-    if (diff.inDays < 30) return '${diff.inDays}日前';
-    final months = diff.inDays ~/ 30;
-    if (months < 12) return '$monthsヶ月前';
-    return '${diff.inDays ~/ 365}年前';
   }
 }
