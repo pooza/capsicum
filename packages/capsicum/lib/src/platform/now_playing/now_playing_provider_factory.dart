@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'mpris_now_playing_provider.dart';
 import 'noop_now_playing_provider.dart';
 import 'now_playing_provider.dart';
+import 'smtc_now_playing_provider.dart';
 
 /// プラットフォームに応じた **OS ネイティブ** [NowPlayingProvider] を生成する。
 ///
@@ -12,12 +13,14 @@ import 'now_playing_provider.dart';
 ///
 /// 実装状況（design §依存と着手順序）:
 /// - Linux  : MPRIS（`dbus` パッケージ）— #466、実装済み
-/// - Windows: SMTC（WinRT FFI）— #484、スパイク後に差し込み
+/// - Windows: SMTC（C++/WinRT メソッドチャンネル）— #484、実装済み
 /// - macOS / iOS / Android: OS ネイティブ pull なし → no-op
 NowPlayingProvider createNativeNowPlayingProvider() {
   if (Platform.isLinux) {
     return const MprisNowPlayingProvider();
   }
-  // TODO(#484): Windows で SmtcNowPlayingProvider を返す
+  if (Platform.isWindows) {
+    return const SmtcNowPlayingProvider();
+  }
   return const NoopNowPlayingProvider();
 }

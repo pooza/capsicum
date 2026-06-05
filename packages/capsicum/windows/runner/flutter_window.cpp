@@ -1,8 +1,13 @@
 #include "flutter_window.h"
 
+#include <flutter/method_call.h>
+#include <flutter/method_result.h>
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "smtc_now_playing.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -26,6 +31,21 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  // ナウプレ取得 (SMTC) のメソッドチャンネル (#466 / #484)。Dart 側の
+  // SmtcNowPlayingProvider が 'getNowPlaying' を呼ぶ。
+  now_playing_channel_ = std::make_unique<flutter::MethodChannel<>>(
+      flutter_controller_->engine()->messenger(), "capsicum/now_playing",
+      &flutter::StandardMethodCodec::GetInstance());
+  now_playing_channel_->SetMethodCallHandler(
+      [](const flutter::MethodCall<>& call,
+         std::unique_ptr<flutter::MethodResult<>> result) {
+        if (call.method_name() == "getNowPlaying") {
+          result->Success(GetCurrentNowPlaying());
+        } else {
+          result->NotImplemented();
+        }
+      });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
