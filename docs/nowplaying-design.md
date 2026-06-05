@@ -68,8 +68,8 @@ class NowPlayingInfo {
 |---|---|---|---|
 | **Linux** | MPRIS（`org.mpris.MediaPlayer2.*`, D-Bus） | pub.dev `dbus`（**pure Dart**, 実績あり） | FFI 不要の見込み。Spotify Linux / VLC / Rhythmbox / Elisa 等 |
 | **Windows** | SMTC（`GlobalSystemMediaTransportControlsSessionManager`） | **WinRT FFI**（`win32` パッケージ or 小さな C++ プラグイン） | **本マイルストーン最大の技術リスク。**良質な既存 Flutter プラグインが無い。先行スパイク推奨 |
-| **macOS** | なし（pull は持たない） | — | 公開 API で他アプリの再生情報は取れない（private MediaRemote.framework は App Store 禁止）。**push（Share Extension）を維持**。pull ボタンは Spotify 連携時のみ動く |
-| **iOS** | なし | — | macOS と同じ。Share Extension（push）+ Spotify（pull）のみ |
+| **macOS** | Apple Music のみ（要調査） | ミュージック.app scripting（ScriptingBridge / AppleScript） | **任意アプリ**の横断取得は公開 API で不可（private MediaRemote.framework は App Store 禁止）。ただし **Apple Music 限定なら scripting で pull 可能**（[#668](https://github.com/pooza/capsicum/issues/668)、サンドボックス entitlement 要検証）。push（Share Extension）も維持。Spotify は連携時のみ |
+| **iOS** | Apple Music のみ | `MPMusicPlayerController.systemMusicPlayer.nowPlayingItem`（MediaPlayer framework、**公開 API**） | **Apple Music 限定なら公開 API で pull 可能**（[#668](https://github.com/pooza/capsicum/issues/668)、`NSAppleMusicUsageDescription` + メディアライブラリ許可）。任意アプリ横断は macOS と同じく不可。Share Extension（push）+ Spotify（pull）も併用 |
 | **Android** | なし（v1.33 では入れない） | （将来 `NotificationListenerService`） | 他アプリの MediaSession 読み取りは通知アクセス権限が必要でプライバシー重め。share intent（push）+ Spotify（pull）に留める |
 
 → **OS ネイティブ pull の実装は実質 Linux(MPRIS) と Windows(SMTC) の 2 つだけ**。他 3 OS は Spotify(pull) + 共有(push) でカバーする。この割り切りで scope が締まる。
