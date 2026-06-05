@@ -3,12 +3,15 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// #466 capsicum 側フォールバック整形。モロヘイヤ `text_nowplaying_formatter`
-/// と揃えた複数行ラベル形式（`#nowplaying` + Title/Album/Artist 行）を組める
-/// こと、URL を持つ源は 1 行目に URL を載せることを確認。
+/// と揃えた複数行ラベル形式（Title/Album/Artist 行 + 末尾 `#nowplaying` 行）を
+/// 組めること、URL を持つ源は末尾タグ行に URL を載せることを確認。
+///
+/// タグ行が**末尾**なのはモロヘイヤの「`#nowplaying` 行に URL が無いと次行を
+/// 詰める」正規化対策（#466）。先頭に置くと `Title:` 行が詰められる。
 
 void main() {
   group('formatNowPlayingFallback', () {
-    test('URL + title/album/artist は URL 行とラベル行を組む', () {
+    test('URL + title/album/artist はラベル行 + 末尾の URL 付きタグ行を組む', () {
       final info = NowPlayingInfo(
         sourceAppName: 'Apple Music',
         title: 'シュビドゥビ☆スイーツタイム',
@@ -18,14 +21,14 @@ void main() {
       );
       expect(
         formatNowPlayingFallback(info),
-        '#nowplaying https://music.apple.com/jp/song/1352845804\n'
         'Title: シュビドゥビ☆スイーツタイム\n'
         'Album: スイート☆エチュード☆アラモード\n'
-        'Artist: 宮本佳那子',
+        'Artist: 宮本佳那子\n'
+        '#nowplaying https://music.apple.com/jp/song/1352845804',
       );
     });
 
-    test('URL が無い源（SMTC / MPRIS）は Title/Album/Artist 行を組む', () {
+    test('URL が無い源（SMTC / MPRIS）は Title/Album/Artist 行 + 末尾タグ', () {
       const info = NowPlayingInfo(
         sourceAppName: 'Spotify',
         title: '閃華裂光拳',
@@ -34,7 +37,7 @@ void main() {
       );
       expect(
         formatNowPlayingFallback(info),
-        '#nowplaying\nTitle: 閃華裂光拳\nAlbum: ダイの大冒険 BEST\nArtist: ダイ',
+        'Title: 閃華裂光拳\nAlbum: ダイの大冒険 BEST\nArtist: ダイ\n#nowplaying',
       );
     });
 
@@ -46,18 +49,18 @@ void main() {
       );
       expect(
         formatNowPlayingFallback(info),
-        '#nowplaying\nTitle: Song\nArtist: Artist',
+        'Title: Song\nArtist: Artist\n#nowplaying',
       );
     });
 
-    test('artist が無ければ Title 行だけ', () {
+    test('artist が無ければ Title 行だけ + 末尾タグ', () {
       const info = NowPlayingInfo(sourceAppName: 'VLC', title: 'Song');
-      expect(formatNowPlayingFallback(info), '#nowplaying\nTitle: Song');
+      expect(formatNowPlayingFallback(info), 'Title: Song\n#nowplaying');
     });
 
-    test('title が無ければ Artist 行だけ', () {
+    test('title が無ければ Artist 行だけ + 末尾タグ', () {
       const info = NowPlayingInfo(sourceAppName: 'VLC', artist: 'Artist');
-      expect(formatNowPlayingFallback(info), '#nowplaying\nArtist: Artist');
+      expect(formatNowPlayingFallback(info), 'Artist: Artist\n#nowplaying');
     });
 
     test('空白のみのフィールドは欠損扱い', () {
@@ -78,7 +81,7 @@ void main() {
       );
       expect(
         formatNowPlayingFallback(info),
-        '#nowplaying\nTitle: Song\nArtist: Artist',
+        'Title: Song\nArtist: Artist\n#nowplaying',
       );
     });
 

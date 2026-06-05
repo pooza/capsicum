@@ -18,21 +18,28 @@ const _nowPlayingTag = '#nowplaying';
 /// 方針（モロヘイヤ `text_nowplaying_formatter` の出力と揃えた複数行形式）:
 ///
 /// ```
-/// #nowplaying <URL があれば>
 /// Title: <title>
 /// Album: <album>
 /// Artist: <artist>
+/// #nowplaying <URL があれば>
 /// ```
 ///
-/// - 1 行目は常にタグ。[NowPlayingInfo.url] が非 null（Spotify 等）なら URL を
-///   続ける（SNS / モロヘイヤが unfurl する）。
-/// - 続けて Title / Album / Artist を**取れたものだけ**ラベル付きで列挙する
+/// - Title / Album / Artist を**取れたものだけ**ラベル付きで列挙する
 ///   （MPRIS / SMTC は URL を持たないが title/album/artist を返す）。
+/// - **タグ行は末尾に置く**。[NowPlayingInfo.url] が非 null（Spotify 等）なら
+///   URL を続ける（SNS / モロヘイヤが unfurl する）。
+///
+///   タグを先頭でなく**末尾**にするのは **モロヘイヤの正規化対策**（#466）。
+///   モロヘイヤは「`#nowplaying` 行に同一行 URL が無いとき次行を詰める」正規化
+///   （過去に `#nowplaying` と URL の間へ改行を入れた投稿を整えるために導入）を
+///   行う。タグを先頭に置くと、URL の無い MPRIS / SMTC では `#nowplaying` 行に
+///   続く `Title:` 行が詰められて結合してしまう。末尾に置けば詰める対象の次行が
+///   無く、副作用が出ない。**先頭に戻さないこと。**
 /// - メタデータが 1 つも無ければ、URL があればそれだけ、無ければ源アプリ名、
-///   それも空なら裸のタグ。
+///   それも空なら裸のタグ（いずれも単一行なので正規化の影響を受けない）。
 String formatNowPlayingFallback(NowPlayingInfo info) {
   final url = info.url;
-  final firstLine = url != null ? '$_nowPlayingTag $url' : _nowPlayingTag;
+  final tagLine = url != null ? '$_nowPlayingTag $url' : _nowPlayingTag;
 
   final labeled = <String>[
     for (final (label, value) in [
@@ -45,12 +52,13 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
 
   if (labeled.isEmpty) {
     // title/album/artist がすべて欠損。URL があればそれだけで成立する。
-    if (url != null) return firstLine;
+    if (url != null) return tagLine;
     // それも無ければ源アプリ名を出す（"VLC で再生中" 相当の情報をゼロにしない
     // ため）。源アプリ名も空なら裸のタグ。
     final source = info.sourceAppName.trim();
     return source.isEmpty ? _nowPlayingTag : '$_nowPlayingTag $source';
   }
 
-  return [firstLine, ...labeled].join('\n');
+  // タグ行は末尾（上記の正規化対策）。
+  return [...labeled, tagLine].join('\n');
 }
