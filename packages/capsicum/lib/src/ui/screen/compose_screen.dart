@@ -22,6 +22,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -144,6 +145,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   bool _sending = false;
+  // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
+  // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
+  // 本文に同じナウプレが多重 append されるのを防ぐ。
+  bool _insertingNowPlaying = false;
   bool _localOnly = false;
   DateTime? _scheduledAt;
   String? _language;
@@ -254,7 +259,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
-      _controller.text = '#nowplaying ${widget.sharedText!}\n';
+      // 共有（push）動線。共有テキストは不透明（URL or テキスト）なので
+      // formatNowPlayingFallback の構造化整形は通せないが、タグ定数だけは共有して
+      // リテラルの二重管理を避ける。整形の完全統一は macOS 共有 Extension とモロ
+      // ヘイヤ再設計（整形=クライアント / プロキシ=サーバー、design 参照）に依存。
+      _controller.text = '$nowPlayingTag ${widget.sharedText!}\n';
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
@@ -1179,6 +1188,73 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
+  /// 整形テキストを挿入する。取れなければ SnackBar で知らせる。
+  ///
+  /// 整形は**クライアント側で確定**（design §責務分担、2026-06-05）。
+  /// `formatNowPlayingFallback` が主整形器で、モロヘイヤのテキスト整形には依存
+  /// しない。モロヘイヤ #4382 は「整形器」ではなく「メタデータ → 共有 URL の
+  /// enrich プロキシ」へ再定義され、URL を持たない源への URL 補完を将来オプション
+  /// として配線する余地を残す（現状は補完なしで実用十分）。
+  Future<void> _insertNowPlaying() async {
+    // 連打ガード。取得中の再入を弾き、多重 append を防ぐ。
+    if (_insertingNowPlaying) return;
+    setState(() => _insertingNowPlaying = true);
+    try {
+      final resolver = ref.read(nowPlayingResolverProvider);
+      NowPlayingInfo? info;
+      try {
+        info = await resolver.currentlyPlaying();
+      } catch (e) {
+        // resolver / provider は例外を null に倒す契約だが、契約破りで投げても
+        // 落とさず観測する。異常系（D-Bus 権限・SMTC チャンネル例外等）を後追い
+        // できるよう breadcrumb を残す（他の best-effort 経路 #553 と同水準）。
+        // 曲名等 PII は載せず型名のみ。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'fetch_failed: ${e.runtimeType}',
+            level: SentryLevel.warning,
+          ),
+        );
+        info = null;
+      }
+      if (!mounted) return;
+      if (info == null) {
+        // 「本当に再生していない正常系」と「源が壊れている異常系」は当層では
+        // 区別しきれない（provider が握り潰す）が、押下のたびに取れなかった事実
+        // を残すと、内部ベータ検証で「無音で源が壊れている」を切り分けられる
+        // (#466)。breadcrumb のみで、ここでは Sentry イベント化しない。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'no_track',
+            level: SentryLevel.info,
+          ),
+        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
+        return;
+      }
+      _appendToBody(formatNowPlayingFallback(info));
+    } finally {
+      if (mounted) setState(() => _insertingNowPlaying = false);
+    }
+  }
+
+  /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
+  /// カーソルは末尾へ移す。
+  void _appendToBody(String snippet) {
+    final current = _controller.text;
+    final separator = (current.isNotEmpty && !current.endsWith('\n'))
+        ? '\n'
+        : '';
+    final next = '$current$separator$snippet';
+    _controller.text = next;
+    _controller.selection = TextSelection.collapsed(offset: next.length);
+  }
+
   Future<void> _showTagsetSheet() async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
@@ -2072,6 +2148,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           onPressed: _sending ? null : _showTagsetSheet,
                           icon: const Icon(Icons.live_tv),
                           tooltip: '実況',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
+                      // Spotify 連携）がこの端末で使えるときだけ出す。
+                      if (ref
+                          .watch(nowPlayingResolverProvider)
+                          .hasAvailableSource)
+                        IconButton(
+                          onPressed: (_sending || _insertingNowPlaying)
+                              ? null
+                              : _insertNowPlaying,
+                          icon: _insertingNowPlaying
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.music_note),
+                          tooltip: 'ナウプレを挿入',
                           visualDensity: VisualDensity.compact,
                         ),
                       if (ref.watch(currentAdapterProvider) is ScheduleSupport)

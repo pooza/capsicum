@@ -27,13 +27,13 @@
 - [x] App Store Connect API Key の配置
 
 > **各マシン共通の前提:**
-> App Store Connect API Key（`.p8`）を `~/.config/capsicum/AuthKey_WLS8G4W44L.p8` に配置すること。
-> Fastlane の Fastfile はこのパスを参照する。
+> App Store Connect API Key（`.p8`）を `~/.config/capsicum/AuthKey_<KEY_ID>.p8` に配置すること。
+> Fastlane の Fastfile はこのパスを参照する。`<KEY_ID>` / `<ISSUER_ID>` の実値は public リポジトリには書かず、各マシンの `~/.config/capsicum/` 配下と開発者の手元で管理する。
 > 配布用証明書（Apple Distribution）は Xcode → Settings → Accounts → Manage Certificates で追加する。
 
 ### 1.4 macOS 署名 / Universal Purchase（v1.21 で初回セットアップ）
 
-macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicum` を Universal Purchase で紐付け、AppStore Connect 上は同一 App レコードで管理する方針。配布は **Mac App Store 一本**（.dmg / Developer ID 配布は採用しない — [release-pipeline.md](release-pipeline.md) 参照）。
+macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicum` を Universal Purchase で紐付け、AppStore Connect 上は同一 App レコードで管理する方針。配布は **Mac App Store 一本**（.dmg / Developer ID 配布は採用しない — [release-pipeline.md](archive/release-pipeline.md) 参照）。
 
 - [ ] Apple Developer ポータルで **macOS App ID** を新規作成
   - Bundle ID: `jp.co.b-shock.capsicum`（iOS と同一文字列。プラットフォームが違うため衝突しない）
@@ -47,7 +47,7 @@ macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicu
 - [ ] Mac App Store 用スクリーンショット（1280×800 / 1440×900 / 2560×1600 のいずれか）を用意
 
 > **APNs キーの共用:**
-> iOS で使用している APNs Auth Key（`AuthKey_WLS8G4W44L.p8`）は macOS でもそのまま使える。`capsicum-relay` 側の APNs 接続も Bundle ID `jp.co.b-shock.capsicum` 単一で iOS / macOS 両プラットフォームを処理する。
+> iOS で使用している APNs Auth Key（`AuthKey_<KEY_ID>.p8`）は macOS でもそのまま使える。`capsicum-relay` 側の APNs 接続も Bundle ID `jp.co.b-shock.capsicum` 単一で iOS / macOS 両プラットフォームを処理する。
 >
 > **Sandbox と flutter_secure_storage:**
 > Debug entitlements では `app-sandbox=false` で運用している（ad-hoc 署名 + sandbox 有効では `errSecMissingEntitlement (-34018)` で flutter_secure_storage が動かないため）。development 署名（Apple Developer Team 紐付け済み）が通れば Debug でも sandbox を有効化できる見込み。Release entitlements は常に sandbox 有効。
@@ -76,7 +76,7 @@ EOF
 chmod 600 ~/.config/capsicum/secrets.env
 ```
 
-`~/.config/capsicum/` は AppStore Connect API Key (`AuthKey_WLS8G4W44L.p8`) と Google Play サービスアカウント JSON も置いているディレクトリ。リポジトリ外なので git に上がる心配はない。`chmod 600` で他ユーザーから読めないようにする。
+`~/.config/capsicum/` は AppStore Connect API Key (`AuthKey_<KEY_ID>.p8`) と Google Play サービスアカウント JSON も置いているディレクトリ。リポジトリ外なので git に上がる心配はない。`chmod 600` で他ユーザーから読めないようにする。
 
 ## 2. ストア掲載情報
 
@@ -373,9 +373,9 @@ v1.25.0 リリースで初めて踏んだ。エラーが出た場合は spaceshi
 ```ruby
 require 'spaceship'
 token = Spaceship::ConnectAPI::Token.create(
-  key_id: 'WLS8G4W44L',
-  issuer_id: '69a6de71-e621-47e3-e053-5b8c7c11a4d1',
-  filepath: File.expand_path('~/.config/capsicum/AuthKey_WLS8G4W44L.p8'),
+  key_id: '<KEY_ID>',
+  issuer_id: '<ISSUER_ID>',
+  filepath: File.expand_path('~/.config/capsicum/AuthKey_<KEY_ID>.p8'),
 )
 Spaceship::ConnectAPI.token = token
 
@@ -401,6 +401,25 @@ gh issue list --label bug --state open
 ```
 
 この結果をもとにリリースノートの「既知の不具合」を構築する。
+
+#### 公開状況の外形確認（App Store lookup API）
+
+iOS / macOS の「審査提出済み」と「公開済み」の差は、Apple の iTunes Search API (lookup) で認証なしに確認できる。`currentVersionReleaseDate` が最新版のストア反映日時。
+
+```bash
+# iOS / iPadOS（bundleId は Universal Purchase 共通）
+curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.capsicum&country=jp" | python3 -m json.tool
+
+# macOS（Mac App Store、entity=macSoftware）
+curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.capsicum&country=jp&entity=macSoftware" | python3 -m json.tool
+```
+
+注目フィールド: `version`（最新公開バージョン）/ `currentVersionReleaseDate`（ストア反映時刻 UTC）/ `releaseDate`（初公開日）/ `trackViewUrl`。
+
+注意:
+
+- User-Agent がないと空応答になることがあるため `-A "Mozilla/5.0"` を付ける。`country=us` 等で他ストアも確認できる
+- **片方ストアが長期停滞中だと lookup の `version` が実態と乖離する**。Universal Purchase の `trackId` 共有の都合で、iOS と macOS のどちらか古い方の公開バージョンが優先表示されることがある（例: iOS が新版公開済みでも macOS が審査停滞中だと両 storefront とも古い方を返し続ける）。**pooza が App Store Connect / ストア Web UI で直接確認した事実を lookup より優先**し、lookup は CLAUDE.md 反映の唯一根拠にせず口頭報告と突き合わせる
 
 ### 4.5 Linux 配布（v1.24〜）
 
@@ -550,7 +569,7 @@ dart run msix:create  # 未署名で生成 (開発者モード ON の Windows �
 
 - **iOS**: TestFlight 外部テスター経由（内部テスターは本名相互公開の問題があるため不使用）
 - **Android**: Google Play で直接配布（GitHub Releases への APK 添付は v1.5.1 で廃止）
-- **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](release-pipeline.md) 参照
+- **macOS**: Mac App Store 一本（.dmg / Developer ID 配布は採用しない）。「App Store からのアプリのみ許可」設定のユーザーに届かない問題と、署名・公証・更新通知の二重メンテを避けるため。詳細は [release-pipeline.md](archive/release-pipeline.md) 参照
 - **Linux**: AppImage 単独（Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念、Snap は不採用）。GitHub Releases に添付して即座に配布。手順は §4.5 参照
 - **Google Play アカウント**: 法人（Google Workspace）アカウントのため、クローズドテスト 12 人要件は免除
 - **ホットフィックス**: Fastfile の構成上 internal → promote の手順が必要（production に直接アップロードは不可）

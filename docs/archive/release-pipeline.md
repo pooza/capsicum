@@ -1,6 +1,6 @@
 # リリースパイプライン構想
 
-capsicum のリリースを複数プラットフォーム・複数ツールにまたがって一元管理するための構想ドキュメント。デスクトップ対応（[CLAUDE.md 長期構想](CLAUDE.md#長期構想-デスクトップ対応)）の前段階として、全体像を先に描いておくことで実装時の迷いを減らす。
+capsicum のリリースを複数プラットフォーム・複数ツールにまたがって一元管理するための構想ドキュメント。デスクトップ対応（[CLAUDE.md 長期構想](../CLAUDE.md#長期構想-デスクトップ対応)）の前段階として、全体像を先に描いておくことで実装時の迷いを減らす。
 
 ## 目的
 
@@ -22,7 +22,7 @@ flowchart LR
     aab -->|cd android && fastlane internal/release| gp[Google Play]
 ```
 
-詳細手順は [store-release-guide.md](store-release-guide.md) を参照。
+詳細手順は [store-release-guide.md](../store-release-guide.md) を参照。
 
 ## 将来像（デスクトップ対応後）
 
@@ -62,7 +62,7 @@ flowchart TB
 | Windows (Store) | `msstore` CLI + MSIX packaging | Windows runner | Microsoft Store |
 | Linux (AppImage) | `appimagetool` / `linuxdeploy` | Ubuntu runner | GitHub Releases |
 
-Snap Store は[採用しない方針](CLAUDE.md#長期構想-デスクトップ対応)。
+Snap Store は[採用しない方針](../CLAUDE.md#長期構想-デスクトップ対応)。
 
 ### macOS は Mac App Store 一本化
 
@@ -72,7 +72,7 @@ macOS の配布は **Mac App Store のみ**とする（.dmg / Developer ID 配�
 - 配布経路を二系統にすると署名・公証・更新通知（Sparkle 等）の運用コストが二重になる
 - iOS と同一 App レコードに Universal Purchase で紐付け済みのため、ストア一本化が素直
 
-このため fastlane レーンは `upload_to_testflight` / `upload_to_app_store` のみで、`create-dmg` / `notarize` は使わない。`.pkg` の生成手順は [store-release-guide.md](store-release-guide.md) 4.2 を参照。
+このため fastlane レーンは `upload_to_testflight` / `upload_to_app_store` のみで、`create-dmg` / `notarize` は使わない。`.pkg` の生成手順は [store-release-guide.md](../store-release-guide.md) 4.2 を参照。
 
 ## タグ命名規則
 
@@ -89,7 +89,7 @@ GitHub Actions のワークフロー側で `v*.*.*` にマッチさせる、ま�
 各ツールが必要とする認証情報の置き場所は、開発環境とリリース環境で使い分ける。
 
 **開発環境（手元 Mac）**
-既存の配置は [dev-environment.md](dev-environment.md) を参照。`~/.config/capsicum/` 配下に App Store Connect API Key と Google Play サービスアカウント JSON を置く運用は維持する。
+既存の配置は [dev-environment.md](../dev-environment.md) を参照。`~/.config/capsicum/` 配下に App Store Connect API Key と Google Play サービスアカウント JSON を置く運用は維持する。
 
 **GitHub Actions**
 プラットフォームが増えたタイミングで、以下を Repository Secrets に追加する。
@@ -122,8 +122,8 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
 ### Phase 1: 現状維持（v1.14〜v1.17）
 
 - 既存の手動 fastlane 運用を継続
-- [store-release-guide.md](store-release-guide.md) に書かれている手順をそのまま使う
-- この間に fastlane 実行ディレクトリの注意点・バージョン番号管理のルールを明文化する（[store-release-guide.md](store-release-guide.md) 済み）
+- [store-release-guide.md](../store-release-guide.md) に書かれている手順をそのまま使う
+- この間に fastlane 実行ディレクトリの注意点・バージョン番号管理のルールを明文化する（[store-release-guide.md](../store-release-guide.md) 済み）
 
 ### Phase 2: モバイル向け GitHub Actions 化（v1.18 前後）
 
@@ -148,8 +148,8 @@ macOS 署名・公証用の証明書は Actions の `apple-actions/import-codesi
   - Phase 1（Windows scaffold）: 完了 — `flutter create` で `packages/capsicum/windows/` 生成
   - Phase 2（MSIX パッケージング設定）: 完了 — `pubspec.yaml` に `msix_config` 追加、`msix: ^3.16.13` 採用
   - Phase 3（Microsoft Partner Center 登録）: 完了 — 個人開発者登録 + アプリ予約。`identity_name` / `publisher` は `pubspec.yaml` 参照
-  - Phase 4（GitHub Actions ワークフロー）: 完了 — [.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml) で windows-latest x64 / Flutter 3.41.9 / `dart run msix:create` / draft Release 添付
-  - Phase 5（Microsoft Store 公開）: **v1.27 で達成** — Partner Center Web UI からの手動 publish ルートで成立 ([#544](https://github.com/pooza/capsicum/issues/544))。`msix_config.store: false` の self-signed MSIX をそのまま upload、Store 側で再署名。毎リリースの publish 手順は [store-release-guide.md §4.6](store-release-guide.md)
+  - Phase 4（GitHub Actions ワークフロー）: 完了 — [.github/workflows/windows-release.yml](../../.github/workflows/windows-release.yml) で windows-latest x64 / Flutter 3.41.9 / `dart run msix:create` / draft Release 添付
+  - Phase 5（Microsoft Store 公開）: **v1.27 で達成** — Partner Center Web UI からの手動 publish ルートで成立 ([#544](https://github.com/pooza/capsicum/issues/544))。`msix_config.store: false` の self-signed MSIX をそのまま upload、Store 側で再署名。毎リリースの publish 手順は [store-release-guide.md §4.6](../store-release-guide.md)
   - msstore CLI 自動 publish (ワークフロー側に実装済み・secrets 未投入時 skip) は引き続き保留: Entra ID テナント関連付け UI が個人開発者アカウントでは到達不能。将来の組織テナント整備時に再挑戦できる構造は維持
   - 実機検証 [#483](https://github.com/pooza/capsicum/issues/483) (v1.25 同期、Parallels VM)、Store 経由インストールでの SmartScreen 警告なし起動も v1.27 で確認済み
   - 中期施策 ([#534](https://github.com/pooza/capsicum/issues/534)) の OV コード署名証明書取得は Store 経由配布が主ルートになったため **当面不要化** (Store 経由は MS 再署名、自己署名直配は上級者向け補助路線として継続)

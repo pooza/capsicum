@@ -109,6 +109,19 @@ chmod +x capsicum-1.24.0-x86_64.AppImage
 
 確認項目は [#425](https://github.com/pooza/capsicum/issues/425) (Linux 実機検証 Issue) を参照。
 
+## トラブルシュート
+
+**AppImage の不具合報告を受けたら、まず AppRun ログを確認する。** GTK / GLib / IME / dlopen 系の native warning や `undefined symbol: XXX` は GUI 操作中に画面へ出ないため、ターミナル起動の出力か AppRun ログでしか見えない（AppRun wrapper が起動時の stdout/stderr を `~/.local/share/capsicum/logs/capsicum-{timestamp}-{pid}.log` に tee する。詳細は上記「build.sh が行う Linux 固有の補正」参照）。
+
+```sh
+ls -lt ~/.local/share/capsicum/logs/ | head -3
+# 最新ログを開いて native warning / undefined symbol を確認
+```
+
+ログは起動時に最新 10 件のみ残してローテーションされる（`chmod 700` / 各ファイル 600）。古い不具合の追跡には間に合わないことがあるので、**再現直後に取得する**。
+
+過去事例（#532、v1.24.0〜v1.24.2 の日本語 IME 不能）: AppRun ログに `libibus-1.0.so.5: undefined symbol: g_task_set_static_name` / `Loading IM context type 'ibus' failed` が記録されていた。これを最初に見ていれば「bundled GLib（build host = ubuntu-22.04 / GLib 2.72）と host libibus（GLib 2.76+ で追加されたシンボルを要求）の symbol mismatch」と一発で特定でき、2 段階の誤診を回避できた。
+
 ## 制約
 
 - 本スクリプトで生成した AppImage は **build した OS の glibc / system

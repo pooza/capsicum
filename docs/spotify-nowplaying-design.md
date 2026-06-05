@@ -5,7 +5,7 @@
 - 対象: capsicum 全プラットフォーム (OS 非依存、HTTP のみで完結)
 - [#465](https://github.com/pooza/capsicum/issues/465) の方針確定。Annict OAuth (mulukhiya 経由) と同じパターンで実装する
 - 既存の macOS Share Extension ([#422](https://github.com/pooza/capsicum/issues/422)) は **push 型**、本機能は **pull 型**。UX 上は併存
-- 将来 [#466](https://github.com/pooza/capsicum/issues/466) NowPlayingProvider 抽象 + Linux MPRIS と統合する際は、Spotify を「OS 非依存 fallback」として保持する想定
+- 将来 [#466](https://github.com/pooza/capsicum/issues/466) NowPlayingProvider 抽象 + Linux MPRIS と統合する際は、Spotify を「OS 非依存 fallback」として保持する想定。**v1.33 全体の抽象設計は [nowplaying-design.md](nowplaying-design.md) が正本**（本書はその 1 取得源としての Spotify 詳細）
 
 ## 全体アーキ
 
