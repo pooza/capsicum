@@ -74,5 +74,7 @@ String? _trimmedString(Object? value) {
 String _appName(Object? sourceAppId) {
   final id = _trimmedString(sourceAppId);
   if (id == null) return '';
-  return id.toLowerCase().endsWith('.exe') ? id.substring(0, id.length - 4) : id;
+  return id.toLowerCase().endsWith('.exe')
+      ? id.substring(0, id.length - 4)
+      : id;
 }
