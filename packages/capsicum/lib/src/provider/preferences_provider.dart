@@ -481,6 +481,25 @@ final visibleTabsProvider = Provider.family<List<TabType>, String>((
     }
   }
 
+  // Append followed channels not yet tracked in the config (#666 — channel
+  // tabs were only synced when the tab management sheet opened, so they did
+  // not appear right after login. Mirror the list behaviour above so they
+  // show as soon as followedChannelsProvider resolves). Channels the user
+  // explicitly hid are already in `config` (visible == false) and thus in
+  // configChannelIds, so they are not re-appended.
+  if (adapter is ChannelSupport && serverChannelIds != null) {
+    final configChannelIds = config
+        .where((e) => e.tab is ChannelTab)
+        .map((e) => (e.tab as ChannelTab).id)
+        .toSet();
+    final followedChannels = serverChannelsAsync.valueOrNull ?? const [];
+    for (final ch in followedChannels) {
+      if (!configChannelIds.contains(ch.id)) {
+        tabs.add(ChannelTab(id: ch.id, name: ch.name));
+      }
+    }
+  }
+
   return tabs;
 });
 
