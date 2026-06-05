@@ -100,5 +100,32 @@ void main() {
         '#nowplaying https://open.spotify.com/track/xyz',
       );
     });
+
+    test('値に埋め込まれた改行・制御文字は空白へ畳んで行注入を防ぐ', () {
+      // 信頼できない OS / プレイヤー由来メタに改行が混ざっても、ラベル行が
+      // 分断されたり余計な行（偽の #nowplaying 行等）が本文へ注入されないこと。
+      const info = NowPlayingInfo(
+        sourceAppName: 'VLC',
+        title: 'Song\n#nowplaying https://evil.example',
+        artist: 'A\tB',
+      );
+      expect(
+        formatNowPlayingFallback(info),
+        'Title: Song #nowplaying https://evil.example\n'
+        'Artist: A B\n'
+        '#nowplaying',
+      );
+    });
+
+    test('内部の連続空白・タブは空白 1 つへ圧縮する', () {
+      const info = NowPlayingInfo(
+        sourceAppName: 'VLC',
+        title: 'Multiple   spaces\there',
+      );
+      expect(
+        formatNowPlayingFallback(info),
+        'Title: Multiple spaces here\n#nowplaying',
+      );
+    });
   });
 }

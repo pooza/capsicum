@@ -145,6 +145,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   bool _sending = false;
+  // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
+  // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
+  // 本文に同じナウプレが多重 append されるのを防ぐ。
+  bool _insertingNowPlaying = false;
   bool _localOnly = false;
   DateTime? _scheduledAt;
   String? _language;
@@ -1193,16 +1197,50 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// enrich プロキシ」へ再定義され、URL を持たない源への URL 補完を将来オプション
   /// として配線する余地を残す（現状は補完なしで実用十分）。
   Future<void> _insertNowPlaying() async {
-    final resolver = ref.read(nowPlayingResolverProvider);
-    final info = await resolver.currentlyPlaying();
-    if (!mounted) return;
-    if (info == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
-      return;
+    // 連打ガード。取得中の再入を弾き、多重 append を防ぐ。
+    if (_insertingNowPlaying) return;
+    setState(() => _insertingNowPlaying = true);
+    try {
+      final resolver = ref.read(nowPlayingResolverProvider);
+      NowPlayingInfo? info;
+      try {
+        info = await resolver.currentlyPlaying();
+      } catch (e) {
+        // resolver / provider は例外を null に倒す契約だが、契約破りで投げても
+        // 落とさず観測する。異常系（D-Bus 権限・SMTC チャンネル例外等）を後追い
+        // できるよう breadcrumb を残す（他の best-effort 経路 #553 と同水準）。
+        // 曲名等 PII は載せず型名のみ。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'fetch_failed: ${e.runtimeType}',
+            level: SentryLevel.warning,
+          ),
+        );
+        info = null;
+      }
+      if (!mounted) return;
+      if (info == null) {
+        // 「本当に再生していない正常系」と「源が壊れている異常系」は当層では
+        // 区別しきれない（provider が握り潰す）が、押下のたびに取れなかった事実
+        // を残すと、内部ベータ検証で「無音で源が壊れている」を切り分けられる
+        // (#466)。breadcrumb のみで、ここでは Sentry イベント化しない。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'compose.nowplaying',
+            message: 'no_track',
+            level: SentryLevel.info,
+          ),
+        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
+        return;
+      }
+      _appendToBody(formatNowPlayingFallback(info));
+    } finally {
+      if (mounted) setState(() => _insertingNowPlaying = false);
     }
-    _appendToBody(formatNowPlayingFallback(info));
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
@@ -2118,8 +2156,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           .watch(nowPlayingResolverProvider)
                           .hasAvailableSource)
                         IconButton(
-                          onPressed: _sending ? null : _insertNowPlaying,
-                          icon: const Icon(Icons.music_note),
+                          onPressed: (_sending || _insertingNowPlaying)
+                              ? null
+                              : _insertNowPlaying,
+                          icon: _insertingNowPlaying
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.music_note),
                           tooltip: 'ナウプレを挿入',
                           visualDensity: VisualDensity.compact,
                         ),

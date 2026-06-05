@@ -47,7 +47,7 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
       ('Album', info.album),
       ('Artist', info.artist),
     ])
-      if (value != null && value.trim().isNotEmpty) '$label: ${value.trim()}',
+      if (_oneLine(value).isNotEmpty) '$label: ${_oneLine(value)}',
   ];
 
   if (labeled.isEmpty) {
@@ -55,10 +55,38 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
     if (url != null) return tagLine;
     // それも無ければ源アプリ名を出す（"VLC で再生中" 相当の情報をゼロにしない
     // ため）。源アプリ名も空なら裸のタグ。
-    final source = info.sourceAppName.trim();
+    final source = _oneLine(info.sourceAppName);
     return source.isEmpty ? nowPlayingTag : '$nowPlayingTag $source';
   }
 
   // タグ行は末尾（上記の正規化対策）。
   return [...labeled, tagLine].join('\n');
+}
+
+/// メタデータ値を **1 行**に正規化する。前後の空白・制御文字を落とし、内部の
+/// 改行 / タブ / その他 C0 制御文字 (0x00-0x1f) と DEL (0x7f) の連続は空白 1 つへ
+/// 畳む。
+///
+/// OS / プレイヤー由来のメタデータは信頼できない外部入力であり、title 等に改行が
+/// 混入すると本文に余計な行（モロヘイヤ正規化を誘発するタグ行や、なりすまし風の
+/// 追記）を注入できてしまう。投稿前にユーザーが目視・編集する設計とはいえ、値が
+/// 単一行であることを整形の入口で保証しておく。
+String _oneLine(String? value) {
+  if (value == null) return '';
+  final buffer = StringBuffer();
+  var pendingSeparator = false;
+  for (final rune in value.runes) {
+    // 制御文字 (C0: 0x00-0x1f / DEL: 0x7f) と通常の空白 (0x20) を区切りとして畳む。
+    final isSeparator = rune <= 0x20 || rune == 0x7f;
+    if (isSeparator) {
+      pendingSeparator = true;
+      continue;
+    }
+    // 先頭の区切りは捨てる（trim 相当）。語間の区切りだけ空白 1 つに圧縮する。
+    if (pendingSeparator && buffer.isNotEmpty) buffer.write(' ');
+    pendingSeparator = false;
+    buffer.writeCharCode(rune);
+  }
+  // 末尾に残った区切りは書き出さない（trim 相当）。
+  return buffer.toString();
 }
