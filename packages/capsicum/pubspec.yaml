@@ -85,6 +85,12 @@ dependencies:
   # 扱う成熟実装で、media_kit ^1.2.1 要求のため core 1.2.6 と互換。
   media_kit_video: ">=1.3.1 <2.0.0"
   media_kit_libs_video: ^1.0.7
+  # Linux のプレイヤー横断ナウプレ取得 (#466)。MPRIS (org.mpris.MediaPlayer2.*,
+  # D-Bus セッションバス) を pure-Dart で叩く（FFI 不要）。Linux 専用機能だが
+  # pure Dart なので全プラットフォームでコンパイルは通る。実際の接続は
+  # NowPlayingProvider factory が Linux のときだけ MprisNowPlayingProvider を
+  # 生成するため、他 OS では DBusClient を起こさない。
+  dbus: ^0.7.12
 
 dev_dependencies:
   flutter_test:
