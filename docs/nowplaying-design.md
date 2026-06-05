@@ -43,6 +43,25 @@ Spotify を最優先にするのは、**URL を返せる唯一の源**だから�
 
 `NowPlayingInfo.url != null` なら URL 挿入、`null` なら整形パスへ、で分岐する。
 
+## 責務分担: 整形はクライアント / API プロキシ（URL enrich）はサーバー（2026-06-05 確定）
+
+ナウプレ処理をクライアント（capsicum）とサーバー（モロヘイヤ）でどう分けるかを確定した。
+
+**原則**:
+
+- **整形（Title/Album/Artist のレイアウト・`#nowplaying` タグ位置・行構成）はクライアント側**で行う。OS pull（MPRIS / SMTC / Apple Music）で構造化メタデータを持っている側が組むのが筋。[`formatNowPlayingFallback`](../packages/capsicum/lib/src/util/now_playing_formatter.dart) がその実体で、これが**主経路**（"fallback" は歴史的命名で、実際は唯一の整形器）。
+- **外部 API の秘密情報・fetch が要る部分（メタデータ → 共有可能 URL の解決、URL → メタデータ抽出）はサーバー（モロヘイヤ）側**に置く。Spotify / iTunes の API キーはサーバー保持で、capsicum は「title/artist を渡して URL をもらう」明示的な API 呼び出しで使う（フロントの処理を軽くする本来のプロキシ設計）。
+
+**背景**:
+
+旧来モロヘイヤは投稿を `handle_pre_toot` で暗黙に横取りし、`#nowplaying 曲名` のキーワード検索・URL 補完・**サーバー側整形**まで一括で行っていた（`itunes_nowplaying` / `spotify_nowplaying` / `*_url_nowplaying` ハンドラ群）。これは「クライアントが構造化データを持たない」時代の道具立て。capsicum が OS から構造化メタデータを pull できる今、整形をサーバーに往復させる必要はなく、むしろサーバー側の正規化（`#nowplaying` 行に URL が無いと次行を詰める処理）がクライアント整形と干渉し、`#nowplaying` を末尾へ逃がす回避策が必要になった（#466）= 整形がサーバーにある弊害が顕在化した。
+
+**帰結**:
+
+- mulukhiya #4382 は「**テキスト整形器**」ではなく「**構造化メタデータ → 共有可能 URL を返す enrich プロキシ・エンドポイント**」へ再定義する。整形は capsicum が行うため、サーバーにテキスト整形を要求しない。
+- 旧 nowplaying ハンドラ群（暗黙の pre-toot 横取り）は、URL 検索ロジックを上記 enrich エンドポイントへ移し、暗黙の投稿書き換えは段階的に廃止する方針（モロヘイヤ側で再設計）。capsicum 非利用クライアント（WebUI 等）への影響範囲はモロヘイヤ側で判断。
+- capsicum 側: `formatNowPlayingFallback` を主整形器として配線済み（モロヘイヤ整形依存なし）。enrich エンドポイントが整ったら、URL を持たない源（MPRIS / SMTC / Apple Music）に対し任意で URL を補完する経路をオプション追加する。
+
 ## モデル（capsicum_core）
 
 `packages/capsicum_core/lib/src/model/now_playing.dart`（新設）:

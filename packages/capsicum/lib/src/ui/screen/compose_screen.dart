@@ -255,7 +255,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
-      _controller.text = '#nowplaying ${widget.sharedText!}\n';
+      // 共有（push）動線。共有テキストは不透明（URL or テキスト）なので
+      // formatNowPlayingFallback の構造化整形は通せないが、タグ定数だけは共有して
+      // リテラルの二重管理を避ける。整形の完全統一は macOS 共有 Extension とモロ
+      // ヘイヤ再設計（整形=クライアント / プロキシ=サーバー、design 参照）に依存。
+      _controller.text = '$nowPlayingTag ${widget.sharedText!}\n';
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
@@ -1183,17 +1187,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
   /// 整形テキストを挿入する。取れなければ SnackBar で知らせる。
   ///
-  /// 整形は本来モロヘイヤ `text_nowplaying_formatter`（#4382）優先・capsicum
-  /// フォールバックの 2 段だが、当該モロヘイヤ機能の配備前は capsicum 側
-  /// フォールバック整形のみを使う（design §URL を持つ源と持たない源）。
+  /// 整形は**クライアント側で確定**（design §責務分担、2026-06-05）。
+  /// `formatNowPlayingFallback` が主整形器で、モロヘイヤのテキスト整形には依存
+  /// しない。モロヘイヤ #4382 は「整形器」ではなく「メタデータ → 共有 URL の
+  /// enrich プロキシ」へ再定義され、URL を持たない源への URL 補完を将来オプション
+  /// として配線する余地を残す（現状は補完なしで実用十分）。
   Future<void> _insertNowPlaying() async {
     final resolver = ref.read(nowPlayingResolverProvider);
     final info = await resolver.currentlyPlaying();
     if (!mounted) return;
     if (info == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('現在再生中の曲がありません')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
       return;
     }
     _appendToBody(formatNowPlayingFallback(info));
@@ -1203,7 +1209,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// カーソルは末尾へ移す。
   void _appendToBody(String snippet) {
     final current = _controller.text;
-    final separator = (current.isNotEmpty && !current.endsWith('\n')) ? '\n' : '';
+    final separator = (current.isNotEmpty && !current.endsWith('\n'))
+        ? '\n'
+        : '';
     final next = '$current$separator$snippet';
     _controller.text = next;
     _controller.selection = TextSelection.collapsed(offset: next.length);

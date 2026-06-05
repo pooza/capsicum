@@ -1,8 +1,8 @@
 import 'package:capsicum_core/capsicum_core.dart';
 
-/// 投稿本文に付けるナウプレのタグ。既存の共有（push）動線
-/// （compose_screen の `#nowplaying ${sharedText}`）と揃える。
-const _nowPlayingTag = '#nowplaying';
+/// 投稿本文に付けるナウプレのタグ。共有（push）動線（compose_screen の
+/// 共有テキスト挿入）もこの定数を参照し、リテラルの二重管理を避ける。
+const nowPlayingTag = '#nowplaying';
 
 /// [NowPlayingInfo] を投稿本文用テキストに整形する **capsicum 側フォールバック**
 /// 整形 (#466 / v1.33)。
@@ -39,7 +39,7 @@ const _nowPlayingTag = '#nowplaying';
 ///   それも空なら裸のタグ（いずれも単一行なので正規化の影響を受けない）。
 String formatNowPlayingFallback(NowPlayingInfo info) {
   final url = info.url;
-  final tagLine = url != null ? '$_nowPlayingTag $url' : _nowPlayingTag;
+  final tagLine = url != null ? '$nowPlayingTag $url' : nowPlayingTag;
 
   final labeled = <String>[
     for (final (label, value) in [
@@ -56,7 +56,7 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
     // それも無ければ源アプリ名を出す（"VLC で再生中" 相当の情報をゼロにしない
     // ため）。源アプリ名も空なら裸のタグ。
     final source = info.sourceAppName.trim();
-    return source.isEmpty ? _nowPlayingTag : '$_nowPlayingTag $source';
+    return source.isEmpty ? nowPlayingTag : '$nowPlayingTag $source';
   }
 
   // タグ行は末尾（上記の正規化対策）。
