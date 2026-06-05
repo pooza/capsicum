@@ -149,8 +149,13 @@ String? _trimmedString(Object? value) {
 
 /// `xesam:artist` は通常 `as`（文字列配列）。非準拠プレイヤー対策で単一文字列も
 /// 受ける。空要素は除き ", " で連結。
+///
+/// `List` でなく `Iterable` で受けるのが要点。`dbus` パッケージの
+/// `DBusArray.toNative()` は **遅延 `Iterable`（`MappedListIterable`）** を返し、
+/// `List` ではない。`is List` で判定すると実機の Spotify / MPRIS で artist が
+/// 取れず null に落ちる（Linux 実機検証 2026-06-05 で判明）。
 String? _joinArtists(Object? value) {
-  if (value is List) {
+  if (value is Iterable) {
     final names = value
         .whereType<String>()
         .map((s) => s.trim())

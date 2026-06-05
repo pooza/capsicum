@@ -24,6 +24,19 @@ void main() {
       expect(info.url, isNull);
     });
 
+    test('xesam:artist が遅延 Iterable（dbus の MappedListIterable 相当）でも受ける', () {
+      // dbus パッケージの DBusArray.toNative() は List ではなく遅延 Iterable
+      // （MappedListIterable）を返す。.map() で List でない Iterable を作って
+      // 実機の型を再現する（Linux 実機検証 2026-06-05 の回帰防止）。
+      final lazyArtists = ['Kanako Miyamoto'].map((s) => s);
+      expect(lazyArtists, isNot(isA<List<dynamic>>()));
+      final info = nowPlayingFromMprisMetadata({
+        'xesam:title': 'True Ambition',
+        'xesam:artist': lazyArtists,
+      }, sourceAppName: 'Spotify');
+      expect(info!.artist, 'Kanako Miyamoto');
+    });
+
     test('xesam:artist が単一文字列（非準拠プレイヤー）でも受ける', () {
       final info = nowPlayingFromMprisMetadata({
         'xesam:title': 'Song',
