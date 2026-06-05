@@ -22,6 +22,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -1179,6 +1180,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// ナウプレ挿入 (#466)。優先順位リゾルバで現在再生中の曲を取得し、本文末尾に
+  /// 整形テキストを挿入する。取れなければ SnackBar で知らせる。
+  ///
+  /// 整形は本来モロヘイヤ `text_nowplaying_formatter`（#4382）優先・capsicum
+  /// フォールバックの 2 段だが、当該モロヘイヤ機能の配備前は capsicum 側
+  /// フォールバック整形のみを使う（design §URL を持つ源と持たない源）。
+  Future<void> _insertNowPlaying() async {
+    final resolver = ref.read(nowPlayingResolverProvider);
+    final info = await resolver.currentlyPlaying();
+    if (!mounted) return;
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('現在再生中の曲がありません')),
+      );
+      return;
+    }
+    _appendToBody(formatNowPlayingFallback(info));
+  }
+
+  /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
+  /// カーソルは末尾へ移す。
+  void _appendToBody(String snippet) {
+    final current = _controller.text;
+    final separator = (current.isNotEmpty && !current.endsWith('\n')) ? '\n' : '';
+    final next = '$current$separator$snippet';
+    _controller.text = next;
+    _controller.selection = TextSelection.collapsed(offset: next.length);
+  }
+
   Future<void> _showTagsetSheet() async {
     final mulukhiya = ref.read(currentMulukhiyaProvider);
     if (mulukhiya == null) return;
@@ -2072,6 +2102,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           onPressed: _sending ? null : _showTagsetSheet,
                           icon: const Icon(Icons.live_tv),
                           tooltip: '実況',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
+                      // Spotify 連携）がこの端末で使えるときだけ出す。
+                      if (ref
+                          .watch(nowPlayingResolverProvider)
+                          .hasAvailableSource)
+                        IconButton(
+                          onPressed: _sending ? null : _insertNowPlaying,
+                          icon: const Icon(Icons.music_note),
+                          tooltip: 'ナウプレを挿入',
                           visualDensity: VisualDensity.compact,
                         ),
                       if (ref.watch(currentAdapterProvider) is ScheduleSupport)
