@@ -9,7 +9,6 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../constants.dart';
 import '../model/account.dart';
-import '../platform/platform_info.dart';
 import '../preset_servers.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
@@ -44,7 +43,10 @@ class PushRegistrationService {
   /// が本配線済みか。macOS / Linux / Windows は本配線未対応のため
   /// (#468 / #475 / #474 で確定後に切り替え予定)、UI と service 層で push
   /// 機能を gate するときの単一の真実源とする (#502)。
-  static bool get isPushBackendWired => !isDesktop;
+  // iOS / Android に加え macOS も APNs 本配線済み (#468)。Linux / Windows は
+  // ネイティブ push 経路が無い (#474 on-hold) ため push 登録 UI も出さない。
+  static bool get isPushBackendWired =>
+      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
   static final _client = PushRelayClient();
 
@@ -129,7 +131,11 @@ class PushRegistrationService {
         return;
       }
 
-      final deviceType = Platform.isIOS ? 'ios' : 'android';
+      // macOS は iOS と同じ APNs だが、relay 側で APNs/FCM 振り分けと
+      // 集計を分けるため device_type は 'macos' で登録する (#468)。
+      final deviceType = Platform.isMacOS
+          ? 'macos'
+          : (Platform.isIOS ? 'ios' : 'android');
 
       // リレーサーバーに登録
       final sub = await _client.register(
@@ -425,7 +431,7 @@ class PushRegistrationService {
   static void startTokenRefreshListener(List<Account> Function() getAccounts) {
     _tokenRefreshSub?.cancel();
     final Stream<String>? stream;
-    if (Platform.isIOS) {
+    if (Platform.isIOS || Platform.isMacOS) {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
@@ -524,7 +530,7 @@ class PushRegistrationService {
   /// の単一スレッドセマンティクス上 race ウィンドウをゼロにする。
   static Future<String?> _waitForDeviceToken() async {
     final Stream<String>? stream;
-    if (Platform.isIOS) {
+    if (Platform.isIOS || Platform.isMacOS) {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
@@ -558,7 +564,8 @@ class PushRegistrationService {
   }
 
   static String? _getDeviceToken() {
-    if (Platform.isIOS) return ApnsService.deviceToken;
+    // macOS は iOS と同じ APNs MethodChannel (ApnsService) からトークンを得る。
+    if (Platform.isIOS || Platform.isMacOS) return ApnsService.deviceToken;
     if (Platform.isAndroid) return FcmService.deviceToken;
     return null;
   }

@@ -22,6 +22,18 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.registrar(forPlugin: "AboutMenuPlugin")
     )
 
+    // APNs push (#468)。iOS と同じ "net.shrieker.capsicum/apns" channel を張り、
+    // AppDelegate に attach する。AppDelegate が
+    // didRegisterForRemoteNotificationsWithDeviceToken で受けた token を
+    // この channel 経由で Dart の ApnsService に流す。engine 準備後の
+    // awakeFromNib で登録要求を出す（token は非同期に AppDelegate へ届く）。
+    let apnsChannel = FlutterMethodChannel(
+      name: "net.shrieker.capsicum/apns",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    (NSApp.delegate as? AppDelegate)?.attachApnsChannel(apnsChannel)
+    NSApplication.shared.registerForRemoteNotifications()
+
     super.awakeFromNib()
   }
 }
