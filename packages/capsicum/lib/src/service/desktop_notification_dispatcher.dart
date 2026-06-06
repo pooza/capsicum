@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../platform/notification_subsystem/notification_subsystem.dart';
@@ -46,11 +47,20 @@ class DesktopNotificationDispatcher {
       _sub = null;
       _emittedIds.clear();
       if (next is NotificationStreamSupport) {
+        debugPrint(
+          'capsicum: push.desktop: subscribing notification stream '
+          '(adapter=${next.runtimeType})',
+        );
         _sub = (next as NotificationStreamSupport).streamNotifications().listen(
           _emit,
           // ストリーム側の error は streaming 内 reconnect で吸収済み。
           // ここに届くのは controller close 等なので握りつぶす。
           onError: (_, _) {},
+        );
+      } else {
+        debugPrint(
+          'capsicum: push.desktop: adapter not NotificationStreamSupport '
+          '(${next.runtimeType}) — no subscription',
         );
       }
     }, fireImmediately: true);
@@ -65,10 +75,17 @@ class DesktopNotificationDispatcher {
     }
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
+    final title = _title(n, display);
+    final body = _body(n);
+    // 本文（ユーザーコンテンツ）はログに残さない。id/type と有無のみ。
+    debugPrint(
+      'capsicum: push.desktop: emit id=${n.id} type=${n.type.name} '
+      'hasUser=${n.user != null} hasPost=${n.post != null}',
+    );
     await subsystem.show(
       id: n.id.hashCode & 0x7FFFFFFF,
-      title: _title(n, display),
-      body: _body(n),
+      title: title,
+      body: body,
       payload: jsonEncode({'notificationId': n.id, 'type': n.type.name}),
       category: _categoryFor(n.type),
     );

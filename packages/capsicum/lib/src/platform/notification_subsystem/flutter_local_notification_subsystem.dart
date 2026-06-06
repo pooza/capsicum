@@ -108,14 +108,23 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       importance: Importance.high,
       priority: Priority.high,
     );
-    // iOS / macOS は同じ DarwinNotificationDetails で扱える。
-    const darwinDetails = DarwinNotificationDetails();
+    // iOS は従来どおり（前面挙動は既存のまま）。
+    const iosDetails = DarwinNotificationDetails();
+    // macOS (#569) は「アプリ起動中」にデスクトップ通知を出すのが主目的なので、
+    // アプリが最前面でもバナーを表示させる。macOS は既定で「最前面アプリ自身が
+    // 出した通知」のバナーを抑制するため、前面提示を明示的に許可する。
+    const macosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBanner: true,
+      presentList: true,
+      presentSound: true,
+    );
     const linuxDetails = LinuxNotificationDetails();
     const windowsDetails = WindowsNotificationDetails();
     const details = NotificationDetails(
       android: androidDetails,
-      iOS: darwinDetails,
-      macOS: darwinDetails,
+      iOS: iosDetails,
+      macOS: macosDetails,
       linux: linuxDetails,
       windows: windowsDetails,
     );
