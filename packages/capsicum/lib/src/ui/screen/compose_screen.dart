@@ -64,6 +64,55 @@ class _OversizeFile {
   });
 }
 
+/// 添付画像プレビュー (#660) から呼び出し元へ返すアクション。
+enum _AttachmentPreviewAction { editDescription }
+
+/// 添付画像を確認するためのフルスクリーンプレビュー (#660)。トリミング結果も
+/// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。AppBar
+/// から ALT 編集へ進める（従来サムネタップに割り当てられていた ALT 編集は
+/// プレビュー経由のサブアクションへ整理した）。
+class _AttachmentPreviewScreen extends StatelessWidget {
+  const _AttachmentPreviewScreen({required this.image});
+
+  final ImageProvider image;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(_AttachmentPreviewAction.editDescription),
+            icon: const Icon(Icons.subtitles_outlined, color: Colors.white),
+            label: const Text(
+              '説明 (ALT)',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+      body: InteractiveViewer(
+        minScale: 1,
+        maxScale: 5,
+        child: Center(
+          child: Image(
+            image: image,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Center(
+              child: Icon(Icons.broken_image, color: Colors.white, size: 48),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 語字 (Unicode の Letter / Number / アンダースコア)。トリガ直前がこれ以外
 /// なら「語の先頭」とみなす。
 final RegExp _composeWordChar = RegExp(r'[\p{L}\p{N}_]', unicode: true);
@@ -1159,6 +1208,46 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 添付エントリの画像 [ImageProvider] を返す。画像でない (動画 / 音声 /
+  /// 非画像の Drive ファイル) 場合は null。プレビュー可否の判定も兼ねる。
+  ImageProvider? _attachmentImageProvider(_MediaEntry entry) {
+    if (entry.isDrive) {
+      final df = entry.driveFile!;
+      final isImage =
+          df.type == AttachmentType.image || df.type == AttachmentType.gifv;
+      if (!isImage) return null;
+      // プレビューは確認用途のため可能なら原寸 URL を使う。
+      final url = df.url.isNotEmpty ? df.url : (df.previewUrl ?? '');
+      return url.isNotEmpty ? NetworkImage(url) : null;
+    }
+    final isVideo = _isVideo(entry.file!.mimeType, entry.file!.path);
+    final isAudio =
+        !isVideo && _isAudio(entry.file!.mimeType, entry.file!.path);
+    if (isVideo || isAudio) return null;
+    return FileImage(File(entry.file!.path));
+  }
+
+  /// 添付サムネのタップ時の動線 (#660)。画像はフルスクリーンのプレビュー
+  /// （ズーム可・トリミング結果の確認用）を開き、そこから ALT 編集へ進める。
+  /// 画像でないエントリはプレビュー対象外なので従来どおり ALT 編集を直接開く。
+  Future<void> _previewAttachment(int index) async {
+    final entry = _attachments[index];
+    final provider = _attachmentImageProvider(entry);
+    if (provider == null) {
+      await _editDescription(index);
+      return;
+    }
+    final action = await Navigator.of(context).push<_AttachmentPreviewAction>(
+      MaterialPageRoute(
+        builder: (_) => _AttachmentPreviewScreen(image: provider),
+        fullscreenDialog: true,
+      ),
+    );
+    if (action == _AttachmentPreviewAction.editDescription && mounted) {
+      await _editDescription(index);
+    }
+  }
+
   Future<void> _openEpisodeBrowser() async {
     final result = await context.push<String>('/episodes');
     if (result != null && mounted) {
@@ -1977,7 +2066,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           behavior: HitTestBehavior.opaque,
                           onTap: _sending
                               ? null
-                              : () => _editDescription(index),
+                              : () => _previewAttachment(index),
                           child: Stack(
                             children: [
                               ClipRRect(
