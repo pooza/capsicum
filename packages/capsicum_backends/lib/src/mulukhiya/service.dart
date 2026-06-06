@@ -450,6 +450,42 @@ class MulukhiyaService {
     );
   }
 
+  /// Post a work-level review (作品全体感想) to Annict via mulukhiya.
+  ///
+  /// モロヘイヤ #4342 で実装された `POST /api/annict/review` を呼ぶ (#592)。
+  /// 劇場版のように episode に分かれていない作品は record の投稿先がなく、
+  /// review でしか感想を残せないため record (単話) の作品単位ペアとして使う。
+  /// [body] (感想本文) は必須。レーティングは総合 + 4 軸 (映像 / 音楽 / 物語 /
+  /// キャラクター) いずれも任意。record と同じく SNS 側の access_token を
+  /// Bearer で渡すだけでよい (Annict トークンはモロヘイヤ側が保持)。
+  Future<void> postAnnictReview({
+    required String snsToken,
+    required int workId,
+    required String body,
+    AnnictRatingState? ratingOverall,
+    AnnictRatingState? ratingAnimation,
+    AnnictRatingState? ratingMusic,
+    AnnictRatingState? ratingStory,
+    AnnictRatingState? ratingCharacter,
+  }) async {
+    await _dio.post(
+      '$baseUrl/annict/review',
+      data: {
+        'work_id': workId,
+        'body': body,
+        if (ratingOverall != null)
+          'rating_overall_state': ratingOverall.apiValue,
+        if (ratingAnimation != null)
+          'rating_animation_state': ratingAnimation.apiValue,
+        if (ratingMusic != null) 'rating_music_state': ratingMusic.apiValue,
+        if (ratingStory != null) 'rating_story_state': ratingStory.apiValue,
+        if (ratingCharacter != null)
+          'rating_character_state': ratingCharacter.apiValue,
+      },
+      options: _bearerOptions(snsToken),
+    );
+  }
+
   /// Fetch episodes for a given Annict work ID.
   Future<List<AnnictEpisode>> getEpisodes(int workId) async {
     final response = await _dio.get('$baseUrl/program/works/$workId/episodes');

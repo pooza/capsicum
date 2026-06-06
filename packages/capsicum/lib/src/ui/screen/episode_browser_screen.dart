@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../util/annict_link.dart';
 import 'annict_record_screen.dart';
+import 'annict_review_screen.dart';
 
 /// エピソード行の操作メニュー (#593)。`ListTile.trailing` にアイコンを並べると
 /// スマホ縦持ちで窮屈になるため PopupMenuButton に集約する。
@@ -100,6 +101,23 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         episodeId: ep.annictId,
         workTitle: _selectedWork!.title,
         episodeLabel: episodeLabel,
+      ),
+    );
+  }
+
+  /// 作品全体感想 (review) 画面へ遷移する (#592)。review は作品単位なので
+  /// episode を選ばず作品から直接開く。劇場版など episode が無い作品はこちらが
+  /// 唯一の感想投稿導線になる。未連携時は record と同様にまず連携を促す (#611)。
+  Future<void> _openAnnictReview(AnnictWork work, bool linked) async {
+    if (!linked) {
+      final justLinked = await runAnnictLinkFlow(context, ref);
+      if (!justLinked || !mounted) return;
+    }
+    context.push(
+      '/annict/review',
+      extra: AnnictReviewScreenArgs(
+        workId: work.annictId,
+        workTitle: work.title,
       ),
     );
   }
@@ -310,6 +328,11 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
 
   Widget _buildEpisodeView() {
     final work = _selectedWork!;
+    final mulukhiya = _mulukhiya;
+    // review は作品単位なので episode の有無に関わらず作品を開いていれば出す。
+    // 未連携でも隠さず、押下時に連携フローを促す (record と同じ方針、#611)。
+    final showAnnictReview = mulukhiya?.annictEnabled ?? false;
+    final annictLinked = mulukhiya?.annictLinked ?? false;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -319,6 +342,12 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         ),
         title: Text(work.title),
         actions: [
+          if (showAnnictReview)
+            IconButton(
+              icon: const Icon(Icons.rate_review_outlined),
+              tooltip: annictLinked ? '作品の感想 (Annict)' : 'Annict と連携',
+              onPressed: () => _openAnnictReview(work, annictLinked),
+            ),
           IconButton(
             icon: const Icon(Icons.copy),
             tooltip: '番組名をコピー',
@@ -368,7 +397,32 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       );
     }
     if (_episodes == null || _episodes!.isEmpty) {
-      return const Center(child: Text('エピソードが見つかりませんでした'));
+      // 劇場版などエピソードに分かれない作品はここに来る。record の投稿先が
+      // ないため、Annict 対応サーバーなら作品全体感想 (review) の導線を出す
+      // (#592)。AppBar のアイコンだけだと発見されにくいので空状態にも明示。
+      final mulukhiya = _mulukhiya;
+      final showAnnictReview = mulukhiya?.annictEnabled ?? false;
+      final annictLinked = mulukhiya?.annictLinked ?? false;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('エピソードが見つかりませんでした', textAlign: TextAlign.center),
+              if (showAnnictReview) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.rate_review_outlined),
+                  label: Text(annictLinked ? '作品全体の感想を書く' : 'Annict と連携'),
+                  onPressed: () =>
+                      _openAnnictReview(_selectedWork!, annictLinked),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     // 感想投稿ボタンはサーバーが Annict 対応 (annictEnabled) のときに出す。
