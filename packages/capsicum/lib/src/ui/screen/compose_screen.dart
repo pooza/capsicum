@@ -33,6 +33,7 @@ import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
+import 'image_text_overlay_screen.dart';
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
@@ -65,16 +66,22 @@ class _OversizeFile {
 }
 
 /// 添付画像プレビュー (#660) から呼び出し元へ返すアクション。
-enum _AttachmentPreviewAction { editDescription }
+enum _AttachmentPreviewAction { editDescription, addText }
 
 /// 添付画像を確認するためのフルスクリーンプレビュー (#660)。トリミング結果も
 /// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。AppBar
 /// から ALT 編集へ進める（従来サムネタップに割り当てられていた ALT 編集は
 /// プレビュー経由のサブアクションへ整理した）。
 class _AttachmentPreviewScreen extends StatelessWidget {
-  const _AttachmentPreviewScreen({required this.image});
+  const _AttachmentPreviewScreen({
+    required this.image,
+    this.showTextOverlay = false,
+  });
 
   final ImageProvider image;
+
+  /// 文字入れ (#576) を提示するか。差し替え可能なローカル画像のみ true。
+  final bool showTextOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +91,13 @@ class _AttachmentPreviewScreen extends StatelessWidget {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
+          if (showTextOverlay)
+            IconButton(
+              tooltip: '文字を入れる',
+              onPressed: () =>
+                  Navigator.of(context).pop(_AttachmentPreviewAction.addText),
+              icon: const Icon(Icons.title, color: Colors.white),
+            ),
           TextButton.icon(
             onPressed: () => Navigator.of(
               context,
@@ -915,25 +929,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
     if (cropped == null || !mounted) return;
 
-    final XFile croppedFile;
-    try {
-      final dir = await getTemporaryDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      // トリミング結果は常に PNG で返るため、拡張子・MIME を PNG に揃える。
-      // 元が WebP/HEIC 等でもサーバー (モロヘイヤ) 側で再変換されるので問題ない。
-      final baseName = original.name.isNotEmpty ? original.name : 'image';
-      final dotIndex = baseName.lastIndexOf('.');
-      final stem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
-      final pngName = '$stem.png';
-      final path = '${dir.path}/crop_${stamp}_$pngName';
-      final out = File(path);
-      // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
-      // 親ディレクトリを作らないため明示的に作成する。
-      await out.create(recursive: true);
-      await out.writeAsBytes(cropped, flush: true);
-      croppedFile = XFile(path, mimeType: 'image/png', name: pngName);
-    } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+    final croppedFile = await _writeTempPng(original, cropped, 'crop');
+    if (croppedFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -947,6 +944,78 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
       entry.file = croppedFile;
     });
+  }
+
+  /// 添付済みのローカル画像に文字 / Unicode 絵文字を重ねて書き出し、結果で元の
+  /// 添付を差し替える (#576)。説明 (ALT) と閲覧注意フラグは引き継ぐ。
+  Future<void> _addTextOverlay(int index) async {
+    final entry = _attachments[index];
+    final original = entry.file;
+    if (original == null) return;
+
+    final Uint8List bytes;
+    try {
+      bytes = await original.readAsBytes();
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('画像を読み込めませんでした')));
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final composited = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ImageTextOverlayScreen(imageData: bytes),
+        fullscreenDialog: true,
+      ),
+    );
+    if (composited == null || !mounted) return;
+
+    final overlaidFile = await _writeTempPng(original, composited, 'overlay');
+    if (overlaidFile == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('編集結果を保存できませんでした')));
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => entry.file = overlaidFile);
+  }
+
+  /// PNG バイト列を一時ファイルに書き出し [XFile] を返す。元ファイル名の stem を
+  /// 引き継ぎ、拡張子・MIME は PNG に揃える（元が WebP/HEIC 等でもサーバー側で
+  /// 再変換されるため問題ない）。失敗時は null。トリミング (#577) と文字入れ
+  /// (#576) の差し替え結果で共用する。
+  Future<XFile?> _writeTempPng(
+    XFile original,
+    Uint8List bytes,
+    String prefix,
+  ) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final baseName = original.name.isNotEmpty ? original.name : 'image';
+      final dotIndex = baseName.lastIndexOf('.');
+      final stem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+      final pngName = '$stem.png';
+      final path = '${dir.path}/${prefix}_${stamp}_$pngName';
+      final out = File(path);
+      // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
+      // 親ディレクトリを作らないため明示的に作成する。
+      await out.create(recursive: true);
+      await out.writeAsBytes(bytes, flush: true);
+      return XFile(path, mimeType: 'image/png', name: pngName);
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      return null;
+    }
   }
 
   static const _videoExtensions = {
@@ -1239,12 +1308,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     final action = await Navigator.of(context).push<_AttachmentPreviewAction>(
       MaterialPageRoute(
-        builder: (_) => _AttachmentPreviewScreen(image: provider),
+        builder: (_) => _AttachmentPreviewScreen(
+          image: provider,
+          showTextOverlay: _isCroppableImage(entry),
+        ),
         fullscreenDialog: true,
       ),
     );
-    if (action == _AttachmentPreviewAction.editDescription && mounted) {
-      await _editDescription(index);
+    if (!mounted) return;
+    switch (action) {
+      case _AttachmentPreviewAction.editDescription:
+        await _editDescription(index);
+      case _AttachmentPreviewAction.addText:
+        await _addTextOverlay(index);
+      case null:
+        break;
     }
   }
 
