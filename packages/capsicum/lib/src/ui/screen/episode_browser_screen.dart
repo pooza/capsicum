@@ -8,6 +8,10 @@ import '../../provider/account_manager_provider.dart';
 import '../util/annict_link.dart';
 import 'annict_record_screen.dart';
 
+/// エピソード行の操作メニュー (#593)。`ListTile.trailing` にアイコンを並べると
+/// スマホ縦持ちで窮屈になるため PopupMenuButton に集約する。
+enum _EpisodeAction { copySubtitle, copyHashtag, openHashtag, annictRecord }
+
 /// Screen for browsing Annict works and episodes.
 /// Returns the selected episode's command_toot via context.pop().
 class EpisodeBrowserScreen extends ConsumerStatefulWidget {
@@ -218,6 +222,92 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     );
   }
 
+  /// 先頭の `#` を除いた素のタグ文字列。コピーは `#tag`、TL 遷移は素のタグを使う。
+  String _bareHashtag(String raw) => raw.replaceFirst('#', '');
+
+  void _copyText(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _openHashtagTimeline(String hashtag) {
+    context.push('/hashtag/${_bareHashtag(hashtag)}');
+  }
+
+  /// エピソード行の操作 (#593)。コピー / TL 遷移 / 感想投稿を PopupMenuButton に
+  /// 集約する。該当する操作が一つも無ければ null（trailing なし）。
+  Widget? _buildEpisodeActions(
+    AnnictEpisode ep,
+    String subtitle, {
+    required bool showAnnictRecord,
+    required bool annictLinked,
+  }) {
+    final hasSubtitle = ep.title != null;
+    final hasHashtag = ep.hashtag != null;
+    if (!hasSubtitle && !hasHashtag && !showAnnictRecord) return null;
+
+    return PopupMenuButton<_EpisodeAction>(
+      icon: const Icon(Icons.more_vert),
+      tooltip: '操作',
+      onSelected: (action) {
+        switch (action) {
+          case _EpisodeAction.copySubtitle:
+            _copyText(ep.title!, 'サブタイトルをコピーしました');
+          case _EpisodeAction.copyHashtag:
+            _copyText('#${_bareHashtag(ep.hashtag!)}', 'ハッシュタグをコピーしました');
+          case _EpisodeAction.openHashtag:
+            _openHashtagTimeline(ep.hashtag!);
+          case _EpisodeAction.annictRecord:
+            _openAnnictRecord(ep, subtitle, annictLinked);
+        }
+      },
+      itemBuilder: (context) => [
+        if (hasSubtitle)
+          const PopupMenuItem(
+            value: _EpisodeAction.copySubtitle,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.copy),
+              title: Text('サブタイトルをコピー'),
+            ),
+          ),
+        if (hasHashtag) ...[
+          const PopupMenuItem(
+            value: _EpisodeAction.copyHashtag,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.tag),
+              title: Text('ハッシュタグをコピー'),
+            ),
+          ),
+          const PopupMenuItem(
+            value: _EpisodeAction.openHashtag,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.dynamic_feed),
+              title: Text('ハッシュタグのタイムライン'),
+            ),
+          ),
+        ],
+        if (showAnnictRecord)
+          PopupMenuItem(
+            value: _EpisodeAction.annictRecord,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.rate_review_outlined),
+              title: Text(annictLinked ? 'Annict に感想投稿' : 'Annict と連携'),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildEpisodeView() {
     final work = _selectedWork!;
     return Scaffold(
@@ -232,25 +322,23 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
           IconButton(
             icon: const Icon(Icons.copy),
             tooltip: '番組名をコピー',
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: work.title));
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('番組名をコピーしました')));
-            },
+            onPressed: () => _copyText(work.title, '番組名をコピーしました'),
           ),
-          if (work.hashtag != null)
+          if (work.hashtag != null) ...[
             IconButton(
               icon: const Icon(Icons.tag),
               tooltip: 'ハッシュタグをコピー',
-              onPressed: () {
-                final tag = '#${work.hashtag!.replaceFirst('#', '')}';
-                Clipboard.setData(ClipboardData(text: tag));
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('ハッシュタグをコピーしました')));
-              },
+              onPressed: () => _copyText(
+                '#${_bareHashtag(work.hashtag!)}',
+                'ハッシュタグをコピーしました',
+              ),
             ),
+            IconButton(
+              icon: const Icon(Icons.dynamic_feed),
+              tooltip: 'ハッシュタグのタイムライン',
+              onPressed: () => _openHashtagTimeline(work.hashtag!),
+            ),
+          ],
         ],
       ),
       body: _buildEpisodesBody(),
@@ -304,37 +392,11 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
         return ListTile(
           leading: const Icon(Icons.play_circle_outline),
           title: Text(subtitle.isNotEmpty ? subtitle : 'エピソード ${ep.annictId}'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (ep.title != null)
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 20),
-                  tooltip: 'サブタイトルをコピー',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: ep.title!));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('サブタイトルをコピーしました')),
-                    );
-                  },
-                ),
-              if (ep.hashtag != null)
-                IconButton(
-                  icon: const Icon(Icons.tag, size: 20),
-                  tooltip: 'ハッシュタグTL',
-                  onPressed: () {
-                    final tag = ep.hashtag!.replaceFirst('#', '');
-                    context.push('/hashtag/$tag');
-                  },
-                ),
-              if (showAnnictRecord)
-                IconButton(
-                  icon: const Icon(Icons.rate_review_outlined, size: 20),
-                  tooltip: annictLinked ? 'Annict に感想投稿' : 'Annict と連携',
-                  onPressed: () =>
-                      _openAnnictRecord(ep, subtitle, annictLinked),
-                ),
-            ],
+          trailing: _buildEpisodeActions(
+            ep,
+            subtitle,
+            showAnnictRecord: showAnnictRecord,
+            annictLinked: annictLinked,
           ),
           onTap: () {
             if (ep.commandToot != null) {
