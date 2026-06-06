@@ -419,7 +419,26 @@ curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.c
 注意:
 
 - User-Agent がないと空応答になることがあるため `-A "Mozilla/5.0"` を付ける。`country=us` 等で他ストアも確認できる
-- **片方ストアが長期停滞中だと lookup の `version` が実態と乖離する**。Universal Purchase の `trackId` 共有の都合で、iOS と macOS のどちらか古い方の公開バージョンが優先表示されることがある（例: iOS が新版公開済みでも macOS が審査停滞中だと両 storefront とも古い方を返し続ける）。**pooza が App Store Connect / ストア Web UI で直接確認した事実を lookup より優先**し、lookup は CLAUDE.md 反映の唯一根拠にせず口頭報告と突き合わせる
+- **片方ストアが長期停滞中だと lookup の `version` が実態と乖離する**。Universal Purchase の `trackId` 共有の都合で、iOS と macOS のどちらか古い方の公開バージョンが優先表示されることがある（例: iOS が新版公開済みでも macOS が審査停滞中だと両 storefront とも古い方を返し続ける）。lookup は公開済みアプリの現行版しか返さないため、**審査中（`WAITING_FOR_REVIEW` / `IN_REVIEW`）かどうかや iOS / macOS の個別ステータスは原理的に分からない**
+
+#### 審査ステータスのプラットフォーム別確認（App Store Connect API、推奨）
+
+iOS と macOS の審査状態を**別々に正確に**取得するには App Store Connect API を使う（lookup では Universal Purchase の同一レコードを拾うため不可）。`appStoreVersions` を `platform`（`IOS` / `MAC_OS`）でフィルタすると各版に `appStoreState`（`READY_FOR_SALE` = 公開済み / `WAITING_FOR_REVIEW` = 審査待ち / `IN_REVIEW` = 審査中 / `PENDING_DEVELOPER_RELEASE` 等）が付く。**今後 iOS / macOS の公開状況確認はこの方法を第一とする**（lookup は補助）。
+
+認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_WLS8G4W44L.p8`、key_id `WLS8G4W44L`、issuer `69a6de71-e621-47e3-e053-5b8c7c11a4d1`）を流用し、ES256 JWT を生成して叩く（Ruby の `jwt` gem 利用）:
+
+```bash
+ruby -e '
+require "jwt"; require "net/http"; require "json"; require "uri"
+KEY_ID="WLS8G4W44L"; ISSUER="69a6de71-e621-47e3-e053-5b8c7c11a4d1"
+key=OpenSSL::PKey::EC.new(File.read(File.expand_path("~/.config/capsicum/AuthKey_WLS8G4W44L.p8")))
+now=Time.now.to_i
+tok=JWT.encode({iss:ISSUER,iat:now,exp:now+600,aud:"appstoreconnect-v1"},key,"ES256",{kid:KEY_ID,typ:"JWT"})
+get=->(p){u=URI("https://api.appstoreconnect.apple.com/v1/#{p}");r=Net::HTTP::Get.new(u);r["Authorization"]="Bearer #{tok}";JSON.parse(Net::HTTP.start(u.host,u.port,use_ssl:true){|h|h.request(r)}.body)}
+app=get.call("apps?filter[bundleId]=jp.co.b-shock.capsicum")["data"].first["id"]
+%w[IOS MAC_OS].each{|pl|puts "== #{pl} ==";get.call("apps/#{app}/appStoreVersions?filter[platform]=#{pl}&limit=3")["data"].each{|v|a=v["attributes"];puts "  #{a["versionString"]}  #{a["appStoreState"]}"}}
+'
+```
 
 ### 4.5 Linux 配布（v1.24〜）
 
