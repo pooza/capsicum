@@ -79,6 +79,27 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     if (linked && mounted) _searchWorks();
   }
 
+  /// 感想投稿画面へ遷移する。未連携 ([linked] == false) の場合はまず Annict
+  /// 連携フローを促し、連携できたら record 画面へ進む (#611)。
+  Future<void> _openAnnictRecord(
+    AnnictEpisode ep,
+    String episodeLabel,
+    bool linked,
+  ) async {
+    if (!linked) {
+      final justLinked = await runAnnictLinkFlow(context, ref);
+      if (!justLinked || !mounted) return;
+    }
+    context.push(
+      '/annict/record',
+      extra: AnnictRecordScreenArgs(
+        episodeId: ep.annictId,
+        workTitle: _selectedWork!.title,
+        episodeLabel: episodeLabel,
+      ),
+    );
+  }
+
   Future<void> _selectWork(AnnictWork work) async {
     final mulukhiya = _mulukhiya;
     if (mulukhiya == null) return;
@@ -262,6 +283,14 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       return const Center(child: Text('エピソードが見つかりませんでした'));
     }
 
+    // 感想投稿ボタンはサーバーが Annict 対応 (annictEnabled) のときに出す。
+    // 当該ユーザーが未連携 (annictLinked == false) の場合は隠さず、押下時に
+    // 連携フローを促す (#611)。旧モロヘイヤは annictLinked が true に
+    // フォールバックし従来どおり record 画面へ直行する。
+    final mulukhiya = _mulukhiya;
+    final showAnnictRecord = mulukhiya?.annictEnabled ?? false;
+    final annictLinked = mulukhiya?.annictLinked ?? false;
+
     return ListView.separated(
       itemCount: _episodes!.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
@@ -298,20 +327,13 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
                     context.push('/hashtag/$tag');
                   },
                 ),
-              IconButton(
-                icon: const Icon(Icons.rate_review_outlined, size: 20),
-                tooltip: 'Annict に感想投稿',
-                onPressed: () {
-                  context.push(
-                    '/annict/record',
-                    extra: AnnictRecordScreenArgs(
-                      episodeId: ep.annictId,
-                      workTitle: _selectedWork!.title,
-                      episodeLabel: subtitle,
-                    ),
-                  );
-                },
-              ),
+              if (showAnnictRecord)
+                IconButton(
+                  icon: const Icon(Icons.rate_review_outlined, size: 20),
+                  tooltip: annictLinked ? 'Annict に感想投稿' : 'Annict と連携',
+                  onPressed: () =>
+                      _openAnnictRecord(ep, subtitle, annictLinked),
+                ),
             ],
           ),
           onTap: () {

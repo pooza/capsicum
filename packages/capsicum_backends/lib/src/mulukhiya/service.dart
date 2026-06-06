@@ -222,6 +222,13 @@ class MulukhiyaService {
   final String? reblogLabel;
   final bool annictEnabled;
 
+  /// モロヘイヤ 5.23.0+ の `features.annict_linked` フラグ (#611)。
+  /// サーバーの Annict 連携可否 ([annictEnabled]) とは別に、**当該ユーザーが
+  /// Annict 連携済みか**を表す。`false` のユーザーには感想投稿ボタンを出さない。
+  /// 旧モロヘイヤ (フラグ未提供) は連携状態を判別できないため `true` に
+  /// フォールバックし、従来どおりボタンを出す (押下時に OAuth 連携を促す)。
+  final bool annictLinked;
+
   /// モロヘイヤ 5.23.0+ の `features.media_catalog` フラグ (#606)。
   /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
@@ -246,6 +253,7 @@ class MulukhiyaService {
     this.defaultHashtag,
     this.reblogLabel,
     this.annictEnabled = false,
+    this.annictLinked = true,
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
     this.adminRoleIds = const [],
@@ -305,6 +313,8 @@ class MulukhiyaService {
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
+        // 欠落時は連携状態を判別できないため true にフォールバック (#611)。
+        annictLinked: features?['annict_linked'] != false,
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         adminRoleIds: adminRoleIds,

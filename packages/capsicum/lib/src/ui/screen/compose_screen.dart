@@ -27,6 +27,7 @@ import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
+import '../util/annict_link.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
@@ -1170,9 +1171,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   // 番組表エントリから直接 Annict 感想投稿画面に遷移する (#298)。
   // annict_episode_id が埋まっているエントリ (= 実在番組) のみ呼ばれる前提。
-  void _openAnnictRecord(MulukhiyaProgram program) {
+  // 当該ユーザーが Annict 未連携 (annictLinked == false) の場合はまず連携
+  // フローを促し、連携できたら record 画面へ進む (#611)。旧モロヘイヤは
+  // annictLinked が true にフォールバックし従来どおり直行する。
+  Future<void> _openAnnictRecord(MulukhiyaProgram program) async {
     final episodeId = program.annictEpisodeId;
     if (episodeId == null) return;
+    if (ref.read(currentMulukhiyaProvider)?.annictLinked == false) {
+      final linked = await runAnnictLinkFlow(context, ref);
+      if (!linked || !mounted) return;
+    }
     final episodeLabel = [
       if (program.episode != null)
         '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
@@ -2520,11 +2528,14 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         // 実況する番組) は独立した軸。エア番組も作品自体は実在し
                         // Annict にエントリがあるため annict_episode_id が
                         // 埋まっていれば普通に感想投稿対象になる
-                        // (project_air_program_concept)。
+                        // (project_air_program_concept)。未連携ユーザーには
+                        // 押下時に連携フローを促す (#611、判定は onAnnictRecord 側)。
                         trailing: entry.value.annictEpisodeId != null
                             ? IconButton(
                                 icon: const Icon(Icons.rate_review_outlined),
-                                tooltip: 'Annict に感想投稿',
+                                tooltip: widget.mulukhiya.annictLinked
+                                    ? 'Annict に感想投稿'
+                                    : 'Annict と連携',
                                 onPressed: () =>
                                     widget.onAnnictRecord(entry.value),
                               )
