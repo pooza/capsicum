@@ -60,6 +60,7 @@ export 'src/social/interfaces/marker_support.dart';
 export 'src/social/interfaces/pin_support.dart';
 export 'src/social/interfaces/media_update_support.dart';
 export 'src/social/interfaces/login_support.dart';
+export 'src/social/interfaces/notification_stream_support.dart';
 export 'src/social/interfaces/notification_support.dart';
 export 'src/social/interfaces/pages_support.dart';
 export 'src/social/interfaces/poll_support.dart';

@@ -24,8 +24,10 @@ import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
+import 'src/platform/platform_info.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
+import 'src/service/desktop_notification_dispatcher.dart';
 import 'src/service/apns_service.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
@@ -1021,6 +1023,12 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // desktop 3 OS のみ、WebSocket 通知ストリーミング → OS ローカル通知の
+    // ディスパッチャを常駐起動する (#569)。read で provider を alive にして
+    // currentAdapterProvider の listen を維持する。
+    if (isDesktop) {
+      ref.read(desktopNotificationDispatcherProvider);
+    }
   }
 
   @override

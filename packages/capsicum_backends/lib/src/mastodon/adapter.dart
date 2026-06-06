@@ -8,6 +8,7 @@ import 'dart:developer' as developer;
 
 import 'client.dart';
 import 'extensions.dart';
+import 'notification_streaming.dart';
 import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
@@ -82,6 +83,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         PollSupport,
         LoginSupport,
         StreamSupport,
+        NotificationStreamSupport,
         MarkerSupport,
         ProfileEditSupport,
         ReportSupport,
@@ -91,6 +93,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         TranslationSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
+  MastodonNotificationStreaming? _notificationStreaming;
   bool _translationAvailable = false;
 
   /// 管理者ロール ID のセット（verify_credentials + モロヘイヤから学習）。
@@ -1011,6 +1014,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   void disposeStream() {
     _streaming?.dispose();
     _streaming = null;
+  }
+
+  // NotificationStreamSupport (#569)
+
+  @override
+  Stream<Notification> streamNotifications() {
+    _notificationStreaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    _notificationStreaming = MastodonNotificationStreaming(
+      host: host,
+      accessToken: token,
+      adminRoleIds: _adminRoleIds,
+    );
+    return _notificationStreaming!.connect();
+  }
+
+  @override
+  void disposeNotificationStream() {
+    _notificationStreaming?.dispose();
+    _notificationStreaming = null;
   }
 
   // ProfileEditSupport

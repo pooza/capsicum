@@ -1,0 +1,23 @@
+import '../../model/notification.dart';
+
+/// 新規通知 (お知らせ含む) を WebSocket streaming からライブ配信する mixin (#569)。
+///
+/// timeline 用の [StreamSupport] とは独立した別接続を想定する。timeline
+/// streaming は home_screen の lifecycle に縛られているため、通知の発火を
+/// 画面表示中に限定させないよう専用の長寿命接続を持つ。adapter は両方を
+/// mix-in しうる。
+///
+/// 主にデスクトップ 3 OS (macOS / Linux / Windows) で、アプリ起動中の通知を
+/// OS ローカル通知へ橋渡しする `DesktopNotificationDispatcher` が購読する。
+/// 設計は docs/desktop-notification-design.md を参照。
+abstract mixin class NotificationStreamSupport {
+  /// 新規通知を emit する broadcast ストリーム。
+  ///
+  /// 接続が切れた場合は実装内部で自動再接続を試み、上位には開いた状態のまま
+  /// に見せる ([StreamSupport] と同じ reconnect / backoff 機構を流用)。
+  /// [disposeNotificationStream] / dispose 時にクローズする。
+  Stream<Notification> streamNotifications();
+
+  /// 通知ストリーミング接続をクローズする。アカウント切替時 / dispose 時に呼ぶ。
+  void disposeNotificationStream();
+}

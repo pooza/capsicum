@@ -10,6 +10,7 @@ import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';
 import 'client.dart';
 import 'extensions.dart';
+import 'notification_streaming.dart';
 import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
@@ -80,6 +81,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PollSupport,
         LoginSupport,
         StreamSupport,
+        NotificationStreamSupport,
         MediaUpdateSupport,
         ProfileEditSupport,
         ChannelSupport,
@@ -96,6 +98,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PagesSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
+  MisskeyNotificationStreaming? _notificationStreaming;
   MisskeyChatStreaming? _chatStreaming;
   // ルーム毎に 1 本ずつ WebSocket を張る (chatRoom channel は roomId 必須で
   // aggregate 不可、#438)。表示中のルームに対して都度購読 / 切断する。
@@ -1387,6 +1390,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   void disposeStream() {
     _streaming?.dispose();
     _streaming = null;
+  }
+
+  // NotificationStreamSupport (#569)
+
+  @override
+  Stream<Notification> streamNotifications() {
+    _notificationStreaming?.dispose();
+    final token = client.accessToken;
+    if (token == null) return const Stream.empty();
+    _notificationStreaming = MisskeyNotificationStreaming(
+      host: host,
+      accessToken: token,
+      adminRoleIds: _adminRoleIds,
+    );
+    return _notificationStreaming!.connect();
+  }
+
+  @override
+  void disposeNotificationStream() {
+    _notificationStreaming?.dispose();
+    _notificationStreaming = null;
   }
 
   // URL preview
