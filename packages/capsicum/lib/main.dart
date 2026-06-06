@@ -1024,8 +1024,8 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // desktop 3 OS のみ、WebSocket 通知ストリーミング → OS ローカル通知の
-    // ディスパッチャを常駐起動する (#569)。read で provider を alive にして
-    // currentAdapterProvider の listen を維持する。
+    // ディスパッチャを常駐起動する (#569 / #675)。read で provider を alive に
+    // して accountManagerProvider の listen（全ログイン垢の並列購読）を維持する。
     if (isDesktop) {
       ref.read(desktopNotificationDispatcherProvider);
     }

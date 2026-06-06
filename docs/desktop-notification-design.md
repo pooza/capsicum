@@ -203,10 +203,10 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 | ケース | 想定挙動 |
 |---|---|
 | アプリ複数ウィンドウ起動 | 1 プロセスにつき 1 dispatcher。WebSocket も 1 接続 |
-| 複数アカウント | アクティブアカウントのみ subscribe（初期実装）。将来は全アカウント並列も検討 |
+| 複数アカウント | 全ログインアカウントを並列 subscribe（#675）。dedup キーは `account\|notification.id` の複合、複数垢時は title 末尾に宛先ハンドルを添える。アクティブ垢の切替では既存購読を維持し増減のみ追従。当初実装はアクティブ垢のみだった |
 | WebSocket 切断 | 既存 streaming の reconnect/backoff 機構を流用（最大 10 回、指数バックオフ） |
 | アプリ起動直後にバックログ通知 | `user` stream は接続後の新規 event のみ emit するため空打ちなし |
-| アカウント切替時の取り違え | `_emittedIds.clear()` + dispatcher 内 adapter ref で識別 |
+| アカウント切替時の取り違え | アカウントごとに購読を `AccountKey` で同定し、dedup キーに account を含める（#675）。切替では購読を張り替えず維持 |
 | 自分宛 mention を自分が投稿（誤発火懸念） | 既存通知抽象が type で fan-out しているため、Mastodon / Misskey 側で除外済み |
 
 ## 共存方針（将来 native push 完成時）

@@ -5,6 +5,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../model/account.dart';
+import '../model/account_key.dart';
 import '../platform/notification_subsystem/notification_subsystem.dart';
 import '../platform/platform_info.dart';
 import '../provider/account_manager_provider.dart';
@@ -12,86 +14,126 @@ import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 
-/// デスクトップ 3 OS (macOS / Linux / Windows) で、アクティブアカウントの
+/// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
 /// WebSocket 通知ストリーミング ([NotificationStreamSupport]) を OS ローカル
-/// 通知 ([NotificationSubsystem]) に橋渡しする service (#569)。
+/// 通知 ([NotificationSubsystem]) に橋渡しする service (#569 / #675)。
 ///
 /// アプリ起動中限定の通知配信。ネイティブ push (APNs #468 / WNS #474) とは
 /// `notification.id` ベースの dedup で併存する。設計は
 /// docs/desktop-notification-design.md を参照。
+///
+/// #675 で全ログインアカウントを並列購読するよう拡張（旧実装はアクティブ
+/// アカウント 1 つだけ）。非アクティブなアカウント宛ての反応こそ通知で拾い
+/// たい、という実用上の要請に応える。アカウント数ぶん WebSocket
+/// (Mastodon user / Misskey main) が常駐する。
 class DesktopNotificationDispatcher {
   DesktopNotificationDispatcher(this._ref);
 
   final Ref _ref;
-  StreamSubscription<Notification>? _sub;
+
+  /// アカウントごとの通知ストリーム購読。[AccountKey] で同定し、アカウントの
+  /// 増減 (ログイン / ログアウト) に追従して張り直す。アクティブ垢の切替では
+  /// 既存購読を維持して WebSocket を無駄に切らない。
+  final Map<AccountKey, StreamSubscription<Notification>> _subs = {};
 
   /// セッション内 dedup。将来 native push と二重受信する通知を取りこぼさず
-  /// 1 表示に抑える。アカウント切替時にクリア。
-  final Set<String> _emittedIds = {};
-  static const _maxTrackedIds = 500;
+  /// 1 表示に抑える。`notification.id` はサーバーローカルでアカウント間で
+  /// 衝突しうるため、account を含む複合キーで持つ。
+  final Set<String> _emittedKeys = {};
+  static const _maxTrackedKeys = 500;
 
   /// OS 通知本文の上限。OS 側でも truncate されるが念のため client 側でも切る。
   static const _maxBodyLength = 200;
 
-  /// アクティブアダプターの変化を listen し、通知ストリーミングを購読し直す。
+  /// ログインアカウントの変化を listen し、購読集合を合わせる。
   /// desktop 以外では何もしない。
   void start() {
     if (!isDesktop) return;
-    _ref.listen<DecentralizedBackendAdapter?>(currentAdapterProvider, (
-      prev,
-      next,
-    ) {
-      // 旧アダプターの購読を切る。broadcast controller の onCancel で
-      // 旧 streaming も dispose される。
-      _sub?.cancel();
-      _sub = null;
-      _emittedIds.clear();
-      if (next is NotificationStreamSupport) {
-        debugPrint(
-          'capsicum: push.desktop: subscribing notification stream '
-          '(adapter=${next.runtimeType})',
-        );
-        _sub = (next as NotificationStreamSupport).streamNotifications().listen(
-          _emit,
-          // ストリーム側の error は streaming 内 reconnect で吸収済み。
-          // ここに届くのは controller close 等なので握りつぶす。
-          onError: (_, _) {},
-        );
-      } else {
-        debugPrint(
-          'capsicum: push.desktop: adapter not NotificationStreamSupport '
-          '(${next.runtimeType}) — no subscription',
-        );
-      }
-    }, fireImmediately: true);
+    _ref.listen<AccountManagerState>(
+      accountManagerProvider,
+      (prev, next) => _reconcile(next.accounts),
+      fireImmediately: true,
+    );
   }
 
-  Future<void> _emit(Notification n) async {
-    if (!_emittedIds.add(n.id)) return; // 既出 (native push 経由含む)
-    if (_emittedIds.length > _maxTrackedIds) {
-      _emittedIds
+  /// 現在のログインアカウント集合に購読を合わせる。新規アカウントは購読を
+  /// 開始し、消えたアカウントは購読を解除する。既存はそのまま維持する
+  /// (アクティブ垢の切替だけでは張り替えない)。
+  void _reconcile(List<Account> accounts) {
+    final live = <AccountKey>{};
+    for (final account in accounts) {
+      final adapter = account.adapter;
+      if (adapter is! NotificationStreamSupport) continue;
+      live.add(account.key);
+      if (_subs.containsKey(account.key)) continue; // 既に購読中
+      debugPrint(
+        'capsicum: push.desktop: subscribing notification stream '
+        '(account=${account.key.toStorageKey()} adapter=${adapter.runtimeType})',
+      );
+      _subs[account.key] = (adapter as NotificationStreamSupport)
+          .streamNotifications()
+          .listen(
+            (n) => _emit(account, n),
+            // ストリーム側の error は streaming 内 reconnect で吸収済み。
+            // ここに届くのは controller close 等なので握りつぶす。
+            onError: (_, _) {},
+          );
+    }
+    final removed = _subs.keys.where((key) => !live.contains(key)).toList();
+    for (final key in removed) {
+      _subs.remove(key)?.cancel();
+      debugPrint(
+        'capsicum: push.desktop: unsubscribed '
+        '(account=${key.toStorageKey()})',
+      );
+    }
+  }
+
+  Future<void> _emit(Account account, Notification n) async {
+    final dedupKey = '${account.key.toStorageKey()}|${n.id}';
+    if (!_emittedKeys.add(dedupKey)) return; // 既出 (native push 経由含む)
+    if (_emittedKeys.length > _maxTrackedKeys) {
+      _emittedKeys
         ..clear()
-        ..add(n.id);
+        ..add(dedupKey);
     }
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
-    final title = _title(n, display);
+    // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。
+    final multiAccount = _ref.read(accountManagerProvider).accounts.length > 1;
+    final title = _title(n, display, multiAccount ? account.key : null);
     final body = _body(n);
-    // 本文（ユーザーコンテンツ）はログに残さない。id/type と有無のみ。
+    // 本文（ユーザーコンテンツ）はログに残さない。account/id/type と有無のみ。
     debugPrint(
-      'capsicum: push.desktop: emit id=${n.id} type=${n.type.name} '
+      'capsicum: push.desktop: emit account=${account.key.toStorageKey()} '
+      'id=${n.id} type=${n.type.name} '
       'hasUser=${n.user != null} hasPost=${n.post != null}',
     );
     await subsystem.show(
-      id: n.id.hashCode & 0x7FFFFFFF,
+      id: dedupKey.hashCode & 0x7FFFFFFF,
       title: title,
       body: body,
-      payload: jsonEncode({'notificationId': n.id, 'type': n.type.name}),
+      payload: jsonEncode({
+        'account': account.key.toStorageKey(),
+        'notificationId': n.id,
+        'type': n.type.name,
+      }),
       category: _categoryFor(n.type),
     );
   }
 
-  String _title(Notification n, NotificationTypeDisplay display) {
+  String _title(
+    Notification n,
+    NotificationTypeDisplay display,
+    AccountKey? recipient,
+  ) {
+    final base = _baseTitle(n, display);
+    if (recipient == null) return base;
+    // 宛先アカウントを末尾に添える (複数垢の区別用)。
+    return '$base (@${recipient.username}@${recipient.host})';
+  }
+
+  String _baseTitle(Notification n, NotificationTypeDisplay display) {
     if (n.type == NotificationType.announcement) {
       final title = n.announcement?.title;
       return (title != null && title.isNotEmpty) ? title : display.label;
@@ -145,8 +187,10 @@ class DesktopNotificationDispatcher {
   }
 
   void dispose() {
-    _sub?.cancel();
-    _sub = null;
+    for (final sub in _subs.values) {
+      sub.cancel();
+    }
+    _subs.clear();
   }
 }
 
