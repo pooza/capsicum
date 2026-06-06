@@ -270,7 +270,17 @@ class MulukhiyaService {
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
   /// Returns [MulukhiyaService] if present, null otherwise.
-  static Future<MulukhiyaService?> detect(Dio dio, String domain) async {
+  ///
+  /// [token] を渡すと /about を当該アカウントの bearer 認証付きで叩く。
+  /// `features.annict_linked` 等の **per-user 動的フラグ** はリクエストの
+  /// トークンが指すアカウントで評価されるため (mulukhiya DynamicFeatures、
+  /// #611)、未指定だとサーバーの default_token で評価され当該ユーザーの
+  /// 連携状態にならない。token は新規ログイン / セッション復元時に手元にある。
+  static Future<MulukhiyaService?> detect(
+    Dio dio,
+    String domain, {
+    String? token,
+  }) async {
     try {
       final response = await dio.get(
         'https://$domain/mulukhiya/api/about',
@@ -278,6 +288,7 @@ class MulukhiyaService {
           responseType: ResponseType.json,
           receiveTimeout: const Duration(seconds: 5),
           sendTimeout: const Duration(seconds: 5),
+          headers: token != null ? {'Authorization': 'Bearer $token'} : null,
         ),
       );
       if (response.statusCode != 200) return null;
