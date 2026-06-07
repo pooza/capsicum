@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- APNs push 通知 (#468)。macOS のキーは `com.apple.developer.aps-environment`
+	     (iOS の `aps-environment` ではない。理由は Release.entitlements 参照)。
+	     development は sandbox APNs 環境でローカル debug 検証用。 -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
 	<!-- Debug ビルドは sandbox を外す: ad-hoc 署名 + sandbox の組み合わせで
 	     ASWebAuthenticationSession / Keychain (flutter_secure_storage) が
 	     errSecMissingEntitlement (-34018) で動かないため。Release は維持。 -->

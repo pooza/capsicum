@@ -222,6 +222,13 @@ class MulukhiyaService {
   final String? reblogLabel;
   final bool annictEnabled;
 
+  /// モロヘイヤ 5.23.0+ の `features.annict_linked` フラグ (#611)。
+  /// サーバーの Annict 連携可否 ([annictEnabled]) とは別に、**当該ユーザーが
+  /// Annict 連携済みか**を表す。`false` のユーザーには感想投稿ボタンを出さない。
+  /// 旧モロヘイヤ (フラグ未提供) は連携状態を判別できないため `true` に
+  /// フォールバックし、従来どおりボタンを出す (押下時に OAuth 連携を促す)。
+  final bool annictLinked;
+
   /// モロヘイヤ 5.23.0+ の `features.media_catalog` フラグ (#606)。
   /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
@@ -246,6 +253,7 @@ class MulukhiyaService {
     this.defaultHashtag,
     this.reblogLabel,
     this.annictEnabled = false,
+    this.annictLinked = true,
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
     this.adminRoleIds = const [],
@@ -262,7 +270,17 @@ class MulukhiyaService {
 
   /// Detect mulukhiya by requesting GET /mulukhiya/api/about.
   /// Returns [MulukhiyaService] if present, null otherwise.
-  static Future<MulukhiyaService?> detect(Dio dio, String domain) async {
+  ///
+  /// [token] を渡すと /about を当該アカウントの bearer 認証付きで叩く。
+  /// `features.annict_linked` 等の **per-user 動的フラグ** はリクエストの
+  /// トークンが指すアカウントで評価されるため (mulukhiya DynamicFeatures、
+  /// #611)、未指定だとサーバーの default_token で評価され当該ユーザーの
+  /// 連携状態にならない。token は新規ログイン / セッション復元時に手元にある。
+  static Future<MulukhiyaService?> detect(
+    Dio dio,
+    String domain, {
+    String? token,
+  }) async {
     try {
       final response = await dio.get(
         'https://$domain/mulukhiya/api/about',
@@ -270,6 +288,7 @@ class MulukhiyaService {
           responseType: ResponseType.json,
           receiveTimeout: const Duration(seconds: 5),
           sendTimeout: const Duration(seconds: 5),
+          headers: token != null ? {'Authorization': 'Bearer $token'} : null,
         ),
       );
       if (response.statusCode != 200) return null;
@@ -305,6 +324,8 @@ class MulukhiyaService {
         defaultHashtag: _parseDefaultHashtag(status?['default_hashtag']),
         reblogLabel: status?['reblog_label'] as String?,
         annictEnabled: features?['annict'] == true,
+        // 欠落時は連携状態を判別できないため true にフォールバック (#611)。
+        annictLinked: features?['annict_linked'] != false,
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         adminRoleIds: adminRoleIds,
@@ -435,6 +456,42 @@ class MulukhiyaService {
         'episode_id': episodeId,
         if (comment != null && comment.isNotEmpty) 'comment': comment,
         if (ratingState != null) 'rating_state': ratingState.apiValue,
+      },
+      options: _bearerOptions(snsToken),
+    );
+  }
+
+  /// Post a work-level review (作品全体感想) to Annict via mulukhiya.
+  ///
+  /// モロヘイヤ #4342 で実装された `POST /api/annict/review` を呼ぶ (#592)。
+  /// 劇場版のように episode に分かれていない作品は record の投稿先がなく、
+  /// review でしか感想を残せないため record (単話) の作品単位ペアとして使う。
+  /// [body] (感想本文) は必須。レーティングは総合 + 4 軸 (映像 / 音楽 / 物語 /
+  /// キャラクター) いずれも任意。record と同じく SNS 側の access_token を
+  /// Bearer で渡すだけでよい (Annict トークンはモロヘイヤ側が保持)。
+  Future<void> postAnnictReview({
+    required String snsToken,
+    required int workId,
+    required String body,
+    AnnictRatingState? ratingOverall,
+    AnnictRatingState? ratingAnimation,
+    AnnictRatingState? ratingMusic,
+    AnnictRatingState? ratingStory,
+    AnnictRatingState? ratingCharacter,
+  }) async {
+    await _dio.post(
+      '$baseUrl/annict/review',
+      data: {
+        'work_id': workId,
+        'body': body,
+        if (ratingOverall != null)
+          'rating_overall_state': ratingOverall.apiValue,
+        if (ratingAnimation != null)
+          'rating_animation_state': ratingAnimation.apiValue,
+        if (ratingMusic != null) 'rating_music_state': ratingMusic.apiValue,
+        if (ratingStory != null) 'rating_story_state': ratingStory.apiValue,
+        if (ratingCharacter != null)
+          'rating_character_state': ratingCharacter.apiValue,
       },
       options: _bearerOptions(snsToken),
     );

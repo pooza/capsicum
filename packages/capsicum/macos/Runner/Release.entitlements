@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- APNs push 通知 (#468)。macOS の entitlement キーは iOS の
+	     `aps-environment` ではなく `com.apple.developer.aps-environment`。
+	     iOS 流の `aps-environment` だと archive/署名は通るが runtime で
+	     「not properly entitled for push notifications」(OSStatus 13) になり
+	     登録失敗する (debug 版 1.34.0+98 で実証)。production は App Store /
+	     TestFlight 配布の本番 APNs 環境。App ID jp.co.b-shock.capsicum の Push
+	     Notifications capability が有効である必要がある (iOS と共通の
+	     Universal Purchase App ID)。 -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>production</string>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.network.client</key>

@@ -49,6 +49,7 @@ import 'ui/screen/settings/push_notification_settings_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
 import 'ui/screen/settings/touch_action_settings_screen.dart';
 import 'ui/screen/annict_record_screen.dart';
+import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/list_management_screen.dart';
@@ -430,6 +431,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final args = state.extra! as AnnictRecordScreenArgs;
           return AnnictRecordScreen(args: args);
+        },
+      ),
+      GoRoute(
+        path: '/annict/review',
+        builder: (context, state) {
+          final args = state.extra! as AnnictReviewScreenArgs;
+          return AnnictReviewScreen(args: args);
         },
       ),
       GoRoute(

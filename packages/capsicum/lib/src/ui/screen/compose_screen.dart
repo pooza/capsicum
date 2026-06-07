@@ -27,11 +27,13 @@ import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
+import '../util/annict_link.dart';
 import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
+import 'image_text_overlay_screen.dart';
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
@@ -61,6 +63,68 @@ class _OversizeFile {
     required this.size,
     required this.limit,
   });
+}
+
+/// 添付画像プレビュー (#660) から呼び出し元へ返すアクション。
+enum _AttachmentPreviewAction { editDescription, addText }
+
+/// 添付画像を確認するためのフルスクリーンプレビュー (#660)。トリミング結果も
+/// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。AppBar
+/// から ALT 編集へ進める（従来サムネタップに割り当てられていた ALT 編集は
+/// プレビュー経由のサブアクションへ整理した）。
+class _AttachmentPreviewScreen extends StatelessWidget {
+  const _AttachmentPreviewScreen({
+    required this.image,
+    this.showTextOverlay = false,
+  });
+
+  final ImageProvider image;
+
+  /// 文字入れ (#576) を提示するか。差し替え可能なローカル画像のみ true。
+  final bool showTextOverlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        actions: [
+          if (showTextOverlay)
+            IconButton(
+              tooltip: '文字を入れる',
+              onPressed: () =>
+                  Navigator.of(context).pop(_AttachmentPreviewAction.addText),
+              icon: const Icon(Icons.title, color: Colors.white),
+            ),
+          TextButton.icon(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(_AttachmentPreviewAction.editDescription),
+            icon: const Icon(Icons.subtitles_outlined, color: Colors.white),
+            label: const Text(
+              '説明 (ALT)',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+      body: InteractiveViewer(
+        minScale: 1,
+        maxScale: 5,
+        child: Center(
+          child: Image(
+            image: image,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Center(
+              child: Icon(Icons.broken_image, color: Colors.white, size: 48),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 語字 (Unicode の Letter / Number / アンダースコア)。トリガ直前がこれ以外
@@ -865,25 +929,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
     if (cropped == null || !mounted) return;
 
-    final XFile croppedFile;
-    try {
-      final dir = await getTemporaryDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      // トリミング結果は常に PNG で返るため、拡張子・MIME を PNG に揃える。
-      // 元が WebP/HEIC 等でもサーバー (モロヘイヤ) 側で再変換されるので問題ない。
-      final baseName = original.name.isNotEmpty ? original.name : 'image';
-      final dotIndex = baseName.lastIndexOf('.');
-      final stem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
-      final pngName = '$stem.png';
-      final path = '${dir.path}/crop_${stamp}_$pngName';
-      final out = File(path);
-      // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
-      // 親ディレクトリを作らないため明示的に作成する。
-      await out.create(recursive: true);
-      await out.writeAsBytes(cropped, flush: true);
-      croppedFile = XFile(path, mimeType: 'image/png', name: pngName);
-    } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+    final croppedFile = await _writeTempPng(original, cropped, 'crop');
+    if (croppedFile == null) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -897,6 +944,78 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 差し替え後も同じ添付スロットを保つため index を再取得せず置換する。
       entry.file = croppedFile;
     });
+  }
+
+  /// 添付済みのローカル画像に文字 / Unicode 絵文字を重ねて書き出し、結果で元の
+  /// 添付を差し替える (#576)。説明 (ALT) と閲覧注意フラグは引き継ぐ。
+  Future<void> _addTextOverlay(int index) async {
+    final entry = _attachments[index];
+    final original = entry.file;
+    if (original == null) return;
+
+    final Uint8List bytes;
+    try {
+      bytes = await original.readAsBytes();
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('画像を読み込めませんでした')));
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final composited = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ImageTextOverlayScreen(imageData: bytes),
+        fullscreenDialog: true,
+      ),
+    );
+    if (composited == null || !mounted) return;
+
+    final overlaidFile = await _writeTempPng(original, composited, 'overlay');
+    if (overlaidFile == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('編集結果を保存できませんでした')));
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => entry.file = overlaidFile);
+  }
+
+  /// PNG バイト列を一時ファイルに書き出し [XFile] を返す。元ファイル名の stem を
+  /// 引き継ぎ、拡張子・MIME は PNG に揃える（元が WebP/HEIC 等でもサーバー側で
+  /// 再変換されるため問題ない）。失敗時は null。トリミング (#577) と文字入れ
+  /// (#576) の差し替え結果で共用する。
+  Future<XFile?> _writeTempPng(
+    XFile original,
+    Uint8List bytes,
+    String prefix,
+  ) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final baseName = original.name.isNotEmpty ? original.name : 'image';
+      final dotIndex = baseName.lastIndexOf('.');
+      final stem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+      final pngName = '$stem.png';
+      final path = '${dir.path}/${prefix}_${stamp}_$pngName';
+      final out = File(path);
+      // macOS の一時ディレクトリは実体が未作成のことがあり、writeAsBytes は
+      // 親ディレクトリを作らないため明示的に作成する。
+      await out.create(recursive: true);
+      await out.writeAsBytes(bytes, flush: true);
+      return XFile(path, mimeType: 'image/png', name: pngName);
+    } catch (e, st) {
+      await Sentry.captureException(e, stackTrace: st);
+      return null;
+    }
   }
 
   static const _videoExtensions = {
@@ -1158,6 +1277,55 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 添付エントリの画像 [ImageProvider] を返す。画像でない (動画 / 音声 /
+  /// 非画像の Drive ファイル) 場合は null。プレビュー可否の判定も兼ねる。
+  ImageProvider? _attachmentImageProvider(_MediaEntry entry) {
+    if (entry.isDrive) {
+      final df = entry.driveFile!;
+      final isImage =
+          df.type == AttachmentType.image || df.type == AttachmentType.gifv;
+      if (!isImage) return null;
+      // プレビューは確認用途のため可能なら原寸 URL を使う。
+      final url = df.url.isNotEmpty ? df.url : (df.previewUrl ?? '');
+      return url.isNotEmpty ? NetworkImage(url) : null;
+    }
+    final isVideo = _isVideo(entry.file!.mimeType, entry.file!.path);
+    final isAudio =
+        !isVideo && _isAudio(entry.file!.mimeType, entry.file!.path);
+    if (isVideo || isAudio) return null;
+    return FileImage(File(entry.file!.path));
+  }
+
+  /// 添付サムネのタップ時の動線 (#660)。画像はフルスクリーンのプレビュー
+  /// （ズーム可・トリミング結果の確認用）を開き、そこから ALT 編集へ進める。
+  /// 画像でないエントリはプレビュー対象外なので従来どおり ALT 編集を直接開く。
+  Future<void> _previewAttachment(int index) async {
+    final entry = _attachments[index];
+    final provider = _attachmentImageProvider(entry);
+    if (provider == null) {
+      await _editDescription(index);
+      return;
+    }
+    final action = await Navigator.of(context).push<_AttachmentPreviewAction>(
+      MaterialPageRoute(
+        builder: (_) => _AttachmentPreviewScreen(
+          image: provider,
+          showTextOverlay: _isCroppableImage(entry),
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _AttachmentPreviewAction.editDescription:
+        await _editDescription(index);
+      case _AttachmentPreviewAction.addText:
+        await _addTextOverlay(index);
+      case null:
+        break;
+    }
+  }
+
   Future<void> _openEpisodeBrowser() async {
     final result = await context.push<String>('/episodes');
     if (result != null && mounted) {
@@ -1170,9 +1338,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   // 番組表エントリから直接 Annict 感想投稿画面に遷移する (#298)。
   // annict_episode_id が埋まっているエントリ (= 実在番組) のみ呼ばれる前提。
-  void _openAnnictRecord(MulukhiyaProgram program) {
+  // 当該ユーザーが Annict 未連携 (annictLinked == false) の場合はまず連携
+  // フローを促し、連携できたら record 画面へ進む (#611)。旧モロヘイヤは
+  // annictLinked が true にフォールバックし従来どおり直行する。
+  Future<void> _openAnnictRecord(MulukhiyaProgram program) async {
     final episodeId = program.annictEpisodeId;
     if (episodeId == null) return;
+    if (ref.read(currentMulukhiyaProvider)?.annictLinked == false) {
+      final linked = await runAnnictLinkFlow(context, ref);
+      if (!linked || !mounted) return;
+    }
     final episodeLabel = [
       if (program.episode != null)
         '${program.episode}${program.episodeSuffix?.isNotEmpty == true ? program.episodeSuffix! : '話'}',
@@ -1969,7 +2144,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           behavior: HitTestBehavior.opaque,
                           onTap: _sending
                               ? null
-                              : () => _editDescription(index),
+                              : () => _previewAttachment(index),
                           child: Stack(
                             children: [
                               ClipRRect(
@@ -2520,11 +2695,14 @@ class _TagsetSheetState extends State<_TagsetSheet> {
                         // 実況する番組) は独立した軸。エア番組も作品自体は実在し
                         // Annict にエントリがあるため annict_episode_id が
                         // 埋まっていれば普通に感想投稿対象になる
-                        // (project_air_program_concept)。
+                        // (project_air_program_concept)。未連携ユーザーには
+                        // 押下時に連携フローを促す (#611、判定は onAnnictRecord 側)。
                         trailing: entry.value.annictEpisodeId != null
                             ? IconButton(
                                 icon: const Icon(Icons.rate_review_outlined),
-                                tooltip: 'Annict に感想投稿',
+                                tooltip: widget.mulukhiya.annictLinked
+                                    ? 'Annict に感想投稿'
+                                    : 'Annict と連携',
                                 onPressed: () =>
                                     widget.onAnnictRecord(entry.value),
                               )

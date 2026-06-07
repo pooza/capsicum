@@ -60,7 +60,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
 
     // Detect mulukhiya on the server (non-blocking — failure is fine).
-    final mulukhiya = await _detectMulukhiya(account.key.host);
+    final mulukhiya = await _detectMulukhiya(
+      account.key.host,
+      token: account.userSecret.accessToken,
+    );
     if (mulukhiya != null) {
       if (account.adapter is MastodonAdapter) {
         (account.adapter as MastodonAdapter).applyAdminRoleIds(
@@ -153,7 +156,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final current = state.current;
     if (current == null) return false;
 
-    final mulukhiya = await _detectMulukhiya(current.key.host);
+    final mulukhiya = await _detectMulukhiya(
+      current.key.host,
+      token: current.userSecret.accessToken,
+    );
     if (mulukhiya == null) return false;
 
     if (current.adapter is MastodonAdapter) {
@@ -213,10 +219,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   /// Detect mulukhiya on the given host.
-  Future<MulukhiyaService?> _detectMulukhiya(String host) async {
+  ///
+  /// [token] を渡すと /about を bearer 認証付きで叩き、`annict_linked` 等の
+  /// per-user フラグが当該アカウントで評価される (#611)。無認証だと
+  /// サーバーの default_token 基準になり連携状態を誤判定する。
+  Future<MulukhiyaService?> _detectMulukhiya(
+    String host, {
+    String? token,
+  }) async {
     try {
       final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
-      final mulukhiya = await MulukhiyaService.detect(dio, host);
+      final mulukhiya = await MulukhiyaService.detect(dio, host, token: token);
       if (mulukhiya != null) {
         debugPrint(
           'capsicum: mulukhiya detected on $host '
@@ -279,7 +292,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           }
         }
 
-        final mulukhiya = await _detectMulukhiya(accountKey.host);
+        final mulukhiya = await _detectMulukhiya(
+          accountKey.host,
+          token: userSecret.accessToken,
+        );
         if (mulukhiya != null) {
           if (adapter is MastodonAdapter) {
             adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
