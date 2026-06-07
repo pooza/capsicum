@@ -425,13 +425,14 @@ curl -sA "Mozilla/5.0" "https://itunes.apple.com/lookup?bundleId=jp.co.b-shock.c
 
 iOS と macOS の審査状態を**別々に正確に**取得するには App Store Connect API を使う（lookup では Universal Purchase の同一レコードを拾うため不可）。`appStoreVersions` を `platform`（`IOS` / `MAC_OS`）でフィルタすると各版に `appStoreState`（`READY_FOR_SALE` = 公開済み / `WAITING_FOR_REVIEW` = 審査待ち / `IN_REVIEW` = 審査中 / `PENDING_DEVELOPER_RELEASE` 等）が付く。**今後 iOS / macOS の公開状況確認はこの方法を第一とする**（lookup は補助）。
 
-認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_WLS8G4W44L.p8`、key_id `WLS8G4W44L`、issuer `69a6de71-e621-47e3-e053-5b8c7c11a4d1`）を流用し、ES256 JWT を生成して叩く（Ruby の `jwt` gem 利用）:
+認証は fastlane と同じ ASC API Key（`~/.config/capsicum/AuthKey_<KEY_ID>.p8`）を流用し、ES256 JWT を生成して叩く（Ruby の `jwt` gem 利用）。`<KEY_ID>` / `<ISSUER_ID>` の実値は public リポジトリには書かず、各マシンの `~/.config/capsicum/` 配下と private な端末固有値リファレンスで管理する（このファイル冒頭 §1.3 と同じ方針）。実行前に環境変数へ入れておく:
 
 ```bash
+# 実値は private リファレンス参照。例: export ASC_KEY_ID=XXXXXXXXXX ASC_ISSUER_ID=........-....-....-....-............
 ruby -e '
 require "jwt"; require "net/http"; require "json"; require "uri"
-KEY_ID="WLS8G4W44L"; ISSUER="69a6de71-e621-47e3-e053-5b8c7c11a4d1"
-key=OpenSSL::PKey::EC.new(File.read(File.expand_path("~/.config/capsicum/AuthKey_WLS8G4W44L.p8")))
+KEY_ID=ENV.fetch("ASC_KEY_ID"); ISSUER=ENV.fetch("ASC_ISSUER_ID")
+key=OpenSSL::PKey::EC.new(File.read(File.expand_path("~/.config/capsicum/AuthKey_#{KEY_ID}.p8")))
 now=Time.now.to_i
 tok=JWT.encode({iss:ISSUER,iat:now,exp:now+600,aud:"appstoreconnect-v1"},key,"ES256",{kid:KEY_ID,typ:"JWT"})
 get=->(p){u=URI("https://api.appstoreconnect.apple.com/v1/#{p}");r=Net::HTTP::Get.new(u);r["Authorization"]="Bearer #{tok}";JSON.parse(Net::HTTP.start(u.host,u.port,use_ssl:true){|h|h.request(r)}.body)}

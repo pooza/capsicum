@@ -1395,7 +1395,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // NotificationStreamSupport (#569)
 
   @override
-  Stream<Notification> streamNotifications() {
+  Stream<Notification> streamNotifications({
+    void Function(Object error, StackTrace stack)? onParseError,
+    void Function(Object error, StackTrace stack)? onStreamError,
+    void Function()? onReconnectExhausted,
+  }) {
     _notificationStreaming?.dispose();
     final token = client.accessToken;
     if (token == null) return const Stream.empty();
@@ -1403,6 +1407,9 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       host: host,
       accessToken: token,
       adminRoleIds: _adminRoleIds,
+      onParseError: onParseError,
+      onStreamError: onStreamError,
+      onReconnectExhausted: onReconnectExhausted,
     );
     return _notificationStreaming!.connect();
   }

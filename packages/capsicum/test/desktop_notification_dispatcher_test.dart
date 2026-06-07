@@ -62,7 +62,13 @@ class _RecordingSubsystem implements NotificationSubsystem {
 ) {
   final controller = StreamController<Notification>.broadcast();
   final adapter = _FakeAdapter();
-  when(adapter.streamNotifications).thenAnswer((_) => controller.stream);
+  when(
+    () => adapter.streamNotifications(
+      onParseError: any(named: 'onParseError'),
+      onStreamError: any(named: 'onStreamError'),
+      onReconnectExhausted: any(named: 'onReconnectExhausted'),
+    ),
+  ).thenAnswer((_) => controller.stream);
   final account = Account(
     key: AccountKey(type: BackendType.mastodon, host: host, username: username),
     adapter: adapter,

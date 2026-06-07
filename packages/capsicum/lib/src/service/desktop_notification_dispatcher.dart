@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../model/account.dart';
 import '../model/account_key.dart';
@@ -13,6 +14,7 @@ import '../provider/account_manager_provider.dart';
 import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
+import '../util/exception_scrub.dart';
 
 /// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
 /// WebSocket 通知ストリーミング ([NotificationStreamSupport]) を OS ローカル
@@ -45,6 +47,14 @@ class DesktopNotificationDispatcher {
   /// OS 通知本文の上限。OS 側でも truncate されるが念のため client 側でも切る。
   static const _maxBodyLength = 200;
 
+  /// streaming 内部 error の観測 throttle。timeline_provider (#586) と同型で
+  /// breadcrumb は毎回、captureException は性質ごとに 60s throttle して切断中の
+  /// 連発 spam を防ぐ。全アカウント共通バケット (account 識別子は PII のため
+  /// tag / fingerprint には載せない。host 分岐も入れない)。
+  DateTime? _lastParseCapture;
+  DateTime? _lastConnectCapture;
+  static const _captureThrottle = Duration(seconds: 60);
+
   /// ログインアカウントの変化を listen し、購読集合を合わせる。
   /// desktop 以外では何もしない。
   void start() {
@@ -71,7 +81,11 @@ class DesktopNotificationDispatcher {
         '(account=${account.key.toStorageKey()} adapter=${adapter.runtimeType})',
       );
       _subs[account.key] = (adapter as NotificationStreamSupport)
-          .streamNotifications()
+          .streamNotifications(
+            onParseError: _onStreamParseError,
+            onStreamError: _onStreamConnectError,
+            onReconnectExhausted: _onStreamReconnectExhausted,
+          )
           .listen(
             (n) => _emit(account, n),
             // ストリーム側の error は streaming 内 reconnect で吸収済み。
@@ -109,16 +123,108 @@ class DesktopNotificationDispatcher {
       'id=${n.id} type=${n.type.name} '
       'hasUser=${n.user != null} hasPost=${n.post != null}',
     );
-    await subsystem.show(
-      id: dedupKey.hashCode & 0x7FFFFFFF,
-      title: title,
-      body: body,
-      payload: jsonEncode({
-        'account': account.key.toStorageKey(),
-        'notificationId': n.id,
-        'type': n.type.name,
-      }),
-      category: _categoryFor(n.type),
+    try {
+      await subsystem.show(
+        id: dedupKey.hashCode & 0x7FFFFFFF,
+        title: title,
+        body: body,
+        payload: jsonEncode({
+          'account': account.key.toStorageKey(),
+          'notificationId': n.id,
+          'type': n.type.name,
+        }),
+        category: _categoryFor(n.type),
+      );
+    } catch (e, st) {
+      // OS 通知の表示失敗 (UNUserNotificationCenter エラー等)。zone integration
+      // でも拾われるが、ここで pipeline を識別する breadcrumb を残してから
+      // 計装する (account 識別子・本文は載せない)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'push.desktop.show',
+          level: SentryLevel.warning,
+          message: e.runtimeType.toString(),
+        ),
+      );
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('push.desktop', 'show_failed');
+          scope.fingerprint = ['push.desktop.show', e.runtimeType.toString()];
+        },
+      );
+    }
+  }
+
+  // streaming 内部の parse / 接続 / 再接続枯渇を観測層へ流す (#569)。
+  // timeline_provider (#586) と同型: breadcrumb は毎回、captureException は
+  // throttle、reconnect 枯渇は captureMessage。account / host は載せない。
+  void _onStreamParseError(Object e, StackTrace st) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'push.desktop.stream.parse',
+        level: SentryLevel.warning,
+        // 例外型のみ。生 payload は通知本文を含みうるため breadcrumb に載せない。
+        message: e.runtimeType.toString(),
+      ),
+    );
+    final now = DateTime.now();
+    if (_lastParseCapture != null &&
+        now.difference(_lastParseCapture!) < _captureThrottle) {
+      return;
+    }
+    _lastParseCapture = now;
+    Sentry.captureException(
+      scrubException(e),
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('push.desktop.stream.parse', 'failed');
+        scope.fingerprint = [
+          'push.desktop.stream.parse',
+          e.runtimeType.toString(),
+        ];
+      },
+    );
+  }
+
+  void _onStreamConnectError(Object e, StackTrace st) {
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'push.desktop.stream.connect',
+        level: SentryLevel.warning,
+        message: e.runtimeType.toString(),
+      ),
+    );
+    final now = DateTime.now();
+    if (_lastConnectCapture != null &&
+        now.difference(_lastConnectCapture!) < _captureThrottle) {
+      return;
+    }
+    _lastConnectCapture = now;
+    Sentry.captureException(
+      scrubException(e),
+      stackTrace: st,
+      withScope: (scope) {
+        scope.setTag('push.desktop.stream.connect', 'failed');
+        scope.fingerprint = [
+          'push.desktop.stream.connect',
+          e.runtimeType.toString(),
+        ];
+      },
+    );
+  }
+
+  void _onStreamReconnectExhausted() {
+    // 無言で「起動中も通知が来なくなった」状態。#588 (streaming 再接続枯渇の
+    // UI 可視化) の観測起点。host 分岐は入れない。
+    Sentry.captureMessage(
+      'push.desktop.stream.reconnect_exhausted',
+      level: SentryLevel.warning,
+      withScope: (scope) {
+        scope.setTag('push.desktop.stream', 'reconnect_exhausted');
+        scope.fingerprint = ['push.desktop.stream.reconnect_exhausted'];
+      },
     );
   }
 

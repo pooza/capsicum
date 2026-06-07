@@ -67,11 +67,11 @@ class MisskeyNotificationStreaming {
         _notifyStreamError(error, stack);
         _scheduleReconnect();
       },
-      onDone: () {
-        _reconnectAttempts = 0;
-        _reconnectExhaustedNotified = false;
-        _scheduleReconnect();
-      },
+      // onDone でバックオフをリセットしない。接続直後に即 close する不調な
+      // サーバーに対し、リセットすると 5s 間隔のタイト再接続ループに陥り
+      // exponential backoff も exhausted 通知も効かなくなる (Mastodon
+      // NotificationStreaming と同型。リセットは接続成功時の ready.then のみ)。
+      onDone: _scheduleReconnect,
     );
 
     // `main` channel に subscribe して個人宛 event (notification 等) を受ける。

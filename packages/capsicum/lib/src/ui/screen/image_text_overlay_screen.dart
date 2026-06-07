@@ -132,6 +132,7 @@ class _ImageTextOverlayScreenState extends State<ImageTextOverlayScreen> {
 
   Future<void> _addItem() async {
     final text = await _promptText();
+    if (!mounted) return;
     if (text == null || text.trim().isEmpty) return;
     setState(() {
       _items.add(_TextOverlayItem(text: text));
@@ -143,6 +144,7 @@ class _ImageTextOverlayScreenState extends State<ImageTextOverlayScreen> {
     final index = _selected;
     if (index == null) return;
     final text = await _promptText(initial: _items[index].text);
+    if (!mounted) return;
     if (text == null) return;
     if (text.trim().isEmpty) {
       setState(() {
