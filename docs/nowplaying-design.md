@@ -114,13 +114,13 @@ MPRIS / SMTC は artwork を byte stream で返せるが、**v1.33 では投稿�
 ## 依存と着手順序
 
 ```
-mulukhiya #4337 (Spotify user OAuth, OPEN/5.26.0) ──→ #570 Spotify（capsicum）
+mulukhiya #4337 (Spotify user OAuth, OPEN/5.27.0) ──→ #570 Spotify（capsicum）
 mulukhiya #4382 enrich プロキシ (URL 解決のみ, optional) ──→ #669 enrich 配線（URL なし源に共有 URL 補完）
                                                           └─ enrich 無しでも capsicum 整形で投稿は成立（必須ではない）
 ```
 
 1. **先に固める（リードタイムが長い上流）**
-   - mulukhiya #4337 の進捗確認（#570 の前提。OPEN / 5.26.0）
+   - mulukhiya #4337 の進捗確認（#570 の前提。OPEN / 5.27.0）
    - mulukhiya #4382 enrich プロキシは URL 補完（#669, optional）の前提だが**必須ではない**。整形ハンドラの起票は不要（§責務分担で撤回済み）
 2. **capsicum 側の土台（上流非依存で着手可）**
    - `NowPlayingInfo` モデル + `NowPlayingProvider` interface + `NowPlayingResolver`（合成・優先順位）
