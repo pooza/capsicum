@@ -28,8 +28,8 @@ import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/annict_link.dart';
-import '../widget/emoji_picker.dart';
 import '../widget/emoji_text.dart';
+import '../widget/insert_picker_sheet.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
@@ -735,24 +735,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   void _showEmojiPicker() {
-    final account = ref.read(currentAccountProvider);
-    final adapter = account?.adapter;
-    if (adapter == null) return;
-    showModalBottomSheet(
+    showInsertPickerSheet(
       context: context,
-      isScrollControlled: true,
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: EmojiPicker(
-          adapter: adapter as BackendAdapter,
-          host: account!.key.host,
-          mulukhiya: account.mulukhiya,
-          accessToken: account.userSecret.accessToken,
-          onSelected: (emoji) {
-            _insertEmoji(emoji);
-          },
-        ),
-      ),
+      ref: ref,
+      onSelected: _insertEmoji,
     );
   }
 

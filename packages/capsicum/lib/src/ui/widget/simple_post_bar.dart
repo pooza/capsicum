@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/shortcode_warning_controller.dart';
+import 'insert_picker_sheet.dart';
 
 class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel ID to post into (Misskey channels).
@@ -167,7 +168,9 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
   /// カーソル位置（または末尾）に絵文字エントリを挿入する。
   /// recentEmojisProvider の add は LRU で先頭に持ち上がるため、再選択でも履歴
   /// 順序がリフレッシュされる。
-  void _insertEmoji(String entry) {
+  /// カーソル位置に文字列を挿入する。履歴には積まない (劇中ワード等の非絵文字を
+  /// 絵文字履歴ストリップに混ぜないため。拡張ピッカーから使う / #614)。
+  void _insertText(String entry) {
     final selection = _controller.selection;
     final text = _controller.text;
     final start = selection.start >= 0 ? selection.start : text.length;
@@ -176,6 +179,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       text: text.replaceRange(start, end, entry),
       selection: TextSelection.collapsed(offset: start + entry.length),
     );
+  }
+
+  void _insertEmoji(String entry) {
+    _insertText(entry);
     ref.read(recentEmojisProvider.notifier).add(entry);
   }
 
@@ -273,6 +280,21 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                       ? null
                       : () => setState(() => _paletteOpen = !_paletteOpen),
                 ),
+              // フルピッカー導線 (#614)。絵文字 (カスタム / Unicode) と、モロヘイヤ
+              // 導入サーバーでは劇中ワードタブを開く。上の履歴ストリップは高速挿入
+              // 経路として残し、こちらは全機能経路として二段構えにする。
+              IconButton(
+                icon: const Icon(Icons.add_reaction_outlined, size: 20),
+                tooltip: '絵文字・劇中ワード',
+                onPressed: _sending
+                    ? null
+                    : () => showInsertPickerSheet(
+                        context: context,
+                        ref: ref,
+                        onSelected: _insertText,
+                        closeOnSelect: true,
+                      ),
+              ),
               IconButton(
                 icon: const Icon(Icons.open_in_new, size: 20),
                 tooltip: '詳細な$postLabel画面',
