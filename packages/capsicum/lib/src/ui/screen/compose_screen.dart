@@ -735,11 +735,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   void _showEmojiPicker() {
-    showInsertPickerSheet(
-      context: context,
-      ref: ref,
-      onSelected: _insertEmoji,
-    );
+    showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
   }
 
   Future<void> _pickMedia() async {
