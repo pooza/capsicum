@@ -36,12 +36,14 @@ Spotify を最優先にするのは、**URL を返せる唯一の源**だから�
 | MPRIS / SMTC | title / artist / album / artwork（**URL なし、文字情報のみ**） | 文字 → ナウプレ整形が必要 |
 | Share Extension（push） | 共有元アプリが渡す URL or テキスト | 既存は `#nowplaying {text}` 直挿入 |
 
-文字情報しか無い源（MPRIS / SMTC）のための **整形パス**を 2 段で用意する:
+文字情報しか無い源（MPRIS / SMTC）の **整形はクライアント（capsicum）側で完結する**（下記 §責務分担、2026-06-05 確定）:
 
-1. **モロヘイヤ `text_nowplaying_formatter`（仮称）ハンドラ** — プリセットサーバーでは title/artist/album を渡して整形済みテキストを得る。**未起票**（#466 本文の宿題）。モロヘイヤ側はリードタイムがあるので **早めに capsicum-requirements 経由で起票**しておく
-2. **capsicum 側フォールバック整形** — モロヘイヤ未配備サーバー / オフライン用に、最低限 `#nowplaying {title} / {artist}` を capsicum 内で組む。これが無いと「モロヘイヤありき」になり、#466 の制約（モロヘイヤ未配備でも動く）を満たせない
+- **capsicum 側整形 `formatNowPlayingFallback`** — title/artist/album から `#nowplaying` 行を組む唯一の整形器。モロヘイヤ配備の有無・オンライン/オフラインに関わらずこれが主経路（"fallback" は歴史的命名）。
+- モロヘイヤに **テキスト整形ハンドラ（旧称 `text_nowplaying_formatter`）は新設しない**。整形をサーバーへ往復させない方針に確定したため。モロヘイヤ側のナウプレ責務は **URL enrich（メタ → 共有 URL、#4382）のみ**で、これは URL を持たない源への **任意の上積み**（capsicum #669）。
 
-`NowPlayingInfo.url != null` なら URL 挿入、`null` なら整形パスへ、で分岐する。
+> **訂正（2026-06-07）**: 当初は「文字情報源のためにモロヘイヤ `text_nowplaying_formatter` を起票する」案だったが、下記 §責務分担の確定（整形=クライアント / サーバーはテキスト整形しない）により撤回。formatter ハンドラの起票は不要。
+
+`NowPlayingInfo.url != null` なら URL をそのまま挿入、`null` なら capsicum 側整形へ。`null` の源には任意でモロヘイヤ enrich（#4382）を挟んで URL を補完できる（#669、optional）。
 
 ## 責務分担: 整形はクライアント / API プロキシ（URL enrich）はサーバー（2026-06-05 確定）
 
@@ -112,14 +114,14 @@ MPRIS / SMTC は artwork を byte stream で返せるが、**v1.33 では投稿�
 ## 依存と着手順序
 
 ```
-mulukhiya #4337 (Spotify user OAuth, OPEN/5.26.0) ──→ #570 Spotify（capsicum）
-mulukhiya text_nowplaying_formatter (未起票・要起票) ──→ #466 MPRIS / #484 SMTC の整形（プリセット）
-                                                          └─ capsicum 側フォールバック整形があれば未配備でも動く
+mulukhiya #4337 (Spotify user OAuth, OPEN/5.27.0) ──→ #570 Spotify（capsicum）
+mulukhiya #4382 enrich プロキシ (URL 解決のみ, optional) ──→ #669 enrich 配線（URL なし源に共有 URL 補完）
+                                                          └─ enrich 無しでも capsicum 整形で投稿は成立（必須ではない）
 ```
 
 1. **先に固める（リードタイムが長い上流）**
-   - mulukhiya `text_nowplaying_formatter` 要件を起票（**まだ無い**。MPRIS/SMTC のプリセット整形に必須）
-   - mulukhiya #4337 の進捗確認（#570 の前提。OPEN）
+   - mulukhiya #4337 の進捗確認（#570 の前提。OPEN / 5.27.0）
+   - mulukhiya #4382 enrich プロキシは URL 補完（#669, optional）の前提だが**必須ではない**。整形ハンドラの起票は不要（§責務分担で撤回済み）
 2. **capsicum 側の土台（上流非依存で着手可）**
    - `NowPlayingInfo` モデル + `NowPlayingProvider` interface + `NowPlayingResolver`（合成・優先順位）
    - capsicum 側フォールバック整形 + 共有(push)動線の整形統一

@@ -125,6 +125,26 @@ class FavoriteTag {
   const FavoriteTag({required this.name, this.url, required this.count});
 }
 
+/// 読み付き単語サジェスト (劇中ワード補完) の候補 1 件 (#4397 / capsicum#614)。
+/// `GET /mulukhiya/api/word/suggest` のレスポンス要素。
+class WordSuggestion {
+  /// 挿入する表層形 (例: `閃華裂光拳`)。
+  final String surface;
+
+  /// 並べ替え・ハイライト用の読み (カタカナ)。
+  final String reading;
+
+  /// 品詞細分類 (人名 / 技名 / 作品名 / 一般 等)。辞書に列がある場合のみ付く
+  /// 任意フィールド。未整備のサーバーでは null。
+  final String? category;
+
+  const WordSuggestion({
+    required this.surface,
+    required this.reading,
+    this.category,
+  });
+}
+
 class MediaCatalogItem {
   final String id;
   final String url;
@@ -239,6 +259,12 @@ class MulukhiyaService {
   /// する経路に対応している。capsicum 側は probing 結果に基づき設定 UI のスイッチを
   /// 出し分け、true の時のみ subscription 登録経路を有効化する。
   final bool announcementPushEnabled;
+
+  /// `features.word_suggest` フラグ (#4397 / capsicum#614)。`true` のサーバーは
+  /// 読み付き単語辞書 (`word_suggest/urls`) を設定済みで、`word/suggest` API が
+  /// 利用可能。capsicum は劇中ワードサジェスト UI の出し分けに使う。旧モロヘイヤ
+  /// (フラグ未提供) は false にフォールバックし、辞書タブを出さない。
+  final bool wordSuggestEnabled;
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -256,6 +282,7 @@ class MulukhiyaService {
     this.annictLinked = true,
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
+    this.wordSuggestEnabled = false,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -328,6 +355,7 @@ class MulukhiyaService {
         annictLinked: features?['annict_linked'] != false,
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
+        wordSuggestEnabled: features?['word_suggest'] == true,
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
@@ -611,6 +639,46 @@ class MulukhiyaService {
       }
       return [];
     } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
+      rethrow;
+    }
+  }
+
+  /// 読み付き単語サジェスト (劇中ワード補完) を引く (#4397 / capsicum#614)。
+  /// GET /mulukhiya/api/word/suggest
+  ///
+  /// [q] にユーザー入力 (主にひらがな読み) を渡す。ひらがな↔カタカナ・全半角の
+  /// 揺れはモロヘイヤ側で吸収されるため素の読みを渡せばよい。並び順もサーバー側で
+  /// 確定済み。辞書未設定 (`features.word_suggest` が false) のサーバーは 404 を
+  /// 返すため、その場合は空リストにフォールバックする。
+  Future<List<WordSuggestion>> suggestWords({
+    required String q,
+    int? limit,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '$baseUrl/word/suggest',
+        queryParameters: {'q': q, 'limit': ?limit},
+      );
+      final candidates = response.data is Map<String, dynamic>
+          ? (response.data as Map<String, dynamic>)['candidates']
+          : null;
+      if (candidates is! List) return [];
+      return candidates
+          .whereType<Map<String, dynamic>>()
+          .where((m) => m['surface'] is String && m['reading'] is String)
+          .map((m) {
+            return WordSuggestion(
+              surface: m['surface'] as String,
+              reading: m['reading'] as String,
+              category: m['category'] as String?,
+            );
+          })
+          .toList();
+    } on DioException catch (e) {
+      // 404 = 辞書未設定。403 (_isAuthError) = サジェストを認証必須にしている
+      // サーバーで未ログイン相当。どちらも「補完が使えない」だけなので空に倒し、
+      // 投稿フォーム本体は通常どおり動かす。5xx/network は rethrow して上位へ。
       if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
       rethrow;
     }

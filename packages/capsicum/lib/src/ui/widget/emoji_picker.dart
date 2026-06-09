@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -19,6 +21,9 @@ const _categoryLabels = <Category, String>{
   Category.SYMBOLS: '記号',
   Category.FLAGS: '旗',
 };
+
+/// ピッカーのタブ種別。表示順は [_EmojiPickerState._tabs] で確定する。
+enum _PickerTab { custom, unicode, word }
 
 class EmojiPicker extends ConsumerStatefulWidget {
   final BackendAdapter adapter;
@@ -45,6 +50,7 @@ class EmojiPicker extends ConsumerStatefulWidget {
 class _EmojiPickerState extends ConsumerState<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final List<_PickerTab> _tabs;
   List<CustomEmoji>? _customEmojis;
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
@@ -54,11 +60,30 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   final _unicodeSearchFocusNode = FocusNode();
   String _unicodeSearchQuery = '';
 
+  // 劇中ワードタブ (#614)。読み (ひらがな) でモロヘイヤ word/suggest を引く。
+  final _wordSearchController = TextEditingController();
+  final _wordSearchFocusNode = FocusNode();
+  String _wordQuery = '';
+  List<WordSuggestion> _wordResults = [];
+  bool _wordLoading = false;
+  Timer? _wordDebounce;
+  int _wordGeneration = 0;
+
+  /// 劇中ワードタブを出す条件。リアクション用ピッカーでは出さず、モロヘイヤが
+  /// `features.word_suggest` を立てているサーバーでのみ有効 (#4397 / #614)。
+  bool get _hasWordSuggest =>
+      !widget.forReaction && (widget.mulukhiya?.wordSuggestEnabled ?? false);
+
   @override
   void initState() {
     super.initState();
     final hasCustom = widget.adapter is CustomEmojiSupport;
-    _tabController = TabController(length: hasCustom ? 2 : 1, vsync: this)
+    _tabs = [
+      if (hasCustom) _PickerTab.custom,
+      _PickerTab.unicode,
+      if (_hasWordSuggest) _PickerTab.word,
+    ];
+    _tabController = TabController(length: _tabs.length, vsync: this)
       ..addListener(_onTabChanged);
     if (hasCustom) {
       _loadCustomEmojis();
@@ -98,17 +123,18 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   void _focusActiveTabSearch() {
-    final hasCustom = widget.adapter is CustomEmojiSupport;
-    final isCustomTab = hasCustom && _tabController.index == 0;
-    if (isCustomTab) {
-      // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
-      if (!_loadingCustom &&
-          _customEmojis != null &&
-          _customEmojis!.isNotEmpty) {
-        _searchFocusNode.requestFocus();
-      }
-    } else {
-      _unicodeSearchFocusNode.requestFocus();
+    switch (_tabs[_tabController.index]) {
+      case _PickerTab.custom:
+        // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
+        if (!_loadingCustom &&
+            _customEmojis != null &&
+            _customEmojis!.isNotEmpty) {
+          _searchFocusNode.requestFocus();
+        }
+      case _PickerTab.unicode:
+        _unicodeSearchFocusNode.requestFocus();
+      case _PickerTab.word:
+        _wordSearchFocusNode.requestFocus();
     }
   }
 
@@ -120,29 +146,50 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     _searchFocusNode.dispose();
     _unicodeSearchController.dispose();
     _unicodeSearchFocusNode.dispose();
+    _wordDebounce?.cancel();
+    _wordSearchController.dispose();
+    _wordSearchFocusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasCustom = widget.adapter is CustomEmojiSupport;
     return Column(
       children: [
         TabBar(
           controller: _tabController,
-          tabs: [
-            if (hasCustom) const Tab(text: 'カスタム'),
-            const Tab(text: 'Unicode'),
-          ],
+          tabs: _tabs.map((t) => Tab(text: _tabLabel(t))).toList(),
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: [if (hasCustom) _buildCustomTab(), _buildUnicodeTab()],
+            children: _tabs.map(_buildTab).toList(),
           ),
         ),
       ],
     );
+  }
+
+  String _tabLabel(_PickerTab tab) {
+    switch (tab) {
+      case _PickerTab.custom:
+        return 'カスタム';
+      case _PickerTab.unicode:
+        return 'Unicode';
+      case _PickerTab.word:
+        return '劇中ワード';
+    }
+  }
+
+  Widget _buildTab(_PickerTab tab) {
+    switch (tab) {
+      case _PickerTab.custom:
+        return _buildCustomTab();
+      case _PickerTab.unicode:
+        return _buildUnicodeTab();
+      case _PickerTab.word:
+        return _buildWordTab();
+    }
   }
 
   Widget _buildUnicodeTab() {
@@ -284,6 +331,122 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
         padding: const EdgeInsets.all(6),
         child: Text(emoji.emoji, style: const TextStyle(fontSize: 24)),
       ),
+    );
+  }
+
+  void _onWordQueryChanged(String value) {
+    final query = value.trim();
+    setState(() => _wordQuery = query);
+    _wordDebounce?.cancel();
+    if (query.isEmpty) {
+      // 入力途中で取りこぼした古いレスポンスが空入力に反映されないよう世代を進める。
+      _wordGeneration++;
+      setState(() {
+        _wordResults = [];
+        _wordLoading = false;
+      });
+      return;
+    }
+    setState(() => _wordLoading = true);
+    _wordDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _runWordSearch(query),
+    );
+  }
+
+  Future<void> _runWordSearch(String query) async {
+    final service = widget.mulukhiya;
+    if (service == null) return;
+    final generation = ++_wordGeneration;
+    try {
+      final results = await service.suggestWords(q: query, limit: 30);
+      if (!mounted || generation != _wordGeneration) return;
+      setState(() {
+        _wordResults = results;
+        _wordLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _wordGeneration) return;
+      setState(() {
+        _wordResults = [];
+        _wordLoading = false;
+      });
+    }
+  }
+
+  /// 劇中ワードタブ。読み (ひらがな) を打って word/suggest を引く (#614)。
+  /// `:` `#` `@` と違いひらがなには専用トリガ文字が無いため、本文へのインライン
+  /// 発火はせず、このピッカー内の検索ボックス方式とする (設計 doc)。
+  Widget _buildWordTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _wordSearchController,
+            focusNode: _wordSearchFocusNode,
+            decoration: InputDecoration(
+              hintText: '読みで検索…（例: せんかれっこうけん）',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _wordQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _wordSearchController.clear();
+                        _onWordQueryChanged('');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+            ),
+            onChanged: _onWordQueryChanged,
+          ),
+        ),
+        Expanded(child: _buildWordResults()),
+      ],
+    );
+  }
+
+  Widget _buildWordResults() {
+    if (_wordQuery.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'ひらがな読みで劇中ワードを検索できます。\n'
+            'IME に変換候補が出ない専門ワードもここから挿入できます。',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (_wordLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_wordResults.isEmpty) {
+      return const Center(child: Text('一致する語がありません'));
+    }
+    return ListView.builder(
+      itemCount: _wordResults.length,
+      itemBuilder: (context, index) {
+        final word = _wordResults[index];
+        final subtitle = word.category != null
+            ? '${word.reading}・${word.category}'
+            : word.reading;
+        return ListTile(
+          dense: true,
+          title: Text(word.surface),
+          subtitle: Text(subtitle),
+          onTap: () => widget.onSelected(word.surface),
+        );
+      },
     );
   }
 
