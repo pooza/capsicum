@@ -28,8 +28,8 @@ Future<void> showInsertPickerSheet({
   final adapter = account?.adapter;
   if (adapter == null) return;
   // マウスドラッグスクロールはユーザーのオプトイン設定 (#574)。トラックパッド
-  // 2 本指スワイプとの両立が崩れうるため無条件には噛ませず、home_screen と同じ
-  // く設定値で出し分ける。
+  // 2 本指スワイプとの両立が崩れうるため無条件には噛ませず、home_screen と
+  // 同じ設定値で出し分ける。
   final mouseDragEnabled = ref.read(mouseDragScrollProvider);
   await showModalBottomSheet<void>(
     context: context,
@@ -39,6 +39,9 @@ Future<void> showInsertPickerSheet({
       // 可視領域が数件に潰れてスクロールも届かなくなる。キーボード高さ分だけ
       // 下にパディングしてシートをその上へ押し上げ、高さは画面 - キーボードに
       // clamp してオーバーフローを防ぐ (#614)。
+      // 画面高は親 context から（sheet 表示後も不変）、キーボード高は
+      // sheetContext から取る。viewInsets はモーダルルート側で更新されるため、
+      // IME 開閉に追従させるには sheetContext を見る必要がある。
       final screenHeight = MediaQuery.of(context).size.height;
       final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
       return Padding(

@@ -676,6 +676,9 @@ class MulukhiyaService {
           })
           .toList();
     } on DioException catch (e) {
+      // 404 = 辞書未設定。403 (_isAuthError) = サジェストを認証必須にしている
+      // サーバーで未ログイン相当。どちらも「補完が使えない」だけなので空に倒し、
+      // 投稿フォーム本体は通常どおり動かす。5xx/network は rethrow して上位へ。
       if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
       rethrow;
     }

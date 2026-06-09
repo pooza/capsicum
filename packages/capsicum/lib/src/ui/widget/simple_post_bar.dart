@@ -165,11 +165,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     }
   }
 
-  /// カーソル位置（または末尾）に絵文字エントリを挿入する。
-  /// recentEmojisProvider の add は LRU で先頭に持ち上がるため、再選択でも履歴
-  /// 順序がリフレッシュされる。
-  /// カーソル位置に文字列を挿入する。履歴には積まない (劇中ワード等の非絵文字を
-  /// 絵文字履歴ストリップに混ぜないため。拡張ピッカーから使う / #614)。
+  /// カーソル位置（または末尾）に文字列を挿入する。履歴には積まない (劇中ワード
+  /// 等の非絵文字を絵文字履歴ストリップに混ぜないため。拡張ピッカーから使う / #614)。
   void _insertText(String entry) {
     final selection = _controller.selection;
     final text = _controller.text;
@@ -181,6 +178,8 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     );
   }
 
+  /// 絵文字を挿入しつつ履歴に積む。recentEmojisProvider の add は LRU で先頭に
+  /// 持ち上がるため、再選択でも履歴順序がリフレッシュされる。
   void _insertEmoji(String entry) {
     _insertText(entry);
     ref.read(recentEmojisProvider.notifier).add(entry);
