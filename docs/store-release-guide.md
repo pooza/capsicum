@@ -351,6 +351,10 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+> ⚠️ **fastlane の出力を `| tail` 等にパイプしない**。パイプすると `$?` がパイプ末尾コマンド（tail）の exit code になり、**fastlane の失敗を取りこぼす**。ログはファイルにリダイレクトし（`fastlane release > log 2>&1; echo $?`）、exit code を明示確認すること。
+>
+> ⚠️ **`fastlane release`（Android）は内部トラックの「現在の」リリースを製品版へ promote する**ため、自分の `fastlane internal` アップロードが失敗していると、トラックに残っている**別ビルドを誤って昇格**しうる。とくに**複数端末で並行ビルドすると versionCode が衝突**し（Google Play は同一トラックの versionCode 重複を拒否）、後発の upload が失敗→既存ビルドが promote される事故が起きる。v1.35.0 で実際に「マージン調整前の 102」が製品版に出た（`| tail` で upload 失敗を見落とし）。**対策**: (1) build 後に実バイナリで versionCode と secrets を確認、(2) 昇格後に Play API で production の versionCode が意図どおりか確認する（手順は §4.4 の Play 版確認、または ASC 同様の service-account JWT で `edits.tracks.get`）。衝突時は `flutter build appbundle --build-number=<次番号>` で採番し直して再 upload→再 promote。
+
 #### サポーター（投げ銭）IAP の審査ノート（[#428](https://github.com/pooza/capsicum/issues/428)、v1.27〜）
 
 消耗型サポータープランを含むビルドを iOS / Android に提出する際は、App Review Information の Notes（App Store）／アプリのアクセス権の説明（Google Play）に [supporter-subscription-plan.md](supporter-subscription-plan.md) C-2 の英文を貼り付ける。機能差別化なし・装飾のみ・単発である旨を明示することで、機能アンロックを伴わない IAP に対する審査員の混乱を回避する。継続課金ではないため Apple Guideline 3.1.2（継続的価値）の論点は発生しない。
