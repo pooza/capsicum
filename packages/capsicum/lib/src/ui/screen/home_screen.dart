@@ -415,22 +415,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          _LivecureFilterButton(ref: ref),
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => context.push('/search'),
-          ),
-          // Hide notification bell when notifications tab is visible.
-          if (account == null ||
-              !ref.watch(
-                isTabVisibleProvider((
-                  storageKey: account.key.toStorageKey(),
-                  tab: const NotificationsTab(),
-                )),
-              ))
-            _NotificationBellButton(
-              hasMultipleAccounts: accountState.accounts.length > 1,
+          // actions の IconButton 既定 48px タップ枠を詰めてタイトル幅を稼ぐ
+          // (簡易投稿バーと同じコンパクト枠 / #614)。1 つの IconButtonTheme で
+          // 包めば、_LivecureFilterButton 等カスタムウィジェット内部の
+          // IconButton にも効く。Row(min) で間隔も詰める。
+          IconButtonTheme(
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(36, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _LivecureFilterButton(ref: ref),
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: () => context.push('/search'),
+                ),
+                // Hide notification bell when notifications tab is visible.
+                if (account == null ||
+                    !ref.watch(
+                      isTabVisibleProvider((
+                        storageKey: account.key.toStorageKey(),
+                        tab: const NotificationsTab(),
+                      )),
+                    ))
+                  _NotificationBellButton(
+                    hasMultipleAccounts: accountState.accounts.length > 1,
+                  ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
