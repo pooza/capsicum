@@ -267,15 +267,16 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                   onPressed: () => _focusNode.unfocus(),
                   visualDensity: VisualDensity.compact,
                 ),
+              // 絵文字履歴ストリップのトグル (#614)。アイコンはフルピッカーの
+              // add_reaction_outlined と紛らわしくならないよう、emoji 系でなく
+              // 履歴アイコン (Icons.history) を使う。履歴があるときだけ出す。
               if (hasRecents)
                 IconButton(
                   icon: Icon(
-                    _paletteOpen
-                        ? Icons.keyboard_hide_outlined
-                        : Icons.emoji_emotions_outlined,
+                    _paletteOpen ? Icons.expand_less : Icons.history,
                     size: 20,
                   ),
-                  tooltip: _paletteOpen ? 'パレットを閉じる' : '絵文字履歴',
+                  tooltip: _paletteOpen ? '履歴を閉じる' : '絵文字履歴',
                   onPressed: _sending
                       ? null
                       : () => setState(() => _paletteOpen = !_paletteOpen),
