@@ -300,12 +300,24 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                   tooltip: '絵文字・劇中ワード',
                   onPressed: _sending
                       ? null
-                      : () => showInsertPickerSheet(
-                          context: context,
-                          ref: ref,
-                          onSelected: _insertText,
-                          closeOnSelect: true,
-                        ),
+                      : () async {
+                          // ピッカーは onSelected → Navigator.pop の順で閉じる
+                          // ため、_insertText 内で requestFocus しても直後の
+                          // pop に奪われる。シートが閉じきる await 後に戻す。
+                          // 挿入位置のカーソルは _insertText がセット済み (#614)。
+                          var inserted = false;
+                          await showInsertPickerSheet(
+                            context: context,
+                            ref: ref,
+                            onSelected: (value) {
+                              inserted = true;
+                              _insertText(value);
+                            },
+                            closeOnSelect: true,
+                          );
+                          // 選択せず閉じた場合はキーボードを再度開かない。
+                          if (inserted && mounted) _focusNode.requestFocus();
+                        },
                 ),
                 IconButton(
                   icon: const Icon(Icons.open_in_new, size: 20),
