@@ -338,9 +338,12 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     final query = value.trim();
     setState(() => _wordQuery = query);
     _wordDebounce?.cancel();
+    // クエリが変わった時点で世代を進め、その世代を検索に引き渡す。以前は次の検索が
+    // 実際に開始する (debounce 後) まで世代が据え置かれ、debounce ウィンドウ中に
+    // 届いた旧クエリの in-flight 応答が `generation == _wordGeneration` ガードを
+    // すり抜けて別の読みの候補を表示しえた (#684)。空入力時も同じく世代を進める。
+    final generation = ++_wordGeneration;
     if (query.isEmpty) {
-      // 入力途中で取りこぼした古いレスポンスが空入力に反映されないよう世代を進める。
-      _wordGeneration++;
       setState(() {
         _wordResults = [];
         _wordLoading = false;
@@ -350,14 +353,13 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     setState(() => _wordLoading = true);
     _wordDebounce = Timer(
       const Duration(milliseconds: 300),
-      () => _runWordSearch(query),
+      () => _runWordSearch(query, generation),
     );
   }
 
-  Future<void> _runWordSearch(String query) async {
+  Future<void> _runWordSearch(String query, int generation) async {
     final service = widget.mulukhiya;
     if (service == null) return;
-    final generation = ++_wordGeneration;
     try {
       final results = await service.suggestWords(q: query, limit: 30);
       if (!mounted || generation != _wordGeneration) return;
