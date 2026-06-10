@@ -1435,8 +1435,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
+      // builder 自身の context を使う。外側の _showEmojiPicker(context) を握ると、
+      // タイルが deactivate / 再描画されて context が外れたとき MediaQuery._of が
+      // null check で fatal になる (Sentry CAPSICUM-2T / #683)。pop も同様に寄せる。
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
           host: account!.key.host,
@@ -1444,7 +1447,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           accessToken: account.userSecret.accessToken,
           forReaction: true,
           onSelected: (emoji) {
-            Navigator.pop(context);
+            Navigator.pop(sheetContext);
             _runReactionAction(
               messenger,
               adapter as BackendAdapter,
