@@ -142,7 +142,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 data['description'] as String? ?? '',
               );
               final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
-              _serverThumbnail = thumbnail?['url'] as String?;
+              // thumbnail が無ければ PWA アイコン (icon[] の 192px / 最大) で
+              // 埋める。/api/v2/instance にマスコットは無い (#658)。
+              _serverThumbnail = _pickImageUrl([
+                thumbnail?['url'] as String?,
+                _mastodonIcon192(data['icon']),
+              ]);
             });
           }
         }
@@ -156,7 +161,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               _serverDescription = _stripHtml(
                 data['description'] as String? ?? '',
               );
-              _serverThumbnail = data['bannerUrl'] as String?;
+              // 背景 → バナー → app192Icon → マスコット → favicon の順で
+              // 無画像サーバーを減らす。mascot 等の相対パスは host を前置 (#658)。
+              _serverThumbnail = _pickImageUrl([
+                data['backgroundImageUrl'] as String?,
+                data['bannerUrl'] as String?,
+                data['app192IconUrl'] as String?,
+                data['mascotImageUrl'] as String?,
+                data['iconUrl'] as String?,
+              ]);
             });
           }
         }
@@ -167,6 +180,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   String _stripHtml(String html) => stripHtml(html).trim();
+
+  /// 候補 URL を先頭から走査し、最初の非空 URL を絶対化して返す (#658)。
+  String? _pickImageUrl(List<String?> candidates) {
+    for (final raw in candidates) {
+      final normalized = _absoluteUrl(raw);
+      if (normalized != null) return normalized;
+    }
+    return null;
+  }
+
+  /// 相対パス (`/assets/ai.png` 等) を `https://host` 前置で絶対化。
+  /// null / 空文字は null に倒す。
+  String? _absoluteUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    if (url.startsWith('/')) return 'https://${widget.host}$url';
+    return url;
+  }
+
+  /// Mastodon `/api/v2/instance` の `icon[]`（PWA アイコン配列）から 192px を
+  /// 優先で選ぶ。無ければ最大サイズ。マスコットは API に無いためこれで代替 (#658)。
+  String? _mastodonIcon192(dynamic icons) {
+    if (icons is! List) return null;
+    String? best;
+    int bestWidth = 0;
+    for (final entry in icons) {
+      if (entry is! Map) continue;
+      final src = entry['src'] as String?;
+      if (src == null || src.isEmpty) continue;
+      final width = int.tryParse((entry['size'] as String?)?.split('x').first ?? '') ?? 0;
+      if (width == 192) return src;
+      if (width > bestWidth) {
+        bestWidth = width;
+        best = src;
+      }
+    }
+    return best;
+  }
 
   void _logLoginStep(String step, {Map<String, Object?>? data}) {
     Sentry.addBreadcrumb(
