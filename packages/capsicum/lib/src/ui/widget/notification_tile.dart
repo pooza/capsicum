@@ -367,8 +367,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
+      // builder 自身の context を使う。外側の _showEmojiPicker(context) を握ると、
+      // タイル deactivate / 再描画で MediaQuery._of が null check fatal になる
+      // (post_tile #683 と同型の予防修正)。pop も同様に寄せる。
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
           host: account!.key.host,
@@ -376,7 +379,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           accessToken: account.userSecret.accessToken,
           forReaction: true,
           onSelected: (emoji) {
-            Navigator.pop(context);
+            Navigator.pop(sheetContext);
             _runReactionAction(
               messenger,
               adapter as BackendAdapter,
