@@ -311,9 +311,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<Post> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       final updated = await action();
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
@@ -398,10 +400,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<void> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await action();
       final updated = await adapter.getPostById(postId);
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       debugPrint('_runReactionAction failed: $e');

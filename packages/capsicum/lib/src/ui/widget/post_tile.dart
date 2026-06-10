@@ -963,10 +963,13 @@ class _PostTileState extends ConsumerState<PostTile> {
     bool isOwnRenote,
     String boostLabel,
   ) async {
+    // await 中にタイルが dispose されると ref.read が StateError を投げうる。
+    // notifier を await 前に退避し以降はローカル参照する (#665)。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await adapter.unrepeatPost(isOwnRenote ? post : targetPost);
       if (isOwnRenote) {
-        ref.read(timelineProvider.notifier).removePost(post.id);
+        timeline.removePost(post.id);
       }
       if (targetPost.reblogged) {
         final updated = targetPost.copyWith(
@@ -975,7 +978,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               ? targetPost.reblogCount - 1
               : 0,
         );
-        ref.read(timelineProvider.notifier).updatePost(updated);
+        timeline.updatePost(updated);
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
@@ -1283,9 +1286,10 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              final timeline = ref.read(timelineProvider.notifier);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
-                ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                timeline.removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
                 if (context.mounted) _popIfInThread(context);
               }, '${ref.read(postLabelProvider)}を削除しました');
@@ -1372,9 +1376,10 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              final timeline = ref.read(timelineProvider.notifier);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
-                ref.read(timelineProvider.notifier).removePost(targetPost.id);
+                timeline.removePost(targetPost.id);
                 if (mounted) setState(() => _deleted = true);
                 if (context.mounted) _popIfInThread(context);
                 if (mounted) {
@@ -1471,11 +1476,13 @@ class _PostTileState extends ConsumerState<PostTile> {
     Future<void> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await action();
       // Refetch the post and update the timeline.
       final updated = await adapter.getPostById(postId);
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
@@ -1501,9 +1508,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     Future<Post> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       final updated = await action();
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       widget.onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
@@ -1624,13 +1633,14 @@ class _PostTileState extends ConsumerState<PostTile> {
         adapter: ref.read(currentAdapterProvider)!,
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
+          final timeline = ref.read(timelineProvider.notifier);
           try {
             await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,
               id: targetPost.id,
               tags: tags,
             );
-            ref.read(timelineProvider.notifier).removePost(targetPost.id);
+            timeline.removePost(targetPost.id);
             if (mounted) setState(() => _deleted = true);
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
