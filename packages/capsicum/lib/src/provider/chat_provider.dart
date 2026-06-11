@@ -459,14 +459,15 @@ class ChatRoomTimelineNotifier
     }
   }
 
-  Future<ChatMessage> send(String text) async {
+  Future<ChatMessage> send(String text, {String? fileId}) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) {
       throw StateError('Adapter does not support chat');
     }
     final message = await (adapter as ChatSupport).sendRoomMessage(
       roomId: arg,
-      text: text,
+      text: text.isEmpty ? null : text,
+      fileId: fileId,
     );
     final current = state.valueOrNull;
     if (current != null) {
@@ -697,14 +698,15 @@ class ChatThreadNotifier
     }
   }
 
-  Future<ChatMessage> send(String text) async {
+  Future<ChatMessage> send(String text, {String? fileId}) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ChatSupport) {
       throw StateError('Adapter does not support chat');
     }
     final message = await (adapter as ChatSupport).sendUserMessage(
       userId: arg,
-      text: text,
+      text: text.isEmpty ? null : text,
+      fileId: fileId,
     );
     final current = state.valueOrNull;
     if (current != null) {

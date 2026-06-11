@@ -12,6 +12,7 @@ import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
@@ -30,6 +31,9 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   final _scrollController = ScrollController();
   final _textController = TextEditingController();
   bool _sending = false;
+  // 添付中のドライブファイル (#613)。未添付なら null。
+  Attachment? _attachedFile;
+  bool _uploading = false;
 
   @override
   void initState() {
@@ -54,13 +58,16 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
 
   Future<void> _send() async {
     final text = _textController.text.trim();
-    if (text.isEmpty || _sending) return;
+    final file = _attachedFile;
+    // テキストも添付も無ければ送らない (#613)。
+    if ((text.isEmpty && file == null) || _sending) return;
     setState(() => _sending = true);
     try {
       await ref
           .read(chatThreadProvider(widget.otherUser.id).notifier)
-          .send(text);
+          .send(text, fileId: file?.id);
       _textController.clear();
+      if (mounted) setState(() => _attachedFile = null);
     } catch (e, st) {
       reportChatOpFailure(
         'send_message',
@@ -74,6 +81,27 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       );
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _pickAttachment() async {
+    setState(() => _uploading = true);
+    try {
+      final file = await showChatAttachmentPicker(context, ref);
+      if (file != null && mounted) setState(() => _attachedFile = file);
+    } catch (e, st) {
+      reportChatOpFailure(
+        'attach_file',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ファイルの添付に失敗しました (${summarizeOpError(e)})')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -209,10 +237,14 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
             ),
           ),
           if (canSend)
-            _ComposeRow(
+            ChatComposeRow(
               controller: _textController,
               sending: _sending,
+              uploading: _uploading,
+              attachedFile: _attachedFile,
               onSend: _send,
+              onAttach: _pickAttachment,
+              onRemoveAttachment: () => setState(() => _attachedFile = null),
             )
           else
             // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
@@ -489,52 +521,3 @@ class _FilePreview extends StatelessWidget {
   }
 }
 
-class _ComposeRow extends StatelessWidget {
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  const _ComposeRow({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                minLines: 1,
-                maxLines: 5,
-                enabled: !sending,
-                decoration: const InputDecoration(
-                  hintText: 'メッセージを入力',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            IconButton(
-              icon: sending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              onPressed: sending ? null : onSend,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
