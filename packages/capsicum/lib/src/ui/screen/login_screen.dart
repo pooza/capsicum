@@ -161,13 +161,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               _serverDescription = _stripHtml(
                 data['description'] as String? ?? '',
               );
-              // 背景 → バナー → app192Icon → マスコット → favicon の順で
-              // 無画像サーバーを減らす。mascot 等の相対パスは host を前置 (#658)。
+              // 背景 → バナー → app192Icon → favicon の順で無画像サーバーを
+              // 減らす。相対パスは host を前置 (#658)。
+              // mascotImageUrl は除外する: ほぼ全 Misskey でデフォルト値
+              // `/assets/ai.png` を返すが、その実体はサーバールートに無く 404
+              // するため、有効な iconUrl があっても空表示になってしまう
+              // (#658 のリグレッション)。AI-chan マスコットはサーバーのロゴ
+              // でもないので、候補から外すのが正しい。
               _serverThumbnail = _pickImageUrl([
                 data['backgroundImageUrl'] as String?,
                 data['bannerUrl'] as String?,
                 data['app192IconUrl'] as String?,
-                data['mascotImageUrl'] as String?,
                 data['iconUrl'] as String?,
               ]);
             });
