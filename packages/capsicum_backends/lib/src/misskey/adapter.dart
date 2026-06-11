@@ -142,6 +142,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'read:notifications',
     'write:notifications',
     'write:notes',
+    // Pages の「いいね」一覧取得 (i/page-likes) と like/unlike (#615 / #617)。
+    // これが無いと getLikedPages / likePage が permission denied で失敗する。
+    'read:page-likes',
+    'write:page-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',

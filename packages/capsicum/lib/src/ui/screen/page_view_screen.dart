@@ -181,7 +181,7 @@ class _PageBodyState extends ConsumerState<_PageBody> {
         _likedCount += wasLiked ? 1 : -1;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('お気に入りの更新に失敗しました')),
+        const SnackBar(content: Text('いいねの更新に失敗しました')),
       );
     } finally {
       if (mounted) setState(() => _toggling = false);
