@@ -1666,6 +1666,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<void> reactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) => client.reactToChatMessage(messageId: messageId, reaction: reaction);
+
+  @override
+  Future<void> unreactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) => client.unreactToChatMessage(messageId: messageId, reaction: reaction);
+
+  @override
   Stream<ChatMessage> streamChatMessages({
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,

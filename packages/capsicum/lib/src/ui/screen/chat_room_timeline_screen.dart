@@ -12,6 +12,7 @@ import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
@@ -259,6 +260,38 @@ class _ChatRoomTimelineScreenState
     }
   }
 
+  void _showActions(ChatMessage message, bool isMine) {
+    showChatMessageActions(
+      context: context,
+      canDelete: isMine,
+      onReact: () => showChatReactionPicker(
+        context: context,
+        ref: ref,
+        onPicked: (reaction) => _toggleReaction(message.id, reaction),
+      ),
+      onDelete: () => _confirmDelete(message),
+    );
+  }
+
+  Future<void> _toggleReaction(String messageId, String reaction) async {
+    try {
+      await ref
+          .read(chatRoomTimelineProvider(widget.room.id).notifier)
+          .toggleReaction(messageId, reaction);
+    } catch (e, st) {
+      reportChatOpFailure(
+        'react_room_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('リアクションに失敗しました (${summarizeOpError(e)})')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myUserId = ref.watch(currentAccountProvider)?.user.id;
@@ -468,7 +501,10 @@ class _ChatRoomTimelineScreenState
                 return _RoomMessageBubble(
                   message: message,
                   isMine: isMine,
-                  onLongPress: isMine ? () => _confirmDelete(message) : null,
+                  myUserId: myUserId,
+                  onLongPress: () => _showActions(message, isMine),
+                  onToggleReaction: (reaction) =>
+                      _toggleReaction(message.id, reaction),
                 );
               },
             ),
@@ -479,12 +515,16 @@ class _ChatRoomTimelineScreenState
 class _RoomMessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
   final bool isMine;
+  final String? myUserId;
   final VoidCallback? onLongPress;
+  final void Function(String reaction)? onToggleReaction;
 
   const _RoomMessageBubble({
     required this.message,
     required this.isMine,
+    this.myUserId,
     this.onLongPress,
+    this.onToggleReaction,
   });
 
   @override
@@ -577,50 +617,70 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
       );
     }
 
+    final localHost = ref.watch(currentAccountProvider)?.key.host;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        mainAxisAlignment: isMine
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
-          if (!isMine) ...[
-            UserAvatar(user: message.fromUser, size: 32),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: GestureDetector(
-              onLongPress: onLongPress,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ...children,
-                    const SizedBox(height: 4),
-                    Text(
-                      formatTimestamp(
-                        message.createdAt,
-                        absolute: ref.watch(absoluteTimeProvider),
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: textColor.withValues(alpha: 0.7),
-                      ),
+          Row(
+            mainAxisAlignment: isMine
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isMine) ...[
+                UserAvatar(user: message.fromUser, size: 32),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: GestureDetector(
+                  onLongPress: onLongPress,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                  ],
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ...children,
+                        const SizedBox(height: 4),
+                        Text(
+                          formatTimestamp(
+                            message.createdAt,
+                            absolute: ref.watch(absoluteTimeProvider),
+                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: textColor.withValues(alpha: 0.7),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
+          if (message.reactions.isNotEmpty && widget.onToggleReaction != null)
+            Padding(
+              padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 40),
+              child: ChatReactionBar(
+                message: message,
+                myUserId: widget.myUserId,
+                host: localHost,
+                onToggle: widget.onToggleReaction!,
+              ),
+            ),
         ],
       ),
     );

@@ -12,6 +12,7 @@ import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
@@ -109,6 +110,38 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
+      );
+    }
+  }
+
+  void _showActions(ChatMessage message, bool isMine) {
+    showChatMessageActions(
+      context: context,
+      canDelete: isMine,
+      onReact: () => showChatReactionPicker(
+        context: context,
+        ref: ref,
+        onPicked: (reaction) => _toggleReaction(message.id, reaction),
+      ),
+      onDelete: () => _confirmDelete(message),
+    );
+  }
+
+  Future<void> _toggleReaction(String messageId, String reaction) async {
+    try {
+      await ref
+          .read(chatThreadProvider(widget.otherUser.id).notifier)
+          .toggleReaction(messageId, reaction);
+    } catch (e, st) {
+      reportChatOpFailure(
+        'react_message',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('リアクションに失敗しました (${summarizeOpError(e)})')),
       );
     }
   }
@@ -232,7 +265,10 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
                 return _MessageBubble(
                   message: message,
                   isMine: isMine,
-                  onLongPress: isMine ? () => _confirmDelete(message) : null,
+                  myUserId: myUserId,
+                  onLongPress: () => _showActions(message, isMine),
+                  onToggleReaction: (reaction) =>
+                      _toggleReaction(message.id, reaction),
                 );
               },
             ),
@@ -243,12 +279,16 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
 class _MessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
   final bool isMine;
+  final String? myUserId;
   final VoidCallback? onLongPress;
+  final void Function(String reaction)? onToggleReaction;
 
   const _MessageBubble({
     required this.message,
     required this.isMine,
+    this.myUserId,
     this.onLongPress,
+    this.onToggleReaction,
   });
 
   @override
@@ -327,54 +367,77 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
       );
     }
 
+    final localHost = ref.watch(currentAccountProvider)?.key.host;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        mainAxisAlignment: isMine
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
-          if (!isMine) ...[
-            UserAvatar(user: message.fromUser, size: 32),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: GestureDetector(
-              onLongPress: onLongPress,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ...children,
-                    const SizedBox(height: 4),
-                    Text(
-                      // post_tile / notification_tile と同じ表示モード
-                      // (display_settings の absoluteTimeProvider) に追従する
-                      // (#560)。日付が分からないと「いつのメッセージか」が
-                      // 読み取れないため、時刻のみの表示は廃止している。
-                      formatTimestamp(
-                        message.createdAt,
-                        absolute: ref.watch(absoluteTimeProvider),
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: textColor.withValues(alpha: 0.7),
-                      ),
+          Row(
+            mainAxisAlignment: isMine
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isMine) ...[
+                UserAvatar(user: message.fromUser, size: 32),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: GestureDetector(
+                  onLongPress: onLongPress,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                  ],
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ...children,
+                        const SizedBox(height: 4),
+                        Text(
+                          // post_tile / notification_tile と同じ表示モード
+                          // (display_settings の absoluteTimeProvider) に追従
+                          // する (#560)。日付が分からないと「いつのメッセージ
+                          // か」が読み取れないため、時刻のみの表示は廃止して
+                          // いる。
+                          formatTimestamp(
+                            message.createdAt,
+                            absolute: ref.watch(absoluteTimeProvider),
+                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: textColor.withValues(alpha: 0.7),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
+          if (message.reactions.isNotEmpty && widget.onToggleReaction != null)
+            Padding(
+              // 相手のバブルはアバター幅 (32 + gap 8) ぶん字下げして reaction を
+              // バブル左端に揃える。
+              padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 40),
+              child: ChatReactionBar(
+                message: message,
+                myUserId: widget.myUserId,
+                host: localHost,
+                onToggle: widget.onToggleReaction!,
+              ),
+            ),
         ],
       ),
     );

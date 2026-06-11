@@ -1223,6 +1223,28 @@ class MisskeyClient {
     await dio.post('/api/chat/read-all', data: createBody());
   }
 
+  /// POST /api/chat/messages/react (#612)
+  Future<void> reactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async {
+    await dio.post(
+      '/api/chat/messages/react',
+      data: createBody({'messageId': messageId, 'reaction': reaction}),
+    );
+  }
+
+  /// POST /api/chat/messages/unreact (#612)
+  Future<void> unreactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async {
+    await dio.post(
+      '/api/chat/messages/unreact',
+      data: createBody({'messageId': messageId, 'reaction': reaction}),
+    );
+  }
+
   // === chat rooms (#438) =====================================================
 
   /// POST /api/chat/messages/room-timeline

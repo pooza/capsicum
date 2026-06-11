@@ -492,6 +492,57 @@ class ChatRoomTimelineNotifier
     }
     ref.invalidate(chatThreadListProvider);
   }
+
+  /// メッセージの reaction をトグルする (#612)。自分が既に同じ reaction を
+  /// 付けていれば unreact、なければ react。API 成功後に state を更新する。
+  Future<void> toggleReaction(String messageId, String reaction) =>
+      _toggleChatReaction(ref, () => state, (v) => state = v, messageId,
+          reaction);
+}
+
+/// DM・ルーム共通の reaction トグル実装 (#612)。両 Notifier は同じ
+/// [ChatThreadState] を持つため処理を共有する。
+Future<void> _toggleChatReaction(
+  Ref ref,
+  AsyncValue<ChatThreadState> Function() read,
+  void Function(AsyncValue<ChatThreadState>) write,
+  String messageId,
+  String reaction,
+) async {
+  final adapter = ref.read(currentAdapterProvider);
+  if (adapter is! ChatSupport) return;
+  final chat = adapter as ChatSupport;
+  final self = ref.read(currentAccountProvider)?.user;
+  if (self == null) return;
+
+  final current = read().valueOrNull;
+  if (current == null) return;
+  final idx = current.messages.indexWhere((m) => m.id == messageId);
+  if (idx < 0) return;
+  final message = current.messages[idx];
+  final alreadyMine = message.reactions.any(
+    (r) => r.reaction == reaction && r.user.id == self.id,
+  );
+
+  if (alreadyMine) {
+    await chat.unreactToChatMessage(messageId: messageId, reaction: reaction);
+  } else {
+    await chat.reactToChatMessage(messageId: messageId, reaction: reaction);
+  }
+
+  // await 中に state が差し替わりうるので読み直してから更新する。
+  final latest = read().valueOrNull;
+  if (latest == null) return;
+  final updated = latest.messages.map((m) {
+    if (m.id != messageId) return m;
+    final reactions = alreadyMine
+        ? m.reactions
+              .where((r) => !(r.reaction == reaction && r.user.id == self.id))
+              .toList()
+        : [...m.reactions, ChatReaction(reaction: reaction, user: self)];
+    return m.copyWith(reactions: reactions);
+  }).toList();
+  write(AsyncData(latest.copyWith(messages: updated)));
 }
 
 final chatRoomTimelineProvider = AsyncNotifierProvider.autoDispose
@@ -679,6 +730,11 @@ class ChatThreadNotifier
     }
     ref.invalidate(chatThreadListProvider);
   }
+
+  /// メッセージの reaction をトグルする (#612)。ルーム側と共通実装。
+  Future<void> toggleReaction(String messageId, String reaction) =>
+      _toggleChatReaction(ref, () => state, (v) => state = v, messageId,
+          reaction);
 }
 
 final chatThreadProvider = AsyncNotifierProvider.autoDispose
