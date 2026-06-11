@@ -7,7 +7,10 @@
 // - ParsedPayload.notificationId の抽出と userInfo への stamp (#674)。
 //   起動中二重通知の dedup は WebSocket dispatcher (#569) を持つ desktop だけの
 //   要件のため iOS には入れない（iOS で stamp しても無害だが、出荷中 NSE を
-//   触らない方針を優先）。
+//   触らない方針を優先）
+// - 成功・guard 素通り・タイムアウトの NSLog (#673)。「失敗ログ無しなのに
+//   generic 文面」の切り分けで、無言経路を unified log から判別するため。
+//   iOS は出荷実績があるため足さない。
 //
 // iOS は拡張テンプレート由来で `import UIKit` だが UIKit API は未使用。
 // macOS に UIKit は無いため Foundation に置き換える。
@@ -59,6 +62,13 @@ class NotificationService: UNNotificationServiceExtension {
             let bodyB64 = userInfo["body"] as? String,
             let encoding = rawEncoding, encoding == "aes128gcm"
         else {
+            // announcement push (#477) は body / encoding を持たない仕様のため
+            // ここを通るのが正常。FailureRecorder には残さず NSLog のみ。
+            NSLog(
+                "capsicum: nse: passthrough (account=\(rawAccount != nil), "
+                    + "body=\(userInfo["body"] is String), "
+                    + "encoding=\(rawEncoding ?? "nil"))"
+            )
             contentHandler(bestAttempt)
             return
         }
@@ -161,6 +171,11 @@ class NotificationService: UNNotificationServiceExtension {
             bestAttempt.userInfo = userInfo
         }
 
+        NSLog(
+            "capsicum: nse: rewrote (type=\(parsed.type ?? "nil"), "
+                + "stamped=\(parsed.notificationId != nil), "
+                + "elapsed=\(elapsedMs())ms)"
+        )
         contentHandler(bestAttempt)
     }
 
@@ -168,6 +183,7 @@ class NotificationService: UNNotificationServiceExtension {
         // NSE は 30 秒以内に完了する必要がある。タイムアウト寸前にここが
         // 呼ばれるので、現時点での best attempt (relay の fallback 文面等)
         // を返して通知を止めない。
+        NSLog("capsicum: nse: expired before completion")
         if let contentHandler = contentHandler,
             let bestAttemptContent = bestAttemptContent
         {
