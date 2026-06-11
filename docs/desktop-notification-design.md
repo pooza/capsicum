@@ -167,7 +167,7 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 
 ### 5. 重複排除 (dedup)
 
-将来 #468 (macOS APNs) / #474 (Windows WNS) が完成すると、**同じ通知を WebSocket 経由 + native push 経由の両方で受ける**可能性がある。重複排除の方針:
+#468 (macOS APNs) / #474 (Windows WNS) が完成すると、**同じ通知を WebSocket 経由 + native push 経由の両方で受ける**可能性がある。重複排除の方針:
 
 | シナリオ | 動作 |
 |---|---|
@@ -175,7 +175,18 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 | アプリ起動直後（cold start）に native push 由来の通知 ID が UserNotificationCenter に既存 | session-only set を再構築せず、最初に来た方を許可（多重表示の方が落とすより安全） |
 | アカウント切替 | dispatcher が `_emittedIds.clear()` で session set をリセット |
 
-将来 native push を統合する際は、APNs / FCM 受信ハンドラから dispatcher に「この id は処理済み」を通知する経路を加える。
+#### macOS 横断 dedup の実装（#674、v1.36）
+
+macOS 向けには上記方針を以下の経路で実装済み。キーは relay / NSE の account 表現に合わせた `username@host|notificationId`。
+
+- **NSE → 通知への stamp**: `macos/CapsicumNotificationService` (#673) が復号した payload から通知 ID（Mastodon `notification_id` / Misskey `body.id`）を `userInfo["capsicum_notification_id"]` に stamp する
+- **native 側 proxy**: `macos/Runner/NotificationDedupPlugin.swift` が flutter_local_notifications の UNUserNotificationCenter delegate を包み（FLN 由来は素通し）、remote push の willPresent を既出集合と突き合わせて後着を黙殺する
+- **双方向 channel**: `net.shrieker.capsicum/notification_dedup`。WebSocket 先着は Dart → native `addEmitted`、APNs 先着は native → Dart `onRemotePresented` で `DesktopNotificationDispatcher` がスキップ
+
+制約:
+
+- willPresent はアプリ foreground 時のみ呼ばれる。macOS で「起動中だが非アクティブ」のときに呼ばれるかは文書上確定せず、**内部ベータの NSLog (`capsicum: dedup:`) で実測確認する**。呼ばれない場合、非アクティブ時の APNs banner は抑止できず、WebSocket 側スキップ（APNs 先着時）のみ効く
+- stamp の無い remote（NSE 復号失敗の generic 文面）は dedup 不能のため foreground では黙殺する。従来 FLN delegate が非 FLN 通知の completionHandler を呼ばず foreground 表示されていなかった挙動の維持であり、同イベントは WebSocket 側がリッチ文面で出す見込みが高い
 
 ### 6. プラットフォーム別注記
 

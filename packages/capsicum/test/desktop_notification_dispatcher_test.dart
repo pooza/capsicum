@@ -6,6 +6,7 @@ import 'package:capsicum/src/platform/notification_subsystem/notification_subsys
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/platform_providers.dart';
 import 'package:capsicum/src/service/desktop_notification_dispatcher.dart';
+import 'package:capsicum/src/service/notification_dedup_channel.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,20 @@ class _TestAccountNotifier extends AccountManagerNotifier {
       accounts: accounts,
       current: accounts.isEmpty ? null : accounts.first,
     );
+  }
+}
+
+/// native への addEmitted を記録し、method channel は使わない dedup channel
+/// (#674)。onRemotePresented はテストから直接発火させる。
+class _FakeDedupChannel extends NotificationDedupChannel {
+  final List<String> emitted = [];
+
+  @override
+  void start() {}
+
+  @override
+  Future<void> addEmitted(String key) async {
+    emitted.add(key);
   }
 }
 
@@ -91,14 +106,17 @@ Future<void> _settle() => Future<void>.delayed(Duration.zero);
 void main() {
   late _RecordingSubsystem subsystem;
   late _TestAccountNotifier notifier;
+  late _FakeDedupChannel dedupChannel;
   late ProviderContainer container;
 
   setUp(() {
     subsystem = _RecordingSubsystem();
+    dedupChannel = _FakeDedupChannel();
     container = ProviderContainer(
       overrides: [
         notificationSubsystemProvider.overrideWithValue(subsystem),
         accountManagerProvider.overrideWith(_TestAccountNotifier.new),
+        notificationDedupChannelProvider.overrideWithValue(dedupChannel),
       ],
     );
     notifier =
@@ -218,5 +236,36 @@ void main() {
     await _settle();
 
     expect(subsystem.shown.single.payload, contains('mastodon://alice@h1'));
+  });
+
+  test('表示時に native の既出集合へ relay 形式キーを伝える (#674)', () async {
+    final a = _makeAccount('alice', 'h1');
+    notifier.setAccounts([a.account]);
+    await _settle();
+
+    a.controller.add(_mention('a1'));
+    await _settle();
+
+    expect(dedupChannel.emitted, ['alice@h1|a1']);
+  });
+
+  test('APNs 先着済み (onRemotePresented) の通知は表示しない (#674)', () async {
+    final a = _makeAccount('alice', 'h1');
+    notifier.setAccounts([a.account]);
+    await _settle();
+
+    // native 側で APNs が先に表示済み。
+    dedupChannel.onRemotePresented!('alice@h1|n1');
+    a.controller.add(_mention('n1'));
+    await _settle();
+
+    expect(subsystem.shown, isEmpty);
+    // スキップした通知のキーを native へ重ねて伝えない。
+    expect(dedupChannel.emitted, isEmpty);
+
+    // 別 id は通常どおり表示する。
+    a.controller.add(_mention('n2'));
+    await _settle();
+    expect(subsystem.shown.length, 1);
   });
 }

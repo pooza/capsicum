@@ -2,7 +2,12 @@
 // 本ファイルは ios/CapsicumNotificationService/NotificationService.swift の
 // macOS NSE 向けコピー。出荷中の iOS NSE を触らないため共有せずコピーしている。
 // 復号・パース・ラベル・FailureRecorder のロジックは iOS と一致させること
-// （変更時は両側を揃える）。macOS 固有差分は冒頭の import のみ。
+// （変更時は両側を揃える）。macOS 固有差分:
+// - 冒頭の import (UIKit → Foundation)
+// - ParsedPayload.notificationId の抽出と userInfo への stamp (#674)。
+//   起動中二重通知の dedup は WebSocket dispatcher (#569) を持つ desktop だけの
+//   要件のため iOS には入れない（iOS で stamp しても無害だが、出荷中 NSE を
+//   触らない方針を優先）。
 //
 // iOS は拡張テンプレート由来で `import UIKit` だが UIKit API は未使用。
 // macOS に UIKit は無いため Foundation に置き換える。
@@ -144,6 +149,18 @@ class NotificationService: UNNotificationServiceExtension {
             bestAttempt.body = body
         }
 
+        // 復号で得た通知 ID を userInfo に stamp する (#674)。アプリ起動中は
+        // #569 (WebSocket → ローカル通知) と本 APNs の両方が同じ通知イベントを
+        // 配信しうるため、main app 側の UNUserNotificationCenter delegate proxy
+        // (NotificationDedupPlugin) が `account|id` キーで突き合わせて後着を
+        // 黙殺する。stamp が無い通知 (復号失敗 = generic 文面) は dedup 不能の
+        // ため proxy 側で degrade する。
+        if let notificationId = parsed.notificationId, !notificationId.isEmpty {
+            var userInfo = bestAttempt.userInfo
+            userInfo["capsicum_notification_id"] = notificationId
+            bestAttempt.userInfo = userInfo
+        }
+
         contentHandler(bestAttempt)
     }
 
@@ -259,6 +276,10 @@ struct ParsedPayload {
     let title: String?
     let body: String?
     let type: String?
+    /// SNS サーバー側の通知 ID。WebSocket 経由 (#569) の `notification.id` と
+    /// 同じ ID 空間で、起動中の二重通知 dedup (#674) の突き合わせキーになる。
+    /// Mastodon: `notification_id` / Misskey: `body.id`。取れない形式では nil。
+    let notificationId: String?
 }
 
 /// Dart の [PushMessageDispatcher.parsePayload] と同じ優先順位で
@@ -272,23 +293,25 @@ enum PayloadParser {
             return nil
         }
 
-        // Mastodon: {title, body, notification_type}
+        // Mastodon: {title, body, notification_type, notification_id}
         let mastodonTitle = dict["title"] as? String
         let mastodonBody = dict["body"] as? String
         let mastodonType = dict["notification_type"] as? String
         if mastodonTitle != nil || mastodonBody != nil || mastodonType != nil {
             return ParsedPayload(
-                title: mastodonTitle, body: mastodonBody, type: mastodonType)
+                title: mastodonTitle, body: mastodonBody, type: mastodonType,
+                notificationId: stringId(dict["notification_id"]))
         }
 
-        // Misskey: {type: 'notification', body: {type, user, note, reaction, ...}}
+        // Misskey: {type: 'notification', body: {id, type, user, note, reaction, ...}}
         if (dict["type"] as? String) == "notification",
             let inner = dict["body"] as? [String: Any]
         {
             return ParsedPayload(
                 title: nil,
                 body: synthesizeMisskeyBody(inner),
-                type: inner["type"] as? String
+                type: inner["type"] as? String,
+                notificationId: stringId(inner["id"])
             )
         }
 
@@ -297,14 +320,31 @@ enum PayloadParser {
         // fromUser / text / file を直接持つ。Dart 側 push_message_dispatcher と同じ
         // ハンドリングを NSE 側にも入れる必要がある (NSE は別プロセスで Dart の
         // parsePayload を共有しないため)。
+        // body.id は ChatMessage の ID。WebSocket 通知ストリームの ID 空間とは
+        // 別物だが、dedup キーとしては「同一イベントなら同一値」が満たせれば
+        // よいので、そのまま stamp する。
         if (dict["type"] as? String) == "newChatMessage",
             let inner = dict["body"] as? [String: Any]
         {
             return ParsedPayload(
                 title: nil,
                 body: synthesizeMisskeyChatBody(inner),
-                type: "newChatMessage"
+                type: "newChatMessage",
+                notificationId: stringId(inner["id"])
             )
+        }
+        return nil
+    }
+
+    /// 通知 ID を文字列に均す。Mastodon の `notification_id` は JSON 数値で
+    /// 届くことがあり (Misskey は文字列)、dedup キーの突き合わせは文字列表現で
+    /// 行うため両方を受ける。
+    private static func stringId(_ value: Any?) -> String? {
+        if let s = value as? String { return s.isEmpty ? nil : s }
+        // Bool は NSNumber に bridge されるため除外する (id に Bool は来ない想定
+        // だが、誤って "0"/"1" を ID 扱いしない)。
+        if let n = value as? NSNumber, !(value is Bool) {
+            return n.stringValue
         }
         return nil
     }

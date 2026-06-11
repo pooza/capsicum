@@ -2,6 +2,10 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  // UNUserNotificationCenter.delegate は weak のため、proxy (#674) を
+  // window が強参照して生かしておく。
+  private var notificationDedupPlugin: NotificationDedupPlugin?
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -33,6 +37,13 @@ class MainFlutterWindow: NSWindow {
     )
     (NSApp.delegate as? AppDelegate)?.attachApnsChannel(apnsChannel)
     NSApplication.shared.registerForRemoteNotifications()
+
+    // 起動中二重通知の dedup proxy (#674)。flutter_local_notifications が
+    // RegisterGeneratedPlugins で UNUserNotificationCenter delegate を設定した
+    // 後に包む必要があるため、この位置で install する。
+    notificationDedupPlugin = NotificationDedupPlugin.install(
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
 
     super.awakeFromNib()
   }

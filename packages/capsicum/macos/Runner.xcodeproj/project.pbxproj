@@ -30,6 +30,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		34545D26F090B5114265C9B1 /* PushKeyReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28BCADBA8953F784B8DBE8E /* PushKeyReader.swift */; };
 		3BA1DDA16F9977ACBBDB46D8 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8103906AF404E69FC02DE65D /* NotificationService.swift */; };
+		3D54B4A18138D89743408B67 /* NotificationDedupPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC988E24F9A857207C61A91 /* NotificationDedupPlugin.swift */; };
 		6E1C5C50E05DFC3A3C696583 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 04FB71ECB0707151522C960D /* Pods_RunnerTests.framework */; };
 		7A93AFDE2FA938B500CC370C /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A93AFD22FA938B500CC370C /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A93AFE62FA938B500CC370C /* ShareIntentPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A93AFE72FA938B500CC370C /* ShareIntentPlugin.swift */; };
@@ -139,6 +140,7 @@
 		EE9676DA48E89753059B49E2 /* CapsicumNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CapsicumNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7C0359C3E38FF1BA148E524 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		FB8774F4FFB493D9E6740A5D /* NotificationService.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = NotificationService.xcconfig; sourceTree = "<group>"; };
+		FDC988E24F9A857207C61A91 /* NotificationDedupPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationDedupPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -316,6 +318,7 @@
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
 				33BA886A226E78AF003329D5 /* Configs */,
+				FDC988E24F9A857207C61A91 /* NotificationDedupPlugin.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -643,6 +646,7 @@
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				7A93AFE62FA938B500CC370C /* ShareIntentPlugin.swift in Sources */,
 				7AB001AA2FA938B500CC370C /* AboutMenuPlugin.swift in Sources */,
+				3D54B4A18138D89743408B67 /* NotificationDedupPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
