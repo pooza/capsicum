@@ -37,17 +37,23 @@ Future<void> showInsertPickerSheet({
     builder: (sheetContext) {
       // 検索ボックスで IME が開くとシート下半分がキーボードに隠れ、候補リストの
       // 可視領域が数件に潰れてスクロールも届かなくなる。キーボード高さ分だけ
-      // 下にパディングしてシートをその上へ押し上げ、高さは画面 - キーボードに
-      // clamp してオーバーフローを防ぐ (#614)。
+      // 下にパディングしてシートをその上へ押し上げる (#614)。
       // 画面高は親 context から（sheet 表示後も不変）、キーボード高は
       // sheetContext から取る。viewInsets はモーダルルート側で更新されるため、
       // IME 開閉に追従させるには sheetContext を見る必要がある。
       final screenHeight = MediaQuery.of(context).size.height;
       final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+      // 高さは画面高ではなく利用可能領域（画面 - キーボード）基準にする。
+      // フル投稿フォーム（closeOnSelect=false）では本文にフォーカスしたまま
+      // シートを開くためキーボードが残り、画面高基準だと
+      // キーボード 0.4 + シート 0.5 でほぼ画面を覆い本文が隠れる。利用可能領域
+      // 基準ならキーボード開時にシートも縮み、本文の可視領域が回復する。
+      // キーボード閉時は avail=画面高なので従来どおり 0.5（#689 / iPhone 実機報告）。
+      final available = screenHeight - keyboardInset;
       return Padding(
         padding: EdgeInsets.only(bottom: keyboardInset),
         child: SizedBox(
-          height: (screenHeight * 0.5).clamp(0.0, screenHeight - keyboardInset),
+          height: available * 0.5,
           // モーダルシートは MaterialApp のグローバル scrollBehavior 配下に無く、
           // 既定の dragDevices はマウスを含まないため、デスクトップで候補リストを
           // マウスドラッグしてもスクロールしない。設定 ON のときだけ home_screen と
