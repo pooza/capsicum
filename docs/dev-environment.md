@@ -30,6 +30,20 @@ Debug ビルドは「コードを動かしてみるための環境」であり�
 - リポジトリルートの `.sentryclirc`（git 管理外）に dSYM アップロード用トークンを配置（`sentry_dart_plugin` が自動参照）
 - `~/.sentryclirc` に Issue 読み取り用トークン（`event:read` / `event:write` / `project:read`）を配置
 
+### 新規の macOS app-extension ターゲット追加後のプロビジョニング（#673）
+
+macOS の Runner に新しい app-extension ターゲット（NSE / ShareExtension 等）を追加した直後は、その bundle id 用の **Mac プロビジョニングプロファイルがまだ生成されていない**ため、`flutter run -d macos` / `flutter build macos` が「No profiles for '…' were found / Automatic signing is disabled and unable to generate a profile」で失敗する。`flutter` は xcodebuild に `-allowProvisioningUpdates` を渡さないため、未署名の新ターゲット用プロファイルをオンザフライで自動生成できないのが原因（App ID 自体は既に存在し App Groups も付与済みで、登録作業は不要なことが多い）。
+
+各 macOS 端末で **一度だけ** プロファイルを生成すれば、以後は `flutter run -d macos` も通る:
+
+```sh
+cd packages/capsicum/macos
+xcodebuild -allowProvisioningUpdates -workspace Runner.xcworkspace -scheme Runner \
+  -configuration Debug -destination 'platform=macOS,arch=arm64' build
+```
+
+Xcode でワークスペースを一度開いて自動署名させてもよい。なお `keychain-access-groups` を `$(AppIdentifierPrefix)group.<App Group id>` の App Group 形式で書く場合、Apple Developer Portal 側に専用の「Keychain Sharing」capability を追加する必要はない（App Groups 配下で動く）。
+
 詳細なリリース手順は [store-release-guide.md](store-release-guide.md) を参照。
 
 ## 補助機（Linux / Windows）セットアップ
