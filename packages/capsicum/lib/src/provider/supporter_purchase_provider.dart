@@ -19,10 +19,15 @@ const supporterTipProductIds = <String>[
   'supporter.tip.big', // ¥800 相当
 ];
 
-/// 購入導線を出すプラットフォーム (#428 D-1)。iOS / Android のみ。
-/// macOS は後日、Linux / Windows はストア IAP 不在。`in_app_purchase` は
-/// 非対応 OS で `InAppPurchase.instance` 取得時に落ちるため、触る前に判定する。
-bool get supporterPurchaseSupported => Platform.isIOS || Platform.isAndroid;
+/// 購入導線を出すプラットフォーム (#428 D-1)。iOS / Android に加え、#598 で
+/// macOS (Mac App Store IAP) を解放。iOS / macOS は Universal Purchase
+/// (同一 App レコード) のため ASC の消耗型 3 商品をそのまま共有し、
+/// `in_app_purchase` も macOS を in_app_purchase_storekit で公式サポートする。
+/// Linux / Windows はストア IAP 不在 (Windows は #599 で検討)。
+/// `in_app_purchase` は非対応 OS で `InAppPurchase.instance` 取得時に
+/// 落ちるため、触る前に判定する。
+bool get supporterPurchaseSupported =>
+    Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
 enum SupporterPurchaseOutcomeKind { success, canceled, error }
 
@@ -177,7 +182,7 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     state = state.copyWith(purchaseInProgress: true, lastOutcome: null);
     try {
       // autoConsume=true: Android は即 consume して再投げ銭可能に。
-      // iOS は consumable のため指定は無視される。
+      // iOS / macOS (StoreKit) は consumable のため指定は無視される。
       await InAppPurchase.instance.buyConsumable(
         purchaseParam: PurchaseParam(productDetails: product),
       );
