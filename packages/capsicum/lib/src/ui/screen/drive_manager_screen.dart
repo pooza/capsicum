@@ -20,6 +20,11 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   final _scrollController = ScrollController();
   final List<_FolderEntry> _folderStack = [];
   bool _isDragging = false;
+
+  /// ドラッグ中に viewport 端へ近づいたとき GridView を自動スクロールさせる
+  /// (#693)。ReorderableListView 内部と同じ公式クラスを使い、ドラッグ開始時に
+  /// 生成・終了時に破棄する。
+  EdgeDraggingAutoScroller? _dragAutoScroller;
   // 自動 loadMore (#452) の post-frame callback を毎フレーム積むのを避ける
   // ためのラッチ (#459)。folder 移動 / refresh で false に戻す。
   bool _autoLoadRequested = false;
@@ -48,6 +53,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   @override
   void dispose() {
+    _stopDragAutoScroll();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -71,6 +77,32 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     final state = ref.read(driveContentsProvider(_currentFolderId)).valueOrNull;
     if (!shouldAutoLoadMore(state)) return;
     ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
+  }
+
+  /// ドラッグ開始時に呼ぶ。[itemContext] はドラッグ元タイルの context
+  /// （GridView の Scrollable 配下にあるため [Scrollable.of] が届く）。
+  /// velocityScalar は既定 (7) だと長いリストで届くまでが遅いため、
+  /// ReorderableListView が使う 50 に合わせる。
+  void _startDragAutoScroll(BuildContext itemContext) {
+    _dragAutoScroller = EdgeDraggingAutoScroller(
+      Scrollable.of(itemContext),
+      velocityScalar: 50,
+    );
+  }
+
+  /// ドラッグ位置の更新ごとに呼ぶ。指の位置を中心にした feedback 相当の
+  /// 矩形 (グローバル座標) を渡し、viewport 端に近ければスクロールが始まり
+  /// 離れれば止まる。矩形が静止していてもスクロール継続は scroller 側が
+  /// 面倒を見る。
+  void _updateDragAutoScroll(Offset globalPosition) {
+    _dragAutoScroller?.startAutoScrollIfNecessary(
+      Rect.fromCenter(center: globalPosition, width: 80, height: 80),
+    );
+  }
+
+  void _stopDragAutoScroll() {
+    _dragAutoScroller?.stopAutoScroll();
+    _dragAutoScroller = null;
   }
 
   void _openFolder(DriveFolder folder) {
@@ -863,8 +895,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                   return LongPressDraggable<Attachment>(
                     key: ValueKey('file-${file.id}'),
                     data: file,
-                    onDragStarted: () => setState(() => _isDragging = true),
-                    onDragEnd: (_) => setState(() => _isDragging = false),
+                    onDragStarted: () {
+                      setState(() => _isDragging = true);
+                      _startDragAutoScroll(context);
+                    },
+                    onDragUpdate: (details) =>
+                        _updateDragAutoScroll(details.globalPosition),
+                    onDragEnd: (_) {
+                      setState(() => _isDragging = false);
+                      _stopDragAutoScroll();
+                    },
                     feedback: Material(
                       elevation: 4,
                       borderRadius: BorderRadius.circular(4),
