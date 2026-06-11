@@ -119,6 +119,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _serverName;
   String? _serverDescription;
   String? _serverThumbnail;
+  // 選んだサムネイルがバナー(横長)かアイコン(正方形)かで表示 fit を切り替える。
+  // バナーは cover で枠を埋め、アイコンは contain で天地を切らない (#658)。
+  BoxFit _serverThumbnailFit = BoxFit.cover;
 
   bool get _isMastodon => widget.backendType == BackendType.mastodon;
 
@@ -142,12 +145,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 data['description'] as String? ?? '',
               );
               final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
-              // thumbnail が無ければ PWA アイコン (icon[] の 192px / 最大) で
-              // 埋める。/api/v2/instance にマスコットは無い (#658)。
-              _serverThumbnail = _pickImageUrl([
-                thumbnail?['url'] as String?,
-                _mastodonIcon192(data['icon']),
+              // thumbnail (バナー) が無ければ PWA アイコン (icon[] の 192px /
+              // 最大) で埋める。/api/v2/instance にマスコットは無い (#658)。
+              final picked = _pickImageUrl([
+                (thumbnail?['url'] as String?, true),
+                (_mastodonIcon192(data['icon']), false),
               ]);
+              _serverThumbnail = picked?.url;
+              _serverThumbnailFit = (picked?.wide ?? true)
+                  ? BoxFit.cover
+                  : BoxFit.contain;
             });
           }
         }
@@ -168,12 +175,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               // するため、有効な iconUrl があっても空表示になってしまう
               // (#658 のリグレッション)。AI-chan マスコットはサーバーのロゴ
               // でもないので、候補から外すのが正しい。
-              _serverThumbnail = _pickImageUrl([
-                data['backgroundImageUrl'] as String?,
-                data['bannerUrl'] as String?,
-                data['app192IconUrl'] as String?,
-                data['iconUrl'] as String?,
+              final picked = _pickImageUrl([
+                (data['backgroundImageUrl'] as String?, true),
+                (data['bannerUrl'] as String?, true),
+                (data['app192IconUrl'] as String?, false),
+                (data['iconUrl'] as String?, false),
               ]);
+              _serverThumbnail = picked?.url;
+              _serverThumbnailFit = (picked?.wide ?? true)
+                  ? BoxFit.cover
+                  : BoxFit.contain;
             });
           }
         }
@@ -185,11 +196,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String _stripHtml(String html) => stripHtml(html).trim();
 
-  /// 候補 URL を先頭から走査し、最初の非空 URL を絶対化して返す (#658)。
-  String? _pickImageUrl(List<String?> candidates) {
-    for (final raw in candidates) {
+  /// 候補を先頭から走査し、最初の非空 URL を絶対化して返す (#658)。各候補は
+  /// `(url, wide)` で、`wide` はバナー(横長)系なら true・アイコン(正方形)系
+  /// なら false。戻り値の `wide` で表示 fit を切り替える。
+  ({String url, bool wide})? _pickImageUrl(List<(String?, bool)> candidates) {
+    for (final (raw, wide) in candidates) {
       final normalized = _absoluteUrl(raw);
-      if (normalized != null) return normalized;
+      if (normalized != null) return (url: normalized, wide: wide);
     }
     return null;
   }
@@ -944,8 +957,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           // Server thumbnail
           // 横長ビューポート (macOS / タブレット landscape) で box が
-          // 極端に横長になり BoxFit.cover で上下がクリップされていたため、
-          // maxWidth 480 で頭打ちにして中央寄せする (#479)。
+          // 極端に横長になり上下がクリップされていたため、maxWidth 480 で
+          // 頭打ちにして中央寄せする (#479)。
+          // 候補にバナー(横長)だけでなく iconUrl(正方形ロゴ/favicon)も
+          // 含む。バナーは cover で枠を埋め、アイコンは contain で天地を切らない
+          // ように、選んだ画像種別に応じて fit を切り替える (#658)。
           if (_serverThumbnail != null)
             Center(
               child: ConstrainedBox(
@@ -956,7 +972,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     _serverThumbnail!,
                     height: 160,
                     width: double.infinity,
-                    fit: BoxFit.cover,
+                    fit: _serverThumbnailFit,
                     errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
