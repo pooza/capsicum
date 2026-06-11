@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
 import '../widget/page_block_renderer.dart';
 import '../widget/user_avatar.dart';
@@ -180,8 +181,18 @@ class _PageBodyState extends ConsumerState<_PageBody> {
         _isLiked = wasLiked;
         _likedCount += wasLiked ? 1 : -1;
       });
+      // 旧トークン (write:page-likes 未付与) は 403 PERMISSION_DENIED。汎用
+      // 文言ではなく再ログインが要る旨を伝える (#615)。自分のページへの like は
+      // Misskey 仕様 (yourPage) で弾かれるが、そちらは scope エラーではないので
+      // 汎用文言のまま。
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('いいねの更新に失敗しました')),
+        SnackBar(
+          content: Text(
+            isOAuthScopeError(e)
+                ? '権限が不足しています。再ログインしてください'
+                : 'いいねの更新に失敗しました',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _toggling = false);

@@ -5,7 +5,9 @@ import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
+import '../widget/oauth_scope_error_view.dart';
 import '../widget/page_card.dart';
 
 /// Misskey ページのハブ画面 (#186)。
@@ -30,6 +32,9 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   bool _loadingLiked = true;
   bool _loadingMoreLiked = false;
   bool _hasMoreLiked = true;
+  // いいね一覧の取得が OAuth スコープ不足 (read:page-likes 未付与の旧トークン)
+  // で失敗したか。汎用エラーではなく再ログイン誘導を出すための分岐 (#615)。
+  bool _likedScopeError = false;
   // 人気ページ (#617)。pages/featured は単一ページ取得なので追加読み込みは
   // 持たず、limit 件を先頭ブロックとして表示するだけ。
   List<Page> _featuredPages = [];
@@ -75,6 +80,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         setState(() {
           _likedEntries = entries;
           _loadingLiked = false;
+          _likedScopeError = false;
           _hasMoreLiked = entries.length >= 20;
         });
       }
@@ -86,10 +92,18 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         account: ref.read(currentAccountProvider),
       );
       if (!mounted) return;
-      setState(() => _loadingLiked = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('いいねしたページの読み込みに失敗しました')));
+      // 旧トークン (read:page-likes 未付与) は 403 PERMISSION_DENIED で失敗する。
+      // 汎用 SnackBar ではなく再ログイン誘導 (OAuthScopeErrorView) を出す (#615)。
+      final scopeError = isOAuthScopeError(e);
+      setState(() {
+        _loadingLiked = false;
+        _likedScopeError = scopeError;
+      });
+      if (!scopeError) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('いいねしたページの読み込みに失敗しました')));
+      }
     }
   }
 
@@ -170,6 +184,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
       _loadingMoreLiked = false;
       _likedEntries = [];
       _hasMoreLiked = true;
+      _likedScopeError = false;
       _loadingFeatured = true;
       _featuredPages = [];
     });
@@ -214,6 +229,15 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
+            ),
+          )
+        else if (_likedScopeError)
+          // 旧トークンでスコープ不足。人気セクションはスコープ不要で出せるので
+          // 残し、いいね一覧の枠にだけ再ログイン誘導を出す (#615)。
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: OAuthScopeErrorView(),
             ),
           )
         else if (_likedEntries.isEmpty)
