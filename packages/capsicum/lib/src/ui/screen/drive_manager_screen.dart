@@ -107,14 +107,30 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   /// がルート、`_FolderPick(id: <非null>)` が特定フォルダ、`null` の戻りは
   /// キャンセル (tap outside or キャンセルボタン)。
   ///
-  /// 簡易実装: 現在の親フォルダ階層 (root + 直下フォルダ) のみを候補に出す。
-  /// 子フォルダへ移動したい場合は親に降りてから再操作する想定 (#437)。
+  /// 候補は現在地ベース (#693): 親フォルダ (一段上へ戻す。深さ 1 ならルート)
+  /// + 現在フォルダ直下の子フォルダ (一段下へ入れる)。ブラウズと同じ感覚で
+  /// 一段ずつ運び、任意階層へは移動の繰り返しで到達する。親へ戻す導線の
+  /// 考え方は既存のドラッグ&ドロップ (AppBar 左の DragTarget) と揃えている。
   Future<_FolderPick?> _showFolderPickerDialog({
     required String title,
     String? excludeFolderId,
   }) async {
-    final folders = await _drive?.getDriveFolders() ?? const [];
+    // limit 省略時の Misskey 既定は 10 で、フォルダが多いと候補が黙って
+    // 切れるため API 上限の 100 まで広げる (ダイアログはページングしない)。
+    final folders =
+        await _drive?.getDriveFolders(
+          folderId: _currentFolderId,
+          query: const TimelineQuery(limit: 100),
+        ) ??
+        const [];
     if (!mounted) return null;
+    // 親フォルダ候補。ルートにいるときは「上」が無いので出さない。深さ 1 の
+    // ときの親はルート (/)。
+    final hasParent = _folderStack.isNotEmpty;
+    final parent = _folderStack.length >= 2
+        ? _folderStack[_folderStack.length - 2]
+        : null;
+    final children = folders.where((f) => f.id != excludeFolderId).toList();
     return showDialog<_FolderPick>(
       context: context,
       builder: (dialogContext) {
@@ -122,26 +138,36 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.home_outlined),
-                  title: const Text('ルート (/)'),
-                  onTap: () =>
-                      Navigator.pop(dialogContext, const _FolderPick(null)),
-                ),
-                const Divider(height: 1),
-                for (final f in folders)
-                  if (f.id != excludeFolderId)
-                    ListTile(
-                      leading: const Icon(Icons.folder),
-                      title: Text(f.name),
-                      onTap: () =>
-                          Navigator.pop(dialogContext, _FolderPick(f.id)),
-                    ),
-              ],
-            ),
+            child: !hasParent && children.isEmpty
+                ? const Text('移動できるフォルダがありません')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      if (hasParent) ...[
+                        ListTile(
+                          leading: Icon(
+                            parent == null
+                                ? Icons.home_outlined
+                                : Icons.drive_folder_upload_outlined,
+                          ),
+                          title: Text(parent?.name ?? 'ルート (/)'),
+                          subtitle: const Text('上の階層'),
+                          onTap: () => Navigator.pop(
+                            dialogContext,
+                            _FolderPick(parent?.id),
+                          ),
+                        ),
+                        if (children.isNotEmpty) const Divider(height: 1),
+                      ],
+                      for (final f in children)
+                        ListTile(
+                          leading: const Icon(Icons.folder),
+                          title: Text(f.name),
+                          onTap: () =>
+                              Navigator.pop(dialogContext, _FolderPick(f.id)),
+                        ),
+                    ],
+                  ),
           ),
           actions: [
             TextButton(
