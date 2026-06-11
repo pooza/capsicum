@@ -145,10 +145,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 data['description'] as String? ?? '',
               );
               final thumbnail = data['thumbnail'] as Map<String, dynamic>?;
-              // thumbnail (バナー) が無ければ PWA アイコン (icon[] の 192px /
-              // 最大) で埋める。/api/v2/instance にマスコットは無い (#658)。
+              // thumbnail (バナー) が未設定だと Mastodon はバンドルのデフォルト
+              // preview 画像を返すので、それは「指定なし」とみなして PWA アイコン
+              // (icon[] の 192px / 最大) にフォールバックする。/api/v2/instance に
+              // マスコットは無い (#658)。
+              final rawThumb = thumbnail?['url'] as String?;
+              final customThumb = _isDefaultMastodonThumbnail(rawThumb)
+                  ? null
+                  : rawThumb;
               final picked = _pickImageUrl([
-                (thumbnail?['url'] as String?, true),
+                (customThumb, true),
                 (_mastodonIcon192(data['icon']), false),
               ]);
               _serverThumbnail = picked?.url;
@@ -213,6 +219,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (url == null || url.isEmpty) return null;
     if (url.startsWith('/')) return 'https://${widget.host}$url';
     return url;
+  }
+
+  /// Mastodon の thumbnail が未設定時のバンドルデフォルト preview 画像かを
+  /// 判定する (#658)。デフォルトは `/packs/.../preview-<hash>.png` のように
+  /// webpack/Vite の bundle assets 配下に preview ファイル名で置かれる。管理者が
+  /// アップロードしたカスタム thumbnail は `/site_uploads/` 配下なので preview
+  /// ファイル名にはならず、ここで false になる。
+  bool _isDefaultMastodonThumbnail(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final path = Uri.tryParse(url)?.path ?? url;
+    final base = path.split('/').last;
+    return path.contains('/packs/') && base.startsWith('preview');
   }
 
   /// Mastodon `/api/v2/instance` の `icon[]`（PWA アイコン配列）から 192px を
