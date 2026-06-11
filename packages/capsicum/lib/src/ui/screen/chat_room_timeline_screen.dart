@@ -264,6 +264,8 @@ class _ChatRoomTimelineScreenState
     showChatMessageActions(
       context: context,
       canDelete: isMine,
+      // 自分のメッセージは Misskey 仕様で自己リアクション不可 (#612)。
+      canReact: !isMine,
       onReact: () => showChatReactionPicker(
         context: context,
         ref: ref,
@@ -678,6 +680,8 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
                 message: message,
                 myUserId: widget.myUserId,
                 host: localHost,
+                // 自分のメッセージのチップは表示のみ (自己リアクション不可)。
+                interactive: !isMine,
                 onToggle: widget.onToggleReaction!,
               ),
             ),

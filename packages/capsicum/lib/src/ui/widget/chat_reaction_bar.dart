@@ -24,12 +24,18 @@ class ChatReactionBar extends StatelessWidget {
   /// (`:shortcode:` または Unicode 絵文字)。
   final void Function(String reaction) onToggle;
 
+  /// チップのタップを受け付けるか。自分のメッセージは Misskey 仕様で
+  /// 自己リアクションが一律禁止 (必ず 500) なので、表示のみにして
+  /// タップ無効にする (#612)。
+  final bool interactive;
+
   const ChatReactionBar({
     super.key,
     required this.message,
     required this.onToggle,
     this.myUserId,
     this.host,
+    this.interactive = true,
   });
 
   @override
@@ -56,7 +62,7 @@ class ChatReactionBar extends StatelessWidget {
               isMine: mine.contains(e.key),
               host: host,
               emojis: message.emojis,
-              onTap: () => onToggle(e.key),
+              onTap: interactive ? () => onToggle(e.key) : null,
             ),
           )
           .toList(),
@@ -70,7 +76,8 @@ class _ReactionChip extends StatelessWidget {
   final bool isMine;
   final String? host;
   final Map<String, String> emojis;
-  final VoidCallback onTap;
+  // null なら表示のみ (タップ無効)。自分のメッセージで使う (#612)。
+  final VoidCallback? onTap;
 
   const _ReactionChip({
     required this.reaction,
@@ -178,28 +185,35 @@ void showChatReactionPicker({
   );
 }
 
-/// メッセージ長押し時のアクションシート (#612)。「リアクション」を全メッセージに、
-/// 「削除」を自分のメッセージにのみ出す。
+/// メッセージ長押し時のアクションシート (#612)。
+///
+/// 「リアクション」は [canReact] が true のメッセージにのみ出す。自分の
+/// メッセージは Misskey 仕様で自己リアクションが一律禁止 (必ず 500) なので
+/// 出さない。「削除」は自分のメッセージ ([canDelete]) にのみ出す。両方とも
+/// false なら何も出さずシートを開かない。
 Future<void> showChatMessageActions({
   required BuildContext context,
   required bool canDelete,
   required VoidCallback onReact,
+  bool canReact = true,
   VoidCallback? onDelete,
 }) {
+  if (!canReact && !canDelete) return Future<void>.value();
   return showModalBottomSheet<void>(
     context: context,
     builder: (sheetContext) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const Icon(Icons.add_reaction_outlined),
-            title: const Text('リアクション'),
-            onTap: () {
-              Navigator.pop(sheetContext);
-              onReact();
-            },
-          ),
+          if (canReact)
+            ListTile(
+              leading: const Icon(Icons.add_reaction_outlined),
+              title: const Text('リアクション'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onReact();
+              },
+            ),
           if (canDelete)
             ListTile(
               leading: const Icon(Icons.delete_outline),
