@@ -9,8 +9,8 @@ typedef LikedPageEntry = ({String likeId, Page page});
 
 /// Misskey の Pages 機能 (#186) サポートを宣言する mixin。
 ///
-/// v1 (#186) は読み取り専用。like / unlike は #615、AiScript 動的ブロック
-/// 対応は #616 で別途扱う。
+/// v1 (#186) は読み取り専用だった。like / unlike は #615 で追加。AiScript
+/// 動的ブロック対応は #616 で別途扱う。
 abstract mixin class PagesSupport {
   /// 指定ユーザーが公開している Page の一覧。
   ///
@@ -40,4 +40,16 @@ abstract mixin class PagesSupport {
   /// like 履歴を保持していない場合は空リストを返す。
   Future<List<LikedPageEntry>> getLikedPages({TimelineQuery? query}) async =>
       const [];
+
+  /// 指定ページを like (お気に入り) する。
+  ///
+  /// Misskey の `POST /api/pages/like` を `{pageId}` パラメータで叩く。
+  /// 実装しないバックエンドは何もしない。
+  Future<void> likePage(String pageId) async {}
+
+  /// 指定ページの like を解除する。
+  ///
+  /// Misskey の `POST /api/pages/unlike` を `{pageId}` パラメータで叩く。
+  /// 実装しないバックエンドは何もしない。
+  Future<void> unlikePage(String pageId) async {}
 }

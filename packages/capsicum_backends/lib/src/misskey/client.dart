@@ -892,6 +892,16 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/pages/like
+  Future<void> likePage(String pageId) async {
+    await dio.post('/api/pages/like', data: createBody({'pageId': pageId}));
+  }
+
+  /// POST /api/pages/unlike
+  Future<void> unlikePage(String pageId) async {
+    await dio.post('/api/pages/unlike', data: createBody({'pageId': pageId}));
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));

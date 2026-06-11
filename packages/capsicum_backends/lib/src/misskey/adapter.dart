@@ -1199,6 +1199,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return entries;
   }
 
+  @override
+  Future<void> likePage(String pageId) => client.likePage(pageId);
+
+  @override
+  Future<void> unlikePage(String pageId) => client.unlikePage(pageId);
+
   // DriveSupport
 
   @override
