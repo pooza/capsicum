@@ -49,6 +49,8 @@
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>投稿にメディアを添付するためにフォトライブラリへのアクセスが必要です</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>表示中の画像や動画をフォトライブラリに保存するために必要です</string>
 	<key>NSCameraUsageDescription</key>
 	<string>投稿に写真を添付するためにカメラへのアクセスが必要です</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
