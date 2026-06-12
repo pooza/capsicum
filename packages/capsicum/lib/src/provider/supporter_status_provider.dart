@@ -189,6 +189,17 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
         }
       }
       if (!record.syncedToServer) {
+        // バックフィルの await 中にアカウントが増えていたら（#701 backfill
+        // 経路の race）、ここで synced を確定させると、増えた分のアカウントが
+        // 以降の同期で `record.syncedToServer == true` の枝に落ちて二度と
+        // バックフィルされない。synced 確定を見送って再同期を予約し、
+        // 再周回で増えたアカウントにも行き渡らせる。既存アカウントへの
+        // 再送は過大計上になるが近似値として許容（クラス docs 参照）。
+        final accountsNow = ref.read(accountManagerProvider).accounts;
+        if (accountsNow.length != accounts.length) {
+          _resyncRequested = true;
+          return;
+        }
         final synced = (state.valueOrNull ?? record).copyWith(
           syncedToServer: true,
         );

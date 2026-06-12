@@ -89,14 +89,21 @@ class _FakeRelayClient extends PushRelayClient {
   }
 }
 
-/// 最初の `fetchSupporterStatus` 呼び出しを [release] するまで宙吊りにする
-/// fake。連続ログインの race (#701) を決定的に再現するために使う。
+/// 最初の relay 呼び出し（fetch / tip いずれか）を [release] するまで宙吊りに
+/// する fake。連続ログインの race (#701) を決定的に再現するために使う。
 class _GatedRelayClient extends _FakeRelayClient {
   final Completer<void> _firstGate = Completer<void>();
-  bool _firstFetchSeen = false;
+  bool _firstCallSeen = false;
 
   void release() {
     if (!_firstGate.isCompleted) _firstGate.complete();
+  }
+
+  Future<void> _gate() async {
+    if (!_firstCallSeen) {
+      _firstCallSeen = true;
+      await _firstGate.future;
+    }
   }
 
   @override
@@ -104,11 +111,26 @@ class _GatedRelayClient extends _FakeRelayClient {
     required String account,
     required String server,
   }) async {
-    if (!_firstFetchSeen) {
-      _firstFetchSeen = true;
-      await _firstGate.future;
-    }
+    await _gate();
     return super.fetchSupporterStatus(account: account, server: server);
+  }
+
+  @override
+  Future<Map<String, dynamic>> recordSupporterTip({
+    required String account,
+    required String server,
+    String? sku,
+    DateTime? tippedAt,
+    int count = 1,
+  }) async {
+    await _gate();
+    return super.recordSupporterTip(
+      account: account,
+      server: server,
+      sku: sku,
+      tippedAt: tippedAt,
+      count: count,
+    );
   }
 }
 
@@ -263,6 +285,44 @@ void main() {
     expect(store.record.firstTippedAt!.toUtc(), DateTime.utc(2026, 2, 2));
     expect(store.record.syncedToServer, isTrue);
   });
+
+  test(
+    '連続ログイン race (backfill 経路): バックフィル中に B を追加しても B にも行き渡る (#701)',
+    () async {
+      // ローカル先行・未同期のサポーター。バックフィル送信が走る。
+      store = _MemoryStore(
+        SupporterRecord(
+          firstTippedAt: DateTime.utc(2026, 3, 1),
+          tipCount: 2,
+          lastSku: 'supporter.tip.small',
+        ),
+      );
+      relay = _GatedRelayClient();
+      await start();
+
+      // A をログイン → _uploadToServer([alice]) が最初の tip 送信で gate 待ち。
+      accounts.setAccounts([_makeAccount('alice', 'h1')]);
+      await _settle();
+      expect(store.record.syncedToServer, isFalse); // まだバックフィル中
+
+      // バックフィル中に B を追加。旧実装ではこの後 synced=true が確定し、
+      // 再周回が synced 枝に落ちて bob を取りこぼした。
+      accounts.setAccounts([
+        _makeAccount('alice', 'h1'),
+        _makeAccount('bob', 'h2'),
+      ]);
+      await _settle();
+
+      // gate 解放 → alice の tip 完走 → アカウント増を検知して synced 確定を
+      // 見送り、再周回で [alice, bob] を再アップロードする。
+      (relay as _GatedRelayClient).release();
+      await _settle();
+
+      final tipped = relay.tips.map((t) => t.account).toSet();
+      expect(tipped, containsAll(['alice@h1', 'bob@h2']));
+      expect(store.record.syncedToServer, isTrue);
+    },
+  );
 
   test('relay 不通: ローカル値で degrade し、未同期のまま例外も出ない', () async {
     store = _MemoryStore(
