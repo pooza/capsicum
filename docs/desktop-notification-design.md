@@ -254,6 +254,11 @@ killed due to sluggish startup」で kill し、元 payload（relay のフォー
 - willPresent ベースの dedup（NotificationDedupPlugin）は前面時の即時黙殺として
   存続。NSE appex も「OS 側が直れば自動復帰する保険」として残置
 - アプリ非起動時の generic 文面は macOS の到達上限として受容する
+- **お知らせ push（#477）は macOS では購読しない**。relay の AnnouncementWorker
+  は device_type=ios/android にしか配送せず（macos はスキップ）、アプリ起動中の
+  お知らせは WebSocket 経路がリッチ通知で出す。非起動時の取りこぼしはアプリ内の
+  お知らせ画面で読めるため許容。macOS では自動購読をスキップし設定画面の
+  トグルも出さない（`AnnouncementSubscriptionService.platformSupported`）
 
 ## 実装フェーズ
 

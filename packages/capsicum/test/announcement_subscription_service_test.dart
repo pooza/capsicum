@@ -1,7 +1,12 @@
+import 'package:capsicum/src/model/account.dart';
+import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/service/announcement_subscription_service.dart';
 import 'package:capsicum/src/service/push_relay_client.dart';
+import 'package:capsicum_backends/capsicum_backends.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 永続化のセマンティクス (キー存在 = 有効、disable で削除) のみテスト。
@@ -147,6 +152,45 @@ void main() {
     });
   });
 
+  group('AnnouncementSubscriptionService.autoEnableIfDefault', () {
+    test('非対応プラットフォームでは既存の自動購読を片付ける (#673 macOS)', () async {
+      AnnouncementSubscriptionService.debugPlatformSupportedOverride = false;
+      addTearDown(() {
+        AnnouncementSubscriptionService.debugPlatformSupportedOverride = null;
+      });
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        '${AnnouncementSubscriptionService.prefsKeyPrefix}mastodon://a@h': 7,
+      });
+      final fake = _FakeRelayClient();
+      AnnouncementSubscriptionService.client = fake;
+
+      await AnnouncementSubscriptionService.autoEnableIfDefault(
+        _makeAccount('a', 'h'),
+      );
+
+      expect(fake.unregisteredIds, [7]);
+      expect(
+        await AnnouncementSubscriptionService.isEnabled('mastodon://a@h'),
+        isFalse,
+      );
+    });
+
+    test('非対応プラットフォームで購読が無ければ何もしない', () async {
+      AnnouncementSubscriptionService.debugPlatformSupportedOverride = false;
+      addTearDown(() {
+        AnnouncementSubscriptionService.debugPlatformSupportedOverride = null;
+      });
+      final fake = _FakeRelayClient();
+      AnnouncementSubscriptionService.client = fake;
+
+      await AnnouncementSubscriptionService.autoEnableIfDefault(
+        _makeAccount('a', 'h'),
+      );
+
+      expect(fake.unregisteredIds, isEmpty);
+    });
+  });
+
   group('AnnouncementSubscriptionService.hasLocalState', () {
     test('id も opt-out marker も無ければ false', () async {
       expect(
@@ -177,6 +221,21 @@ void main() {
     });
   });
 }
+
+class _MockAdapter extends Mock implements DecentralizedBackendAdapter {}
+
+class _MockUser extends Mock implements User {}
+
+class _MockUserSecret extends Mock implements UserSecret {}
+
+/// autoEnableIfDefault に渡す最小限の Account。非対応プラットフォーム分岐は
+/// account.key しか参照しないため adapter 等は mock で足りる。
+Account _makeAccount(String username, String host) => Account(
+  key: AccountKey(type: BackendType.mastodon, host: host, username: username),
+  adapter: _MockAdapter(),
+  user: _MockUser(),
+  userSecret: _MockUserSecret(),
+);
 
 class _FakeRelayClient extends PushRelayClient {
   _FakeRelayClient({this.throwOnUnregister = false});

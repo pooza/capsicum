@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,6 +43,22 @@ class AnnouncementSubscriptionService {
     _client = client;
   }
 
+  /// テストがホスト OS に依存せず分岐を通すための override。
+  @visibleForTesting
+  static bool? debugPlatformSupportedOverride;
+
+  /// お知らせ push を購読するプラットフォームか。
+  ///
+  /// relay の AnnouncementWorker は device_type が ios / android のときだけ
+  /// 配送し、macos は配送しない。macOS はアプリ起動中のお知らせを WebSocket
+  /// 経路 (#569) がリッチ通知で出すうえ、非起動時の取りこぼしはアプリ内の
+  /// お知らせ画面で読めるため、push 購読は mobile 限定とする
+  /// (docs/desktop-notification-design.md の #673 節)。設定画面のトグル表示
+  /// 判定にも使う。
+  static bool get platformSupported =>
+      debugPlatformSupportedOverride ??
+      (!kIsWeb && (Platform.isIOS || Platform.isAndroid));
+
   /// 指定アカウントが announcement push に opt-in 済みか。
   static Future<bool> isEnabled(String accountStorageKey) async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,8 +86,17 @@ class AnnouncementSubscriptionService {
   ///
   /// 失敗時もログ + Sentry に流すだけで本筋 (push registration) は止めない。
   static Future<void> autoEnableIfDefault(Account account) async {
-    if (account.mulukhiya?.announcementPushEnabled != true) return;
     final accountStorageKey = account.key.toStorageKey();
+    if (!platformSupported) {
+      // 非対応プラットフォーム (macOS 等)。過去の自動購読が残っていれば
+      // 片付ける — relay には配送されない死に subscription のため。
+      // opt-out marker はユーザー意思の記録なので触らない。
+      if (await isEnabled(accountStorageKey)) {
+        await disable(accountStorageKey, host: account.key.host);
+      }
+      return;
+    }
+    if (account.mulukhiya?.announcementPushEnabled != true) return;
     if (await isExplicitlyOptedOut(accountStorageKey)) return;
     if (await isEnabled(accountStorageKey)) return;
     try {

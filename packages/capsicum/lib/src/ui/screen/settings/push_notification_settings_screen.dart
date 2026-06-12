@@ -114,13 +114,16 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
       snapshot?.reason,
     );
 
-    // お知らせ通知 (#477) は features.announcement_push: true のモロヘイヤが
-    // 必須。そのうえで、(a) 親 push subscription が registered (新規 enable
-    // 操作の入口) または (b) ローカルに saved subscription / opt-out marker が
-    // ある (relay 側 active subscription を OFF にする経路を保つ) なら表示する。
+    // お知らせ通知 (#477) は購読対応プラットフォーム (mobile のみ。relay は
+    // macos に配送しないため macOS ではトグル自体を出さない) かつ
+    // features.announcement_push: true のモロヘイヤが必須。そのうえで、
+    // (a) 親 push subscription が registered (新規 enable 操作の入口) または
+    // (b) ローカルに saved subscription / opt-out marker がある (relay 側
+    // active subscription を OFF にする経路を保つ) なら表示する。
     // (b) は register snapshot が一時的に idle/failed でも、既存の subscription
     // で push が届き続ける状況で UI から OFF にできないと事故るため (Codex 指摘)。
     final announcementSupported =
+        AnnouncementSubscriptionService.platformSupported &&
         (account.mulukhiya?.announcementPushEnabled ?? false) &&
         (state == PushRegistrationState.registered ||
             _hasAnnouncementLocalState);
