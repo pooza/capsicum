@@ -32,6 +32,14 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# windows-latest CI の MSVC 14.51 (VS 18) は <experimental/coroutine> の
+# 非推奨 static assert をエラーにする。gal プラグイン (#646) が WinRT
+# コルーチン経由で同ヘッダに依存するため、STL 公式の escape hatch で
+# 当面抑止する (gal 側が C++20 <coroutine> へ移行したら外す)。
+# ここの add_definitions は後続 include の generated_plugins.cmake で
+# 追加されるプラグイン群にも波及する。
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

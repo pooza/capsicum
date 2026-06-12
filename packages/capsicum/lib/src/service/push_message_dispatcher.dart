@@ -180,15 +180,42 @@ class PushMessageDispatcher {
       return null;
     }
 
+    // base64 デコードと復号・パースを別 try に分ける (#700)。base64Url.decode
+    // の FormatException は toString() に不正な source 断片（暗号化 body や
+    // Keychain の鍵素材）を埋め込むため、その message は一切記録してはならない。
+    // 後段 (WebPushDecryptor / parsePayload) の FormatException も復号後の
+    // 平文を含みうる。よって decryptError には message を載せず、型名（と
+    // base64 か否かの区別）だけを残す。Sentry の二次分類 (push.decrypt.kind)
+    // は型名で足りる。
+    final Uint8List bodyBytes;
+    final Uint8List privateKeyD;
+    final Uint8List uaPublicKey;
+    final Uint8List authSecret;
     try {
-      final bodyBytes = base64Url.decode(base64Url.normalize(bodyB64));
+      bodyBytes = base64Url.decode(base64Url.normalize(bodyB64));
+      privateKeyD = base64Url.decode(
+        base64Url.normalize(keys.privateKeyBase64),
+      );
+      uaPublicKey = base64Url.decode(base64Url.normalize(keys.p256dh));
+      authSecret = base64Url.decode(base64Url.normalize(keys.auth));
+    } on FormatException {
+      _trace('decrypt failed: base64 decode');
+      await PushFailureRecorder.record(
+        PushFailureRecorder.codeDecryptFailed,
+        host: host,
+        encoding: encoding,
+        elapsedMs: elapsed(),
+        decryptError: 'FormatException(base64)',
+      );
+      return null;
+    }
+
+    try {
       final plaintext = WebPushDecryptor.decryptAes128gcm(
         body: bodyBytes,
-        uaPrivateKeyD: base64Url.decode(
-          base64Url.normalize(keys.privateKeyBase64),
-        ),
-        uaPublicKey: base64Url.decode(base64Url.normalize(keys.p256dh)),
-        authSecret: base64Url.decode(base64Url.normalize(keys.auth)),
+        uaPrivateKeyD: privateKeyD,
+        uaPublicKey: uaPublicKey,
+        authSecret: authSecret,
       );
       _trace('decrypt ok, ${plaintext.length} bytes');
       final parsed = parsePayload(plaintext);
@@ -206,16 +233,15 @@ class PushMessageDispatcher {
       }
       return parsed;
     } catch (e) {
-      _trace('decrypt failed: $e');
+      // 型名のみ記録（message は平文を含みうるため出さない）。GCM 認証失敗・
+      // 鍵不一致・parse 失敗は runtimeType で十分に切り分けられる。
+      _trace('decrypt failed: ${e.runtimeType}');
       await PushFailureRecorder.record(
         PushFailureRecorder.codeDecryptFailed,
         host: host,
         encoding: encoding,
         elapsedMs: elapsed(),
-        // FormatException (bodyB64 異常) や WebPushDecryptor / parsePayload
-        // が投げた exception 文字列を kind 分類 (push.decrypt.kind) のために
-        // recorder に流す (#436 の二次分類タグを実走経路にも適用)。
-        decryptError: e.toString(),
+        decryptError: e.runtimeType.toString(),
       );
       return null;
     }

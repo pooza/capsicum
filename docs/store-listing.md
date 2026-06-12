@@ -46,15 +46,17 @@ Misskey は upstream の仕様上、通常サードパーティアプリから�
 
 - ナウプレ共有 — Apple Music や Spotify などの「共有」から capsicum を選ぶだけで `#nowplaying` 付きの投稿を作成
 - Annict 連携 — 視聴中のアニメに対する実況投稿〜視聴後の感想記録までを capsicum 内で完結
+- 劇中ワードサジェスト — IME の変換候補に出ない専門ワード（必殺技名・キャラ名など）を、ひらがな読みから補完。アニメ実況の即時入力を支援
 - 複数サーバー・アカウントの切り替え
 - 引用投稿の表示・作成（Mastodon / Misskey）
-- Misskey リアクション・クリップ・ドライブ・チャンネル・Misskey Play
+- Misskey リアクション・クリップ・ドライブ・チャンネル・ページ・メッセージ・Misskey Play
 - アンケート作成・投票
 - 予約投稿・投稿の翻訳・言語選択
 - 絵文字ピッカー・カスタム絵文字・MFM 描画
 - ハッシュタグフォロー・タブ固定
 - テーマカラー・フォントサイズ・表示カスタマイズ（絶対時間・画像ぼかし・投稿前確認）
 - リアルタイム更新（WebSocket ストリーミング）
+- サポーター（投げ銭）— 開発を応援できる投げ銭機能
 
 capsicum はオープンソース（AGPL-3.0）です。
 https://capsicum.shrieker.net
@@ -84,3 +86,12 @@ https://capsicum.shrieker.net
 ## サポート URL
 
 https://github.com/pooza/capsicum/issues
+
+## 英語ローカライズなしの注記（#695・暫定）
+
+App Store / Google Play / Microsoft Store の英語（en-US）説明文に、以下の注記を掲載する。英語表示で見つけた利用者に、日本語専用であることを明示するための暫定対応。v1.37 で en-US ローカライズ宣言自体を削除する（#695）までのつなぎ。
+
+App Store ぶんはバージョン提出時のみ反映できるため v1.36.1 提出に同梱する。Google Play / Microsoft Store は随時反映可。
+
+> capsicum is a Japanese-only app.
+> There is no English localization, and an English version is not planned. The interface, in-app text, documentation, and support are all provided in Japanese only. Please take this into account before downloading.

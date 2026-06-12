@@ -50,6 +50,10 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
 
   bool _syncing = false;
 
+  /// 同期実行中に新たな同期要求（ログイン追加等）が来たことを示す。
+  /// 現在の往復が終わったらもう一周する (#701)。
+  bool _resyncRequested = false;
+
   /// 同期済みのアカウント数。ログイン追加で増えたら再同期する
   /// （新アカウントにもサーバー側レコードを行き渡らせる）。
   int _syncedAccountCount = -1;
@@ -94,20 +98,33 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
   /// - ローカルがサポーターで未同期: 全量をバックフィル
   ///   （v1.27〜のローカル先行レコードの汲み上げ）
   Future<void> _syncWithServer() async {
-    if (_syncing) return;
-    final accounts = ref.read(accountManagerProvider).accounts;
-    if (accounts.isEmpty) return;
+    // 同期実行中に再要求が来たら（A 同期の往復中に B をログイン追加した等）、
+    // その場では弾いて予約だけ立て、現在の往復が終わってからもう一周する
+    // (#701)。単に return すると増えた分のアカウントが次のアカウント数変化
+    // まで（実質アプリ再起動まで）同期されず、#596 バックフィルが新アカウント
+    // で成立しなくなる。
+    if (_syncing) {
+      _resyncRequested = true;
+      return;
+    }
     _syncing = true;
     try {
-      final record = state.valueOrNull ?? await _store.load();
-      if (!record.isSupporter) {
-        await _adoptFromServer(record, accounts);
-      } else if (!record.syncedToServer) {
-        await _uploadToServer(sku: record.lastSku);
-      }
-      _syncedAccountCount = accounts.length;
+      do {
+        // 周回の先頭でクリアし、この往復中に来た再要求だけを次周に持ち越す。
+        _resyncRequested = false;
+        final accounts = ref.read(accountManagerProvider).accounts;
+        if (accounts.isEmpty) break;
+        final record = state.valueOrNull ?? await _store.load();
+        if (!record.isSupporter) {
+          await _adoptFromServer(record, accounts);
+        } else if (!record.syncedToServer) {
+          await _uploadToServer(sku: record.lastSku);
+        }
+        _syncedAccountCount = accounts.length;
+      } while (_resyncRequested);
     } catch (e) {
       // relay 不通・オフラインは正常系の degrade。次の機会に再同期する。
+      // （_syncedAccountCount は更新しないので、次のアカウント変化で再発火する）
       _breadcrumb('sync failed: ${e.runtimeType}');
       debugPrint('capsicum: supporter.sync: failed (${e.runtimeType})');
     } finally {
@@ -172,6 +189,17 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
         }
       }
       if (!record.syncedToServer) {
+        // バックフィルの await 中にアカウントが増えていたら（#701 backfill
+        // 経路の race）、ここで synced を確定させると、増えた分のアカウントが
+        // 以降の同期で `record.syncedToServer == true` の枝に落ちて二度と
+        // バックフィルされない。synced 確定を見送って再同期を予約し、
+        // 再周回で増えたアカウントにも行き渡らせる。既存アカウントへの
+        // 再送は過大計上になるが近似値として許容（クラス docs 参照）。
+        final accountsNow = ref.read(accountManagerProvider).accounts;
+        if (accountsNow.length != accounts.length) {
+          _resyncRequested = true;
+          return;
+        }
         final synced = (state.valueOrNull ?? record).copyWith(
           syncedToServer: true,
         );
