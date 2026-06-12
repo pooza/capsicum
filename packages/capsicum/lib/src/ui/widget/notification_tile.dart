@@ -311,9 +311,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<Post> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       final updated = await action();
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
@@ -365,8 +367,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
+      // builder 自身の context を使う。外側の _showEmojiPicker(context) を握ると、
+      // タイル deactivate / 再描画で MediaQuery._of が null check fatal になる
+      // (post_tile #683 と同型の予防修正)。pop も同様に寄せる。
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.5,
         child: EmojiPicker(
           adapter: adapter as BackendAdapter,
           host: account!.key.host,
@@ -374,7 +379,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           accessToken: account.userSecret.accessToken,
           forReaction: true,
           onSelected: (emoji) {
-            Navigator.pop(context);
+            Navigator.pop(sheetContext);
             _runReactionAction(
               messenger,
               adapter as BackendAdapter,
@@ -398,10 +403,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<void> Function() action,
     String successMessage,
   ) async {
+    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
+    final timeline = ref.read(timelineProvider.notifier);
     try {
       await action();
       final updated = await adapter.getPostById(postId);
-      ref.read(timelineProvider.notifier).updatePost(updated);
+      timeline.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       debugPrint('_runReactionAction failed: $e');

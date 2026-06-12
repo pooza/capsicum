@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS appex は sandbox 必須。 -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- メインアプリと共有する App Group / Keychain Access Group (#673)。
+	     NSE は App Group UserDefaults からラベル/失敗記録を読み書きし、
+	     Keychain Access Group から Web Push 復号鍵 (PushKeyStore #392) を読む。
+	     NSE 自身は push 登録しないため aps-environment は不要。 -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.jp.co.b-shock.capsicum</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)group.jp.co.b-shock.capsicum</string>
+	</array>
+</dict>
+</plist>

@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.35.0+102
+version: 1.36.0+107
 
 environment:
   sdk: ^3.11.0
@@ -91,6 +91,10 @@ dependencies:
   # NowPlayingProvider factory が Linux のときだけ MprisNowPlayingProvider を
   # 生成するため、他 OS では DBusClient を起こさない。
   dbus: ^0.7.12
+  # モバイル (iOS / Android) のメディアビューア保存先 = カメラロール /
+  # ギャラリー (#646)。デスクトップ 3 OS は file_selector の保存ダイアログ
+  # (#572) を使うため、gal はモバイルのみで呼ばれる。
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

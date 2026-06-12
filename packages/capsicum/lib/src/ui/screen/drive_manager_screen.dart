@@ -20,6 +20,11 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   final _scrollController = ScrollController();
   final List<_FolderEntry> _folderStack = [];
   bool _isDragging = false;
+
+  /// ドラッグ中に viewport 端へ近づいたとき GridView を自動スクロールさせる
+  /// (#693)。ReorderableListView 内部と同じ公式クラスを使い、ドラッグ開始時に
+  /// 生成・終了時に破棄する。
+  EdgeDraggingAutoScroller? _dragAutoScroller;
   // 自動 loadMore (#452) の post-frame callback を毎フレーム積むのを避ける
   // ためのラッチ (#459)。folder 移動 / refresh で false に戻す。
   bool _autoLoadRequested = false;
@@ -48,6 +53,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 
   @override
   void dispose() {
+    _stopDragAutoScroll();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -71,6 +77,32 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     final state = ref.read(driveContentsProvider(_currentFolderId)).valueOrNull;
     if (!shouldAutoLoadMore(state)) return;
     ref.read(driveContentsProvider(_currentFolderId).notifier).loadMore();
+  }
+
+  /// ドラッグ開始時に呼ぶ。[itemContext] はドラッグ元タイルの context
+  /// （GridView の Scrollable 配下にあるため [Scrollable.of] が届く）。
+  /// velocityScalar は既定 (7) だと長いリストで届くまでが遅いため、
+  /// ReorderableListView が使う 50 に合わせる。
+  void _startDragAutoScroll(BuildContext itemContext) {
+    _dragAutoScroller = EdgeDraggingAutoScroller(
+      Scrollable.of(itemContext),
+      velocityScalar: 50,
+    );
+  }
+
+  /// ドラッグ位置の更新ごとに呼ぶ。指の位置を中心にした feedback 相当の
+  /// 矩形 (グローバル座標) を渡し、viewport 端に近ければスクロールが始まり
+  /// 離れれば止まる。矩形が静止していてもスクロール継続は scroller 側が
+  /// 面倒を見る。
+  void _updateDragAutoScroll(Offset globalPosition) {
+    _dragAutoScroller?.startAutoScrollIfNecessary(
+      Rect.fromCenter(center: globalPosition, width: 80, height: 80),
+    );
+  }
+
+  void _stopDragAutoScroll() {
+    _dragAutoScroller?.stopAutoScroll();
+    _dragAutoScroller = null;
   }
 
   void _openFolder(DriveFolder folder) {
@@ -107,14 +139,30 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   /// がルート、`_FolderPick(id: <非null>)` が特定フォルダ、`null` の戻りは
   /// キャンセル (tap outside or キャンセルボタン)。
   ///
-  /// 簡易実装: 現在の親フォルダ階層 (root + 直下フォルダ) のみを候補に出す。
-  /// 子フォルダへ移動したい場合は親に降りてから再操作する想定 (#437)。
+  /// 候補は現在地ベース (#693): 親フォルダ (一段上へ戻す。深さ 1 ならルート)
+  /// + 現在フォルダ直下の子フォルダ (一段下へ入れる)。ブラウズと同じ感覚で
+  /// 一段ずつ運び、任意階層へは移動の繰り返しで到達する。親へ戻す導線の
+  /// 考え方は既存のドラッグ&ドロップ (AppBar 左の DragTarget) と揃えている。
   Future<_FolderPick?> _showFolderPickerDialog({
     required String title,
     String? excludeFolderId,
   }) async {
-    final folders = await _drive?.getDriveFolders() ?? const [];
+    // limit 省略時の Misskey 既定は 10 で、フォルダが多いと候補が黙って
+    // 切れるため API 上限の 100 まで広げる (ダイアログはページングしない)。
+    final folders =
+        await _drive?.getDriveFolders(
+          folderId: _currentFolderId,
+          query: const TimelineQuery(limit: 100),
+        ) ??
+        const [];
     if (!mounted) return null;
+    // 親フォルダ候補。ルートにいるときは「上」が無いので出さない。深さ 1 の
+    // ときの親はルート (/)。
+    final hasParent = _folderStack.isNotEmpty;
+    final parent = _folderStack.length >= 2
+        ? _folderStack[_folderStack.length - 2]
+        : null;
+    final children = folders.where((f) => f.id != excludeFolderId).toList();
     return showDialog<_FolderPick>(
       context: context,
       builder: (dialogContext) {
@@ -122,26 +170,36 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.home_outlined),
-                  title: const Text('ルート (/)'),
-                  onTap: () =>
-                      Navigator.pop(dialogContext, const _FolderPick(null)),
-                ),
-                const Divider(height: 1),
-                for (final f in folders)
-                  if (f.id != excludeFolderId)
-                    ListTile(
-                      leading: const Icon(Icons.folder),
-                      title: Text(f.name),
-                      onTap: () =>
-                          Navigator.pop(dialogContext, _FolderPick(f.id)),
-                    ),
-              ],
-            ),
+            child: !hasParent && children.isEmpty
+                ? const Text('移動できるフォルダがありません')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      if (hasParent) ...[
+                        ListTile(
+                          leading: Icon(
+                            parent == null
+                                ? Icons.home_outlined
+                                : Icons.drive_folder_upload_outlined,
+                          ),
+                          title: Text(parent?.name ?? 'ルート (/)'),
+                          subtitle: const Text('上の階層'),
+                          onTap: () => Navigator.pop(
+                            dialogContext,
+                            _FolderPick(parent?.id),
+                          ),
+                        ),
+                        if (children.isNotEmpty) const Divider(height: 1),
+                      ],
+                      for (final f in children)
+                        ListTile(
+                          leading: const Icon(Icons.folder),
+                          title: Text(f.name),
+                          onTap: () =>
+                              Navigator.pop(dialogContext, _FolderPick(f.id)),
+                        ),
+                    ],
+                  ),
           ),
           actions: [
             TextButton(
@@ -837,8 +895,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                   return LongPressDraggable<Attachment>(
                     key: ValueKey('file-${file.id}'),
                     data: file,
-                    onDragStarted: () => setState(() => _isDragging = true),
-                    onDragEnd: (_) => setState(() => _isDragging = false),
+                    onDragStarted: () {
+                      setState(() => _isDragging = true);
+                      _startDragAutoScroll(context);
+                    },
+                    onDragUpdate: (details) =>
+                        _updateDragAutoScroll(details.globalPosition),
+                    onDragEnd: (_) {
+                      setState(() => _isDragging = false);
+                      _stopDragAutoScroll();
+                    },
                     feedback: Material(
                       elevation: 4,
                       borderRadius: BorderRadius.circular(4),

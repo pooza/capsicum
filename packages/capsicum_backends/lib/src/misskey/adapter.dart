@@ -142,6 +142,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     'read:notifications',
     'write:notifications',
     'write:notes',
+    // Pages の「いいね」一覧取得 (i/page-likes) と like/unlike (#615 / #617)。
+    // これが無いと getLikedPages / likePage が permission denied で失敗する。
+    'read:page-likes',
+    'write:page-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -1199,6 +1203,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return entries;
   }
 
+  @override
+  Future<void> likePage(String pageId) => client.likePage(pageId);
+
+  @override
+  Future<void> unlikePage(String pageId) => client.unlikePage(pageId);
+
   // DriveSupport
 
   @override
@@ -1658,6 +1668,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<void> deleteChatMessage(String messageId) async {
     await client.deleteChatMessage(messageId);
   }
+
+  @override
+  Future<void> reactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) => client.reactToChatMessage(messageId: messageId, reaction: reaction);
+
+  @override
+  Future<void> unreactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) => client.unreactToChatMessage(messageId: messageId, reaction: reaction);
 
   @override
   Stream<ChatMessage> streamChatMessages({

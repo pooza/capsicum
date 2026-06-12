@@ -97,6 +97,52 @@ class PushRelayClient {
     );
   }
 
+  /// 投げ銭イベントをサーバー側サポーター状態に記録する (#596 /
+  /// capsicum-relay#18)。(account, server) 単位の upsert。
+  ///
+  /// [tippedAt] と 2 以上の [count] はローカル既存レコードの汲み上げ
+  /// （バックフィル）用。省略時はサーバー側が現在時刻・1 回として扱う。
+  /// retry は [register] と同じ transient ポリシー。
+  Future<Map<String, dynamic>> recordSupporterTip({
+    required String account,
+    required String server,
+    String? sku,
+    DateTime? tippedAt,
+    int count = 1,
+  }) {
+    return _postWithRetry(
+      path: '/supporters/tip',
+      operation: 'supporter_tip',
+      data: {
+        'account': account,
+        'server': server,
+        'sku': ?sku,
+        'tipped_at': ?tippedAt?.toUtc().toIso8601String(),
+        'count': count,
+      },
+      server: server,
+    );
+  }
+
+  /// サーバー側サポーター状態を取得する (#596)。未登録 (404) は null。
+  /// `first_tipped_at` 等の時刻は SQLite の `YYYY-MM-DD HH:MM:SS` (UTC)。
+  Future<Map<String, dynamic>?> fetchSupporterStatus({
+    required String account,
+    required String server,
+  }) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/supporters',
+        queryParameters: {'account': account, 'server': server},
+        options: Options(headers: {'X-Relay-Secret': _secret}),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null; // 未登録 = 非サポーター
+      rethrow;
+    }
+  }
+
   /// リレー応答の `id` を防御的にパースする。整数・数値文字列の両方を許容し、
   /// 解釈不能なら null を返す（呼び出し側で契約違反として計装する）。
   /// register / announcement_subscriptions の両系統で共有する。

@@ -1,0 +1,17 @@
+// Minimal config for the macOS Notification Service Extension (#673) —
+// only imports Flutter build variables ($(FLUTTER_BUILD_NAME) /
+// $(FLUTTER_BUILD_NUMBER))。ShareExtension.xcconfig と同方針。
+// Does NOT include Pods, so no frameworks are linked.
+#include "ephemeral/Flutter-Generated.xcconfig"
+
+// Project-level xcconfig (Debug/Release) の #include 連鎖で
+// Pods-Runner.*.xcconfig が混入し OTHER_LDFLAGS / FRAMEWORK_SEARCH_PATHS 等に
+// Firebase / Sentry 等の framework が入る。NSE はそれらも FlutterMacOS も
+// link しない（CryptoKit / UserNotifications / Security のみ）ため、リンク時に
+// シンボル不整合でビルドが落ちる。明示的に空へ上書きする。
+OTHER_LDFLAGS =
+FRAMEWORK_SEARCH_PATHS =
+HEADER_SEARCH_PATHS =
+LIBRARY_SEARCH_PATHS =
+GCC_PREPROCESSOR_DEFINITIONS =
+OTHER_SWIFT_FLAGS =

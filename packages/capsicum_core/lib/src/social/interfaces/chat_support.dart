@@ -41,6 +41,25 @@ abstract mixin class ChatSupport {
   Future<void> deleteChatMessage(String messageId);
   Future<void> markAllChatRead();
 
+  /// chat メッセージに reaction を付ける (#612)。DM・ルーム共通
+  /// (`/api/chat/messages/react`)。[reaction] は `:shortcode:` または Unicode
+  /// 絵文字。実装しないバックエンドは UnsupportedError を投げる。
+  Future<void> reactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async => throw UnsupportedError(
+    'chat reactions are not supported by this backend',
+  );
+
+  /// chat メッセージの reaction を外す (#612)。
+  /// (`/api/chat/messages/unreact`)。
+  Future<void> unreactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async => throw UnsupportedError(
+    'chat reactions are not supported by this backend',
+  );
+
   /// 新着 chat メッセージを通知する broadcast ストリーム。listen 開始で
   /// WebSocket 接続を立て、onCancel で切断する想定。サーバーの main channel
   /// から `newChatMessage` イベントだけ取り出して emit する。

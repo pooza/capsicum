@@ -6,9 +6,11 @@ import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../platform/platform_info.dart';
@@ -152,15 +154,39 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     }
   }
 
-  /// メディア保存はデスクトップ 3 OS のみ対応 (#572 第一弾)。モバイルは
-  /// ギャラリー保存に別パッケージ + ネイティブ権限が必要なため別 issue
-  /// (#646)、ファイラーへの drag-out も別 issue (#645)。
+  /// デスクトップ 3 OS は file_selector の保存ダイアログでローカル保存 (#572
+  /// 第一弾)。ファイラーへの drag-out は別 issue (#645)。
   bool get _canSaveToDisk => isDesktop;
 
-  /// 現在表示中のメディアを OS のファイル保存ダイアログ経由でローカルに
-  /// ダウンロードする (#572)。file_selector の保存ダイアログで保存先を選び、
-  /// dio で取得して書き出す。
+  /// モバイル (iOS / Android) はカメラロール / ギャラリーへ保存 (#646)。
+  /// gal が扱えるのは画像と動画のみで、音声はギャラリーの概念に無いため
+  /// 対象外 (デスクトップの保存ダイアログ側は従来どおり音声も保存可)。
+  bool _canSaveToGallery(Attachment attachment) {
+    if (isDesktop) return false;
+    switch (attachment.type) {
+      case AttachmentType.image:
+      case AttachmentType.video:
+      case AttachmentType.gifv:
+        return true;
+      case AttachmentType.audio:
+      case AttachmentType.unknown:
+        return false;
+    }
+  }
+
+  /// 現在表示中のメディアを保存する。デスクトップは OS のファイル保存
+  /// ダイアログ (#572)、モバイルはカメラロール / ギャラリー (#646)。
   Future<void> _saveMedia() async {
+    if (isDesktop) {
+      await _saveMediaToDisk();
+    } else {
+      await _saveMediaToGallery();
+    }
+  }
+
+  /// file_selector の保存ダイアログで保存先を選び、dio で取得して書き出す
+  /// (#572)。
+  Future<void> _saveMediaToDisk() async {
     final attachment = _attachments[_currentIndex];
     final suggestedName = suggestedMediaFileName(attachment);
 
@@ -173,14 +199,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     messenger.showSnackBar(const SnackBar(content: Text('保存しています…')));
 
     try {
-      final response = await Dio().get<List<int>>(
-        attachment.url,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final bytes = response.data;
-      if (bytes == null) {
-        throw const FormatException('empty response body');
-      }
+      final bytes = await _downloadBytes(attachment.url);
       await File(location.path).writeAsBytes(bytes);
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
@@ -199,6 +218,84 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
     }
+  }
+
+  /// gal でカメラロール / ギャラリーへ保存する (#646)。ネットワーク上の
+  /// メディアを一時ファイルに落としてから putImage / putVideo に渡す
+  /// (gal はファイルパス入力のため)。
+  Future<void> _saveMediaToGallery() async {
+    final attachment = _attachments[_currentIndex];
+    final messenger = ScaffoldMessenger.of(context);
+
+    // iOS は NSPhotoLibraryAddUsageDescription の追加許可、Android API 28
+    // 以下は WRITE_EXTERNAL_STORAGE をここで要求する (API 29+ は常に true)。
+    final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
+    if (!mounted) return;
+    if (!hasAccess) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('フォトライブラリへのアクセスが許可されていません')),
+      );
+      return;
+    }
+
+    messenger.showSnackBar(const SnackBar(content: Text('保存しています…')));
+
+    File? tempFile;
+    try {
+      final bytes = await _downloadBytes(attachment.url);
+      final tempDir = await getTemporaryDirectory();
+      tempFile = File('${tempDir.path}/${suggestedMediaFileName(attachment)}');
+      await tempFile.writeAsBytes(bytes);
+      final isVideo =
+          attachment.type == AttachmentType.video ||
+          attachment.type == AttachmentType.gifv;
+      if (isVideo) {
+        await Gal.putVideo(tempFile.path);
+      } else {
+        await Gal.putImage(tempFile.path);
+      }
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('保存しました')));
+    } catch (e, st) {
+      // デスクトップ保存 (#648) と同じ計装。権限拒否はユーザー操作の範疇
+      // なので Sentry には送らない。
+      final denied =
+          e is GalException && e.type == GalExceptionType.accessDenied;
+      if (!denied) {
+        reportOpFailure(
+          tagKey: 'media.op',
+          operation: 'save_gallery',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
+      }
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(denied ? 'フォトライブラリへのアクセスが許可されていません' : '保存に失敗しました'),
+        ),
+      );
+    } finally {
+      // 一時ファイルは best-effort で掃除する (失敗しても OS が回収する領域)。
+      try {
+        await tempFile?.delete();
+      } catch (_) {}
+    }
+  }
+
+  Future<List<int>> _downloadBytes(String url) async {
+    final response = await Dio().get<List<int>>(
+      url,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    final bytes = response.data;
+    if (bytes == null) {
+      throw const FormatException('empty response body');
+    }
+    return bytes;
   }
 
   @override
@@ -224,7 +321,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
               ? Text('${_currentIndex + 1} / ${widget.attachments.length}')
               : null,
           actions: [
-            if (_canSaveToDisk)
+            if (_canSaveToDisk || _canSaveToGallery(attachment))
               IconButton(
                 icon: const Icon(Icons.download_outlined),
                 tooltip: '保存',

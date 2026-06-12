@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
 import '../widget/page_block_renderer.dart';
 import '../widget/user_avatar.dart';
@@ -132,13 +133,73 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
   }
 }
 
-class _PageBody extends ConsumerWidget {
+class _PageBody extends ConsumerStatefulWidget {
   final Page page;
 
   const _PageBody({required this.page});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PageBody> createState() => _PageBodyState();
+}
+
+class _PageBodyState extends ConsumerState<_PageBody> {
+  // like 状態はサーバー往復を待たず楽観更新する。失敗時は元に戻す。
+  late bool _isLiked = widget.page.isLiked;
+  late int _likedCount = widget.page.likedCount;
+  // 連打で like/unlike が交錯しないよう、往復中は再操作を弾く。
+  bool _toggling = false;
+
+  Future<void> _toggleLike() async {
+    if (_toggling) return;
+    final raw = ref.read(currentAdapterProvider);
+    if (raw is! PagesSupport) return;
+    final pages = raw as PagesSupport;
+
+    final wasLiked = _isLiked;
+    setState(() {
+      _toggling = true;
+      _isLiked = !wasLiked;
+      _likedCount += wasLiked ? -1 : 1;
+    });
+    try {
+      if (wasLiked) {
+        await pages.unlikePage(widget.page.id);
+      } else {
+        await pages.likePage(widget.page.id);
+      }
+    } catch (e, st) {
+      // token 漏洩を避けるため scrubException 経由で Sentry に送り、UI には
+      // 汎用文言だけ出す (view 経路と同型 / #460)。
+      reportPagesOpFailure(
+        wasLiked ? 'unlike' : 'like',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
+      if (!mounted) return;
+      setState(() {
+        _isLiked = wasLiked;
+        _likedCount += wasLiked ? 1 : -1;
+      });
+      // 旧トークン (write:page-likes 未付与) は 403 PERMISSION_DENIED。汎用
+      // 文言ではなく再ログインが要る旨を伝える (#615)。自分のページへの like は
+      // Misskey 仕様 (yourPage) で弾かれるが、そちらは scope エラーではないので
+      // 汎用文言のまま。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isOAuthScopeError(e) ? '権限が不足しています。再ログインしてください' : 'いいねの更新に失敗しました',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _toggling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final page = widget.page;
     final theme = Theme.of(context);
     final adapter = ref.watch(currentAdapterProvider);
     final host = adapter is DecentralizedBackendAdapter ? adapter.host : null;
@@ -189,6 +250,18 @@ class _PageBody extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _toggling ? null : _toggleLike,
+                  icon: Icon(
+                    _isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: _isLiked ? theme.colorScheme.primary : null,
+                  ),
+                  label: Text('$_likedCount'),
+                ),
               ),
             ],
           ),

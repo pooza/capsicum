@@ -892,6 +892,16 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/pages/like
+  Future<void> likePage(String pageId) async {
+    await dio.post('/api/pages/like', data: createBody({'pageId': pageId}));
+  }
+
+  /// POST /api/pages/unlike
+  Future<void> unlikePage(String pageId) async {
+    await dio.post('/api/pages/unlike', data: createBody({'pageId': pageId}));
+  }
+
   /// POST /api/clips/list
   Future<List<Map<String, dynamic>>> getClips() async {
     final response = await dio.post('/api/clips/list', data: createBody({}));
@@ -1211,6 +1221,28 @@ class MisskeyClient {
   /// POST /api/chat/read-all
   Future<void> markAllChatRead() async {
     await dio.post('/api/chat/read-all', data: createBody());
+  }
+
+  /// POST /api/chat/messages/react (#612)
+  Future<void> reactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async {
+    await dio.post(
+      '/api/chat/messages/react',
+      data: createBody({'messageId': messageId, 'reaction': reaction}),
+    );
+  }
+
+  /// POST /api/chat/messages/unreact (#612)
+  Future<void> unreactToChatMessage({
+    required String messageId,
+    required String reaction,
+  }) async {
+    await dio.post(
+      '/api/chat/messages/unreact',
+      data: createBody({'messageId': messageId, 'reaction': reaction}),
+    );
   }
 
   // === chat rooms (#438) =====================================================

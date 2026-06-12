@@ -234,6 +234,22 @@ ChatMessage misskeyChatMessageFromMap(
       : const <String, String>{};
   final toRoomId = data['toRoomId'] as String?;
   final toRoomMap = data['toRoom'] as Map<String, dynamic>?;
+  // reactions は `{reaction, user}` の配列 (#612)。user は UserLite で埋め込み。
+  final reactions = <ChatReaction>[];
+  for (final raw in (data['reactions'] as List? ?? const [])) {
+    if (raw is! Map<String, dynamic>) continue;
+    final reaction = raw['reaction'] as String?;
+    final userMap = raw['user'] as Map<String, dynamic>?;
+    if (reaction == null || userMap == null) continue;
+    reactions.add(
+      ChatReaction(
+        reaction: reaction,
+        user: MisskeyUser.fromJson(
+          userMap,
+        ).toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      ),
+    );
+  }
   return ChatMessage(
     id: data['id'] as String,
     createdAt: DateTime.parse(data['createdAt'] as String),
@@ -253,6 +269,7 @@ ChatMessage misskeyChatMessageFromMap(
         : null,
     isRead: data['isRead'] as bool? ?? defaultIsRead,
     emojis: emojis,
+    reactions: reactions,
   );
 }
 

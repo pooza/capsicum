@@ -15,6 +15,8 @@ import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
+import 'delivered_push_cleaner.dart';
+import 'notification_dedup_channel.dart';
 
 /// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
 /// WebSocket 通知ストリーミング ([NotificationStreamSupport]) を OS ローカル
@@ -38,10 +40,15 @@ class DesktopNotificationDispatcher {
   /// 既存購読を維持して WebSocket を無駄に切らない。
   final Map<AccountKey, StreamSubscription<Notification>> _subs = {};
 
-  /// セッション内 dedup。将来 native push と二重受信する通知を取りこぼさず
+  /// セッション内 dedup。native push と二重受信する通知を取りこぼさず
   /// 1 表示に抑える。`notification.id` はサーバーローカルでアカウント間で
   /// 衝突しうるため、account を含む複合キーで持つ。
   final Set<String> _emittedKeys = {};
+
+  /// APNs 先着で native 側 (macOS NotificationDedupPlugin) が表示済みの
+  /// `username@host|notificationId` キー (#674)。[NotificationDedupChannel] の
+  /// onRemotePresented で流入し、同じ通知の WebSocket 側 emit をスキップする。
+  final Set<String> _nativeShownKeys = {};
   static const _maxTrackedKeys = 500;
 
   /// OS 通知本文の上限。OS 側でも truncate されるが念のため client 側でも切る。
@@ -59,6 +66,16 @@ class DesktopNotificationDispatcher {
   /// desktop 以外では何もしない。
   void start() {
     if (!isDesktop) return;
+    // APNs 先着分の逆方向 dedup (#674)。macOS 以外では channel が no-op。
+    _ref.read(notificationDedupChannelProvider).onRemotePresented = (key) {
+      if (_nativeShownKeys.length >= _maxTrackedKeys) {
+        _nativeShownKeys.clear();
+      }
+      _nativeShownKeys.add(key);
+    };
+    // 配信済み generic 通知の掃除役 (#673)。ここで read して常駐させ、
+    // APNs 到着合図 (onRemoteArrived) の配線を起動時に済ませる。
+    _ref.read(deliveredPushCleanerProvider);
     _ref.listen<AccountManagerState>(
       accountManagerProvider,
       (prev, next) => _reconcile(next.accounts),
@@ -104,13 +121,31 @@ class DesktopNotificationDispatcher {
   }
 
   Future<void> _emit(Account account, Notification n) async {
+    // NSE (#673) が stamp する ID と同じキー空間 (`username@host|id`) の
+    // 横断 dedup キー (#674)。relay の account 表現に合わせる。
+    final relayKey = '${account.key.username}@${account.key.host}|${n.id}';
+    if (_nativeShownKeys.contains(relayKey)) {
+      // APNs 先着で OS 通知は表示済み。WebSocket 側は出さない。
+      debugPrint(
+        'capsicum: push.desktop: skip (native shown) '
+        'account=${account.key.toStorageKey()} id=${n.id}',
+      );
+      return;
+    }
     final dedupKey = '${account.key.toStorageKey()}|${n.id}';
-    if (!_emittedKeys.add(dedupKey)) return; // 既出 (native push 経由含む)
+    if (!_emittedKeys.add(dedupKey)) return; // 既出
     if (_emittedKeys.length > _maxTrackedKeys) {
       _emittedKeys
         ..clear()
         ..add(dedupKey);
     }
+    // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
+    // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
+    // 最小化する。
+    unawaited(_ref.read(notificationDedupChannelProvider).addEmitted(relayKey));
+    // 配信済み generic 通知の掃除 (#673)。APNs が先着済みの逆順ケースと、
+    // この後に遅れて届くケース (onRemoteArrived 側) の両方をカバーする。
+    _ref.read(deliveredPushCleanerProvider).recordEmitted(relayKey);
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
     // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。

@@ -167,7 +167,7 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 
 ### 5. 重複排除 (dedup)
 
-将来 #468 (macOS APNs) / #474 (Windows WNS) が完成すると、**同じ通知を WebSocket 経由 + native push 経由の両方で受ける**可能性がある。重複排除の方針:
+#468 (macOS APNs) / #474 (Windows WNS) が完成すると、**同じ通知を WebSocket 経由 + native push 経由の両方で受ける**可能性がある。重複排除の方針:
 
 | シナリオ | 動作 |
 |---|---|
@@ -175,7 +175,18 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 | アプリ起動直後（cold start）に native push 由来の通知 ID が UserNotificationCenter に既存 | session-only set を再構築せず、最初に来た方を許可（多重表示の方が落とすより安全） |
 | アカウント切替 | dispatcher が `_emittedIds.clear()` で session set をリセット |
 
-将来 native push を統合する際は、APNs / FCM 受信ハンドラから dispatcher に「この id は処理済み」を通知する経路を加える。
+#### macOS 横断 dedup の実装（#674、v1.36）
+
+macOS 向けには上記方針を以下の経路で実装済み。キーは relay / NSE の account 表現に合わせた `username@host|notificationId`。
+
+- **NSE → 通知への stamp**: `macos/CapsicumNotificationService` (#673) が復号した payload から通知 ID（Mastodon `notification_id` / Misskey `body.id`）を `userInfo["capsicum_notification_id"]` に stamp する
+- **native 側 proxy**: `macos/Runner/NotificationDedupPlugin.swift` が flutter_local_notifications の UNUserNotificationCenter delegate を包み（FLN 由来は素通し）、remote push の willPresent を既出集合と突き合わせて後着を黙殺する
+- **双方向 channel**: `net.shrieker.capsicum/notification_dedup`。WebSocket 先着は Dart → native `addEmitted`、APNs 先着は native → Dart `onRemotePresented` で `DesktopNotificationDispatcher` がスキップ
+
+制約:
+
+- willPresent はアプリ foreground 時のみ呼ばれる。macOS で「起動中だが非アクティブ」のときに呼ばれるかは文書上確定せず、**内部ベータの NSLog (`capsicum: dedup:`) で実測確認する**。呼ばれない場合、非アクティブ時の APNs banner は抑止できず、WebSocket 側スキップ（APNs 先着時）のみ効く
+- stamp の無い remote（NSE 復号失敗の generic 文面）は dedup 不能のため foreground では黙殺する。従来 FLN delegate が非 FLN 通知の completionHandler を呼ばず foreground 表示されていなかった挙動の維持であり、同イベントは WebSocket 側がリッチ文面で出す見込みが高い
 
 ### 6. プラットフォーム別注記
 
@@ -218,6 +229,36 @@ main.dart で desktop 起動時に `start()` を呼ぶ。
 | Phase C（#474 完成） | Windows: WebSocket + WNS。dedup 経路で 1 通知 1 表示 |
 
 native push が `_emittedIds` に追記してから OS 通知を表示すれば、後着の WebSocket は黙殺される。逆も同様。
+
+### macOS の NSE 不能と generic 通知の後始末（#673、2026-06-12 確定）
+
+macOS は UNNotificationServiceExtension に didReceive を渡さない。usernoted が
+appex を起動するものの、リクエストを配送せず約 2 秒で「Extension will be
+killed due to sluggish startup」で kill し、元 payload（relay のフォールバック
+文面「{account} に通知があります」）をそのまま表示する。Monterey〜macOS 26.5
+まで一貫した OS 側の実装欠落で（Apple Dev Forums 693011 / 712482 / 125987）、
+コード・署名・entitlements の問題ではない（実測の経緯は
+[#673](https://github.com/pooza/capsicum/issues/673) 2026-06-12 のコメント）。
+
+このため macOS の Phase B は次の形に確定した:
+
+- **文面の品質と重複排除は WebSocket 経路（本設計）が全責任を持つ**。
+  APNs はアプリ非起動時の控え（generic 文面でも「通知が来た事実」は届く）
+- アプリ起動中に届いた APNs generic 通知は `DeliveredPushCleaner` が後始末する。
+  main app は復号鍵を持つので、配信済み通知の暗号化 body を復号 →
+  notificationId を突き合わせ、WebSocket 側で表示済みのものだけを通知センター
+  から削除する。一致しない通知（WebSocket 切断中に届いた等）は削除しない
+- 掃除のトリガは AppDelegate の didReceiveRemoteNotification（APNs 後着 = 主経路。
+  APNs はイベントから数分遅れることがある）と WebSocket emit 直後（APNs 先着の
+  逆順）の 2 つ
+- willPresent ベースの dedup（NotificationDedupPlugin）は前面時の即時黙殺として
+  存続。NSE appex も「OS 側が直れば自動復帰する保険」として残置
+- アプリ非起動時の generic 文面は macOS の到達上限として受容する
+- **お知らせ push（#477）は macOS では購読しない**。relay の AnnouncementWorker
+  は device_type=ios/android にしか配送せず（macos はスキップ）、アプリ起動中の
+  お知らせは WebSocket 経路がリッチ通知で出す。非起動時の取りこぼしはアプリ内の
+  お知らせ画面で読めるため許容。macOS では自動購読をスキップし設定画面の
+  トグルも出さない（`AnnouncementSubscriptionService.platformSupported`）
 
 ## 実装フェーズ
 
