@@ -154,8 +154,7 @@ class _AttachmentPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isImage =
-        file.type == AttachmentType.image ||
-        file.type == AttachmentType.gifv;
+        file.type == AttachmentType.image || file.type == AttachmentType.gifv;
     final thumbUrl = file.previewUrl?.isNotEmpty == true
         ? file.previewUrl!
         : file.url;

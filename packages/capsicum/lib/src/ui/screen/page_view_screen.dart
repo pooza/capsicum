@@ -188,9 +188,7 @@ class _PageBodyState extends ConsumerState<_PageBody> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isOAuthScopeError(e)
-                ? '権限が不足しています。再ログインしてください'
-                : 'いいねの更新に失敗しました',
+            isOAuthScopeError(e) ? '権限が不足しています。再ログインしてください' : 'いいねの更新に失敗しました',
           ),
         ),
       );

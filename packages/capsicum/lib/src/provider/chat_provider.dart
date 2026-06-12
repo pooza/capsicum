@@ -497,8 +497,13 @@ class ChatRoomTimelineNotifier
   /// メッセージの reaction をトグルする (#612)。自分が既に同じ reaction を
   /// 付けていれば unreact、なければ react。API 成功後に state を更新する。
   Future<void> toggleReaction(String messageId, String reaction) =>
-      _toggleChatReaction(ref, () => state, (v) => state = v, messageId,
-          reaction);
+      _toggleChatReaction(
+        ref,
+        () => state,
+        (v) => state = v,
+        messageId,
+        reaction,
+      );
 }
 
 /// DM・ルーム共通の reaction トグル実装 (#612)。両 Notifier は同じ
@@ -735,8 +740,13 @@ class ChatThreadNotifier
 
   /// メッセージの reaction をトグルする (#612)。ルーム側と共通実装。
   Future<void> toggleReaction(String messageId, String reaction) =>
-      _toggleChatReaction(ref, () => state, (v) => state = v, messageId,
-          reaction);
+      _toggleChatReaction(
+        ref,
+        () => state,
+        (v) => state = v,
+        messageId,
+        reaction,
+      );
 }
 
 final chatThreadProvider = AsyncNotifierProvider.autoDispose

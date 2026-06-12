@@ -520,4 +520,3 @@ class _FilePreview extends StatelessWidget {
     );
   }
 }
-

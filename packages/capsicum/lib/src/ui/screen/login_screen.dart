@@ -243,7 +243,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (entry is! Map) continue;
       final src = entry['src'] as String?;
       if (src == null || src.isEmpty) continue;
-      final width = int.tryParse((entry['size'] as String?)?.split('x').first ?? '') ?? 0;
+      final width =
+          int.tryParse((entry['size'] as String?)?.split('x').first ?? '') ?? 0;
       if (width == 192) return src;
       if (width > bestWidth) {
         bestWidth = width;
