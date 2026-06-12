@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
@@ -84,6 +86,29 @@ class _FakeRelayClient extends PushRelayClient {
       count: count,
     ));
     return {'account': account, 'server': server};
+  }
+}
+
+/// 最初の `fetchSupporterStatus` 呼び出しを [release] するまで宙吊りにする
+/// fake。連続ログインの race (#701) を決定的に再現するために使う。
+class _GatedRelayClient extends _FakeRelayClient {
+  final Completer<void> _firstGate = Completer<void>();
+  bool _firstFetchSeen = false;
+
+  void release() {
+    if (!_firstGate.isCompleted) _firstGate.complete();
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchSupporterStatus({
+    required String account,
+    required String server,
+  }) async {
+    if (!_firstFetchSeen) {
+      _firstFetchSeen = true;
+      await _firstGate.future;
+    }
+    return super.fetchSupporterStatus(account: account, server: server);
   }
 }
 
@@ -205,6 +230,38 @@ void main() {
     expect(relay.tips.single.count, 1);
     expect(relay.tips.single.sku, 'supporter.tip.big');
     expect(relay.tips.single.tippedAt, isNull); // 増分はサーバー時刻に任せる
+  });
+
+  test('連続ログイン race: A 照会中に B を追加しても B の採用を取りこぼさない (#701)', () async {
+    // ローカルは非サポーター。B (bob) だけが他端末で投げ銭済み。
+    relay = _GatedRelayClient();
+    relay.serverRecords['bob@h2'] = {
+      'first_tipped_at': '2026-02-02 00:00:00',
+      'tip_count': 1,
+    };
+    await start();
+
+    // A をログイン → _adoptFromServer([alice]) が alice の照会で gate 待ちに入る。
+    accounts.setAccounts([_makeAccount('alice', 'h1')]);
+    await _settle();
+    expect(container.read(isSupporterProvider), isFalse); // まだ照会中
+
+    // alice 照会中に B を追加。旧実装ではこの同期要求が _syncing で破棄され、
+    // _syncedAccountCount=1 に固定されて B は再起動まで照会されなかった。
+    accounts.setAccounts([
+      _makeAccount('alice', 'h1'),
+      _makeAccount('bob', 'h2'),
+    ]);
+    await _settle();
+
+    // gate を開けて 1 本目を完走 → 予約された再周回で [alice, bob] を再照会し
+    // bob のサーバーレコードを採用する。
+    (relay as _GatedRelayClient).release();
+    await _settle();
+
+    expect(container.read(isSupporterProvider), isTrue);
+    expect(store.record.firstTippedAt!.toUtc(), DateTime.utc(2026, 2, 2));
+    expect(store.record.syncedToServer, isTrue);
   });
 
   test('relay 不通: ローカル値で degrade し、未同期のまま例外も出ない', () async {
