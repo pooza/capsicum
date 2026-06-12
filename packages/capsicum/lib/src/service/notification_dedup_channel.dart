@@ -32,15 +32,24 @@ class NotificationDedupChannel {
   /// [DesktopNotificationDispatcher] が配線する。
   void Function(String key)? onRemotePresented;
 
+  /// アプリ起動中に APNs が届いた合図 (AppDelegate の
+  /// didReceiveRemoteNotification 由来)。macOS は NSE (#673) が機能しないため
+  /// generic 文面の banner がこの直後に配信される。[DeliveredPushCleaner] が
+  /// 掃除のトリガとして配線する。
+  void Function()? onRemoteArrived;
+
   bool get _supported => !kIsWeb && Platform.isMacOS;
 
   /// native からの逆方向通知を listen し始める。アプリ起動時に 1 回呼ぶ。
   void start() {
     if (!_supported) return;
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'onRemotePresented') {
-        final key = call.arguments as String?;
-        if (key != null) onRemotePresented?.call(key);
+      switch (call.method) {
+        case 'onRemotePresented':
+          final key = call.arguments as String?;
+          if (key != null) onRemotePresented?.call(key);
+        case 'onRemoteArrived':
+          onRemoteArrived?.call();
       }
     });
   }
@@ -57,6 +66,73 @@ class NotificationDedupChannel {
       // 同上。native 側が channel を張れなかったケース。
     }
   }
+
+  /// 配信済み通知のうち APNs remote 由来のものを取得する (#673 掃除用)。
+  /// 失敗時 (proxy 未 install 等) は空リスト = 掃除対象なし扱い。
+  Future<List<DeliveredRemoteNotification>> getDeliveredRemotes() async {
+    if (!_supported) return const [];
+    try {
+      final raw = await _channel.invokeListMethod<Map<Object?, Object?>>(
+        'getDeliveredRemotes',
+      );
+      if (raw == null) return const [];
+      return [
+        for (final entry in raw)
+          if (entry['identifier'] is String && entry['account'] is String)
+            DeliveredRemoteNotification(
+              identifier: entry['identifier']! as String,
+              account: entry['account']! as String,
+              body: entry['body'] as String?,
+              encoding: entry['encoding'] as String?,
+              stampedId: entry['stampedId'] as String?,
+            ),
+      ];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  /// 配信済み通知を identifier 指定で通知センターから削除する (#673 掃除用)。
+  Future<void> removeDelivered(List<String> identifiers) async {
+    if (!_supported || identifiers.isEmpty) return;
+    try {
+      await _channel.invokeMethod<void>('removeDelivered', identifiers);
+    } on PlatformException {
+      // 削除失敗は「重複が残る」だけなので握りつぶす。
+    } on MissingPluginException {
+      // 同上。
+    }
+  }
+}
+
+/// 通知センターに配信済みの APNs remote 通知 1 件分 (#673 掃除用)。
+/// native 側 NotificationDedupPlugin.collectDeliveredRemotes の出力に対応する。
+class DeliveredRemoteNotification {
+  /// UNNotificationRequest.identifier。削除指定に使う。
+  final String identifier;
+
+  /// relay が userInfo に載せる `username@host`。
+  final String account;
+
+  /// Web Push 暗号化ペイロード (base64url)。announcement push (#477) には無い。
+  final String? body;
+
+  /// `aes128gcm` 等。[body] とセットで復号可否の判定に使う。
+  final String? encoding;
+
+  /// NSE が stamp した通知 ID。macOS では NSE が機能しない (#673) ため通常
+  /// null だが、OS 側が直った場合は復号せずこれで突き合わせる。
+  final String? stampedId;
+
+  const DeliveredRemoteNotification({
+    required this.identifier,
+    required this.account,
+    this.body,
+    this.encoding,
+    this.stampedId,
+  });
 }
 
 final notificationDedupChannelProvider = Provider<NotificationDedupChannel>(

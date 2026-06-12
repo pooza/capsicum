@@ -1,4 +1,14 @@
 // === macOS コピー (#673) ===
+//
+// 【重要】macOS は本 NSE に didReceive を渡さない (2026-06-12 実測確定)。
+// usernoted が appex を起動するものの、リクエストを配送せず約 2 秒で
+// 「Extension will be killed due to sluggish startup」で kill する。OS 側の
+// 実装欠落で、Monterey〜macOS 26.5 まで一貫 (Apple Dev Forums 693011 /
+// 712482 / 125987。ドキュメントは macOS 10.14+ 対応を謳うが機能しない)。
+// このため macOS の文面書き換え・stamp は main app 側の DeliveredPushCleaner
+// (#673) が担う。本 appex は OS 側が直った場合に自動で復帰する保険として
+// 残している (起動して殺されるだけで無害)。
+//
 // 本ファイルは ios/CapsicumNotificationService/NotificationService.swift の
 // macOS NSE 向けコピー。出荷中の iOS NSE を触らないため共有せずコピーしている。
 // 復号・パース・ラベル・FailureRecorder のロジックは iOS と一致させること

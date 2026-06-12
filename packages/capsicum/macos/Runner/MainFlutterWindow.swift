@@ -44,6 +44,10 @@ class MainFlutterWindow: NSWindow {
     notificationDedupPlugin = NotificationDedupPlugin.install(
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
+    // AppDelegate の didReceiveRemoteNotification → 掃除トリガ (#673) の配線。
+    if let plugin = notificationDedupPlugin {
+      (NSApp.delegate as? AppDelegate)?.attachDedupPlugin(plugin)
+    }
 
     super.awakeFromNib()
   }

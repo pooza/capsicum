@@ -230,6 +230,31 @@ macOS 向けには上記方針を以下の経路で実装済み。キーは rela
 
 native push が `_emittedIds` に追記してから OS 通知を表示すれば、後着の WebSocket は黙殺される。逆も同様。
 
+### macOS の NSE 不能と generic 通知の後始末（#673、2026-06-12 確定）
+
+macOS は UNNotificationServiceExtension に didReceive を渡さない。usernoted が
+appex を起動するものの、リクエストを配送せず約 2 秒で「Extension will be
+killed due to sluggish startup」で kill し、元 payload（relay のフォールバック
+文面「{account} に通知があります」）をそのまま表示する。Monterey〜macOS 26.5
+まで一貫した OS 側の実装欠落で（Apple Dev Forums 693011 / 712482 / 125987）、
+コード・署名・entitlements の問題ではない（実測の経緯は
+[#673](https://github.com/pooza/capsicum/issues/673) 2026-06-12 のコメント）。
+
+このため macOS の Phase B は次の形に確定した:
+
+- **文面の品質と重複排除は WebSocket 経路（本設計）が全責任を持つ**。
+  APNs はアプリ非起動時の控え（generic 文面でも「通知が来た事実」は届く）
+- アプリ起動中に届いた APNs generic 通知は `DeliveredPushCleaner` が後始末する。
+  main app は復号鍵を持つので、配信済み通知の暗号化 body を復号 →
+  notificationId を突き合わせ、WebSocket 側で表示済みのものだけを通知センター
+  から削除する。一致しない通知（WebSocket 切断中に届いた等）は削除しない
+- 掃除のトリガは AppDelegate の didReceiveRemoteNotification（APNs 後着 = 主経路。
+  APNs はイベントから数分遅れることがある）と WebSocket emit 直後（APNs 先着の
+  逆順）の 2 つ
+- willPresent ベースの dedup（NotificationDedupPlugin）は前面時の即時黙殺として
+  存続。NSE appex も「OS 側が直れば自動復帰する保険」として残置
+- アプリ非起動時の generic 文面は macOS の到達上限として受容する
+
 ## 実装フェーズ
 
 1. **Phase 1**: capsicum_core の `NotificationStreamSupport` mixin 追加

@@ -15,6 +15,7 @@ import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
+import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
 
 /// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
@@ -72,6 +73,9 @@ class DesktopNotificationDispatcher {
       }
       _nativeShownKeys.add(key);
     };
+    // 配信済み generic 通知の掃除役 (#673)。ここで read して常駐させ、
+    // APNs 到着合図 (onRemoteArrived) の配線を起動時に済ませる。
+    _ref.read(deliveredPushCleanerProvider);
     _ref.listen<AccountManagerState>(
       accountManagerProvider,
       (prev, next) => _reconcile(next.accounts),
@@ -139,6 +143,9 @@ class DesktopNotificationDispatcher {
     // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
     // 最小化する。
     unawaited(_ref.read(notificationDedupChannelProvider).addEmitted(relayKey));
+    // 配信済み generic 通知の掃除 (#673)。APNs が先着済みの逆順ケースと、
+    // この後に遅れて届くケース (onRemoteArrived 側) の両方をカバーする。
+    _ref.read(deliveredPushCleanerProvider).recordEmitted(relayKey);
     final subsystem = _ref.read(notificationSubsystemProvider);
     final display = notificationTypeDisplay(n.type);
     // 複数アカウントがログインしているときだけ宛先を明示する (単一垢では冗長)。

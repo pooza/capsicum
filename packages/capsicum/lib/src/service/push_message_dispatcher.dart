@@ -168,7 +168,7 @@ class PushMessageDispatcher {
       return null;
     }
 
-    final keys = await _findKeys(account);
+    final keys = await findKeys(account);
     if (keys == null) {
       _trace('no push keys for $account');
       await PushFailureRecorder.record(
@@ -233,7 +233,8 @@ class PushMessageDispatcher {
   /// `account` (username@host) に紐付く PushKeys を探す。backend 種別
   /// (mastodon / misskey) がペイロードからは判別できないため、両 prefix で
   /// 順に試す。最初に見つかった方を返す。
-  static Future<PushKeys?> _findKeys(String account) async {
+  /// DeliveredPushCleaner (#673) からも使うため公開する。
+  static Future<PushKeys?> findKeys(String account) async {
     for (final prefix in ['mastodon', 'misskey']) {
       final storageKey = '$prefix://$account';
       final keys = await PushKeyStore.read(storageKey);
@@ -249,8 +250,8 @@ class PushMessageDispatcher {
   /// Misskey は `{type: 'notification', body: {type, user, note, ...}, ...}`
   /// と構造が異なるため、両形式を個別にサポートする。
   ///
-  /// `public` visibility は test 用。
-  @visibleForTesting
+  /// FCM 経路 ([dispatch]) のほか、macOS の配信済み generic 通知の掃除
+  /// (DeliveredPushCleaner #673) からも呼ばれる。
   static DecryptedPushContent? parsePayload(Uint8List plaintext) {
     try {
       final text = utf8.decode(plaintext);
@@ -272,6 +273,7 @@ class PushMessageDispatcher {
           title: mastodonTitle is String ? mastodonTitle : null,
           body: mastodonBody is String ? mastodonBody : null,
           type: mastodonType is String ? mastodonType : null,
+          notificationId: _stringId(json['notification_id']),
         );
       }
 
@@ -285,6 +287,7 @@ class PushMessageDispatcher {
             title: null,
             body: _synthesizeMisskeyBody(inner),
             type: inner['type'] as String?,
+            notificationId: _stringId(inner['id']),
           );
         }
       }
@@ -304,6 +307,7 @@ class PushMessageDispatcher {
             body: _synthesizeMisskeyChatBody(inner),
             type: 'newChatMessage',
             userId: userId,
+            notificationId: _stringId(inner['id']),
           );
         }
       }
@@ -312,6 +316,17 @@ class PushMessageDispatcher {
       _trace('parse failed: $e');
       return null;
     }
+  }
+
+  /// 通知 ID を文字列に均す。Mastodon の `notification_id` は JSON 数値で
+  /// 届くことがあり (Misskey は文字列)、dedup キーの突き合わせは文字列表現で
+  /// 行うため両方を受ける。NSE 側 `stringId` と同じ仕様 (bool は ID に来ない
+  /// 想定だが、誤って "true" 等を ID 扱いしないよう除外する)。
+  static String? _stringId(Object? value) {
+    if (value is String) return value.isEmpty ? null : value;
+    if (value is bool) return null;
+    if (value is num) return value.toString();
+    return null;
   }
 
   /// Misskey の通知オブジェクトから通知本文を合成する。Mastodon が
@@ -427,5 +442,17 @@ class DecryptedPushContent {
   /// に遷移する宛先解決に使う)。type=newChatMessage 以外は null (#440)。
   final String? userId;
 
-  const DecryptedPushContent({this.title, this.body, this.type, this.userId});
+  /// SNS サーバー側の通知 ID。WebSocket 経由 (#569) の `notification.id` と
+  /// 同じ ID 空間で、macOS の配信済み generic 通知の掃除 (#673 / #674) の
+  /// 突き合わせキーになる。Mastodon: `notification_id` / Misskey: `body.id`。
+  /// 取れない形式では null。
+  final String? notificationId;
+
+  const DecryptedPushContent({
+    this.title,
+    this.body,
+    this.type,
+    this.userId,
+    this.notificationId,
+  });
 }

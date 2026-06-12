@@ -11,6 +11,10 @@ class AppDelegate: FlutterAppDelegate {
   private var apnsChannel: FlutterMethodChannel?
   private var pendingDeviceToken: String?
 
+  // 配信済み generic 通知の掃除トリガ (#673)。MainFlutterWindow が install 後に
+  // attach する (強参照は MainFlutterWindow 側が保持)。
+  private weak var dedupPlugin: NotificationDedupPlugin?
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
   }
@@ -35,6 +39,11 @@ class AppDelegate: FlutterAppDelegate {
     }
   }
 
+  /// MainFlutterWindow が NotificationDedupPlugin install 後に attach する。
+  func attachDedupPlugin(_ plugin: NotificationDedupPlugin) {
+    dedupPlugin = plugin
+  }
+
   // MARK: - APNs (#468)
 
   // FlutterAppDelegate (macOS) はこれらを open func で宣言するため compile 上は
@@ -57,6 +66,17 @@ class AppDelegate: FlutterAppDelegate {
       // engine / channel がまだ無ければ buffer して attach 時に flush。
       pendingDeviceToken = token
     }
+  }
+
+  override func application(
+    _ application: NSApplication,
+    didReceiveRemoteNotification userInfo: [String: Any]
+  ) {
+    // アプリ起動中に APNs が届いた合図。macOS は NSE (#673) が機能しないため
+    // generic 文面の banner がこの直後に配信される。Dart 側
+    // DeliveredPushCleaner に掃除をトリガする。token 系 override と同じく
+    // super を呼ぶと doesNotRecognizeSelector でクラッシュするため呼ばない。
+    dedupPlugin?.notifyRemoteArrived()
   }
 
   override func application(

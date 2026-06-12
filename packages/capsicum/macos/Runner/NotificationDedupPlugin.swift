@@ -20,17 +20,26 @@ import UserNotifications
 /// - APNs 先着 → willPresent がキーを登録 + `onRemotePresented` で Dart へ通知 →
 ///   WebSocket 側 dispatcher が emit をスキップ
 ///
-/// 制約 (内部ベータで実測確認する):
-/// - willPresent はアプリが foreground のときしか呼ばれない。macOS で
-///   「起動中だが非アクティブ」のときに呼ばれるかは文書上確定しないため、
-///   呼び出し状況を NSLog で残し内部ベータで確認する。呼ばれないケースでは
-///   APNs banner は OS 既定で表示され、本 dedup は WebSocket 側 (Dart) の
-///   スキップのみ効く。
-/// - NSE 復号に失敗した generic 通知は stamp (#673) が無く dedup 不能。従来の
-///   FLN delegate は非 FLN 通知の completionHandler を呼ばず foreground 表示を
-///   事実上握りつぶしていたため、現状維持として黙殺する (重複より取りこぼしの
-///   方が安全、の例外。generic は WebSocket 側が同イベントをリッチ文面で出す
-///   見込みが高い)。
+/// 制約 (2026-06-12 内部ベータ 104/105 で実測確定):
+/// - willPresent はアプリが非アクティブ (背面) のときは呼ばれない。
+///   そのケースの APNs banner は OS 既定で表示される。
+/// - macOS は NSE (#673) に didReceive を渡さず約 2 秒で kill するため
+///   (「Extension will be killed due to sluggish startup」、OS 側の実装欠落)、
+///   APNs 通知は常に stamp 無しの generic 文面で届く。
+///
+/// このため willPresent ベースの dedup は前面でしか効かず、背面では generic
+/// banner が重複表示される。後始末として Dart 側 DeliveredPushCleaner が
+/// [getDeliveredRemotes] で配信済み remote を取得 → 暗号化 body を main app の
+/// 鍵で復号して notificationId を特定 → WebSocket 側の既出キーと一致したものを
+/// [removeDelivered] で通知センターから削除する。掃除のトリガは
+/// AppDelegate の didReceiveRemoteNotification → [notifyRemoteArrived]
+/// (APNs 後着 = 主経路) と、WebSocket emit 直後 (APNs 先着の逆順) の 2 つ。
+///
+/// - NSE 復号に失敗した generic 通知は stamp (#673) が無く willPresent では
+///   dedup 不能。従来の FLN delegate は非 FLN 通知の completionHandler を
+///   呼ばず foreground 表示を事実上握りつぶしていたため、現状維持として
+///   黙殺する (重複より取りこぼしの方が安全、の例外。generic は WebSocket
+///   側が同イベントをリッチ文面で出す見込みが高い)。
 class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
   /// Dart 側 DesktopNotificationDispatcher と同じ上限。超えたら全消しして
   /// 作り直す (LRU は不要。取りこぼしても「多重表示の方が落とすより安全」)。
@@ -76,12 +85,57 @@ class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
           plugin.remember(key)
         }
         result(nil)
+      case "getDeliveredRemotes":
+        plugin.collectDeliveredRemotes(result)
+      case "removeDelivered":
+        if let ids = call.arguments as? [String], !ids.isEmpty {
+          UNUserNotificationCenter.current()
+            .removeDeliveredNotifications(withIdentifiers: ids)
+          NSLog("capsicum: dedup: removed \(ids.count) delivered remote(s)")
+        }
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
     }
     center.delegate = plugin
     return plugin
+  }
+
+  /// AppDelegate の didReceiveRemoteNotification から呼ばれる (#673 後始末)。
+  /// アプリ起動中に APNs が届いた合図を Dart 側 DeliveredPushCleaner へ流し、
+  /// 配信済み generic 通知の掃除をトリガする。
+  func notifyRemoteArrived() {
+    channel.invokeMethod("onRemoteArrived", arguments: nil)
+  }
+
+  /// 配信済み通知のうち APNs remote 由来 (非 FLN かつ account 付き) を
+  /// Dart 側へ返す。復号は鍵を持つ Dart 側の責務のため、ここでは userInfo の
+  /// 必要キーをそのまま渡すだけにする。
+  private func collectDeliveredRemotes(_ result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+      let remotes: [[String: Any]] = notifications.compactMap { notification in
+        let userInfo = notification.request.content.userInfo
+        if self.isFlutterLocalNotification(userInfo) { return nil }
+        guard let account = userInfo["account"] as? String else { return nil }
+        var entry: [String: Any] = [
+          "identifier": notification.request.identifier,
+          "account": account,
+        ]
+        if let body = userInfo["body"] as? String { entry["body"] = body }
+        if let encoding = userInfo["encoding"] as? String {
+          entry["encoding"] = encoding
+        }
+        // NSE が動く環境 (OS 側が直った場合) では stamp をそのまま使えるよう
+        // 復号不要の手がかりも渡す。
+        if let stamped = userInfo["capsicum_notification_id"] as? String {
+          entry["stampedId"] = stamped
+        }
+        return entry
+      }
+      // FlutterMethodChannel の result はプラットフォームスレッドで呼ぶ。
+      DispatchQueue.main.async { result(remotes) }
+    }
   }
 
   private func remember(_ key: String) {

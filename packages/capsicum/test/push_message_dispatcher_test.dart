@@ -24,6 +24,8 @@ void main() {
       expect(result!.title, '@alice さんから返信がありました');
       expect(result.body, 'こんにちは');
       expect(result.type, 'mention');
+      // notification_id は数値で届いても文字列に均す (#673 掃除キー用)。
+      expect(result.notificationId, '12345');
     });
 
     test('title だけでも取り出せる', () {
@@ -69,6 +71,7 @@ void main() {
       expect(result, isNotNull);
       expect(result!.type, 'mention');
       expect(result.body, 'こんにちは');
+      expect(result.notificationId, 'abcd');
     });
 
     test('Misskey 形式 (reaction / note.text 無し) は送信者+リアクションを合成', () {
@@ -145,6 +148,8 @@ void main() {
       expect(result, isNotNull);
       expect(result!.type, 'newChatMessage');
       expect(result.userId, 'user_abc');
+      // ChatMessage の ID を掃除キー (#673) 用に拾う。
+      expect(result.notificationId, 'msg1');
     });
 
     test(
