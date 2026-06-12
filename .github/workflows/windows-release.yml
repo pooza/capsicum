@@ -68,6 +68,12 @@ jobs:
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+          # windows-latest の CMake 4.x が cmake_minimum_required < 3.5 の
+          # 互換性を削除し、firebase_cpp_sdk_windows (firebase_core が build 時に
+          # 展開する) の同梱 CMakeLists.txt が configure で拒否される
+          # (2026-06-12 の runner image 更新から発生)。SDK 側が更新されるまで
+          # CMake 公式の互換 escape hatch で 3.5 相当のポリシーを指定する。
+          CMAKE_POLICY_VERSION_MINIMUM: '3.5'
         shell: pwsh
         # Sentry / capsicum-relay 連携キーは GitHub Secrets から渡し、
         # 未設定なら省略 (起動可能、Sentry 送信無効・push 通知無効)。
