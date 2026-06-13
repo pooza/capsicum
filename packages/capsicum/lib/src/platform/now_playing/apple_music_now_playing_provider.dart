@@ -1,0 +1,81 @@
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/services.dart';
+
+import 'now_playing_provider.dart';
+
+/// iOS / macOS の Apple Music（ミュージック.app）から「現在再生中の曲」を取得する
+/// [NowPlayingProvider] 実装 (#668)。
+///
+/// #466 / nowplaying-design.md では「iOS / macOS は公開 API で他アプリの再生
+/// 情報を取れない」としていたが、これは**任意アプリの横断取得**の話。Apple Music
+/// に限れば Apple 公認の公開 API で pull でき、App Store でも許可される
+/// （private MediaRemote.framework は使わない）:
+///
+/// - iOS  : `MPMusicPlayerController.systemMusicPlayer.nowPlayingItem`
+///   （MediaPlayer framework）。`NSAppleMusicUsageDescription` +
+///   メディアライブラリ権限が必要。
+/// - macOS: ミュージック.app を ScriptingBridge で照会（実装は #668 の macOS
+///   スパイク結果次第。未対応の間は factory が macOS を本 provider に繋がない）。
+///
+/// ネイティブ I/O は Windows SMTC (#484) と同じ入口に揃える — メソッドチャンネル
+/// `capsicum/now_playing` の `getNowPlaying` が title / artist / albumTitle の
+/// マップを返し、それを [NowPlayingInfo] へ変換する。
+///
+/// 設計どおり Apple Music も **「文字情報のみの源」** として扱い、
+/// `NowPlayingInfo.url` は常に null（`MPMediaItem` は共有 URL を持たない。URL 源は
+/// Spotify provider が担う）。初回取得時にネイティブ側が権限ダイアログを出し、
+/// 拒否・未再生・チャンネル未登録はいずれも null に倒す。
+///
+/// 実機 I/O から切り離してテストするため、変換ロジックは
+/// [nowPlayingFromAppleMusicMetadata] に切り出す。
+class AppleMusicNowPlayingProvider implements NowPlayingProvider {
+  const AppleMusicNowPlayingProvider();
+
+  static const _channel = MethodChannel('capsicum/now_playing');
+
+  @override
+  // iOS / macOS でのみ生成されるため、provider が存在する＝この OS で利用可能。
+  // 実際に再生中の曲が取れるか・権限が下りるかは currentlyPlaying 時に判定する。
+  bool get isAvailable => true;
+
+  @override
+  Future<NowPlayingInfo?> currentlyPlaying() async {
+    try {
+      final raw = await _channel.invokeMapMethod<String, Object?>(
+        'getNowPlaying',
+      );
+      if (raw == null) return null;
+      return nowPlayingFromAppleMusicMetadata(raw);
+    } catch (_) {
+      // チャンネル未登録 / ネイティブ例外は null に倒す（resolver が次の源へ）。
+      return null;
+    }
+  }
+}
+
+/// Apple Music メソッドチャンネルの戻り値マップから [NowPlayingInfo] を組む純関数。
+///
+/// 曲名もアーティストも無ければ null。源アプリ名はネイティブが返さなければ
+/// `'Apple Music'` を既定にする（Apple Music 固定源のため）。
+NowPlayingInfo? nowPlayingFromAppleMusicMetadata(Map<String, Object?> data) {
+  final title = _trimmedString(data['title']);
+  final artist = _trimmedString(data['artist']);
+  final album = _trimmedString(data['albumTitle']);
+
+  if (title == null && artist == null) return null;
+
+  return NowPlayingInfo(
+    sourceAppName: _trimmedString(data['sourceAppName']) ?? 'Apple Music',
+    title: title,
+    artist: artist,
+    album: album,
+    // Apple Music は文字情報源（URL 源は Spotify provider が担う）。
+    url: null,
+  );
+}
+
+String? _trimmedString(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}

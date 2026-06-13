@@ -34,6 +34,11 @@ import UserNotifications
       ShareIntentPlugin.register(with: registrar)
     }
 
+    // Apple Music ナウプレ取得 (#668)。capsicum/now_playing チャンネル。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NowPlayingPlugin") {
+      NowPlayingPlugin.register(with: registrar)
+    }
+
     // Set up the APNs MethodChannel after the Flutter engine is ready.
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ApnsPlugin") {
       apnsChannel = FlutterMethodChannel(
