@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -137,8 +138,8 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
     } catch (e) {
       // relay 不通・オフラインは正常系の degrade。次の機会に再同期する。
       // （_syncedAccountKeys は更新しないので、次のアカウント変化で再発火する）
-      _breadcrumb('sync failed: ${e.runtimeType}');
-      debugPrint('capsicum: supporter.sync: failed (${e.runtimeType})');
+      _breadcrumb('sync failed: ${_describeError(e)}');
+      debugPrint('capsicum: supporter.sync: failed (${_describeError(e)})');
     } finally {
       _syncing = false;
     }
@@ -219,8 +220,8 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
         state = AsyncData(synced);
       }
     } catch (e) {
-      _breadcrumb('upload failed: ${e.runtimeType}');
-      debugPrint('capsicum: supporter.sync: upload failed (${e.runtimeType})');
+      _breadcrumb('upload failed: ${_describeError(e)}');
+      debugPrint('capsicum: supporter.sync: upload failed (${_describeError(e)})');
     }
   }
 
@@ -234,6 +235,20 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
   static DateTime? _parseRelayTime(Object? raw) {
     if (raw is! String || raw.isEmpty) return null;
     return DateTime.tryParse('${raw.replaceFirst(' ', 'T')}Z')?.toLocal();
+  }
+
+  /// breadcrumb / log 用のエラー要約 (#697)。relay 同期失敗の原因
+  /// （接続エラー / timeout / 4xx / 5xx）を観測側で切り分けられるよう、
+  /// DioException は種別とステータスコードまで載せる。トークン等の機密が
+  /// 乗る `e.message` や response body は含めず、enum 名と数値だけに絞る。
+  static String _describeError(Object e) {
+    if (e is DioException) {
+      final status = e.response?.statusCode;
+      return status != null
+          ? 'DioException(${e.type.name} $status)'
+          : 'DioException(${e.type.name})';
+    }
+    return e.runtimeType.toString();
   }
 
   static void _breadcrumb(String message) {
