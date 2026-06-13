@@ -189,6 +189,9 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   Future<void> _saveMediaToDisk() async {
     final attachment = _attachments[_currentIndex];
     final suggestedName = suggestedMediaFileName(attachment);
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。catch で
+    // mounted ガード前に ref を触らないため、失敗計装用の account を先に取る。
+    final account = ref.read(currentAccountProvider);
 
     final FileSaveLocation? location = await getSaveLocation(
       suggestedName: suggestedName,
@@ -212,7 +215,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         operation: 'save',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: account,
       );
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
@@ -226,6 +229,8 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   Future<void> _saveMediaToGallery() async {
     final attachment = _attachments[_currentIndex];
     final messenger = ScaffoldMessenger.of(context);
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。
+    final account = ref.read(currentAccountProvider);
 
     // iOS は NSPhotoLibraryAddUsageDescription の追加許可、Android API 28
     // 以下は WRITE_EXTERNAL_STORAGE をここで要求する (API 29+ は常に true)。
@@ -268,7 +273,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
           operation: 'save_gallery',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: account,
         );
       }
       if (!mounted) return;

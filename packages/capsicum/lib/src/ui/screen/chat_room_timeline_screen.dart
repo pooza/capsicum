@@ -73,6 +73,8 @@ class _ChatRoomTimelineScreenState
     final file = _attachedFile;
     // テキストも添付も無ければ送らない (#613)。
     if ((text.isEmpty && file == null) || _sending) return;
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。
+    final account = ref.read(currentAccountProvider);
     setState(() => _sending = true);
     try {
       await ref
@@ -85,7 +87,7 @@ class _ChatRoomTimelineScreenState
         'send_room_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: account,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -97,6 +99,8 @@ class _ChatRoomTimelineScreenState
   }
 
   Future<void> _pickAttachment() async {
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。
+    final account = ref.read(currentAccountProvider);
     setState(() => _uploading = true);
     try {
       final file = await showChatAttachmentPicker(context, ref);
@@ -106,7 +110,7 @@ class _ChatRoomTimelineScreenState
         'attach_room_file',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: account,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
