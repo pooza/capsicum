@@ -18,6 +18,8 @@
 	<string>APPL</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.social-networking</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>再生中の曲を投稿に挿入するためにミュージックの再生情報へのアクセスが必要です</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleShortVersionString</key>

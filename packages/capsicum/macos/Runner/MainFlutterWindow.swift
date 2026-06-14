@@ -26,6 +26,12 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.registrar(forPlugin: "AboutMenuPlugin")
     )
 
+    // Apple Music ナウプレ取得 (#668)。ミュージック.app を AppleScript で照会する
+    // "capsicum/now_playing" channel を提供する（iOS / Windows SMTC と共通）。
+    NowPlayingPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "NowPlayingPlugin")
+    )
+
     // APNs push (#468)。iOS と同じ "net.shrieker.capsicum/apns" channel を張り、
     // AppDelegate に attach する。AppDelegate が
     // didRegisterForRemoteNotificationsWithDeviceToken で受けた token を

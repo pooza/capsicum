@@ -16,8 +16,7 @@ import 'smtc_now_playing_provider.dart';
 /// - Linux  : MPRIS（`dbus` パッケージ）— #466、実装済み
 /// - Windows: SMTC（C++/WinRT メソッドチャンネル）— #484、実装済み
 /// - iOS    : Apple Music（MPMusicPlayerController メソッドチャンネル）— #668、実装済み
-/// - macOS  : Apple Music（ScriptingBridge）— #668 スパイク中。ネイティブ側
-///   未実装の間は no-op に留め、ボタンが出て常に「曲なし」になる UX を避ける
+/// - macOS  : Apple Music（ミュージック.app を AppleScript で照会）— #668、実装済み
 /// - Android: OS ネイティブ pull なし → no-op
 NowPlayingProvider createNativeNowPlayingProvider() {
   if (Platform.isLinux) {
@@ -26,7 +25,7 @@ NowPlayingProvider createNativeNowPlayingProvider() {
   if (Platform.isWindows) {
     return const SmtcNowPlayingProvider();
   }
-  if (Platform.isIOS) {
+  if (Platform.isIOS || Platform.isMacOS) {
     return const AppleMusicNowPlayingProvider();
   }
   return const NoopNowPlayingProvider();

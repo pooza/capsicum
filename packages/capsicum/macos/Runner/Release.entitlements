@@ -27,6 +27,12 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<!-- Apple Music ナウプレ取得 (#668)。Sandbox 下でミュージック.app へ
+	     Apple Events (AppleScript) を送るために必要。実際の送信時に TCC
+	     「オートメーション」許可ダイアログが出る（NSAppleEventsUsageDescription
+	     を文面に使う）。拒否されても -1743 を nil に倒すだけで他機能に影響なし。 -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.jp.co.b-shock.capsicum</string>
