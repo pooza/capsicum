@@ -136,7 +136,7 @@ mulukhiya #4382 enrich プロキシ (URL 解決のみ, optional) ──→ #669 
 | # | 論点 | 暫定方針 |
 |---|---|---|
 | 1 | Windows SMTC を FFI 自前実装するか | まずスパイク。`win32` パッケージで WinRT `GlobalSystemMediaTransportControlsSessionManager` に到達できるか確認。困難なら小さな C++ プラグイン。SMTC が重ければ #484 を v1.33 内で後ろに置く / 再 on-hold も選択肢 |
-| 2 | macOS / iOS / Android に OS ネイティブ pull を入れるか | **入れない**（公開 API で不可 / 権限重め）。Spotify(pull) + 共有(push) でカバー |
+| 2 | macOS / iOS / Android に OS ネイティブ pull を入れるか | v1.33 では入れなかったが、**Apple Music 限定なら公開 API で pull 可能**と判明し [#668](https://github.com/pooza/capsicum/issues/668)（v1.37）で iOS（`MPMusicPlayerController`）/ macOS（ミュージック.app の AppleScript + `automation.apple-events` entitlement）に追加。Android は引き続き入れない（権限重め）。任意アプリ横断は依然不可（private MediaRemote 禁止）なので Spotify(pull) + 共有(push) も併用 |
 | 3 | MPRIS/SMTC 整形をモロヘイヤ必須にするか | 必須にしない。capsicum 側フォールバック整形を必ず持つ（モロヘイヤ未配備でも動く） |
 | 4 | アートワーク添付 | v1.33 ではしない（モデルにフィールドだけ用意） |
 | 5 | #570 が mulukhiya #4337 待ちで v1.33 内に間に合うか | 上流進捗次第。間に合わなければ Spotify を v1.33 内の後段に回し、MPRIS/フォールバックを先に出す判断もあり |
