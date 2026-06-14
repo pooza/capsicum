@@ -39,6 +39,25 @@ class NowPlayingInfo {
     this.url,
   });
 
+  /// フィールドを差し替えたコピーを返す。モロヘイヤ enrich (#669) が URL を
+  /// 持たない源に解決した共有 URL を載せ替える用途で使う。各引数 null は
+  /// 「据え置き」（既存値を保つ）。
+  NowPlayingInfo copyWith({
+    String? sourceAppName,
+    String? title,
+    String? artist,
+    String? album,
+    Uri? artworkUrl,
+    Uri? url,
+  }) => NowPlayingInfo(
+    sourceAppName: sourceAppName ?? this.sourceAppName,
+    title: title ?? this.title,
+    artist: artist ?? this.artist,
+    album: album ?? this.album,
+    artworkUrl: artworkUrl ?? this.artworkUrl,
+    url: url ?? this.url,
+  );
+
   @override
   bool operator ==(Object other) =>
       other is NowPlayingInfo &&

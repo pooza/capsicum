@@ -265,6 +265,13 @@ class MulukhiyaService {
   /// 利用可能。capsicum は劇中ワードサジェスト UI の出し分けに使う。旧モロヘイヤ
   /// (フラグ未提供) は false にフォールバックし、辞書タブを出さない。
   final bool wordSuggestEnabled;
+
+  /// `features.nowplaying_resolver` フラグ (#4382 / capsicum#669)。`true` の
+  /// サーバーは enrich プロキシ (`POST nowplaying/resolve`) を提供し、URL を
+  /// 持たないナウプレ源 (Apple Music / MPRIS / SMTC) のメタデータから共有 URL を
+  /// 解決できる。iTunes Search は資格情報不要のためモロヘイヤ側は常に true を返す
+  /// が、旧モロヘイヤ (フラグ未提供) は false にフォールバックし enrich を試みない。
+  final bool nowplayingResolverEnabled;
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -283,6 +290,7 @@ class MulukhiyaService {
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
     this.wordSuggestEnabled = false,
+    this.nowplayingResolverEnabled = false,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -356,6 +364,7 @@ class MulukhiyaService {
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         wordSuggestEnabled: features?['word_suggest'] == true,
+        nowplayingResolverEnabled: features?['nowplaying_resolver'] == true,
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
@@ -681,6 +690,49 @@ class MulukhiyaService {
       // 投稿フォーム本体は通常どおり動かす。5xx/network は rethrow して上位へ。
       if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
       rethrow;
+    }
+  }
+
+  /// POST /mulukhiya/api/nowplaying/resolve (#669 / mulukhiya #4382)
+  ///
+  /// URL を持たないナウプレ源 (Apple Music / Linux MPRIS / Windows SMTC) の
+  /// 構造化メタデータを渡し、Spotify / iTunes 検索で **共有可能な URL** を解決する
+  /// enrich プロキシ。[nowplayingResolverEnabled] が true のサーバーでのみ呼ぶ。
+  ///
+  /// あくまで **任意の上積み**。ヒットすれば URL を返し、ヒットなし (200 +
+  /// `{url: null}`) / 認証失効 (403) / 未提供 (404) / バリデーション (422) /
+  /// 5xx・network はすべて null に倒す。呼び出し側は URL なしのクライアント整形
+  /// ([formatNowPlayingFallback]) にフォールバックし、投稿フローを止めない。
+  ///
+  /// 整形はクライアント側で行うため、本 API はテキスト整形を含まず URL のみ使う
+  /// （design: nowplaying-design.md §責務分担）。
+  Future<Uri?> resolveNowPlaying({
+    required String accessToken,
+    required String title,
+    String? artist,
+    String? album,
+    String? sourceAppName,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '$baseUrl/nowplaying/resolve',
+        data: {
+          'title': title,
+          'artist': ?artist,
+          'album': ?album,
+          'source_app_name': ?sourceAppName,
+        },
+        options: _bearerOptions(accessToken),
+      );
+      final url = response.data is Map<String, dynamic>
+          ? (response.data as Map<String, dynamic>)['url']
+          : null;
+      if (url is! String || url.isEmpty) return null;
+      return Uri.tryParse(url);
+    } on DioException {
+      // enrich は任意の上積みなので、未提供・認証失効・サーバ不調・network いずれも
+      // null に倒して URL なし整形へフォールバックする（UX を止めない）。
+      return null;
     }
   }
 

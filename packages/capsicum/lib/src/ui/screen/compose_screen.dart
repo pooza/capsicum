@@ -1395,10 +1395,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
         return;
       }
+      // URL を持たない源 (Apple Music / MPRIS / SMTC) は、モロヘイヤ enrich で
+      // 共有 URL を任意に補完する (#669)。enrich が無効・未ヒット・失敗でも元の
+      // info をそのまま整形するため投稿は成立する（URL なしフォールバック）。
+      info = await _enrichNowPlayingUrl(info);
+      if (!mounted) return;
       _appendToBody(formatNowPlayingFallback(info));
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
+  }
+
+  /// URL を持たないナウプレ源に、モロヘイヤ enrich (#669 / mulukhiya #4382) で
+  /// 共有 URL を任意補完する。enrich 無効 (フラグ off / 旧モロヘイヤ) ・title 欠落・
+  /// 未ヒット・失敗のときは元の [info] をそのまま返す（クライアント整形へ）。
+  Future<NowPlayingInfo> _enrichNowPlayingUrl(NowPlayingInfo info) async {
+    if (info.url != null) return info; // URL を持つ源 (Spotify 等) は補完不要。
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null ||
+        mulukhiya == null ||
+        !mulukhiya.nowplayingResolverEnabled) {
+      return info;
+    }
+    final title = info.title;
+    if (title == null || title.trim().isEmpty) return info; // resolve は title 必須。
+    final url = await mulukhiya.resolveNowPlaying(
+      accessToken: account.userSecret.accessToken,
+      title: title,
+      artist: info.artist,
+      album: info.album,
+      sourceAppName: info.sourceAppName,
+    );
+    return url == null ? info : info.copyWith(url: url);
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。
