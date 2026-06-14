@@ -324,10 +324,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
       // 共有（push）動線。共有テキストは不透明（URL or テキスト）なので
-      // formatNowPlayingFallback の構造化整形は通せないが、タグ定数だけは共有して
-      // リテラルの二重管理を避ける。整形の完全統一は macOS 共有 Extension とモロ
-      // ヘイヤ再設計（整形=クライアント / プロキシ=サーバー、design 参照）に依存。
-      _controller.text = '$nowPlayingTag ${widget.sharedText!}\n';
+      // formatNowPlayingFallback の構造化整形は通せないが、タグ配置だけは
+      // composeSharedNowPlaying で formatter と同じ「末尾」規律に揃える (#670)。
+      // 整形の完全統一は macOS 共有 Extension とモロヘイヤ再設計（整形=クライアント
+      // / プロキシ=サーバー、design 参照）に依存。
+      _controller.text = '${composeSharedNowPlaying(widget.sharedText!)}\n';
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );

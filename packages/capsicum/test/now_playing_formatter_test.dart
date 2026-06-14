@@ -128,4 +128,51 @@ void main() {
       );
     });
   });
+
+  group('composeSharedNowPlaying', () {
+    // #670: 共有(push)テキストもタグを末尾規律に揃える。
+
+    test('単一 URL はタグと同一行（unfurl 用）', () {
+      expect(
+        composeSharedNowPlaying('https://music.apple.com/jp/song/1352845804'),
+        '#nowplaying https://music.apple.com/jp/song/1352845804',
+      );
+    });
+
+    test('プレーンテキストはテキスト先・タグ末尾（行頭に置かない）', () {
+      expect(
+        composeSharedNowPlaying('シュビドゥビ☆スイーツタイム 宮本佳那子'),
+        'シュビドゥビ☆スイーツタイム 宮本佳那子\n#nowplaying',
+      );
+    });
+
+    test('複数行テキストでもタグは末尾（次行詰めの巻き添えを防ぐ）', () {
+      expect(
+        composeSharedNowPlaying('Title\nArtist'),
+        'Title\nArtist\n#nowplaying',
+      );
+    });
+
+    test('URL の後にテキストが続く（単一 URL でない）ならテキスト先・タグ末尾', () {
+      expect(
+        composeSharedNowPlaying('https://example.com/x 再生中'),
+        'https://example.com/x 再生中\n#nowplaying',
+      );
+    });
+
+    test('前後の空白はトリムする', () {
+      expect(composeSharedNowPlaying('  Song  '), 'Song\n#nowplaying');
+    });
+
+    test('空文字なら裸のタグ', () {
+      expect(composeSharedNowPlaying('   '), '#nowplaying');
+    });
+
+    test('http/https 以外のスキームは単一 URL 扱いしない', () {
+      expect(
+        composeSharedNowPlaying('capsicum://share'),
+        'capsicum://share\n#nowplaying',
+      );
+    });
+  });
 }
