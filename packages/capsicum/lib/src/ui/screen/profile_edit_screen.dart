@@ -165,6 +165,22 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       );
       return;
     }
+    // Mastodon は補足情報を最大 max_profile_fields(=4) 件に制限する
+    // (validates :fields, length: maximum)。「追加」ボタンは止めているが、既存
+    // アカウントが上限超のフィールドを持っていると（他クライアント等で設定）
+    // 読み込んだ全件を送って 422 (ERR_TOO_LONG) になる。送信前に件数を弾き、
+    // 減らすよう促す（build 112 の Sentry で field_count=10 を実証）。
+    final maxFields = _maxFields ?? 4;
+    if (fields.length > maxFields) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '補足情報は最大$maxFields件までです（現在${fields.length}件）。減らしてから保存してください。',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
 
