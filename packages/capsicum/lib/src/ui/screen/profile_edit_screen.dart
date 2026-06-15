@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
@@ -189,6 +191,32 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         stackTrace: st,
         account: account,
       );
+      // バリデーション拒否（422/400）はどの検証で落ちたかを本文から特定する。
+      // Mastodon の検証エラーは項目コード/説明で PII ではないが、念のため本文は
+      // 切り詰める。フィールド数・名前/値の長さも添える（255 超や 4 超の切り分け）。
+      if (e is DioException) {
+        final status = e.response?.statusCode;
+        if (status == 422 || status == 400) {
+          final body = e.response?.data?.toString() ?? '';
+          Sentry.captureMessage(
+            'profile.save validation rejected ($status)',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('profile.validation', '$status');
+              scope.setTag('host', account?.key.host ?? '-');
+              scope.setContexts('profile_validation', {
+                'body': body.length > 1000 ? body.substring(0, 1000) : body,
+                'field_count': fields.length,
+                'field_name_lengths': fields.map((f) => f.name.length).toList(),
+                'field_value_lengths': fields
+                    .map((f) => f.value.length)
+                    .toList(),
+              });
+              scope.fingerprint = ['profile', 'validation', '$status'];
+            },
+          );
+        }
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
