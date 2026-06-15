@@ -1048,13 +1048,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<int?> getMaxProfileFields() async {
+    // サーバーが報告する上限をそのまま使う（フォーク差を尊重。プリセットサーバーは
+    // 10 件等。4 をクライアント仕様にハードコードしない）。
+    //
+    // Mastodon 4.6 で v1 instance は configuration.accounts.max_profile_fields を
+    // 返さなくなった（v1 の accounts は max_featured_tags のみに縮小）。値の正本は
+    // v2 instance に移ったため v2 を引く。取得できなければ null を返し、呼び出し側は
+    // クライアント側の件数強制をしない（サーバーの検証に委ねる）。
     try {
-      final instance = await client.getInstanceV1();
+      final instance = await client.getInstanceV2();
       final config = instance['configuration'] as Map<String, dynamic>?;
       final accounts = config?['accounts'] as Map<String, dynamic>?;
-      return accounts?['max_profile_fields'] as int? ?? 4;
+      return accounts?['max_profile_fields'] as int?;
     } catch (_) {
-      return 4;
+      return null;
     }
   }
 

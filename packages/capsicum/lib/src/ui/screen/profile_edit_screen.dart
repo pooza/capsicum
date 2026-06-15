@@ -165,13 +165,15 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       );
       return;
     }
-    // Mastodon は補足情報を最大 max_profile_fields(=4) 件に制限する
-    // (validates :fields, length: maximum)。「追加」ボタンは止めているが、既存
-    // アカウントが上限超のフィールドを持っていると（他クライアント等で設定）
-    // 読み込んだ全件を送って 422 (ERR_TOO_LONG) になる。送信前に件数を弾き、
-    // 減らすよう促す（build 112 の Sentry で field_count=10 を実証）。
-    final maxFields = _maxFields ?? 4;
-    if (fields.length > maxFields) {
+    // サーバーが上限件数を報告していて、それを超えていれば送信前に弾く
+    // (Mastodon validates :fields, length: maximum)。上限はサーバー値
+    // （max_profile_fields、フォークにより 4 / 10 等）を使い、ハードコードしない。
+    // 未取得(null)なら強制せずサーバー検証に委ねる（422 本文は別途観測する）。
+    // 「追加」ボタンは別途 _maxFields で止めているが、既存アカウントが上限超の
+    // フィールドを持つと読み込んだ全件を送ってしまうため保存時にも確認する
+    // （build 112 の Sentry で field_count=10 を実証）。
+    final maxFields = _maxFields;
+    if (maxFields != null && fields.length > maxFields) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
