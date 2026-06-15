@@ -208,6 +208,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   PostScope _scope = PostScope.public;
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
+  // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
+  // post-frame で 1 度出すためのフラグ (#703)。
+  bool _redraftPollDropped = false;
   bool _sending = false;
   // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
   // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
@@ -315,8 +318,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     if (redraft != null) {
-      _controller.text = _extractPlainText(redraft.content ?? '');
+      // 本文: リモートメンションを `@user@host` に復元して平文化 (#703)。
+      // Mastodon (isHtml) のみ host 復元が必要。Misskey の MFM は元から
+      // フル acct なので従来どおり _extractPlainText に委ねる。
+      final localHost = ref.read(currentAccountProvider)?.key.host;
+      _controller.text = (redraft.isHtml && localHost != null)
+          ? stripHtmlRestoringMentions(
+              redraft.content ?? '',
+              localHost: localHost,
+            )
+          : _extractPlainText(redraft.content ?? '');
       _scope = redraft.scope;
+      // 引き継げる要素は最大限引き継ぐ (#703)。
+      if (redraft.spoilerText != null && redraft.spoilerText!.isNotEmpty) {
+        _cwEnabled = true;
+        _cwController.text = redraft.spoilerText!;
+      }
+      if (redraft.sensitive) {
+        _sensitiveEnabled = true;
+      }
+      // 添付は再DL/再UL不要。drive エントリとして積めば送信時に既存 id を
+      // 再利用する（送信経路の entry.isDrive 分岐）。
+      if (redraft.attachments.isNotEmpty) {
+        _attachments.addAll(redraft.attachments.map(_MediaEntry.drive));
+      }
+      // アンケートは引き継がない（投票結果がリセットされるため）。元投稿に
+      // アンケートが付いていた場合は post-frame で注釈を出す。
+      if (redraft.poll != null) {
+        _redraftPollDropped = true;
+      }
     } else if (replyTo != null) {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
@@ -371,6 +401,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
       if (adapter is CustomEmojiSupport) {
         _loadAllEmojis(adapter as CustomEmojiSupport);
+      }
+      // redraft 元にアンケートが付いていた場合の引き継ぎ不可注釈 (#703)。
+      if (_redraftPollDropped) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('アンケートは引き継げません。再投稿時に再設定してください。')),
+        );
       }
     });
   }

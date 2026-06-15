@@ -20,6 +20,42 @@ String stripHtml(String html) {
   );
 }
 
+/// 「削除して再編集」(redraft) 専用の平文化 (#703)。
+///
+/// Mastodon の mention anchor は可視テキストが `@user`（ローカル部のみ）で、
+/// host は `<a href>` 側にしか無い。そのまま [stripHtml] すると host が落ち、
+/// リモートアカウント宛が `@user` だけになって再投稿時にローカルの別人へ飛ぶ
+/// / 解決されない。ここでは平文化の前に mention anchor だけ href の host を
+/// 使って `@user@host` に展開してから [stripHtml] に渡す。
+///
+/// [localHost] は現在ログイン中アカウントのサーバー host。ローカル宛メンション
+/// （host == [localHost]）は従来どおり `@user` のままにする。Misskey の MFM は
+/// 元から `@user@host` が本文にあるため、この経路は通さない（呼び出し側で
+/// `isHtml` の Mastodon コンテンツにのみ適用する）。
+String stripHtmlRestoringMentions(String html, {required String localHost}) {
+  final expanded = html.replaceAllMapped(
+    RegExp(
+      r'<a\b[^>]*?\bhref="([^"]*)"[^>]*>(.*?)</a>',
+      caseSensitive: false,
+      dotAll: true,
+    ),
+    (m) {
+      final url = m[1]!;
+      // 内側の <span> 等を除いた可視ラベル。
+      final label = m[2]!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      // mention anchor 以外（リンク / ハッシュタグ）は触らず、そのまま
+      // [stripHtml] の一括タグ除去に委ねる。
+      if (!label.startsWith('@')) return m[0]!;
+      // 既に `@user@host` 形式なら触らない。
+      if (label.indexOf('@', 1) != -1) return m[0]!;
+      final host = Uri.tryParse(url)?.host;
+      if (host == null || host.isEmpty || host == localHost) return label;
+      return '$label@$host';
+    },
+  );
+  return stripHtml(expanded);
+}
+
 /// Parsed content node types.
 enum _NodeType {
   text,
