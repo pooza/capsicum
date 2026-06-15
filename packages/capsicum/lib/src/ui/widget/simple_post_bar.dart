@@ -315,7 +315,28 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                             closeOnSelect: true,
                           );
                           // 選択せず閉じた場合はキーボードを再度開かない。
-                          if (inserted && mounted) _focusNode.requestFocus();
+                          if (inserted && mounted) {
+                            // _insertText がセットした挿入直後の collapsed
+                            // キャレット位置を、再フォーカスで打ち消される前に
+                            // 退避しておく。
+                            final caret = _controller.selection.baseOffset;
+                            _focusNode.requestFocus();
+                            // desktop では requestFocus による再フォーカス時に
+                            // テキスト全体が選択状態へ戻る Flutter 挙動があり、
+                            // 挿入直後のキャレットが選択に化ける (#709)。
+                            // 再フォーカス確定後の次フレームで collapsed
+                            // キャレットを再適用して打ち消す。
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              final len = _controller.text.length;
+                              final off = (caret >= 0 && caret <= len)
+                                  ? caret
+                                  : len;
+                              _controller.selection = TextSelection.collapsed(
+                                offset: off,
+                              );
+                            });
+                          }
                         },
                 ),
                 IconButton(
