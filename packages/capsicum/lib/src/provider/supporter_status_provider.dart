@@ -221,7 +221,9 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
       }
     } catch (e) {
       _breadcrumb('upload failed: ${_describeError(e)}');
-      debugPrint('capsicum: supporter.sync: upload failed (${_describeError(e)})');
+      debugPrint(
+        'capsicum: supporter.sync: upload failed (${_describeError(e)})',
+      );
     }
   }
 

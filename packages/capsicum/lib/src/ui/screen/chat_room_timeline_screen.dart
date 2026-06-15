@@ -83,12 +83,7 @@ class _ChatRoomTimelineScreenState
       _textController.clear();
       if (mounted) setState(() => _attachedFile = null);
     } catch (e, st) {
-      reportChatOpFailure(
-        'send_room_message',
-        e,
-        st,
-        account: account,
-      );
+      reportChatOpFailure('send_room_message', e, st, account: account);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeOpError(e)})')),
@@ -106,12 +101,7 @@ class _ChatRoomTimelineScreenState
       final file = await showChatAttachmentPicker(context, ref);
       if (file != null && mounted) setState(() => _attachedFile = file);
     } catch (e, st) {
-      reportChatOpFailure(
-        'attach_room_file',
-        e,
-        st,
-        account: account,
-      );
+      reportChatOpFailure('attach_room_file', e, st, account: account);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('ファイルの添付に失敗しました (${summarizeOpError(e)})')),

@@ -1455,7 +1455,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       return info;
     }
     final title = info.title;
-    if (title == null || title.trim().isEmpty) return info; // resolve は title 必須。
+    if (title == null || title.trim().isEmpty) {
+      return info; // resolve は title 必須。
+    }
     final url = await mulukhiya.resolveNowPlaying(
       accessToken: account.userSecret.accessToken,
       title: title,

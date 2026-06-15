@@ -110,7 +110,8 @@ void main() {
         'Bearer tok123',
       );
       final body =
-          jsonDecode(built.adapter.capturedResolveBody!) as Map<String, dynamic>;
+          jsonDecode(built.adapter.capturedResolveBody!)
+              as Map<String, dynamic>;
       expect(body['title'], 'Song');
       expect(body['artist'], 'Artist');
       expect(body['album'], 'Album');
@@ -121,7 +122,8 @@ void main() {
       final built = await _build(resolveBody: {'url': null});
       await built.service.resolveNowPlaying(accessToken: 't', title: 'Song');
       final body =
-          jsonDecode(built.adapter.capturedResolveBody!) as Map<String, dynamic>;
+          jsonDecode(built.adapter.capturedResolveBody!)
+              as Map<String, dynamic>;
       expect(body.containsKey('title'), isTrue);
       expect(body.containsKey('artist'), isFalse);
       expect(body.containsKey('album'), isFalse);
