@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
+import '../../service/sentry_op_failure.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
   const ProfileEditScreen({super.key});
@@ -78,7 +79,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       }
 
       if (mounted) setState(() => _loaded = true);
-    } catch (_) {
+    } catch (e, st) {
+      // verifyCredentials / max-fields 取得失敗。握り潰すと「読み込み失敗」しか
+      // 残らず後追いできないため Sentry に流す（DioException の生 URL/認可は
+      // reportOpFailure 内の scrub で落ちる）。
+      reportOpFailure(
+        tagKey: 'profile.op',
+        operation: 'load',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(
@@ -130,6 +141,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   Future<void> _save() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ProfileEditSupport) return;
+    final account = ref.read(currentAccountProvider);
 
     setState(() => _saving = true);
 
@@ -147,7 +159,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
 
       if (mounted) context.pop(updatedUser);
-    } catch (e) {
+    } catch (e, st) {
+      // updateProfile (PATCH update_credentials / Misskey i/update) の失敗。
+      // 「保存に失敗しました」だけだと 4.6 ステージング等での不安定を後追い
+      // できないため Sentry に流す（status / path は scrub 済みで残る）。
+      reportOpFailure(
+        tagKey: 'profile.op',
+        operation: 'save',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
