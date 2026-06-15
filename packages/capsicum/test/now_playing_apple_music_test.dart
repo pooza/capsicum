@@ -139,6 +139,24 @@ void main() {
             .currentlyPlaying();
         expect(info, isNull);
       });
+
+      test('no_track（診断付き）は投げず null に倒す', () async {
+        mockReturn({
+          '__nowPlayingError': 'no_track',
+          '__automationStatus': 0,
+          '__scriptItems': 0,
+        });
+        final info = await const AppleMusicNowPlayingProvider()
+            .currentlyPlaying();
+        expect(info, isNull);
+      });
+
+      test('診断キー付きの実トラックは NowPlayingInfo になる', () async {
+        mockReturn({'title': 'Song', 'artist': 'A', '__automationStatus': 0});
+        final info = await const AppleMusicNowPlayingProvider()
+            .currentlyPlaying();
+        expect(info?.title, 'Song');
+      });
     },
   );
 }

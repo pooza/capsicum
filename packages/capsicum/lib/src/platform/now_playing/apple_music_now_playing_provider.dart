@@ -49,9 +49,11 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
       return null;
     }
     if (raw == null) return null;
-    // macOS は「曲なし(null)」と区別して失敗種別を返す（iOS は常に通常マップか
-    // null で、このマーカーは付かない）。TCC 由来は許可案内のため例外で伝播し、
-    // それ以外の予期しないスクリプトエラーは観測だけして「曲なし」に倒す。
+    // macOS は「曲なし(null)」と区別して失敗種別＋診断（AEDetermine の status /
+    // スクリプト要素数）を返す（iOS は常に通常マップか null で、このマーカーは
+    // 付かない）。TCC 由来は許可案内のため例外で伝播。それ以外（no_track /
+    // script_error）は #668 build 111 の「即・曲なし」を切り分けるため、診断を
+    // Sentry に残して「曲なし(null)」に倒す。
     final errorKind = raw['__nowPlayingError'];
     if (errorKind is String) {
       if (errorKind == 'automation_denied' ||
@@ -59,14 +61,20 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
         throw NowPlayingPermissionException(errorKind);
       }
       Sentry.captureMessage(
-        'nowplaying: apple music script error',
+        'nowplaying: apple music no track / script issue',
         level: SentryLevel.warning,
         withScope: (scope) {
           scope.setTag('nowplaying.source', 'apple_music');
           scope.setTag('nowplaying.error', errorKind);
-          final code = raw!['__code'];
+          final status = raw!['__automationStatus'];
+          if (status != null) {
+            scope.setTag('nowplaying.automation_status', '$status');
+          }
+          final items = raw['__scriptItems'];
+          if (items != null) scope.setTag('nowplaying.script_items', '$items');
+          final code = raw['__code'];
           if (code != null) scope.setTag('nowplaying.code', '$code');
-          scope.fingerprint = ['nowplaying', 'apple_music_script_error'];
+          scope.fingerprint = ['nowplaying', 'apple_music', errorKind];
         },
       );
       return null;
