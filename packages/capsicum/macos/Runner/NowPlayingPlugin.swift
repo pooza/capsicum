@@ -1,4 +1,3 @@
-import CoreServices
 import FlutterMacOS
 import Foundation
 
@@ -12,19 +11,20 @@ import Foundation
 /// Events）を使う。App Sandbox 下では `com.apple.security.automation.apple-events`
 /// entitlement と `NSAppleEventsUsageDescription` が要る。
 ///
-/// **TCC「オートメーション」許可は `AEDeterminePermissionToAutomateTarget` で能動的に
-/// 問い合わせる**。AppleScript の `try` に任せると TCC 拒否(-1743)/応答待ち(-1744)を
-/// try が握り潰し、プロンプトも出ないまま空が返って「曲なし」化けする（#668 build 110
-/// で実証）。許可ターゲットは `NSAppleEventDescriptor(bundleIdentifier:)` で解決する。
+/// **TCC「オートメーション」許可の出し方（#668 の難所）:**
+/// - スクリプト内の `try` で曲読み取りを囲うと、TCC 拒否(-1743)/応答待ち(-1744)を
+///   try が握り潰し、プロンプトも出ないまま空が返り「曲なし」化けする（build 110）。
+/// - `AEDeterminePermissionToAutomateTarget` で能動許可要求も試したが、App Sandbox
+///   下では対象を解決できず **procNotFound(-600)** を返してスクリプトに到達すらせず
+///   失敗した（build 112 の Sentry で確定）。
+/// - 結論: **バックグラウンドスレッドで（メインを塞がず＝プロンプトが描画できる）、
+///   `try` で包まずに直接スクリプトを実行する**。最初の Apple Event 送信で TCC が
+///   プロンプトを出し、拒否/応答待ちは executeAndReturnError の errorNumber に出る。
 ///
-/// build 111 でも「即・曲なし」が続き原因切り分けのため、戻り値に診断情報
-/// （`__automationStatus` = AEDetermine の OSStatus、`__scriptItems` = スクリプトが
-/// 返した要素数）を必ず載せ、Dart 側が Sentry に流せるようにした。失敗種別は
-/// `__nowPlayingError`（automation_denied / automation_pending / no_track /
-/// script_error + __code）。実曲は title/artist を持つマップ。
+/// 失敗種別は `__nowPlayingError`（automation_denied / automation_pending /
+/// no_track / script_error + __code / __scriptItems）で返し、Dart 側が許可案内や
+/// Sentry 観測に振り分ける。実曲は title/artist を持つマップ。
 final class NowPlayingPlugin {
-  private static let musicBundleID = "com.apple.Music"
-
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
       name: "capsicum/now_playing",
@@ -33,8 +33,8 @@ final class NowPlayingPlugin {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "getNowPlaying":
-        // AEDeterminePermissionToAutomateTarget は許可ダイアログ表示中ブロック
-        // しうるため、メインスレッドで呼ばない（Apple 推奨）。
+        // メインスレッドで同期送信すると、TCC プロンプトを描画するメイン run loop
+        // が塞がり、プロンプトが出ないまま -1744 が返る。バックグラウンドで送る。
         DispatchQueue.global(qos: .userInitiated).async {
           let map = currentItemMap()
           DispatchQueue.main.async { result(map) }
@@ -45,45 +45,16 @@ final class NowPlayingPlugin {
     }
   }
 
+  /// ミュージック.app の現在の曲を title / artist / albumTitle のマップにする。
+  /// `application "Music" is running` を tell の外で判定し、未起動のミュージックを
+  /// 副作用で起動しない。**曲読み取りを try で包まない**ことで、TCC 拒否/応答待ちを
+  /// executeAndReturnError に表面化させる（握り潰すとプロンプトが出ない）。
   private static func currentItemMap() -> [String: Any]? {
-    let status = automationPermissionStatus(promptIfNeeded: true)
-    switch status {
-    case noErr:
-      return runNowPlayingScript(automationStatus: status)
-    case -1743:  // errAEEventNotPermitted: 拒否
-      return ["__nowPlayingError": "automation_denied", "__automationStatus": Int(status)]
-    case -1744:  // errAEEventWouldRequireUserConsent: 応答待ち
-      return ["__nowPlayingError": "automation_pending", "__automationStatus": Int(status)]
-    default:
-      // -600(procNotFound: 未起動) 等を含め、診断のため status を載せて no_track 化。
-      return ["__nowPlayingError": "no_track", "__automationStatus": Int(status)]
-    }
-  }
-
-  /// ミュージック.app への Apple Events 許可状態。promptIfNeeded=true なら未決時に
-  /// TCC プロンプトを出す。ターゲットは bundleIdentifier で解決（AECreateDesc より
-  /// 実行中プロセスの解決が確実）。
-  private static func automationPermissionStatus(promptIfNeeded: Bool) -> OSStatus {
-    let desc = NSAppleEventDescriptor(bundleIdentifier: musicBundleID)
-    guard let aeDescPtr = desc.aeDesc else { return OSStatus(-1700) }
-    var mutableDesc = aeDescPtr.pointee
-    return AEDeterminePermissionToAutomateTarget(
-      &mutableDesc, typeWildCard, typeWildCard, promptIfNeeded)
-  }
-
-  /// 許可済み前提で現在の曲を照会する。`application "Music" is running` を tell の
-  /// 外で判定し、未起動のミュージックを副作用で起動しない。曲読み取りの `try` は
-  /// 「再生中だが現在トラックなし」だけを吸収する（許可は前段で確認済み）。
-  private static func runNowPlayingScript(automationStatus: OSStatus) -> [String: Any]? {
     let source = """
       if application "Music" is running then
         tell application "Music"
           if player state is stopped then return {}
-          try
-            return {name of current track, artist of current track, album of current track}
-          on error
-            return {}
-          end try
+          return {name of current track, artist of current track, album of current track}
         end tell
       else
         return {}
@@ -94,28 +65,24 @@ final class NowPlayingPlugin {
       let descriptor = NSAppleScript(source: source)?
         .executeAndReturnError(&errorInfo)
     else {
+      // 実行失敗。-1743=TCC 拒否 / -1744=許可応答待ち は許可案内へ、それ以外
+      // （-1728 の「現在トラックなし」等を含む）は観測用に code を添えて返す。
       let code = (errorInfo?[NSAppleScript.errorNumber] as? Int) ?? 0
       switch code {
       case -1743:
-        return ["__nowPlayingError": "automation_denied", "__automationStatus": Int(automationStatus)]
+        return ["__nowPlayingError": "automation_denied", "__code": code]
       case -1744:
-        return ["__nowPlayingError": "automation_pending", "__automationStatus": Int(automationStatus)]
+        return ["__nowPlayingError": "automation_pending", "__code": code]
       default:
-        return [
-          "__nowPlayingError": "script_error", "__code": code,
-          "__automationStatus": Int(automationStatus),
-        ]
+        return ["__nowPlayingError": "script_error", "__code": code]
       }
     }
     // 空 {} は 0 要素。曲があれば {name, artist, album} の 3 要素リスト。
     let items = descriptor.numberOfItems
     guard items >= 3 else {
-      return [
-        "__nowPlayingError": "no_track", "__scriptItems": items,
-        "__automationStatus": Int(automationStatus),
-      ]
+      return ["__nowPlayingError": "no_track", "__scriptItems": items]
     }
-    var map: [String: Any] = ["__automationStatus": Int(automationStatus)]
+    var map: [String: Any] = [:]
     // NSAppleEventDescriptor のリストは 1 始まり。
     if let title = descriptor.atIndex(1)?.stringValue, !title.isEmpty {
       map["title"] = title
@@ -126,12 +93,9 @@ final class NowPlayingPlugin {
     if let album = descriptor.atIndex(3)?.stringValue, !album.isEmpty {
       map["albumTitle"] = album
     }
-    // title も artist も無ければ no_track 扱い（診断情報は残す）。
+    // title も artist も無ければ no_track 扱い。
     if map["title"] == nil && map["artist"] == nil {
-      return [
-        "__nowPlayingError": "no_track", "__scriptItems": items,
-        "__automationStatus": Int(automationStatus),
-      ]
+      return ["__nowPlayingError": "no_track", "__scriptItems": items]
     }
     return map
   }
