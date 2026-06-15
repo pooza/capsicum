@@ -258,6 +258,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     for (final keyStr in keys) {
       final secrets = await storage.getSecrets(keyStr);
       if (secrets == null) {
+        // secret が例外なく単に存在しない (`getSecrets` の raw==null) 経路。
+        // インデックス (#337 で分離) は生存しているのに secure storage 側の
+        // secret だけが消えた典型シグナル (再インストール / データ削除 / 端末
+        // 復元・機種変 / OS 由来の Keystore リセット)。挙動自体は #277 / #337 の
+        // 設計通り (再ログインを促す) だが、例外を投げないため従来は Sentry に
+        // 一切出ず、規模・頻度・プラットフォーム傾向が観測できなかった (#704)。
+        // 例外経路 (`_reportRestoreOnce`) と区別できる軽量メッセージを 1 度だけ送る。
+        _reportNullSecretSkipOnce(keyStr);
         skippedCount++;
         continue;
       }
@@ -371,6 +379,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         e,
         stackTrace: st,
         withScope: (scope) {
+          // null 経路 (`_reportNullSecretSkipOnce`) と区別するための経路タグ。
+          scope.setTag('account_restore.path', 'exception');
           if (parsed != null) {
             scope.setTag('account_restore.host', parsed.host);
             scope.setTag(
@@ -381,6 +391,48 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
             scope.setTag('account_restore.key_parse', 'failed');
           }
           scope.fingerprint = ['account_restore', e.runtimeType.toString()];
+        },
+      );
+    } catch (_) {
+      // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
+    }
+  }
+
+  /// secret が例外なく欠落していた (`getSecrets` の raw==null) ためアカウントを
+  /// skip した際に、軽量メッセージを per-process で 1 度だけ送る (#704)。
+  ///
+  /// 例外経路 (`_reportRestoreOnce`) と同じ de-identification ポリシーに従う:
+  /// tag は host のみ、username は [hashForSentryTag] でハッシュ化 (#500)。
+  /// dedup は例外経路と同じ [_reportedRestoreErrors] を `:null_secret` 接尾辞で
+  /// 共用し、Keystore 一括喪失で全アカウント同時 skip しても Sentry を
+  /// 埋めない (#337-B と同じ per-process dedup)。
+  static void _reportNullSecretSkipOnce(String accountKey) {
+    final dedupKey = '$accountKey:null_secret';
+    if (!_reportedRestoreErrors.add(dedupKey)) return;
+    try {
+      // AccountKey.fromStorageKey は破損 key で StateError を投げる。parse 失敗
+      // 時は tag を諦めて parse 失敗マーカ付きで送る (#524 と同方針)。
+      AccountKey? parsed;
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        parsed = null;
+      }
+      Sentry.captureMessage(
+        'account_restore: secret missing (null path), account skipped',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('account_restore.path', 'null_secret');
+          if (parsed != null) {
+            scope.setTag('account_restore.host', parsed.host);
+            scope.setTag(
+              'account_restore.user_hash',
+              hashForSentryTag(parsed.username),
+            );
+          } else {
+            scope.setTag('account_restore.key_parse', 'failed');
+          }
+          scope.fingerprint = ['account_restore', 'null_secret'];
         },
       );
     } catch (_) {
