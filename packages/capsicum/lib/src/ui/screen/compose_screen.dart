@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
@@ -1399,6 +1400,33 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       NowPlayingInfo? info;
       try {
         info = await resolver.currentlyPlaying();
+      } on NowPlayingPermissionException catch (e) {
+        // OS の許可不足（macOS ミュージック.app への Apple Events が TCC
+        // 「オートメーション」で拒否 / 応答待ち #668）。「曲なし」と誤誘導せず、
+        // 解消手順を案内する。denied は設定変更が要るので Sentry にも残す。
+        if (!mounted) return;
+        final pending = e.reason == 'automation_pending';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              pending
+                  ? 'ミュージックへのアクセスを許可するか確認したうえで、もう一度お試しください。'
+                  : 'ミュージックへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum にミュージックの操作を許可してください。',
+            ),
+          ),
+        );
+        if (!pending) {
+          Sentry.captureMessage(
+            'nowplaying: music automation denied',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('nowplaying.source', 'apple_music');
+              scope.setTag('nowplaying.error', e.reason);
+              scope.fingerprint = ['nowplaying', 'automation_denied'];
+            },
+          );
+        }
+        return;
       } catch (e) {
         // resolver / provider は例外を null に倒す契約だが、契約破りで投げても
         // 落とさず観測する。異常系（D-Bus 権限・SMTC チャンネル例外等）を後追い

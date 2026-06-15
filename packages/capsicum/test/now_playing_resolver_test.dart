@@ -13,6 +13,9 @@ class _FakeProvider implements NowPlayingProvider {
   final NowPlayingInfo? result;
   final bool throwOnCall;
 
+  /// 設定されていれば currentlyPlaying で NowPlayingPermissionException を投げる。
+  final String? permissionDeniedReason;
+
   /// この provider の currentlyPlaying が実際に呼ばれたか。
   bool called = false;
 
@@ -20,11 +23,15 @@ class _FakeProvider implements NowPlayingProvider {
     this.isAvailable = true,
     this.result,
     this.throwOnCall = false,
+    this.permissionDeniedReason,
   });
 
   @override
   Future<NowPlayingInfo?> currentlyPlaying() async {
     called = true;
+    if (permissionDeniedReason != null) {
+      throw NowPlayingPermissionException(permissionDeniedReason!);
+    }
     if (throwOnCall) throw StateError('boom');
     return result;
   }
@@ -82,6 +89,27 @@ void main() {
       expect(info?.sourceAppName, 'MPRIS');
       expect(throwing.called, isTrue);
       expect(fine.called, isTrue);
+    });
+
+    test('許可不足の例外は握り潰さず伝播し、後続の源も試さない (#668)', () async {
+      // 「無音」と違い、ユーザー操作で解消すべき設定不備。compose が許可案内を
+      // 出せるよう、resolver は次の源へ流さずそのまま投げ直す。
+      final denied = _FakeProvider(permissionDeniedReason: 'automation_denied');
+      final fallback = _FakeProvider(result: _info('MPRIS'));
+      final resolver = NowPlayingResolver([denied, fallback]);
+
+      await expectLater(
+        resolver.currentlyPlaying(),
+        throwsA(
+          isA<NowPlayingPermissionException>().having(
+            (e) => e.reason,
+            'reason',
+            'automation_denied',
+          ),
+        ),
+      );
+      expect(denied.called, isTrue);
+      expect(fallback.called, isFalse);
     });
 
     test('どの源も取れなければ null', () async {

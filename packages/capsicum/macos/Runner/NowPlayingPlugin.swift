@@ -11,8 +11,11 @@ import Foundation
 /// 照会となるため AppleScript（Apple Events）を使う。App Sandbox 下では
 /// `com.apple.security.automation.apple-events` entitlement と
 /// `NSAppleEventsUsageDescription` が必要で、初回送信時に TCC「オートメーション」
-/// 許可ダイアログが出る。拒否（-1743）・未再生・ミュージック未起動はいずれも
-/// nil を返し、Dart 側 resolver が「再生中の曲がありません」へフォールバックする。
+/// 許可ダイアログが出る。未再生・ミュージック未起動は nil（Dart 側は「再生中の
+/// 曲がありません」）。一方 TCC 拒否（-1743）・許可応答待ち（-1744）は「無音」と
+/// 区別するため `["__nowPlayingError": "automation_denied" / "automation_pending"]`
+/// を返し、Dart 側で許可案内を出せるようにする（#668。それ以外の実行時エラーは
+/// `"script_error"` + `"__code"` で観測に回す）。
 final class NowPlayingPlugin {
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -32,6 +35,8 @@ final class NowPlayingPlugin {
   /// ミュージック.app の現在の曲を title / artist / albumTitle のマップにする。
   /// 未起動・停止中・曲なしは nil。`application "Music" is running` を tell の外で
   /// 判定することで、未起動のミュージックを副作用で起動しないようにする。
+  /// TCC 拒否 / 応答待ち / その他スクリプトエラーは `__nowPlayingError` 付きの
+  /// マップを返して「曲なし(nil)」と区別する。
   private static func currentItemMap() -> [String: Any]? {
     let source = """
       if application "Music" is running then
@@ -58,8 +63,17 @@ final class NowPlayingPlugin {
       let descriptor = NSAppleScript(source: source)?
         .executeAndReturnError(&errorInfo)
     else {
-      // TCC 拒否 (-1743) / 構文以外の実行時エラー。nil に倒して次の源へ。
-      return nil
+      // 実行失敗。TCC 由来（-1743 拒否 / -1744 応答待ち）は「無音」と区別して
+      // 許可案内に回し、それ以外は観測用に code を添えて返す。
+      let code = (errorInfo?[NSAppleScript.errorNumber] as? Int) ?? 0
+      switch code {
+      case -1743:
+        return ["__nowPlayingError": "automation_denied"]
+      case -1744:
+        return ["__nowPlayingError": "automation_pending"]
+      default:
+        return ["__nowPlayingError": "script_error", "__code": code]
+      }
     }
     // 空 {} は 0 要素。曲があれば {name, artist, album} の 3 要素リスト。
     guard descriptor.numberOfItems >= 3 else { return nil }

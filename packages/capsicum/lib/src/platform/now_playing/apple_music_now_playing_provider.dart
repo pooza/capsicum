@@ -1,5 +1,6 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/services.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'now_playing_provider.dart';
 
@@ -40,16 +41,37 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
 
   @override
   Future<NowPlayingInfo?> currentlyPlaying() async {
+    final Map<String, Object?>? raw;
     try {
-      final raw = await _channel.invokeMapMethod<String, Object?>(
-        'getNowPlaying',
-      );
-      if (raw == null) return null;
-      return nowPlayingFromAppleMusicMetadata(raw);
+      raw = await _channel.invokeMapMethod<String, Object?>('getNowPlaying');
     } catch (_) {
       // チャンネル未登録 / ネイティブ例外は null に倒す（resolver が次の源へ）。
       return null;
     }
+    if (raw == null) return null;
+    // macOS は「曲なし(null)」と区別して失敗種別を返す（iOS は常に通常マップか
+    // null で、このマーカーは付かない）。TCC 由来は許可案内のため例外で伝播し、
+    // それ以外の予期しないスクリプトエラーは観測だけして「曲なし」に倒す。
+    final errorKind = raw['__nowPlayingError'];
+    if (errorKind is String) {
+      if (errorKind == 'automation_denied' ||
+          errorKind == 'automation_pending') {
+        throw NowPlayingPermissionException(errorKind);
+      }
+      Sentry.captureMessage(
+        'nowplaying: apple music script error',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('nowplaying.source', 'apple_music');
+          scope.setTag('nowplaying.error', errorKind);
+          final code = raw!['__code'];
+          if (code != null) scope.setTag('nowplaying.code', '$code');
+          scope.fingerprint = ['nowplaying', 'apple_music_script_error'];
+        },
+      );
+      return null;
+    }
+    return nowPlayingFromAppleMusicMetadata(raw);
   }
 }
 
