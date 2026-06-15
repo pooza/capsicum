@@ -143,6 +143,27 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     if (adapter is! ProfileEditSupport) return;
     final account = ref.read(currentAccountProvider);
 
+    // 補足情報は「項目名・値とも空」の行を送らない（未入力の UI 行）。さらに
+    // Mastodon は「値はあるが項目名が空」の行を 422 で弾く
+    // (EmptyProfileFieldNamesValidator)。公式 UI と同じ規律で、送信前に項目名の
+    // 入力を促してブロックする（generic「保存に失敗」より分かりやすく、無効な
+    // PATCH を投げない）。
+    final fields = _fields
+        .map(
+          (f) =>
+              UserField(name: f.name.text.trim(), value: f.value.text.trim()),
+        )
+        .where((f) => f.name.isNotEmpty || f.value.isNotEmpty)
+        .toList();
+    if (fields.any((f) => f.name.isEmpty && f.value.isNotEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('値のある補足情報には項目名が必要です。項目名を入力するか、値を空にしてください。'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     try {
@@ -151,9 +172,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         description: _bioController.text,
         avatarFilePath: _avatarFile?.path,
         bannerFilePath: _bannerFile?.path,
-        fields: _fields
-            .map((f) => UserField(name: f.name.text, value: f.value.text))
-            .toList(),
+        fields: fields,
       );
 
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
