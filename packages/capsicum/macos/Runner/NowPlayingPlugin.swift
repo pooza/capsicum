@@ -72,7 +72,7 @@ final class NowPlayingPlugin {
     // 空 {} は 0 要素（未起動 / 停止中）。曲があれば {name, artist, album} の 3 要素。
     let items = descriptor.numberOfItems
     guard items >= 3 else {
-      return ["__nowPlayingError": "no_track", "__scriptItems": items]
+      return ["__nowPlayingError": "no_track"]
     }
     var map: [String: Any] = [:]
     // NSAppleEventDescriptor のリストは 1 始まり。
@@ -86,7 +86,7 @@ final class NowPlayingPlugin {
       map["albumTitle"] = album
     }
     if map["title"] == nil && map["artist"] == nil {
-      return ["__nowPlayingError": "no_track", "__scriptItems": items]
+      return ["__nowPlayingError": "no_track"]
     }
     return map
   }

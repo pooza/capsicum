@@ -209,13 +209,14 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         stackTrace: st,
         account: account,
       );
-      // バリデーション拒否（422/400）はどの検証で落ちたかを本文から特定する。
-      // Mastodon の検証エラーは項目コード/説明で PII ではないが、念のため本文は
-      // 切り詰める。フィールド数・名前/値の長さも添える（255 超や 4 超の切り分け）。
+      // バリデーション拒否（422/400）はどの検証で落ちたかを切り分ける。本文を
+      // verbatim で載せると、フォークや Misskey が将来エラー文に入力値（表示名・
+      // 自己紹介・項目値）を補間した場合に PII が混入しうるため、構造化シグナル
+      // （キー名・検証コード）だけに絞る（このコードベースの scrub 規律に統一）。
+      // フィールド数・名前/値の長さも添える（255 超や件数超の切り分け用、長さのみ）。
       if (e is DioException) {
         final status = e.response?.statusCode;
         if (status == 422 || status == 400) {
-          final body = e.response?.data?.toString() ?? '';
           Sentry.captureMessage(
             'profile.save validation rejected ($status)',
             level: SentryLevel.warning,
@@ -223,7 +224,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               scope.setTag('profile.validation', '$status');
               scope.setTag('host', account?.key.host ?? '-');
               scope.setContexts('profile_validation', {
-                'body': body.length > 1000 ? body.substring(0, 1000) : body,
+                'body_summary': _summarizeValidationBody(e.response?.data),
                 'field_count': fields.length,
                 'field_name_lengths': fields.map((f) => f.name.length).toList(),
                 'field_value_lengths': fields
@@ -456,4 +457,34 @@ class _FieldEntry {
   final TextEditingController value;
 
   _FieldEntry({required this.name, required this.value});
+}
+
+/// バリデーション拒否レスポンスを、入力値を含まない構造化シグナルに圧縮する。
+///
+/// Mastodon の 422 は `{"error": "...", "details": {"attr": [{"error":
+/// "ERR_TOO_LONG", ...}]}}` 形式。値（説明文・入力エコー）は載せず、最上位
+/// キー名・details の属性名・検証コード（`ERR_*`）だけを残す。Map でない／
+/// パースできない本文は型名と長さのみに倒す。
+Object _summarizeValidationBody(Object? data) {
+  if (data is Map) {
+    final keys = data.keys.map((k) => '$k').toList();
+    final detailCodes = <String>[];
+    final details = data['details'];
+    if (details is Map) {
+      for (final entry in details.entries) {
+        final issues = entry.value;
+        if (issues is List) {
+          for (final issue in issues) {
+            final code = issue is Map ? issue['error'] : null;
+            detailCodes.add('${entry.key}:${code ?? '?'}');
+          }
+        } else {
+          detailCodes.add('${entry.key}');
+        }
+      }
+    }
+    return {'keys': keys, 'detail_codes': detailCodes};
+  }
+  final text = data?.toString() ?? '';
+  return {'type': data.runtimeType.toString(), 'length': text.length};
 }

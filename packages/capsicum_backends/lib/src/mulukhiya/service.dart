@@ -728,7 +728,14 @@ class MulukhiyaService {
           ? (response.data as Map<String, dynamic>)['url']
           : null;
       if (url is! String || url.isEmpty) return null;
-      return Uri.tryParse(url);
+      final uri = Uri.tryParse(url);
+      // 投稿本文に挿入されるため、http/https 以外（javascript: / data: 等）は
+      // 弾く。モロヘイヤは信頼境界内だが、共有 URL 判定（composeSharedNowPlaying）
+      // と同じスキーム規律に揃える。
+      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return null;
+      }
+      return uri;
     } on DioException {
       // enrich は任意の上積みなので、未提供・認証失効・サーバ不調・network いずれも
       // null に倒して URL なし整形へフォールバックする（UX を止めない）。
