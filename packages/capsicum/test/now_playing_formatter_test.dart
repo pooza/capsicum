@@ -146,12 +146,13 @@ void main() {
 
   group('composeSharedNowPlaying', () {
     // #670: 共有(push)テキストもタグを末尾規律に揃える。
-    // 二重化対策: 単一 URL でも #nowplaying と同一行に置かない（本体整形と統一）。
+    // #727: 共有は URL しか持たずメタはモロヘイヤ enrich 任せのため、単一 URL は
+    // 同一行（発火させる）。アプリ内 formatter と方針が逆である点に注意。
 
-    test('単一 URL もテキスト先・裸タグ末尾（同一行にしない）', () {
+    test('単一 URL はタグと同一行（モロヘイヤ enrich を発火させる）', () {
       expect(
         composeSharedNowPlaying('https://music.apple.com/jp/song/1352845804'),
-        'https://music.apple.com/jp/song/1352845804\n#nowplaying',
+        '#nowplaying https://music.apple.com/jp/song/1352845804',
       );
     });
 

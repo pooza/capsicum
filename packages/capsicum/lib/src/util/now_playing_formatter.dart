@@ -65,18 +65,31 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
 
 /// 共有 (push) 動線の**不透明な共有テキスト**に `#nowplaying` タグを付ける (#670)。
 ///
-/// 共有はテキスト / URL を不透明に受け取るだけで曲メタ（Title/Album/Artist）を
-/// 持たないため、構造化整形はしない。共有テキストを先に置き、`#nowplaying` を
-/// **裸で末尾**に付けるだけにする（[formatNowPlayingFallback] と同じ規律に統一）。
+/// **アプリ内ナウプレ（[formatNowPlayingFallback]）とは整形方針が逆**なので注意
+/// （#727）。共有は ShareExtension から **URL（または不透明テキスト）しか受け取らず**
+/// 曲メタ（Title/Album/Artist）を持たない。そのためメタはモロヘイヤの enrich に
+/// 委ねる必要があり、**単一 URL は `#nowplaying <url>` の同一行**に置いてモロヘイヤを
+/// 発火させる。アプリ内は自前メタを持つので逆に同一行を避ける（発火させると二重化）。
+/// **両者を安易に「フォーマット統一」しないこと。** 共有も自前メタで自己完結させる案
+/// （URL→メタの resolve-by-URL）は v1.38 の上積み。
 ///
-/// 単一 URL でも**タグと同一行に置かない**（#727）。`#nowplaying <url>` 同一行は
-/// 本体整形とフォーマットがずれるうえ、モロヘイヤの旧ナウプレ整形ハンドラを発火
-/// させる構造になる。URL を前・タグを末尾にすれば発火せず、unfurl も従来どおり効く。
-/// URL→メタの自前補完（resolve-by-URL）は将来の上積み。
+/// タグ自体は末尾規律に揃える。タグを行頭に置くと、モロヘイヤの「`#nowplaying` 行に
+/// 同一行 URL が無いと次行を詰める」正規化で、共有テキストが複数行かつ URL 無しのとき
+/// 次行が詰められて結合してしまう。末尾へ逃がせば詰める対象の次行が無く副作用が出ない
+/// （**先頭に戻さないこと**）。
 String composeSharedNowPlaying(String sharedText) {
   final trimmed = sharedText.trim();
   if (trimmed.isEmpty) return nowPlayingTag;
+  if (_isSingleUrl(trimmed)) return '$nowPlayingTag $trimmed';
   return '$trimmed\n$nowPlayingTag';
+}
+
+/// 共有テキストが**単一 URL**（空白を含まず http(s) スキーム）か。単一 URL なら
+/// タグと同一行に置いてモロヘイヤに enrich させられる。
+bool _isSingleUrl(String text) {
+  if (text.contains(RegExp(r'\s'))) return false;
+  final uri = Uri.tryParse(text);
+  return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
 }
 
 /// メタデータ値を **1 行**に正規化する。前後の空白・制御文字を落とし、内部の
