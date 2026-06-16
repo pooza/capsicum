@@ -53,6 +53,8 @@
 	<string>表示中の画像や動画をフォトライブラリに保存するために必要です</string>
 	<key>NSCameraUsageDescription</key>
 	<string>投稿に写真を添付するためにカメラへのアクセスが必要です</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>再生中の曲を投稿に挿入するためにミュージックの再生情報へのアクセスが必要です</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

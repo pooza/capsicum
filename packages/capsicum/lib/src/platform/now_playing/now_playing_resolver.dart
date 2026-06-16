@@ -37,6 +37,11 @@ class NowPlayingResolver {
       try {
         final info = await provider.currentlyPlaying();
         if (info != null) return info;
+      } on NowPlayingPermissionException {
+        // 許可不足は「無音」ではなく設定不備。握り潰さず呼び出し側へ伝播し、
+        // compose が許可案内を出せるようにする（次の源を試しても同じ許可で
+        // 阻まれる可能性が高く、誤誘導メッセージを避けたい）。
+        rethrow;
       } catch (_) {
         // この源は諦めて次へ。
       }

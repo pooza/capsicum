@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
@@ -208,6 +209,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   PostScope _scope = PostScope.public;
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
+  // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
+  // post-frame で 1 度出すためのフラグ (#703)。
+  bool _redraftPollDropped = false;
   bool _sending = false;
   // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
   // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
@@ -315,8 +319,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     if (redraft != null) {
-      _controller.text = _extractPlainText(redraft.content ?? '');
+      // 本文: リモートメンションを `@user@host` に復元して平文化 (#703)。
+      // Mastodon (isHtml) のみ host 復元が必要。Misskey の MFM は元から
+      // フル acct なので従来どおり _extractPlainText に委ねる。
+      final localHost = ref.read(currentAccountProvider)?.key.host;
+      _controller.text = (redraft.isHtml && localHost != null)
+          ? stripHtmlRestoringMentions(
+              redraft.content ?? '',
+              localHost: localHost,
+            )
+          : _extractPlainText(redraft.content ?? '');
       _scope = redraft.scope;
+      // 引き継げる要素は最大限引き継ぐ (#703)。
+      if (redraft.spoilerText != null && redraft.spoilerText!.isNotEmpty) {
+        _cwEnabled = true;
+        _cwController.text = redraft.spoilerText!;
+      }
+      if (redraft.sensitive) {
+        _sensitiveEnabled = true;
+      }
+      // 添付は再DL/再UL不要。drive エントリとして積めば送信時に既存 id を
+      // 再利用する（送信経路の entry.isDrive 分岐）。
+      if (redraft.attachments.isNotEmpty) {
+        _attachments.addAll(redraft.attachments.map(_MediaEntry.drive));
+      }
+      // アンケートは引き継がない（投票結果がリセットされるため）。元投稿に
+      // アンケートが付いていた場合は post-frame で注釈を出す。
+      if (redraft.poll != null) {
+        _redraftPollDropped = true;
+      }
     } else if (replyTo != null) {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
@@ -324,10 +355,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
       // 共有（push）動線。共有テキストは不透明（URL or テキスト）なので
-      // formatNowPlayingFallback の構造化整形は通せないが、タグ定数だけは共有して
-      // リテラルの二重管理を避ける。整形の完全統一は macOS 共有 Extension とモロ
-      // ヘイヤ再設計（整形=クライアント / プロキシ=サーバー、design 参照）に依存。
-      _controller.text = '$nowPlayingTag ${widget.sharedText!}\n';
+      // formatNowPlayingFallback の構造化整形は通せないが、タグ配置だけは
+      // composeSharedNowPlaying で formatter と同じ「末尾」規律に揃える (#670)。
+      // 整形の完全統一は macOS 共有 Extension とモロヘイヤ再設計（整形=クライアント
+      // / プロキシ=サーバー、design 参照）に依存。
+      _controller.text = '${composeSharedNowPlaying(widget.sharedText!)}\n';
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
@@ -370,6 +402,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
       if (adapter is CustomEmojiSupport) {
         _loadAllEmojis(adapter as CustomEmojiSupport);
+      }
+      // redraft 元にアンケートが付いていた場合の引き継ぎ不可注釈 (#703)。
+      if (_redraftPollDropped) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('アンケートは引き継げません。再投稿時に再設定してください。')),
+        );
       }
     });
   }
@@ -1362,6 +1400,33 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       NowPlayingInfo? info;
       try {
         info = await resolver.currentlyPlaying();
+      } on NowPlayingPermissionException catch (e) {
+        // OS の許可不足（macOS ミュージック.app への Apple Events が TCC
+        // 「オートメーション」で拒否 / 応答待ち #668）。「曲なし」と誤誘導せず、
+        // 解消手順を案内する。denied は設定変更が要るので Sentry にも残す。
+        if (!mounted) return;
+        final pending = e.reason == 'automation_pending';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              pending
+                  ? 'ミュージックへのアクセスを許可するか確認したうえで、もう一度お試しください。'
+                  : 'ミュージックへのアクセスが許可されていません。システム設定 ＞ プライバシーとセキュリティ ＞ オートメーション で capsicum にミュージックの操作を許可してください。',
+            ),
+          ),
+        );
+        if (!pending) {
+          Sentry.captureMessage(
+            'nowplaying: music automation denied',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('nowplaying.source', 'apple_music');
+              scope.setTag('nowplaying.error', e.reason);
+              scope.fingerprint = ['nowplaying', 'automation_denied'];
+            },
+          );
+        }
+        return;
       } catch (e) {
         // resolver / provider は例外を null に倒す契約だが、契約破りで投げても
         // 落とさず観測する。異常系（D-Bus 権限・SMTC チャンネル例外等）を後追い
@@ -1394,10 +1459,41 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ).showSnackBar(const SnackBar(content: Text('現在再生中の曲がありません')));
         return;
       }
+      // URL を持たない源 (Apple Music / MPRIS / SMTC) は、モロヘイヤ enrich で
+      // 共有 URL を任意に補完する (#669)。enrich が無効・未ヒット・失敗でも元の
+      // info をそのまま整形するため投稿は成立する（URL なしフォールバック）。
+      info = await _enrichNowPlayingUrl(info);
+      if (!mounted) return;
       _appendToBody(formatNowPlayingFallback(info));
     } finally {
       if (mounted) setState(() => _insertingNowPlaying = false);
     }
+  }
+
+  /// URL を持たないナウプレ源に、モロヘイヤ enrich (#669 / mulukhiya #4382) で
+  /// 共有 URL を任意補完する。enrich 無効 (フラグ off / 旧モロヘイヤ) ・title 欠落・
+  /// 未ヒット・失敗のときは元の [info] をそのまま返す（クライアント整形へ）。
+  Future<NowPlayingInfo> _enrichNowPlayingUrl(NowPlayingInfo info) async {
+    if (info.url != null) return info; // URL を持つ源 (Spotify 等) は補完不要。
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null ||
+        mulukhiya == null ||
+        !mulukhiya.nowplayingResolverEnabled) {
+      return info;
+    }
+    final title = info.title;
+    if (title == null || title.trim().isEmpty) {
+      return info; // resolve は title 必須。
+    }
+    final url = await mulukhiya.resolveNowPlaying(
+      accessToken: account.userSecret.accessToken,
+      title: title,
+      artist: info.artist,
+      album: info.album,
+      sourceAppName: info.sourceAppName,
+    );
+    return url == null ? info : info.copyWith(url: url);
   }
 
   /// 本文末尾に [snippet] を追記する。直前が改行でなければ改行を 1 つ挟む。

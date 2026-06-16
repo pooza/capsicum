@@ -363,6 +363,31 @@ cd macos && fastlane release && cd ..
 
 投げ銭画面の金額はストアのローカライズ価格（`ProductDetails.price`）をそのまま表示する設計で、コード側に金額をハードコードしない。表示通貨は端末の App Store / Play アカウントのストア地域で決まるため、検証アカウントが日本以外（米国 sandbox 等）だと `$` 表示になる。これは不具合ではなく、日本ストアのユーザーには円で表示される（iPhone 実機で確認済み）。
 
+#### macOS の Apple Events (temporary-exception) 審査ノート（[#668](https://github.com/pooza/capsicum/issues/668)、v1.37〜）
+
+macOS のナウプレ挿入は、ミュージック.app（`com.apple.Music`）の**現在再生中の曲（タイトル/アーティスト/アルバム）を AppleScript で読み取る**ため、Release.entitlements に `com.apple.security.temporary-exception.apple-events` = `["com.apple.Music"]` を持つ。これは MAS 審査で必ず見られる entitlement なので、**App Review Information の Notes に下記英文を貼る**（macOS バージョン提出時）。
+
+**なぜ temporary-exception が必要か**（capsicum での実証経緯）: modern の `com.apple.security.automation.apple-events`（boolean）だけだと、App Sandbox 下でミュージックへの Apple Events が記述子（bundleId / PID）・スレッドを問わず **procNotFound (-600)** で弾かれ、対象アプリを解決すらできない（build 109-116 の内部ベータ実機 Sentry で確定）。特定アプリ宛てを明示する temporary-exception を併用して初めて addressable になり、TCC「オートメーション」許可プロンプトが出て読み取りが成立した（build 117 で動作確認）。
+
+審査 Notes 英文テンプレート:
+
+```text
+On macOS, capsicum's compose screen has an optional "Insert Now Playing"
+button. When the user taps it, the app reads the *currently playing track's
+title / artist / album* from the Music app (com.apple.Music) via Apple Events,
+so the user can mention what they are listening to in a post. It is
+read-only — the app never controls playback. The Apple Event is sent only on
+that explicit user action, and NSAppleEventsUsageDescription explains the
+purpose; the first use shows the standard Automation consent prompt.
+
+We declare com.apple.security.temporary-exception.apple-events limited to
+com.apple.Music because the modern com.apple.security.automation.apple-events
+entitlement alone returns procNotFound (-600) when resolving the Music app
+inside the App Sandbox, so the feature cannot work without it.
+```
+
+> 万一 temporary-exception で差し戻された場合の代替は、macOS を Developer ID 直接配布（非サンドボックス）にすること。ただし **macOS の投げ銭 IAP（#598、StoreKit）は MAS 専用**で非サンドボックス化すると失われるため、ナウプレ機能と IAP のトレードオフになる。まず temporary-exception で挑み、不可なら配布形態を pooza 判断。
+
 #### macOS の whatsNew (新機能欄) 未入力で submit が弾かれる罠
 
 iOS は `fastlane release` 実行時に新バージョンの `whatsNew` が空でも前バージョンの値を継承するか何らかの経路で埋められ、submit_for_review が通る。一方 **macOS は同じ Fastfile / 同じ呼び出し方でも `whatsNew` を継承しない** ため、空のまま submit_for_review に進んで Apple API がエラーを返す:

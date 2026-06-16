@@ -73,6 +73,8 @@ class _ChatRoomTimelineScreenState
     final file = _attachedFile;
     // テキストも添付も無ければ送らない (#613)。
     if ((text.isEmpty && file == null) || _sending) return;
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。
+    final account = ref.read(currentAccountProvider);
     setState(() => _sending = true);
     try {
       await ref
@@ -81,12 +83,7 @@ class _ChatRoomTimelineScreenState
       _textController.clear();
       if (mounted) setState(() => _attachedFile = null);
     } catch (e, st) {
-      reportChatOpFailure(
-        'send_room_message',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('send_room_message', e, st, account: account);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeOpError(e)})')),
@@ -97,17 +94,14 @@ class _ChatRoomTimelineScreenState
   }
 
   Future<void> _pickAttachment() async {
+    // ref.read は await をまたぐ前に退避する (#698 / #665 同型)。
+    final account = ref.read(currentAccountProvider);
     setState(() => _uploading = true);
     try {
       final file = await showChatAttachmentPicker(context, ref);
       if (file != null && mounted) setState(() => _attachedFile = file);
     } catch (e, st) {
-      reportChatOpFailure(
-        'attach_room_file',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('attach_room_file', e, st, account: account);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('ファイルの添付に失敗しました (${summarizeOpError(e)})')),

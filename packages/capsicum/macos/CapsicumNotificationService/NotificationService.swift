@@ -86,7 +86,7 @@ class NotificationService: UNNotificationServiceExtension {
         let lookup = PushKeyReader.read(account: account)
         guard let keys = lookup.keys else {
             NSLog(
-                "capsicum: nse: no push keys for \(account) "
+                "capsicum: nse: no push keys for \(maskedAccount(account)) "
                     + "(status=\(lookup.lastStatus), tried=\(lookup.triedPrefixes))"
             )
             FailureRecorder.record(
@@ -105,7 +105,7 @@ class NotificationService: UNNotificationServiceExtension {
             let authSecret = Data(base64UrlEncoded: keys.authBase64),
             let p256dh = Data(base64UrlEncoded: keys.p256dhBase64)
         else {
-            NSLog("capsicum: nse: base64url decode failed for \(account)")
+            NSLog("capsicum: nse: base64url decode failed for \(maskedAccount(account))")
             FailureRecorder.record(
                 code: "nse.base64_decode_failed",
                 host: host, encoding: encoding, elapsedMs: elapsedMs()
@@ -294,6 +294,15 @@ func hostFromAccount(_ account: String) -> String? {
     guard let atIndex = account.lastIndex(of: "@") else { return nil }
     let host = account[account.index(after: atIndex)...]
     return host.isEmpty ? nil : String(host)
+}
+
+/// ログ用にアカウント識別子をマスクする (#696)。Dart 側
+/// (delivered_push_cleaner.dart) は account を一切出さない方針なので、
+/// native 側もユーザー識別子 (username) を伏せて `***@host` に揃える。
+/// host はサーバードメインでありユーザー識別子ではないため、切り分け用に残す。
+func maskedAccount(_ account: String) -> String {
+    guard let host = hostFromAccount(account) else { return "***" }
+    return "***@\(host)"
 }
 
 // MARK: - Payload parsing

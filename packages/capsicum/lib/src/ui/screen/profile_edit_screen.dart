@@ -3,12 +3,15 @@ import 'dart:io';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
+import '../../service/sentry_op_failure.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
   const ProfileEditScreen({super.key});
@@ -78,7 +81,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       }
 
       if (mounted) setState(() => _loaded = true);
-    } catch (_) {
+    } catch (e, st) {
+      // verifyCredentials / max-fields 取得失敗。握り潰すと「読み込み失敗」しか
+      // 残らず後追いできないため Sentry に流す（DioException の生 URL/認可は
+      // reportOpFailure 内の scrub で落ちる）。
+      reportOpFailure(
+        tagKey: 'profile.op',
+        operation: 'load',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(
@@ -130,6 +143,46 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   Future<void> _save() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ProfileEditSupport) return;
+    final account = ref.read(currentAccountProvider);
+
+    // 補足情報は「項目名・値とも空」の行を送らない（未入力の UI 行）。さらに
+    // Mastodon は「値はあるが項目名が空」の行を 422 で弾く
+    // (EmptyProfileFieldNamesValidator)。公式 UI と同じ規律で、送信前に項目名の
+    // 入力を促してブロックする（generic「保存に失敗」より分かりやすく、無効な
+    // PATCH を投げない）。
+    final fields = _fields
+        .map(
+          (f) =>
+              UserField(name: f.name.text.trim(), value: f.value.text.trim()),
+        )
+        .where((f) => f.name.isNotEmpty || f.value.isNotEmpty)
+        .toList();
+    if (fields.any((f) => f.name.isEmpty && f.value.isNotEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('値のある補足情報には項目名が必要です。項目名を入力するか、値を空にしてください。'),
+        ),
+      );
+      return;
+    }
+    // サーバーが上限件数を報告していて、それを超えていれば送信前に弾く
+    // (Mastodon validates :fields, length: maximum)。上限はサーバー値
+    // （max_profile_fields、フォークにより 4 / 10 等）を使い、ハードコードしない。
+    // 未取得(null)なら強制せずサーバー検証に委ねる（422 本文は別途観測する）。
+    // 「追加」ボタンは別途 _maxFields で止めているが、既存アカウントが上限超の
+    // フィールドを持つと読み込んだ全件を送ってしまうため保存時にも確認する
+    // （build 112 の Sentry で field_count=10 を実証）。
+    final maxFields = _maxFields;
+    if (maxFields != null && fields.length > maxFields) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '補足情報は最大$maxFields件までです（現在${fields.length}件）。減らしてから保存してください。',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
 
@@ -139,15 +192,50 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         description: _bioController.text,
         avatarFilePath: _avatarFile?.path,
         bannerFilePath: _bannerFile?.path,
-        fields: _fields
-            .map((f) => UserField(name: f.name.text, value: f.value.text))
-            .toList(),
+        fields: fields,
       );
 
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
 
       if (mounted) context.pop(updatedUser);
-    } catch (e) {
+    } catch (e, st) {
+      // updateProfile (PATCH update_credentials / Misskey i/update) の失敗。
+      // 「保存に失敗しました」だけだと 4.6 ステージング等での不安定を後追い
+      // できないため Sentry に流す（status / path は scrub 済みで残る）。
+      reportOpFailure(
+        tagKey: 'profile.op',
+        operation: 'save',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+      // バリデーション拒否（422/400）はどの検証で落ちたかを切り分ける。本文を
+      // verbatim で載せると、フォークや Misskey が将来エラー文に入力値（表示名・
+      // 自己紹介・項目値）を補間した場合に PII が混入しうるため、構造化シグナル
+      // （キー名・検証コード）だけに絞る（このコードベースの scrub 規律に統一）。
+      // フィールド数・名前/値の長さも添える（255 超や件数超の切り分け用、長さのみ）。
+      if (e is DioException) {
+        final status = e.response?.statusCode;
+        if (status == 422 || status == 400) {
+          Sentry.captureMessage(
+            'profile.save validation rejected ($status)',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('profile.validation', '$status');
+              scope.setTag('host', account?.key.host ?? '-');
+              scope.setContexts('profile_validation', {
+                'body_summary': _summarizeValidationBody(e.response?.data),
+                'field_count': fields.length,
+                'field_name_lengths': fields.map((f) => f.name.length).toList(),
+                'field_value_lengths': fields
+                    .map((f) => f.value.length)
+                    .toList(),
+              });
+              scope.fingerprint = ['profile', 'validation', '$status'];
+            },
+          );
+        }
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -369,4 +457,34 @@ class _FieldEntry {
   final TextEditingController value;
 
   _FieldEntry({required this.name, required this.value});
+}
+
+/// バリデーション拒否レスポンスを、入力値を含まない構造化シグナルに圧縮する。
+///
+/// Mastodon の 422 は `{"error": "...", "details": {"attr": [{"error":
+/// "ERR_TOO_LONG", ...}]}}` 形式。値（説明文・入力エコー）は載せず、最上位
+/// キー名・details の属性名・検証コード（`ERR_*`）だけを残す。Map でない／
+/// パースできない本文は型名と長さのみに倒す。
+Object _summarizeValidationBody(Object? data) {
+  if (data is Map) {
+    final keys = data.keys.map((k) => '$k').toList();
+    final detailCodes = <String>[];
+    final details = data['details'];
+    if (details is Map) {
+      for (final entry in details.entries) {
+        final issues = entry.value;
+        if (issues is List) {
+          for (final issue in issues) {
+            final code = issue is Map ? issue['error'] : null;
+            detailCodes.add('${entry.key}:${code ?? '?'}');
+          }
+        } else {
+          detailCodes.add('${entry.key}');
+        }
+      }
+    }
+    return {'keys': keys, 'detail_codes': detailCodes};
+  }
+  final text = data?.toString() ?? '';
+  return {'type': data.runtimeType.toString(), 'length': text.length};
 }

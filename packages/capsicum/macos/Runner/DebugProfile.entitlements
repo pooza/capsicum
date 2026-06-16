@@ -20,6 +20,12 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<!-- Apple Music ナウプレ取得 (#668)。Release と揃える（debug は sandbox を
+	     外しているため Apple Events 自体は entitlement 無しでも通るが、TCC
+	     オートメーション許可は要る。entitlement セットを Release と一致させて
+	     挙動差を作らない）。 -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.jp.co.b-shock.capsicum</string>

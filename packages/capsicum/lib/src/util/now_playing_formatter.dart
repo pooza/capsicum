@@ -63,6 +63,33 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
   return [...labeled, tagLine].join('\n');
 }
 
+/// 共有 (push) 動線の**不透明な共有テキスト**に `#nowplaying` タグを付ける (#670)。
+///
+/// [formatNowPlayingFallback] と同じ **「タグは末尾」規律** に揃える。タグを行頭に
+/// 置くと、モロヘイヤの「`#nowplaying` 行に同一行 URL が無いと次行を詰める」正規化
+/// で、共有テキストが複数行かつ URL 無しのとき次行が詰められて結合してしまう。
+/// タグを末尾へ逃がせば詰める対象の次行が無く、副作用が出ない（formatter と同じ
+/// 理由。**先頭に戻さないこと**）。
+///
+/// 共有テキストが単一 URL のときだけ unfurl 用にタグと同一行へ置く
+/// （`#nowplaying <url>`）。それ以外はテキストを先に、タグを末尾行に置く。
+/// 構造化整形（Title/Album/Artist 行）への完全統一は Share Extension + モロヘイヤ
+/// enrich 再設計に依存するため、本関数は **タグ配置だけ** を整える（#670 の制約）。
+String composeSharedNowPlaying(String sharedText) {
+  final trimmed = sharedText.trim();
+  if (trimmed.isEmpty) return nowPlayingTag;
+  if (_isSingleUrl(trimmed)) return '$nowPlayingTag $trimmed';
+  return '$trimmed\n$nowPlayingTag';
+}
+
+/// 共有テキストが**単一 URL**（空白を含まず http(s) スキーム）か。単一 URL なら
+/// タグと同一行に置いて unfurl させられる。
+bool _isSingleUrl(String text) {
+  if (text.contains(RegExp(r'\s'))) return false;
+  final uri = Uri.tryParse(text);
+  return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+}
+
 /// メタデータ値を **1 行**に正規化する。前後の空白・制御文字を落とし、内部の
 /// 改行 / タブ / その他 C0 制御文字 (0x00-0x1f) と DEL (0x7f) の連続は空白 1 つへ
 /// 畳む。
