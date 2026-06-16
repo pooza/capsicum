@@ -60,23 +60,22 @@ class AppleMusicNowPlayingProvider implements NowPlayingProvider {
           errorKind == 'automation_pending') {
         throw NowPlayingPermissionException(errorKind);
       }
-      Sentry.captureMessage(
-        'nowplaying: apple music no track / script issue',
-        level: SentryLevel.warning,
-        withScope: (scope) {
-          scope.setTag('nowplaying.source', 'apple_music');
-          scope.setTag('nowplaying.error', errorKind);
-          final status = raw!['__automationStatus'];
-          if (status != null) {
-            scope.setTag('nowplaying.automation_status', '$status');
-          }
-          final items = raw['__scriptItems'];
-          if (items != null) scope.setTag('nowplaying.script_items', '$items');
-          final code = raw['__code'];
-          if (code != null) scope.setTag('nowplaying.code', '$code');
-          scope.fingerprint = ['nowplaying', 'apple_music', errorKind];
-        },
-      );
+      // no_track（未再生・停止・未起動）は正常系なので無音で null に倒す。
+      // script_error（想定外の実行時エラー）だけ観測する。#668 の sandbox 解決は
+      // temporary-exception.apple-events(com.apple.Music) で済み（build 117 で動作確認）、
+      // 診断用の __automationStatus / __scriptItems タグは不要になったため落とした。
+      if (errorKind == 'script_error') {
+        Sentry.captureMessage(
+          'nowplaying: apple music script error',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('nowplaying.source', 'apple_music');
+            final code = raw!['__code'];
+            if (code != null) scope.setTag('nowplaying.code', '$code');
+            scope.fingerprint = ['nowplaying', 'apple_music_script_error'];
+          },
+        );
+      }
       return null;
     }
     return nowPlayingFromAppleMusicMetadata(raw);
