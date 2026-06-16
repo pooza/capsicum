@@ -10,13 +10,13 @@
 ダウンロードしてからメニュー登録まで行います。次の 1 行で完結します:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+curl -fsSL https://capsicum.shrieker.net/install.sh | bash
 ```
 
 `curl` が無ければ `wget` でも動きます:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/install.sh | bash
+wget -qO- https://capsicum.shrieker.net/install.sh | bash
 ```
 
 > システム領域には書き込みません (`sudo` 不要)。書き込み先はすべて
@@ -122,7 +122,7 @@ ibus-mozc 以外の組み合わせは未検証のため、問題があれば [Is
 削除できます。ワンライナー:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pooza/capsicum/main/packaging/linux/uninstall.sh | bash
+curl -fsSL https://capsicum.shrieker.net/uninstall.sh | bash
 ```
 
 ローカルに `uninstall.sh` がある場合はそれを実行しても同じです:
