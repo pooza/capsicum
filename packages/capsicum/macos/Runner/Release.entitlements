@@ -30,9 +30,20 @@
 	<!-- Apple Music ナウプレ取得 (#668)。Sandbox 下でミュージック.app へ
 	     Apple Events (AppleScript) を送るために必要。実際の送信時に TCC
 	     「オートメーション」許可ダイアログが出る（NSAppleEventsUsageDescription
-	     を文面に使う）。拒否されても -1743 を nil に倒すだけで他機能に影響なし。 -->
+	     を文面に使う）。 -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<!-- #668: automation.apple-events（modern・TCC ベース）だけだと、Sandbox 下で
+	     ミュージック.app への Apple Events が procNotFound(-600) で弾かれ、対象すら
+	     解決できなかった（build 109-116 の実機 Sentry で実証。AEDetermine も
+	     NSAppleScript も bundleId/PID/name・thread を問わず -600）。特定アプリへの
+	     送信を明示的に許可する temporary-exception を併用して対象を addressable に
+	     する。MAS 審査で説明が要る点に留意（ナウプレ＝ミュージックの現在再生曲のみ
+	     読み取り、制御はしない）。 -->
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.apple.Music</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.jp.co.b-shock.capsicum</string>
