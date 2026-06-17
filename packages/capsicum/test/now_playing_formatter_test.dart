@@ -2,16 +2,17 @@ import 'package:capsicum/src/util/now_playing_formatter.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// #466 capsicum 側フォールバック整形。モロヘイヤ `text_nowplaying_formatter`
-/// と揃えた複数行ラベル形式（Title/Album/Artist 行 + 末尾 `#nowplaying` 行）を
-/// 組めること、URL を持つ源は末尾タグ行に URL を載せることを確認。
+/// #466 capsicum 側整形。複数行ラベル形式（Title/Album/Artist 行 + URL 独立行 +
+/// 裸の `#nowplaying` 末尾行）を組めること、URL は **#nowplaying と同一行に置かない**
+/// ことを確認。
 ///
-/// タグ行が**末尾**なのはモロヘイヤの「`#nowplaying` 行に URL が無いと次行を
-/// 詰める」正規化対策（#466）。先頭に置くと `Title:` 行が詰められる。
+/// URL を独立行・タグを裸で末尾にするのは、モロヘイヤの「`#nowplaying` 行の直後の
+/// URL を同一行へ引き上げて整形ハンドラを再発火させ、Title/Album/Artist を二重付与
+/// する」正規化を踏ませないため（二重化対策）。
 
 void main() {
   group('formatNowPlayingFallback', () {
-    test('URL + title/album/artist はラベル行 + 末尾の URL 付きタグ行を組む', () {
+    test('URL + title/album/artist はラベル行 + URL 独立行 + 裸の末尾タグを組む', () {
       final info = NowPlayingInfo(
         sourceAppName: 'Apple Music',
         title: 'シュビドゥビ☆スイーツタイム',
@@ -24,8 +25,22 @@ void main() {
         'Title: シュビドゥビ☆スイーツタイム\n'
         'Album: スイート☆エチュード☆アラモード\n'
         'Artist: 宮本佳那子\n'
-        '#nowplaying https://music.apple.com/jp/song/1352845804',
+        'https://music.apple.com/jp/song/1352845804\n'
+        '#nowplaying',
       );
+    });
+
+    test('URL は #nowplaying と同一行に置かない（モロヘイヤ再発火による二重化防止）', () {
+      final info = NowPlayingInfo(
+        sourceAppName: 'Apple Music',
+        title: 'Song',
+        artist: 'Artist',
+        url: Uri.parse('https://open.spotify.com/track/xyz'),
+      );
+      final out = formatNowPlayingFallback(info);
+      // タグは裸で最終行。URL がタグと同一行に乗っていない。
+      expect(out.split('\n').last, nowPlayingTag);
+      expect(out, isNot(contains('$nowPlayingTag http')));
     });
 
     test('URL が無い源（SMTC / MPRIS）は Title/Album/Artist 行 + 末尾タグ', () {
@@ -90,14 +105,14 @@ void main() {
       expect(formatNowPlayingFallback(info), '#nowplaying');
     });
 
-    test('URL があれば title/artist が空でも URL 行のみで成立', () {
+    test('URL があれば title/artist が空でも URL 独立行 + 末尾タグで成立', () {
       final info = NowPlayingInfo(
         sourceAppName: 'Spotify',
         url: Uri.parse('https://open.spotify.com/track/xyz'),
       );
       expect(
         formatNowPlayingFallback(info),
-        '#nowplaying https://open.spotify.com/track/xyz',
+        'https://open.spotify.com/track/xyz\n#nowplaying',
       );
     });
 
@@ -131,8 +146,10 @@ void main() {
 
   group('composeSharedNowPlaying', () {
     // #670: 共有(push)テキストもタグを末尾規律に揃える。
+    // #727: 共有は URL しか持たずメタはモロヘイヤ enrich 任せのため、単一 URL は
+    // 同一行（発火させる）。アプリ内 formatter と方針が逆である点に注意。
 
-    test('単一 URL はタグと同一行（unfurl 用）', () {
+    test('単一 URL はタグと同一行（モロヘイヤ enrich を発火させる）', () {
       expect(
         composeSharedNowPlaying('https://music.apple.com/jp/song/1352845804'),
         '#nowplaying https://music.apple.com/jp/song/1352845804',
