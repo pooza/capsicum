@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../platform/platform_info.dart';
+import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../../service/update_checker.dart';
 
@@ -14,6 +15,8 @@ class DisplaySettingsScreen extends ConsumerWidget {
     final absoluteTime = ref.watch(absoluteTimeProvider);
     final blurAllImages = ref.watch(blurAllImagesProvider);
     final previewCardMode = ref.watch(previewCardModeProvider);
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    final nowPlayingUrlProvider = ref.watch(nowPlayingUrlProviderProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -40,6 +43,21 @@ class DisplaySettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showPreviewCardModeDialog(context, ref),
           ),
+          // ナウプレ URL の優先プロバイダ (#681)。URL を持たない源 (Apple Music /
+          // MPRIS / SMTC) を enrich (#669) で URL 解決する際、Apple Music /
+          // Spotify どちらの URL を載せるかの端末共通 (アカウント非依存) 嗜好。
+          // enrich が使える (`nowplayingResolverEnabled`) サーバーのアカウントを
+          // 現在選択しているときだけ表示する（enrich が走らなければ効かない）。
+          if (mulukhiya?.nowplayingResolverEnabled ?? false)
+            ListTile(
+              title: const Text('ナウプレの URL 優先プロバイダ'),
+              subtitle: Text(
+                '再生中の曲に URL を補完するとき、'
+                '${_nowPlayingUrlProviderLabel(nowPlayingUrlProvider)} の URL を優先',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showNowPlayingUrlProviderDialog(context, ref),
+            ),
           SwitchListTile(
             title: const Text('投稿前に確認する'),
             subtitle: const Text('すべての投稿操作で送信前に確認ダイアログを表示します'),
@@ -89,6 +107,47 @@ class DisplaySettingsScreen extends ConsumerWidget {
                   .read(updateCheckEnabledProvider.notifier)
                   .setEnabled(value),
             ),
+        ],
+      ),
+    );
+  }
+
+  String _nowPlayingUrlProviderLabel(NowPlayingUrlProvider provider) {
+    return switch (provider) {
+      NowPlayingUrlProvider.appleMusic => 'Apple Music',
+      NowPlayingUrlProvider.spotify => 'Spotify',
+    };
+  }
+
+  void _showNowPlayingUrlProviderDialog(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('ナウプレの URL 優先プロバイダ'),
+        children: [
+          RadioGroup<NowPlayingUrlProvider>(
+            groupValue: ref.watch(nowPlayingUrlProviderProvider),
+            onChanged: (value) {
+              if (value != null) {
+                ref
+                    .read(nowPlayingUrlProviderProvider.notifier)
+                    .setProvider(value);
+                Navigator.pop(context);
+              }
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final provider in NowPlayingUrlProvider.values)
+                  RadioListTile<NowPlayingUrlProvider>(
+                    title: Text(_nowPlayingUrlProviderLabel(provider)),
+                    value: provider,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );

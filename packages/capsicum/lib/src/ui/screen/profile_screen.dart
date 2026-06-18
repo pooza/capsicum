@@ -18,7 +18,6 @@ import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
-import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
 
@@ -876,10 +875,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
               ],
             ),
-          ],
-          if (_isOwnProfile) ...[
-            const SizedBox(height: 8),
-            const PushRegistrationStatusSection(),
           ],
           // サポーターバッジ (#428 B-3 / #605) は装飾のみ・自分のみ可視で、
           // ロール chip 列と統合表示する。状態は SupporterStatus 抽象層
