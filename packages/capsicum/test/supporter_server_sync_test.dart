@@ -336,4 +336,30 @@ void main() {
     expect(container.read(isSupporterProvider), isTrue); // ローカル値は生きる
     expect(store.record.syncedToServer, isFalse); // 次回再同期に委ねる
   });
+
+  test('backfill 失敗時は同期済み登録を見送り、次のアカウント変化で再試行する (#724)', () async {
+    // 同期済み (syncedToServer=true) レコードで _uploadToServer の backfill 枝に
+    // 入る。relay 失敗を握り潰して synced 登録すると、不通復帰後も再試行されない。
+    store = _MemoryStore(
+      SupporterRecord(
+        firstTippedAt: DateTime.utc(2026, 3, 1),
+        tipCount: 1,
+        syncedToServer: true,
+      ),
+    );
+    relay = _FakeRelayClient()..failing = true;
+    await start();
+    accounts.setAccounts([_makeAccount('alice', 'h1')]);
+    await _settle();
+    expect(relay.tips, isEmpty); // 不通で送れていない
+
+    // relay 復帰。同じアカウント集合の再 emit で listener を再評価させる。
+    // 失敗時に alice を「同期済み」と登録していなければ（#724 修正）、
+    // alice は未同期のまま listener が発火し、バックフィルが再試行される。
+    relay.failing = false;
+    accounts.setAccounts([_makeAccount('alice', 'h1')]);
+    await _settle();
+
+    expect(relay.tips.map((t) => t.account), contains('alice@h1'));
+  });
 }

@@ -129,7 +129,12 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
           // 新アカウントへバックフィルする (#699)。listener が未処理キーの
           // 出現時のみ発火するため、既存アカウントへの再送（過大計上・許容）
           // は最小限に留まる。
-          await _uploadToServer(sku: record.lastSku);
+          //
+          // upload が relay 不通で失敗したら synced 登録を見送り、次のアカウント
+          // 変化で再発火させる (#724)。_uploadToServer は内部で例外を握り潰す
+          // （markTipped の fire-and-forget 経路と共用するため）ので、戻り値で
+          // 失敗を受け取り `_adoptFromServer` の throw 経路と対称にする。
+          if (!await _uploadToServer(sku: record.lastSku)) break;
         }
         _syncedAccountKeys
           ..clear()
@@ -177,12 +182,16 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
   /// 増分送信の失敗はサーバー側 tip_count の過少、バックフィル再試行は
   /// 過大計上になりうるが、いずれも近似値として許容（バッジ判定に影響
   /// しない。クラス docs 参照）。
-  Future<void> _uploadToServer({String? sku}) async {
+  /// ローカルの投げ銭をサーバーへ反映する。成功（または送る物が無い no-op）で
+  /// `true`、relay 失敗を握り潰したときは `false` を返す。呼び出し元
+  /// （[_syncWithServer]）は `false` のとき `_syncedAccountKeys` 更新を見送り、
+  /// 次のアカウント変化で再試行できるようにする (#724)。
+  Future<bool> _uploadToServer({String? sku}) async {
     final accounts = ref.read(accountManagerProvider).accounts;
-    if (accounts.isEmpty) return;
+    if (accounts.isEmpty) return true;
     final record = state.valueOrNull ?? await _store.load();
     final firstTippedAt = record.firstTippedAt;
-    if (firstTippedAt == null) return; // 非サポーターから呼ばれることはない想定
+    if (firstTippedAt == null) return true; // 非サポーターから呼ばれることはない想定
     try {
       for (final account in accounts) {
         if (record.syncedToServer) {
@@ -210,8 +219,9 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
         // 再送は過大計上になるが近似値として許容（クラス docs 参照）。
         final accountsNow = ref.read(accountManagerProvider).accounts;
         if (accountsNow.length != accounts.length) {
+          // 失敗ではなく再同期予約による中断。do-while が再周回するので成功扱い。
           _resyncRequested = true;
-          return;
+          return true;
         }
         final synced = (state.valueOrNull ?? record).copyWith(
           syncedToServer: true,
@@ -219,11 +229,13 @@ class SupporterStatusNotifier extends AsyncNotifier<SupporterRecord> {
         await _store.save(synced);
         state = AsyncData(synced);
       }
+      return true;
     } catch (e) {
       _breadcrumb('upload failed: ${_describeError(e)}');
       debugPrint(
         'capsicum: supporter.sync: upload failed (${_describeError(e)})',
       );
+      return false;
     }
   }
 
