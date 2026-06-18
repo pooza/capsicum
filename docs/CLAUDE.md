@@ -176,6 +176,7 @@ capsicum/
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
     flutter-upstream-watch.md  # Flutter 上流バグの追跡（月次 chase routine と連動）
     mastodon-46-capsicum-triage.md  # Mastodon 4.6 の API 変更を client 影響でトリアージ（フォーク diff 手順つき）
+    misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
     store-release-guide.md  # ストアリリース手順書（運用正本）
     archive/              # 過去の記録（現役運用では参照しない。release-pipeline.md 等）
