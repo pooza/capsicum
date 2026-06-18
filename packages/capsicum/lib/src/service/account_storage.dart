@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
@@ -111,16 +112,36 @@ class AccountStorage {
         _reportOnce('secret:$accountKey:transient', e, st);
         return null;
       }
+      // Android の Keystore 復号エラーは、transient（起動時にロック中 / Keystore
+      // 準備前 / register race）と permanent（再インストールで鍵再生成）が
+      // 判別しづらい。delete は再ログインを強制する破壊的操作で、一過性のときに
+      // 「複数アカウントが一斉ログアウト」を招く (#730 / #731)。Android では
+      // delete せず secret を残して次回起動で再試行する（permanent でも再ログイン
+      // が secret を上書きするので無害）。-25308 のような明示 transient コードが
+      // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
+      if (Platform.isAndroid) {
+        debugPrint(
+          'capsicum: android keystore read error for $accountKey, '
+          'keeping secret (code=${e.code}): $e',
+        );
+        _reportOnce('secret:$accountKey:android_keystore', e, st);
+        return null;
+      }
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
     } catch (e, st) {
       // BadPaddingException etc. may bypass PlatformException wrapping
-      // after app reinstall (encryption key regenerated).
+      // after app reinstall (encryption key regenerated). Android では上と同様、
+      // 一過性の Keystore 失敗で破壊しないよう delete を見送る (#730 / #731)。
       debugPrint(
         'capsicum: unexpected error reading secrets for $accountKey: $e',
       );
+      if (Platform.isAndroid) {
+        _reportOnce('secret:$accountKey:android_keystore', e, st);
+        return null;
+      }
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;

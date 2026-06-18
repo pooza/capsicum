@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -13,6 +15,7 @@ import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
+import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
 
 /// State: list of accounts + currently selected account.
@@ -254,6 +257,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final storage = ref.read(accountStorageProvider);
     final keys = await storage.getAccountKeys();
     var skippedCount = 0;
+    // ネットワーク一過性で落ちたアカウント（secret は有効）。ループ後に
+    // バックグラウンドで再試行する (#730)。
+    final transientFailures = <({String keyStr, Map<String, String> secrets})>[];
 
     for (final keyStr in keys) {
       final secrets = await storage.getSecrets(keyStr);
@@ -271,69 +277,23 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       }
 
       try {
-        final accountKey = AccountKey.fromStorageKey(keyStr);
-        final adapter = await accountKey.type.createAdapter(accountKey.host);
-
-        final userSecret = UserSecret(
-          accessToken: secrets['access_token']!,
-          refreshToken: secrets['refresh_token'],
-        );
-        final clientSecret = secrets.containsKey('client_id')
-            ? ClientSecretData(
-                clientId: secrets['client_id']!,
-                clientSecret: secrets['client_secret']!,
-              )
-            : null;
-
-        await adapter.applySecrets(clientSecret, userSecret);
-        final user = await adapter.getMyself();
-
-        // Detect timeline availability (non-blocking).
-        if (adapter is MastodonAdapter) {
-          try {
-            await adapter.detectTimelineAvailability();
-          } catch (e) {
-            debugPrint(
-              'capsicum: restoreSessions: detectTimelineAvailability '
-              'failed for $keyStr: $e',
-            );
-          }
-        }
-
-        final mulukhiya = await _detectMulukhiya(
-          accountKey.host,
-          token: userSecret.accessToken,
-        );
-        if (mulukhiya != null) {
-          if (adapter is MastodonAdapter) {
-            adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
-          } else if (adapter is MisskeyAdapter) {
-            adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
-          }
-        }
-        final softwareVersion = await _detectSoftwareVersion(accountKey.host);
-
-        final account = Account(
-          key: accountKey,
-          adapter: adapter,
-          user: user,
-          userSecret: userSecret,
-          clientSecret: clientSecret,
-          mulukhiya: mulukhiya,
-          softwareVersion: softwareVersion,
-        );
-
-        final newAccounts = [...state.accounts, account];
-        state = AccountManagerState(
-          accounts: newAccounts,
-          current: state.current ?? account,
-        );
-
-        await _persistNotificationLabels(account);
-
-        // Prefetch server metadata for badge display (non-blocking).
-        ServerMetadataCache.instance.fetch(accountKey.host);
+        await _restoreOne(keyStr, secrets);
       } catch (e, st) {
+        // ネットワーク一過性（host lookup / connection / timeout）の失敗は、
+        // secret は有効なのに probe（getMyself 等）が落ちただけ。これを
+        // 「復元不能＝ログアウト」へ降格させない (#730)。回線ブリップ時に複数
+        // アカウントの getMyself() が同時に失敗→全 skip→「一斉ログアウト」に
+        // 見える事象の根治。secret は無傷なのでバックグラウンドで再試行し、
+        // ユーザー操作なしで自動回復させる。auth 失効（401=server 応答）や
+        // secret 系・不明はこれまで通り skip + 観測する。
+        if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
+          debugPrint(
+            'capsicum: restoreSessions: transient network for $keyStr, '
+            'will retry in background: $e',
+          );
+          transientFailures.add((keyStr: keyStr, secrets: secrets));
+          continue;
+        }
         // 復元中の例外を以前は完全に握りつぶしていたが、Linux で
         // Misskey アカウントだけ silently に消える挙動の追跡が不可能に
         // なっていた (#496)。debugPrint で起動ログに出し、Sentry にも
@@ -345,7 +305,131 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         continue;
       }
     }
+
+    if (transientFailures.isNotEmpty) {
+      // 起動を待たせないよう、再試行はバックグラウンドへ逃がす（splash は
+      // restoreSessions 完走として先へ進み、復帰したアカウントは後から現れる）。
+      unawaited(_retryTransientRestores(transientFailures));
+    }
     return skippedCount;
+  }
+
+  /// 1 アカウントを secret から復元し、成功したら state へ追加する。
+  /// [restoreSessions] の初回ループと [_retryTransientRestores] の両方から使う。
+  /// 例外は呼び出し側で分類する（ネットワーク一過性なら再試行、それ以外は skip）。
+  Future<void> _restoreOne(String keyStr, Map<String, String> secrets) async {
+    final accountKey = AccountKey.fromStorageKey(keyStr);
+    final adapter = await accountKey.type.createAdapter(accountKey.host);
+
+    final userSecret = UserSecret(
+      accessToken: secrets['access_token']!,
+      refreshToken: secrets['refresh_token'],
+    );
+    final clientSecret = secrets.containsKey('client_id')
+        ? ClientSecretData(
+            clientId: secrets['client_id']!,
+            clientSecret: secrets['client_secret']!,
+          )
+        : null;
+
+    await adapter.applySecrets(clientSecret, userSecret);
+    final user = await adapter.getMyself();
+
+    // Detect timeline availability (non-blocking).
+    if (adapter is MastodonAdapter) {
+      try {
+        await adapter.detectTimelineAvailability();
+      } catch (e) {
+        debugPrint(
+          'capsicum: restoreSessions: detectTimelineAvailability '
+          'failed for $keyStr: $e',
+        );
+      }
+    }
+
+    final mulukhiya = await _detectMulukhiya(
+      accountKey.host,
+      token: userSecret.accessToken,
+    );
+    if (mulukhiya != null) {
+      if (adapter is MastodonAdapter) {
+        adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
+      } else if (adapter is MisskeyAdapter) {
+        adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
+      }
+    }
+    final softwareVersion = await _detectSoftwareVersion(accountKey.host);
+
+    final account = Account(
+      key: accountKey,
+      adapter: adapter,
+      user: user,
+      userSecret: userSecret,
+      clientSecret: clientSecret,
+      mulukhiya: mulukhiya,
+      softwareVersion: softwareVersion,
+    );
+
+    final newAccounts = [...state.accounts, account];
+    state = AccountManagerState(
+      accounts: newAccounts,
+      current: state.current ?? account,
+    );
+
+    await _persistNotificationLabels(account);
+
+    // Prefetch server metadata for badge display (non-blocking).
+    ServerMetadataCache.instance.fetch(accountKey.host);
+  }
+
+  /// ネットワーク一過性で初回復元に失敗したアカウントを、回線復帰を待って
+  /// バックグラウンドで再試行する (#730)。短い backoff を数回かけ、成功すれば
+  /// state に現れてユーザー操作なしで自動回復する。手動ログイン等で既に
+  /// 復元済みのものはスキップ。ネットワーク以外（auth 失効等）へ転じたら諦めて
+  /// 観測。全 backoff 後も不通なら観測のみ残す（ユーザーは手動で再ログイン可能）。
+  Future<void> _retryTransientRestores(
+    List<({String keyStr, Map<String, String> secrets})> pending,
+  ) async {
+    const delays = [
+      Duration(seconds: 2),
+      Duration(seconds: 5),
+      Duration(seconds: 15),
+      Duration(seconds: 30),
+    ];
+    var remaining = pending;
+    for (final delay in delays) {
+      if (remaining.isEmpty) return;
+      await Future<void>.delayed(delay);
+      final stillFailing =
+          <({String keyStr, Map<String, String> secrets})>[];
+      for (final item in remaining) {
+        // 別経路（手動ログイン等）で既に復元済みなら何もしない。
+        final alreadyRestored = state.accounts.any(
+          (a) => a.key.toStorageKey() == item.keyStr,
+        );
+        if (alreadyRestored) continue;
+        try {
+          await _restoreOne(item.keyStr, item.secrets);
+        } catch (e, st) {
+          if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
+            stillFailing.add(item); // まだ不通。次の backoff で再試行。
+          } else {
+            // ネットワーク以外（auth 失効等）へ転じたら諦めて観測する。
+            debugPrint(
+              'capsicum: account_restore: retry gave up for ${item.keyStr}: $e',
+            );
+            _reportRestoreOnce(item.keyStr, e, st);
+          }
+        }
+      }
+      remaining = stillFailing;
+    }
+    if (remaining.isNotEmpty) {
+      debugPrint(
+        'capsicum: restoreSessions: ${remaining.length} account(s) still '
+        'unreachable after retries; user can re-login manually',
+      );
+    }
   }
 
   static final Set<String> _reportedRestoreErrors = {};
