@@ -469,11 +469,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     state = AsyncData(current.copyWith(posts: posts));
   }
 
-  /// 自分の投稿を即座に TL 先頭へ楽観的挿入する (#717)。投稿成功直後に呼ぶ。
+  /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
+  /// 投稿成功直後に呼ぶ。この provider は [selectedTimelineTypeProvider] を
+  /// watch するため、挿入先は home 固定ではなく今表示中の TL（home / local /
+  /// federated）になる。
   ///
   /// 旧実装は投稿後に `invalidate(timelineProvider)` で REST 全再取得していたが、
   /// 取得タイミング次第（連合/負荷時のサーバー伝播レース）で自分の投稿がまだ
-  /// home に index されておらず「投稿しても出ない」ことがあった。楽観挿入なら
+  /// サーバーに index されておらず「投稿しても出ない」ことがあった。楽観挿入なら
   /// REST 再取得・ストリーミング状態に依存せず必ず即時に出る。後から streaming /
   /// REST で同じ id が来ても二重表示しないよう、既存なら何もしない。
   ///
@@ -490,6 +493,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (hideLivecure && _hasLivecureTag(post)) return;
     if (current.posts.any((p) => p.id == post.id)) return;
     if (_pendingPosts.any((p) => p.id == post.id)) return;
+    // streaming は `!_isNearTop` のとき _pendingPosts にキューしてスクロール
+    // ジャンプを防ぐが、自分の投稿は「投稿したのに出ない」を避けるため位置に
+    // 関わらず即座に先頭へ出す（意図的に _isNearTop を見ない）。
     state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
   }
 

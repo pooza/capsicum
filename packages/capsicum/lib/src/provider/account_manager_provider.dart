@@ -371,6 +371,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       softwareVersion: softwareVersion,
     );
 
+    // append 直前の最終重複ガード。_restoreOne は複数 await をまたぐため、
+    // その間に別経路（手動ログイン / リトライ）で同一 key が復元されると二重
+    // append になりうる。冒頭チェックだけでは await 中の競合を塞げないので
+    // ここで再確認する (#730 リトライ経路の防御)。
+    if (state.accounts.any((a) => a.key == accountKey)) return;
+
     final newAccounts = [...state.accounts, account];
     state = AccountManagerState(
       accounts: newAccounts,
@@ -429,6 +435,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         'capsicum: restoreSessions: ${remaining.length} account(s) still '
         'unreachable after retries; user can re-login manually',
       );
+      // 全 backoff 後も不通＝「一過性」前提が外れて恒久障害だった可能性がある。
+      // #730 は一斉ログアウト誤認を防ぐのが主目的だが、握り潰しが恒久障害を
+      // 覆い隠さないよう、枯渇したアカウントを per-process dedup で 1 度だけ
+      // 観測する（network 系として path タグで区別）。
+      for (final item in remaining) {
+        _reportRestoreExhaustedOnce(item.keyStr);
+      }
     }
   }
 
@@ -517,6 +530,44 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
             scope.setTag('account_restore.key_parse', 'failed');
           }
           scope.fingerprint = ['account_restore', 'null_secret'];
+        },
+      );
+    } catch (_) {
+      // Sentry 自体が起動前 / 失敗するケースでも本筋を止めない。
+    }
+  }
+
+  /// ネットワーク一過性として再試行を尽くしても復元できなかったアカウントを
+  /// per-process で 1 度だけ観測する (#730)。例外経路 (`_reportRestoreOnce`) /
+  /// null 経路 (`_reportNullSecretSkipOnce`) と同じ de-identification ポリシー
+  /// （tag は host のみ・username はハッシュ・dedup は [_reportedRestoreErrors]
+  /// を `:network_exhausted` 接尾辞で共用）に従う。一過性前提の握り潰しが恒久
+  /// 障害を覆い隠していないか、本番 Sentry で頻度・規模を把握するため。
+  static void _reportRestoreExhaustedOnce(String accountKey) {
+    final dedupKey = '$accountKey:network_exhausted';
+    if (!_reportedRestoreErrors.add(dedupKey)) return;
+    try {
+      AccountKey? parsed;
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        parsed = null;
+      }
+      Sentry.captureMessage(
+        'account_restore: still unreachable after retries (network exhausted)',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('account_restore.path', 'network_exhausted');
+          if (parsed != null) {
+            scope.setTag('account_restore.host', parsed.host);
+            scope.setTag(
+              'account_restore.user_hash',
+              hashForSentryTag(parsed.username),
+            );
+          } else {
+            scope.setTag('account_restore.key_parse', 'failed');
+          }
+          scope.fingerprint = ['account_restore', 'network_exhausted'];
         },
       );
     } catch (_) {

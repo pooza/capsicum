@@ -109,7 +109,7 @@ class AccountStorage {
         debugPrint(
           'capsicum: keychain transient for $accountKey (code=${e.code}): $e',
         );
-        _reportOnce('secret:$accountKey:transient', e, st);
+        _reportOnce('secret:$accountKey:transient', e, st, code: e.code);
         return null;
       }
       // Android の Keystore 復号エラーは、transient（起動時にロック中 / Keystore
@@ -124,7 +124,7 @@ class AccountStorage {
           'capsicum: android keystore read error for $accountKey, '
           'keeping secret (code=${e.code}): $e',
         );
-        _reportOnce('secret:$accountKey:android_keystore', e, st);
+        _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
         return null;
       }
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
@@ -466,10 +466,32 @@ class AccountStorage {
     }
   }
 
-  static void _reportOnce(String stage, Object error, StackTrace st) {
-    final key = '$stage:${error.runtimeType}';
+  /// secret 読み取り失敗を per-process で 1 度だけ Sentry に送る。
+  ///
+  /// [code] は `PlatformException.code`（例: `-25308` 等のエラーコードであり
+  /// secret ではない）。Android Keystore 失敗は transient（ロック中 / register
+  /// race）と permanent（再インストールで鍵再生成）が同じ stage に集約されて
+  /// dedup で片方しか届かないことがあるため、code を dedup キーと scope タグの
+  /// 両方に載せて切り分けられるようにする (#731 の根因切り分け)。
+  static void _reportOnce(
+    String stage,
+    Object error,
+    StackTrace st, {
+    String? code,
+  }) {
+    final key = '$stage:${error.runtimeType}${code != null ? ':$code' : ''}';
     if (!_reportedErrors.add(key)) return;
-    Sentry.captureException(error, stackTrace: st);
+    try {
+      Sentry.captureException(
+        error,
+        stackTrace: st,
+        withScope: code != null
+            ? (scope) => scope.setTag('secret.code', code)
+            : null,
+      );
+    } catch (_) {
+      // Sentry 未初期化 / 失敗でも本筋（secret 読み取り）を止めない。
+    }
   }
 
   /// macOS / iOS の Keychain アクセスで transient (再試行で読めるはず)
