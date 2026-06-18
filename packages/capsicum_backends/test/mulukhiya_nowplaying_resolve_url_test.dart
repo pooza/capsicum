@@ -121,7 +121,10 @@ void main() {
 
     test('非 http スキームの正規化結果は null に倒す', () async {
       final built = await _build(
-        body: {'url': 'spotify:track:abc', 'normalized': {'title': 'X'}},
+        body: {
+          'url': 'spotify:track:abc',
+          'normalized': {'title': 'X'},
+        },
       );
       final info = await built.service.resolveNowPlayingByUrl(
         accessToken: 't',

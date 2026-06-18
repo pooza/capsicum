@@ -897,11 +897,12 @@ class MulukhiyaService {
   /// [NowPlayingInfo.sourceAppName] は URL を持つ本経路では整形に使われない
   /// （[formatNowPlayingFallback] は labeled か url があれば source を出さない）が、
   /// モデルが非 null を要求するため埋める。
-  static String _nowPlayingProviderLabel(Object? provider) => switch (provider) {
-    'spotify' => 'Spotify',
-    'apple_music' => 'Apple Music',
-    _ => '',
-  };
+  static String _nowPlayingProviderLabel(Object? provider) =>
+      switch (provider) {
+        'spotify' => 'Spotify',
+        'apple_music' => 'Apple Music',
+        _ => '',
+      };
 
   /// Update tags on a scheduled status (Mastodon only).
   /// PUT /mulukhiya/api/scheduled_status/:id/tags

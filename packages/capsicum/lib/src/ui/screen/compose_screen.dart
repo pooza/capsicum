@@ -1507,7 +1507,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         !isSingleNowPlayingUrl(sharedText)) {
       return; // 非プリセット / 機能無効 / URL でない不透明テキストはフォールバック据え置き。
     }
-    unawaited(_upgradeSharedNowPlaying(account, mulukhiya, sharedText, fallback));
+    unawaited(
+      _upgradeSharedNowPlaying(account, mulukhiya, sharedText, fallback),
+    );
   }
 
   /// 共有 URL を resolve-by-URL でメタ解決し、整形版へ差し替える (#729)。失敗・

@@ -87,9 +87,7 @@ void main() {
     test('再生中は URL を持つ NowPlayingInfo を返す', () async {
       final provider = SpotifyNowPlayingProvider(
         mulukhiya: await _service(
-          _SpotifyAdapter(
-            body: {'url': 'https://open.spotify.com/track/abc'},
-          ),
+          _SpotifyAdapter(body: {'url': 'https://open.spotify.com/track/abc'}),
         ),
         accessToken: 't',
       );

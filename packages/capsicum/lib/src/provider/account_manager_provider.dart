@@ -259,7 +259,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     var skippedCount = 0;
     // ネットワーク一過性で落ちたアカウント（secret は有効）。ループ後に
     // バックグラウンドで再試行する (#730)。
-    final transientFailures = <({String keyStr, Map<String, String> secrets})>[];
+    final transientFailures =
+        <({String keyStr, Map<String, String> secrets})>[];
 
     for (final keyStr in keys) {
       final secrets = await storage.getSecrets(keyStr);
@@ -400,8 +401,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     for (final delay in delays) {
       if (remaining.isEmpty) return;
       await Future<void>.delayed(delay);
-      final stillFailing =
-          <({String keyStr, Map<String, String> secrets})>[];
+      final stillFailing = <({String keyStr, Map<String, String> secrets})>[];
       for (final item in remaining) {
         // 別経路（手動ログイン等）で既に復元済みなら何もしない。
         final alreadyRestored = state.accounts.any(
