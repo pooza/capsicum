@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../model/account.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/content_parser.dart';
@@ -355,15 +356,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
-      // 共有（push）動線。共有テキストは不透明（URL or テキスト）なので
-      // formatNowPlayingFallback の構造化整形は通せないが、タグ配置だけは
-      // composeSharedNowPlaying で formatter と同じ「末尾」規律に揃える (#670)。
-      // 整形の完全統一は macOS 共有 Extension とモロヘイヤ再設計（整形=クライアント
-      // / プロキシ=サーバー、design 参照）に依存。
-      _controller.text = '${composeSharedNowPlaying(widget.sharedText!)}\n';
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
-      );
+      _initSharedNowPlaying(widget.sharedText!);
       final account = ref.read(currentAccountProvider);
       if (account != null && account.user.defaultScope != null) {
         _scope = account.user.defaultScope!;
@@ -1491,6 +1484,57 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 共有（push）動線の本文初期化 (#729)。
+  ///
+  /// ShareExtension は URL しか渡さずメタ（Title/Album/Artist）を持たないため、
+  /// まず [composeSharedNowPlaying] の即時フォールバック（同一行 `#nowplaying <url>`、
+  /// モロヘイヤ post-time enrich 任せ）を入れる。プリセット＋オンラインかつ単一 URL
+  /// なら、モロヘイヤ resolve-by-URL でメタを解決し、**in-app と同じ
+  /// [formatNowPlayingFallback]** に非同期で差し替える（段階的劣化: 取れれば自己完結
+  /// フォーマット、ダメならフォールバック据え置き）。
+  void _initSharedNowPlaying(String sharedText) {
+    final fallback = '${composeSharedNowPlaying(sharedText)}\n';
+    _controller.text = fallback;
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null ||
+        mulukhiya == null ||
+        !mulukhiya.nowplayingUrlResolverEnabled ||
+        !isSingleNowPlayingUrl(sharedText)) {
+      return; // 非プリセット / 機能無効 / URL でない不透明テキストはフォールバック据え置き。
+    }
+    unawaited(_upgradeSharedNowPlaying(account, mulukhiya, sharedText, fallback));
+  }
+
+  /// 共有 URL を resolve-by-URL でメタ解決し、整形版へ差し替える (#729)。失敗・
+  /// 未ヒットはフォールバックのまま。ユーザーが既に本文を編集していたら差し替え
+  /// ない（[fallback] と一致するときだけ上書き）。
+  Future<void> _upgradeSharedNowPlaying(
+    Account account,
+    MulukhiyaService mulukhiya,
+    String url,
+    String fallback,
+  ) async {
+    final NowPlayingInfo? info;
+    try {
+      info = await mulukhiya.resolveNowPlayingByUrl(
+        accessToken: account.userSecret.accessToken,
+        url: url.trim(),
+      );
+    } catch (_) {
+      return; // resolveNowPlayingByUrl は null に倒す契約だが、防御的にフォールバック維持。
+    }
+    if (info == null || !mounted) return;
+    if (_controller.text != fallback) return; // ユーザー編集済みなら触らない。
+    final upgraded = '${formatNowPlayingFallback(info)}\n';
+    _controller.text = upgraded;
+    _controller.selection = TextSelection.collapsed(offset: upgraded.length);
+  }
+
   /// URL を持たないナウプレ源に、モロヘイヤ enrich (#669 / mulukhiya #4382) で
   /// 共有 URL を任意補完する。enrich 無効 (フラグ off / 旧モロヘイヤ) ・title 欠落・
   /// 未ヒット・失敗のときは元の [info] をそのまま返す（クライアント整形へ）。
@@ -1513,6 +1557,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       artist: info.artist,
       album: info.album,
       sourceAppName: info.sourceAppName,
+      prefer: ref.read(nowPlayingUrlProviderProvider).apiValue,
     );
     return url == null ? info : info.copyWith(url: url);
   }

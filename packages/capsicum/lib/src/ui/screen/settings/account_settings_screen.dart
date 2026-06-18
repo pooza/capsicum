@@ -36,6 +36,7 @@ class AccountSettingsScreen extends ConsumerWidget {
           _BackgroundImageTile(ref: ref),
           _TabOrderTile(ref: ref),
           const _SpotifyLinkTile(),
+          const _NowPlayingProviderTile(),
         ],
       ),
     );
@@ -193,6 +194,64 @@ class _SpotifyLinkTileState extends ConsumerState<_SpotifyLinkTile> {
           : (linked
                 ? TextButton(onPressed: _unlink, child: const Text('連携解除'))
                 : FilledButton(onPressed: _link, child: const Text('連携する'))),
+    );
+  }
+}
+
+/// ナウプレ URL の優先プロバイダ設定 (#681)。URL を持たない源 (Apple Music /
+/// MPRIS / SMTC) を enrich (#669) で URL 解決する際、Apple Music / Spotify
+/// どちらの URL を載せるかの端末ローカル嗜好。enrich が使える
+/// (`nowplayingResolverEnabled`) サーバーのアカウントでのみ表示する（enrich が
+/// 走らなければ設定しても効かないため）。値は端末共通（アカウント非依存）。
+class _NowPlayingProviderTile extends ConsumerWidget {
+  const _NowPlayingProviderTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    if (mulukhiya == null || !mulukhiya.nowplayingResolverEnabled) {
+      return const SizedBox.shrink();
+    }
+    final current = ref.watch(nowPlayingUrlProviderProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Text('ナウプレの URL 優先プロバイダ'),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
+          child: Text(
+            '再生中の曲に URL を補完するとき、どちらの配信元の URL を優先するか（端末共通）',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ),
+        RadioGroup<NowPlayingUrlProvider>(
+          groupValue: current,
+          onChanged: (value) {
+            if (value != null) {
+              ref
+                  .read(nowPlayingUrlProviderProvider.notifier)
+                  .setProvider(value);
+            }
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final provider in NowPlayingUrlProvider.values)
+                RadioListTile<NowPlayingUrlProvider>(
+                  value: provider,
+                  title: Text(switch (provider) {
+                    NowPlayingUrlProvider.appleMusic => 'Apple Music',
+                    NowPlayingUrlProvider.spotify => 'Spotify',
+                  }),
+                  dense: true,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
