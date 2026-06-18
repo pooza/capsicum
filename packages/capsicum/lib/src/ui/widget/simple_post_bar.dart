@@ -129,7 +129,13 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
       );
       if (mounted) {
         _controller.clear();
-        ref.invalidate(timelineProvider);
+        if (widget.channelId == null && posted != null) {
+          // #717: 自分の投稿を TL 先頭へ楽観的に挿入する（REST 全再取得に
+          // 依存させず、サーバー伝播レースでも必ず即座に出す）。
+          ref.read(timelineProvider.notifier).insertOwnPost(posted);
+        } else {
+          ref.invalidate(timelineProvider);
+        }
         // #433: hideLivecure ON 中に #実況 を含む投稿 (モロヘイヤ自動付与含む)
         // は TL から除外されるため SnackBar で告知。
         maybeShowHideLivecureSnackBar(context, ref, posted);

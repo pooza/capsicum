@@ -80,15 +80,17 @@ String formatNowPlayingFallback(NowPlayingInfo info) {
 String composeSharedNowPlaying(String sharedText) {
   final trimmed = sharedText.trim();
   if (trimmed.isEmpty) return nowPlayingTag;
-  if (_isSingleUrl(trimmed)) return '$nowPlayingTag $trimmed';
+  if (isSingleNowPlayingUrl(trimmed)) return '$nowPlayingTag $trimmed';
   return '$trimmed\n$nowPlayingTag';
 }
 
 /// 共有テキストが**単一 URL**（空白を含まず http(s) スキーム）か。単一 URL なら
-/// タグと同一行に置いてモロヘイヤに enrich させられる。
-bool _isSingleUrl(String text) {
-  if (text.contains(RegExp(r'\s'))) return false;
-  final uri = Uri.tryParse(text);
+/// タグと同一行に置いてモロヘイヤに enrich させられる。共有フローが resolve-by-URL
+/// (#729) を呼ぶ前段の判定にも使うため公開する。
+bool isSingleNowPlayingUrl(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty || trimmed.contains(RegExp(r'\s'))) return false;
+  final uri = Uri.tryParse(trimmed);
   return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
 }
 

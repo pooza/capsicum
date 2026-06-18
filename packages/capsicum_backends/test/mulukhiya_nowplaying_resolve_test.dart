@@ -128,6 +128,20 @@ void main() {
       expect(body.containsKey('artist'), isFalse);
       expect(body.containsKey('album'), isFalse);
       expect(body.containsKey('source_app_name'), isFalse);
+      expect(body.containsKey('prefer'), isFalse);
+    });
+
+    test('prefer を渡すと body に載る (#681)', () async {
+      final built = await _build(resolveBody: {'url': null});
+      await built.service.resolveNowPlaying(
+        accessToken: 't',
+        title: 'Song',
+        prefer: 'spotify',
+      );
+      final body =
+          jsonDecode(built.adapter.capturedResolveBody!)
+              as Map<String, dynamic>;
+      expect(body['prefer'], 'spotify');
     });
 
     test('ヒットなし (200 + url:null) は null', () async {

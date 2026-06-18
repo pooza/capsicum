@@ -47,11 +47,14 @@ Misskey は upstream の仕様上、通常はサードパーティアプリか�
 
 ## 主な機能
 
-- **ナウプレ共有** — Apple Music や Spotify などの「共有」から capsicum を選ぶだけで、`#nowplaying` 付きの投稿を作成
+- **劇中ワードサジェスト**（v1.35〜） — IME の変換候補に出てこない専門用語（必殺技名・キャラクター名など）を、ひらがなの読みから検索して投稿フォームに挿入。辞書を用意したモロヘイヤ導入サーバーで利用できる独自機能
+- **ナウプレ** — 聴いている曲を `#nowplaying` 付きの投稿としてワンアクションで作成。Apple Music や Spotify などの「共有」から作るほか、投稿フォームの ♪ ボタンから再生中の曲を直接取得できます（デスクトップの Linux / Windows は v1.33〜、iPhone / iPad / Mac の Apple Music は v1.37〜）
 - **Annict 連携** — 視聴中のアニメに対する実況投稿〜視聴後の感想記録までを capsicum 内で完結 (詳細は [docs/annict-integration.md](docs/annict-integration.md))
+- **デスクトップ通知**（v1.34〜） — macOS / Linux / Windows でも、アプリ起動中の WebSocket 接続経由で通知を OS のローカル通知に表示（macOS はネイティブ APNs にも対応）
 - 複数サーバー・アカウントの切り替え
 - 引用投稿の表示・作成（Mastodon / Misskey）
-- Misskey リアクション・クリップ・ドライブ・チャンネル・Misskey Play
+- Misskey リアクション・クリップ・ドライブ・チャンネル・ページ・Misskey Play
+- Misskey メッセージ / グループチャット（スレッド形式チャット・リアクション・ファイル添付）
 - アンケート作成・投票
 - 予約投稿・投稿の翻訳・言語選択
 - 絵文字ピッカー・カスタム絵文字・MFM 描画

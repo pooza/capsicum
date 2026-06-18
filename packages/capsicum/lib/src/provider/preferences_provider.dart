@@ -41,6 +41,7 @@ const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
 const _updateCheckEnabledKey = 'update_check_enabled';
 const _postTouchActionsKey = 'post_touch_actions';
+const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -52,6 +53,22 @@ enum PreviewCardMode {
 
   /// Hide preview cards entirely.
   hide,
+}
+
+/// ナウプレ URL の優先プロバイダ (#681)。URL を持たないナウプレ源
+/// (Apple Music / MPRIS / SMTC) を enrich (#669) で共有 URL 解決する際、
+/// どちらの配信元の URL を載せたいかのユーザー嗜好。端末ローカル設定で、
+/// モロヘイヤ enrich 呼び出しの `prefer` パラメータとして毎回送る。既定は
+/// Apple Music（運営者の価値観＝アーティスト還元、サーバー既定とも一致）。
+enum NowPlayingUrlProvider {
+  appleMusic,
+  spotify;
+
+  /// モロヘイヤ enrich の `prefer` パラメータ値。
+  String get apiValue => switch (this) {
+    NowPlayingUrlProvider.appleMusic => 'apple_music',
+    NowPlayingUrlProvider.spotify => 'spotify',
+  };
 }
 
 /// アカウントアイコンの形状 (#372)。
@@ -918,6 +935,37 @@ class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_previewCardModeKey, mode.name);
+  }
+}
+
+/// ナウプレ URL の優先プロバイダ設定 (#681)。既定は Apple Music。
+final nowPlayingUrlProviderProvider =
+    NotifierProvider<NowPlayingUrlProviderNotifier, NowPlayingUrlProvider>(
+      NowPlayingUrlProviderNotifier.new,
+    );
+
+class NowPlayingUrlProviderNotifier extends Notifier<NowPlayingUrlProvider> {
+  @override
+  NowPlayingUrlProvider build() {
+    _load();
+    return NowPlayingUrlProvider.appleMusic;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_nowPlayingUrlProviderKey);
+    if (saved != null) {
+      final provider = NowPlayingUrlProvider.values
+          .where((p) => p.name == saved)
+          .firstOrNull;
+      if (provider != null) state = provider;
+    }
+  }
+
+  Future<void> setProvider(NowPlayingUrlProvider provider) async {
+    state = provider;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_nowPlayingUrlProviderKey, provider.name);
   }
 }
 
