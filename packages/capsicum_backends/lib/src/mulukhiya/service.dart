@@ -230,6 +230,16 @@ class EmojiPalettesResult {
   }
 }
 
+/// Spotify 連携トークンが未連携 / 失効でモロヘイヤが 403 を返したことを表す
+/// (#570)。「再生中の曲なし (null)」とは区別され、呼び出し側が再連携導線を
+/// 出せる状態。`Ginseng::AuthError` (HTTP 403) に対応する。
+class MulukhiyaSpotifyAuthException implements Exception {
+  const MulukhiyaSpotifyAuthException();
+
+  @override
+  String toString() => 'MulukhiyaSpotifyAuthException';
+}
+
 class MulukhiyaService {
   final Dio _dio;
   final String baseUrl;
@@ -272,6 +282,21 @@ class MulukhiyaService {
   /// 解決できる。iTunes Search は資格情報不要のためモロヘイヤ側は常に true を返す
   /// が、旧モロヘイヤ (フラグ未提供) は false にフォールバックし enrich を試みない。
   final bool nowplayingResolverEnabled;
+
+  /// `features.spotify_enabled` フラグ (#4337 / capsicum#570)。`true` の
+  /// サーバーは Spotify user-level OAuth (Developer Dashboard 登録 +
+  /// `user_oauth_enabled`) を満たし、`spotify/*` エンドポイントが利用可能。
+  /// 旧モロヘイヤ (フラグ未提供) は false にフォールバックし、ナウプレ取得導線を
+  /// 出さない。
+  final bool spotifyEnabled;
+
+  /// `features.spotify_linked` フラグ (#4337 / capsicum#570)。サーバーの
+  /// Spotify 提供可否 ([spotifyEnabled]) とは別に、**当該ユーザーが Spotify
+  /// 連携済みか**を表す。`true` の時だけ compose のナウプレ挿入ボタンを出す
+  /// (`spotify/currently_playing` が叩ける)。`annictLinked` と異なり未連携時は
+  /// ボタンを出さない (連携導線は設定画面が担う) ため、欠落時は false に倒す。
+  final bool spotifyLinked;
+
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -291,6 +316,8 @@ class MulukhiyaService {
     this.announcementPushEnabled = false,
     this.wordSuggestEnabled = false,
     this.nowplayingResolverEnabled = false,
+    this.spotifyEnabled = false,
+    this.spotifyLinked = false,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -365,6 +392,9 @@ class MulukhiyaService {
         announcementPushEnabled: features?['announcement_push'] == true,
         wordSuggestEnabled: features?['word_suggest'] == true,
         nowplayingResolverEnabled: features?['nowplaying_resolver'] == true,
+        spotifyEnabled: features?['spotify_enabled'] == true,
+        // 欠落・未連携時はナウプレ挿入導線を出さない (#570)。連携導線は設定画面側。
+        spotifyLinked: features?['spotify_linked'] == true,
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
@@ -443,6 +473,63 @@ class MulukhiyaService {
     await _dio.post(
       '$baseUrl/annict/auth',
       data: {'token': snsToken, 'code': annictCode},
+      options: _bearerOptions(snsToken),
+    );
+  }
+
+  /// Spotify user-level OAuth の認可 URL をサーバーから取得する (#570)。
+  /// client_id / redirect_uri はサーバー側 config なので capsicum は組み立てない。
+  Future<String> getSpotifyOAuthUri() async {
+    final response = await _dio.get('$baseUrl/spotify/oauth_uri');
+    final data = response.data as Map<String, dynamic>;
+    return data['oauth_uri'] as String;
+  }
+
+  /// Spotify OAuth の認可コードを access/refresh トークンに交換する (#570)。
+  /// トークンはモロヘイヤ側で当該ユーザーに紐付けて暗号化保管される。
+  /// ユーザー特定は Bearer ([snsToken]) で行うため body は `code` のみ
+  /// (mulukhiya SpotifyAuthContract に準拠)。
+  Future<void> authenticateSpotify({
+    required String snsToken,
+    required String code,
+  }) async {
+    await _dio.post(
+      '$baseUrl/spotify/auth',
+      data: {'code': code},
+      options: _bearerOptions(snsToken),
+    );
+  }
+
+  /// 現在 Spotify で再生中のトラックの共有 URL を取得する (#570)。
+  ///
+  /// 再生中なら `https`/`http` の URL、未再生 / 広告 / プライベートセッションは
+  /// null。access_token の期限切れはモロヘイヤ側が refresh で隠蔽するが、
+  /// refresh も失効 / 未連携のときモロヘイヤは 403 を返す。これは「無音」と
+  /// 区別して再連携導線を出せるよう [MulukhiyaSpotifyAuthException] を投げる。
+  Future<Uri?> getSpotifyCurrentlyPlaying(String snsToken) async {
+    try {
+      final response = await _dio.get(
+        '$baseUrl/spotify/currently_playing',
+        options: _bearerOptions(snsToken),
+      );
+      final data = response.data;
+      final url = data is Map<String, dynamic> ? data['url'] : null;
+      if (url is! String || url.isEmpty) return null;
+      final uri = Uri.tryParse(url);
+      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return null;
+      }
+      return uri;
+    } on DioException catch (e) {
+      if (_isAuthError(e)) throw const MulukhiyaSpotifyAuthException();
+      rethrow;
+    }
+  }
+
+  /// Spotify 連携を解除する (#570)。モロヘイヤ側の保管トークンを破棄する。
+  Future<void> unlinkSpotify(String snsToken) async {
+    await _dio.delete(
+      '$baseUrl/spotify/auth',
       options: _bearerOptions(snsToken),
     );
   }

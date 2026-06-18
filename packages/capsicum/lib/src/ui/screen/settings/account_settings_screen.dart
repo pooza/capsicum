@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/platform_providers.dart';
 import '../../../provider/preferences_provider.dart';
+import '../../util/spotify_link.dart';
 import '../../widget/tab_management_sheet.dart';
 
 class AccountSettingsScreen extends ConsumerWidget {
@@ -34,6 +35,7 @@ class AccountSettingsScreen extends ConsumerWidget {
           _ThemeColorTile(ref: ref),
           _BackgroundImageTile(ref: ref),
           _TabOrderTile(ref: ref),
+          const _SpotifyLinkTile(),
         ],
       ),
     );
@@ -123,6 +125,74 @@ class _TabOrderTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Spotify 連携セクション (#570)。サーバーが Spotify user OAuth を提供
+/// (`spotify_enabled`) するアカウントでのみ表示し、連携状態 (`spotify_linked`)
+/// に応じて連携 / 解除ボタンを出す。連携 / 解除後は `redetectMulukhiya` で
+/// フラグを更新し、compose のナウプレ挿入ボタンの出し分けに即時追従させる。
+class _SpotifyLinkTile extends ConsumerStatefulWidget {
+  const _SpotifyLinkTile();
+
+  @override
+  ConsumerState<_SpotifyLinkTile> createState() => _SpotifyLinkTileState();
+}
+
+class _SpotifyLinkTileState extends ConsumerState<_SpotifyLinkTile> {
+  bool _busy = false;
+
+  Future<void> _link() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final linked = await runSpotifyLinkFlow(context, ref);
+      if (linked) {
+        await ref.read(accountManagerProvider.notifier).redetectMulukhiya();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _unlink() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final unlinked = await runSpotifyUnlinkFlow(context, ref);
+      if (unlinked) {
+        await ref.read(accountManagerProvider.notifier).redetectMulukhiya();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    if (mulukhiya == null || !mulukhiya.spotifyEnabled) {
+      return const SizedBox.shrink();
+    }
+    final linked = mulukhiya.spotifyLinked;
+    return ListTile(
+      leading: const Icon(Icons.music_note),
+      title: const Text('Spotify 連携'),
+      subtitle: Text(
+        linked
+            ? '連携済み。投稿フォームの「ナウプレを挿入」で再生中の曲を貼れます。'
+            : '連携すると、再生中の曲を投稿フォームに挿入できます。',
+      ),
+      trailing: _busy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : (linked
+                ? TextButton(onPressed: _unlink, child: const Text('連携解除'))
+                : FilledButton(onPressed: _link, child: const Text('連携する'))),
     );
   }
 }

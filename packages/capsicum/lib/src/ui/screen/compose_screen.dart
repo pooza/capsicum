@@ -35,6 +35,7 @@ import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
 import 'image_text_overlay_screen.dart';
+import 'settings/account_settings_screen.dart';
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
@@ -1401,10 +1402,30 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       try {
         info = await resolver.currentlyPlaying();
       } on NowPlayingPermissionException catch (e) {
+        if (!mounted) return;
+        if (e.reason == 'spotify_reauth') {
+          // Spotify 連携トークンが失効 (mulukhiya 403)。「曲なし」と誤誘導せず、
+          // 設定画面への再連携導線を出す (#570)。
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Spotify との連携が切れています。設定画面で連携し直してください。'),
+              action: SnackBarAction(
+                label: '設定',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AccountSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+          return;
+        }
         // OS の許可不足（macOS ミュージック.app への Apple Events が TCC
         // 「オートメーション」で拒否 / 応答待ち #668）。「曲なし」と誤誘導せず、
         // 解消手順を案内する。denied は設定変更が要るので Sentry にも残す。
-        if (!mounted) return;
         final pending = e.reason == 'automation_pending';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -7,7 +7,9 @@ import '../platform/media_picker/media_picker_factory.dart';
 import '../platform/notification_subsystem/notification_subsystem.dart';
 import '../platform/now_playing/now_playing_provider_factory.dart';
 import '../platform/now_playing/now_playing_resolver.dart';
+import '../platform/now_playing/spotify_now_playing_provider.dart';
 import '../service/notification_init.dart';
+import 'account_manager_provider.dart';
 
 /// プラットフォーム抽象層 (`lib/src/platform/`) の Riverpod 入口。
 /// UI 層はこの provider 経由で実装を受け取り、`Platform.isXxx` を
@@ -35,11 +37,22 @@ final backgroundTaskSchedulerProvider = Provider<BackgroundTaskScheduler>(
 /// プレイヤー横断ナウプレ取得 ([NowPlayingResolver], #466)。優先順位つきで
 /// 取得源を合成する。リストは**優先順位の高い順**:
 ///
-///   1. Spotify 源（#570、mulukhiya 経由・OS 非依存）— 後続増分で先頭に追加
-///   2. OS ネイティブ源（Linux MPRIS / Windows SMTC。それ以外は no-op）
+///   1. Spotify 源（#570、mulukhiya 経由・OS 非依存）— アカウントが Spotify
+///      連携済みのときだけ available。URL を直接返せる唯一の源なので最優先。
+///   2. OS ネイティブ源（Linux MPRIS / Windows SMTC / Apple Music。それ以外は no-op）
 ///
-/// 現状は OS ネイティブ源のみ。Spotify provider が入ったら、その availability
-/// （アカウントの Spotify 連携状態）に応じてここで先頭に prepend する。
-final nowPlayingResolverProvider = Provider<NowPlayingResolver>(
-  (_) => NowPlayingResolver([createNativeNowPlayingProvider()]),
-);
+/// Spotify 源はアカウントごとに状態が変わる (mulukhiya 検出値) ため、
+/// [currentAccountProvider] を watch して再構築する。連携 / 解除で
+/// `redetectMulukhiya` が走ると spotify_linked が更新され、ここも追従する。
+final nowPlayingResolverProvider = Provider<NowPlayingResolver>((ref) {
+  final account = ref.watch(currentAccountProvider);
+  final mulukhiya = account?.mulukhiya;
+  return NowPlayingResolver([
+    if (account != null && mulukhiya != null)
+      SpotifyNowPlayingProvider(
+        mulukhiya: mulukhiya,
+        accessToken: account.userSecret.accessToken,
+      ),
+    createNativeNowPlayingProvider(),
+  ]);
+});
