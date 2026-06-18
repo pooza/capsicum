@@ -469,6 +469,30 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     state = AsyncData(current.copyWith(posts: posts));
   }
 
+  /// 自分の投稿を即座に TL 先頭へ楽観的挿入する (#717)。投稿成功直後に呼ぶ。
+  ///
+  /// 旧実装は投稿後に `invalidate(timelineProvider)` で REST 全再取得していたが、
+  /// 取得タイミング次第（連合/負荷時のサーバー伝播レース）で自分の投稿がまだ
+  /// home に index されておらず「投稿しても出ない」ことがあった。楽観挿入なら
+  /// REST 再取得・ストリーミング状態に依存せず必ず即時に出る。後から streaming /
+  /// REST で同じ id が来ても二重表示しないよう、既存なら何もしない。
+  ///
+  /// ストリーミング受信時 ([_streamSubscription] の listener) と同じフィルタを
+  /// 適用する: フィルタ hide / hideLivecure 中の #実況（#433 の SnackBar 告知に
+  /// 委ねる）は挿入しない。DM (direct) は公開 TL に出さない。
+  void insertOwnPost(Post post) {
+    final current = state.valueOrNull;
+    // build 中・未構築なら何もしない（後続の REST / streaming が拾う）。
+    if (current == null) return;
+    if (post.scope == PostScope.direct) return;
+    if (post.filterAction == FilterAction.hide) return;
+    final hideLivecure = ref.read(hideLivecureProvider);
+    if (hideLivecure && _hasLivecureTag(post)) return;
+    if (current.posts.any((p) => p.id == post.id)) return;
+    if (_pendingPosts.any((p) => p.id == post.id)) return;
+    state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
+  }
+
   /// Remove all posts by a user (e.g. after block/mute).
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;

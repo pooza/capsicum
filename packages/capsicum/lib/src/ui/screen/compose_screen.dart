@@ -2005,10 +2005,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             context,
           ).showSnackBar(const SnackBar(content: Text('予約投稿を設定しました')));
         } else {
-          ref.invalidate(timelineProvider);
           final channelId = _effectiveChannelId;
           if (channelId != null) {
+            // チャンネル投稿は両 TL を再取得（home への楽観挿入はしない）。
+            ref.invalidate(timelineProvider);
             ref.invalidate(channelTimelineProvider(channelId));
+          } else if (posted != null) {
+            // #717: 自分の投稿を home TL 先頭へ楽観的に挿入する。invalidate の
+            // REST 全再取得に依存しないため、サーバー伝播レースやストリーミング
+            // 状態に関係なく自分の投稿が必ず即座に出る。
+            ref.read(timelineProvider.notifier).insertOwnPost(posted);
+          } else {
+            // 戻り値が無い稀ケースは従来どおり再取得に倒す。
+            ref.invalidate(timelineProvider);
           }
           // #433: hideLivecure ON 中に #実況 を含む投稿をすると TL から
           // 除外されるため SnackBar で告知。検出はモロヘイヤ handler が
