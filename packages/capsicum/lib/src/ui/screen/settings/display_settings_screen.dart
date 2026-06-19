@@ -90,6 +90,16 @@ class DisplaySettingsScreen extends ConsumerWidget {
             value: hideLivecure,
             onChanged: (_) => ref.read(hideLivecureProvider.notifier).toggle(),
           ),
+          SwitchListTile(
+            title: const Text('起動時に既読位置を復元'),
+            subtitle: const Text(
+              'オンにすると前回読んでいた位置から、オフにすると常に最新の投稿から'
+              'ホームのタイムラインを開きます（Mastodon のみ）',
+            ),
+            value: ref.watch(restoreReadPositionProvider),
+            onChanged: (_) =>
+                ref.read(restoreReadPositionProvider.notifier).toggle(),
+          ),
           // マウスドラッグでのスクロールはデスクトップ専用 (#574)。トラック
           // パッド 2 本指スワイプとの両立が崩れるケースがあるためオプトイン。
           if (isDesktop)

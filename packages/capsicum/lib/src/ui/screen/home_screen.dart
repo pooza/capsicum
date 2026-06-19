@@ -145,6 +145,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_markerRestored) return;
     _markerRestored = true;
 
+    // 既読位置復元をオフにしているユーザーは常に最新先頭で開く (#715)。
+    if (!ref.read(restoreReadPositionProvider)) return;
+
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! MarkerSupport) return;
 

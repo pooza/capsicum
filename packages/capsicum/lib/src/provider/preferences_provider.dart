@@ -25,6 +25,7 @@ const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
 const _hideInstanceTickerKey = 'hide_instance_ticker';
+const _restoreReadPositionKey = 'restore_read_position';
 const _confirmBeforePostKey = 'confirm_before_post';
 const _hiddenListIdsPrefix = 'hidden_list_ids_';
 const _listOrderPrefix = 'list_order_';
@@ -1203,6 +1204,37 @@ class HideInstanceTickerNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideInstanceTickerKey, state);
+  }
+}
+
+/// Whether to restore the saved read position (#25 markers) on cold start.
+/// Default is on (restore). When off, the home timeline always opens at the
+/// newest post. Mastodon-only behavior (markers API); Misskey always opens at
+/// the top regardless.
+final restoreReadPositionProvider =
+    NotifierProvider<RestoreReadPositionNotifier, bool>(
+      RestoreReadPositionNotifier.new,
+    );
+
+class RestoreReadPositionNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_restoreReadPositionKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_restoreReadPositionKey, state);
   }
 }
 
