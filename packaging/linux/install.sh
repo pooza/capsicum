@@ -148,6 +148,13 @@ if [[ "$SRC" != "$DEST" ]]; then
 fi
 chmod +x "$DEST"
 
+# バージョンを跨いで安定したパスでアプリを指す symlink (#707)。.desktop の
+# Exec はこの symlink を指すので、新バージョン導入で AppImage のファイル名が
+# 変わっても、アプリメニューの「お気に入り」や手製の .desktop ランチャーが
+# 壊れない (旧来は Exec がバージョン付き AppImage を直接指していた)。
+STABLE_LINK="$APPLICATIONS_DIR/$APP_NAME"
+ln -sfn "$DEST" "$STABLE_LINK"
+
 # AppImage の中身 (.desktop / hicolor アイコン) を一時ディレクトリに展開
 # して再利用する。リポジトリのファイル構成を仮定しないので、AppImage 単独
 # + install.sh だけで動く。
@@ -171,10 +178,11 @@ fi
 mkdir -p "$DESKTOP_DIR"
 DEST_DESKTOP="$DESKTOP_DIR/$APP_ID.desktop"
 # Exec は元の `capsicum %U` (= $PATH 解決前提) のままだとランチャーから
-# 起動できないので、実体の AppImage を絶対パスで指す。AppImage 内に
-# StartupWMClass / Icon は既に書かれているのでそれ以外はそのまま流す。
+# 起動できないので、安定 symlink ($STABLE_LINK) を絶対パスで指す (#707)。
+# AppImage 内に StartupWMClass / Icon は既に書かれているのでそれ以外は
+# そのまま流す。
 echo "==> Writing $DEST_DESKTOP"
-sed -E "s|^Exec=.*|Exec=$DEST %U|" "$SRC_DESKTOP" > "$DEST_DESKTOP"
+sed -E "s|^Exec=.*|Exec=$STABLE_LINK %U|" "$SRC_DESKTOP" > "$DEST_DESKTOP"
 
 if [[ ! -d "$SRC_ICON_BASE" ]]; then
   echo "warn: hicolor icons not found at $SRC_ICON_BASE — skipping icons" >&2

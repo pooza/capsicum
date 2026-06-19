@@ -36,7 +36,8 @@ chmod +x install.sh
 いずれの場合もスクリプトは次を行います:
 
 - AppImage を `~/Applications/` に配置 (+ `chmod +x`)
-- `.desktop` を `~/.local/share/applications/` に展開 (Exec を実体パスに書き換え)
+- 安定 symlink `~/Applications/capsicum` を AppImage に張る (バージョンを上げてもメニューの「お気に入り」が壊れないように)
+- `.desktop` を `~/.local/share/applications/` に展開 (Exec を上記 symlink に書き換え)
 - hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
 - `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
 
