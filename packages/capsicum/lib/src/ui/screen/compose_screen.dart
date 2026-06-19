@@ -770,6 +770,95 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
   }
 
+  /// Misskey WebUI「装飾を追加」相当の MFM タグ一覧 (#688)。
+  /// 本家 `MFM_TAGS`（frontend-shared/js/const.ts）に揃える。パラメータを
+  /// 持つタグも、本家のクイック挿入と同じく素の `$[tag ]` を入れるだけ。
+  static const _mfmTags = <String>[
+    'tada',
+    'jelly',
+    'twitch',
+    'shake',
+    'spin',
+    'jump',
+    'bounce',
+    'flip',
+    'x2',
+    'x3',
+    'x4',
+    'scale',
+    'position',
+    'fg',
+    'bg',
+    'border',
+    'font',
+    'blur',
+    'rainbow',
+    'sparkle',
+    'rotate',
+    'ruby',
+    'unixtime',
+  ];
+
+  /// 本文へ MFM 装飾を挿入する。選択範囲があれば `$[tag 選択テキスト]` で囲み、
+  /// なければ `$[tag ]` を挿入して内側（閉じ `]` の手前）へカーソルを移す。
+  void _insertMfm(String tag) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    final selected = start != end ? text.substring(start, end) : '';
+    final insertion = '\$[$tag $selected]';
+    final newText = text.replaceRange(start, end, insertion);
+    final caret = selected.isEmpty
+        ? start +
+              insertion.length -
+              1 // 閉じ `]` の手前
+        : start + insertion.length; // 囲んだ末尾
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+  }
+
+  void _showMfmPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('装飾を追加', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              const Text(
+                '選択範囲があれば囲み、なければ \$[tag ] を挿入します',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final tag in _mfmTags)
+                    ActionChip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _insertMfm(tag);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickMedia() async {
     final files = await ref.read(mediaPickerProvider).pickMultipleMedia();
     await _addLocalMedia(files);
@@ -2447,6 +2536,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                         tooltip: '絵文字',
                         visualDensity: VisualDensity.compact,
                       ),
+                      // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ
+                      // 出す（判定は ReactionSupport の有無、CLAUDE.md）。
+                      if (ref.watch(currentAdapterProvider) is ReactionSupport)
+                        IconButton(
+                          onPressed: _sending ? null : _showMfmPicker,
+                          icon: const Icon(Icons.palette_outlined),
+                          tooltip: 'MFM 装飾',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       IconButton(
                         onPressed: _sending
                             ? null
