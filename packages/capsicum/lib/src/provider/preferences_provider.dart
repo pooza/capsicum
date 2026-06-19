@@ -35,6 +35,7 @@ const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
+const _insertPickerHeightKey = 'insert_picker_height';
 const _recentEmojisKey = 'recent_emojis';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
@@ -1235,6 +1236,41 @@ class RestoreReadPositionNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_restoreReadPositionKey, state);
+  }
+}
+
+/// 挿入ピッカーシートの高さ（利用可能領域に対する比率）。ユーザーが上端の
+/// ハンドルをドラッグして決めた値を記憶し、次回も同じ高さで開く (#690)。
+/// ドラッグ側の clamp と揃えるため公開定数にしている。
+const double kMinInsertPickerHeight = 0.25;
+const double kMaxInsertPickerHeight = 0.9;
+const double kDefaultInsertPickerHeight = 0.5;
+
+final insertPickerHeightProvider =
+    NotifierProvider<InsertPickerHeightNotifier, double>(
+      InsertPickerHeightNotifier.new,
+    );
+
+class InsertPickerHeightNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return kDefaultInsertPickerHeight;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_insertPickerHeightKey);
+    if (saved != null) {
+      state = saved.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
+    }
+  }
+
+  Future<void> set(double value) async {
+    final clamped = value.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_insertPickerHeightKey, clamped);
   }
 }
 
