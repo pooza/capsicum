@@ -145,6 +145,7 @@ mulukhiya #4382 enrich プロキシ (URL 解決のみ, optional) ──→ #669 
 
 ## 関連
 
+- **後継計画（Odesli / song.link ユニバーサルリンク）**: モロヘイヤ側 [`docs/nowplaying-odesli-plan.md`](https://github.com/pooza/mulukhiya-toot-proxy/blob/develop/docs/nowplaying-odesli-plan.md)。Songwhip 終了（mulukhiya #3748）の後継で、横断リンク復活 + URL→メタの host 拡張。処理はモロヘイヤ主体、capsicum はプロバイダ切替（`NowPlayingUrlProvider`）に「ユニバーサル」を足す場合のみ薄い追従（enum/UI 数行）。急がず mulukhiya 進捗次第。
 - [spotify-nowplaying-design.md](spotify-nowplaying-design.md) — Spotify 取得源の詳細（本書の 1 ソース）
 - 抽象パターンの先例: [desktop-plugin-compatibility.md](desktop-plugin-compatibility.md) / CLAUDE.md「デスクトップ対応」設計指針
 - Issue: [#466](https://github.com/pooza/capsicum/issues/466) / [#484](https://github.com/pooza/capsicum/issues/484) / [#570](https://github.com/pooza/capsicum/issues/570)
