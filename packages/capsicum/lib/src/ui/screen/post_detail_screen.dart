@@ -9,14 +9,49 @@ import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../widget/post_tile.dart';
 
-class PostDetailScreen extends ConsumerWidget {
+class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
 
   const PostDetailScreen({super.key, required this.post});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PostDetailScreen> createState() => _PostDetailScreenState();
+}
+
+class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Post get post => widget.post;
+
+  void _jumpToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _jumpToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final threadFuture = ref.watch(_threadProvider(post.id));
+    // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
+    final showJump = (threadFuture.asData?.value.length ?? 0) > 1;
 
     return Scaffold(
       appBar: AppBar(
@@ -24,6 +59,26 @@ class PostDetailScreen extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: _buildBody(context, ref, threadFuture),
+      floatingActionButton: showJump
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'thread_jump_top',
+                  tooltip: '先頭へ',
+                  onPressed: _jumpToTop,
+                  child: const Icon(Icons.keyboard_arrow_up),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'thread_jump_bottom',
+                  tooltip: '末尾へ',
+                  onPressed: _jumpToBottom,
+                  child: const Icon(Icons.keyboard_arrow_down),
+                ),
+              ],
+            )
+          : null,
     );
   }
 
@@ -42,6 +97,7 @@ class PostDetailScreen extends ConsumerWidget {
 
     Widget body = threadFuture.when(
       data: (thread) => ListView.separated(
+        controller: _scrollController,
         itemCount: thread.length,
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
