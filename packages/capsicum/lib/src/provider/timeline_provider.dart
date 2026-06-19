@@ -87,6 +87,11 @@ class TimelineState {
   /// build() が再実行されるとクリアされる。
   final bool pageCapHit;
 
+  /// streaming のライブ接続状態 (#714)。backend の接続ライフサイクルを反映し、
+  /// 常時インジケータの表示に使う。`exhausted` は `streamReconnectExhausted`
+  /// の可視化と同じ枯渇状態を表す。build() 再実行で `connecting` に戻る。
+  final StreamConnectionState streamConnectionState;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -95,6 +100,7 @@ class TimelineState {
     this.pendingCount = 0,
     this.streamReconnectExhausted = false,
     this.pageCapHit = false,
+    this.streamConnectionState = StreamConnectionState.connecting,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -108,6 +114,7 @@ class TimelineState {
     int? pendingCount,
     bool? streamReconnectExhausted,
     bool? pageCapHit,
+    StreamConnectionState? streamConnectionState,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -119,6 +126,7 @@ class TimelineState {
     streamReconnectExhausted:
         streamReconnectExhausted ?? this.streamReconnectExhausted,
     pageCapHit: pageCapHit ?? this.pageCapHit,
+    streamConnectionState: streamConnectionState ?? this.streamConnectionState,
   );
 }
 
@@ -365,6 +373,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         if (current != null && !current.streamReconnectExhausted) {
           state = AsyncData(current.copyWith(streamReconnectExhausted: true));
         }
+      },
+      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
+      onConnectionState: (connState) {
+        final current = state.valueOrNull;
+        if (current == null) return;
+        if (current.streamConnectionState == connState) return;
+        state = AsyncData(current.copyWith(streamConnectionState: connState));
       },
     );
     _streamSubscription = stream.listen(

@@ -992,6 +992,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(StreamConnectionState state)? onConnectionState,
   }) {
     _streaming?.dispose();
     // DM timeline has no dedicated stream; avoid falling back to 'user'
@@ -1006,6 +1007,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       onParseError: onParseError,
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
+      onConnectionState: onConnectionState,
     );
     return _streaming!.connect(type);
   }

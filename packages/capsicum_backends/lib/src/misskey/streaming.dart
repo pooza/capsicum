@@ -26,6 +26,9 @@ class MisskeyStreaming {
   final void Function(Object error, StackTrace stack)? onStreamError;
   final void Function()? onReconnectExhausted;
 
+  /// 接続ライフサイクルの遷移を呼び出し側 (UI インジケータ) へ流す (#714)。
+  final void Function(StreamConnectionState state)? onConnectionState;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
@@ -33,6 +36,7 @@ class MisskeyStreaming {
   String? _subscriptionId;
   bool _disposed = false;
   bool _reconnectExhaustedNotified = false;
+  StreamConnectionState? _lastConnectionState;
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
@@ -45,7 +49,18 @@ class MisskeyStreaming {
     this.onParseError,
     this.onStreamError,
     this.onReconnectExhausted,
+    this.onConnectionState,
   });
+
+  // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
+  // 本筋を止めない。
+  void _notifyConnectionState(StreamConnectionState next) {
+    if (_disposed || _lastConnectionState == next) return;
+    _lastConnectionState = next;
+    try {
+      onConnectionState?.call(next);
+    } catch (_) {}
+  }
 
   Stream<Post> connect(TimelineType type) {
     _currentType = type;
@@ -58,6 +73,7 @@ class MisskeyStreaming {
   void _connect(TimelineType type) {
     if (_disposed) return;
     _channel?.sink.close();
+    _notifyConnectionState(StreamConnectionState.connecting);
 
     final uri = Uri(
       scheme: 'wss',
@@ -71,11 +87,13 @@ class MisskeyStreaming {
       _onMessage,
       onError: (Object error, StackTrace stack) {
         _notifyStreamError(error, stack);
+        _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
       onDone: () {
         _reconnectAttempts = 0;
         _reconnectExhaustedNotified = false;
+        _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
     );
@@ -96,9 +114,11 @@ class MisskeyStreaming {
               'body': {'channel': channelName, 'id': subId},
             }),
           );
+          _notifyConnectionState(StreamConnectionState.live);
         })
         .catchError((Object error, StackTrace stack) {
           _notifyStreamError(error, stack);
+          _notifyConnectionState(StreamConnectionState.disconnected);
           _scheduleReconnect();
         });
   }
@@ -147,6 +167,7 @@ class MisskeyStreaming {
           // 観測経路の失敗で本筋を止めない。
         }
       }
+      _notifyConnectionState(StreamConnectionState.exhausted);
       return;
     }
     _reconnectTimer?.cancel();

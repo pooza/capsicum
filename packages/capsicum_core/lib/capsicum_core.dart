@@ -26,6 +26,7 @@ export 'src/model/preview_card.dart';
 export 'src/model/post_draft.dart';
 export 'src/model/post_scope.dart';
 export 'src/model/scheduled_post.dart';
+export 'src/model/stream_connection_state.dart';
 export 'src/model/timeline_query.dart';
 export 'src/model/timeline_response.dart';
 export 'src/model/tab_type.dart';

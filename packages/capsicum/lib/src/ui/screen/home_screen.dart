@@ -434,6 +434,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // ライブ更新の接続インジケータ (#714)。streaming する本線 TL
+                // (home / local / social / federated) のときだけ出す。DM や
+                // ハッシュタグ / リスト TL は別 provider / 非 streaming のため
+                // 出さない。
+                if (selectedHashtag == null &&
+                    selectedList == null &&
+                    selectedType != TimelineType.directMessages)
+                  const _StreamStatusIndicator(),
                 _LivecureFilterButton(ref: ref),
                 IconButton(
                   icon: const Icon(Icons.search),
@@ -1749,6 +1757,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
     return ServerBadge.fromHost(host, themeColors: themeColors);
+  }
+}
+
+/// 本線タイムラインのライブ更新（streaming）接続状態を常時表示する小さな
+/// ドット (#714)。`timelineProvider` の [StreamConnectionState] を反映する。
+/// 枯渇可視化 (#588) も exhausted 状態として内包する。
+class _StreamStatusIndicator extends ConsumerWidget {
+  const _StreamStatusIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conn =
+        ref.watch(timelineProvider).valueOrNull?.streamConnectionState ??
+        StreamConnectionState.connecting;
+    final (Color color, String label) = switch (conn) {
+      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
+      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
+      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
+      StreamConnectionState.exhausted => (
+        Theme.of(context).colorScheme.error,
+        'ライブ更新が停止（引っぱって再接続）',
+      ),
+    };
+    return Tooltip(
+      message: 'ライブ更新: $label',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Icon(Icons.circle, size: 10, color: color),
+      ),
+    );
   }
 }
 
