@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
@@ -19,32 +20,31 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+  final _itemScrollController = ItemScrollController();
 
   Post get post => widget.post;
 
-  void _jumpToTop() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      0,
+  /// スレッド内で対象リプライ（タップした投稿）が並ぶ index。見つからない
+  /// 場合は最後尾を返す（#711 のフォールバック）。
+  int _targetIndex(List<Post> thread) {
+    final i = thread.indexWhere((p) => p.id == post.id);
+    return i >= 0 ? i : thread.length - 1;
+  }
+
+  void _jumpTo(int index) {
+    if (!_itemScrollController.isAttached) return;
+    _itemScrollController.scrollTo(
+      index: index,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
   }
 
+  void _jumpToTop() => _jumpTo(0);
+
   void _jumpToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
+    final length = ref.read(_threadProvider(post.id)).asData?.value.length ?? 0;
+    if (length > 0) _jumpTo(length - 1);
   }
 
   @override
@@ -96,8 +96,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         : defaultBackgroundOpacity;
 
     Widget body = threadFuture.when(
-      data: (thread) => ListView.separated(
-        controller: _scrollController,
+      data: (thread) => ScrollablePositionedList.separated(
+        itemScrollController: _itemScrollController,
+        // 開いた時点で対象リプライの位置へアンカーする (#711)。見つからない
+        // ときは最後尾（フォールバック）。root(0) のときはそのまま先頭表示。
+        initialScrollIndex: thread.isEmpty ? 0 : _targetIndex(thread),
         itemCount: thread.length,
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
