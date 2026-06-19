@@ -770,6 +770,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
   }
 
+  /// CW 欄へカーソル位置挿入する (#686)。本文と別 controller のため専用経路。
+  void _insertIntoCw(String value) {
+    final text = _cwController.text;
+    final sel = _cwController.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    _cwController.value = TextEditingValue(
+      text: text.replaceRange(start, end, value),
+      selection: TextSelection.collapsed(offset: start + value.length),
+    );
+  }
+
+  void _showCwPicker() {
+    showInsertPickerSheet(
+      context: context,
+      ref: ref,
+      onSelected: _insertIntoCw,
+    );
+  }
+
   /// Misskey WebUI「装飾を追加」相当の MFM タグ一覧 (#688)。
   /// 本家 `MFM_TAGS`（frontend-shared/js/const.ts）に揃える。パラメータを
   /// 持つタグも、本家のクイック挿入と同じく素の `$[tag ]` を入れるだけ。
@@ -2243,11 +2263,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   TextField(
                     controller: _cwController,
                     enabled: !_sending,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: '閲覧注意の警告文',
-                      border: UnderlineInputBorder(),
+                      border: const UnderlineInputBorder(),
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      // CW 欄にも絵文字 / 劇中ワードの拡張ピッカーを届ける (#686)。
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.emoji_emotions_outlined),
+                        tooltip: '絵文字・ワード',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _sending ? null : _showCwPicker,
+                      ),
                     ),
                   ),
                 Expanded(
