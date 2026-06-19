@@ -629,14 +629,16 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (category.key.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  child: Text(
-                    category.key,
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
+              // 分類のない絵文字 (category 空) は見出しなしだと直前の
+              // 「最近使った」/「パレット」と地続きに見えるため、明示的に
+              // 「分類なし」の見出しを付けて仕切る。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                child: Text(
+                  category.key.isNotEmpty ? category.key : '分類なし',
+                  style: Theme.of(context).textTheme.labelMedium,
                 ),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Wrap(
