@@ -1,5 +1,7 @@
 # プレイヤー横断ナウプレ取得 設計（v1.33）
 
+> **【アーカイブ】** v1.33（desktop ネイティブ pull）/ v1.37（Apple Music）/ v1.38（URL 優先プロバイダ）で実装完了。正本は各実装コード（`now_playing_*`）。本書は抽象設計の経緯記録として保持する。Spotify 源は規約都合で塩漬け（[#570](https://github.com/pooza/capsicum/issues/570)、本番 `spotify_enabled` OFF）。
+
 ## 位置付け
 
 v1.33「NowPlaying 横断対応」の **抽象設計**。3 つの Issue を 1 つのアーキテクチャに束ねる:
@@ -51,7 +53,7 @@ Spotify を最優先にするのは、**URL を返せる唯一の源**だから�
 
 **原則**:
 
-- **整形（Title/Album/Artist のレイアウト・`#nowplaying` タグ位置・行構成）はクライアント側**で行う。OS pull（MPRIS / SMTC / Apple Music）で構造化メタデータを持っている側が組むのが筋。[`formatNowPlayingFallback`](../packages/capsicum/lib/src/util/now_playing_formatter.dart) がその実体で、これが**主経路**（"fallback" は歴史的命名で、実際は唯一の整形器）。
+- **整形（Title/Album/Artist のレイアウト・`#nowplaying` タグ位置・行構成）はクライアント側**で行う。OS pull（MPRIS / SMTC / Apple Music）で構造化メタデータを持っている側が組むのが筋。[`formatNowPlayingFallback`](../../packages/capsicum/lib/src/util/now_playing_formatter.dart) がその実体で、これが**主経路**（"fallback" は歴史的命名で、実際は唯一の整形器）。
 - **外部 API の秘密情報・fetch が要る部分（メタデータ → 共有可能 URL の解決、URL → メタデータ抽出）はサーバー（モロヘイヤ）側**に置く。Spotify / iTunes の API キーはサーバー保持で、capsicum は「title/artist を渡して URL をもらう」明示的な API 呼び出しで使う（フロントの処理を軽くする本来のプロキシ設計）。
 
 **背景**:
@@ -97,7 +99,7 @@ class NowPlayingInfo {
 
 ## 既存の共有（push）動線との統一
 
-現状 [`compose_screen.dart`](../packages/capsicum/lib/src/ui/screen/compose_screen.dart) は共有テキストを `_controller.text = '#nowplaying ${sharedText}\n'` と **直挿入**している（`ShareIntentService.consumeSharedText()` 由来）。本設計の整形ロジック（`NowPlayingInfo` → 本文テキスト）を共有経路にも通し、push / pull で **整形を一本化**する（共有テキストに URL が含まれていればそのまま、無ければフォールバック整形）。これは小さなリファクタだが、フォーマットの二重管理を防ぐ。
+現状 [`compose_screen.dart`](../../packages/capsicum/lib/src/ui/screen/compose_screen.dart) は共有テキストを `_controller.text = '#nowplaying ${sharedText}\n'` と **直挿入**している（`ShareIntentService.consumeSharedText()` 由来）。本設計の整形ロジック（`NowPlayingInfo` → 本文テキスト）を共有経路にも通し、push / pull で **整形を一本化**する（共有テキストに URL が含まれていればそのまま、無ければフォールバック整形）。これは小さなリファクタだが、フォーマットの二重管理を防ぐ。
 
 ## compose / 設定 UI
 
@@ -105,7 +107,7 @@ class NowPlayingInfo {
 - **compose 画面**: 既存の実況ボタン（`compose_screen.dart` の `Icons.live_tv`）の隣に「ナウプレを挿入」ボタン。表示条件と動作:
   - **表示**: `NowPlayingResolver` が「この端末で何か取れる可能性がある」= `spotifyEnabled && spotifyLinked` **または** OS ネイティブ provider が存在（Linux/Windows）
   - **押下**: `resolver.currentlyPlaying()` → `NowPlayingInfo` を整形して本文末尾に挿入。null なら SnackBar「現在再生中の曲がありません」。Spotify 401 なら「設定画面で Spotify と連携してください」+ 設定動線
-- mulukhiya feature flag は既存 `MulukhiyaService.annictEnabled` と同じ場所（`detect()` の `features` パース）に `spotifyEnabled` / `spotifyLinked` を追加（[capsicum_backends/.../mulukhiya/service.dart](../packages/capsicum_backends/lib/src/mulukhiya/service.dart)）
+- mulukhiya feature flag は既存 `MulukhiyaService.annictEnabled` と同じ場所（`detect()` の `features` パース）に `spotifyEnabled` / `spotifyLinked` を追加（[capsicum_backends/.../mulukhiya/service.dart](../../packages/capsicum_backends/lib/src/mulukhiya/service.dart)）
 
 ## アートワーク
 

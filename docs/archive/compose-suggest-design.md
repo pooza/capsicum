@@ -1,5 +1,7 @@
 # 投稿サジェスト機能 設計（v1.35, #614）
 
+> **【アーカイブ】** v1.35 で実装完了。正本は実装コード（`insert_picker_sheet.dart` ほか）。本書は設計の経緯記録として保持する。拡張要望は v1.39 系（#685-#691）で継続。
+
 ## 位置付け
 
 v1.35「投稿フォームのサジェスト」（[#614](https://github.com/pooza/capsicum/issues/614)）の設計。実況用途で、IME の変換候補に出てこない専門ワード（劇中ワード・キャラ名・必殺技名・カスタム絵文字ショートコード等）を、capsicum 側のアプリ独立サジェスト UI で補えるようにする。
@@ -8,7 +10,7 @@ v1.35「投稿フォームのサジェスト」（[#614](https://github.com/pooz
 
 ## いちばん効く前提整理: 「もう在るもの」と「新規なもの」
 
-[compose_screen.dart](../packages/capsicum/lib/src/ui/screen/compose_screen.dart) には既に**インライン補完が実装済み**である。設計はこの既存資産の上に積む。
+[compose_screen.dart](../../packages/capsicum/lib/src/ui/screen/compose_screen.dart) には既に**インライン補完が実装済み**である。設計はこの既存資産の上に積む。
 
 | 補完 | トリガ | 実装 | 状態 |
 |---|---|---|---|
@@ -20,7 +22,7 @@ v1.35「投稿フォームのサジェスト」（[#614](https://github.com/pooz
 
 1. **劇中ワード辞書サジェスト（読み付き）** — 既存 `#` 補完は SNS 標準のタグ検索で「読み」を持たない。`閃華裂光拳` のように **IME で字面を打てない語**を、**ひらがな読みから**引けるようにするのが本機能の心臓部。
 2. **視聴中作品の話数** — モロヘイヤ `tagging/dic/annict/episodes`（「24話」等）。
-3. **簡易投稿バーからの導線** — 実況の主導線である [simple_post_bar.dart](../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart) には**フルのピッカー導線が無い**（最近使った絵文字の横ストリップのみ）。ここに補完を届けるのが要件。
+3. **簡易投稿バーからの導線** — 実況の主導線である [simple_post_bar.dart](../../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart) には**フルのピッカー導線が無い**（最近使った絵文字の横ストリップのみ）。ここに補完を届けるのが要件。
 
 ## データ源: モロヘイヤに「読み付きサジェスト」を出してもらう（確定 2026-06-07）
 
@@ -54,7 +56,7 @@ v1.35「投稿フォームのサジェスト」（[#614](https://github.com/pooz
   - `category`: 品詞細分類（人名 / 地域 / 一般 等）。ピッカーのカテゴリ別ブラウズに使う。
   - `tags`: 任意。挿入時にタグ自動付与へ繋げられる（別レイヤ）。
 - **読み照合**: capsicum は入力ひらがなをカタカナ正規化して送る／またはモロヘイヤが両対応する（どちらが吸収するかは要件で確定）。
-- **feature flag**: `GET /mulukhiya/api/about` の `features` に `word_suggest`（仮称）を追加。capsicum は [service.dart](../packages/capsicum_backends/lib/src/mulukhiya/service.dart) の `annictEnabled` と同じ場所でパースして UI 出し分け。
+- **feature flag**: `GET /mulukhiya/api/about` の `features` に `word_suggest`（仮称）を追加。capsicum は [service.dart](../../packages/capsicum_backends/lib/src/mulukhiya/service.dart) の `annictEnabled` と同じ場所でパースして UI 出し分け。
 
 ### 取得方式（capsicum 側）
 
@@ -70,20 +72,20 @@ v1.35「投稿フォームのサジェスト」（[#614](https://github.com/pooz
 
 ### ピッカー拡張
 
-[emoji_picker.dart](../packages/capsicum/lib/src/ui/widget/emoji_picker.dart) は既にタブ構成（カスタム / Unicode）＋検索ボックス＋「最近使った」セクション＋モロヘイヤ palette 同期を持つ。ここに**タブを追加**する:
+[emoji_picker.dart](../../packages/capsicum/lib/src/ui/widget/emoji_picker.dart) は既にタブ構成（カスタム / Unicode）＋検索ボックス＋「最近使った」セクション＋モロヘイヤ palette 同期を持つ。ここに**タブを追加**する:
 
 - **劇中ワード**タブ — 検索ボックスに**ひらがな読み**を入力 → 候補グリッド → タップで表層挿入。カテゴリ別ブラウズ（人名 / 地域 等）も可。
 - **話数**タブ — `tagging/dic/annict/episodes`（annict 視聴中の作品 × 話数）。
 
-各タブは既存カスタム絵文字タブと同形の検索 UI（[emoji_picker.dart §カスタムタブ](../packages/capsicum/lib/src/ui/widget/emoji_picker.dart)）を踏襲する。
+各タブは既存カスタム絵文字タブと同形の検索 UI（[emoji_picker.dart §カスタムタブ](../../packages/capsicum/lib/src/ui/widget/emoji_picker.dart)）を踏襲する。
 
 ### 共有ランチャ
 
-compose 側のピッカー起動（[compose_screen.dart `_showEmojiPicker`](../packages/capsicum/lib/src/ui/screen/compose_screen.dart)）を**共有ランチャ**（`showInsertPickerSheet(...)` 仮称）に切り出し、**compose と簡易投稿バーの両方から同じ拡張ピッカーを開く**。実装が 1 箇所に集約され、劇中ワード/話数タブが両画面で自動的に使える。
+compose 側のピッカー起動（[compose_screen.dart `_showEmojiPicker`](../../packages/capsicum/lib/src/ui/screen/compose_screen.dart)）を**共有ランチャ**（`showInsertPickerSheet(...)` 仮称）に切り出し、**compose と簡易投稿バーの両方から同じ拡張ピッカーを開く**。実装が 1 箇所に集約され、劇中ワード/話数タブが両画面で自動的に使える。
 
 ### 簡易投稿バー導線（本機能の主眼）
 
-[simple_post_bar.dart](../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart) の現状:
+[simple_post_bar.dart](../../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart) の現状:
 
 - ボタン列は `[キーボードしまう?] [絵文字履歴トグル?] [詳細画面へ] [送信]`。
 - 「絵文字履歴トグル」は**最近使った絵文字の横ストリップ**を開くのみ（`_buildPalette`）。しかも `if (hasRecents)` 条件付きで履歴が無いと出ない。
@@ -112,7 +114,7 @@ compose 側のピッカー起動（[compose_screen.dart `_showEmojiPicker`](../p
 
 - **compose 本文** — 既存補完 + 拡張ピッカー。
 - **簡易投稿バー** — 拡張ピッカー導線を追加（主眼）。
-- **CW 欄 / リプライ / Misskey メッセージ入力** — 各々独立の `TextEditingController`（[chat_thread_screen.dart](../packages/capsicum/lib/src/ui/screen/chat_thread_screen.dart) 等）。v1.35 では**対象外**（本文と簡易バーに集中）。共有ランチャ化により後で広げやすくはしておく。
+- **CW 欄 / リプライ / Misskey メッセージ入力** — 各々独立の `TextEditingController`（[chat_thread_screen.dart](../../packages/capsicum/lib/src/ui/screen/chat_thread_screen.dart) 等）。v1.35 では**対象外**（本文と簡易バーに集中）。共有ランチャ化により後で広げやすくはしておく。
 
 ## 段階リリースとスコープ
 
@@ -142,6 +144,6 @@ compose 側のピッカー起動（[compose_screen.dart `_showEmojiPicker`](../p
 ## 関連
 
 - [#614](https://github.com/pooza/capsicum/issues/614) 投稿サジェスト機能（本書の実装元）
-- 既存補完・ピッカー: [compose_screen.dart](../packages/capsicum/lib/src/ui/screen/compose_screen.dart) / [emoji_picker.dart](../packages/capsicum/lib/src/ui/widget/emoji_picker.dart) / [simple_post_bar.dart](../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart)
-- モロヘイヤ連携: [service.dart](../packages/capsicum_backends/lib/src/mulukhiya/service.dart) / モロヘイヤ docs/capsicum-requirements.md
+- 既存補完・ピッカー: [compose_screen.dart](../../packages/capsicum/lib/src/ui/screen/compose_screen.dart) / [emoji_picker.dart](../../packages/capsicum/lib/src/ui/widget/emoji_picker.dart) / [simple_post_bar.dart](../../packages/capsicum/lib/src/ui/widget/simple_post_bar.dart)
+- モロヘイヤ連携: [service.dart](../../packages/capsicum_backends/lib/src/mulukhiya/service.dart) / モロヘイヤ docs/capsicum-requirements.md
 - 劇中ワード辞書の大元（参考）: precure.ml `/api/dic/v1/dic.json`（MeCab IPADic 形式・読み付き）

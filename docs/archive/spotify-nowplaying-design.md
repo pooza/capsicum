@@ -1,5 +1,7 @@
 # Spotify Web API ナウプレ取得 設計
 
+> **【アーカイブ】** コードは実装・検証済みだが、Spotify のクォータ規約改定で一般開放不可と判明し**塩漬け**（[#570](https://github.com/pooza/capsicum/issues/570)、本番 `spotify_enabled` OFF）。設計経緯の記録として保持する。
+
 ## 位置付け
 
 - 対象: capsicum 全プラットフォーム (OS 非依存、HTTP のみで完結)
