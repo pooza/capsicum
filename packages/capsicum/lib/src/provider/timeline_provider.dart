@@ -211,6 +211,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
 
+  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
+  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
+  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
+  StreamConnectionState _streamConnectionState =
+      StreamConnectionState.connecting;
+
   @override
   Future<TimelineState> build() async {
     // build() reruns when adapter / timeline type changes. Reset stream-side
@@ -218,6 +224,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // into the new one via flushPending().
     _pendingPosts.clear();
     _isNearTop = true;
+    _streamConnectionState = StreamConnectionState.connecting;
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
@@ -284,6 +291,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       posts: enriched,
       hasMore: hasMore,
       pageCapHit: pageCapHit,
+      // _enrichIsCat の await 中に接続が live になっていることがあるため、
+      // 取りこぼさないよう現在値を反映する (#714)。
+      streamConnectionState: _streamConnectionState,
     );
   }
 
@@ -375,7 +385,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         }
       },
       // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
+      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
+      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
+      // データがあればそれも更新する。
       onConnectionState: (connState) {
+        _streamConnectionState = connState;
         final current = state.valueOrNull;
         if (current == null) return;
         if (current.streamConnectionState == connState) return;
