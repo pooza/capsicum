@@ -1905,6 +1905,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     setState(() => _scheduledAt = scheduled);
   }
 
+  /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
+  /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
+  /// モバイルでは修飾キーが無いため発火しない。
+  void _submitFromKeyboard() {
+    if (_sending) return;
+    _submit();
+  }
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
@@ -2156,16 +2164,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                 Expanded(
                   child: Stack(
                     children: [
-                      TextField(
-                        controller: _controller,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        autofocus: true,
-                        enabled: !_sending,
-                        decoration: const InputDecoration(
-                          hintText: '今なにしてる？',
-                          border: InputBorder.none,
+                      // Cmd+Enter / Ctrl+Enter で送信 (#708)。Enter 単独は改行。
+                      CallbackShortcuts(
+                        bindings: <ShortcutActivator, VoidCallback>{
+                          const SingleActivator(
+                            LogicalKeyboardKey.enter,
+                            meta: true,
+                          ): _submitFromKeyboard,
+                          const SingleActivator(
+                            LogicalKeyboardKey.enter,
+                            control: true,
+                          ): _submitFromKeyboard,
+                        },
+                        child: TextField(
+                          controller: _controller,
+                          maxLines: null,
+                          expands: true,
+                          textAlignVertical: TextAlignVertical.top,
+                          autofocus: true,
+                          enabled: !_sending,
+                          decoration: const InputDecoration(
+                            hintText: '今なにしてる？',
+                            border: InputBorder.none,
+                          ),
                         ),
                       ),
                       if (maxLength != null)
