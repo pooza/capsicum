@@ -2843,10 +2843,11 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
     final thumbScale = ref.watch(thumbnailScaleProvider);
     if (images.length == 1) {
-      // 1 枚でも固定高さの横長枠に cover で収める (#718)。縦長画像が縦に
-      // 伸び続ける問題を避け、枚数・向きを問わずサムネ高さを統一する。
+      // 1 枚でも固定高さの横長枠に cover で収める (#718)。2 枚 (= 160) や
+      // 3 枚以上 (各行 ≈ 158) と同じ高さに揃え、枚数・向きを問わずサムネ
+      // 高さを統一する。従来は 1 枚だけ contain で縦長が縦に伸びていた。
       return SizedBox(
-        height: 240 * thumbScale,
+        height: 160 * thumbScale,
         width: double.infinity,
         child: _buildThumbnail(context, images.first, 0, images),
       );
