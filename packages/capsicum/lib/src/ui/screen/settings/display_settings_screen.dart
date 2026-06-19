@@ -14,6 +14,7 @@ class DisplaySettingsScreen extends ConsumerWidget {
     final hideLivecure = ref.watch(hideLivecureProvider);
     final absoluteTime = ref.watch(absoluteTimeProvider);
     final blurAllImages = ref.watch(blurAllImagesProvider);
+    final hideInstanceTicker = ref.watch(hideInstanceTickerProvider);
     final previewCardMode = ref.watch(previewCardModeProvider);
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
     final nowPlayingUrlProvider = ref.watch(nowPlayingUrlProviderProvider);
@@ -36,6 +37,15 @@ class DisplaySettingsScreen extends ConsumerWidget {
             subtitle: const Text('NSFW フラグに関係なくすべての画像をぼかし表示にします。タップで個別に表示できます'),
             value: blurAllImages,
             onChanged: (_) => ref.read(blurAllImagesProvider.notifier).toggle(),
+          ),
+          SwitchListTile(
+            title: const Text('投稿元サーバー帯を隠す'),
+            subtitle: const Text(
+              'リモート投稿に表示される投稿元サーバー名／テーマカラー帯（インスタンスティッカー）を非表示にします',
+            ),
+            value: hideInstanceTicker,
+            onChanged: (_) =>
+                ref.read(hideInstanceTickerProvider.notifier).toggle(),
           ),
           ListTile(
             title: const Text('プレビューカード（OGP）'),

@@ -24,6 +24,7 @@ const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
+const _hideInstanceTickerKey = 'hide_instance_ticker';
 const _confirmBeforePostKey = 'confirm_before_post';
 const _hiddenListIdsPrefix = 'hidden_list_ids_';
 const _listOrderPrefix = 'list_order_';
@@ -1174,6 +1175,34 @@ class BlurAllImagesNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_blurAllImagesKey, state);
+  }
+}
+
+/// Whether to hide the instance ticker (source-server band) on remote posts.
+final hideInstanceTickerProvider =
+    NotifierProvider<HideInstanceTickerNotifier, bool>(
+      HideInstanceTickerNotifier.new,
+    );
+
+class HideInstanceTickerNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_hideInstanceTickerKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideInstanceTickerKey, state);
   }
 }
 

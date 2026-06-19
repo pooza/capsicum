@@ -336,6 +336,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
     final displayPost = post.reblog ?? post;
     final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
+    final hideInstanceTicker = ref.watch(hideInstanceTickerProvider);
 
     // Show a compact placeholder for warn-filtered posts until expanded.
     if (isFilteredWarn && !_filterExpanded) {
@@ -496,7 +497,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (displayPost.author.host != null)
+                    if (displayPost.author.host != null && !hideInstanceTicker)
                       _buildInstanceTicker(context, displayPost.author.host!),
                     if (displayPost.channelName != null)
                       Padding(
