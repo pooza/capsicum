@@ -4,11 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../main.dart'
-    show
-        appLaunchStopwatch,
-        firebaseReady,
-        pendingSharedText,
-        shareIntentReady;
+    show appLaunchStopwatch, firebaseReady, pendingSharedText, shareIntentReady;
 import '../../util/startup_trace.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';

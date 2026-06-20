@@ -361,7 +361,10 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Opacity(opacity: 0.8, child: _FileTile(file: file, onTap: () {})),
+            Opacity(
+              opacity: 0.8,
+              child: _FileTile(file: file, onTap: () {}),
+            ),
             Positioned(
               top: -6,
               right: -6,
@@ -826,7 +829,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                                 ? theme.colorScheme.primary
                                 : null,
                           ),
-                          tooltip: candidateData.isNotEmpty ? '親フォルダへ移動' : '選択を解除',
+                          tooltip: candidateData.isNotEmpty
+                              ? '親フォルダへ移動'
+                              : '選択を解除',
                           onPressed: _exitSelectionMode,
                         ),
                       ))
@@ -932,7 +937,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                       builder: (context, candidateData, rejectedData) {
                         return _FolderTile(
                           folder: folder,
-                          onTap: _selectionMode ? () {} : () => _openFolder(folder),
+                          onTap: _selectionMode
+                              ? () {}
+                              : () => _openFolder(folder),
                           onLongPress: _selectionMode
                               ? () {}
                               : () => _showFolderActions(folder),

@@ -27,8 +27,11 @@ void recordStartupPhase(
     startTimestamp: now.subtract(Duration(milliseconds: durationMs)),
   );
   measurementsMs.forEach(
-    (k, v) =>
-        tx.setMeasurement(k, v, unit: DurationSentryMeasurementUnit.milliSecond),
+    (k, v) => tx.setMeasurement(
+      k,
+      v,
+      unit: DurationSentryMeasurementUnit.milliSecond,
+    ),
   );
   tags.forEach(tx.setTag);
   data.forEach(tx.setData);
