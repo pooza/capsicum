@@ -29,17 +29,17 @@ git diff $OLD..$NEW -- config/routes/api.rb
 
 | API 変化 | 内容 | Issue |
 |---|---|---|
-| account `show_media` / `show_media_replies` / `show_featured` | プロフィールのタブ非表示設定への追従 | [#732](https://github.com/pooza/capsicum/issues/732)（v1.43） |
-| **Collections 横断**: 新 `/api/v1/collections`(+items / context / in_collections / accounts/:id/collections) ・account `feature_approval` ・status `tagged_collections` ・search `collections` ・notification 新 `collection` type ・role `collection_limit` ・新 entity Collection / CollectionItem / CollectionWithAccounts / ShallowTag / PartialAccount | キュレーション共有（FEP-7aa9）。**単なる新エンドポイントでなく account / status / search / notification entity に染み出す横断変更** | [#722](https://github.com/pooza/capsicum/issues/722)（v1.43） |
+| account `show_media` / `show_media_replies` / `show_featured` | プロフィールのタブ非表示設定への追従 | [#732](https://github.com/pooza/capsicum/issues/732)（v1.44） |
+| **Collections 横断**: 新 `/api/v1/collections`(+items / context / in_collections / accounts/:id/collections) ・account `feature_approval` ・status `tagged_collections` ・search `collections` ・notification 新 type **2 種**（`added_to_collection` / `collection_update`、いずれも `collection` キーで `REST::CollectionSerializer` 同梱）・role `collection_limit` ・新 entity Collection / CollectionItem / CollectionWithAccounts / ShallowTag / PartialAccount | キュレーション共有（FEP-7aa9）。**単なる新エンドポイントでなく account / status / search / notification entity に染み出す横断変更**。受信側を分割: 通知描画 [#741](https://github.com/pooza/capsicum/issues/741)（v1.41・前倒し）/ 被フィーチャー操作 [#742](https://github.com/pooza/capsicum/issues/742)（v1.44） | オーナー側 [#722](https://github.com/pooza/capsicum/issues/722)（v1.44） |
 
 ### 🟡 actionable（小粒・additive な拾い物）
 
 | API 変化 | 内容 | Issue |
 |---|---|---|
-| account `avatar_description` / `header_description` | アバター / ヘッダー画像の alt テキスト | [#733](https://github.com/pooza/capsicum/issues/733)（v1.43） |
-| relationship `muting_expires_at` | ミュートの有効期限 | [#734](https://github.com/pooza/capsicum/issues/734)（v1.43） |
-| custom_emoji `featured` | フィーチャー絵文字（カテゴリ） | [#735](https://github.com/pooza/capsicum/issues/735)（v1.43） |
-| 新 `/api/v1/profile`(show / update, avatar / header destroy) + Profile entity | プロフィール編集 v2 専用エンドポイント。現状 `update_credentials` で動作するため移行は任意 | [#736](https://github.com/pooza/capsicum/issues/736)（v1.43） |
+| account `avatar_description` / `header_description` | アバター / ヘッダー画像の alt テキスト | [#733](https://github.com/pooza/capsicum/issues/733)（v1.44） |
+| relationship `muting_expires_at` | ミュートの有効期限 | [#734](https://github.com/pooza/capsicum/issues/734)（v1.44） |
+| custom_emoji `featured` | フィーチャー絵文字（カテゴリ） | [#735](https://github.com/pooza/capsicum/issues/735)（v1.44） |
+| 新 `/api/v1/profile`(show / update, avatar / header destroy) + Profile entity | プロフィール編集 v2 専用エンドポイント。現状 `update_credentials` で動作するため移行は任意 | [#736](https://github.com/pooza/capsicum/issues/736)（v1.44） |
 
 ### ⚪ passive / none（対応不要）
 
