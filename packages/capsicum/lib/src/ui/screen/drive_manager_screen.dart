@@ -266,6 +266,11 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   }
 
   void _exitSelectionMode() {
+    // #694 の一括 D&D は fire-and-forget で _moveSelectedFilesToFolder →
+    // _exitSelectionMode に至るため、移動の await 中に画面を離れると dispose 済み
+    // State で setState する事故が起きうる。mounted ガードで防ぐ（AppBar の
+    // 同期呼び出しでは常に mounted なので無害）。
+    if (!mounted) return;
     setState(() {
       _selectionMode = false;
       _selectedFileIds.clear();
@@ -340,12 +345,25 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   /// 統一してある（単体ドラッグは要素 1）。選択モード中のドラッグは選択全件を
   /// 運ぶので、既存の一括移動 [_moveSelectedFilesToFolder]（`_selectedFileIds`
   /// 基準・移動後に選択解除）を再利用する。通常ドラッグは単体移動。
-  Future<void> _handleDropToFolder(List<Attachment> files, String? folderId) {
+  Future<void> _handleDropToFolder(
+    List<Attachment> files,
+    String? folderId,
+  ) async {
     if (_selectionMode) {
-      return _moveSelectedFilesToFolder(folderId);
+      // 一括移動は fire-and-forget（DragTarget は戻り Future を捨てる）。移動完了
+      // まで選択は解除されないため、完了前に同じ選択を再ドロップすると二重移動に
+      // なりうる。ダイアログ経路と同じ _bulkMoving で再入を防ぐ。
+      if (_bulkMoving) return;
+      _bulkMoving = true;
+      try {
+        await _moveSelectedFilesToFolder(folderId);
+      } finally {
+        _bulkMoving = false;
+      }
+      return;
     }
-    if (files.isEmpty) return Future<void>.value();
-    return _moveFileToFolder(files.first, folderId);
+    if (files.isEmpty) return;
+    await _moveFileToFolder(files.first, folderId);
   }
 
   /// 選択モード中の一括ドラッグ用フィードバック (#694)。代表サムネに選択枚数の
