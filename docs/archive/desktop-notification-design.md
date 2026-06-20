@@ -1,10 +1,12 @@
 # デスクトップ版 通知設計（WebSocket → OS ローカル通知）
 
+> **【アーカイブ】** v1.34（[#569](https://github.com/pooza/capsicum/issues/569) WebSocket → OS ローカル通知 / [#468](https://github.com/pooza/capsicum/issues/468) macOS APNs）で実装完了。正本は実装コード。本書は設計の経緯記録として保持する。Windows push 本配線（[#474](https://github.com/pooza/capsicum/issues/474)）は v1.40 で継続。
+
 ## 位置付け
 
 - 対象 OS: macOS / Linux / Windows の 3 OS 共通
 - ネイティブ push (APNs / WNS) と**併存**する設計。本書はアプリ起動中の通知配信を担う中間解
-- mobile / capsicum-relay 経路 ([pooza/capsicum-relay](https://github.com/pooza/capsicum-relay)、設計経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md)) は別レイヤー。本書はアプリ起動中のデスクトップ通知配信を扱う
+- mobile / capsicum-relay 経路 ([pooza/capsicum-relay](https://github.com/pooza/capsicum-relay)、設計経緯は [archive/push-relay-plan.md](push-relay-plan.md)) は別レイヤー。本書はアプリ起動中のデスクトップ通知配信を扱う
 
 ## 背景
 
@@ -277,4 +279,4 @@ Phase 1〜4 は依存関係上 1 PR にまとめるのが妥当。Phase 5 は内
 - #477 お知らせ通知 C 案 capsicum-relay（mobile 対象、存続）
 - #468 macOS push 本配線（v1.34、本設計と併存）
 - #474 Windows push 本配線（on-hold、本設計と併存）
-- mobile / relay 経路の背景: [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリ、初期設計は [archive/push-relay-plan.md](archive/push-relay-plan.md)
+- mobile / relay 経路の背景: [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリ、初期設計は [archive/push-relay-plan.md](push-relay-plan.md)

@@ -4,7 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../main.dart'
-    show firebaseReady, pendingSharedText, shareIntentReady;
+    show appLaunchStopwatch, firebaseReady, pendingSharedText, shareIntentReady;
+import '../../util/startup_trace.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
 import 'eula_screen.dart';
@@ -25,6 +26,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   Future<void> _restoreSessions() async {
     var skippedAccounts = 0;
+    final restoreSw = Stopwatch()..start();
     try {
       skippedAccounts = await ref
           .read(accountManagerProvider.notifier)
@@ -32,6 +34,29 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     } catch (e, st) {
       debugPrint('capsicum: failed to restore sessions: $e\n$st');
     }
+    restoreSw.stop();
+
+    // #716 計測: 復元の所要 (restore_ms) と起動からの経過 (since_launch_ms) を
+    // 残す。restore_ms は #716 並列化の直接指標、since_launch_ms は「起動 →
+    // 復元完了」の体感前段。サーバー応答に左右されないので時間帯をまたいだ
+    // 前後比較に使える。
+    final accountCount = ref.read(accountManagerProvider).accounts.length;
+    debugPrint(
+      'capsicum: startup: sessions restored in '
+      '${restoreSw.elapsedMilliseconds}ms '
+      '(since_launch=${appLaunchStopwatch.elapsedMilliseconds}ms '
+      'accounts=$accountCount skipped=$skippedAccounts)',
+    );
+    // 起動計測 (#716): transaction duration = restore_ms（復元の所要・サーバー
+    // 非依存）。since_launch_ms は measurement で持つ。
+    recordStartupPhase(
+      'app.startup.restore',
+      durationMs: restoreSw.elapsedMilliseconds,
+      measurementsMs: {
+        'since_launch_ms': appLaunchStopwatch.elapsedMilliseconds,
+      },
+      data: {'accounts': accountCount, 'skipped': skippedAccounts},
+    );
     if (!mounted) return;
 
     // restoreSessions() が完走した。通知タップ routing が accounts の

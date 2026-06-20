@@ -63,7 +63,15 @@ void _logDevStack(StackTrace stackTrace) {
   if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
 }
 
+/// アプリ起動からの経過を測る基準ストップウォッチ (#716 計測)。
+/// 「起動 → セッション復元 → ホーム TL 表示」の各段を since-launch で並べ、
+/// サーバー応答 (fetch) と client 側コスト (restore / isCat enrich) を切り分けて
+/// 体感速度の前後比較を交絡なしで行うための共通アンカー。`main()` の先頭で
+/// start し、splash の復元計測と timeline_provider のホーム初回描画計測が参照する。
+final Stopwatch appLaunchStopwatch = Stopwatch();
+
 Future<void> main() async {
+  appLaunchStopwatch.start();
   WidgetsFlutterBinding.ensureInitialized();
 
   // media_kit (libmpv) のネイティブバックエンドを初期化する (#492)。
@@ -729,10 +737,11 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
 }
 
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
-  // 上限: restoreSessions は 1 アカウントあたり getMyself + mulukhiya probe
-  // + timeline availability probe を走らせるため、低速回線 + 多アカウント
-  // 環境では 10〜30 秒かかりうる。3600 フレーム（≒ 60 秒 @60fps）を上限に
-  // 設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
+  // 上限: restoreSessions は #716 でアカウント内・アカウント間とも probe を
+  // 並列化したため、所要は最長 1 アカウントぶん（getMyself + mulukhiya +
+  // timeline availability + version probe の最長 1 本）へ畳まれた。とはいえ
+  // 低速回線では数秒〜十数秒かかりうるので、3600 フレーム（≒ 60 秒 @60fps）を
+  // 上限に設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
   // Navigator 未確立ケースの暴走も防ぐ。
   const maxAttempts = 3600;
 

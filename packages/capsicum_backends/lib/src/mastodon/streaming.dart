@@ -28,12 +28,16 @@ class MastodonStreaming {
   final void Function(Object error, StackTrace stack)? onStreamError;
   final void Function()? onReconnectExhausted;
 
+  /// 接続ライフサイクルの遷移を呼び出し側 (UI インジケータ) へ流す (#714)。
+  final void Function(StreamConnectionState state)? onConnectionState;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
   TimelineType? _currentType;
   bool _disposed = false;
   bool _reconnectExhaustedNotified = false;
+  StreamConnectionState? _lastConnectionState;
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
@@ -46,7 +50,18 @@ class MastodonStreaming {
     this.onParseError,
     this.onStreamError,
     this.onReconnectExhausted,
+    this.onConnectionState,
   });
+
+  // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
+  // 本筋を止めない。
+  void _notifyConnectionState(StreamConnectionState next) {
+    if (_disposed || _lastConnectionState == next) return;
+    _lastConnectionState = next;
+    try {
+      onConnectionState?.call(next);
+    } catch (_) {}
+  }
 
   Stream<Post> connect(TimelineType type) {
     _currentType = type;
@@ -59,6 +74,7 @@ class MastodonStreaming {
   void _connect(TimelineType type) {
     if (_disposed) return;
     _channel?.sink.close();
+    _notifyConnectionState(StreamConnectionState.connecting);
 
     final stream = _streamMap[type] ?? 'user';
     final uri = Uri(
@@ -73,15 +89,18 @@ class MastodonStreaming {
         .then((_) {
           _reconnectAttempts = 0;
           _reconnectExhaustedNotified = false;
+          _notifyConnectionState(StreamConnectionState.live);
         })
         .catchError((Object error, StackTrace stack) {
           _notifyStreamError(error, stack);
+          _notifyConnectionState(StreamConnectionState.disconnected);
           _scheduleReconnect();
         });
     _channel!.stream.listen(
       _onMessage,
       onError: (Object error, StackTrace stack) {
         _notifyStreamError(error, stack);
+        _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
       onDone: () {
@@ -90,6 +109,7 @@ class MastodonStreaming {
         // 上限到達による `onReconnectExhausted` 通知も出なくなる。リセット
         // は `ready.then` の接続成功時のみ行い、DM (`chat_streaming.dart`) /
         // ルーム (`chat_room_streaming.dart`) と挙動を揃える。
+        _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
     );
@@ -140,6 +160,7 @@ class MastodonStreaming {
           // 観測経路の失敗で本筋を止めない。
         }
       }
+      _notifyConnectionState(StreamConnectionState.exhausted);
       return;
     }
     _reconnectTimer?.cancel();

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../screen/drive_picker_screen.dart';
+import 'insert_picker_sheet.dart';
 
 /// chat の添付ファイルを選ぶ (#613)。ドライブの既存ファイル選択か端末からの
 /// アップロードを選ばせ、添付する drive ファイル ([Attachment]) を返す。
@@ -60,7 +61,7 @@ Future<Attachment?> showChatAttachmentPicker(
 /// chat の入力欄 (#613)。DM ([ChatThreadScreen]) とルーム
 /// ([ChatRoomTimelineScreen]) で共用する。テキスト入力 + 添付ボタン + 送信に
 /// 加え、添付中のファイルプレビューを表示する。
-class ChatComposeRow extends StatelessWidget {
+class ChatComposeRow extends ConsumerWidget {
   final TextEditingController controller;
 
   /// 送信中。
@@ -87,8 +88,21 @@ class ChatComposeRow extends StatelessWidget {
     this.attachedFile,
   });
 
+  /// カーソル位置（選択範囲があれば置換）にテキストを挿入する。Misskey
+  /// メッセージは MFM 解釈なので custom emoji の前後スペースは不要。
+  void _insertAtCursor(String value) {
+    final text = controller.text;
+    final sel = controller.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    controller.value = TextEditingValue(
+      text: text.replaceRange(start, end, value),
+      selection: TextSelection.collapsed(offset: start + value.length),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final busy = sending || uploading;
     return SafeArea(
       top: false,
@@ -109,6 +123,19 @@ class ChatComposeRow extends StatelessWidget {
                   icon: const Icon(Icons.attach_file),
                   tooltip: '添付',
                   onPressed: busy ? null : onAttach,
+                ),
+                // 絵文字 / 劇中ワード等の拡張ピッカー (#686)。compose 本文・簡易
+                // バーと同じ共有ランチャをメッセージ入力にも届ける。
+                IconButton(
+                  icon: const Icon(Icons.emoji_emotions_outlined),
+                  tooltip: '絵文字・ワード',
+                  onPressed: busy
+                      ? null
+                      : () => showInsertPickerSheet(
+                          context: context,
+                          ref: ref,
+                          onSelected: _insertAtCursor,
+                        ),
                 ),
                 Expanded(
                   child: TextField(

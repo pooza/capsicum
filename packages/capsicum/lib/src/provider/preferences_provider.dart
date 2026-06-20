@@ -24,6 +24,8 @@ const _hideLivecureKey = 'hide_livecure';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
+const _hideInstanceTickerKey = 'hide_instance_ticker';
+const _restoreReadPositionKey = 'restore_read_position';
 const _confirmBeforePostKey = 'confirm_before_post';
 const _hiddenListIdsPrefix = 'hidden_list_ids_';
 const _listOrderPrefix = 'list_order_';
@@ -33,6 +35,7 @@ const _emojiScaleKey = 'emoji_scale';
 const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
+const _insertPickerHeightKey = 'insert_picker_height';
 const _recentEmojisKey = 'recent_emojis';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
@@ -1174,6 +1177,100 @@ class BlurAllImagesNotifier extends Notifier<bool> {
     state = !state;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_blurAllImagesKey, state);
+  }
+}
+
+/// Whether to hide the instance ticker (source-server band) on remote posts.
+final hideInstanceTickerProvider =
+    NotifierProvider<HideInstanceTickerNotifier, bool>(
+      HideInstanceTickerNotifier.new,
+    );
+
+class HideInstanceTickerNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_hideInstanceTickerKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideInstanceTickerKey, state);
+  }
+}
+
+/// Whether to restore the saved read position (#25 markers) on cold start.
+/// Default is on (restore). When off, the home timeline always opens at the
+/// newest post. Mastodon-only behavior (markers API); Misskey always opens at
+/// the top regardless.
+final restoreReadPositionProvider =
+    NotifierProvider<RestoreReadPositionNotifier, bool>(
+      RestoreReadPositionNotifier.new,
+    );
+
+class RestoreReadPositionNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_restoreReadPositionKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_restoreReadPositionKey, state);
+  }
+}
+
+/// 挿入ピッカーシートの高さ（利用可能領域に対する比率）。ユーザーが上端の
+/// ハンドルをドラッグして決めた値を記憶し、次回も同じ高さで開く (#690)。
+/// ドラッグ側の clamp と揃えるため公開定数にしている。
+const double kMinInsertPickerHeight = 0.25;
+const double kMaxInsertPickerHeight = 0.9;
+const double kDefaultInsertPickerHeight = 0.5;
+
+final insertPickerHeightProvider =
+    NotifierProvider<InsertPickerHeightNotifier, double>(
+      InsertPickerHeightNotifier.new,
+    );
+
+class InsertPickerHeightNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return kDefaultInsertPickerHeight;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_insertPickerHeightKey);
+    if (saved != null) {
+      state = saved.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
+    }
+  }
+
+  Future<void> set(double value) async {
+    final clamped = value.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_insertPickerHeightKey, clamped);
   }
 }
 

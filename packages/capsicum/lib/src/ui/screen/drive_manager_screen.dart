@@ -45,6 +45,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   String get _currentTitle =>
       _folderStack.isEmpty ? 'ドライブ' : _folderStack.last.name;
 
+  /// 1 つ上のフォルダ ID（ルート直下なら null）。AppBar 左への drop で親へ移す
+  /// 際に使う (#694 で単体／一括の両 drop が参照)。
+  String? get _parentFolderId => _folderStack.length >= 2
+      ? _folderStack[_folderStack.length - 2].id
+      : null;
+
   @override
   void initState() {
     super.initState();
@@ -260,6 +266,11 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   }
 
   void _exitSelectionMode() {
+    // #694 の一括 D&D は fire-and-forget で _moveSelectedFilesToFolder →
+    // _exitSelectionMode に至るため、移動の await 中に画面を離れると dispose 済み
+    // State で setState する事故が起きうる。mounted ガードで防ぐ（AppBar の
+    // 同期呼び出しでは常に mounted なので無害）。
+    if (!mounted) return;
     setState(() {
       _selectionMode = false;
       _selectedFileIds.clear();
@@ -328,6 +339,73 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
     _exitSelectionMode();
+  }
+
+  /// ドラッグ&ドロップの移動先確定 (#694)。ペイロードは `List<Attachment>` に
+  /// 統一してある（単体ドラッグは要素 1）。選択モード中のドラッグは選択全件を
+  /// 運ぶので、既存の一括移動 [_moveSelectedFilesToFolder]（`_selectedFileIds`
+  /// 基準・移動後に選択解除）を再利用する。通常ドラッグは単体移動。
+  Future<void> _handleDropToFolder(
+    List<Attachment> files,
+    String? folderId,
+  ) async {
+    if (_selectionMode) {
+      // 一括移動は fire-and-forget（DragTarget は戻り Future を捨てる）。移動完了
+      // まで選択は解除されないため、完了前に同じ選択を再ドロップすると二重移動に
+      // なりうる。ダイアログ経路と同じ _bulkMoving で再入を防ぐ。
+      if (_bulkMoving) return;
+      _bulkMoving = true;
+      try {
+        await _moveSelectedFilesToFolder(folderId);
+      } finally {
+        _bulkMoving = false;
+      }
+      return;
+    }
+    if (files.isEmpty) return;
+    await _moveFileToFolder(files.first, folderId);
+  }
+
+  /// 選択モード中の一括ドラッグ用フィードバック (#694)。代表サムネに選択枚数の
+  /// バッジを重ねる。
+  Widget _buildBulkDragFeedback(Attachment file) {
+    final theme = Theme.of(context);
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(4),
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Opacity(
+              opacity: 0.8,
+              child: _FileTile(file: file, onTap: () {}),
+            ),
+            Positioned(
+              top: -6,
+              right: -6,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${_selectedFileIds.length}',
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _moveFileToFolder(Attachment file, String? folderId) async {
@@ -747,24 +825,43 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                     : Text(_currentTitle)),
           backgroundColor: theme.colorScheme.inversePrimary,
           leading: _selectionMode
-              ? IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: '選択を解除',
-                  onPressed: _exitSelectionMode,
-                )
+              ? (_folderStack.isEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: '選択を解除',
+                        onPressed: _exitSelectionMode,
+                      )
+                    // 選択モード中でも親フォルダへの一括 drop を受ける (#694)。
+                    // タップは従来どおり選択解除。ドラッグ中／drop 候補時は
+                    // arrow_back に変えて「ここに落とすと親へ」を示す。
+                    : DragTarget<List<Attachment>>(
+                        onWillAcceptWithDetails: (_) => true,
+                        onAcceptWithDetails: (details) =>
+                            _handleDropToFolder(details.data, _parentFolderId),
+                        builder: (context, candidateData, _) => IconButton(
+                          icon: Icon(
+                            _isDragging || candidateData.isNotEmpty
+                                ? Icons.arrow_back
+                                : Icons.close,
+                            color: candidateData.isNotEmpty
+                                ? theme.colorScheme.primary
+                                : null,
+                          ),
+                          tooltip: candidateData.isNotEmpty
+                              ? '親フォルダへ移動'
+                              : '選択を解除',
+                          onPressed: _exitSelectionMode,
+                        ),
+                      ))
               : (_folderStack.isEmpty
                     ? IconButton(
                         icon: const Icon(Icons.close),
                         onPressed: _goBack,
                       )
-                    : DragTarget<Attachment>(
+                    : DragTarget<List<Attachment>>(
                         onWillAcceptWithDetails: (_) => true,
-                        onAcceptWithDetails: (details) {
-                          final parentId = _folderStack.length >= 2
-                              ? _folderStack[_folderStack.length - 2].id
-                              : null;
-                          _moveFileToFolder(details.data, parentId);
-                        },
+                        onAcceptWithDetails: (details) =>
+                            _handleDropToFolder(details.data, _parentFolderId),
                         builder: (context, candidateData, _) => IconButton(
                           icon: Icon(
                             Icons.arrow_back,
@@ -847,28 +944,23 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                 itemBuilder: (context, index) {
                   if (index < totalFolders) {
                     final folder = state.folders[index];
-                    if (_selectionMode) {
-                      // 選択モード中はフォルダ操作を無効化 (現フォルダ内のファイルだけ
-                      // 対象。フォルダ複数選択は v1 範囲外、#567)。
-                      return Opacity(
-                        opacity: 0.4,
-                        child: _FolderTile(
-                          folder: folder,
-                          onTap: () {},
-                          onLongPress: () {},
-                        ),
-                      );
-                    }
-                    return DragTarget<Attachment>(
+                    // 選択モード中もフォルダは drop 先として活かす (#694 一括移動)。
+                    // タップ／ロングプレス（開く・操作メニュー）は選択モード中は
+                    // 無効（フォルダ複数選択は範囲外、#567）。
+                    return DragTarget<List<Attachment>>(
                       key: ValueKey('folder-${folder.id}'),
                       onWillAcceptWithDetails: (_) => true,
                       onAcceptWithDetails: (details) =>
-                          _moveFileToFolder(details.data, folder.id),
+                          _handleDropToFolder(details.data, folder.id),
                       builder: (context, candidateData, rejectedData) {
                         return _FolderTile(
                           folder: folder,
-                          onTap: () => _openFolder(folder),
-                          onLongPress: () => _showFolderActions(folder),
+                          onTap: _selectionMode
+                              ? () {}
+                              : () => _openFolder(folder),
+                          onLongPress: _selectionMode
+                              ? () {}
+                              : () => _showFolderActions(folder),
                           isHighlighted: candidateData.isNotEmpty,
                         );
                       },
@@ -883,18 +975,54 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                   }
                   final file = state.files[fileIndex];
                   if (_selectionMode) {
-                    // 選択モード中は drag を起動させず、tap で選択切り替え (#567)。
-                    return _FileTile(
-                      key: ValueKey('file-${file.id}'),
+                    final isSelected = _selectedFileIds.contains(file.id);
+                    // 未選択タイルは従来どおり tap で選択トグル（drag は起こさない）。
+                    if (!isSelected) {
+                      return _FileTile(
+                        key: ValueKey('file-${file.id}'),
+                        file: file,
+                        isSelectionMode: true,
+                        isSelected: false,
+                        onTap: () => _toggleFileSelected(file.id),
+                      );
+                    }
+                    // 選択済みタイルは long-press で「選択全件」をまとめてドラッグ
+                    // できる (#694)。drop 先（フォルダ／親）の DragTarget は選択全件を
+                    // _handleDropToFolder → _moveSelectedFilesToFolder で移す。
+                    final selected = state.files
+                        .where((f) => _selectedFileIds.contains(f.id))
+                        .toList();
+                    final tile = _FileTile(
                       file: file,
                       isSelectionMode: true,
-                      isSelected: _selectedFileIds.contains(file.id),
+                      isSelected: true,
                       onTap: () => _toggleFileSelected(file.id),
                     );
+                    return LongPressDraggable<List<Attachment>>(
+                      key: ValueKey('file-${file.id}'),
+                      data: selected,
+                      onDragStarted: () {
+                        setState(() => _isDragging = true);
+                        _startDragAutoScroll(context);
+                      },
+                      onDragUpdate: (details) =>
+                          _updateDragAutoScroll(details.globalPosition),
+                      onDragEnd: (_) {
+                        setState(() => _isDragging = false);
+                        _stopDragAutoScroll();
+                      },
+                      feedback: _buildBulkDragFeedback(file),
+                      childWhenDragging: Opacity(opacity: 0.3, child: tile),
+                      // 起点以外の選択タイルもドラッグ中はまとめて減光する (#694)。
+                      child: Opacity(
+                        opacity: _isDragging ? 0.3 : 1.0,
+                        child: tile,
+                      ),
+                    );
                   }
-                  return LongPressDraggable<Attachment>(
+                  return LongPressDraggable<List<Attachment>>(
                     key: ValueKey('file-${file.id}'),
-                    data: file,
+                    data: [file],
                     onDragStarted: () {
                       setState(() => _isDragging = true);
                       _startDragAutoScroll(context);

@@ -19,13 +19,23 @@ DESKTOP_ENTRY="$DESKTOP_DIR/$APP_ID.desktop"
 
 # Exec= 行から実体の AppImage パスを抜き出して同時に消す。install.sh が
 # 上書きで書いた前提なので、ユーザーが手動編集していなければ参照は壊れて
-# いない。
+# いない。#707 以降は Exec が安定 symlink (~/Applications/capsicum) を指す
+# ため、symlink ならリンク先の実体 AppImage も併せて消す。旧来 (#707 以前)
+# は Exec がバージョン付き AppImage を直接指している。
 if [[ -f "$DESKTOP_ENTRY" ]]; then
   EXEC_LINE=$(grep -E "^Exec=" "$DESKTOP_ENTRY" | head -1 | sed -E "s|^Exec=||" || true)
-  APPIMAGE_PATH="${EXEC_LINE% %U}"
-  if [[ -f "$APPIMAGE_PATH" && "$APPIMAGE_PATH" == "$APPLICATIONS_DIR/"* ]]; then
-    echo "==> Removing AppImage $APPIMAGE_PATH"
-    rm -f "$APPIMAGE_PATH"
+  EXEC_PATH="${EXEC_LINE% %U}"
+  if [[ -L "$EXEC_PATH" ]]; then
+    TARGET=$(readlink -f "$EXEC_PATH" || true)
+    if [[ -n "$TARGET" && -f "$TARGET" && "$TARGET" == "$APPLICATIONS_DIR/"* ]]; then
+      echo "==> Removing AppImage $TARGET"
+      rm -f "$TARGET"
+    fi
+    echo "==> Removing symlink $EXEC_PATH"
+    rm -f "$EXEC_PATH"
+  elif [[ -f "$EXEC_PATH" && "$EXEC_PATH" == "$APPLICATIONS_DIR/"* ]]; then
+    echo "==> Removing AppImage $EXEC_PATH"
+    rm -f "$EXEC_PATH"
   fi
   echo "==> Removing desktop entry $DESKTOP_ENTRY"
   rm -f "$DESKTOP_ENTRY"

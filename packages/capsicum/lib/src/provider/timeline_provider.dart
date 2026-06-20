@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../main.dart' show appLaunchStopwatch;
 import '../util/exception_scrub.dart';
+import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 
@@ -87,6 +90,11 @@ class TimelineState {
   /// build() が再実行されるとクリアされる。
   final bool pageCapHit;
 
+  /// streaming のライブ接続状態 (#714)。backend の接続ライフサイクルを反映し、
+  /// 常時インジケータの表示に使う。`exhausted` は `streamReconnectExhausted`
+  /// の可視化と同じ枯渇状態を表す。build() 再実行で `connecting` に戻る。
+  final StreamConnectionState streamConnectionState;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -95,6 +103,7 @@ class TimelineState {
     this.pendingCount = 0,
     this.streamReconnectExhausted = false,
     this.pageCapHit = false,
+    this.streamConnectionState = StreamConnectionState.connecting,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -108,6 +117,7 @@ class TimelineState {
     int? pendingCount,
     bool? streamReconnectExhausted,
     bool? pageCapHit,
+    StreamConnectionState? streamConnectionState,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -119,6 +129,7 @@ class TimelineState {
     streamReconnectExhausted:
         streamReconnectExhausted ?? this.streamReconnectExhausted,
     pageCapHit: pageCapHit ?? this.pageCapHit,
+    streamConnectionState: streamConnectionState ?? this.streamConnectionState,
   );
 }
 
@@ -198,10 +209,20 @@ Future<TimelineState> fetchUntilVisible({
 /// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
+
+  /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
+  /// AutoDispose で Notifier は作り直されるため static に持つ。
+  static bool _homeFirstPaintReported = false;
   StreamSubscription<Post>? _streamSubscription;
   final List<Post> _pendingPosts = [];
   final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
+
+  /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
+  /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
+  /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
+  StreamConnectionState _streamConnectionState =
+      StreamConnectionState.connecting;
 
   @override
   Future<TimelineState> build() async {
@@ -210,10 +231,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // into the new one via flushPending().
     _pendingPosts.clear();
     _isNearTop = true;
+    _streamConnectionState = StreamConnectionState.connecting;
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
+
+    // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
+    // since-launch に分けて測る。fetch はサーバー負荷依存・enrich は item3 の
+    // 遅延化候補・since-launch は #716 復元並列化の効果を含む全体前段。1 回だけ。
+    final measureHomePaint =
+        type == TimelineType.home && !_homeFirstPaintReported;
+    final fetchSw = measureHomePaint ? (Stopwatch()..start()) : null;
 
     // Initial REST fetch — retry pages until visible posts are found or the
     // timeline is exhausted (same logic as loadMore).
@@ -271,11 +300,63 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
+    fetchSw?.stop();
+    final enrichSw = measureHomePaint ? (Stopwatch()..start()) : null;
     final enriched = await _enrichIsCat(allVisible);
+    enrichSw?.stop();
+
+    if (measureHomePaint) {
+      _homeFirstPaintReported = true;
+      _reportHomeFirstPaint(
+        fetchMs: fetchSw!.elapsedMilliseconds,
+        enrichMs: enrichSw!.elapsedMilliseconds,
+        posts: enriched.length,
+        fetches: fetches,
+        // 既読位置復元 (#715) の ON/OFF で起動の体感は大きく変わる（ON は
+        // first paint 後に getMarkers 往復＋古い位置へ着地）。混在させると平均が
+        // 無意味になるため、計測を設定値で層別できるようタグ付けする。マーカー
+        // 復元そのものの所要は home_screen 側の startup.marker_restore で測る。
+        restoreReadPosition: ref.read(restoreReadPositionProvider),
+      );
+    }
+
     return TimelineState(
       posts: enriched,
       hasMore: hasMore,
       pageCapHit: pageCapHit,
+      // _enrichIsCat の await 中に接続が live になっていることがあるため、
+      // 取りこぼさないよう現在値を反映する (#714)。
+      streamConnectionState: _streamConnectionState,
+    );
+  }
+
+  /// ホーム TL の初回描画到達を計測ログ / Sentry breadcrumb に残す (#716)。
+  /// fetch_ms (サーバー応答) と enrich_ms (isCat 補完) を分離して持つことで、
+  /// 体感の主因がサーバー側か client 側 (item3 遅延化候補) かを切り分け、
+  /// since_launch_ms は時間帯をまたいでも比較できる起動全体の前段指標になる。
+  void _reportHomeFirstPaint({
+    required int fetchMs,
+    required int enrichMs,
+    required int posts,
+    required int fetches,
+    required bool restoreReadPosition,
+  }) {
+    final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
+    debugPrint(
+      'capsicum: startup: home timeline first paint in '
+      '${sinceLaunchMs}ms since launch '
+      '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches '
+      'restoreReadPosition=$restoreReadPosition)',
+    );
+    // 起動計測 (#716): transaction duration = since_launch_ms（起動→初回描画）。
+    // fetch_ms（サーバー）/ enrich_ms（isCat=item3 候補）は measurement、既読位置
+    // 復元の ON/OFF は tag で層別する。
+    recordStartupPhase(
+      'app.startup.home_timeline',
+      durationMs: sinceLaunchMs,
+      measurementsMs: {'fetch_ms': fetchMs, 'enrich_ms': enrichMs},
+      tags: {'restore_read_position': '$restoreReadPosition'},
+      data: {'posts': posts, 'fetches': fetches},
     );
   }
 
@@ -365,6 +446,17 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         if (current != null && !current.streamReconnectExhausted) {
           state = AsyncData(current.copyWith(streamReconnectExhausted: true));
         }
+      },
+      // 接続ライフサイクルを state に反映し、常時インジケータへ流す (#714)。
+      // build() 中（state が AsyncLoading で valueOrNull が null）に発火しても
+      // 取りこぼさないよう、まず notifier フィールドへ常時記録する。state に
+      // データがあればそれも更新する。
+      onConnectionState: (connState) {
+        _streamConnectionState = connState;
+        final current = state.valueOrNull;
+        if (current == null) return;
+        if (current.streamConnectionState == connState) return;
+        state = AsyncData(current.copyWith(streamConnectionState: connState));
       },
     );
     _streamSubscription = stream.listen(

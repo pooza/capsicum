@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/preferences_provider.dart';
 import '../../url_helper.dart';
+import 'content_parser.dart';
 
 const _categoryLabels = <Category, String>{
   Category.SMILEYS: 'スマイリー',
@@ -68,6 +69,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   bool _wordLoading = false;
   Timer? _wordDebounce;
   int _wordGeneration = 0;
+
+  // 劇中ワード候補を MFM レンダリング（ルビ＝当て字表示）するための共有
+  // レンダラ (#691)。投稿表示と同じ ContentRenderer を流用する。
+  ContentRenderer? _wordRenderer;
 
   /// 劇中ワードタブを出す条件。リアクション用ピッカーでは出さず、モロヘイヤが
   /// `features.word_suggest` を立てているサーバーでのみ有効 (#4397 / #614)。
@@ -149,6 +154,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     _wordDebounce?.cancel();
     _wordSearchController.dispose();
     _wordSearchFocusNode.dispose();
+    _wordRenderer?.dispose();
     super.dispose();
   }
 
@@ -435,6 +441,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     if (_wordResults.isEmpty) {
       return const Center(child: Text('一致する語がありません'));
     }
+    final renderer = _wordContentRenderer(context);
     return ListView.builder(
       itemCount: _wordResults.length,
       itemBuilder: (context, index) {
@@ -444,10 +451,30 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             : word.reading;
         return ListTile(
           dense: true,
-          title: Text(word.surface),
+          // 候補は MFM レンダリングし、`$[ruby base reading]` の当て字ルビを
+          // 投稿表示と同じ見た目で出す (#691)。プレーン文字列はそのまま素の
+          // テキストになるだけなのでサーバー出し分けと独立に常時通して安全。
+          title: Text.rich(renderer.renderMfm(word.surface)),
           subtitle: Text(subtitle),
           onTap: () => widget.onSelected(word.surface),
         );
+      },
+    );
+  }
+
+  /// 劇中ワード候補用の [ContentRenderer]。custom emoji はピッカーが読み込み
+  /// 済みの一覧から解決する。ruby など MFM のみで links / mentions は付かない
+  /// 想定 (#691)。
+  ContentRenderer _wordContentRenderer(BuildContext context) {
+    return _wordRenderer ??= ContentRenderer(
+      baseStyle: Theme.of(context).textTheme.titleMedium ?? const TextStyle(),
+      resolveEmoji: (shortcode) {
+        final list = _customEmojis;
+        if (list == null) return null;
+        for (final e in list) {
+          if (e.shortcode == shortcode) return e.url;
+        }
+        return null;
       },
     );
   }
@@ -629,14 +656,16 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (category.key.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  child: Text(
-                    category.key,
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
+              // 分類のない絵文字 (category 空) は見出しなしだと直前の
+              // 「最近使った」/「パレット」と地続きに見えるため、明示的に
+              // 「分類なし」の見出しを付けて仕切る。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                child: Text(
+                  category.key.isNotEmpty ? category.key : '分類なし',
+                  style: Theme.of(context).textTheme.labelMedium,
                 ),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Wrap(

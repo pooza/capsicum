@@ -770,6 +770,115 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
   }
 
+  /// CW 欄へカーソル位置挿入する (#686)。本文と別 controller のため専用経路。
+  void _insertIntoCw(String value) {
+    final text = _cwController.text;
+    final sel = _cwController.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    _cwController.value = TextEditingValue(
+      text: text.replaceRange(start, end, value),
+      selection: TextSelection.collapsed(offset: start + value.length),
+    );
+  }
+
+  void _showCwPicker() {
+    showInsertPickerSheet(
+      context: context,
+      ref: ref,
+      onSelected: _insertIntoCw,
+    );
+  }
+
+  /// Misskey WebUI「装飾を追加」相当の MFM タグ一覧 (#688)。
+  /// 本家 `MFM_TAGS`（frontend-shared/js/const.ts）に揃える。パラメータを
+  /// 持つタグも、本家のクイック挿入と同じく素の `$[tag ]` を入れるだけ。
+  static const _mfmTags = <String>[
+    'tada',
+    'jelly',
+    'twitch',
+    'shake',
+    'spin',
+    'jump',
+    'bounce',
+    'flip',
+    'x2',
+    'x3',
+    'x4',
+    'scale',
+    'position',
+    'fg',
+    'bg',
+    'border',
+    'font',
+    'blur',
+    'rainbow',
+    'sparkle',
+    'rotate',
+    'ruby',
+    'unixtime',
+  ];
+
+  /// 本文へ MFM 装飾を挿入する。選択範囲があれば `$[tag 選択テキスト]` で囲み、
+  /// なければ `$[tag ]` を挿入して内側（閉じ `]` の手前）へカーソルを移す。
+  void _insertMfm(String tag) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
+    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
+    final selected = start != end ? text.substring(start, end) : '';
+    final insertion = '\$[$tag $selected]';
+    final newText = text.replaceRange(start, end, insertion);
+    final caret = selected.isEmpty
+        ? start +
+              insertion.length -
+              1 // 閉じ `]` の手前
+        : start + insertion.length; // 囲んだ末尾
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+  }
+
+  void _showMfmPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('装飾を追加', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              const Text(
+                '選択範囲があれば囲み、なければ \$[tag ] を挿入します',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final tag in _mfmTags)
+                    ActionChip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _insertMfm(tag);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickMedia() async {
     final files = await ref.read(mediaPickerProvider).pickMultipleMedia();
     await _addLocalMedia(files);
@@ -1905,6 +2014,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     setState(() => _scheduledAt = scheduled);
   }
 
+  /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
+  /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
+  /// モバイルでは修飾キーが無いため発火しない。
+  void _submitFromKeyboard() {
+    if (_sending) return;
+    _submit();
+  }
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
@@ -2146,26 +2263,46 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                   TextField(
                     controller: _cwController,
                     enabled: !_sending,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: '閲覧注意の警告文',
-                      border: UnderlineInputBorder(),
+                      border: const UnderlineInputBorder(),
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      // CW 欄にも絵文字 / 劇中ワードの拡張ピッカーを届ける (#686)。
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.emoji_emotions_outlined),
+                        tooltip: '絵文字・ワード',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _sending ? null : _showCwPicker,
+                      ),
                     ),
                   ),
                 Expanded(
                   child: Stack(
                     children: [
-                      TextField(
-                        controller: _controller,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        autofocus: true,
-                        enabled: !_sending,
-                        decoration: const InputDecoration(
-                          hintText: '今なにしてる？',
-                          border: InputBorder.none,
+                      // Cmd+Enter / Ctrl+Enter で送信 (#708)。Enter 単独は改行。
+                      CallbackShortcuts(
+                        bindings: <ShortcutActivator, VoidCallback>{
+                          const SingleActivator(
+                            LogicalKeyboardKey.enter,
+                            meta: true,
+                          ): _submitFromKeyboard,
+                          const SingleActivator(
+                            LogicalKeyboardKey.enter,
+                            control: true,
+                          ): _submitFromKeyboard,
+                        },
+                        child: TextField(
+                          controller: _controller,
+                          maxLines: null,
+                          expands: true,
+                          textAlignVertical: TextAlignVertical.top,
+                          autofocus: true,
+                          enabled: !_sending,
+                          decoration: const InputDecoration(
+                            hintText: '今なにしてる？',
+                            border: InputBorder.none,
+                          ),
                         ),
                       ),
                       if (maxLength != null)
@@ -2426,6 +2563,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                         tooltip: '絵文字',
                         visualDensity: VisualDensity.compact,
                       ),
+                      // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ
+                      // 出す（判定は ReactionSupport の有無、CLAUDE.md）。
+                      if (ref.watch(currentAdapterProvider) is ReactionSupport)
+                        IconButton(
+                          onPressed: _sending ? null : _showMfmPicker,
+                          icon: const Icon(Icons.palette_outlined),
+                          tooltip: 'MFM 装飾',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       IconButton(
                         onPressed: _sending
                             ? null

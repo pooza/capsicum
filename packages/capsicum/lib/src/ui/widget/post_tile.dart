@@ -336,6 +336,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
     final displayPost = post.reblog ?? post;
     final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
+    final hideInstanceTicker = ref.watch(hideInstanceTickerProvider);
 
     // Show a compact placeholder for warn-filtered posts until expanded.
     if (isFilteredWarn && !_filterExpanded) {
@@ -496,7 +497,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (displayPost.author.host != null)
+                    if (displayPost.author.host != null && !hideInstanceTicker)
                       _buildInstanceTicker(context, displayPost.author.host!),
                     if (displayPost.channelName != null)
                       Padding(
@@ -2842,15 +2843,13 @@ class _AttachmentThumbnailsState extends ConsumerState<_AttachmentThumbnails> {
   Widget _buildImageGrid(BuildContext context, List<Attachment> images) {
     final thumbScale = ref.watch(thumbnailScaleProvider);
     if (images.length == 1) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: 400 * thumbScale),
-        child: _buildThumbnail(
-          context,
-          images.first,
-          0,
-          images,
-          fit: BoxFit.contain,
-        ),
+      // 1 枚でも固定高さの横長枠に cover で収める (#718)。2 枚 (= 160) や
+      // 3 枚以上 (各行 ≈ 158) と同じ高さに揃え、枚数・向きを問わずサムネ
+      // 高さを統一する。従来は 1 枚だけ contain で縦長が縦に伸びていた。
+      return SizedBox(
+        height: 160 * thumbScale,
+        width: double.infinity,
+        child: _buildThumbnail(context, images.first, 0, images),
       );
     }
 

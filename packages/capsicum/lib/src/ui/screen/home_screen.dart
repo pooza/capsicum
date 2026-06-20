@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
@@ -17,6 +18,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/post_scope_display.dart';
@@ -145,21 +147,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_markerRestored) return;
     _markerRestored = true;
 
+    // 既読位置復元をオフにしているユーザーは常に最新先頭で開く (#715)。
+    if (!ref.read(restoreReadPositionProvider)) return;
+
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! MarkerSupport) return;
 
+    // #716 計測: 既読位置復元は first paint の後に走る別系統コスト
+    // (getMarkers 往復＋古い位置への jumpTo)。所要・命中可否を残し、
+    // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
+    // 「未読位置読み込みあり」の体感への寄与を切り分ける。
+    final markerSw = Stopwatch()..start();
+    var found = false;
+    var jumped = false;
     try {
       final markers = await (adapter as MarkerSupport).getMarkers();
+      markerSw.stop();
       if (markers.home == null) return;
 
       final markerId = markers.home!.lastReadId;
       final index = posts.indexWhere((p) => p.id == markerId);
+      found = index >= 0;
       if (index > 0 && mounted && _itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: index);
+        jumped = true;
       }
     } catch (_) {
       // Marker fetch failed — silently ignore.
+    } finally {
+      if (markerSw.isRunning) markerSw.stop();
+      _reportMarkerRestore(
+        markerMs: markerSw.elapsedMilliseconds,
+        found: found,
+        jumped: jumped,
+      );
     }
+  }
+
+  /// 既読位置復元 (#715) の所要を起動計測に残す (#716)。first paint 後に走る
+  /// ため startup.home_timeline には含まれない別系統コスト。getMarkers の往復
+  /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
+  /// (found)・実際に jump したか (jumped) を持ち、未読位置読み込みの体感寄与を
+  /// 切り分ける。
+  void _reportMarkerRestore({
+    required int markerMs,
+    required bool found,
+    required bool jumped,
+  }) {
+    final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
+    debugPrint(
+      'capsicum: startup: marker restore (getMarkers) in ${markerMs}ms '
+      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped)',
+    );
+    recordStartupPhase(
+      'app.startup.marker_restore',
+      durationMs: markerMs,
+      measurementsMs: {'since_launch_ms': sinceLaunchMs},
+      tags: {'found': '$found', 'jumped': '$jumped'},
+    );
   }
 
   @override
@@ -431,6 +476,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // ライブ更新の接続インジケータ (#714)。streaming する本線 TL
+                // (home / local / social / federated) のときだけ出す。DM や
+                // ハッシュタグ / リスト TL は別 provider / 非 streaming のため
+                // 出さない。
+                if (selectedHashtag == null &&
+                    selectedList == null &&
+                    selectedType != TimelineType.directMessages)
+                  const _StreamStatusIndicator(),
                 _LivecureFilterButton(ref: ref),
                 IconButton(
                   icon: const Icon(Icons.search),
@@ -1746,6 +1799,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildServerBadge(BuildContext context, WidgetRef ref, String host) {
     final themeColors = ref.watch(hostThemeColorProvider);
     return ServerBadge.fromHost(host, themeColors: themeColors);
+  }
+}
+
+/// 本線タイムラインのライブ更新（streaming）接続状態を常時表示する小さな
+/// ドット (#714)。`timelineProvider` の [StreamConnectionState] を反映する。
+/// 枯渇可視化 (#588) も exhausted 状態として内包する。
+class _StreamStatusIndicator extends ConsumerWidget {
+  const _StreamStatusIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conn =
+        ref.watch(timelineProvider).valueOrNull?.streamConnectionState ??
+        StreamConnectionState.connecting;
+    final (Color color, String label) = switch (conn) {
+      StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
+      StreamConnectionState.connecting => (Colors.amber, '接続中…'),
+      StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
+      StreamConnectionState.exhausted => (
+        Theme.of(context).colorScheme.error,
+        'ライブ更新が停止（引っぱって再接続）',
+      ),
+    };
+    return Tooltip(
+      message: 'ライブ更新: $label',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Icon(Icons.circle, size: 10, color: color),
+      ),
+    );
   }
 }
 

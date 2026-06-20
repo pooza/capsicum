@@ -1,4 +1,5 @@
 import '../../model/post.dart';
+import '../../model/stream_connection_state.dart';
 import '../../model/timeline_type.dart';
 
 abstract mixin class StreamSupport {
@@ -13,11 +14,16 @@ abstract mixin class StreamSupport {
   ///
   /// [onReconnectExhausted] は再接続上限に到達して諦めたときに 1 回だけ
   /// 呼ばれる。UI 警告や Sentry captureMessage に繋ぐ用途を想定 (#586)。
+  ///
+  /// [onConnectionState] は接続ライフサイクル (connecting / live / disconnected
+  /// / exhausted) の遷移ごとに呼ばれる。常時の接続インジケータを出す用途を
+  /// 想定 (#714)。同じ状態が連続するときは重複通知しない。
   Stream<Post> streamTimeline(
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
+    void Function(StreamConnectionState state)? onConnectionState,
   });
 
   /// Closes the current streaming connection.
