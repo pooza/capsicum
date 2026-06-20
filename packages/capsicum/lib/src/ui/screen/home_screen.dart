@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
+import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
@@ -151,18 +153,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null || adapter is! MarkerSupport) return;
 
+    // #716 計測: 既読位置復元は first paint の後に走る別系統コスト
+    // (getMarkers 往復＋古い位置への jumpTo)。所要・命中可否を残し、
+    // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
+    // 「未読位置読み込みあり」の体感への寄与を切り分ける。
+    final markerSw = Stopwatch()..start();
+    var found = false;
+    var jumped = false;
     try {
       final markers = await (adapter as MarkerSupport).getMarkers();
+      markerSw.stop();
       if (markers.home == null) return;
 
       final markerId = markers.home!.lastReadId;
       final index = posts.indexWhere((p) => p.id == markerId);
+      found = index >= 0;
       if (index > 0 && mounted && _itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: index);
+        jumped = true;
       }
     } catch (_) {
       // Marker fetch failed — silently ignore.
+    } finally {
+      if (markerSw.isRunning) markerSw.stop();
+      _reportMarkerRestore(
+        markerMs: markerSw.elapsedMilliseconds,
+        found: found,
+        jumped: jumped,
+      );
     }
+  }
+
+  /// 既読位置復元 (#715) の所要を計測ログ / Sentry breadcrumb に残す (#716)。
+  /// first paint 後に走るため startup.home_timeline には含まれない別系統コスト。
+  /// getMarkers の往復 (marker_ms)・マーカーが読み込み済みページ内にあったか
+  /// (found)・実際に jump したか (jumped) を持ち、未読位置読み込みの体感寄与を
+  /// 切り分ける。
+  void _reportMarkerRestore({
+    required int markerMs,
+    required bool found,
+    required bool jumped,
+  }) {
+    final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
+    debugPrint(
+      'capsicum: startup: marker restore (getMarkers) in ${markerMs}ms '
+      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped)',
+    );
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: 'startup: marker restore',
+        category: 'startup.marker_restore',
+        level: SentryLevel.info,
+        data: {
+          'marker_ms': markerMs,
+          'since_launch_ms': sinceLaunchMs,
+          'found': found,
+          'jumped': jumped,
+        },
+      ),
+    );
   }
 
   @override

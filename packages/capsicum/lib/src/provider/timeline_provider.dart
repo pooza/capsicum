@@ -311,6 +311,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         enrichMs: enrichSw!.elapsedMilliseconds,
         posts: enriched.length,
         fetches: fetches,
+        // 既読位置復元 (#715) の ON/OFF で起動の体感は大きく変わる（ON は
+        // first paint 後に getMarkers 往復＋古い位置へ着地）。混在させると平均が
+        // 無意味になるため、計測を設定値で層別できるようタグ付けする。マーカー
+        // 復元そのものの所要は home_screen 側の startup.marker_restore で測る。
+        restoreReadPosition: ref.read(restoreReadPositionProvider),
       );
     }
 
@@ -333,12 +338,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     required int enrichMs,
     required int posts,
     required int fetches,
+    required bool restoreReadPosition,
   }) {
     final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
     debugPrint(
       'capsicum: startup: home timeline first paint in '
       '${sinceLaunchMs}ms since launch '
-      '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches)',
+      '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches '
+      'restoreReadPosition=$restoreReadPosition)',
     );
     Sentry.addBreadcrumb(
       Breadcrumb(
@@ -351,6 +358,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           'enrich_ms': enrichMs,
           'posts': posts,
           'fetches': fetches,
+          'restore_read_position': restoreReadPosition,
         },
       ),
     );
