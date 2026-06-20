@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../url_helper.dart';
@@ -19,6 +18,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/post_scope_display.dart';
@@ -184,9 +184,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// 既読位置復元 (#715) の所要を計測ログ / Sentry breadcrumb に残す (#716)。
-  /// first paint 後に走るため startup.home_timeline には含まれない別系統コスト。
-  /// getMarkers の往復 (marker_ms)・マーカーが読み込み済みページ内にあったか
+  /// 既読位置復元 (#715) の所要を起動計測に残す (#716)。first paint 後に走る
+  /// ため startup.home_timeline には含まれない別系統コスト。getMarkers の往復
+  /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
   /// (found)・実際に jump したか (jumped) を持ち、未読位置読み込みの体感寄与を
   /// 切り分ける。
   void _reportMarkerRestore({
@@ -199,18 +199,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       'capsicum: startup: marker restore (getMarkers) in ${markerMs}ms '
       '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped)',
     );
-    Sentry.addBreadcrumb(
-      Breadcrumb(
-        message: 'startup: marker restore',
-        category: 'startup.marker_restore',
-        level: SentryLevel.info,
-        data: {
-          'marker_ms': markerMs,
-          'since_launch_ms': sinceLaunchMs,
-          'found': found,
-          'jumped': jumped,
-        },
-      ),
+    recordStartupPhase(
+      'app.startup.marker_restore',
+      durationMs: markerMs,
+      measurementsMs: {'since_launch_ms': sinceLaunchMs},
+      tags: {'found': '$found', 'jumped': '$jumped'},
     );
   }
 

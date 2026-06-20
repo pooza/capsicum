@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../main.dart'
@@ -10,6 +9,7 @@ import '../../../main.dart'
         firebaseReady,
         pendingSharedText,
         shareIntentReady;
+import '../../util/startup_trace.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
 import 'eula_screen.dart';
@@ -51,18 +51,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       '(since_launch=${appLaunchStopwatch.elapsedMilliseconds}ms '
       'accounts=$accountCount skipped=$skippedAccounts)',
     );
-    Sentry.addBreadcrumb(
-      Breadcrumb(
-        message: 'startup: sessions restored',
-        category: 'startup.restore',
-        level: SentryLevel.info,
-        data: {
-          'restore_ms': restoreSw.elapsedMilliseconds,
-          'since_launch_ms': appLaunchStopwatch.elapsedMilliseconds,
-          'accounts': accountCount,
-          'skipped': skippedAccounts,
-        },
-      ),
+    // 起動計測 (#716): transaction duration = restore_ms（復元の所要・サーバー
+    // 非依存）。since_launch_ms は measurement で持つ。
+    recordStartupPhase(
+      'app.startup.restore',
+      durationMs: restoreSw.elapsedMilliseconds,
+      measurementsMs: {
+        'since_launch_ms': appLaunchStopwatch.elapsedMilliseconds,
+      },
+      data: {'accounts': accountCount, 'skipped': skippedAccounts},
     );
     if (!mounted) return;
 

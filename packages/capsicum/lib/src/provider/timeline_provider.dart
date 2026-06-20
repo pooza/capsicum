@@ -6,6 +6,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../main.dart' show appLaunchStopwatch;
 import '../util/exception_scrub.dart';
+import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 
@@ -347,20 +348,15 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches '
       'restoreReadPosition=$restoreReadPosition)',
     );
-    Sentry.addBreadcrumb(
-      Breadcrumb(
-        message: 'startup: home timeline first paint',
-        category: 'startup.home_timeline',
-        level: SentryLevel.info,
-        data: {
-          'since_launch_ms': sinceLaunchMs,
-          'fetch_ms': fetchMs,
-          'enrich_ms': enrichMs,
-          'posts': posts,
-          'fetches': fetches,
-          'restore_read_position': restoreReadPosition,
-        },
-      ),
+    // 起動計測 (#716): transaction duration = since_launch_ms（起動→初回描画）。
+    // fetch_ms（サーバー）/ enrich_ms（isCat=item3 候補）は measurement、既読位置
+    // 復元の ON/OFF は tag で層別する。
+    recordStartupPhase(
+      'app.startup.home_timeline',
+      durationMs: sinceLaunchMs,
+      measurementsMs: {'fetch_ms': fetchMs, 'enrich_ms': enrichMs},
+      tags: {'restore_read_position': '$restoreReadPosition'},
+      data: {'posts': posts, 'fetches': fetches},
     );
   }
 
