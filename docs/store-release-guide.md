@@ -493,6 +493,24 @@ bash packaging/linux/appimage/build.sh
 
 ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認を参照。
 
+#### GitHub Release のリリースノート（Linux セクションテンプレート）
+
+Linux は**ストア展開が無く、この AppImage インストールコマンドが最優先の導線**になるため、リリースノートには**必ず**この Linux セクションを入れる（v1.38 でこのセクションごと抜けた経緯あり）。手順本体は [packaging/linux/INSTALL.md](../packaging/linux/INSTALL.md) を single source of truth とし、ワンライナーは**サイト配信の install.sh**（バージョン非依存・常に最新 Release を取得）を案内する。
+
+````markdown
+## Linux (AppImage)
+
+下記ワンライナーで最新版のダウンロード〜メニュー登録まで完了します（`sudo` 不要・`$HOME` 配下のみ）:
+
+```sh
+curl -fsSL https://capsicum.shrieker.net/install.sh | bash
+```
+
+`curl` が無ければ `wget -qO- https://capsicum.shrieker.net/install.sh | bash`。手動配置・FUSE2 fallback・アンインストールは [インストール手順](https://capsicum.shrieker.net/desktop/) を参照してください。
+````
+
+> **install.sh / uninstall.sh の site 同期チェック（毎リリース）**: `packaging/linux/install.sh` または `uninstall.sh` を変更したリリースでは、capsicum-site (`~/repos/capsicum-site`) の同名ファイルへ機能を反映して push する（`capsicum.shrieker.net/install.sh` は正本のミラー。URL を `raw.githubusercontent`→`capsicum.shrieker.net` に差し替えた本番変種なので byte 一致ではなく #707 等の機能変更を移植する形）。ワンライナーはバージョン非依存なので、スクリプト未変更のリリースでは同期不要。同期済みかは `curl -fsSL https://capsicum.shrieker.net/install.sh | grep -c '<変更の目印>'` で確認できる。
+
 ### 4.6 Windows 配布（v1.25〜）
 
 Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は 2 系統:
