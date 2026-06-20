@@ -729,10 +729,11 @@ void _routeToAnnouncements(String? accountString, {int attempt = 0}) {
 }
 
 void _routeToNotificationsTab(String? accountString, {int attempt = 0}) {
-  // 上限: restoreSessions は 1 アカウントあたり getMyself + mulukhiya probe
-  // + timeline availability probe を走らせるため、低速回線 + 多アカウント
-  // 環境では 10〜30 秒かかりうる。3600 フレーム（≒ 60 秒 @60fps）を上限に
-  // 設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
+  // 上限: restoreSessions は #716 でアカウント内・アカウント間とも probe を
+  // 並列化したため、所要は最長 1 アカウントぶん（getMyself + mulukhiya +
+  // timeline availability + version probe の最長 1 本）へ畳まれた。とはいえ
+  // 低速回線では数秒〜十数秒かかりうるので、3600 フレーム（≒ 60 秒 @60fps）を
+  // 上限に設定し、現実的な restore 時間を十分にカバーしつつ、pathological な
   // Navigator 未確立ケースの暴走も防ぐ。
   const maxAttempts = 3600;
 

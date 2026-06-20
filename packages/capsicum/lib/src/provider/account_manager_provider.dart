@@ -257,11 +257,14 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final storage = ref.read(accountStorageProvider);
     final keys = await storage.getAccountKeys();
     var skippedCount = 0;
-    // ネットワーク一過性で落ちたアカウント（secret は有効）。ループ後に
-    // バックグラウンドで再試行する (#730)。
+    // ネットワーク一過性で落ちたアカウント（secret は有効）。バックグラウンドで
+    // 再試行する (#730)。
     final transientFailures =
         <({String keyStr, Map<String, String> secrets})>[];
 
+    // secret を読み出せたアカウントだけを probe 対象に集める。順序は
+    // getAccountKeys（＝MRU）を保持し、後段の一括反映でこの並びを使う。
+    final entries = <({String keyStr, Map<String, String> secrets})>[];
     for (final keyStr in keys) {
       final secrets = await storage.getSecrets(keyStr);
       if (secrets == null) {
@@ -276,34 +279,45 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         skippedCount++;
         continue;
       }
+      entries.add((keyStr: keyStr, secrets: secrets));
+    }
 
-      try {
-        await _restoreOne(keyStr, secrets);
-      } catch (e, st) {
-        // ネットワーク一過性（host lookup / connection / timeout）の失敗は、
-        // secret は有効なのに probe（getMyself 等）が落ちただけ。これを
-        // 「復元不能＝ログアウト」へ降格させない (#730)。回線ブリップ時に複数
-        // アカウントの getMyself() が同時に失敗→全 skip→「一斉ログアウト」に
-        // 見える事象の根治。secret は無傷なのでバックグラウンドで再試行し、
-        // ユーザー操作なしで自動回復させる。auth 失効（401=server 応答）や
-        // secret 系・不明はこれまで通り skip + 観測する。
-        if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
-          debugPrint(
-            'capsicum: restoreSessions: transient network for $keyStr, '
-            'will retry in background: $e',
-          );
-          transientFailures.add((keyStr: keyStr, secrets: secrets));
-          continue;
-        }
-        // 復元中の例外を以前は完全に握りつぶしていたが、Linux で
-        // Misskey アカウントだけ silently に消える挙動の追跡が不可能に
-        // なっていた (#496)。debugPrint で起動ログに出し、Sentry にも
-        // accountKey 単位で 1 度だけ送る (Keystore 破壊で全アカウント
-        // 同時失敗するケースで Sentry を埋めないように)。
-        debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
-        _reportRestoreOnce(keyStr, e, st);
+    // 全アカウントを同時に probe する (#716 段階2)。直列だと N アカウントで
+    // probe 時間が累積していたのを、最長 1 アカウントぶんへ畳む。各 probe は
+    // 例外を内部で分類して結果レコードに畳むため Future.wait は throw しない。
+    final results = await Future.wait(
+      entries.map((e) => _probeForRestore(e.keyStr, e.secrets)),
+    );
+
+    // 完了順ではなく entries（＝MRU 順）の並びで結果を確定し、並び・current の
+    // ブレを防ぐ。
+    final restored = <Account>[];
+    for (var i = 0; i < entries.length; i++) {
+      final r = results[i];
+      if (r.account != null) {
+        restored.add(r.account!);
+      } else if (r.transient) {
+        transientFailures.add(entries[i]);
+      } else {
         skippedCount++;
-        continue;
+      }
+    }
+
+    if (restored.isNotEmpty) {
+      // MRU 順を保ったまま一括反映する。current は先頭（＝MRU 先頭）。splash 中は
+      // 通常 state は空だが、万一別経路が先に追加したアカウントがあれば温存する。
+      final existing = state.accounts
+          .where((a) => restored.every((r) => r.key != a.key))
+          .toList();
+      state = AccountManagerState(
+        accounts: [...restored, ...existing],
+        current: state.current ?? restored.first,
+      );
+
+      // 反映後の後処理: 通知ラベル永続化（並列）とバッジ用メタのプリフェッチ。
+      await Future.wait(restored.map(_persistNotificationLabels));
+      for (final account in restored) {
+        ServerMetadataCache.instance.fetch(account.key.host);
       }
     }
 
@@ -315,10 +329,54 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     return skippedCount;
   }
 
-  /// 1 アカウントを secret から復元し、成功したら state へ追加する。
-  /// [restoreSessions] の初回ループと [_retryTransientRestores] の両方から使う。
-  /// 例外は呼び出し側で分類する（ネットワーク一過性なら再試行、それ以外は skip）。
-  Future<void> _restoreOne(String keyStr, Map<String, String> secrets) async {
+  /// 1 アカウントを probe し、結果を例外なしのレコードへ畳む。初回の一括復元
+  /// （[restoreSessions]）から使う。state は変更しない（反映は呼び出し側で一括）。
+  ///
+  /// - `account != null` … 復元成功
+  /// - `transient == true` … ネットワーク一過性。secret は有効なのでバック
+  ///   グラウンド再試行へ回す (#730)。
+  /// - いずれも false … auth 失効 / secret 系 / 不明。skip して観測する。
+  Future<({Account? account, bool transient})> _probeForRestore(
+    String keyStr,
+    Map<String, String> secrets,
+  ) async {
+    try {
+      final account = await _probeAccount(keyStr, secrets);
+      return (account: account, transient: false);
+    } catch (e, st) {
+      // ネットワーク一過性（host lookup / connection / timeout）の失敗は、
+      // secret は有効なのに probe（getMyself 等）が落ちただけ。これを
+      // 「復元不能＝ログアウト」へ降格させない (#730)。回線ブリップ時に複数
+      // アカウントの getMyself() が同時に失敗→全 skip→「一斉ログアウト」に
+      // 見える事象の根治。secret は無傷なのでバックグラウンドで再試行し、
+      // ユーザー操作なしで自動回復させる。auth 失効（401=server 応答）や
+      // secret 系・不明はこれまで通り skip + 観測する。
+      if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
+        debugPrint(
+          'capsicum: restoreSessions: transient network for $keyStr, '
+          'will retry in background: $e',
+        );
+        return (account: null, transient: true);
+      }
+      // 復元中の例外を以前は完全に握りつぶしていたが、Linux で Misskey
+      // アカウントだけ silently に消える挙動の追跡が不可能になっていた
+      // (#496)。debugPrint で起動ログに出し、Sentry にも accountKey 単位で
+      // 1 度だけ送る (Keystore 破壊で全アカウント同時失敗するケースで Sentry を
+      // 埋めないように)。
+      debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
+      _reportRestoreOnce(keyStr, e, st);
+      return (account: null, transient: false);
+    }
+  }
+
+  /// secret から 1 アカウントを probe して [Account] を組み立てる（state は
+  /// 変更しない）。初回の一括復元（[_probeForRestore] 経由）とリトライ
+  /// （[_restoreOne] 経由）の両方から使う。例外は呼び出し側で分類する
+  /// （ネットワーク一過性なら再試行、それ以外は skip）。
+  Future<Account> _probeAccount(
+    String keyStr,
+    Map<String, String> secrets,
+  ) async {
     final accountKey = AccountKey.fromStorageKey(keyStr);
     final adapter = await accountKey.type.createAdapter(accountKey.host);
 
@@ -334,24 +392,32 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : null;
 
     await adapter.applySecrets(clientSecret, userSecret);
-    final user = await adapter.getMyself();
 
-    // Detect timeline availability (non-blocking).
-    if (adapter is MastodonAdapter) {
-      try {
-        await adapter.detectTimelineAvailability();
-      } catch (e) {
-        debugPrint(
-          'capsicum: restoreSessions: detectTimelineAvailability '
-          'failed for $keyStr: $e',
-        );
-      }
-    }
-
-    final mulukhiya = await _detectMulukhiya(
+    // 復元プローブをアカウント単位で並列化する (#716)。getMyself /
+    // detectTimelineAvailability / mulukhiya 検出 / ソフトウェアバージョン検出は
+    // 互いの結果に依存しないため、直列 await の累積（2〜4 本）を最長 1 本ぶんへ
+    // 畳む。getMyself 以外はいずれも内部で例外を握る（mulukhiya / version は
+    // null 返し、timeline は下の catchError）ので、getMyself が落ちて早期 throw
+    // しても未処理例外にはならない。getMyself の例外だけは従来どおり呼び出し側へ
+    // 伝播し、ネットワーク一過性 / auth 失効の分類 (#730) に乗せる。
+    final userFuture = adapter.getMyself();
+    final timelineFuture = adapter is MastodonAdapter
+        ? adapter.detectTimelineAvailability().catchError((Object e) {
+            debugPrint(
+              'capsicum: restoreSessions: detectTimelineAvailability '
+              'failed for $keyStr: $e',
+            );
+          })
+        : Future<void>.value();
+    final mulukhiyaFuture = _detectMulukhiya(
       accountKey.host,
       token: userSecret.accessToken,
     );
+    final softwareVersionFuture = _detectSoftwareVersion(accountKey.host);
+
+    final user = await userFuture;
+    await timelineFuture;
+    final mulukhiya = await mulukhiyaFuture;
     if (mulukhiya != null) {
       if (adapter is MastodonAdapter) {
         adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
@@ -359,9 +425,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         adapter.applyAdminRoleIds(mulukhiya.adminRoleIds);
       }
     }
-    final softwareVersion = await _detectSoftwareVersion(accountKey.host);
+    final softwareVersion = await softwareVersionFuture;
 
-    final account = Account(
+    return Account(
       key: accountKey,
       adapter: adapter,
       user: user,
@@ -370,23 +436,29 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       mulukhiya: mulukhiya,
       softwareVersion: softwareVersion,
     );
+  }
 
-    // append 直前の最終重複ガード。_restoreOne は複数 await をまたぐため、
-    // その間に別経路（手動ログイン / リトライ）で同一 key が復元されると二重
-    // append になりうる。冒頭チェックだけでは await 中の競合を塞げないので
-    // ここで再確認する (#730 リトライ経路の防御)。
-    if (state.accounts.any((a) => a.key == accountKey)) return;
+  /// 1 アカウントを probe して、成功したら state へ追加する。
+  /// バックグラウンド再試行 [_retryTransientRestores] から使う（初回の一括復元は
+  /// [restoreSessions] が [_probeForRestore] で並列化し、まとめて反映する）。
+  /// 例外は呼び出し側で分類する（ネットワーク一過性なら再試行、それ以外は skip）。
+  Future<void> _restoreOne(String keyStr, Map<String, String> secrets) async {
+    final account = await _probeAccount(keyStr, secrets);
 
-    final newAccounts = [...state.accounts, account];
+    // append 直前の最終重複ガード。probe は複数 await をまたぐため、その間に
+    // 別経路（手動ログイン / 初回復元）で同一 key が復元されると二重 append に
+    // なりうる。ここで再確認する (#730 リトライ経路の防御)。
+    if (state.accounts.any((a) => a.key == account.key)) return;
+
     state = AccountManagerState(
-      accounts: newAccounts,
+      accounts: [...state.accounts, account],
       current: state.current ?? account,
     );
 
     await _persistNotificationLabels(account);
 
     // Prefetch server metadata for badge display (non-blocking).
-    ServerMetadataCache.instance.fetch(accountKey.host);
+    ServerMetadataCache.instance.fetch(account.key.host);
   }
 
   /// ネットワーク一過性で初回復元に失敗したアカウントを、回線復帰を待って
