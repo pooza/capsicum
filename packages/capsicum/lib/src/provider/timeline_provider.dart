@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../main.dart' show appLaunchStopwatch;
 import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
@@ -206,6 +208,10 @@ Future<TimelineState> fetchUntilVisible({
 /// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
+
+  /// ホーム TL の初回描画を 1 プロセス 1 回だけ計測するためのフラグ (#716)。
+  /// AutoDispose で Notifier は作り直されるため static に持つ。
+  static bool _homeFirstPaintReported = false;
   StreamSubscription<Post>? _streamSubscription;
   final List<Post> _pendingPosts = [];
   final Map<String, bool> _isCatCache = {};
@@ -229,6 +235,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
     if (adapter == null) return const TimelineState();
+
+    // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
+    // since-launch に分けて測る。fetch はサーバー負荷依存・enrich は item3 の
+    // 遅延化候補・since-launch は #716 復元並列化の効果を含む全体前段。1 回だけ。
+    final measureHomePaint =
+        type == TimelineType.home && !_homeFirstPaintReported;
+    final fetchSw = measureHomePaint ? (Stopwatch()..start()) : null;
 
     // Initial REST fetch — retry pages until visible posts are found or the
     // timeline is exhausted (same logic as loadMore).
@@ -286,7 +299,21 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
     });
 
+    fetchSw?.stop();
+    final enrichSw = measureHomePaint ? (Stopwatch()..start()) : null;
     final enriched = await _enrichIsCat(allVisible);
+    enrichSw?.stop();
+
+    if (measureHomePaint) {
+      _homeFirstPaintReported = true;
+      _reportHomeFirstPaint(
+        fetchMs: fetchSw!.elapsedMilliseconds,
+        enrichMs: enrichSw!.elapsedMilliseconds,
+        posts: enriched.length,
+        fetches: fetches,
+      );
+    }
+
     return TimelineState(
       posts: enriched,
       hasMore: hasMore,
@@ -294,6 +321,38 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // _enrichIsCat の await 中に接続が live になっていることがあるため、
       // 取りこぼさないよう現在値を反映する (#714)。
       streamConnectionState: _streamConnectionState,
+    );
+  }
+
+  /// ホーム TL の初回描画到達を計測ログ / Sentry breadcrumb に残す (#716)。
+  /// fetch_ms (サーバー応答) と enrich_ms (isCat 補完) を分離して持つことで、
+  /// 体感の主因がサーバー側か client 側 (item3 遅延化候補) かを切り分け、
+  /// since_launch_ms は時間帯をまたいでも比較できる起動全体の前段指標になる。
+  void _reportHomeFirstPaint({
+    required int fetchMs,
+    required int enrichMs,
+    required int posts,
+    required int fetches,
+  }) {
+    final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
+    debugPrint(
+      'capsicum: startup: home timeline first paint in '
+      '${sinceLaunchMs}ms since launch '
+      '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches)',
+    );
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: 'startup: home timeline first paint',
+        category: 'startup.home_timeline',
+        level: SentryLevel.info,
+        data: {
+          'since_launch_ms': sinceLaunchMs,
+          'fetch_ms': fetchMs,
+          'enrich_ms': enrichMs,
+          'posts': posts,
+          'fetches': fetches,
+        },
+      ),
     );
   }
 

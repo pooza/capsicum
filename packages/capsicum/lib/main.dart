@@ -63,7 +63,15 @@ void _logDevStack(StackTrace stackTrace) {
   if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
 }
 
+/// アプリ起動からの経過を測る基準ストップウォッチ (#716 計測)。
+/// 「起動 → セッション復元 → ホーム TL 表示」の各段を since-launch で並べ、
+/// サーバー応答 (fetch) と client 側コスト (restore / isCat enrich) を切り分けて
+/// 体感速度の前後比較を交絡なしで行うための共通アンカー。`main()` の先頭で
+/// start し、splash の復元計測と timeline_provider のホーム初回描画計測が参照する。
+final Stopwatch appLaunchStopwatch = Stopwatch();
+
 Future<void> main() async {
+  appLaunchStopwatch.start();
   WidgetsFlutterBinding.ensureInitialized();
 
   // media_kit (libmpv) のネイティブバックエンドを初期化する (#492)。
