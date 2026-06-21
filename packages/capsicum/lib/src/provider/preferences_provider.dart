@@ -1220,16 +1220,11 @@ final restoreReadPositionProvider =
 class RestoreReadPositionNotifier extends Notifier<bool> {
   @override
   bool build() {
-    _load();
-    return true;
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_restoreReadPositionKey);
-    if (saved != null) {
-      state = saved;
-    }
+    // pre-warm 済み SharedPreferences から同期で読む (#746)。非同期ロードで
+    // 初期値 true を返すと、HomeScreen._restoreMarker が _load 完了前に
+    // 同期参照し、OFF 設定者でも getMarkers → 旧読み位置へジャンプしてしまう
+    // race になる。#579 / #652 と同じく同期化して race を構造的に消す。
+    return sharedPrefsOrThrow.getBool(_restoreReadPositionKey) ?? true;
   }
 
   Future<void> toggle() async {
