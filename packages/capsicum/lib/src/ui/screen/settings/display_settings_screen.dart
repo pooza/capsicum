@@ -113,6 +113,19 @@ class DisplaySettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(mouseDragScrollProvider.notifier).setEnabled(value),
             ),
+          // 常駐モード (#752)。ウィンドウを閉じてもトレイ / メニューバーに
+          // 常駐し、通知 (#569 WebSocket) を受け続ける。desktop 専用。
+          if (isDesktop)
+            SwitchListTile(
+              title: const Text('ウィンドウを閉じても常駐'),
+              subtitle: const Text(
+                'オンにすると、ウィンドウを閉じてもアプリは終了せずトレイ'
+                '（macOS はメニューバー）に常駐し、通知を受け続けます',
+              ),
+              value: ref.watch(residentModeProvider),
+              onChanged: (value) =>
+                  ref.read(residentModeProvider.notifier).setEnabled(value),
+            ),
           // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX 直配) のみ
           // 意味がある設定 (#641)。ストア配布ビルドでは
           // [kIsDirectChannelBuild] が false なので、設定エントリ自体を隠す。

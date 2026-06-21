@@ -28,6 +28,7 @@ import 'src/platform/platform_info.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
 import 'src/service/desktop_notification_dispatcher.dart';
+import 'src/service/resident_mode_service.dart';
 import 'src/service/apns_service.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
@@ -1044,6 +1045,10 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     // して accountManagerProvider の listen（全ログイン垢の並列購読）を維持する。
     if (isDesktop) {
       ref.read(desktopNotificationDispatcherProvider);
+      // 常駐モード (#752): window / tray リスナーを張り、保存済みの設定値を
+      // 適用する。値変化は build() の ref.listen で追従する。
+      ResidentModeService.instance.attach();
+      ResidentModeService.instance.setEnabled(ref.read(residentModeProvider));
     }
   }
 
@@ -1076,6 +1081,12 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
 
   @override
   Widget build(BuildContext context) {
+    // 常駐モード (#752) の設定変化を service に反映する。desktop のみ意味を持つ
+    // が、provider は全プラットフォームに存在するので listen 自体は無害。
+    ref.listen<bool>(residentModeProvider, (_, next) {
+      ResidentModeService.instance.setEnabled(next);
+    });
+
     final router = ref.watch(routerProvider);
     final seedColor = ref.watch(themeSeedColorProvider);
     final themeMode = ref.watch(themeModeProvider);

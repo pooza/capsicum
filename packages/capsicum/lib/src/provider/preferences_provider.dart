@@ -43,6 +43,7 @@ const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
 const _updateCheckEnabledKey = 'update_check_enabled';
+const _residentModeKey = 'resident_mode';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 
@@ -851,6 +852,31 @@ class UpdateCheckEnabledNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_updateCheckEnabledKey, value);
+  }
+}
+
+/// デスクトップ常駐モード (#752)。オンにするとメインウィンドウを閉じても
+/// アプリは終了せず、トレイ (Windows / Linux) / メニューバー (macOS) に常駐し、
+/// #569 の WebSocket streaming 経由でローカル通知を受け続ける。default OFF。
+///
+/// ウィンドウの閉じる傍受 (setPreventClose) を起動直後に設定する必要があるため
+/// 同期ロードする (#652 / #715 / #746 と同じ pre-warm prefs パターン)。非同期
+/// ロードだと閉じる操作の初回だけ傍受が間に合わず終了してしまう。
+final residentModeProvider = NotifierProvider<ResidentModeNotifier, bool>(
+  ResidentModeNotifier.new,
+);
+
+class ResidentModeNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return sharedPrefsOrThrow.getBool(_residentModeKey) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_residentModeKey, value);
   }
 }
 
