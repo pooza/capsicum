@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../platform/platform_info.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
+import '../../../service/launch_at_login_service.dart';
+import '../../../service/resident_mode_service.dart';
 import '../../../service/update_checker.dart';
 
 class DisplaySettingsScreen extends ConsumerWidget {
@@ -114,8 +116,9 @@ class DisplaySettingsScreen extends ConsumerWidget {
                   ref.read(mouseDragScrollProvider.notifier).setEnabled(value),
             ),
           // 常駐モード (#752)。ウィンドウを閉じてもトレイ / メニューバーに
-          // 常駐し、通知 (#569 WebSocket) を受け続ける。desktop 専用。
-          if (isDesktop)
+          // 常駐し、通知 (#569 WebSocket) を受け続ける。v1.40 は Windows のみ
+          // 有効化（macOS / Linux は検証後に #757 で広げる）。
+          if (ResidentModeService.isSupported)
             SwitchListTile(
               title: const Text('ウィンドウを閉じても常駐'),
               subtitle: const Text(
@@ -125,6 +128,20 @@ class DisplaySettingsScreen extends ConsumerWidget {
               value: ref.watch(residentModeProvider),
               onChanged: (value) =>
                   ref.read(residentModeProvider.notifier).setEnabled(value),
+            ),
+          // ログイン時起動 (#751)。OS のログイン時に capsicum を自動起動。
+          // 常駐 (#752) と組み合わせると「ログイン → 常駐 → 通知を受け続ける」
+          // が成立する。v1.40 は Windows のみ（macOS / Linux は #757）。
+          if (LaunchAtLoginService.isSupported)
+            SwitchListTile(
+              title: const Text('ログイン時に起動'),
+              subtitle: const Text(
+                'OS にログインしたとき capsicum を自動的に起動します。'
+                '「ウィンドウを閉じても常駐」と併用すると常に通知を受け取れます',
+              ),
+              value: ref.watch(launchAtLoginProvider),
+              onChanged: (value) =>
+                  ref.read(launchAtLoginProvider.notifier).setEnabled(value),
             ),
           // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX 直配) のみ
           // 意味がある設定 (#641)。ストア配布ビルドでは

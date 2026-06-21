@@ -44,6 +44,7 @@ const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
 const _updateCheckEnabledKey = 'update_check_enabled';
 const _residentModeKey = 'resident_mode';
+const _launchAtLoginKey = 'launch_at_login';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 
@@ -877,6 +878,27 @@ class ResidentModeNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_residentModeKey, value);
+  }
+}
+
+/// デスクトップのログイン時起動 (#751)。OS のログイン項目への登録は
+/// `LaunchAtLoginService` 側で行い、ここは pref の真実源だけを持つ
+/// （値変化を main の ref.listen で OS に反映する）。default OFF。
+final launchAtLoginProvider = NotifierProvider<LaunchAtLoginNotifier, bool>(
+  LaunchAtLoginNotifier.new,
+);
+
+class LaunchAtLoginNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return sharedPrefsOrThrow.getBool(_launchAtLoginKey) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_launchAtLoginKey, value);
   }
 }
 

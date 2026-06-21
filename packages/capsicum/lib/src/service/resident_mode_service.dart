@@ -23,6 +23,11 @@ class ResidentModeService with WindowListener, TrayListener {
   ResidentModeService._();
   static final ResidentModeService instance = ResidentModeService._();
 
+  /// 常駐モードを UI に露出する OS。実装コード自体は全デスクトップで動くが、
+  /// v1.40 では検証面の都合で Windows のみ有効化する。macOS（メニューバー）/
+  /// Linux（トレイ）の検証と有効化は #757 (v1.42) で行い、ここを広げる。
+  static bool get isSupported => Platform.isWindows;
+
   bool _enabled = false;
   bool _trayCreated = false;
   bool _attached = false;

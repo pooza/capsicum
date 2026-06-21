@@ -28,6 +28,7 @@ import 'src/platform/platform_info.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
 import 'src/service/desktop_notification_dispatcher.dart';
+import 'src/service/launch_at_login_service.dart';
 import 'src/service/resident_mode_service.dart';
 import 'src/service/apns_service.dart';
 import 'src/util/exception_scrub.dart';
@@ -1085,6 +1086,11 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     // が、provider は全プラットフォームに存在するので listen 自体は無害。
     ref.listen<bool>(residentModeProvider, (_, next) {
       ResidentModeService.instance.setEnabled(next);
+    });
+    // ログイン時起動 (#751) の設定変化を OS に反映する。OS 側はトグル時のみ
+    // 変更すればよく、起動毎の再適用は不要なため initial apply はしない。
+    ref.listen<bool>(launchAtLoginProvider, (_, next) {
+      LaunchAtLoginService.setEnabled(next);
     });
 
     final router = ref.watch(routerProvider);
