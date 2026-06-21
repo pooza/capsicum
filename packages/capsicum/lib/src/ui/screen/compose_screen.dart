@@ -39,6 +39,15 @@ import 'image_crop_screen.dart';
 import 'image_text_overlay_screen.dart';
 import 'settings/account_settings_screen.dart';
 
+/// compose セッションの引用元を解決する純粋部分 (#756)。
+///
+/// 新規引用 (`quoteTo`) を最優先し、無ければ引用付き投稿の「削除して再編集」
+/// (`redraft.quote`) を引き継ぐ。redraft 分岐 (#703) が quote を取りこぼし、
+/// 引用付き投稿を再編集すると引用が落ちていた不具合への対応。
+@visibleForTesting
+Post? resolveComposeQuote(Post? quoteTo, Post? redraft) =>
+    quoteTo ?? redraft?.quote;
+
 /// MFM 装飾タグ挿入 (#688) の純粋部分。選択範囲 (base/extent) を正規化し、
 /// `$[tag 選択文字列]` を挿入した後のテキストとキャレット位置を返す。
 ///
@@ -292,6 +301,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       widget.redraft?.channelName ??
       widget.replyTo?.channelName ??
       widget.quoteTo?.channelName;
+
+  /// 引用元の投稿。新規引用 (quoteTo) と、引用付き投稿の「削除して再編集」
+  /// (redraft.quote) を同一経路で扱う。redraft 分岐 (#703) が quote を
+  /// 引き継いでおらず引用が落ちていた取りこぼしへの対応 (#756)。
+  Post? get _quotedPost => resolveComposeQuote(widget.quoteTo, widget.redraft);
 
   // Poll state
   bool _pollEnabled = false;
@@ -2140,7 +2154,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           content: text.isNotEmpty ? text : null,
           scope: _scope,
           inReplyToId: widget.replyTo?.id,
-          quoteId: widget.quoteTo?.id,
+          quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
@@ -2302,9 +2316,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               children: [
                 if (widget.replyTo != null)
                   _CollapsiblePreview(post: widget.replyTo!, icon: Icons.reply),
-                if (widget.quoteTo != null)
+                if (_quotedPost != null)
                   _CollapsiblePreview(
-                    post: widget.quoteTo!,
+                    post: _quotedPost!,
                     icon: Icons.format_quote,
                   ),
                 if (_cwEnabled)
