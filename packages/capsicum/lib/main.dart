@@ -38,6 +38,7 @@ import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/service/window_state_service.dart';
+import 'src/service/wns_service.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
 
@@ -116,6 +117,12 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // Windows は WNS Channel URI を pull 取得する (#474)。ネイティブからの
+  // onChannelUri を取りこぼさないよう runApp() 前に handler を張り、取得を起動。
+  if (Platform.isWindows) {
+    WnsService.initialize();
+  }
 
   // macOS メニューバー「About capsicum」→ Flutter 側ダイアログを開くための
   // MethodChannel handler。Drawer の「capsicum について」と同じ表示に統一。

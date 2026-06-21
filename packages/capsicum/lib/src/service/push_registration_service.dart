@@ -17,6 +17,7 @@ import 'fcm_service.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
+import 'wns_service.dart';
 
 /// プッシュ通知のリレーサーバー登録と Web Push サブスクリプション登録を
 /// オーケストレーションするサービス。
@@ -40,11 +41,13 @@ class PushRegistrationService {
       accounts.any((a) => isPresetServer(a.key.host));
 
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
-  /// が本配線済みか。macOS / Linux / Windows は本配線未対応のため
-  /// (#468 / #475 / #474 で確定後に切り替え予定)、UI と service 層で push
-  /// 機能を gate するときの単一の真実源とする (#502)。
-  // iOS / Android に加え macOS も APNs 本配線済み (#468)。Linux / Windows は
-  // ネイティブ push 経路が無い (#474 on-hold) ため push 登録 UI も出さない。
+  /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
+  /// UI と service 層で push 機能を gate するときの単一の真実源とする (#502)。
+  // iOS / Android に加え macOS も APNs 本配線済み (#468)。
+  // Windows (#474) は WNS Channel URI 取得・device token 配線まで仕込み済み
+  // (フェーズ1) だが、受信/復号 (フェーズ2) と relay の device_type='windows'
+  // 対応 (フェーズ3) が揃うまでは本ゲートを立てない。揃ったら Platform.isWindows
+  // を OR に追加して有効化する。Linux はネイティブ push 経路が無い (#475)。
   static bool get isPushBackendWired =>
       Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
@@ -131,10 +134,13 @@ class PushRegistrationService {
         return;
       }
 
-      // macOS は iOS と同じ APNs だが、relay 側で APNs/FCM 振り分けと
-      // 集計を分けるため device_type は 'macos' で登録する (#468)。
+      // relay 側で APNs/FCM/WNS の振り分けと集計を分けるため device_type を
+      // プラットフォーム別に登録する。macOS は iOS と同じ APNs だが 'macos'
+      // (#468)、Windows は WNS で 'windows' (#474)。
       final deviceType = Platform.isMacOS
           ? 'macos'
+          : Platform.isWindows
+          ? 'windows'
           : (Platform.isIOS ? 'ios' : 'android');
 
       // リレーサーバーに登録
@@ -435,6 +441,9 @@ class PushRegistrationService {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
+    } else if (Platform.isWindows) {
+      // WNS Channel URI 失効に伴う再取得 (#474 フェーズ2 以降で emit)。
+      stream = WnsService.onTokenChanged;
     } else {
       return;
     }
@@ -534,6 +543,8 @@ class PushRegistrationService {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
+    } else if (Platform.isWindows) {
+      stream = WnsService.onTokenChanged;
     } else {
       return null;
     }
@@ -567,6 +578,8 @@ class PushRegistrationService {
     // macOS は iOS と同じ APNs MethodChannel (ApnsService) からトークンを得る。
     if (Platform.isIOS || Platform.isMacOS) return ApnsService.deviceToken;
     if (Platform.isAndroid) return FcmService.deviceToken;
+    // Windows は WNS Channel URI を device token とみなす (#474)。
+    if (Platform.isWindows) return WnsService.deviceToken;
     return null;
   }
 
