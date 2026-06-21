@@ -55,5 +55,29 @@ void main() {
       expect(r.hasRawTag, isFalse);
       expect(r.urls, ['https://example.com/page']);
     });
+
+    test('ラベルが # で始まる実リンク（pixiv）の URL が失われない (#750)', () {
+      // mk.precure.fun の MFM `[#名探偵プリキュア! ... - pixiv](https://...)` が
+      // 連合 HTML では <a href="...">#名探偵プリキュア! ... - pixiv</a> になる。
+      // ラベルが空白を含む＝実リンクなので href を捨ててはいけない。
+      const label =
+          '#名探偵プリキュア! キュアエクレールの正体を推理する - ふたふたのマンガ '
+          '#明智あんな #小林みくる #ウソノワール - pixiv';
+      final r = parseHtmlForTesting(
+        '<a href="https://www.pixiv.net/artworks/145316345" '
+        'rel="nofollow noopener" target="_blank">$label</a>',
+      );
+      expect(r.links, [
+        (text: label, url: 'https://www.pixiv.net/artworks/145316345'),
+      ]);
+    });
+
+    test('ラベルが @ で始まる実リンク（空白あり）の URL が失われない (#750)', () {
+      const label = '@alice の記事を読む';
+      final r = parseHtmlForTesting(
+        '<a href="https://example.com/article">$label</a>',
+      );
+      expect(r.links, [(text: label, url: 'https://example.com/article')]);
+    });
   });
 }
