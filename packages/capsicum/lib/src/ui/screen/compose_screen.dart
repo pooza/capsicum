@@ -38,6 +38,34 @@ import 'image_crop_screen.dart';
 import 'image_text_overlay_screen.dart';
 import 'settings/account_settings_screen.dart';
 
+/// MFM 装飾タグ挿入 (#688) の純粋部分。選択範囲 (base/extent) を正規化し、
+/// `$[tag 選択文字列]` を挿入した後のテキストとキャレット位置を返す。
+///
+/// - 後ろ向き (右→左) ドラッグ選択で `baseOffset > extentOffset` になっても
+///   `TextSelection.start/end` の min/max で正規化するため `RangeError` を
+///   投げない (#745)。
+/// - 選択なし (offset == -1) は末尾挿入に倒す。
+@visibleForTesting
+({String text, int caret}) buildMfmInsertion(
+  String text,
+  int baseOffset,
+  int extentOffset,
+  String tag,
+) {
+  final sel = TextSelection(baseOffset: baseOffset, extentOffset: extentOffset);
+  final start = sel.start < 0 ? text.length : sel.start;
+  final end = sel.end < 0 ? text.length : sel.end;
+  final selected = start != end ? text.substring(start, end) : '';
+  final insertion = '\$[$tag $selected]';
+  final newText = text.replaceRange(start, end, insertion);
+  final caret = selected.isEmpty
+      ? start +
+            insertion.length -
+            1 // 閉じ `]` の手前
+      : start + insertion.length; // 囲んだ末尾
+  return (text: newText, caret: caret);
+}
+
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
   XFile? file;
@@ -822,21 +850,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 本文へ MFM 装飾を挿入する。選択範囲があれば `$[tag 選択テキスト]` で囲み、
   /// なければ `$[tag ]` を挿入して内側（閉じ `]` の手前）へカーソルを移す。
   void _insertMfm(String tag) {
-    final text = _controller.text;
     final sel = _controller.selection;
-    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
-    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
-    final selected = start != end ? text.substring(start, end) : '';
-    final insertion = '\$[$tag $selected]';
-    final newText = text.replaceRange(start, end, insertion);
-    final caret = selected.isEmpty
-        ? start +
-              insertion.length -
-              1 // 閉じ `]` の手前
-        : start + insertion.length; // 囲んだ末尾
+    final result = buildMfmInsertion(
+      _controller.text,
+      sel.baseOffset,
+      sel.extentOffset,
+      tag,
+    );
     _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: caret),
+      text: result.text,
+      selection: TextSelection.collapsed(offset: result.caret),
     );
   }
 
