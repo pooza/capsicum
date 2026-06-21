@@ -24,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
@@ -873,7 +874,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('装飾を追加', style: Theme.of(context).textTheme.titleSmall),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '装飾を追加',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  // 各タグの意味・書式を確認できる学習動線 (#749)。レンダリング
+                  // 対応(#748)を待たずに公式 MFM リファレンスへ誘導する。
+                  TextButton.icon(
+                    onPressed: () => launchUrlSafely(
+                      Uri.parse(
+                        'https://misskey-hub.net/ja/docs/for-users/features/mfm/',
+                      ),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.help_outline, size: 18),
+                    label: const Text('MFMの書式'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               const Text(
                 '選択範囲があれば囲み、なければ \$[tag ] を挿入します',
