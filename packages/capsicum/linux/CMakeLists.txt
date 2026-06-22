@@ -41,7 +41,12 @@ endif()
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_14)
-  target_compile_options(${TARGET} PRIVATE -Wall -Werror)
+  # tray_manager (#752) などサードパーティ製プラグインは libayatana-appindicator
+  # の app_indicator_new など deprecated API を使う。新しめのディストロ
+  # (Debian 13 = libayatana-appindicator 0.5.94 等) では deprecated 指定があり、
+  # -Werror で deprecation 警告がビルドエラーに昇格する。自前で直せない外部
+  # コードのため deprecation だけエラー昇格を外す (警告自体は残す)。
+  target_compile_options(${TARGET} PRIVATE -Wall -Werror -Wno-error=deprecated-declarations)
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()

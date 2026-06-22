@@ -62,6 +62,7 @@ jobs:
             libcurl4-openssl-dev default-jdk-headless \
             libfuse2t64 patchelf \
             libmpv-dev \
+            libayatana-appindicator3-dev \
             ibus-gtk3 \
             fcitx5-frontend-gtk3 \
             uim-gtk3-immodule
