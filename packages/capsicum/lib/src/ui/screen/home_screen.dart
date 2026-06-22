@@ -619,7 +619,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget body = Column(
       children: [
         Expanded(
-          child: timeline.when(
+          // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）による
+          // リロード中は、直前文脈の TL（前のアカウントの投稿など）をそのまま
+          // 残さずローディングを出す。Riverpod は reload 中も valueOrNull に直前値を
+          // 保持するため、素の `.when` だと低速回線で数秒「古い TL のまま」に見え、
+          // インジケータの stale 緑と合わさって「緑なのに中身が来ない/古い」体感に
+          // なる (#758)。isReloading のときだけ素の loading に差し替えてローディング
+          // 分岐へ流す。pull-to-refresh（isRefreshing）は現データ保持のまま
+          // （skipLoadingOnRefresh=true 相当）。
+          child: (timeline.isReloading
+                  ? const AsyncValue<TimelineState>.loading()
+                  : timeline)
+              .when(
             data: (tlState) {
               // Restore marker position on first load (home timeline only).
               if (selectedList == null &&
@@ -1810,9 +1821,17 @@ class _StreamStatusIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final conn =
-        ref.watch(timelineProvider).valueOrNull?.streamConnectionState ??
-        StreamConnectionState.connecting;
+    final async = ref.watch(timelineProvider);
+    // リロード中（アカウント/文脈切替・起動時の current 着地・pull-to-refresh）は
+    // 直前 state の接続状態が valueOrNull に残るため、そのまま読むと「前のアカウント
+    // の緑」を新しい文脈のロード完了まで見せてしまう。低速回線ではこの窓が数秒に
+    // 伸び、サーバーは新 TL を返しているのに「緑なのに中身が来ない/古い」体感に
+    // なる。build() 実行中（isLoading）は直前の緑を出さず connecting を表示し、緑は
+    // 「この文脈の TL がロード済み＋live」だけを意味するようにする。
+    final conn = async.isLoading
+        ? StreamConnectionState.connecting
+        : (async.valueOrNull?.streamConnectionState ??
+              StreamConnectionState.connecting);
     final (Color color, String label) = switch (conn) {
       StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
       StreamConnectionState.connecting => (Colors.amber, '接続中…'),
