@@ -685,8 +685,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             }
                             await refreshed;
                           } finally {
-                            if (mounted)
+                            if (mounted) {
                               setState(() => _pullRefreshing = false);
+                            }
                           }
                         },
                         child: ScrollablePositionedList.separated(
