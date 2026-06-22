@@ -1047,9 +1047,14 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     if (isDesktop) {
       ref.read(desktopNotificationDispatcherProvider);
       // 常駐モード (#752): window / tray リスナーを張り、保存済みの設定値を
-      // 適用する。値変化は build() の ref.listen で追従する。
-      ResidentModeService.instance.attach();
-      ResidentModeService.instance.setEnabled(ref.read(residentModeProvider));
+      // 適用する。値変化は build() の ref.listen で追従する。v1.40 では
+      // Windows のみ有効化（isSupported）。macOS / Linux は #757 で検証後に
+      // 広げる。未サポート OS で window_manager / tray_manager を一切触らない
+      // ことで、Linux のトレイ実行時依存欠如による不安定化を避ける。
+      if (ResidentModeService.isSupported) {
+        ResidentModeService.instance.attach();
+        ResidentModeService.instance.setEnabled(ref.read(residentModeProvider));
+      }
     }
   }
 

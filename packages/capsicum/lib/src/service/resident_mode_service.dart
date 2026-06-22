@@ -5,7 +5,6 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../constants.dart';
-import '../platform/platform_info.dart';
 
 /// デスクトップ常駐モード (#752)。オンのとき、メインウィンドウを閉じても
 /// アプリを終了させず、システムトレイ (Windows / Linux) / メニューバー
@@ -38,18 +37,18 @@ class ResidentModeService with WindowListener, TrayListener {
       ? 'assets/images/tray_icon.ico'
       : 'assets/images/logo.png';
 
-  /// window / tray のリスナー登録。デスクトップ起動時に 1 度だけ呼ぶ。
+  /// window / tray のリスナー登録。サポート OS の起動時に 1 度だけ呼ぶ。
   void attach() {
-    if (!isDesktop || _attached) return;
+    if (!isSupported || _attached) return;
     windowManager.addListener(this);
     trayManager.addListener(this);
     _attached = true;
   }
 
   /// 常駐モードの有効/無効を適用する。`residentModeProvider` の初期値適用と
-  /// 値変化の双方から呼ぶ。冪等。
+  /// 値変化の双方から呼ぶ。冪等。未サポート OS では何もしない。
   Future<void> setEnabled(bool value) async {
-    if (!isDesktop) return;
+    if (!isSupported) return;
     _enabled = value;
     try {
       if (value) {
