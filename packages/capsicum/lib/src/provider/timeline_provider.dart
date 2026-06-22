@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../main.dart' show appLaunchStopwatch;
+import '../model/account_key.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
@@ -36,6 +37,15 @@ final selectedTimelineTypeProvider = Provider<TimelineType>((ref) {
 /// `null` 自体が「明示的にクリア」を意味する nullable フィールドを
 /// `copyWith` で保持／差し替えするための sentinel (#455 / #450 と同型)。
 const Object _keepLoadMoreError = Object();
+
+/// 表示中の TL がどの文脈で取得されたかを表すキーを組み立てる (#758)。
+///
+/// [kind] は TL の種別を表す識別子（メイン TL は `tl:<type>`、ハッシュタグは
+/// `tag:<spec>`、リストは `list:<id>`）。アカウントキーが無いときは null。
+/// provider 側は build() でこのキーを TimelineState に刻み、UI 側は現在の文脈から
+/// 同じ式で組み立てたキーと照合する。両者で同一の式を使うことが前提。
+String? timelineContextKey(AccountKey? accountKey, String kind) =>
+    accountKey == null ? null : '${accountKey.toStorageKey()}|$kind';
 
 /// build() / fetchUntilVisible のページ取得ループの試行ページ数上限 (#601)。
 /// 実況フィルタ ON で API が満杯ページを返し続けると、可視投稿が 1 件見つかる
@@ -95,6 +105,13 @@ class TimelineState {
   /// の可視化と同じ枯渇状態を表す。build() 再実行で `connecting` に戻る。
   final StreamConnectionState streamConnectionState;
 
+  /// この TimelineState がどの文脈（アカウント＋種別/タグ/リスト）で取得された
+  /// かを表すキー (#758)。Riverpod は build() 再実行中も直前 state を valueOrNull
+  /// に保持するため、文脈切替直後はこのキーが現在の文脈と食い違う「前の文脈の
+  /// キャッシュ」が一瞬見えることがある。UI 側は現在の文脈キーと照合し、
+  /// 食い違う state はそのまま描かずローディングへフォールバックする。
+  final String? contextKey;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -104,6 +121,7 @@ class TimelineState {
     this.streamReconnectExhausted = false,
     this.pageCapHit = false,
     this.streamConnectionState = StreamConnectionState.connecting,
+    this.contextKey,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -118,6 +136,7 @@ class TimelineState {
     bool? streamReconnectExhausted,
     bool? pageCapHit,
     StreamConnectionState? streamConnectionState,
+    String? contextKey,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -130,6 +149,7 @@ class TimelineState {
         streamReconnectExhausted ?? this.streamReconnectExhausted,
     pageCapHit: pageCapHit ?? this.pageCapHit,
     streamConnectionState: streamConnectionState ?? this.streamConnectionState,
+    contextKey: contextKey ?? this.contextKey,
   );
 }
 
@@ -235,7 +255,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
-    if (adapter == null) return const TimelineState();
+    final contextKey = timelineContextKey(
+      ref.watch(currentAccountProvider)?.key,
+      'tl:${type.name}',
+    );
+    if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
     // since-launch に分けて測る。fetch はサーバー負荷依存・enrich は item3 の
@@ -324,6 +348,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       posts: enriched,
       hasMore: hasMore,
       pageCapHit: pageCapHit,
+      contextKey: contextKey,
       // _enrichIsCat の await 中に接続が live になっていることがあるため、
       // 取りこぼさないよう現在値を反映する (#714)。
       streamConnectionState: _streamConnectionState,

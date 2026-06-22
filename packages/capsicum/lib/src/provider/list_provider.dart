@@ -20,12 +20,16 @@ class ListTimelineNotifier
   @override
   Future<TimelineState> build(String arg) async {
     final adapter = ref.watch(currentAdapterProvider);
+    final contextKey = timelineContextKey(
+      ref.watch(currentAccountProvider)?.key,
+      'list:$arg',
+    );
     if (adapter == null || adapter is! ListSupport) {
-      return const TimelineState(hasMore: false);
+      return TimelineState(hasMore: false, contextKey: contextKey);
     }
 
     final hideLivecure = ref.watch(hideLivecureProvider);
-    return fetchUntilVisible(
+    final result = await fetchUntilVisible(
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as ListSupport).getListTimeline(
@@ -33,6 +37,7 @@ class ListTimelineNotifier
         query: TimelineQuery(maxId: maxId, limit: _pageSize),
       ),
     );
+    return result.copyWith(contextKey: contextKey);
   }
 
   Future<void> loadMore() async {

@@ -611,7 +611,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       }
     }
-    final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+    final account = ref.watch(currentAccountProvider);
+    final storageKey = account?.key.toStorageKey();
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
         : null;
@@ -619,110 +620,135 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? ref.watch(backgroundOpacityProvider(storageKey))
         : defaultBackgroundOpacity;
 
+    // 現在の文脈（アカウント＋タブ種別/タグ/リスト）の contextKey。watch している
+    // provider の state が別文脈で取得した「前のキャッシュ」を保持していると、
+    // この期待キーと state.contextKey が食い違う。その間はローディングへ落とす
+    // (#758)。
+    final expectedContextKey = account == null
+        ? null
+        : timelineContextKey(
+            account.key,
+            selectedHashtag != null
+                ? 'tag:$selectedHashtag'
+                : selectedList != null
+                ? 'list:${selectedList.id}'
+                : 'tl:${selectedType.name}',
+          );
+
     Widget body = Column(
       children: [
         Expanded(
           // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL を
           // ロード中は、直前文脈の TL（前のアカウントの投稿など）をそのまま残さず
-          // ローディングを出す。Riverpod は再計算中も valueOrNull に直前値を保持する
-          // ため、素の `.when` だと低速回線で数秒「古い TL のまま」に見え、インジ
-          // ケータの stale 緑と合わさって「緑なのに中身が来ない/古い」体感になる
-          // (#758)。アカウント切替は reload と分類されず isReloading では拾えない
-          // ため、確実に立つ isLoading で判定し、loading に差し替えてローディング分岐へ
-          // 流す。ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト
-          // 消失を防ぐ・RefreshIndicator が自前のスピナーを出す）。
-          child: (timeline.isLoading && !_pullRefreshing
-                  ? const AsyncValue<TimelineState>.loading()
-                  : timeline)
-              .when(
-            data: (tlState) {
-              // Restore marker position on first load (home timeline only).
-              if (selectedList == null &&
-                  selectedType == TimelineType.home &&
-                  tlState.posts.isNotEmpty) {
-                _restoreMarker(tlState.posts);
-              }
-              return RefreshIndicator(
-                onRefresh: () async {
-                  _markerRestored = false;
-                  // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
-                  // データを残す。完了で必ず戻す。
-                  setState(() => _pullRefreshing = true);
-                  try {
-                    final Future<TimelineState> refreshed;
-                    if (selectedHashtag != null) {
-                      refreshed = ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
-                      );
-                    } else if (selectedList != null) {
-                      refreshed = ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    } else {
-                      refreshed = ref.refresh(timelineProvider.future);
-                    }
-                    await refreshed;
-                  } finally {
-                    if (mounted) setState(() => _pullRefreshing = false);
-                  }
-                },
-                child: ScrollablePositionedList.separated(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  itemCount:
-                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= tlState.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return PostTile(post: tlState.posts[index]);
-                  },
-                ),
-              );
-            },
-            loading: () {
-              if (_showScrollTop) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _showScrollTop = false);
-                });
-              }
-              return const Center(child: CircularProgressIndicator());
-            },
-            error: (error, stack) {
-              final message = _timelineErrorMessage(error);
-              final canRetry = !_isForbiddenError(error);
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(message, textAlign: TextAlign.center),
-                      if (canRetry) ...[
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (selectedList != null) {
-                              ref.invalidate(
-                                listTimelineProvider(selectedList.id),
+          // ローディングを出す。Riverpod は再計算中も valueOrNull に直前値を保持し、
+          // さらに account→adapter→timeline の dirty 伝播が HomeScreen の再 build
+          // より遅れることがあるため、isLoading 判定だけでは「前の文脈の値（しかも
+          // isLoading=false）」を取りこぼす。そこで state.contextKey が現在の期待
+          // キーと食い違う＝前文脈のキャッシュなら、isLoading の有無に関わらず
+          // ローディングへ落とす（同一アカウント内のタブ切替でも前 TL を出さない）。
+          // ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト消失を
+          // 防ぐ・RefreshIndicator が自前のスピナーを出す）。
+          child:
+              ((timeline.isLoading ||
+                              (expectedContextKey != null &&
+                                  timeline.valueOrNull?.contextKey !=
+                                      expectedContextKey)) &&
+                          !_pullRefreshing
+                      ? const AsyncValue<TimelineState>.loading()
+                      : timeline)
+                  .when(
+                    data: (tlState) {
+                      // Restore marker position on first load (home timeline only).
+                      if (selectedList == null &&
+                          selectedType == TimelineType.home &&
+                          tlState.posts.isNotEmpty) {
+                        _restoreMarker(tlState.posts);
+                      }
+                      return RefreshIndicator(
+                        onRefresh: () async {
+                          _markerRestored = false;
+                          // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
+                          // データを残す。完了で必ず戻す。
+                          setState(() => _pullRefreshing = true);
+                          try {
+                            final Future<TimelineState> refreshed;
+                            if (selectedHashtag != null) {
+                              refreshed = ref.refresh(
+                                hashtagTimelineProvider(selectedHashtag).future,
+                              );
+                            } else if (selectedList != null) {
+                              refreshed = ref.refresh(
+                                listTimelineProvider(selectedList.id).future,
                               );
                             } else {
-                              ref.invalidate(timelineProvider);
+                              refreshed = ref.refresh(timelineProvider.future);
                             }
+                            await refreshed;
+                          } finally {
+                            if (mounted)
+                              setState(() => _pullRefreshing = false);
+                          }
+                        },
+                        child: ScrollablePositionedList.separated(
+                          itemScrollController: _itemScrollController,
+                          itemPositionsListener: _itemPositionsListener,
+                          itemCount:
+                              tlState.posts.length +
+                              (tlState.isLoadingMore ? 1 : 0),
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            if (index >= tlState.posts.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            return PostTile(post: tlState.posts[index]);
                           },
-                          child: const Text('再試行'),
                         ),
-                      ],
-                    ],
+                      );
+                    },
+                    loading: () {
+                      if (_showScrollTop) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) setState(() => _showScrollTop = false);
+                        });
+                      }
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                    error: (error, stack) {
+                      final message = _timelineErrorMessage(error);
+                      final canRetry = !_isForbiddenError(error);
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(message, textAlign: TextAlign.center),
+                              if (canRetry) ...[
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    if (selectedList != null) {
+                                      ref.invalidate(
+                                        listTimelineProvider(selectedList.id),
+                                      );
+                                    } else {
+                                      ref.invalidate(timelineProvider);
+                                    }
+                                  },
+                                  child: const Text('再試行'),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ),
-              );
-            },
-          ),
         ),
         const SimplePostBar(),
       ],
@@ -1839,9 +1865,18 @@ class _StreamStatusIndicator extends ConsumerWidget {
     // 直前 state の接続状態が valueOrNull に残るため、そのまま読むと「前のアカウント
     // の緑」を新しい文脈のロード完了まで見せてしまう。低速回線ではこの窓が数秒に
     // 伸び、サーバーは新 TL を返しているのに「緑なのに中身が来ない/古い」体感に
-    // なる。build() 実行中（isLoading）は直前の緑を出さず connecting を表示し、緑は
-    // 「この文脈の TL がロード済み＋live」だけを意味するようにする。
-    final conn = async.isLoading
+    // なる。build() 実行中（isLoading）に加え、state.contextKey が現在の期待キーと
+    // 食い違う（＝前文脈のキャッシュ。dirty 伝播が遅れて isLoading=false のまま残る
+    // ケース）間も connecting を表示し、緑は「この文脈の TL がロード済み＋live」
+    // だけを意味するようにする (#758)。
+    final expectedContextKey = timelineContextKey(
+      ref.watch(currentAccountProvider)?.key,
+      'tl:${ref.watch(selectedTimelineTypeProvider).name}',
+    );
+    final stale =
+        expectedContextKey != null &&
+        async.valueOrNull?.contextKey != expectedContextKey;
+    final conn = (async.isLoading || stale)
         ? StreamConnectionState.connecting
         : (async.valueOrNull?.streamConnectionState ??
               StreamConnectionState.connecting);
