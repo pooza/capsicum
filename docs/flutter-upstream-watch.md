@@ -34,3 +34,5 @@ capsicum は Flutter stable channel に固定している。上流修正が次�
 ## routine
 
 月次 chase は capsicum リポジトリの schedule routine で自動実行される（毎月 1 日 09:00 JST）。実行内容は本 doc の「chase 手順」に準ずる。
+
+あわせて月次巡回のついでに、**資格情報の満了チェック**も実施する（infra-note〔chubo2, private〕の「資格情報の満了一覧」§の月次チェック手順）。chubo2 を参照できる環境では満了 60 日 / 30 日以内の資格情報を報告し、参照できない環境ではスキップしてその旨を残す（満了日そのものは private な infra-note 側が正本。公開リポジトリには書かない）。
