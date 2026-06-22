@@ -67,6 +67,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _pendingListRestore;
   Timer? _throttleTimer;
   bool _showScrollTop = false;
+  // pull-to-refresh 実行中だけ true。文脈切替（アカウント/タブ切替）の reload と
+  // 区別し、リフレッシュ中は現データを残す（リスト消失を防ぐ）ため (#758)。
+  bool _pullRefreshing = false;
 
   @override
   void initState() {
@@ -619,15 +622,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget body = Column(
       children: [
         Expanded(
-          // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）による
-          // リロード中は、直前文脈の TL（前のアカウントの投稿など）をそのまま
-          // 残さずローディングを出す。Riverpod は reload 中も valueOrNull に直前値を
-          // 保持するため、素の `.when` だと低速回線で数秒「古い TL のまま」に見え、
-          // インジケータの stale 緑と合わさって「緑なのに中身が来ない/古い」体感に
-          // なる (#758)。isReloading のときだけ素の loading に差し替えてローディング
-          // 分岐へ流す。pull-to-refresh（isRefreshing）は現データ保持のまま
-          // （skipLoadingOnRefresh=true 相当）。
-          child: (timeline.isReloading
+          // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL を
+          // ロード中は、直前文脈の TL（前のアカウントの投稿など）をそのまま残さず
+          // ローディングを出す。Riverpod は再計算中も valueOrNull に直前値を保持する
+          // ため、素の `.when` だと低速回線で数秒「古い TL のまま」に見え、インジ
+          // ケータの stale 緑と合わさって「緑なのに中身が来ない/古い」体感になる
+          // (#758)。アカウント切替は reload と分類されず isReloading では拾えない
+          // ため、確実に立つ isLoading で判定し、loading に差し替えてローディング分岐へ
+          // 流す。ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト
+          // 消失を防ぐ・RefreshIndicator が自前のスピナーを出す）。
+          child: (timeline.isLoading && !_pullRefreshing
                   ? const AsyncValue<TimelineState>.loading()
                   : timeline)
               .when(
@@ -639,19 +643,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _restoreMarker(tlState.posts);
               }
               return RefreshIndicator(
-                onRefresh: () {
+                onRefresh: () async {
                   _markerRestored = false;
-                  if (selectedHashtag != null) {
-                    return ref.refresh(
-                      hashtagTimelineProvider(selectedHashtag).future,
-                    );
+                  // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
+                  // データを残す。完了で必ず戻す。
+                  setState(() => _pullRefreshing = true);
+                  try {
+                    final Future<TimelineState> refreshed;
+                    if (selectedHashtag != null) {
+                      refreshed = ref.refresh(
+                        hashtagTimelineProvider(selectedHashtag).future,
+                      );
+                    } else if (selectedList != null) {
+                      refreshed = ref.refresh(
+                        listTimelineProvider(selectedList.id).future,
+                      );
+                    } else {
+                      refreshed = ref.refresh(timelineProvider.future);
+                    }
+                    await refreshed;
+                  } finally {
+                    if (mounted) setState(() => _pullRefreshing = false);
                   }
-                  if (selectedList != null) {
-                    return ref.refresh(
-                      listTimelineProvider(selectedList.id).future,
-                    );
-                  }
-                  return ref.refresh(timelineProvider.future);
                 },
                 child: ScrollablePositionedList.separated(
                   itemScrollController: _itemScrollController,
