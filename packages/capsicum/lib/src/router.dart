@@ -44,6 +44,7 @@ import 'ui/screen/server_info_screen.dart';
 import 'ui/screen/settings_screen.dart';
 import 'ui/screen/settings/account_settings_screen.dart';
 import 'ui/screen/settings/appearance_settings_screen.dart';
+import 'ui/screen/settings/desktop_settings_screen.dart';
 import 'ui/screen/settings/display_settings_screen.dart';
 import 'ui/screen/settings/push_notification_settings_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
@@ -159,6 +160,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/touch',
         builder: (context, state) => const TouchActionSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/desktop',
+        builder: (context, state) => const DesktopSettingsScreen(),
       ),
       GoRoute(
         path: '/settings/push',
