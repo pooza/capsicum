@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "smtc_now_playing.cpp"
   "wns_push.cpp"
   "web_push_decrypt.cpp"
+  "web_push_key_reader.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -19,10 +20,12 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
-# web_push_decrypt_test.cpp は runner ターゲットに含めない（独自 main を持つ
-# スタンドアロン単体テスト）。RFC 8291 復号ロジックの検証は VS Developer 環境で
-#   cl /EHsc /std:c++17 web_push_decrypt_test.cpp web_push_decrypt.cpp /link bcrypt.lib
-# を直接実行する（フルビルド不要）。
+# *_test.cpp は runner ターゲットに含めない（独自 main を持つスタンドアロン
+# 単体テスト）。VS Developer 環境で直接ビルド・実行する（フルビルド不要）:
+#   cl /EHsc /std:c++17 web_push_decrypt_test.cpp web_push_decrypt.cpp ^
+#      /link bcrypt.lib
+#   cl /EHsc /std:c++17 web_push_key_reader_test.cpp web_push_key_reader.cpp ^
+#      /link crypt32.lib shell32.lib ole32.lib version.lib
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
@@ -47,6 +50,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
 # CNG (Cryptography API: Next Generation)。Web Push (RFC 8291) の ECDH P-256 /
 # HKDF-SHA256 / AES-128-GCM 復号で使う (#474 フェーズ2 web_push_decrypt.cpp)。
 target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
+# DPAPI (CryptUnprotectData) + APPDATA 解決 (SHGetKnownFolderPath /
+# VerQueryValue)。flutter_secure_storage.dat から push 鍵を読む
+# (#474 フェーズ2 web_push_key_reader.cpp)。
+target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib" "shell32.lib" "ole32.lib" "version.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
