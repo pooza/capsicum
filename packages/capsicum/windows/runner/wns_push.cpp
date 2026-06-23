@@ -131,11 +131,13 @@ void RunWnsChannelReceiver(
     return;
   }
 
-  // アプリ完全終了中の受信用にバックグラウンドタスクを登録し、鍵を AppContainer
-  // から読める LocalState に同期する (#474 フェーズ C)。起動中は下の in-process
-  // 受信が args.Cancel(true) でこのタスク発火を抑止する。
-  RegisterPushBackgroundTaskOnce();
+  // アプリ完全終了中の受信用に鍵を AppContainer から読める LocalState に同期して
+  // から、バックグラウンドタスクを登録する (#474 フェーズ C)。順序が逆だと
+  // 「登録済みだが鍵未同期」の窓で push を受けて bgtask.no_keyset を偽陽性で
+  // 記録しうるため、同期を先に済ませる。起動中は下の in-process 受信が
+  // args.Cancel(true) でこのタスク発火を抑止する。
   SyncPushKeysToLocalState();
+  RegisterPushBackgroundTaskOnce();
 
   // 起動中の in-process 受信を購読する。raw 通知は OS が自動表示しないため、
   // 自前で復号 → トースト表示する。

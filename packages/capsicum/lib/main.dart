@@ -525,8 +525,9 @@ Future<void> _flushWnsPushDiagnostics() async {
     final host = decoded['host'];
     final atMs = decoded['at_ms'];
 
-    // 正常系（表示成功・暗号化通知でない）は info、異常系は warning。
-    const benign = {'bgtask.shown', 'bgtask.not_encrypted'};
+    // 正常系（表示成功・暗号化通知でない・raw 以外で起動）は info、異常系は
+    // warning。ネイティブ push_diagnostics.cpp の IsBenignCode と揃えること。
+    const benign = {'bgtask.shown', 'bgtask.not_encrypted', 'bgtask.not_raw'};
     final level = benign.contains(code)
         ? SentryLevel.info
         : SentryLevel.warning;
@@ -538,19 +539,19 @@ Future<void> _flushWnsPushDiagnostics() async {
         withScope: (scope) {
           scope.setTag('service', 'wns_push_diagnostics');
           scope.setTag('push.bgtask.code', code);
-          scope.setTag('push.bgtask.count', countStr);
           // code ごとに別グループへ分割する（_flushPushFailureRecord と同方針）。
           scope.fingerprint = ['push.wns_bgtask', code];
           if (host is String && host.isNotEmpty) {
             scope.setTag('push.host', host);
           }
+          // count は基数が際限なく増えるため tag にしない（検索・集計を汚す）。
+          // メッセージ本文と push context に載せて観測する。
+          final pushContext = <String, dynamic>{'bgtask_count': countStr};
           if (atMs is int) {
-            scope.setContexts('push', {
-              'bgtask_last_at': DateTime.fromMillisecondsSinceEpoch(
-                atMs,
-              ).toIso8601String(),
-            });
+            pushContext['bgtask_last_at'] =
+                DateTime.fromMillisecondsSinceEpoch(atMs).toIso8601String();
           }
+          scope.setContexts('push', pushContext);
         },
       );
     }

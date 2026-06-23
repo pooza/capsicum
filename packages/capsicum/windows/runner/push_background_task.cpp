@@ -161,6 +161,12 @@ struct PushBackgroundTask
             RecordBgDiagnostic(DiagnosticCodeForError(error), std::string());
           }
         }
+      } else {
+        // raw push trigger なのに RawNotification 以外（toast/badge/tile 等）が
+        // 来た。実害は無いが、無記録だと「bg task が起動したのに何も残らない」
+        // 空白になり、push 不達トリアージで本当の問題と区別できない。正常系
+        // 扱い（info）で起動した事実だけ残す。
+        RecordBgDiagnostic("bgtask.not_raw", std::string());
       }
     } catch (...) {
       // バックグラウンドホストを巻き込まないよう全例外を握り潰す。

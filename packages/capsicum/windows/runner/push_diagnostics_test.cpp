@@ -55,14 +55,16 @@ int main() {
           "累積 count=2 / 最新で上書き / host 省略");
   }
 
-  // 3) 3 回目も累積する。
+  // 3) 3 回累積する。count は常に進むが、未消費の異常系（no_keys）は後続の
+  //    正常系（shown）で上書きされず温存される。
   {
     std::string p1 = BuildPushDiagnosticJson("", "bgtask.shown", "", 1);
     std::string p2 = BuildPushDiagnosticJson(p1, "bgtask.no_keys", "", 2);
     std::string p3 = BuildPushDiagnosticJson(p2, "bgtask.shown", "h", 3);
     PushDiagnostic d;
     ParsePushDiagnosticJson(p3, &d);
-    Check(d.count == 3 && d.code == "bgtask.shown", "3 回累積 count=3");
+    Check(d.count == 3 && d.code == "bgtask.no_keys" && d.at_ms == 2,
+          "3 回累積 count=3 / 異常系は正常系で上書きされない");
   }
 
   // 4) 空文字列 / 空オブジェクト / 壊れた JSON はレコード無し。
@@ -98,6 +100,34 @@ int main() {
     PushDiagnostic d;
     bool ok = ParsePushDiagnosticJson(j, &d);
     Check(ok && d.host == "a\"b", "host のエスケープ往復");
+  }
+
+  // 8) 異常系の上書きルール（単一スロットで warning を温存する）。
+  {
+    // 正常系 → 異常系: 異常系で上書きする（最新の異常を記録）。
+    std::string a = BuildPushDiagnosticJson("", "bgtask.shown", "h1", 10);
+    std::string b = BuildPushDiagnosticJson(a, "bgtask.decrypt_failed", "", 20);
+    PushDiagnostic d;
+    ParsePushDiagnosticJson(b, &d);
+    Check(d.code == "bgtask.decrypt_failed" && d.count == 2 && d.at_ms == 20,
+          "正常系 → 異常系は上書きする");
+
+    // 異常系 → 正常系: 異常系を温存する（code/at/host は据え置き・count のみ進む）。
+    std::string c =
+        BuildPushDiagnosticJson(b, "bgtask.shown", "h3", 30);
+    PushDiagnostic e;
+    ParsePushDiagnosticJson(c, &e);
+    Check(e.code == "bgtask.decrypt_failed" && e.count == 3 && e.at_ms == 20 &&
+              e.host.empty(),
+          "異常系 → 正常系は温存する（count のみ進む）");
+
+    // 異常系 → 別の異常系: 最新の異常系で上書きする。
+    std::string f =
+        BuildPushDiagnosticJson(c, "bgtask.exception", "", 40);
+    PushDiagnostic g;
+    ParsePushDiagnosticJson(f, &g);
+    Check(g.code == "bgtask.exception" && g.count == 4 && g.at_ms == 40,
+          "異常系 → 別の異常系は最新で上書きする");
   }
 
   if (g_failures == 0) {

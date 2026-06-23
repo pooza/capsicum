@@ -20,6 +20,14 @@ std::string JsonQuote(const std::string& s) {
   return out;
 }
 
+// 観測上の「正常系」コード。これらは未消費の異常系コードを上書きしない
+// （単一スロットゆえ、異常系が後続の正常系イベントに飲まれて Sentry の warning が
+// 消えるのを防ぐ）。Dart 側 _flushWnsPushDiagnostics の benign 判定と揃えること。
+bool IsBenignCode(const std::string& code) {
+  return code == "bgtask.shown" || code == "bgtask.not_encrypted" ||
+         code == "bgtask.not_raw";
+}
+
 // 自前で生成した flat オブジェクト（値は文字列 or 数値）を解く最小パーサ。
 // ネスト無し・我々の出力のみを対象とする。
 class FlatParser {
@@ -134,15 +142,26 @@ std::string BuildPushDiagnosticJson(const std::string& prev_json,
                                     const std::string& host, int64_t at_ms) {
   int count = 1;
   PushDiagnostic prev;
-  if (ParsePushDiagnosticJson(prev_json, &prev)) {
+  const bool has_prev = ParsePushDiagnosticJson(prev_json, &prev);
+  if (has_prev) {
     count = prev.count + 1;
   }
+  // 未消費の異常系コードは後続の正常系イベントで上書きしない（warning が info に
+  // 飲まれて消えるのを防ぐ）。それ以外は最新イベントを代表にする。
+  std::string rep_code = code;
+  std::string rep_host = host;
+  int64_t rep_at_ms = at_ms;
+  if (has_prev && IsBenignCode(code) && !IsBenignCode(prev.code)) {
+    rep_code = prev.code;
+    rep_host = prev.host;
+    rep_at_ms = prev.at_ms;
+  }
   std::string o = "{";
-  o += "\"code\":" + JsonQuote(code);
-  o += ",\"at_ms\":" + std::to_string(at_ms);
+  o += "\"code\":" + JsonQuote(rep_code);
+  o += ",\"at_ms\":" + std::to_string(rep_at_ms);
   o += ",\"count\":" + std::to_string(count);
-  if (!host.empty()) {
-    o += ",\"host\":" + JsonQuote(host);
+  if (!rep_host.empty()) {
+    o += ",\"host\":" + JsonQuote(rep_host);
   }
   o += "}";
   return o;
