@@ -15,6 +15,7 @@ add_executable(${BINARY_NAME} WIN32
   "web_push_key_reader.cpp"
   "web_push_payload.cpp"
   "web_push_receive.cpp"
+  "win_toast.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
