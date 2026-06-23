@@ -335,3 +335,135 @@ StoreKit / Android Play Billing の consumable を統一 API で扱える）を�
 3. Claude: #428 にスコープ反映（コメント） → D の実装計画を Issue 化／着手
 4. pooza さん: ストア側で消耗型 IAP 3 SKU を作成（商品メタデータ・税区分）、
    capsicum-site に法人名義の特商法表記を設置
+
+---
+
+## E. Windows IAP 設計（#599）— decision draft
+
+iOS / Android / macOS（D-1）に続く Windows の投げ銭購入導線の設計叩き台。
+**B/C（商品設計・法務）は全プラットフォーム共通で確定済み（上記）を流用**し、
+Windows 固有の技術差分と意思決定だけをここに展開する。実装スコープが固まったら
+#599 に反映する。
+
+### E-0. 現状と着手ブロッカー（= 設計を先行する理由）
+
+実装は**まだ着手できない**。コードに触れない設計だけ先行する（他端末の作業と
+コンフリクトしない）。ブロッカーは 2 つ:
+
+1. **Partner Center で消耗型アドオン 3 つが未登録**（pooza 作業・E-5）。商品 ID が
+   確定しないと購入フローを実機検証できない。
+2. **Store 配布版でしか IAP を検証できない**（E-2）。`Windows.Services.Store` は
+   Microsoft Store リスティングに紐づくため、GitHub 直配の自己署名 MSIX や debug
+   ビルドでは購入経路が成立しない。検証は **MS Store の非公開フライト/グループ配布**
+   が要る＝ネイティブ push（#474）と同じ「内部ベータ経由検証」ルール
+   （MEMORY `feedback_native_change_via_internal_beta`）に乗る。
+
+### E-1. 課金プラグイン方式
+
+公式 [`in_app_purchase`](https://pub.dev/packages/in_app_purchase) には **Windows
+federation が存在しない**（iOS StoreKit / Android Play Billing / macOS StoreKit のみ）。
+よって `SupporterPurchaseNotifier`（`InAppPurchase.instance` 直叩き）は Windows で
+そのまま使えず、`isAvailable()` 取得時点でプラグインが落ちる。
+
+| 選択肢 | 内容 | 評価 |
+|---|---|---|
+| (a) 自前 platform channel | `Windows.Services.Store`（`StoreContext`）を runner の MethodChannel で薄く叩く（SMTC / WNS と同じ流儀） | **推奨**。消耗型 3 商品の取得・購入・消費報告のみで surface が小さい |
+| (b) コミュニティ製プラグイン採用 | 既存の Windows IAP プラグインがあれば利用 | 成熟度・保守性が不確実。要調査だが現状有力なものは確認できていない |
+
+推奨: **(a) 自前 channel**。必要 API は `StoreContext.GetDefault()` →
+`GetStoreProductsAsync(["Consumable"], productIds)` / `RequestPurchaseAsync(storeId)`
+/ `ReportConsumableFulfillmentAsync`（E-4）の 3 つに限定できる。
+
+### E-2. Store-install 判定と購入導線の可視性
+
+`StoreContext` は **Microsoft Store からインストールされたコピーでのみ**機能し、
+直配 MSIX は Store リスティングに紐づかず購入できない（#599 本文の非対称）。
+現状の入口ガード `supporterPurchaseSupported`（[supporter_purchase_provider.dart](../packages/capsicum/lib/src/provider/supporter_purchase_provider.dart)）は
+`Platform.is*` のコンパイル時判定だが、Windows は **実行時に Store-install か**を
+見分ける必要がある。
+
+| 選択肢 | 入口の出し方 | 直配版の見え方 |
+|---|---|---|
+| (a) Store-install のみ入口表示 | 起動時に Store 判定 → Store 版だけ「capsicum をサポート」を出す | 直配版は非表示（= 現状の Linux/Win と同じ・混乱なし） |
+| (b) 常に入口表示・runtime で degrade | Windows なら常に出し、`isAvailable=false` で「現在利用できません」に倒す | 直配版で空振り。理由が伝わらず不親切 |
+| (c) (a) + 直配版に Store 誘導 | 直配版では購入導線でなく「Store 版で応援できます」リンクのみ | 親切だが導線追加。優先度低 |
+
+推奨: **(a)**。判定方法は `StoreContext` で商品取得を試み、パッケージ ID 無し /
+取得失敗を「Store 版でない」と扱うのが堅い（WNS Channel URI の noDeviceToken と
+同じ握り）。`PackageSignatureKind == Store` でも判別できるが、フライト配布の扱いが
+バージョン依存なので商品取得可否を一次情報にする。**(c) は要望が出たら追加**
+（overridable）。
+
+### E-3. 抽象層への接続（UI 無改修を目標）
+
+UI（[supporter_screen.dart](../packages/capsicum/lib/src/ui/screen/settings/supporter_screen.dart)）は
+`supporterPurchaseProvider` の `SupporterPurchaseState`（`isLoadingProducts` /
+`isAvailable` / `products` / `buy` / `lastOutcome`）だけを見る。Windows backend が
+**同じ state 形を produce**すれば画面は無改修で済む。
+
+設計: 課金 backend を薄いインターフェースに切り出す。
+
+- `InAppPurchaseBackend`（既存・iOS/Android/macOS、`in_app_purchase` ラップ）
+- `WindowsStoreBackend`（新規・E-1 の platform channel ラップ）
+
+`SupporterPurchaseNotifier` は `Platform.isWindows` で backend を選ぶだけにし、
+**成功時は両 backend とも同じ `supporterStatusProvider.markTipped(sku)` を呼ぶ**
+（[supporter_status_provider.dart](../packages/capsicum/lib/src/provider/supporter_status_provider.dart)
+の抽象層。ローカルフラグ + #596 サーバー同期はこの内側）。商品の見せ方は
+`ProductDetails`（`id/title/description/price`）が公開コンストラクタを持つので、
+Windows channel が返す商品メタから synthetic に組み立てれば `products` 型を保てる
+（新モデル導入は不要）。バッジ UI は従来どおり `isSupporterProvider` 参照で
+Windows でも自動表示される（既にローカルフラグがあれば desktop 表示済み）。
+
+### E-4. 消耗型の消費報告（再投げ銭可能化）
+
+MS Store の消耗型アドオンは購入後 `ReportConsumableFulfillmentAsync` で**消費報告**
+しないと「未消費残高」が残り再購入できない（Android の autoConsume 相当）。Windows
+backend は購入成立 → `markTipped` 永続化成功 → 消費報告、の順で確定させる。
+**永続化失敗時は消費報告しない**（次回起動でストアが未処理購入を再配信し markTipped
+を再試行できる。既存 `_onPurchaseUpdates` の `pendingCompletePurchase` と同じ思想）。
+
+### E-5. Partner Center アドオン登録仕様（pooza 作業）
+
+Microsoft Store パートナーセンターで**消耗型（Consumable）アドオンを 3 つ**作成する。
+表示名・説明は既存 C-2c と同一文言で揃える（ストア横断で統一）。
+
+| アプリ内 SKU（既存） | MS Store Product ID（案） | 価格（¥基準） | 表示名 | 説明 |
+|---|---|---|---|---|
+| `supporter.tip.small` | `supporter.tip.small` | ¥100 に最も近い MS 価格帯 | ちょこっとサポート | capsicum の開発と通知リレー運用へのささやかな応援です。 |
+| `supporter.tip.medium` | `supporter.tip.medium` | ¥500 相当 | しっかりサポート | capsicum の開発と通知リレー運用へのしっかりした応援です。 |
+| `supporter.tip.big` | `supporter.tip.big` | ¥800 相当 | たっぷりサポート | capsicum の開発と通知リレー運用への大きな応援です。 |
+
+- **Product ID をアプリ内 SKU と一致**させると `supporterTipProductIds` をそのまま
+  使え分岐が減る（MS は Product ID に英数字ドットを許容）。不一致なら Windows backend
+  に ID マッピング表を持たせる。
+- MS Store は Apple/Google と価格帯テーブルが異なるため ¥100/¥500/¥800 に**最も近い
+  価格帯**を選ぶ（厳密一致は不要・既存も「ストア換算」方針 B-2）。
+- 税区分・年齢区分・IAP の申告は MS Store のフローに従う。特商法表記は C-3 の法人名義を
+  capsicum-site のページへリンクで流用（新規作成不要）。
+
+### E-6. 実装スコープ（B/C 確定後・E-5 完了後に着手）
+
+D-3 の段階導入に倣い、概念ごとに commit 分割:
+
+1. runner に `Windows.Services.Store` の platform channel（商品取得 / 購入 /
+   消費報告 / Store-install 判定）。C++/WinRT、SMTC・WNS と同じ MTA ワーカー流儀。
+2. Dart 側 `WindowsStoreBackend` + `SupporterPurchaseNotifier` の backend 切替。
+   成功で `markTipped(sku)`。Sentry 計装は既存 fingerprint 規約に合わせる。
+3. `supporterPurchaseSupported`（or その runtime 版）に Windows + Store-install
+   判定を追加し入口を解放（E-2 (a)）。UI は無改修を確認。
+4. MS Store 非公開フライトで内部ベータ検証（購入 → バッジ → 再投げ銭）→ 製品版昇格。
+
+**着手可否そのものの判断**（#599 の主旨）: 自前 channel 実装コスト + 配布経路の
+非対称（Store 版のみ）を許容して進めるか。推奨は **E-1(a)/E-2(a) で薄く実装**だが、
+母数（Store 版利用者）が読めないうちは優先度低のまま、native push（#474）の片付き
+具合を見て着手時期を判断する。
+
+### E-7. 未決事項（pooza 判断待ち）
+
+1. **E-2**: 入口可視性は (a) Store-install のみ表示 / (c) 直配版に Store 誘導も付ける、
+   どちらにするか（推奨 (a)）。
+2. **E-5**: MS Store Product ID をアプリ内 SKU と一致させるか（推奨：一致）。価格帯の
+   最終選択。
+3. **着手 GO/保留**: native push（#474）と同じ v1.40 主役群に入れるか、優先度低のまま
+   後ろのマイルストーンへ置くか。
