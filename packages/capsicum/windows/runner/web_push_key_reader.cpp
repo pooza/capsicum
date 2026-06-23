@@ -273,10 +273,38 @@ bool DecodeKey(const std::map<std::string, std::string>& fields,
   return out->size() == expected_len;
 }
 
+// JSON 文字列値のエスケープ（ParseJsonString の逆。#474 フェーズ C で鍵セット
+// マップを LocalState に再シリアライズするのに使う）。
+std::string EscapeJsonString(const std::string& s) {
+  std::string out;
+  out.reserve(s.size() + 8);
+  for (unsigned char c : s) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      default:
+        if (c < 0x20) {
+          char buf[8];
+          sprintf_s(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out.push_back(static_cast<char>(c));
+        }
+    }
+  }
+  return out;
+}
+
 }  // namespace
 
-bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,
-                  PushKeys* out, std::string* error) {
+bool ReadPushKeysFromKeysetJson(const std::string& keyset_map_json,
+                                const std::string& account, PushKeys* out,
+                                std::string* error) {
   auto fail = [&](const char* message) {
     if (error != nullptr) {
       *error = message;
@@ -284,16 +312,8 @@ bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,
     return false;
   };
 
-  std::vector<uint8_t> encrypted;
-  if (!ReadAllBytes(dat_file_path, &encrypted)) {
-    return fail("secure storage file not found or unreadable");
-  }
-  std::string plain;
-  if (!DpapiUnprotect(encrypted, &plain)) {
-    return fail("CryptUnprotectData failed");
-  }
   std::map<std::string, std::string> entries;
-  if (!ParseJsonStringMap(plain, &entries)) {
+  if (!ParseJsonStringMap(keyset_map_json, &entries)) {
     return fail("failed to parse secure storage JSON map");
   }
 
@@ -324,7 +344,75 @@ bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,
   return fail("no push keys for account");
 }
 
-std::wstring DefaultSecureStorageDatPath() {
+bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,
+                  PushKeys* out, std::string* error) {
+  auto fail = [&](const char* message) {
+    if (error != nullptr) {
+      *error = message;
+    }
+    return false;
+  };
+
+  std::vector<uint8_t> encrypted;
+  if (!ReadAllBytes(dat_file_path, &encrypted)) {
+    return fail("secure storage file not found or unreadable");
+  }
+  std::string plain;
+  if (!DpapiUnprotect(encrypted, &plain)) {
+    return fail("CryptUnprotectData failed");
+  }
+  return ReadPushKeysFromKeysetJson(plain, account, out, error);
+}
+
+bool ExtractPushKeysetMapJson(const std::wstring& dat_file_path,
+                              std::string* out_json, std::string* error) {
+  auto fail = [&](const char* message) {
+    if (error != nullptr) {
+      *error = message;
+    }
+    return false;
+  };
+
+  std::vector<uint8_t> encrypted;
+  if (!ReadAllBytes(dat_file_path, &encrypted)) {
+    return fail("secure storage file not found or unreadable");
+  }
+  std::string plain;
+  if (!DpapiUnprotect(encrypted, &plain)) {
+    return fail("CryptUnprotectData failed");
+  }
+  std::map<std::string, std::string> entries;
+  if (!ParseJsonStringMap(plain, &entries)) {
+    return fail("failed to parse secure storage JSON map");
+  }
+
+  // push 鍵セット (capsicum_push_keyset_*) のエントリだけを抽出して平文 JSON に
+  // 再シリアライズする。アカウントトークン等の他の秘密は **含めない**。
+  const std::string prefix = "capsicum_push_keyset_";
+  std::string json = "{";
+  bool first = true;
+  for (const auto& entry : entries) {
+    if (entry.first.size() < prefix.size() ||
+        entry.first.compare(0, prefix.size(), prefix) != 0) {
+      continue;
+    }
+    if (!first) {
+      json += ",";
+    }
+    first = false;
+    json += "\"" + EscapeJsonString(entry.first) + "\":\"" +
+            EscapeJsonString(entry.second) + "\"";
+  }
+  json += "}";
+  *out_json = json;
+  return true;
+}
+
+std::wstring SecureStorageDatPathForExe(const std::wstring& exe_path) {
+  if (exe_path.empty()) {
+    return std::wstring();
+  }
+
   // %APPDATA% (Roaming) を取得。
   PWSTR roaming = nullptr;
   if (SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roaming) !=
@@ -337,20 +425,15 @@ std::wstring DefaultSecureStorageDatPath() {
   std::wstring base(roaming);
   CoTaskMemFree(roaming);
 
-  // 実行中 exe のバージョン情報から CompanyName / ProductName を取る
+  // 指定 exe のバージョン情報から CompanyName / ProductName を取る
   // （path_provider_windows と同じ規則）。
-  wchar_t module_path[MAX_PATH];
-  DWORD len = GetModuleFileNameW(nullptr, module_path, MAX_PATH);
-  if (len == 0 || len >= MAX_PATH) {
-    return std::wstring();
-  }
   DWORD dummy = 0;
-  DWORD info_size = GetFileVersionInfoSizeW(module_path, &dummy);
+  DWORD info_size = GetFileVersionInfoSizeW(exe_path.c_str(), &dummy);
   if (info_size == 0) {
     return std::wstring();
   }
   std::vector<uint8_t> info(info_size);
-  if (!GetFileVersionInfoW(module_path, 0, info_size, info.data())) {
+  if (!GetFileVersionInfoW(exe_path.c_str(), 0, info_size, info.data())) {
     return std::wstring();
   }
 
@@ -377,6 +460,16 @@ std::wstring DefaultSecureStorageDatPath() {
   }
   return base + L"\\" + company + L"\\" + product +
          L"\\flutter_secure_storage.dat";
+}
+
+std::wstring DefaultSecureStorageDatPath() {
+  // 実行中 exe のバージョン情報を使う（in-process 受信用）。
+  wchar_t module_path[MAX_PATH];
+  DWORD len = GetModuleFileNameW(nullptr, module_path, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH) {
+    return std::wstring();
+  }
+  return SecureStorageDatPathForExe(std::wstring(module_path, len));
 }
 
 }  // namespace capsicum

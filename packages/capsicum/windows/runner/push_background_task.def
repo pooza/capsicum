@@ -1,0 +1,9 @@
+; WNS push バックグラウンドタスク DLL (#474 フェーズ C) のエクスポート。
+; WinRT in-process server として backgroundTaskHost.exe にロードされる。
+; これらは roapi.h / combaseapi.h で extern "C" 宣言済みのため、定義側に
+; __declspec(dllexport) を付けるとリンケージが衝突する。エクスポートは
+; この .def で行う。
+LIBRARY push_background_task
+EXPORTS
+    DllGetActivationFactory PRIVATE
+    DllCanUnloadNow PRIVATE

@@ -40,6 +40,16 @@ bool HandleWnsRawPayload(const std::string& raw_payload,
                          const std::wstring& dat_file_path, PushDisplay* out,
                          std::string* error = nullptr);
 
+// [HandleWnsRawPayload] と同じだが、鍵を flutter_secure_storage.dat ではなく
+// 平文の鍵セット JSON マップ（ExtractPushKeysetMapJson 出力）から引く版
+// (#474 フェーズ C / Option A)。AppContainer のバックグラウンドタスクは
+// ローミング %APPDATA% の .dat を読めないため、LocalState に置いた鍵セット JSON
+// を読んでこちらに渡す。
+bool HandleWnsRawPayloadFromKeysetJson(const std::string& raw_payload,
+                                       const std::string& keyset_map_json,
+                                       PushDisplay* out,
+                                       std::string* error = nullptr);
+
 }  // namespace capsicum
 
 #endif  // RUNNER_WEB_PUSH_RECEIVE_H_

@@ -181,9 +181,16 @@ std::string MapGet(const std::map<std::string, std::string>& m,
 
 }  // namespace
 
-bool HandleWnsRawPayload(const std::string& raw_payload,
-                         const std::wstring& dat_file_path, PushDisplay* out,
-                         std::string* error) {
+namespace {
+
+// 鍵の取得元（.dat ファイル or 平文鍵セット JSON）だけを差し替えて共通化する。
+// dat_file_path != nullptr なら flutter_secure_storage.dat を DPAPI 復号して引く
+// （in-process / FullTrust）。keyset_map_json != nullptr なら平文の鍵セット JSON
+// から引く（AppContainer のバックグラウンドタスク、#474 フェーズ C / Option A）。
+bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
+                             const std::wstring* dat_file_path,
+                             const std::string* keyset_map_json,
+                             PushDisplay* out, std::string* error) {
   auto fail = [&](const char* message) {
     if (error != nullptr) *error = message;
     return false;
@@ -212,7 +219,12 @@ bool HandleWnsRawPayload(const std::string& raw_payload,
 
   PushKeys keys;
   std::string key_error;
-  if (!ReadPushKeys(dat_file_path, account, &keys, &key_error)) {
+  const bool keys_ok =
+      dat_file_path != nullptr
+          ? ReadPushKeys(*dat_file_path, account, &keys, &key_error)
+          : ReadPushKeysFromKeysetJson(*keyset_map_json, account, &keys,
+                                       &key_error);
+  if (!keys_ok) {
     return fail("no push keys");
   }
 
@@ -235,6 +247,22 @@ bool HandleWnsRawPayload(const std::string& raw_payload,
   out->notification_id = parsed.notification_id;
   out->user_id = parsed.user_id;
   return true;
+}
+
+}  // namespace
+
+bool HandleWnsRawPayload(const std::string& raw_payload,
+                         const std::wstring& dat_file_path, PushDisplay* out,
+                         std::string* error) {
+  return HandleWnsRawPayloadImpl(raw_payload, &dat_file_path, nullptr, out,
+                                 error);
+}
+
+bool HandleWnsRawPayloadFromKeysetJson(const std::string& raw_payload,
+                                       const std::string& keyset_map_json,
+                                       PushDisplay* out, std::string* error) {
+  return HandleWnsRawPayloadImpl(raw_payload, nullptr, &keyset_map_json, out,
+                                 error);
 }
 
 }  // namespace capsicum

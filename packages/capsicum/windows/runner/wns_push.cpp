@@ -1,9 +1,13 @@
 #include "wns_push.h"
 
+#include <winrt/Windows.ApplicationModel.Background.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Networking.PushNotifications.h>
+#include <winrt/Windows.Storage.h>
 
 #include <condition_variable>
+#include <fstream>
 #include <mutex>
 #include <string>
 
@@ -13,12 +17,69 @@
 
 namespace {
 
+using winrt::Windows::ApplicationModel::Background::BackgroundExecutionManager;
+using winrt::Windows::ApplicationModel::Background::BackgroundTaskBuilder;
+using winrt::Windows::ApplicationModel::Background::BackgroundTaskRegistration;
+using winrt::Windows::ApplicationModel::Background::PushNotificationTrigger;
 using winrt::Windows::Networking::PushNotifications::PushNotificationChannel;
 using winrt::Windows::Networking::PushNotifications::
     PushNotificationChannelManager;
 using winrt::Windows::Networking::PushNotifications::
     PushNotificationReceivedEventArgs;
 using winrt::Windows::Networking::PushNotifications::PushNotificationType;
+
+// バックグラウンドタスクの登録名と EntryPoint。push_background_task.cpp の
+// ActivatableClassId・patch_appxmanifest_pushtask.ps1 の宣言と完全一致させる。
+constexpr wchar_t kBackgroundTaskName[] = L"CapsicumPushTask";
+constexpr wchar_t kBackgroundTaskEntryPoint[] =
+    L"CapsicumPushTask.PushBackgroundTask";
+
+// push 鍵セットを AppContainer のバックグラウンドタスクが読める LocalState に
+// 書き出す (#474 フェーズ C / Option A)。bg task はサンドボックスのため
+// ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
+// できないので、FullTrust 本体がここで鍵セットだけを平文 JSON 化して
+// ApplicationData.LocalFolder（パッケージ専有・両者からアクセス可）へ渡す。
+void SyncPushKeysToLocalState() {
+  try {
+    const std::wstring dat = capsicum::DefaultSecureStorageDatPath();
+    std::string json;
+    if (!capsicum::ExtractPushKeysetMapJson(dat, &json, nullptr)) {
+      return;  // 鍵未生成・.dat 不在等。次回登録後に再同期される。
+    }
+    winrt::hstring folder =
+        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
+    std::wstring path =
+        std::wstring(folder.c_str(), folder.size()) + L"\\push_keys.json";
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f) {
+      f.write(json.data(), static_cast<std::streamsize>(json.size()));
+    }
+  } catch (...) {
+    // 書き出し失敗は致命でない（in-process 受信は引き続き動く）。
+  }
+}
+
+// アプリ完全終了中の WNS raw 受信用バックグラウンドタスクを 1 度だけ登録する
+// (#474 フェーズ C)。既存登録があればスキップ。MTA スレッドから呼ぶこと。
+void RegisterPushBackgroundTaskOnce() {
+  try {
+    for (auto const& entry : BackgroundTaskRegistration::AllTasks()) {
+      if (entry.Value().Name() == kBackgroundTaskName) {
+        return;  // 既に登録済み。
+      }
+    }
+    // パッケージ済みアプリのバックグラウンド実行許可（拒否されても登録は試みる）。
+    BackgroundExecutionManager::RequestAccessAsync().get();
+    BackgroundTaskBuilder builder;
+    builder.Name(kBackgroundTaskName);
+    builder.TaskEntryPoint(kBackgroundTaskEntryPoint);
+    builder.SetTrigger(PushNotificationTrigger());
+    builder.Register();
+  } catch (...) {
+    // 登録失敗（権限拒否・非パッケージ起動・マニフェスト未宣言等）は諦める。
+    // 起動中は in-process 受信が動くため push 全体は止めない。
+  }
+}
 
 // raw 通知 1 通を復号してトースト表示する。失敗（非暗号化通知・鍵不在・復号
 // 失敗）は黙って捨てる。title / body はサーバーが生成・ローカライズ済み。
@@ -68,6 +129,12 @@ void RunWnsChannelReceiver(
     winrt::uninit_apartment();
     return;
   }
+
+  // アプリ完全終了中の受信用にバックグラウンドタスクを登録し、鍵を AppContainer
+  // から読める LocalState に同期する (#474 フェーズ C)。起動中は下の in-process
+  // 受信が args.Cancel(true) でこのタスク発火を抑止する。
+  RegisterPushBackgroundTaskOnce();
+  SyncPushKeysToLocalState();
 
   // 起動中の in-process 受信を購読する。raw 通知は OS が自動表示しないため、
   // 自前で復号 → トースト表示する。

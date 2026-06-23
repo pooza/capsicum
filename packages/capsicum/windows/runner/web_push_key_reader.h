@@ -50,15 +50,44 @@ bool ReadPushKeys(const std::wstring& dat_file_path,
                   PushKeys* out,
                   std::string* error = nullptr);
 
+// flutter_secure_storage.dat を DPAPI 復号し、push 鍵セット
+// (capsicum_push_keyset_* で始まるエントリ) **だけ** を平文 JSON マップ文字列
+// として返す（#474 フェーズ C / Option A）。アカウントトークン等の他の秘密は
+// 含めない。FullTrust 本体（runner）がこれを AppContainer のバックグラウンド
+// タスクからも読める LocalState に書き出すために使う。バックグラウンドタスクは
+// AppContainer サンドボックスのためローミング %APPDATA% の .dat を読めず DPAPI
+// 復号もできないので、平文化した鍵セットを LocalState 経由で渡す（LocalState は
+// パッケージ専有 ACL のため第三者からは読めない。macOS の App Group 共有に相当）。
+//
+// 成功時 true で `*out_json` を埋める。.dat 不在・DPAPI 失敗・パース失敗で false。
+bool ExtractPushKeysetMapJson(const std::wstring& dat_file_path,
+                              std::string* out_json,
+                              std::string* error = nullptr);
+
+// 平文の鍵セット JSON マップ（[ExtractPushKeysetMapJson] の出力、または
+// flutter_secure_storage.dat を復号した平文と同形式）から `account`
+// (`username@host`) の push 鍵を取り出す。[ReadPushKeys] の「DPAPI 復号後」の
+// 処理と同一で、バックグラウンドタスクが LocalState の鍵を読むのに使う。
+bool ReadPushKeysFromKeysetJson(const std::string& keyset_map_json,
+                                const std::string& account,
+                                PushKeys* out,
+                                std::string* error = nullptr);
+
 // 既定の保存先 `%APPDATA%\{CompanyName}\{ProductName}\flutter_secure_storage.dat`
 // を返す（path_provider の Windows 実装と同じ解決規則。CompanyName /
-// ProductName は実行中 exe のバージョン情報から取る）。解決に失敗したときは
-// 空文字列を返す。
-//
-// 注意: バックグラウンドタスクを別 exe にする場合、その exe のバージョン情報の
-// CompanyName / ProductName をメインアプリ（net.shrieker / capsicum）と一致させ
-// ないと別ディレクトリを指す。bg task 配線時に揃えること。
+// ProductName は **実行中 exe** のバージョン情報から取る）。解決に失敗したときは
+// 空文字列を返す。in-process（runner exe 上）の受信で使う。
 std::wstring DefaultSecureStorageDatPath();
+
+// 指定した exe のバージョン情報（CompanyName / ProductName）から
+// `%APPDATA%\{CompanyName}\{ProductName}\flutter_secure_storage.dat` を解決する。
+//
+// バックグラウンドタスク (#474 フェーズ C) は backgroundTaskHost.exe 上で動くため
+// `DefaultSecureStorageDatPath()`（実行中 exe 基準）では別ディレクトリを指す。
+// タスク DLL は同梱の capsicum.exe パスを渡してメインアプリと同じ .dat を解決する
+// （path_provider の CompanyName / ProductName は runner exe の VERSIONINFO 由来）。
+// 解決失敗時は空文字列。
+std::wstring SecureStorageDatPathForExe(const std::wstring& exe_path);
 
 }  // namespace capsicum
 

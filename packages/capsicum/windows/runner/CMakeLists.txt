@@ -63,5 +63,29 @@ target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib" "shell32.lib" "ole32.lib" "version.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
+# WNS push バックグラウンドタスク DLL (#474 フェーズ C)。
+# アプリ完全終了中の WNS raw 通知を受ける WinRT in-process server で、
+# backgroundTaskHost.exe にロードされる。復号・鍵読み・表示の各部品
+# (web_push_* / win_toast) を runner と共有してビルドする（Flutter 非依存）。
+add_library(capsicum_push_task SHARED
+  "push_background_task.cpp"
+  "push_background_task.def"
+  "web_push_decrypt.cpp"
+  "web_push_key_reader.cpp"
+  "web_push_payload.cpp"
+  "web_push_receive.cpp"
+  "win_toast.cpp"
+)
+apply_standard_settings(capsicum_push_task)
+target_compile_definitions(capsicum_push_task PRIVATE "NOMINMAX")
+target_link_libraries(capsicum_push_task PRIVATE "windowsapp.lib" "bcrypt.lib")
+target_link_libraries(capsicum_push_task PRIVATE "crypt32.lib" "shell32.lib" "ole32.lib" "version.lib")
+target_include_directories(capsicum_push_task PRIVATE "${CMAKE_SOURCE_DIR}")
+# 出力名はマニフェスト inProcessServer の Path と一致させる。
+set_target_properties(capsicum_push_task PROPERTIES OUTPUT_NAME "push_background_task")
+# capsicum.exe と同じ Release バンドルフォルダへ同梱する（MSIX が拾えるように）。
+install(TARGETS capsicum_push_task RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
