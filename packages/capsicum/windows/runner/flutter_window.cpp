@@ -6,7 +6,9 @@
 
 #include <winrt/Windows.Foundation.h>
 
+#include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -64,22 +66,21 @@ bool FlutterWindow::OnCreate() {
              std::unique_ptr<flutter::MethodResult<>> result) {
         if (call.method_name() == "requestChannelUri") {
           HWND hwnd = GetHandle();
+          // 専用ワーカーで Channel URI 取得 + in-process 受信購読を回す
+          // (#474 フェーズ1+3)。WinRT / 受信ロジックは wns_push に集約し、ここは
+          // 取得した URI を UI スレッドへ marshal するコールバックだけ渡す。
+          // RunWnsChannelReceiver は購読後プロセス終了までブロックするため、
+          // スレッドは detach する。
           std::thread([this, hwnd]() {
-            std::string uri;
-            try {
-              winrt::init_apartment(winrt::apartment_type::multi_threaded);
-              uri = QueryWnsChannelUri();
-              winrt::uninit_apartment();
-            } catch (...) {
-              // 取得不可時は空文字列のまま。
-            }
-            {
-              std::lock_guard<std::mutex> lock(wns_mutex_);
-              wns_uri_ = std::move(uri);
-            }
-            if (hwnd) {
-              PostMessage(hwnd, WM_WNS_CHANNEL_READY, 0, 0);
-            }
+            RunWnsChannelReceiver([this, hwnd](const std::string& uri) {
+              {
+                std::lock_guard<std::mutex> lock(wns_mutex_);
+                wns_uri_ = uri;
+              }
+              if (hwnd) {
+                PostMessage(hwnd, WM_WNS_CHANNEL_READY, 0, 0);
+              }
+            });
           }).detach();
           // 取得は非同期。要求受理だけ即 ack し、結果は onChannelUri で返す。
           result->Success();

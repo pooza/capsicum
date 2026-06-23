@@ -1,20 +1,28 @@
 #ifndef RUNNER_WNS_PUSH_H_
 #define RUNNER_WNS_PUSH_H_
 
+#include <functional>
 #include <string>
 
-// Windows Notification Service (WNS) の Channel URI を取得する (#474 フェーズ1)。
+// Windows Notification Service (WNS) の Channel URI 取得 + 起動中 (in-process)
+// raw 通知受信を回す (#474 フェーズ1 + フェーズ3)。
 //
 // `PushNotificationChannelManager::CreatePushNotificationChannelForApplication-
-// Async()` を MTA スレッド上で blocking 取得する純粋部分。capsicum-relay は
-// この URI を device token とみなし、WNS へ raw 通知を POST する。
+// Async()` で channel を取得し、その URI を `on_uri` に 1 度だけ渡す
+// （capsicum-relay はこの URI を device token とみなし WNS へ raw 通知を POST
+// する）。続けて channel の `PushNotificationReceived` を購読し、raw 通知を受け
+// たら復号 → トースト表示する（完全終了中のバックグラウンドタスクと同じ
+// web_push_receive → win_toast 経路を共有）。
 //
-// 戻り値は Channel URI 文字列。取得失敗時（パッケージ ID 無しの非 MSIX 起動・
-// ネットワーク不通・WinRT 例外）は空文字列を返す。MSIX / Microsoft Store 版の
-// ようにパッケージ ID を持つ起動でのみ URI を払い出せる。
+// 購読を維持するため channel と MTA アパートメントを生かし続ける必要があり、
+// 本関数は購読後プロセス終了までブロックする。よって呼び出し側は専用の detached
+// スレッドで実行すること（WinRT の取得を STA でブロックすると停止しうるため
+// 内部で MTA アパートメントを初期化する）。
 //
-// WinRT の非同期 API を STA でブロックすると停止しうるため、呼び出し側は必ず
-// 専用の MTA ワーカースレッドから呼ぶこと（SMTC 取得と同じ制約）。
-std::string QueryWnsChannelUri();
+// `on_uri` は本関数のワーカースレッド上で必ず 1 度呼ばれる（取得不可時は空
+// 文字列）。channel を取得できない起動（パッケージ ID 無しの非 MSIX 起動・
+// ネットワーク不通・WinRT 例外）では `on_uri("")` を呼んで即 return する。
+void RunWnsChannelReceiver(
+    const std::function<void(const std::string&)>& on_uri);
 
 #endif  // RUNNER_WNS_PUSH_H_
