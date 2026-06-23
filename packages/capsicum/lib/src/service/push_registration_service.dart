@@ -44,12 +44,16 @@ class PushRegistrationService {
   /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
   /// UI と service 層で push 機能を gate するときの単一の真実源とする (#502)。
   // iOS / Android に加え macOS も APNs 本配線済み (#468)。
-  // Windows (#474) は WNS Channel URI 取得・device token 配線まで仕込み済み
-  // (フェーズ1) だが、受信/復号 (フェーズ2) と relay の device_type='windows'
-  // 対応 (フェーズ3) が揃うまでは本ゲートを立てない。揃ったら Platform.isWindows
-  // を OR に追加して有効化する。Linux はネイティブ push 経路が無い (#475)。
+  // Windows (#474) も WNS で本配線完了: Channel URI 取得 (フェーズ1) + 受信/復号
+  // (フェーズ2) + 起動中 in-process 受信 (フェーズ3) が揃い、relay も
+  // device_type='windows' で WNS raw 送出に対応済み (capsicum-relay d87ef2d)。
+  // 未起動受信 (バックグラウンドタスク) は後続だが、起動中は #569 と併存して
+  // 通知できるためゲートを立てる。Linux はネイティブ push 経路が無い (#475)。
   static bool get isPushBackendWired =>
-      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+      Platform.isIOS ||
+      Platform.isAndroid ||
+      Platform.isMacOS ||
+      Platform.isWindows;
 
   static final _client = PushRelayClient();
 
@@ -525,9 +529,21 @@ class PushRegistrationService {
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
-    await Future.wait(
-      accounts.map((a) => registerAccount(a, eligible: hasPreset)),
-    );
+    //
+    // ただし Windows は flutter_secure_storage が単一ファイル
+    // (flutter_secure_storage.dat) を read-modify-write するため、複数アカウント
+    // を並列登録すると PushKeyStore の write 同士が同ファイルを同時に開いて
+    // PathAccessException（共有違反）になる (#474)。iOS/Android/macOS は
+    // Keychain/Keystore が並行安全なので並列のまま。Windows のみ直列化する。
+    if (Platform.isWindows) {
+      for (final a in accounts) {
+        await registerAccount(a, eligible: hasPreset);
+      }
+    } else {
+      await Future.wait(
+        accounts.map((a) => registerAccount(a, eligible: hasPreset)),
+      );
+    }
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。
