@@ -13,6 +13,7 @@ add_executable(${BINARY_NAME} WIN32
   "wns_push.cpp"
   "web_push_decrypt.cpp"
   "web_push_key_reader.cpp"
+  "web_push_payload.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -26,6 +27,7 @@ add_executable(${BINARY_NAME} WIN32
 #      /link bcrypt.lib
 #   cl /EHsc /std:c++17 web_push_key_reader_test.cpp web_push_key_reader.cpp ^
 #      /link crypt32.lib shell32.lib ole32.lib version.lib
+#   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
