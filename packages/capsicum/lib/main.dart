@@ -396,6 +396,13 @@ void _startApp() {
   // (#366)。SentryFlutter.init より後に走るのでこの位置に配置している。
   unawaited(_flushPushFailureRecord());
 
+  // Windows: 完全終了中 WNS 受信のバックグラウンドタスク (#474 フェーズ C) が
+  // LocalState に残した観測レコードを Sentry に吸い上げる。AppContainer の
+  // bg task は Sentry SDK もコンソールも持てないため、runner 経由で取り出す。
+  if (Platform.isWindows) {
+    unawaited(_flushWnsPushDiagnostics());
+  }
+
   // Firebase / FCM 初期化（Android）。スプラッシュ画面でプッシュ登録前に await する。
   firebaseReady = _initFirebase();
 
@@ -489,6 +496,66 @@ Future<void> _flushPushFailureRecord() async {
       'keychainStatus=${record.keychainStatus}, '
       'triedPrefixes=${record.triedPrefixes}, '
       'decryptError=${record.decryptError})',
+    );
+  } catch (_) {
+    // ignore
+  }
+}
+
+/// Windows: 完全終了中 WNS 受信のバックグラウンドタスク (#474 フェーズ C) が
+/// LocalState に残した観測レコード（push_diagnostics の単一スロット JSON）を
+/// runner 経由で取り出し、Sentry に吸い上げる。bg task は別プロセス・純 C++ で
+/// Sentry SDK を持てないため、macOS NSE の FailureRecorder と同じく「ネイティブ
+/// が記録 → 次回起動で Dart が回収」方式をとる。
+///
+/// 単一スロット = 最後のイベント + 累計件数のみ保持し、起動時に 1 回だけ
+/// captureMessage で吸い上げる（volume を抑える）。bgtask.shown / not_encrypted
+/// は正常系なので info、それ以外（鍵不在・復号失敗・例外等）は warning。
+/// エラーは握りつぶす（観測機構が本体を落とさない）。
+Future<void> _flushWnsPushDiagnostics() async {
+  try {
+    final raw = await WnsService.consumePushDiagnostics();
+    if (raw == null || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return;
+    final code = decoded['code'];
+    if (code is! String || code.isEmpty) return;
+    final count = decoded['count'];
+    final countStr = count is int ? count.toString() : '?';
+    final host = decoded['host'];
+    final atMs = decoded['at_ms'];
+
+    // 正常系（表示成功・暗号化通知でない）は info、異常系は warning。
+    const benign = {'bgtask.shown', 'bgtask.not_encrypted'};
+    final level = benign.contains(code)
+        ? SentryLevel.info
+        : SentryLevel.warning;
+
+    if (Sentry.isEnabled) {
+      await Sentry.captureMessage(
+        'push.wns_bgtask: $code (count=$countStr)',
+        level: level,
+        withScope: (scope) {
+          scope.setTag('service', 'wns_push_diagnostics');
+          scope.setTag('push.bgtask.code', code);
+          scope.setTag('push.bgtask.count', countStr);
+          // code ごとに別グループへ分割する（_flushPushFailureRecord と同方針）。
+          scope.fingerprint = ['push.wns_bgtask', code];
+          if (host is String && host.isNotEmpty) {
+            scope.setTag('push.host', host);
+          }
+          if (atMs is int) {
+            scope.setContexts('push', {
+              'bgtask_last_at': DateTime.fromMillisecondsSinceEpoch(
+                atMs,
+              ).toIso8601String(),
+            });
+          }
+        },
+      );
+    }
+    _logDev(
+      'capsicum: push.wns_bgtask: flushed $code (count=$countStr, host=$host)',
     );
   } catch (_) {
     // ignore

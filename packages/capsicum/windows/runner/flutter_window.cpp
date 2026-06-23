@@ -84,6 +84,16 @@ bool FlutterWindow::OnCreate() {
           }).detach();
           // 取得は非同期。要求受理だけ即 ack し、結果は onChannelUri で返す。
           result->Success();
+        } else if (call.method_name() == "consumePushDiagnostics") {
+          // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測
+          // レコードを 1 件読み出して返す（読んだら消す）。Dart 側が Sentry へ
+          // 吸い上げる。レコードが無ければ null。
+          std::string diag;
+          if (ConsumePushDiagnosticsJson(&diag)) {
+            result->Success(flutter::EncodableValue(diag));
+          } else {
+            result->Success();
+          }
         } else {
           result->NotImplemented();
         }

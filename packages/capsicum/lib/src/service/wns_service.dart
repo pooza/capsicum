@@ -39,6 +39,23 @@ class WnsService {
     });
   }
 
+  /// バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測レコード
+  /// を 1 件読み出して返す（ネイティブ側が読んだら消す）。レコードが無ければ
+  /// null。返り値は push_diagnostics の単一スロット JSON 文字列で、呼び出し側
+  /// （main の flush）が Sentry へ吸い上げる。
+  ///
+  /// AppContainer の bg task は Sentry SDK もコンソールも持てず、書き込み先の
+  /// LocalState は Dart の path_provider（ローミング）からは読めないため、
+  /// WinRT を持つ FullTrust runner 経由でしか取り出せない。
+  static Future<String?> consumePushDiagnostics() async {
+    try {
+      return await _channel.invokeMethod<String>('consumePushDiagnostics');
+    } catch (e) {
+      debugPrint('capsicum: push.wns: consumePushDiagnostics failed: $e');
+      return null;
+    }
+  }
+
   static Future<dynamic> _handleMethod(MethodCall call) async {
     switch (call.method) {
       case 'onChannelUri':

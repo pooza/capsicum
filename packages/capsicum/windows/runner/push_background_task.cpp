@@ -29,10 +29,12 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <string_view>
 
+#include "push_diagnostics.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
 
@@ -51,27 +53,81 @@ constexpr wchar_t kRuntimeClassName[] = L"CapsicumPushTask.PushBackgroundTask";
 // ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
 // できないため、パッケージ専有で両者からアクセスできる ApplicationData の
 // LocalFolder 経由で鍵を受け取る。
+std::wstring LocalStateFilePath(const wchar_t* name) {
+  winrt::hstring folder =
+      winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
+  return std::wstring(folder.c_str(), folder.size()) + L"\\" + name;
+}
+
+std::string ReadFileUtf8(const std::wstring& path) {
+  std::ifstream f(path, std::ios::binary | std::ios::ate);
+  if (!f) {
+    return std::string();
+  }
+  std::streamoff size = f.tellg();
+  if (size <= 0) {
+    return std::string();
+  }
+  std::string out(static_cast<size_t>(size), '\0');
+  f.seekg(0);
+  f.read(out.data(), static_cast<std::streamsize>(size));
+  return out;
+}
+
 std::string ReadLocalStateKeysetJson() {
   try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    std::wstring path =
-        std::wstring(folder.c_str(), folder.size()) + L"\\push_keys.json";
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) {
-      return std::string();
-    }
-    std::streamoff size = f.tellg();
-    if (size <= 0) {
-      return std::string();
-    }
-    std::string out(static_cast<size_t>(size), '\0');
-    f.seekg(0);
-    f.read(out.data(), static_cast<std::streamsize>(size));
-    return out;
+    return ReadFileUtf8(LocalStateFilePath(L"push_keys.json"));
   } catch (...) {
     return std::string();
   }
+}
+
+// UNIX エポックからのミリ秒。FILETIME（1601 起点・100ns 単位）から換算する。
+int64_t NowUnixMs() {
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+  ULARGE_INTEGER u;
+  u.LowPart = ft.dwLowDateTime;
+  u.HighPart = ft.dwHighDateTime;
+  // 1601-01-01 → 1970-01-01 は 11644473600 秒。
+  return static_cast<int64_t>(u.QuadPart / 10000ULL) - 11644473600000LL;
+}
+
+// `username@host` から host 部分のみ返す（username は観測に載せない）。
+std::string HostFromAccount(const std::string& account) {
+  size_t at = account.rfind('@');
+  if (at == std::string::npos || at + 1 >= account.size()) {
+    return std::string();
+  }
+  return account.substr(at + 1);
+}
+
+// bg task の観測コードを LocalState の単一スロットへ記録する (#474 フェーズ C)。
+// AppContainer の bg task は Sentry SDK もコンソールも持てないため、ここに
+// 残し、次回 FullTrust 起動時に runner が読んで Dart 経由で Sentry へ送る。
+// 失敗は黙殺する（観測機構が通知本体を巻き込まない）。
+void RecordBgDiagnostic(const std::string& code, const std::string& host) {
+  try {
+    const std::wstring path = LocalStateFilePath(L"push_diag.json");
+    const std::string prev = ReadFileUtf8(path);
+    const std::string next = capsicum::BuildPushDiagnosticJson(
+        prev, code, host, NowUnixMs());
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f) {
+      f.write(next.data(), static_cast<std::streamsize>(next.size()));
+    }
+  } catch (...) {
+  }
+}
+
+// HandleWnsRawPayload の error 文字列を観測コードへ写す。
+std::string DiagnosticCodeForError(const std::string& error) {
+  if (error == "no push keys") return "bgtask.no_keys";
+  if (error == "decryption failed") return "bgtask.decrypt_failed";
+  if (error == "payload parse failed") return "bgtask.parse_failed";
+  if (error == "not an encrypted notification") return "bgtask.not_encrypted";
+  // invalid envelope / missing account / invalid body base64url 等。
+  return "bgtask.bad_payload";
 }
 
 struct PushBackgroundTask
@@ -86,17 +142,29 @@ struct PushBackgroundTask
         // 鍵は FullTrust 本体が LocalState に同期した push_keys.json から読む
         // （AppContainer はローミング %APPDATA% の .dat を読めないため）。
         const std::string keyset = ReadLocalStateKeysetJson();
-        capsicum::PushDisplay display;
-        if (capsicum::HandleWnsRawPayloadFromKeysetJson(content, keyset,
-                                                        &display, nullptr)) {
-          // title / body はサーバー生成・ローカライズ済み。tag に SNS 通知 ID。
-          capsicum::ShowRawToast(display.title, display.body,
-                                 /*launch_arg=*/"", display.notification_id);
+        if (keyset.empty()) {
+          // Option A の鍵同期がまだ走っていない（FullTrust を一度も起動して
+          // いない等）。鍵不在と区別して記録する。
+          RecordBgDiagnostic("bgtask.no_keyset", std::string());
+        } else {
+          capsicum::PushDisplay display;
+          std::string error;
+          if (capsicum::HandleWnsRawPayloadFromKeysetJson(content, keyset,
+                                                          &display, &error)) {
+            // title / body はサーバー生成・ローカライズ済み。tag に SNS 通知 ID。
+            capsicum::ShowRawToast(display.title, display.body,
+                                   /*launch_arg=*/"", display.notification_id);
+            RecordBgDiagnostic("bgtask.shown", HostFromAccount(display.account));
+          } else {
+            // 復号できない通知（鍵不在・announcement 等）は捨てるが、無言だと
+            // bg task が動いたかすら分からないため観測コードを残す。
+            RecordBgDiagnostic(DiagnosticCodeForError(error), std::string());
+          }
         }
-        // 復号できない通知（鍵不在・announcement 等）は黙って捨てる。
       }
     } catch (...) {
       // バックグラウンドホストを巻き込まないよう全例外を握り潰す。
+      RecordBgDiagnostic("bgtask.exception", std::string());
     }
     deferral.Complete();
   }

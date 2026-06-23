@@ -25,4 +25,10 @@
 void RunWnsChannelReceiver(
     const std::function<void(const std::string&)>& on_uri);
 
+// バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測レコード
+// (push_diag.json) を 1 件読み出してファイルを消す。FullTrust 起動時に呼び、
+// 内容（push_diagnostics の単一スロット JSON）を `*out_json` に入れて Dart へ
+// 渡す（Dart が Sentry へ吸い上げる）。レコードが無ければ false。
+bool ConsumePushDiagnosticsJson(std::string* out_json);
+
 #endif  // RUNNER_WNS_PUSH_H_

@@ -7,6 +7,7 @@
 #include <winrt/Windows.Storage.h>
 
 #include <condition_variable>
+#include <cstdio>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -165,4 +166,38 @@ void RunWnsChannelReceiver(
   std::condition_variable wait_cv;
   std::unique_lock<std::mutex> wait_lock(wait_mutex);
   wait_cv.wait(wait_lock, [] { return false; });
+}
+
+bool ConsumePushDiagnosticsJson(std::string* out_json) {
+  if (out_json == nullptr) {
+    return false;
+  }
+  out_json->clear();
+  try {
+    winrt::hstring folder =
+        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
+    std::wstring path =
+        std::wstring(folder.c_str(), folder.size()) + L"\\push_diag.json";
+    {
+      std::ifstream f(path, std::ios::binary | std::ios::ate);
+      if (!f) {
+        return false;  // レコード無し。
+      }
+      std::streamoff size = f.tellg();
+      if (size <= 0) {
+        f.close();
+        _wremove(path.c_str());
+        return false;
+      }
+      out_json->resize(static_cast<size_t>(size));
+      f.seekg(0);
+      f.read(out_json->data(), static_cast<std::streamsize>(size));
+    }
+    // 二重送信を避けるため読み出したら消す。
+    _wremove(path.c_str());
+    return !out_json->empty();
+  } catch (...) {
+    out_json->clear();
+    return false;
+  }
 }
