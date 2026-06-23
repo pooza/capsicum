@@ -19,7 +19,7 @@ namespace capsicum {
 // 表示に必要なフィールド（空文字列 = 無し）。
 struct PushDisplay {
   std::string account;          // エンベロープの宛先アカウント (username@host)
-  std::string title;            // Mastodon サーバー生成 title（type 優先のため補助）
+  std::string title;            // 表示用に解決済みの title（type→ラベル統一済み）
   std::string body;             // 表示本文
   std::string type;             // 通知種別（type→ラベル変換は表示側の責務）
   std::string notification_id;  // SNS 側通知 ID（dedup 用）

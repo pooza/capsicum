@@ -14,6 +14,7 @@
 // ビルド & 実行（VS Developer 環境）:
 //   cl /EHsc /std:c++17 web_push_receive_test.cpp web_push_receive.cpp ^
 //      web_push_key_reader.cpp web_push_decrypt.cpp web_push_payload.cpp ^
+//      notification_type_label.cpp ^
 //      /link crypt32.lib bcrypt.lib shell32.lib ole32.lib version.lib
 
 #include <windows.h>

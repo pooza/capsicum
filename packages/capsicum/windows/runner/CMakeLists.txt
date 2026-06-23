@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "smtc_now_playing.cpp"
   "wns_push.cpp"
+  "notification_type_label.cpp"
   "web_push_decrypt.cpp"
   "web_push_key_reader.cpp"
   "web_push_payload.cpp"
@@ -32,6 +33,7 @@ add_executable(${BINARY_NAME} WIN32
 #   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp
 #   cl /EHsc /std:c++17 web_push_receive_test.cpp web_push_receive.cpp ^
 #      web_push_key_reader.cpp web_push_decrypt.cpp web_push_payload.cpp ^
+#      notification_type_label.cpp ^
 #      /link crypt32.lib bcrypt.lib shell32.lib ole32.lib version.lib
 
 # Apply the standard set of build settings. This can be removed for applications
@@ -70,6 +72,7 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_library(capsicum_push_task SHARED
   "push_background_task.cpp"
   "push_background_task.def"
+  "notification_type_label.cpp"
   "web_push_decrypt.cpp"
   "web_push_key_reader.cpp"
   "web_push_payload.cpp"

@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 
+#include "notification_type_label.h"
 #include "web_push_decrypt.h"
 #include "web_push_key_reader.h"
 #include "web_push_payload.h"
@@ -241,7 +242,10 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   }
 
   out->account = account;
-  out->title = parsed.title;
+  // 表示 title を統一ラベルで解決する (#474 空タイトル修正)。Misskey は
+  // payload に title を持たず（type だけ）、Mastodon もサーバー生成 title は
+  // 表記揺れがあるため、type→ラベル変換を優先する。macOS NSE と同じ優先順位。
+  out->title = ResolveDisplayTitle(parsed.type, parsed.title);
   out->body = parsed.body;
   out->type = parsed.type;
   out->notification_id = parsed.notification_id;
