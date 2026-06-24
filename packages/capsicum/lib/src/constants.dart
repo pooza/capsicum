@@ -60,7 +60,6 @@ class AppConstants {
   // 外部サービス
   static const notestockBaseUrl = 'https://notestock.osa-p.net';
   static final notestockUrl = Uri.parse(notestockBaseUrl);
-  static final fediverUrl = Uri.parse('https://f.chomechome.jp');
 
   // Twemoji CDN
   static const twemojiBaseUrl =
