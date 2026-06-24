@@ -438,16 +438,14 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
                       children: [
                         ...children,
                         const SizedBox(height: 4),
-                        Text(
-                          // post_tile / notification_tile と同じ表示モード
-                          // (display_settings の absoluteTimeProvider) に追従
-                          // する (#560)。日付が分からないと「いつのメッセージ
-                          // か」が読み取れないため、時刻のみの表示は廃止して
-                          // いる。
-                          formatTimestamp(
-                            message.createdAt,
-                            absolute: ref.watch(absoluteTimeProvider),
-                          ),
+                        // post_tile / notification_tile と同じ表示モード
+                        // (display_settings の absoluteTimeProvider) に追従
+                        // する (#560)。日付が分からないと「いつのメッセージ
+                        // か」が読み取れないため、時刻のみの表示は廃止して
+                        // いる。
+                        TimestampText(
+                          message.createdAt,
+                          absolute: ref.watch(absoluteTimeProvider),
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: textColor.withValues(alpha: 0.7),

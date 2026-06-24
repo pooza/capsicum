@@ -271,13 +271,11 @@ class _ThreadMetaColumn extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          // chat_thread_screen / post_tile / notification_tile と同じ表示モード
-          // (display_settings の absoluteTimeProvider) に追従する (#560)。
-          formatTimestamp(
-            thread.lastMessage.createdAt,
-            absolute: ref.watch(absoluteTimeProvider),
-          ),
+        // chat_thread_screen / post_tile / notification_tile と同じ表示モード
+        // (display_settings の absoluteTimeProvider) に追従する (#560)。
+        TimestampText(
+          thread.lastMessage.createdAt,
+          absolute: ref.watch(absoluteTimeProvider),
           style: Theme.of(context).textTheme.bodySmall,
         ),
         if (thread.isUnread)

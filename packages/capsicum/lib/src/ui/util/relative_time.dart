@@ -5,6 +5,10 @@
 /// 同じロジックを重複実装していたものをここに集約した（#557）。
 library;
 
+import 'package:flutter/material.dart';
+
+import '../../platform/platform_info.dart';
+
 /// 絶対時刻表示（`YYYY-MM-DD HH:mm`、端末ローカルタイムゾーン）。
 String formatAbsoluteTime(DateTime time) {
   final local = time.toLocal();
@@ -27,3 +31,28 @@ String formatRelativeTime(DateTime time) {
 /// `absoluteTimeProvider` の値に応じて絶対/相対を切り替える。
 String formatTimestamp(DateTime time, {required bool absolute}) =>
     absolute ? formatAbsoluteTime(time) : formatRelativeTime(time);
+
+/// 時刻ラベル（相対/絶対）を表示する [Text]。
+///
+/// デスクトップでは相対表示のとき、ホバーで絶対日時のツールチップを出す
+/// （#754）。既に絶対日時を表示している場合・モバイルではツールチップを
+/// 付けない（モバイルは投稿の長押しがアクションシートと競合するため）。
+class TimestampText extends StatelessWidget {
+  final DateTime time;
+  final bool absolute;
+  final TextStyle? style;
+
+  const TimestampText(
+    this.time, {
+    required this.absolute,
+    this.style,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(formatTimestamp(time, absolute: absolute), style: style);
+    if (absolute || !isDesktop) return text;
+    return Tooltip(message: formatAbsoluteTime(time), child: text);
+  }
+}

@@ -682,11 +682,9 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
                       children: [
                         ...children,
                         const SizedBox(height: 4),
-                        Text(
-                          formatTimestamp(
-                            message.createdAt,
-                            absolute: ref.watch(absoluteTimeProvider),
-                          ),
+                        TimestampText(
+                          message.createdAt,
+                          absolute: ref.watch(absoluteTimeProvider),
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: textColor.withValues(alpha: 0.7),

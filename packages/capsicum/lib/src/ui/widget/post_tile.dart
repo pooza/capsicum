@@ -13,6 +13,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
+import '../../platform/platform_info.dart';
 import '../../url_helper.dart';
 import '../util/post_action_error.dart';
 import '../../provider/account_manager_provider.dart';
@@ -460,12 +461,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   for (final role in displayPost.author.roles)
                                     ..._buildRoleIcon(context, role),
                                   const SizedBox(width: 4),
-                                  Icon(
-                                    _scopeIcon(displayPost.scope),
-                                    size: 14,
-                                    color: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.color,
+                                  _maybeDesktopTooltip(
+                                    _scopeLabel(displayPost.scope),
+                                    Icon(
+                                      _scopeIcon(displayPost.scope),
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
                                   ),
                                   if (displayPost.localOnly) ...[
                                     const SizedBox(width: 2),
@@ -478,11 +482,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     ),
                                   ],
                                   const SizedBox(width: 4),
-                                  Text(
-                                    _formatTime(displayPost.postedAt),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                  _maybeDesktopTooltip(
+                                    _absoluteTimeTooltip(displayPost.postedAt),
+                                    Text(
+                                      _formatTime(displayPost.postedAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1830,6 +1837,26 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   IconData _scopeIcon(PostScope scope) =>
       postScopeIcon(scope, ref.read(currentAdapterProvider));
+
+  String _scopeLabel(PostScope scope) =>
+      postScopeLabel(scope, ref.read(currentAdapterProvider));
+
+  /// 相対日時表示のときだけ、ホバー用の絶対日時文字列を返す（#754）。
+  /// 既に絶対日時を表示している場合はツールチップ不要なので null。
+  String? _absoluteTimeTooltip(DateTime postedAt) {
+    if (ref.watch(absoluteTimeProvider)) return null;
+    final local = postedAt.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// デスクトップでのみ [child] をツールチップで包む（#753 / #754）。
+  /// モバイルは投稿の長押しでアクションシートを出すため、Tooltip の長押し
+  /// 起動と競合させない。[message] が null/空のときも素の [child] を返す。
+  Widget _maybeDesktopTooltip(String? message, Widget child) {
+    if (!isDesktop || message == null || message.isEmpty) return child;
+    return Tooltip(message: message, child: child);
+  }
 }
 
 class _CountChip extends StatelessWidget {

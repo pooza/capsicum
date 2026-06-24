@@ -436,11 +436,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       return Row(
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
-          Text(
-            formatTimestamp(
-              notification.createdAt,
-              absolute: ref.watch(absoluteTimeProvider),
-            ),
+          TimestampText(
+            notification.createdAt,
+            absolute: ref.watch(absoluteTimeProvider),
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -474,11 +472,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          formatTimestamp(
-            notification.createdAt,
-            absolute: ref.watch(absoluteTimeProvider),
-          ),
+        TimestampText(
+          notification.createdAt,
+          absolute: ref.watch(absoluteTimeProvider),
           style: theme.textTheme.bodySmall,
         ),
       ],
