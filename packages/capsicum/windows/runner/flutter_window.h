@@ -5,6 +5,7 @@
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -48,6 +49,11 @@ class FlutterWindow : public Win32Window {
   // ワーカーが取得した Channel URI。UI スレッドの InvokeMethod へ受け渡す。
   std::mutex wns_mutex_;
   std::string wns_uri_;
+  // requestChannelUri の受信ワーカーを 1 度だけ起動するための再入ガード
+  // (#763)。RunWnsChannelReceiver は購読後プロセス終了までブロックするため、
+  // 複数回起動すると MTA スレッドと PushNotificationReceived 購読が多重化し、
+  // 同一 raw 通知でトーストが複数回出る。
+  std::atomic<bool> wns_receiver_started_{false};
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

@@ -119,16 +119,20 @@ class ResidentModeService with WindowListener, TrayListener {
   }
 
   @override
-  void onTrayMenuItemClick(MenuItem menuItem) {
+  void onTrayMenuItemClick(MenuItem menuItem) async {
     switch (menuItem.key) {
       case _kShow:
         _showWindow();
       case _kExit:
         // 明示終了。preventClose を解いてから destroy し、onWindowClose の
-        // hide 分岐に吸われず確実にプロセスを終わらせる。
+        // hide 分岐に吸われず確実にプロセスを終わらせる。setPreventClose は
+        // プラットフォームチャネル越しの非同期呼び出しのため、await せずに
+        // destroy すると解除が反映される前にウィンドウが閉じ、onWindowClose の
+        // hide 分岐に吸われうる。_enabled=false ガードで救済されるが綱渡りなので
+        // 解除完了を待ってから終了する (#763)。
         _enabled = false;
-        windowManager.setPreventClose(false);
-        windowManager.destroy();
+        await windowManager.setPreventClose(false);
+        await windowManager.destroy();
     }
   }
 

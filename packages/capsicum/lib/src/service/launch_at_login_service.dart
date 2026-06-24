@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../constants.dart';
+import '../util/exception_scrub.dart';
 
 /// デスクトップのログイン時起動 (#751)。OS のログイン項目 / 自動起動に
 /// 本アプリを登録 / 解除する。`launchAtLoginProvider` の値変化を受けて
@@ -43,8 +45,20 @@ class LaunchAtLoginService {
       } else {
         await launchAtStartup.disable();
       }
-    } catch (e) {
+    } catch (e, st) {
+      // 失敗すると pref（真実源）と OS の自動起動状態が黙って乖離し、UI は
+      // 「オン」のまま実際には起動しない。debugPrint だけでは本番で観測でき
+      // ないため Sentry に記録して乖離を可視化する (#763)。意図値 (value) を
+      // タグに残し、enable/disable どちらが失敗したか追えるようにする。
       debugPrint('capsicum: launch_at_login: setEnabled($value) failed: $e');
+      Sentry.captureException(
+        scrubException(e),
+        stackTrace: st,
+        withScope: (scope) {
+          scope.setTag('service', 'launch_at_login');
+          scope.setTag('desired', value.toString());
+        },
+      );
     }
   }
 }
