@@ -15,3 +15,11 @@ x86/
 *.[Cc]ache
 # but keep track of directories ending in .cache
 !*.[Cc]ache/
+
+# runner/*_test.cpp を cl で直接コンパイルしたときに出る成果物
+# (#474 の web_push_* / notification_type_label / push_diagnostics のスタンドアロン
+# 単体テスト)。ソースに .obj/.exe をコミットすることはないので一括無視する。
+runner/*.obj
+runner/*.exe
+runner/*.ilk
+runner/*.pdb

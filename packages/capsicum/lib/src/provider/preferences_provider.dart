@@ -43,6 +43,8 @@ const _tabConfigPrefix = 'tab_config_';
 const _avatarShapeKey = 'avatar_shape';
 const _mouseDragScrollKey = 'mouse_drag_scroll';
 const _updateCheckEnabledKey = 'update_check_enabled';
+const _residentModeKey = 'resident_mode';
+const _launchAtLoginKey = 'launch_at_login';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 
@@ -854,6 +856,52 @@ class UpdateCheckEnabledNotifier extends Notifier<bool> {
   }
 }
 
+/// デスクトップ常駐モード (#752)。オンにするとメインウィンドウを閉じても
+/// アプリは終了せず、トレイ (Windows / Linux) / メニューバー (macOS) に常駐し、
+/// #569 の WebSocket streaming 経由でローカル通知を受け続ける。default OFF。
+///
+/// ウィンドウの閉じる傍受 (setPreventClose) を起動直後に設定する必要があるため
+/// 同期ロードする (#652 / #715 / #746 と同じ pre-warm prefs パターン)。非同期
+/// ロードだと閉じる操作の初回だけ傍受が間に合わず終了してしまう。
+final residentModeProvider = NotifierProvider<ResidentModeNotifier, bool>(
+  ResidentModeNotifier.new,
+);
+
+class ResidentModeNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return sharedPrefsOrThrow.getBool(_residentModeKey) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_residentModeKey, value);
+  }
+}
+
+/// デスクトップのログイン時起動 (#751)。OS のログイン項目への登録は
+/// `LaunchAtLoginService` 側で行い、ここは pref の真実源だけを持つ
+/// （値変化を main の ref.listen で OS に反映する）。default OFF。
+final launchAtLoginProvider = NotifierProvider<LaunchAtLoginNotifier, bool>(
+  LaunchAtLoginNotifier.new,
+);
+
+class LaunchAtLoginNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return sharedPrefsOrThrow.getBool(_launchAtLoginKey) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_launchAtLoginKey, value);
+  }
+}
+
 /// Per-account pinned hashtags for home screen tabs.
 ///
 /// Takes an account storage key as the family parameter.
@@ -1220,16 +1268,11 @@ final restoreReadPositionProvider =
 class RestoreReadPositionNotifier extends Notifier<bool> {
   @override
   bool build() {
-    _load();
-    return true;
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_restoreReadPositionKey);
-    if (saved != null) {
-      state = saved;
-    }
+    // pre-warm 済み SharedPreferences から同期で読む (#746)。非同期ロードで
+    // 初期値 true を返すと、HomeScreen._restoreMarker が _load 完了前に
+    // 同期参照し、OFF 設定者でも getMarkers → 旧読み位置へジャンプしてしまう
+    // race になる。#579 / #652 と同じく同期化して race を構造的に消す。
+    return sharedPrefsOrThrow.getBool(_restoreReadPositionKey) ?? true;
   }
 
   Future<void> toggle() async {

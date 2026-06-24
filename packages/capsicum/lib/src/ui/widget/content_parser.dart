@@ -841,9 +841,17 @@ List<_Node> _parseHtml(String html) {
           final url = m[1]!;
           // 内側の <span> 等を除いた可視ラベル。
           final label = m[2]!.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-          // ハッシュタグ / メンション anchor は素のテキストに戻し、MFM
-          // パーサ側で hashtag / mention ノードとして再検出させる。
-          if (label.startsWith('#') || label.startsWith('@')) return label;
+          // 本物のハッシュタグ / メンション anchor はラベルが単一トークン
+          // （`#tag` / `@user@host`、内部空白なし）。これだけを素のテキストへ
+          // 戻し、MFM パーサ側で hashtag / mention ノードとして再検出させる
+          // (#595)。ラベル先頭がたまたま `#` / `@` でも空白を含むなら実リンクの
+          // ラベルなので、href を捨てずリンクとして維持する (#750: pixiv 等の
+          // `[#... 文章 ...](url)` 形式リンクが壊れていた)。
+          final isSingleToken = !RegExp(r'\s').hasMatch(label);
+          if (isSingleToken &&
+              (label.startsWith('#') || label.startsWith('@'))) {
+            return label;
+          }
           // ラベルが空 / URL と同一なら裸の URL にして自動リンクに任せる。
           if (label.isEmpty || label == url) return url;
           return '[$label]($url)';

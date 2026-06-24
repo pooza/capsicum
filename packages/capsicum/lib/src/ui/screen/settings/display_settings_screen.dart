@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../platform/platform_info.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
-import '../../../service/update_checker.dart';
 
 class DisplaySettingsScreen extends ConsumerWidget {
   const DisplaySettingsScreen({super.key});
@@ -100,33 +98,10 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(restoreReadPositionProvider.notifier).toggle(),
           ),
-          // マウスドラッグでのスクロールはデスクトップ専用 (#574)。トラック
-          // パッド 2 本指スワイプとの両立が崩れるケースがあるためオプトイン。
-          if (isDesktop)
-            SwitchListTile(
-              title: const Text('マウスドラッグでスクロール'),
-              subtitle: const Text(
-                'Drawer・タブ列をマウスで掴んで横スクロールできるようにします。'
-                'トラックパッドの 2 本指スワイプが効きにくくなることがあります',
-              ),
-              value: ref.watch(mouseDragScrollProvider),
-              onChanged: (value) =>
-                  ref.read(mouseDragScrollProvider.notifier).setEnabled(value),
-            ),
-          // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX 直配) のみ
-          // 意味がある設定 (#641)。ストア配布ビルドでは
-          // [kIsDirectChannelBuild] が false なので、設定エントリ自体を隠す。
-          if (kIsDirectChannelBuild)
-            SwitchListTile(
-              title: const Text('起動時に新しいバージョンを確認'),
-              subtitle: const Text(
-                'GitHub Releases の最新版を確認し、新しいバージョンがあれば通知します',
-              ),
-              value: ref.watch(updateCheckEnabledProvider),
-              onChanged: (value) => ref
-                  .read(updateCheckEnabledProvider.notifier)
-                  .setEnabled(value),
-            ),
+          // 常駐 (#752) / ログイン時起動 (#751) / マウスドラッグスクロール (#574) /
+          // 起動時の更新確認 (#641) などデスクトップ専用の設定は「デスクトップ」
+          // 画面 (DesktopSettingsScreen) へ分離した。ここはモバイルと共通の表示
+          // 設定のみを置く。
         ],
       ),
     );

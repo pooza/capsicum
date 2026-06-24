@@ -27,13 +27,17 @@ class HashtagTimelineNotifier
   @override
   Future<TimelineState> build(String arg) async {
     final adapter = ref.watch(currentAdapterProvider);
+    final contextKey = timelineContextKey(
+      ref.watch(currentAccountProvider)?.key,
+      'tag:$arg',
+    );
     if (adapter == null || adapter is! HashtagSupport) {
-      return const TimelineState(hasMore: false);
+      return TimelineState(hasMore: false, contextKey: contextKey);
     }
 
     final (primary, all) = parseHashtagSpec(arg);
     final hideLivecure = ref.watch(hideLivecureProvider);
-    return fetchUntilVisible(
+    final result = await fetchUntilVisible(
       pageSize: _pageSize,
       hideLivecure: hideLivecure,
       fetch: (maxId) => (adapter as HashtagSupport).getPostsByHashtag(
@@ -42,6 +46,7 @@ class HashtagTimelineNotifier
         all: all,
       ),
     );
+    return result.copyWith(contextKey: contextKey);
   }
 
   Future<void> loadMore() async {

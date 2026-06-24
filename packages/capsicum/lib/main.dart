@@ -28,6 +28,8 @@ import 'src/platform/platform_info.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
 import 'src/service/desktop_notification_dispatcher.dart';
+import 'src/service/launch_at_login_service.dart';
+import 'src/service/resident_mode_service.dart';
 import 'src/service/apns_service.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
@@ -38,6 +40,7 @@ import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/service/window_state_service.dart';
+import 'src/service/wns_service.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
 
@@ -116,6 +119,12 @@ Future<void> main() async {
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.
   ApnsService.initialize();
+
+  // Windows は WNS Channel URI を pull 取得する (#474)。ネイティブからの
+  // onChannelUri を取りこぼさないよう runApp() 前に handler を張り、取得を起動。
+  if (Platform.isWindows) {
+    WnsService.initialize();
+  }
 
   // macOS メニューバー「About capsicum」→ Flutter 側ダイアログを開くための
   // MethodChannel handler。Drawer の「capsicum について」と同じ表示に統一。
@@ -387,6 +396,13 @@ void _startApp() {
   // (#366)。SentryFlutter.init より後に走るのでこの位置に配置している。
   unawaited(_flushPushFailureRecord());
 
+  // Windows: 完全終了中 WNS 受信のバックグラウンドタスク (#474 フェーズ C) が
+  // LocalState に残した観測レコードを Sentry に吸い上げる。AppContainer の
+  // bg task は Sentry SDK もコンソールも持てないため、runner 経由で取り出す。
+  if (Platform.isWindows) {
+    unawaited(_flushWnsPushDiagnostics());
+  }
+
   // Firebase / FCM 初期化（Android）。スプラッシュ画面でプッシュ登録前に await する。
   firebaseReady = _initFirebase();
 
@@ -480,6 +496,68 @@ Future<void> _flushPushFailureRecord() async {
       'keychainStatus=${record.keychainStatus}, '
       'triedPrefixes=${record.triedPrefixes}, '
       'decryptError=${record.decryptError})',
+    );
+  } catch (_) {
+    // ignore
+  }
+}
+
+/// Windows: 完全終了中 WNS 受信のバックグラウンドタスク (#474 フェーズ C) が
+/// LocalState に残した観測レコード（push_diagnostics の単一スロット JSON）を
+/// runner 経由で取り出し、Sentry に吸い上げる。bg task は別プロセス・純 C++ で
+/// Sentry SDK を持てないため、macOS NSE の FailureRecorder と同じく「ネイティブ
+/// が記録 → 次回起動で Dart が回収」方式をとる。
+///
+/// 単一スロット = 最後のイベント + 累計件数のみ保持し、起動時に 1 回だけ
+/// captureMessage で吸い上げる（volume を抑える）。bgtask.shown / not_encrypted
+/// は正常系なので info、それ以外（鍵不在・復号失敗・例外等）は warning。
+/// エラーは握りつぶす（観測機構が本体を落とさない）。
+Future<void> _flushWnsPushDiagnostics() async {
+  try {
+    final raw = await WnsService.consumePushDiagnostics();
+    if (raw == null || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return;
+    final code = decoded['code'];
+    if (code is! String || code.isEmpty) return;
+    final count = decoded['count'];
+    final countStr = count is int ? count.toString() : '?';
+    final host = decoded['host'];
+    final atMs = decoded['at_ms'];
+
+    // 正常系（表示成功・暗号化通知でない・raw 以外で起動）は info、異常系は
+    // warning。ネイティブ push_diagnostics.cpp の IsBenignCode と揃えること。
+    const benign = {'bgtask.shown', 'bgtask.not_encrypted', 'bgtask.not_raw'};
+    final level = benign.contains(code)
+        ? SentryLevel.info
+        : SentryLevel.warning;
+
+    if (Sentry.isEnabled) {
+      await Sentry.captureMessage(
+        'push.wns_bgtask: $code (count=$countStr)',
+        level: level,
+        withScope: (scope) {
+          scope.setTag('service', 'wns_push_diagnostics');
+          scope.setTag('push.bgtask.code', code);
+          // code ごとに別グループへ分割する（_flushPushFailureRecord と同方針）。
+          scope.fingerprint = ['push.wns_bgtask', code];
+          if (host is String && host.isNotEmpty) {
+            scope.setTag('push.host', host);
+          }
+          // count は基数が際限なく増えるため tag にしない（検索・集計を汚す）。
+          // メッセージ本文と push context に載せて観測する。
+          final pushContext = <String, dynamic>{'bgtask_count': countStr};
+          if (atMs is int) {
+            pushContext['bgtask_last_at'] = DateTime.fromMillisecondsSinceEpoch(
+              atMs,
+            ).toIso8601String();
+          }
+          scope.setContexts('push', pushContext);
+        },
+      );
+    }
+    _logDev(
+      'capsicum: push.wns_bgtask: flushed $code (count=$countStr, host=$host)',
     );
   } catch (_) {
     // ignore
@@ -1037,6 +1115,15 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     // して accountManagerProvider の listen（全ログイン垢の並列購読）を維持する。
     if (isDesktop) {
       ref.read(desktopNotificationDispatcherProvider);
+      // 常駐モード (#752): window / tray リスナーを張り、保存済みの設定値を
+      // 適用する。値変化は build() の ref.listen で追従する。v1.40 では
+      // Windows のみ有効化（isSupported）。macOS / Linux は #757 で検証後に
+      // 広げる。未サポート OS で window_manager / tray_manager を一切触らない
+      // ことで、Linux のトレイ実行時依存欠如による不安定化を避ける。
+      if (ResidentModeService.isSupported) {
+        ResidentModeService.instance.attach();
+        ResidentModeService.instance.setEnabled(ref.read(residentModeProvider));
+      }
     }
   }
 
@@ -1069,6 +1156,17 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
 
   @override
   Widget build(BuildContext context) {
+    // 常駐モード (#752) の設定変化を service に反映する。desktop のみ意味を持つ
+    // が、provider は全プラットフォームに存在するので listen 自体は無害。
+    ref.listen<bool>(residentModeProvider, (_, next) {
+      ResidentModeService.instance.setEnabled(next);
+    });
+    // ログイン時起動 (#751) の設定変化を OS に反映する。OS 側はトグル時のみ
+    // 変更すればよく、起動毎の再適用は不要なため initial apply はしない。
+    ref.listen<bool>(launchAtLoginProvider, (_, next) {
+      LaunchAtLoginService.setEnabled(next);
+    });
+
     final router = ref.watch(routerProvider);
     final seedColor = ref.watch(themeSeedColorProvider);
     final themeMode = ref.watch(themeModeProvider);

@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.39.0+125
+version: 1.40.0+135
 
 environment:
   sdk: ^3.11.0
@@ -59,6 +59,13 @@ dependencies:
   # 置く」運用 (e.g. Amazon Prime Video と左右並列) を支える。モバイルは
   # OS がウィンドウを持たないため対象外。
   window_manager: ^0.5.1
+  # デスクトップ常駐モード (#752) のシステムトレイ / メニューバー常駐。
+  # window_manager の close 傍受 + hide と組み合わせ、ウィンドウを閉じても
+  # トレイ (Windows / Linux) / メニューバー (macOS) に常駐させる。モバイル対象外。
+  tray_manager: ^0.5.0
+  # デスクトップのログイン時起動 (#751)。OS のログイン項目 / 自動起動に登録。
+  # v1.40 は Windows のみ有効化（macOS/Linux は #757 で検証後）。モバイル対象外。
+  launch_at_startup: ^0.5.0
   # サポーター（投げ銭）の消耗型 IAP (#428)。iOS StoreKit / Android Play
   # Billing を統一 API で扱う。購入導線は iOS / Android のみ（macOS は後日、
   # Linux / Windows はストア IAP 不在）。商品タイプ・保持先は

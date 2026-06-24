@@ -30,6 +30,11 @@ jobs:
       # WINDOWS_SELFSIGNED_PFX_PASSWORD: 上記 PFX の export password
       WINDOWS_SELFSIGNED_PFX_BASE64: ${{ secrets.WINDOWS_SELFSIGNED_PFX_BASE64 }}
       WINDOWS_SELFSIGNED_PFX_PASSWORD: ${{ secrets.WINDOWS_SELFSIGNED_PFX_PASSWORD }}
+      # capsicum-relay の共有シークレット。push 登録の X-Relay-Secret に使う。
+      # job レベルに上げておくことで下のガード step の if: 条件で参照できる
+      # (secrets context は step の if: で直接読めないため env 経由が必要)。
+      # 未投入だと CI 産 MSIX が relay 登録で 401 になり push が全滅する (#474)。
+      RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
       # Microsoft Store credentials (#544、on-hold)。job レベルで env に
       # 上げておくことで publish step の if: 条件を評価できる。
       # secrets 未投入なら空文字列になり publish step は skip される。
@@ -105,6 +110,19 @@ jobs:
           Write-Host "::error::Tag-driven build requires WINDOWS_SELFSIGNED_PFX_BASE64. Refusing to sign a release MSIX with a non-reproducible ephemeral certificate."
           exit 1
 
+      - name: Guard tag-driven build against missing RELAY_SECRET
+        # タグ駆動 (リリース) build で RELAY_SECRET が未投入だと、CI 産 MSIX は
+        # capsicum-relay への push 登録で X-Relay-Secret 不一致により 401 になり、
+        # チャンネル URI を登録できず WNS push が出荷ビルドで全滅する (#474)。
+        # 一度この欠落で本番直前まで気付けなかったため、リリースでは明示 fail
+        # させる。PR / 非タグ build は RELAY_SECRET なしでも通す (push 無効の
+        # 動作確認は成立する)。
+        if: ${{ startsWith(github.ref, 'refs/tags/') && env.RELAY_SECRET == '' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Tag-driven build requires RELAY_SECRET. Without it the Windows MSIX cannot authenticate to capsicum-relay (HTTP 401 on push registration), so push notifications are dead in the shipped build."
+          exit 1
+
       - name: Prepare signing certificate
         # 自己署名 MSIX 直配 (#423) 用の PFX を準備する。
         # Subject は MSIX の publisher 識別子 (pubspec.yaml の
@@ -143,20 +161,50 @@ jobs:
           [System.IO.File]::WriteAllBytes($cerPath, $x509.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
           "CERT_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Package MSIX (self-signed)
-        # pubspec.yaml の msix_config を読んで MSIX を生成し、上で用意した
-        # PFX で signtool 経由で署名する (msix package が内部で signtool を呼ぶ)。
-        # --certificate-path 指定時は pubspec.yaml の `store: true` よりも
-        # 署名フローが優先される。Microsoft Store 公開 (#544) を再開する際は、
-        # 別途 `--store` で未署名 MSIX を生成する step を組む。
-        # --build-windows false を必ず付けて、前段の `Build Windows release`
-        # step で渡した --dart-define (SENTRY_DSN / RELAY_SECRET) を保持した
-        # build output をそのまま MSIX に詰める。デフォルトの true だと msix
-        # package が裏で再ビルドして dart-define が落ちる (Codex P1 指摘)。
+      # MSIX 生成は build → patch → pack の 3 段に分ける (#474 フェーズ C)。
+      # msix package (3.17.0) は windows.backgroundTasks /
+      # activatableClass.inProcessServer 拡張を msix_config から宣言できないため、
+      # msix:build が出した AppxManifest.xml に patch スクリプトで拡張を注入し、
+      # その後 msix:pack でパッケージ化・署名する。一括の msix:create では
+      # patch を挟めない。詳細は patch_appxmanifest_pushtask.ps1 のヘッダ参照。
+      #
+      # 3 段すべてに --build-windows false / --certificate-path を渡す:
+      # - --build-windows false で、前段 `Build Windows release` が --dart-define
+      #   (SENTRY_DSN / RELAY_SECRET) 付きで出した build output をそのまま使う
+      #   (true だと裏で再ビルドして dart-define が落ちる。Codex P1 指摘)。
+      #   build output には CMake install で push_background_task.dll も同梱済み。
+      # - --certificate-path 指定で pubspec.yaml の `store: true` より署名フローが
+      #   優先される。manifest の Publisher も cert 主体から解決されるため build
+      #   段にも渡す。Microsoft Store 公開 (#544) 再開時は別途 `--store` を組む。
+      - name: Build MSIX files (unpacked)
         shell: pwsh
         run: |
           Push-Location packages/capsicum
-          dart run msix:create `
+          dart run msix:build `
+            --build-windows false `
+            --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
+            --certificate-password "$env:CERT_PASSWORD"
+          Pop-Location
+
+      - name: Patch AppxManifest with push background task
+        # msix:build が build/windows/x64/runner/Release/AppxManifest.xml を出すので、
+        # そこへ backgroundTasks (Application 配下) と activatableClass.inProcessServer
+        # (Package 直下) を注入する。スクリプトは冪等 (注入済みなら skip)。
+        # ReadAllText がプロセス cwd で相対解決するため絶対パスで渡す。
+        shell: pwsh
+        run: |
+          $manifest = Join-Path $env:GITHUB_WORKSPACE `
+            "packages/capsicum/build/windows/x64/runner/Release/AppxManifest.xml"
+          & "$env:GITHUB_WORKSPACE/packaging/windows/patch_appxmanifest_pushtask.ps1" `
+            -ManifestPath $manifest
+
+      - name: Pack MSIX (self-signed)
+        # patch 済み AppxManifest を含む build folder をパッケージ化し、用意した
+        # PFX で signtool 経由で署名する (msix package が内部で signtool を呼ぶ)。
+        shell: pwsh
+        run: |
+          Push-Location packages/capsicum
+          dart run msix:pack `
             --build-windows false `
             --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
             --certificate-password "$env:CERT_PASSWORD"

@@ -17,6 +17,7 @@ import 'fcm_service.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
+import 'wns_service.dart';
 
 /// プッシュ通知のリレーサーバー登録と Web Push サブスクリプション登録を
 /// オーケストレーションするサービス。
@@ -40,15 +41,32 @@ class PushRegistrationService {
       accounts.any((a) => isPresetServer(a.key.host));
 
   /// 現在のプラットフォームで push backend (APNs/FCM 経由 + capsicum-relay)
-  /// が本配線済みか。macOS / Linux / Windows は本配線未対応のため
-  /// (#468 / #475 / #474 で確定後に切り替え予定)、UI と service 層で push
-  /// 機能を gate するときの単一の真実源とする (#502)。
-  // iOS / Android に加え macOS も APNs 本配線済み (#468)。Linux / Windows は
-  // ネイティブ push 経路が無い (#474 on-hold) ため push 登録 UI も出さない。
+  /// が本配線済みか。macOS / Linux / Windows のうち未対応のものは false にし、
+  /// UI と service 層で push 機能を gate するときの単一の真実源とする (#502)。
+  // iOS / Android に加え macOS も APNs 本配線済み (#468)。
+  // Windows (#474) も WNS で本配線完了: Channel URI 取得 (フェーズ1) + 受信/復号
+  // (フェーズ2) + 起動中 in-process 受信 (フェーズ3) が揃い、relay も
+  // device_type='windows' で WNS raw 送出に対応済み (capsicum-relay d87ef2d)。
+  // 未起動受信 (バックグラウンドタスク) は後続だが、起動中は #569 と併存して
+  // 通知できるためゲートを立てる。Linux はネイティブ push 経路が無い (#475)。
   static bool get isPushBackendWired =>
-      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+      Platform.isIOS ||
+      Platform.isAndroid ||
+      Platform.isMacOS ||
+      Platform.isWindows;
 
   static final _client = PushRelayClient();
+
+  /// Windows: 鍵セット変更後に LocalState のバックグラウンドタスク用鍵コピー
+  /// (push_keys.json) を現在の鍵セットへ再同期する (#474 フェーズ C)。ログアウト
+  /// で消した鍵を bg task からも確実に除き、追加した鍵を反映する。これを怠ると、
+  /// アプリ完全終了中の bg task がログアウト済みアカウントの古い鍵で push を
+  /// 復号・表示し続け、平文の秘密鍵も次回起動まで残る。Windows 以外では no-op。
+  /// ベストエフォート（WnsService 側で失敗は握り潰す）。
+  static Future<void> _syncWnsPushKeys() async {
+    if (!Platform.isWindows) return;
+    await WnsService.syncPushKeys();
+  }
 
   static StreamSubscription<String>? _tokenRefreshSub;
 
@@ -131,10 +149,13 @@ class PushRegistrationService {
         return;
       }
 
-      // macOS は iOS と同じ APNs だが、relay 側で APNs/FCM 振り分けと
-      // 集計を分けるため device_type は 'macos' で登録する (#468)。
+      // relay 側で APNs/FCM/WNS の振り分けと集計を分けるため device_type を
+      // プラットフォーム別に登録する。macOS は iOS と同じ APNs だが 'macos'
+      // (#468)、Windows は WNS で 'windows' (#474)。
       final deviceType = Platform.isMacOS
           ? 'macos'
+          : Platform.isWindows
+          ? 'windows'
           : (Platform.isIOS ? 'ios' : 'android');
 
       // リレーサーバーに登録
@@ -363,6 +384,13 @@ class PushRegistrationService {
       accountKey,
       host: account.key.host,
     );
+
+    // Windows: ログアウトで消した鍵を LocalState のバックグラウンドタスク用
+    // コピー (push_keys.json) からも除く (#474 フェーズ C)。これを怠ると、
+    // relay の unsubscribe が遅延/失敗した窓でアプリ完全終了中に push が来ると、
+    // bg task が残った古い鍵で復号してログアウト済みアカウントの通知を表示して
+    // しまう。
+    await _syncWnsPushKeys();
   }
 
   /// デバイスの relay row を削除する。token rotation 時など、共有 row を
@@ -435,6 +463,9 @@ class PushRegistrationService {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
+    } else if (Platform.isWindows) {
+      // WNS Channel URI 失効に伴う再取得 (#474 フェーズ2 以降で emit)。
+      stream = WnsService.onTokenChanged;
     } else {
       return;
     }
@@ -516,9 +547,27 @@ class PushRegistrationService {
     // registerAccount は in-flight ガード付きで内部 try/catch も備えるため、
     // 並列化して起動時のブロック時間を短縮する。N アカウント × 2 HTTP が
     // 直列で数秒積み上がっていたのを 1 ラウンドに圧縮する。
-    await Future.wait(
-      accounts.map((a) => registerAccount(a, eligible: hasPreset)),
-    );
+    //
+    // ただし Windows は flutter_secure_storage が単一ファイル
+    // (flutter_secure_storage.dat) を read-modify-write するため、複数アカウント
+    // を並列登録すると PushKeyStore の write 同士が同ファイルを同時に開いて
+    // PathAccessException（共有違反）になる (#474)。iOS/Android/macOS は
+    // Keychain/Keystore が並行安全なので並列のまま。Windows のみ直列化する。
+    if (Platform.isWindows) {
+      for (final a in accounts) {
+        await registerAccount(a, eligible: hasPreset);
+      }
+    } else {
+      await Future.wait(
+        accounts.map((a) => registerAccount(a, eligible: hasPreset)),
+      );
+    }
+
+    // Windows: 登録で生成・更新した鍵を LocalState のバックグラウンドタスク用
+    // コピー (push_keys.json) へ反映する (#474 フェーズ C)。起動時のネイティブ
+    // 初回同期は Dart の鍵生成より先に走ることがあり取りこぼすため、登録完了後に
+    // 再同期して確実に最新化する。
+    await _syncWnsPushKeys();
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。
@@ -534,6 +583,8 @@ class PushRegistrationService {
       stream = ApnsService.onTokenChanged;
     } else if (Platform.isAndroid) {
       stream = FcmService.onTokenChanged;
+    } else if (Platform.isWindows) {
+      stream = WnsService.onTokenChanged;
     } else {
       return null;
     }
@@ -567,6 +618,8 @@ class PushRegistrationService {
     // macOS は iOS と同じ APNs MethodChannel (ApnsService) からトークンを得る。
     if (Platform.isIOS || Platform.isMacOS) return ApnsService.deviceToken;
     if (Platform.isAndroid) return FcmService.deviceToken;
+    // Windows は WNS Channel URI を device token とみなす (#474)。
+    if (Platform.isWindows) return WnsService.deviceToken;
     return null;
   }
 

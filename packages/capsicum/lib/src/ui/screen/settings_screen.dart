@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../constants.dart';
+import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../service/push_registration_service.dart';
@@ -51,6 +52,16 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/touch'),
           ),
+          // デスクトップ専用設定（常駐 #752 / ログイン時起動 #751 / マウスドラッグ
+          // スクロール #574 / 起動時更新確認 #641）。モバイルでは出さない。
+          if (isDesktop)
+            ListTile(
+              leading: const Icon(Icons.desktop_windows),
+              title: const Text('デスクトップ'),
+              subtitle: const Text('ウィンドウ常駐・ログイン時起動など'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/settings/desktop'),
+            ),
           // macOS / Linux / Windows は push 通知を本配線していない
           // (#467 / #471 / #423)。本配線が入るまで設定エントリも隠す。
           if (PushRegistrationService.isPushBackendWired)

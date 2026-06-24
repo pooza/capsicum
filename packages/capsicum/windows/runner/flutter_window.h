@@ -6,8 +6,16 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <mutex>
+#include <string>
 
 #include "win32_window.h"
+
+// WNS Channel URI 取得ワーカーが取得完了を UI スレッドへ通知するための
+// カスタムメッセージ (#474 フェーズ1)。flutter::MethodChannel の InvokeMethod は
+// プラットフォーム（UI）スレッド affinity を持つため、MTA ワーカーで取得した
+// 結果を PostMessage で UI スレッドに marshal してから Dart へ返す。
+#define WM_WNS_CHANNEL_READY (WM_APP + 1)
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -32,6 +40,14 @@ class FlutterWindow : public Win32Window {
 
   // ナウプレ取得 (SMTC) 用メソッドチャンネル (#466 / #484)。
   std::unique_ptr<flutter::MethodChannel<>> now_playing_channel_;
+
+  // WNS push (Channel URI 取得) 用メソッドチャンネル (#474 フェーズ1)。
+  // Dart 側 WnsService が 'requestChannelUri' を呼ぶと MTA ワーカーで URI を
+  // 取得し、完了後に 'onChannelUri' を InvokeMethod で Dart へ返す。
+  std::unique_ptr<flutter::MethodChannel<>> wns_channel_;
+  // ワーカーが取得した Channel URI。UI スレッドの InvokeMethod へ受け渡す。
+  std::mutex wns_mutex_;
+  std::string wns_uri_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

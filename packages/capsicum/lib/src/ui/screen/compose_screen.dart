@@ -24,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
@@ -37,6 +38,43 @@ import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
 import 'image_text_overlay_screen.dart';
 import 'settings/account_settings_screen.dart';
+
+/// compose セッションの引用元を解決する純粋部分 (#756)。
+///
+/// 新規引用 (`quoteTo`) を最優先し、無ければ引用付き投稿の「削除して再編集」
+/// (`redraft.quote`) を引き継ぐ。redraft 分岐 (#703) が quote を取りこぼし、
+/// 引用付き投稿を再編集すると引用が落ちていた不具合への対応。
+@visibleForTesting
+Post? resolveComposeQuote(Post? quoteTo, Post? redraft) =>
+    quoteTo ?? redraft?.quote;
+
+/// MFM 装飾タグ挿入 (#688) の純粋部分。選択範囲 (base/extent) を正規化し、
+/// `$[tag 選択文字列]` を挿入した後のテキストとキャレット位置を返す。
+///
+/// - 後ろ向き (右→左) ドラッグ選択で `baseOffset > extentOffset` になっても
+///   `TextSelection.start/end` の min/max で正規化するため `RangeError` を
+///   投げない (#745)。
+/// - 選択なし (offset == -1) は末尾挿入に倒す。
+@visibleForTesting
+({String text, int caret}) buildMfmInsertion(
+  String text,
+  int baseOffset,
+  int extentOffset,
+  String tag,
+) {
+  final sel = TextSelection(baseOffset: baseOffset, extentOffset: extentOffset);
+  final start = sel.start < 0 ? text.length : sel.start;
+  final end = sel.end < 0 ? text.length : sel.end;
+  final selected = start != end ? text.substring(start, end) : '';
+  final insertion = '\$[$tag $selected]';
+  final newText = text.replaceRange(start, end, insertion);
+  final caret = selected.isEmpty
+      ? start +
+            insertion.length -
+            1 // 閉じ `]` の手前
+      : start + insertion.length; // 囲んだ末尾
+  return (text: newText, caret: caret);
+}
 
 class _MediaEntry {
   // トリミング (#577) で差し替えるため可変。drive ファイルは差し替えない。
@@ -263,6 +301,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       widget.redraft?.channelName ??
       widget.replyTo?.channelName ??
       widget.quoteTo?.channelName;
+
+  /// 引用元の投稿。新規引用 (quoteTo) と、引用付き投稿の「削除して再編集」
+  /// (redraft.quote) を同一経路で扱う。redraft 分岐 (#703) が quote を
+  /// 引き継いでおらず引用が落ちていた取りこぼしへの対応 (#756)。
+  Post? get _quotedPost => resolveComposeQuote(widget.quoteTo, widget.redraft);
 
   // Poll state
   bool _pollEnabled = false;
@@ -822,21 +865,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 本文へ MFM 装飾を挿入する。選択範囲があれば `$[tag 選択テキスト]` で囲み、
   /// なければ `$[tag ]` を挿入して内側（閉じ `]` の手前）へカーソルを移す。
   void _insertMfm(String tag) {
-    final text = _controller.text;
     final sel = _controller.selection;
-    final start = sel.baseOffset < 0 ? text.length : sel.baseOffset;
-    final end = sel.extentOffset < 0 ? text.length : sel.extentOffset;
-    final selected = start != end ? text.substring(start, end) : '';
-    final insertion = '\$[$tag $selected]';
-    final newText = text.replaceRange(start, end, insertion);
-    final caret = selected.isEmpty
-        ? start +
-              insertion.length -
-              1 // 閉じ `]` の手前
-        : start + insertion.length; // 囲んだ末尾
+    final result = buildMfmInsertion(
+      _controller.text,
+      sel.baseOffset,
+      sel.extentOffset,
+      tag,
+    );
     _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: caret),
+      text: result.text,
+      selection: TextSelection.collapsed(offset: result.caret),
     );
   }
 
@@ -850,7 +888,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('装飾を追加', style: Theme.of(context).textTheme.titleSmall),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '装飾を追加',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  // 各タグの意味・書式を確認できる学習動線 (#749)。レンダリング
+                  // 対応(#748)を待たずに公式 MFM リファレンスへ誘導する。
+                  TextButton.icon(
+                    onPressed: () => launchUrlSafely(
+                      Uri.parse(
+                        'https://misskey-hub.net/ja/docs/for-users/features/mfm/',
+                      ),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.help_outline, size: 18),
+                    label: const Text('MFMの書式'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               const Text(
                 '選択範囲があれば囲み、なければ \$[tag ] を挿入します',
@@ -2092,7 +2154,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           content: text.isNotEmpty ? text : null,
           scope: _scope,
           inReplyToId: widget.replyTo?.id,
-          quoteId: widget.quoteTo?.id,
+          quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
           sensitive: _effectiveSensitive,
@@ -2254,9 +2316,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               children: [
                 if (widget.replyTo != null)
                   _CollapsiblePreview(post: widget.replyTo!, icon: Icons.reply),
-                if (widget.quoteTo != null)
+                if (_quotedPost != null)
                   _CollapsiblePreview(
-                    post: widget.quoteTo!,
+                    post: _quotedPost!,
                     icon: Icons.format_quote,
                   ),
                 if (_cwEnabled)

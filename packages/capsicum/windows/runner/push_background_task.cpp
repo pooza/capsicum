@@ -1,0 +1,221 @@
+// WNS raw push のバックグラウンドタスク (#474 フェーズ C)。
+//
+// アプリ完全終了中に WNS raw 通知が届くと、OS が PushNotificationTrigger で
+// このタスクを起動する。タスクは backgroundTaskHost.exe にロードされる WinRT
+// in-process server DLL で、Flutter エンジンを起こさず純 C++ で
+//   RawNotification.Content() → HandleWnsRawPayload（復号）→ ShowRawToast
+// を実行する。macOS の Notification Service Extension に相当する。
+//
+// マニフェストに以下を注入して有効化する（msix config では宣言できないため
+// build → patch → pack で挿入。#474 フェーズ C 設計）:
+//   - Application 配下: windows.backgroundTasks (Task Type="pushNotification")
+//     EntryPoint="CapsicumPushTask.PushBackgroundTask"
+//   - Package 配下: windows.activatableClass.inProcessServer
+//     Path=push_background_task.dll / ActivatableClassId 同上
+// runner 側は BackgroundTaskBuilder + PushNotificationTrigger で 1 度登録する。
+//
+// 実行中はランナーの in-process 受信が args.Cancel(true) でこのタスクの発火を
+// 抑止するため、本タスクが走るのは実質「アプリ未起動時」だけになる。
+
+#include <windows.h>
+#include <winerror.h>
+// windows.h の後に置く（HSTRING / WindowsGetStringRawBuffer / IActivationFactory /
+// DllGetActivationFactory 宣言）。
+#include <roapi.h>
+#include <winstring.h>
+
+#include <winrt/Windows.ApplicationModel.Background.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Networking.PushNotifications.h>
+#include <winrt/Windows.Storage.h>
+
+#include <cstdint>
+#include <fstream>
+#include <string>
+#include <string_view>
+
+#include "push_diagnostics.h"
+#include "web_push_receive.h"
+#include "win_toast.h"
+
+namespace {
+
+using winrt::Windows::ApplicationModel::Background::IBackgroundTask;
+using winrt::Windows::ApplicationModel::Background::IBackgroundTaskInstance;
+using winrt::Windows::Networking::PushNotifications::RawNotification;
+
+// このタスクの ActivatableClassId。マニフェストの inProcessServer 宣言と
+// runner 側 TaskEntryPoint と完全一致させること。
+constexpr wchar_t kRuntimeClassName[] = L"CapsicumPushTask.PushBackgroundTask";
+
+// FullTrust 本体が書き出した LocalState の push_keys.json（平文鍵セット）を読む
+// (#474 フェーズ C / Option A)。AppContainer のバックグラウンドタスクは
+// ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
+// できないため、パッケージ専有で両者からアクセスできる ApplicationData の
+// LocalFolder 経由で鍵を受け取る。
+std::wstring LocalStateFilePath(const wchar_t* name) {
+  winrt::hstring folder =
+      winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
+  return std::wstring(folder.c_str(), folder.size()) + L"\\" + name;
+}
+
+std::string ReadFileUtf8(const std::wstring& path) {
+  std::ifstream f(path, std::ios::binary | std::ios::ate);
+  if (!f) {
+    return std::string();
+  }
+  std::streamoff size = f.tellg();
+  if (size <= 0) {
+    return std::string();
+  }
+  std::string out(static_cast<size_t>(size), '\0');
+  f.seekg(0);
+  f.read(out.data(), static_cast<std::streamsize>(size));
+  return out;
+}
+
+std::string ReadLocalStateKeysetJson() {
+  try {
+    return ReadFileUtf8(LocalStateFilePath(L"push_keys.json"));
+  } catch (...) {
+    return std::string();
+  }
+}
+
+// UNIX エポックからのミリ秒。FILETIME（1601 起点・100ns 単位）から換算する。
+int64_t NowUnixMs() {
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+  ULARGE_INTEGER u;
+  u.LowPart = ft.dwLowDateTime;
+  u.HighPart = ft.dwHighDateTime;
+  // 1601-01-01 → 1970-01-01 は 11644473600 秒。
+  return static_cast<int64_t>(u.QuadPart / 10000ULL) - 11644473600000LL;
+}
+
+// `username@host` から host 部分のみ返す（username は観測に載せない）。
+std::string HostFromAccount(const std::string& account) {
+  size_t at = account.rfind('@');
+  if (at == std::string::npos || at + 1 >= account.size()) {
+    return std::string();
+  }
+  return account.substr(at + 1);
+}
+
+// bg task の観測コードを LocalState の単一スロットへ記録する (#474 フェーズ C)。
+// AppContainer の bg task は Sentry SDK もコンソールも持てないため、ここに
+// 残し、次回 FullTrust 起動時に runner が読んで Dart 経由で Sentry へ送る。
+// 失敗は黙殺する（観測機構が通知本体を巻き込まない）。
+void RecordBgDiagnostic(const std::string& code, const std::string& host) {
+  try {
+    const std::wstring path = LocalStateFilePath(L"push_diag.json");
+    const std::string prev = ReadFileUtf8(path);
+    const std::string next = capsicum::BuildPushDiagnosticJson(
+        prev, code, host, NowUnixMs());
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f) {
+      f.write(next.data(), static_cast<std::streamsize>(next.size()));
+    }
+  } catch (...) {
+  }
+}
+
+// HandleWnsRawPayload の error 文字列を観測コードへ写す。
+std::string DiagnosticCodeForError(const std::string& error) {
+  if (error == "no push keys") return "bgtask.no_keys";
+  if (error == "decryption failed") return "bgtask.decrypt_failed";
+  if (error == "payload parse failed") return "bgtask.parse_failed";
+  if (error == "not an encrypted notification") return "bgtask.not_encrypted";
+  // invalid envelope / missing account / invalid body base64url 等。
+  return "bgtask.bad_payload";
+}
+
+struct PushBackgroundTask
+    : winrt::implements<PushBackgroundTask, IBackgroundTask> {
+  void Run(IBackgroundTaskInstance const& instance) {
+    // 非同期の表示処理を確実に終わらせるため deferral を取る。
+    auto deferral = instance.GetDeferral();
+    try {
+      auto raw = instance.TriggerDetails().try_as<RawNotification>();
+      if (raw) {
+        const std::string content = winrt::to_string(raw.Content());
+        // 鍵は FullTrust 本体が LocalState に同期した push_keys.json から読む
+        // （AppContainer はローミング %APPDATA% の .dat を読めないため）。
+        const std::string keyset = ReadLocalStateKeysetJson();
+        if (keyset.empty()) {
+          // Option A の鍵同期がまだ走っていない（FullTrust を一度も起動して
+          // いない等）。鍵不在と区別して記録する。
+          RecordBgDiagnostic("bgtask.no_keyset", std::string());
+        } else {
+          capsicum::PushDisplay display;
+          std::string error;
+          if (capsicum::HandleWnsRawPayloadFromKeysetJson(content, keyset,
+                                                          &display, &error)) {
+            // title / body はサーバー生成・ローカライズ済み。tag に SNS 通知 ID。
+            capsicum::ShowRawToast(display.title, display.body,
+                                   /*launch_arg=*/"", display.notification_id);
+            RecordBgDiagnostic("bgtask.shown", HostFromAccount(display.account));
+          } else {
+            // 復号できない通知（鍵不在・announcement 等）は捨てるが、無言だと
+            // bg task が動いたかすら分からないため観測コードを残す。
+            RecordBgDiagnostic(DiagnosticCodeForError(error), std::string());
+          }
+        }
+      } else {
+        // raw push trigger なのに RawNotification 以外（toast/badge/tile 等）が
+        // 来た。実害は無いが、無記録だと「bg task が起動したのに何も残らない」
+        // 空白になり、push 不達トリアージで本当の問題と区別できない。正常系
+        // 扱い（info）で起動した事実だけ残す。
+        RecordBgDiagnostic("bgtask.not_raw", std::string());
+      }
+    } catch (...) {
+      // バックグラウンドホストを巻き込まないよう全例外を握り潰す。
+      RecordBgDiagnostic("bgtask.exception", std::string());
+    }
+    deferral.Complete();
+  }
+};
+
+struct PushBackgroundTaskFactory
+    : winrt::implements<PushBackgroundTaskFactory,
+                        winrt::Windows::Foundation::IActivationFactory> {
+  winrt::Windows::Foundation::IInspectable ActivateInstance() {
+    return winrt::make<PushBackgroundTask>();
+  }
+};
+
+}  // namespace
+
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID /*reserved*/) {
+  if (reason == DLL_PROCESS_ATTACH) {
+    DisableThreadLibraryCalls(hinst);
+  }
+  return TRUE;
+}
+
+// WinRT 活性化エントリポイント。システム（backgroundTaskHost）が
+// RoGetActivationFactory 経由で呼ぶ。シグネチャは roapi.h / combaseapi.h の宣言と
+// 一致させ、エクスポートは push_background_task.def で行う（dllexport を付けると
+// システムヘッダの宣言とリンケージが衝突するため）。
+extern "C" HRESULT __stdcall DllGetActivationFactory(
+    HSTRING classId, IActivationFactory** factory) {
+  if (factory == nullptr) {
+    return E_POINTER;
+  }
+  *factory = nullptr;
+  try {
+    std::wstring_view name{WindowsGetStringRawBuffer(classId, nullptr)};
+    if (name == kRuntimeClassName) {
+      *factory = static_cast<IActivationFactory*>(
+          winrt::detach_abi(winrt::make<PushBackgroundTaskFactory>()));
+      return S_OK;
+    }
+    return REGDB_E_CLASSNOTREG;
+  } catch (...) {
+    return winrt::to_hresult();
+  }
+}
+
+extern "C" HRESULT __stdcall DllCanUnloadNow() {
+  return winrt::get_module_lock() ? S_FALSE : S_OK;
+}
