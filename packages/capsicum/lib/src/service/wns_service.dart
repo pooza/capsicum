@@ -56,6 +56,21 @@ class WnsService {
     }
   }
 
+  /// LocalState の push 鍵セット (push_keys.json) をネイティブに再同期させる
+  /// (#474 フェーズ C / Option A)。ログアウト・アカウント追加など鍵セットを
+  /// 変更した直後に呼ぶ。これを怠ると、アプリ完全終了中のバックグラウンド
+  /// タスクがログアウト済みアカウントの古い鍵で push を復号・表示し続け、
+  /// 平文の秘密鍵も次回起動まで LocalState に残る。ネイティブ側は detached
+  /// スレッドで処理して即 ack するため、await はほぼ即座に返る。失敗は
+  /// ベストエフォート（次回起動時の同期で回復する）として握り潰す。
+  static Future<void> syncPushKeys() async {
+    try {
+      await _channel.invokeMethod<void>('syncPushKeys');
+    } catch (e) {
+      debugPrint('capsicum: push.wns: syncPushKeys failed: $e');
+    }
+  }
+
   static Future<dynamic> _handleMethod(MethodCall call) async {
     switch (call.method) {
       case 'onChannelUri':

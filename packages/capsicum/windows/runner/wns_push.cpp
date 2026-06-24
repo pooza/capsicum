@@ -35,28 +35,22 @@ constexpr wchar_t kBackgroundTaskName[] = L"CapsicumPushTask";
 constexpr wchar_t kBackgroundTaskEntryPoint[] =
     L"CapsicumPushTask.PushBackgroundTask";
 
-// push 鍵セットを AppContainer のバックグラウンドタスクが読める LocalState に
-// 書き出す (#474 フェーズ C / Option A)。bg task はサンドボックスのため
-// ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
-// できないので、FullTrust 本体がここで鍵セットだけを平文 JSON 化して
-// ApplicationData.LocalFolder（パッケージ専有・両者からアクセス可）へ渡す。
-void SyncPushKeysToLocalState() {
+// push_keys.json の truncate-write / 削除を直列化する。起動時同期と、ログアウト
+// /登録後にメソッドチャネルから走る再同期が並走しても書き込みが交錯しないように
+// するため。
+std::mutex& PushKeysSyncMutex() {
+  static std::mutex m;
+  return m;
+}
+
+// LocalState の push_keys.json 絶対パス。LocalFolder 解決失敗時は空文字列。
+std::wstring PushKeysJsonPath() {
   try {
-    const std::wstring dat = capsicum::DefaultSecureStorageDatPath();
-    std::string json;
-    if (!capsicum::ExtractPushKeysetMapJson(dat, &json, nullptr)) {
-      return;  // 鍵未生成・.dat 不在等。次回登録後に再同期される。
-    }
     winrt::hstring folder =
         winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    std::wstring path =
-        std::wstring(folder.c_str(), folder.size()) + L"\\push_keys.json";
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (f) {
-      f.write(json.data(), static_cast<std::streamsize>(json.size()));
-    }
+    return std::wstring(folder.c_str(), folder.size()) + L"\\push_keys.json";
   } catch (...) {
-    // 書き出し失敗は致命でない（in-process 受信は引き続き動く）。
+    return std::wstring();
   }
 }
 
@@ -100,6 +94,43 @@ void DisplayRawNotification(const std::string& content) {
 
 }  // namespace
 
+// push 鍵セットを AppContainer のバックグラウンドタスクが読める LocalState に
+// 書き出す (#474 フェーズ C / Option A)。bg task はサンドボックスのため
+// ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
+// できないので、FullTrust 本体がここで鍵セットだけを平文 JSON 化して
+// ApplicationData.LocalFolder（パッケージ専有・両者からアクセス可）へ渡す。
+//
+// 起動時に加えてログアウト・アカウント追加など鍵セット変更後にも呼ばれる
+// （flutter_window の syncPushKeys メソッドチャネル経由）。鍵セットが読めない
+// （.dat 不在・DPAPI 失敗）ときは push_keys.json を削除し、ログアウト済み
+// アカウントの平文鍵を bg task に残さない（鍵が読めない＝通知が出ない安全側に
+// 倒す。他プラットフォームが secure storage から鍵を消すと復号できなくなるのと
+// parity を取る）。
+void SyncWnsPushKeysToLocalState() {
+  std::lock_guard<std::mutex> guard(PushKeysSyncMutex());
+  try {
+    const std::wstring path = PushKeysJsonPath();
+    if (path.empty()) {
+      return;  // LocalFolder 解決不可。次の機会に再同期される。
+    }
+    const std::wstring dat = capsicum::DefaultSecureStorageDatPath();
+    std::string json;
+    if (!capsicum::ExtractPushKeysetMapJson(dat, &json, nullptr)) {
+      // .dat 不在・DPAPI 失敗・パース失敗。古い平文鍵を残さないよう既存ファイルを
+      // 消す。通常ログアウト（鍵エントリのみ削除）は .dat が読めて空マップ "{}" が
+      // 返るため、この分岐ではなく下の truncate-write 側で正しく上書きされる。
+      _wremove(path.c_str());
+      return;
+    }
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f) {
+      f.write(json.data(), static_cast<std::streamsize>(json.size()));
+    }
+  } catch (...) {
+    // 書き出し失敗は致命でない（in-process 受信は引き続き動く）。
+  }
+}
+
 void RunWnsChannelReceiver(
     const std::function<void(const std::string&)>& on_uri) {
   PushNotificationChannel channel{nullptr};
@@ -134,9 +165,11 @@ void RunWnsChannelReceiver(
   // アプリ完全終了中の受信用に鍵を AppContainer から読める LocalState に同期して
   // から、バックグラウンドタスクを登録する (#474 フェーズ C)。順序が逆だと
   // 「登録済みだが鍵未同期」の窓で push を受けて bgtask.no_keyset を偽陽性で
-  // 記録しうるため、同期を先に済ませる。起動中は下の in-process 受信が
-  // args.Cancel(true) でこのタスク発火を抑止する。
-  SyncPushKeysToLocalState();
+  // 記録しうるため、同期を先に済ませる。なお初回起動時は Dart の鍵生成がまだ
+  // 走っていないことがあり、その分はログイン/登録完了後に Dart が syncPushKeys
+  // メソッドチャネルで再同期する（ログアウト時の鍵削除も同経路）。起動中は下の
+  // in-process 受信が args.Cancel(true) でこのタスク発火を抑止する。
+  SyncWnsPushKeysToLocalState();
   RegisterPushBackgroundTaskOnce();
 
   // 起動中の in-process 受信を購読する。raw 通知は OS が自動表示しないため、

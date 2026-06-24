@@ -57,6 +57,17 @@ class PushRegistrationService {
 
   static final _client = PushRelayClient();
 
+  /// Windows: 鍵セット変更後に LocalState のバックグラウンドタスク用鍵コピー
+  /// (push_keys.json) を現在の鍵セットへ再同期する (#474 フェーズ C)。ログアウト
+  /// で消した鍵を bg task からも確実に除き、追加した鍵を反映する。これを怠ると、
+  /// アプリ完全終了中の bg task がログアウト済みアカウントの古い鍵で push を
+  /// 復号・表示し続け、平文の秘密鍵も次回起動まで残る。Windows 以外では no-op。
+  /// ベストエフォート（WnsService 側で失敗は握り潰す）。
+  static Future<void> _syncWnsPushKeys() async {
+    if (!Platform.isWindows) return;
+    await WnsService.syncPushKeys();
+  }
+
   static StreamSubscription<String>? _tokenRefreshSub;
 
   /// アカウント単位の登録処理を排他するための in-flight ガード。
@@ -373,6 +384,13 @@ class PushRegistrationService {
       accountKey,
       host: account.key.host,
     );
+
+    // Windows: ログアウトで消した鍵を LocalState のバックグラウンドタスク用
+    // コピー (push_keys.json) からも除く (#474 フェーズ C)。これを怠ると、
+    // relay の unsubscribe が遅延/失敗した窓でアプリ完全終了中に push が来ると、
+    // bg task が残った古い鍵で復号してログアウト済みアカウントの通知を表示して
+    // しまう。
+    await _syncWnsPushKeys();
   }
 
   /// デバイスの relay row を削除する。token rotation 時など、共有 row を
@@ -544,6 +562,12 @@ class PushRegistrationService {
         accounts.map((a) => registerAccount(a, eligible: hasPreset)),
       );
     }
+
+    // Windows: 登録で生成・更新した鍵を LocalState のバックグラウンドタスク用
+    // コピー (push_keys.json) へ反映する (#474 フェーズ C)。起動時のネイティブ
+    // 初回同期は Dart の鍵生成より先に走ることがあり取りこぼすため、登録完了後に
+    // 再同期して確実に最新化する。
+    await _syncWnsPushKeys();
   }
 
   /// デバイストークンの到着を最大 10 秒待つ。

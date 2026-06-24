@@ -84,6 +84,14 @@ bool FlutterWindow::OnCreate() {
           }).detach();
           // 取得は非同期。要求受理だけ即 ack し、結果は onChannelUri で返す。
           result->Success();
+        } else if (call.method_name() == "syncPushKeys") {
+          // ログアウト・アカウント追加など鍵セット変更後に、LocalState の
+          // push_keys.json を現在の鍵セットへ再同期する (#474 フェーズ C)。
+          // これを怠るとバックグラウンドタスクがログアウト済みアカウントの
+          // 古い鍵で復号・表示し続ける。DPAPI 復号 + ファイル I/O のため
+          // detached スレッドで実行し UI を塞がない。要求受理だけ即 ack する。
+          std::thread([]() { SyncWnsPushKeysToLocalState(); }).detach();
+          result->Success();
         } else if (call.method_name() == "consumePushDiagnostics") {
           // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測
           // レコードを 1 件読み出して返す（読んだら消す）。Dart 側が Sentry へ

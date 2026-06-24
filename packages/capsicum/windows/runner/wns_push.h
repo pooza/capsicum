@@ -25,6 +25,17 @@
 void RunWnsChannelReceiver(
     const std::function<void(const std::string&)>& on_uri);
 
+// flutter_secure_storage の現在の push 鍵セットを LocalState の push_keys.json に
+// 再同期する (#474 フェーズ C / Option A)。アプリ起動時 ([RunWnsChannelReceiver]
+// 内) に加え、ログアウト・アカウント追加など鍵セットを変更した直後にも呼ぶ
+// （Dart の WnsService.syncPushKeys → flutter_window のメソッドチャネル経由）。
+// これを怠ると、別プロセスのバックグラウンドタスクがログアウト済みアカウントの
+// 古い鍵で push を復号・表示し続け、平文の秘密鍵も次回再起動まで LocalState に
+// 残る（他プラットフォームは secure storage から鍵を消すと復号できなくなるのと
+// parity を取る）。鍵セットが読めない (.dat 不在・DPAPI 失敗) ときは
+// push_keys.json を削除する。書き込みは内部 mutex で直列化されスレッドセーフ。
+void SyncWnsPushKeysToLocalState();
+
 // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測レコード
 // (push_diag.json) を 1 件読み出してファイルを消す。FullTrust 起動時に呼び、
 // 内容（push_diagnostics の単一スロット JSON）を `*out_json` に入れて Dart へ
