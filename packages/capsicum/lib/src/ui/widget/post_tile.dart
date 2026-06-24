@@ -1902,7 +1902,7 @@ class _CountChip extends StatelessWidget {
 }
 
 /// 短時間に同じリアクションへ繰り返しホバーしても API を叩き直さないための
-/// インメモリキャッシュ。key は `noteId reactionKey`。
+/// インメモリキャッシュ。key は `noteId reactionKey`。
 class _ReactionUsersCache {
   static final Map<String, List<User>> _cache = {};
 
@@ -2008,7 +2008,7 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
   bool _fetching = false;
   List<User>? _users;
 
-  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
+  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
 
   @override
   void dispose() {
