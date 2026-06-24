@@ -548,8 +548,9 @@ Future<void> _flushWnsPushDiagnostics() async {
           // メッセージ本文と push context に載せて観測する。
           final pushContext = <String, dynamic>{'bgtask_count': countStr};
           if (atMs is int) {
-            pushContext['bgtask_last_at'] =
-                DateTime.fromMillisecondsSinceEpoch(atMs).toIso8601String();
+            pushContext['bgtask_last_at'] = DateTime.fromMillisecondsSinceEpoch(
+              atMs,
+            ).toIso8601String();
           }
           scope.setContexts('push', pushContext);
         },
