@@ -34,7 +34,9 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       followingCount: followingCount,
       postCount: statusesCount,
       isBot: bot ?? false,
-      isGroup: actorType == 'Group',
+      // 標準 Mastodon API の `group` boolean を優先。`actor_type` は REST
+      // シリアライザが公開しないためフォーク独自経路のフォールバック (#726)。
+      isGroup: (group ?? false) || actorType == 'Group',
       roles: (roles ?? []).map((r) {
         final roleId = r['id']?.toString() ?? '';
         final perms = int.tryParse(r['permissions']?.toString() ?? '') ?? 0;
