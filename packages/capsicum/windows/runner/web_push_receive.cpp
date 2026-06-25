@@ -141,8 +141,16 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   const std::string body_b64 = MapGet(envelope, "body");
   // announcement push 等は body / encoding を持たない。暗号化通知だけここで扱い、
   // それ以外は呼び出し側に委ねる。
-  if (body_b64.empty() || encoding != "aes128gcm") {
+  if (body_b64.empty() || encoding.empty()) {
     return fail("not an encrypted notification");
+  }
+  // 本体も encoding もあるが aes128gcm 以外（レガシー aesgcm 等）は、
+  // iOS / Android / macOS が扱える暗号化 push を Windows だけ静かに捨てている
+  // 可能性がある。announcement（body / encoding 無し）と区別できる別エラーに
+  // して観測へ載せる (#765)。プリセット 5 サーバーは aes128gcm のため通常は
+  // 起きない。
+  if (encoding != "aes128gcm") {
+    return fail("unsupported encoding");
   }
 
   std::vector<uint8_t> body;

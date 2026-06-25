@@ -127,6 +127,9 @@ std::string DiagnosticCodeForError(const std::string& error) {
   if (error == "decryption failed") return "bgtask.decrypt_failed";
   if (error == "payload parse failed") return "bgtask.parse_failed";
   if (error == "not an encrypted notification") return "bgtask.not_encrypted";
+  // aes128gcm 以外の暗号化 push を Windows だけ捨てている可能性を、無暗号化
+  // (announcement) と区別して観測する (#765)。
+  if (error == "unsupported encoding") return "bgtask.unsupported_encoding";
   // invalid envelope / missing account / invalid body base64url 等。
   return "bgtask.bad_payload";
 }
