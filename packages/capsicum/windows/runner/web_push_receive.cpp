@@ -8,43 +8,11 @@
 #include "web_push_decrypt.h"
 #include "web_push_key_reader.h"
 #include "web_push_payload.h"
+#include "web_push_text_util.h"
 
 namespace capsicum {
 
 namespace {
-
-// base64url / 標準 base64 の両対応デコーダ（パディング無視）。relay は
-// base64url で送るが、標準 base64 で来ても落とさないよう `+/` も受ける。
-bool Base64Decode(const std::string& in, std::vector<uint8_t>* out) {
-  out->clear();
-  int buffer = 0;
-  int bits = 0;
-  for (char c : in) {
-    int value;
-    if (c >= 'A' && c <= 'Z') {
-      value = c - 'A';
-    } else if (c >= 'a' && c <= 'z') {
-      value = c - 'a' + 26;
-    } else if (c >= '0' && c <= '9') {
-      value = c - '0' + 52;
-    } else if (c == '-' || c == '+') {
-      value = 62;
-    } else if (c == '_' || c == '/') {
-      value = 63;
-    } else if (c == '=') {
-      continue;
-    } else {
-      return false;
-    }
-    buffer = (buffer << 6) | value;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out->push_back(static_cast<uint8_t>((buffer >> bits) & 0xff));
-    }
-  }
-  return true;
-}
 
 // 値がすべて文字列の JSON オブジェクト `{"k":"v",...}` をパースする
 // （エンベロープは flat な String→String）。エスケープ（\" \\ \/ \b\f\n\r\t
@@ -57,42 +25,6 @@ bool ParseFlatObject(const std::string& s,
     while (i < s.size() &&
            (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) {
       ++i;
-    }
-  };
-  auto parse_hex4 = [&](size_t pos, uint32_t* cp) -> bool {
-    if (pos + 4 > s.size()) return false;
-    uint32_t v = 0;
-    for (size_t k = 0; k < 4; ++k) {
-      char c = s[pos + k];
-      v <<= 4;
-      if (c >= '0' && c <= '9') {
-        v |= static_cast<uint32_t>(c - '0');
-      } else if (c >= 'a' && c <= 'f') {
-        v |= static_cast<uint32_t>(c - 'a' + 10);
-      } else if (c >= 'A' && c <= 'F') {
-        v |= static_cast<uint32_t>(c - 'A' + 10);
-      } else {
-        return false;
-      }
-    }
-    *cp = v;
-    return true;
-  };
-  auto append_utf8 = [](uint32_t cp, std::string* o) {
-    if (cp <= 0x7f) {
-      o->push_back(static_cast<char>(cp));
-    } else if (cp <= 0x7ff) {
-      o->push_back(static_cast<char>(0xc0 | (cp >> 6)));
-      o->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-    } else if (cp <= 0xffff) {
-      o->push_back(static_cast<char>(0xe0 | (cp >> 12)));
-      o->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-      o->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-    } else {
-      o->push_back(static_cast<char>(0xf0 | (cp >> 18)));
-      o->push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3f)));
-      o->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-      o->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
     }
   };
   auto parse_string = [&](std::string* result) -> bool {
@@ -120,18 +52,18 @@ bool ParseFlatObject(const std::string& s,
           case 't': result->push_back('\t'); break;
           case 'u': {
             uint32_t cp = 0;
-            if (!parse_hex4(i + 1, &cp)) return false;
+            if (!ParseHex4(s, i + 1, &cp)) return false;
             i += 4;
             if (cp >= 0xd800 && cp <= 0xdbff && i + 2 < s.size() &&
                 s[i + 1] == '\\' && s[i + 2] == 'u') {
               uint32_t low = 0;
-              if (!parse_hex4(i + 3, &low)) return false;
+              if (!ParseHex4(s, i + 3, &low)) return false;
               if (low >= 0xdc00 && low <= 0xdfff) {
                 cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
                 i += 6;
               }
             }
-            append_utf8(cp, result);
+            AppendUtf8(cp, result);
             break;
           }
           default:
@@ -214,7 +146,9 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   }
 
   std::vector<uint8_t> body;
-  if (!Base64Decode(body_b64, &body)) {
+  // relay は base64url で送るが、標準 base64 で来ても落とさないよう '+' / '/'
+  // も受ける。
+  if (!Base64Decode(body_b64, &body, /*accept_standard=*/true)) {
     return fail("invalid body base64url");
   }
 

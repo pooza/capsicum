@@ -44,6 +44,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # WNS push のネイティブ C++（復号 / 鍵読み / ペイロード合成 / 文面ラベル /
+      # 観測 / 文字列プリミティブ）のスタンドアロン単体テスト (#474 / #764)。
+      # runner ターゲットから除外されており手動 cl ビルド前提だったため、三言語
+      # （Dart / Swift / C++）ビット一致の回帰ネットが CI で鳴っていなかった。
+      # VS Developer 環境を立てて cl ビルド→実行し、いずれか非 0 で fail させる。
+      # flutter build に依存しないので、重いビルドの前段に置いて早期に失敗させる。
+      - name: Run native push unit tests
+        shell: cmd
+        working-directory: packages/capsicum/windows/runner
+        run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+          if "%VSPATH%"=="" ( echo VS with C++ tools not found & exit /b 1 )
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul
+          where cl >nul 2>nul || ( echo cl not on PATH after vcvars & exit /b 1 )
+          cl /nologo /EHsc /std:c++17 web_push_decrypt_test.cpp web_push_decrypt.cpp /link bcrypt.lib || exit /b 1
+          .\web_push_decrypt_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 web_push_key_reader_test.cpp web_push_key_reader.cpp web_push_text_util.cpp /link crypt32.lib shell32.lib ole32.lib version.lib || exit /b 1
+          .\web_push_key_reader_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp web_push_text_util.cpp || exit /b 1
+          .\web_push_payload_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 web_push_receive_test.cpp web_push_receive.cpp web_push_key_reader.cpp web_push_decrypt.cpp web_push_payload.cpp web_push_text_util.cpp notification_type_label.cpp /link crypt32.lib bcrypt.lib shell32.lib ole32.lib version.lib || exit /b 1
+          .\web_push_receive_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 notification_type_label_test.cpp notification_type_label.cpp || exit /b 1
+          .\notification_type_label_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 push_diagnostics_test.cpp push_diagnostics.cpp || exit /b 1
+          .\push_diagnostics_test.exe || exit /b 1
+
       # sentry_flutter 9.x が transitive で引き込む jni 0.14.x が
       # JNI_CreateJavaVM のリンクで JDK の jvm.lib (x64) を要求する。
       # windows-latest runner の bundled JDK ではなく、固定 minor の

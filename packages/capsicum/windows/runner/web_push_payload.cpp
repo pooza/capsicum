@@ -4,6 +4,8 @@
 #include <utility>
 #include <vector>
 
+#include "web_push_text_util.h"
+
 namespace capsicum {
 
 namespace {
@@ -43,24 +45,6 @@ struct JsonValue {
   }
 };
 
-void AppendUtf8(uint32_t cp, std::string* out) {
-  if (cp <= 0x7f) {
-    out->push_back(static_cast<char>(cp));
-  } else if (cp <= 0x7ff) {
-    out->push_back(static_cast<char>(0xc0 | (cp >> 6)));
-    out->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-  } else if (cp <= 0xffff) {
-    out->push_back(static_cast<char>(0xe0 | (cp >> 12)));
-    out->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-    out->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-  } else {
-    out->push_back(static_cast<char>(0xf0 | (cp >> 18)));
-    out->push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3f)));
-    out->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-    out->push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-  }
-}
-
 class JsonParser {
  public:
   explicit JsonParser(const std::string& s) : s_(s) {}
@@ -86,28 +70,6 @@ class JsonParser {
         break;
       }
     }
-  }
-
-  bool ParseHex4(size_t pos, uint32_t* out) {
-    if (pos + 4 > s_.size()) {
-      return false;
-    }
-    uint32_t value = 0;
-    for (size_t k = 0; k < 4; ++k) {
-      char c = s_[pos + k];
-      value <<= 4;
-      if (c >= '0' && c <= '9') {
-        value |= static_cast<uint32_t>(c - '0');
-      } else if (c >= 'a' && c <= 'f') {
-        value |= static_cast<uint32_t>(c - 'a' + 10);
-      } else if (c >= 'A' && c <= 'F') {
-        value |= static_cast<uint32_t>(c - 'A' + 10);
-      } else {
-        return false;
-      }
-    }
-    *out = value;
-    return true;
   }
 
   bool ParseString(std::string* out) {
@@ -139,14 +101,14 @@ class JsonParser {
           case 't': out->push_back('\t'); break;
           case 'u': {
             uint32_t cp = 0;
-            if (!ParseHex4(i_ + 1, &cp)) {
+            if (!ParseHex4(s_, i_ + 1, &cp)) {
               return false;
             }
             i_ += 4;
             if (cp >= 0xd800 && cp <= 0xdbff) {
               if (i_ + 2 < s_.size() && s_[i_ + 1] == '\\' && s_[i_ + 2] == 'u') {
                 uint32_t low = 0;
-                if (!ParseHex4(i_ + 3, &low)) {
+                if (!ParseHex4(s_, i_ + 3, &low)) {
                   return false;
                 }
                 if (low >= 0xdc00 && low <= 0xdfff) {

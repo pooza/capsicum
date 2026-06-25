@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 
+#include "local_state_files.h"
 #include "push_diagnostics.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -76,7 +77,7 @@ std::string ReadFileUtf8(const std::wstring& path) {
 
 std::string ReadLocalStateKeysetJson() {
   try {
-    return ReadFileUtf8(LocalStateFilePath(L"push_keys.json"));
+    return ReadFileUtf8(LocalStateFilePath(capsicum::kLocalStateKeysetFile));
   } catch (...) {
     return std::string();
   }
@@ -108,7 +109,7 @@ std::string HostFromAccount(const std::string& account) {
 // 失敗は黙殺する（観測機構が通知本体を巻き込まない）。
 void RecordBgDiagnostic(const std::string& code, const std::string& host) {
   try {
-    const std::wstring path = LocalStateFilePath(L"push_diag.json");
+    const std::wstring path = LocalStateFilePath(capsicum::kLocalStateDiagFile);
     const std::string prev = ReadFileUtf8(path);
     const std::string next = capsicum::BuildPushDiagnosticJson(
         prev, code, host, NowUnixMs());
