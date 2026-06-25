@@ -396,6 +396,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (replyTo != null) {
       _scope = replyTo.scope;
       _initReplyMentions(replyTo);
+      // 元投稿に CW があればリプライにも引き継ぐ (#768、Mastodon WebUI 同様)。
+      // ユーザーはそのまま送信しても、CW 欄を編集・クリアしてもよい。
+      if (replyTo.spoilerText != null && replyTo.spoilerText!.isNotEmpty) {
+        _cwEnabled = true;
+        _cwController.text = replyTo.spoilerText!;
+      }
     } else if (widget.quoteTo != null) {
       _scope = widget.quoteTo!.scope;
     } else if (widget.sharedText != null) {
