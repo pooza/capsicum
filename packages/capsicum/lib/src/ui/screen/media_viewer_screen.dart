@@ -388,6 +388,13 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                     ? _DragOutImage(
                         attachment: a,
                         download: _downloadBytes,
+                        onDownloadError: (e, st) => reportOpFailure(
+                          tagKey: 'media.op',
+                          operation: 'drag_out',
+                          error: e,
+                          stackTrace: st,
+                          account: ref.read(currentAccountProvider),
+                        ),
                         child: image,
                       )
                     : image;
@@ -449,11 +456,13 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 class _DragOutImage extends StatelessWidget {
   final Attachment attachment;
   final Future<List<int>> Function(String url) download;
+  final void Function(Object error, StackTrace stackTrace) onDownloadError;
   final Widget child;
 
   const _DragOutImage({
     required this.attachment,
     required this.download,
+    required this.onDownloadError,
     required this.child,
   });
 
@@ -482,7 +491,10 @@ class _DragOutImage extends StatelessWidget {
                 final sink = sinkProvider(fileSize: bytes.length);
                 sink.add(Uint8List.fromList(bytes));
                 sink.close();
-              } catch (e) {
+              } catch (e, st) {
+                // #645 は新機能のため初期は計装し、drag-out 固有の失敗率を
+                // host/backend tag 付きで観測する（save 系 #648 と同じ方針）。
+                onDownloadError(e, st);
                 // 取得失敗時は壊れた / 空ファイルを OS へ残さず中断する。
                 final sink = sinkProvider(fileSize: 0);
                 sink.addError(e);

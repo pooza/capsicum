@@ -25,6 +25,7 @@ import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/post_scope_display.dart';
+import '../util/relative_time.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'post_touch_action_row.dart';
@@ -1862,9 +1863,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// 既に絶対日時を表示している場合はツールチップ不要なので null。
   String? _absoluteTimeTooltip(DateTime postedAt) {
     if (ref.watch(absoluteTimeProvider)) return null;
-    final local = postedAt.toLocal();
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return formatAbsoluteTime(postedAt);
   }
 
   /// デスクトップでのみ [child] をツールチップで包む（#753 / #754）。

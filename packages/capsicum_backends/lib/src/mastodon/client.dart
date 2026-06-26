@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
@@ -432,9 +434,24 @@ class MastodonClient {
         'limit': ?limit,
       },
     );
-    return (response.data as List)
-        .map((e) => MastodonNotification.fromJson(e as Map<String, dynamic>))
-        .toList();
+    // 1 件でも fromJson が throw するとページ全体が読めなくなるため、
+    // 壊れた通知だけ skip する（タイムライン側の _safeConvert と同じ方針）。
+    // Mastodon 4.6 の collection (#741) など新フィールドを非準拠サーバーが
+    // 非整形で返したときに通知一覧が丸ごと空になるのを防ぐ。
+    final notifications = <MastodonNotification>[];
+    for (final e in response.data as List) {
+      try {
+        notifications.add(
+          MastodonNotification.fromJson(e as Map<String, dynamic>),
+        );
+      } catch (err) {
+        developer.log(
+          'skipping malformed notification: $err',
+          name: 'capsicum',
+        );
+      }
+    }
+    return notifications;
   }
 
   /// GET /api/v1/conversations

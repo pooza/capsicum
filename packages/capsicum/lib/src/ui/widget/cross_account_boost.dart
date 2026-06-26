@@ -127,7 +127,9 @@ Future<void> _boostWithAccount(
     final results = await (adapter as SearchSupport).search(url);
     if (results.posts.isEmpty) {
       messenger.removeCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(content: Text('$nameの鯖で投稿を解決できませんでした')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('$nameのサーバーで投稿を解決できませんでした')),
+      );
       return;
     }
     await adapter.repeatPost(results.posts.first.id);
