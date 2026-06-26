@@ -156,6 +156,17 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  // Collections 通知 (#741): post を持たないため、対象コレクション名を
+                  // 「どのコレクションか」が分かるよう表示する（詳細画面は #742）。
+                  if (notification.collection != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      notification.collection!.name,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                   if (notification.post != null)
                     PostTouchActionRow(
                       targetPost:

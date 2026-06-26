@@ -1,4 +1,5 @@
 import 'announcement.dart';
+import 'collection.dart';
 import 'post.dart';
 import 'user.dart';
 
@@ -15,6 +16,9 @@ enum NotificationType {
   createToken,
   chat,
   announcement,
+  // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。Misskey 等価なし。
+  addedToCollection,
+  collectionUpdate,
   other,
 }
 
@@ -33,6 +37,11 @@ class Notification {
   /// 別途保持する。それ以外の type では null。
   final Announcement? announcement;
 
+  /// `type == addedToCollection / collectionUpdate` のとき同梱される対象
+  /// コレクション (#741)。どのコレクションに載せられた／更新されたかを通知行に
+  /// 表示するために保持する。それ以外の type では null。
+  final Collection? collection;
+
   const Notification({
     required this.id,
     required this.type,
@@ -42,5 +51,6 @@ class Notification {
     this.reaction,
     this.unread = true,
     this.announcement,
+    this.collection,
   });
 }

@@ -303,6 +303,9 @@ const mastodonNotificationTypeMap = <String, NotificationType>{
   'follow_request': NotificationType.followRequest,
   'poll': NotificationType.poll,
   'update': NotificationType.update,
+  // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。
+  'added_to_collection': NotificationType.addedToCollection,
+  'collection_update': NotificationType.collectionUpdate,
 };
 
 extension CapsicumMastodonNotificationExtension on MastodonNotification {
@@ -316,8 +319,14 @@ extension CapsicumMastodonNotificationExtension on MastodonNotification {
       createdAt: createdAt,
       user: account.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: status?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
+      collection: collection?.toCapsicum(),
     );
   }
+}
+
+extension CapsicumMastodonCollectionExtension on MastodonCollection {
+  Collection toCapsicum() =>
+      Collection(id: id, name: name, url: url, itemCount: itemCount);
 }
 
 extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
