@@ -434,14 +434,18 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 
 /// 画像を OS ファイラー（Finder / Explorer）へ drag-out する wrapper (#645)。
 /// super_drag_and_drop の virtual file（遅延ファイル生成）で、ネットワーク画像を
-/// ドラッグ開始時にダウンロードし、OS がファイルとして受け取れるようにする。
-/// macOS / Windows のみ（[supportsMediaDragOut]）。画像用途に限定し、動画/音声は
-/// player の操作 gesture と競合するため対象外。
+/// OS がファイルとして受け取れるようにする。macOS / Windows のみ
+/// （[supportsMediaDragOut]）。画像用途に限定し、動画/音声は player の操作 gesture
+/// と競合するため対象外。
 ///
-/// ダウンロードは [dragItemProvider]（async）内で行い、virtual file provider には
-/// 確定済み bytes を同期で渡す。失敗時は null を返し drag-out を不成立にする
-/// （壊れた / 空ファイルを OS へ渡さない）。ドラッグ開始時に取得するため、回線が
-/// 遅いと開始までに体感ラグが出る点はトレードオフ（将来 drop 時遅延取得の余地）。
+/// ダウンロードは drop 時に呼ばれる virtual file provider 内で行い、
+/// [dragItemProvider] は同期で DragItem を返す（await しない）。Windows の OLE
+/// ドラッグ（DoDragDrop）はジェスチャー内で同期的に開始する必要があり、開始前に
+/// await（ネットワーク取得）が挟まるとドラッグが起動したりしなかったりするため
+/// （drag-out が間欠的に不成立）。virtual file provider は「DL 等で時間がかかる
+/// on-demand 生成」を想定した API なので、取得はここに置くのが本来の設計
+/// （README / addVirtualFile の doc 参照）。取得失敗時は addError で空ファイルを
+/// 残さず中断する。
 class _DragOutImage extends StatelessWidget {
   final Attachment attachment;
   final Future<List<int>> Function(String url) download;
@@ -458,15 +462,9 @@ class _DragOutImage extends StatelessWidget {
     return DragItemWidget(
       allowedOperations: () => const [DropOperation.copy],
       canAddItemToExistingSession: true,
-      dragItemProvider: (request) async {
+      dragItemProvider: (request) {
         final format = _dragOutFileFormat(attachment);
         if (format == null) return null;
-        final List<int> bytes;
-        try {
-          bytes = await download(attachment.url);
-        } catch (_) {
-          return null;
-        }
         final item = DragItem(
           suggestedName: suggestedMediaFileName(attachment),
           localData: attachment.id,
@@ -474,10 +472,22 @@ class _DragOutImage extends StatelessWidget {
         if (!item.virtualFileSupported) return null;
         item.addVirtualFile(
           format: format,
+          // drop 時に遅延ダウンロード。ドラッグ開始時に await しないことが要点
+          // （Windows のドラッグ起動を阻害しない）。sinkProvider は取得完了後に
+          // ファイルサイズ確定で呼ぶ。
           provider: (sinkProvider, progress) {
-            final sink = sinkProvider(fileSize: bytes.length);
-            sink.add(Uint8List.fromList(bytes));
-            sink.close();
+            unawaited(() async {
+              try {
+                final bytes = await download(attachment.url);
+                final sink = sinkProvider(fileSize: bytes.length);
+                sink.add(Uint8List.fromList(bytes));
+                sink.close();
+              } catch (e) {
+                // 取得失敗時は壊れた / 空ファイルを OS へ残さず中断する。
+                final sink = sinkProvider(fileSize: 0);
+                sink.addError(e);
+              }
+            }());
           },
         );
         return item;
