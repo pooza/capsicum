@@ -19,6 +19,7 @@ import '../util/post_action_error.dart';
 import '../util/relative_time.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
+import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'emoji_text.dart';
@@ -269,6 +270,22 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
+                    );
+                  },
+                ),
+              if ((targetPost.scope == PostScope.public ||
+                      targetPost.scope == PostScope.unlisted) &&
+                  targetPost.url != null &&
+                  hasOtherAccounts(ref))
+                ListTile(
+                  leading: const Icon(Icons.repeat),
+                  title: Text('別アカウントで$boostLabel'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showCrossAccountBoostPicker(
+                      context: context,
+                      ref: ref,
+                      targetPost: targetPost,
                     );
                   },
                 ),
