@@ -72,6 +72,11 @@ dependencies:
   # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
   in_app_purchase: ^3.2.0
   desktop_drop: ^0.7.1
+  # メディアビューアから OS ファイラーへの drag-out (#645)。desktop_drop は
+  # 受け取り側 (drag-in) 専用なので、ドラッグ元 (drag-source) はこちらで実装する。
+  # virtual file (遅延ファイル生成) は macOS / Windows のみ対応のため drag-out も
+  # この 2 OS に限定 (supportsMediaDragOut)。Linux (GTK) は別 issue。
+  super_drag_and_drop: ^0.9.1
   # 添付画像のトリミング (#577 デスクトップ / #647 モバイル)。image_cropper は
   # iOS/Android/Web のみ対応でデスクトップ非対応のため、platform channel 不要の
   # 純 Flutter 実装である crop_your_image を採用する。Uint8List をメモリ上で

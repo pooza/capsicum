@@ -8,10 +8,12 @@ list(APPEND FLUTTER_PLUGIN_LIST
   emoji_picker_flutter
   file_selector_linux
   flutter_secure_storage_linux
+  irondash_engine_context
   media_kit_libs_linux
   media_kit_video
   screen_retriever_linux
   sentry_flutter
+  super_native_extensions
   tray_manager
   url_launcher_linux
   volume_controller
