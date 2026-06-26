@@ -206,6 +206,47 @@ String? composeTriggerQuery({
   return null;
 }
 
+/// ひらがな (劇中ワードの「読み」入力とみなす文字)。長音符 ー (U+30FC) と
+/// 繰り返し記号 ゝゞ も読みの一部として連続に含める。
+final RegExp _composeHiraganaChar = RegExp(r'[ぁ-ゖゝゞー]');
+
+/// 本文インライン読み補完 (#685) の発火クエリ。`@`/`#`/`:` と違いひらがなには
+/// 専用トリガ文字が無いため、カーソル直前に連続する確定済みひらがなそのものを
+/// トリガとし、それを読みとして word/suggest に渡す (発火方式は pooza 判断
+/// 2026-06-26 = 「ひらがな連続自動検出」)。
+///
+/// - [minLength] 文字未満の短い連続は「いま」「きみ」等の通常語との誤発火が
+///   多いので null（既定 [composeReadingMinLength]）。
+/// - カーソル直後にもひらがなが続く（語の途中を編集中）なら末尾入力ではない
+///   ので null。タイプ末尾でのみ補完する。
+/// - IME 変換中 (composing) の抑止は呼び出し側 (_onTextChanged) が担う。
+///
+/// 既知の制約: 「技はせんか…」のように読みの直前に助詞 (は/が/を/の 等) が
+/// ひらがなで続くと、それも連続に含めて送ってしまう。読み単体を切り出す境界が
+/// 無いためで、word/suggest が当たらなければ候補が出ないだけ (graceful)。漢字・
+/// カタカナ・句読点・文頭で始まる読みは正しく拾える。将来 #687 (辞書一括取得 +
+/// ローカル絞り込み) でローカル側のあいまい一致を入れる余地がある。
+/// State から切り出した純粋関数 (テスト対象)。
+const composeReadingMinLength = 3;
+
+String? composeReadingQuery({
+  required String text,
+  required int cursor,
+  int minLength = composeReadingMinLength,
+}) {
+  if (cursor < 0 || cursor > text.length) return null;
+  if (cursor < text.length && _composeHiraganaChar.hasMatch(text[cursor])) {
+    return null;
+  }
+  var start = cursor;
+  while (start > 0 && _composeHiraganaChar.hasMatch(text[start - 1])) {
+    start--;
+  }
+  final run = text.substring(start, cursor);
+  if (run.runes.length < minLength) return null;
+  return run;
+}
+
 class ComposeScreen extends ConsumerStatefulWidget {
   final Post? redraft;
   final Post? replyTo;
@@ -276,6 +317,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // CustomEmojiSupport を実装しているアダプタのみ対象。
   List<CustomEmoji> _emojiSuggestions = [];
   List<CustomEmoji>? _allEmojis;
+
+  // インライン読み補完 (#685)。確定済みひらがなの連続を「読み」とみなし、
+  // モロヘイヤ word/suggest で劇中ワード候補をインライン表示する。
+  // `features.word_suggest` 対応サーバーのみ発火。サーバー往復のため
+  // mention/hashtag と同じ debounce (_mentionDebounce) + 世代ガードに乗せる。
+  List<WordSuggestion> _wordSuggestions = [];
+  int _wordFetchGen = 0;
 
   // Quote approval policy (Mastodon 4.5+)
   String? _quoteApprovalPolicy;
@@ -504,6 +552,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final emojiQuery = (mentionQuery == null && hashtagQuery == null)
         ? _currentEmojiTriggerQuery()
         : null;
+    // トリガ文字 (@/#/:) が立っていない素のひらがな入力のときだけ読み補完を
+    // 検討する (#685)。トリガ補完とは排他。
+    final readingQuery =
+        (mentionQuery == null && hashtagQuery == null && emojiQuery == null)
+        ? _currentReadingQuery()
+        : null;
 
     if (mentionQuery == null && _mentionSuggestions.isNotEmpty) {
       setState(() => _mentionSuggestions = []);
@@ -513,6 +567,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     if (emojiQuery == null && _emojiSuggestions.isNotEmpty) {
       setState(() => _emojiSuggestions = []);
+    }
+    if (readingQuery == null && _wordSuggestions.isNotEmpty) {
+      setState(() => _wordSuggestions = []);
     }
 
     if (mentionQuery != null) {
@@ -526,7 +583,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } else if (emojiQuery != null) {
       // 絵文字はローカル絞り込みのため debounce 不要 (即時反映)。
       _updateEmojiSuggestions(emojiQuery);
+    } else if (readingQuery != null) {
+      _mentionDebounce = Timer(const Duration(milliseconds: 300), () {
+        _fetchWordSuggestions(readingQuery);
+      });
     }
+  }
+
+  /// 本文インライン読み補完 (#685) の現在クエリ。読み付き辞書を持つモロヘイヤ
+  /// (`features.word_suggest`) 導入サーバーでのみ発火し、本家 Mastodon /
+  /// Misskey では常に null（劇中ワードタブ自体が出ないのと同条件）。
+  String? _currentReadingQuery() {
+    if (ref.read(currentMulukhiyaProvider)?.wordSuggestEnabled != true) {
+      return null;
+    }
+    return composeReadingQuery(
+      text: _controller.text,
+      cursor: _controller.selection.baseOffset,
+    );
   }
 
   /// 自サーバー custom_emojis に未登録の shortcode 集合を controller に渡し、
@@ -628,6 +702,48 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void _insertHashtag(String tag) {
     _insertTriggerCompletion('#', '#$tag ');
     setState(() => _hashtagSuggestions = []);
+  }
+
+  Future<void> _fetchWordSuggestions(String query) async {
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    if (mulukhiya == null) return;
+    final gen = ++_wordFetchGen;
+    try {
+      final words = await mulukhiya.suggestWords(q: query, limit: 5);
+      // 後着レスポンス破棄 (#581 観点2 と同型)。await 中に新しい入力で再発火
+      // していたら世代が進んでいる。
+      if (gen != _wordFetchGen) return;
+      if (mounted) setState(() => _wordSuggestions = words);
+    } catch (e) {
+      // best-effort なサジェスト。404 (辞書未設定) / 403 は suggestWords が空に
+      // 倒すのでここには来ない。5xx/network のみ breadcrumb を残す (#553 同型)。
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'compose.suggest.words',
+          message: e.runtimeType.toString(),
+          level: SentryLevel.warning,
+        ),
+      );
+    }
+  }
+
+  /// インライン読み補完 (#685) の候補挿入。トリガ文字が無いので、カーソル直前の
+  /// ひらがな連続 (= 打った読み) を表層形で置き換える。`@`/`#` と違い文中の語
+  /// なので末尾スペースは付けない。
+  void _insertWordSuggestion(WordSuggestion word) {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    if (cursor < 0 || cursor > text.length) return;
+    var start = cursor;
+    while (start > 0 && _composeHiraganaChar.hasMatch(text[start - 1])) {
+      start--;
+    }
+    final newText = text.replaceRange(start, cursor, word.surface);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + word.surface.length),
+    );
+    setState(() => _wordSuggestions = []);
   }
 
   void _updateEmojiSuggestions(String query) {
@@ -2485,6 +2601,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                           onPressed: () => _completeEmojiFromSuggestion(emoji),
+                        );
+                      },
+                    ),
+                  ),
+                if (_wordSuggestions.isNotEmpty)
+                  SizedBox(
+                    height: 48,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _wordSuggestions.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 4),
+                      itemBuilder: (context, index) {
+                        final word = _wordSuggestions[index];
+                        return ActionChip(
+                          avatar: const Icon(Icons.menu_book, size: 18),
+                          label: Text(
+                            word.surface,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          tooltip: word.category != null
+                              ? '${word.reading}・${word.category}'
+                              : word.reading,
+                          onPressed: () => _insertWordSuggestion(word),
                         );
                       },
                     ),
