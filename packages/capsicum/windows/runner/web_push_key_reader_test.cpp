@@ -8,6 +8,7 @@
 //
 // ビルド & 実行（VS Developer 環境）:
 //   cl /EHsc /std:c++17 web_push_key_reader_test.cpp web_push_key_reader.cpp ^
+//      web_push_text_util.cpp ^
 //      /link crypt32.lib shell32.lib ole32.lib version.lib
 //   .\web_push_key_reader_test.exe
 //

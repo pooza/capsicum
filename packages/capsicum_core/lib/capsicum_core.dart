@@ -7,6 +7,7 @@ export 'src/model/antenna.dart';
 export 'src/model/announcement.dart';
 export 'src/model/attachment.dart';
 export 'src/model/channel.dart';
+export 'src/model/collection.dart';
 export 'src/model/chat_message.dart';
 export 'src/model/chat_room.dart';
 export 'src/model/chat_room_invitation.dart';

@@ -69,7 +69,7 @@ Misskey は upstream の仕様上、通常はサードパーティアプリか�
 melos bs
 
 # コード生成
-melos gen
+melos run build_runner
 
 # フォーマットチェック
 dart format --set-exit-if-changed .

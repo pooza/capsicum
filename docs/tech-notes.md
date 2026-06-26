@@ -28,6 +28,18 @@
 
 MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること。
 
+## デスクトップ（drag & drop / ネイティブ連携）
+
+### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く
+
+super_drag_and_drop で virtual file を使ってメディアを drag-out する際（#645 メディアビューア画像保存）、ネットワーク取得などの `await` を**ドラッグ開始時の `dragItemProvider`（async）に置くと Windows でドラッグが「できたりできなかったり」**になる。Windows の OLE ドラッグ（`DoDragDrop`）はジェスチャー内で同期的に開始する必要があり、開始前に await が挟まると取得完了までドラッグが始まらず、回線・タイミング次第で起動が間欠的に失敗する。macOS は item provider から後追いでドラッグセッションを開始できるため同じコードでも顕在化せず、プラットフォーム差で気付きにくい。
+
+対策: 取得は `addVirtualFile` の **provider（drop 時に呼ばれる）内で遅延実行**し、`dragItemProvider` は await せず同期で `DragItem` を返す。`addVirtualFile` はそもそも「DL 等で時間がかかる on-demand 生成」を想定した API（パッケージ doc 参照）であり、これが本来の使い方。Dart 共通コードなので macOS も同挙動になる（virtual file の遅延 async は D&D で公式サポート・回帰なし）。差が出るのは低速回線時のみ。実装は [media_viewer_screen.dart](../packages/capsicum/lib/src/ui/screen/media_viewer_screen.dart) の `_DragOutImage`。
+
+### desktop のドラッグ操作はマウス＝即ドラッグ・タッチ＝長押し→持ち上げ
+
+super_drag_and_drop の drag 開始ジェスチャーは入力デバイスで異なる。マウスは長押し不要の即ドラッグ、タッチは長押し→そのまま持ち上げ（スクロール/タップとの誤認回避・iOS/Android と同方式）。タッチ環境で「長押しが要るのか即ドラッグなのか」分かりにくいが仕様。drag-out が動かないという報告は、まずコードでなくこの操作差を疑う。
+
 ## 認証フロー
 
 ### `flutter_web_auth_2` が Android エミュレータで不安定

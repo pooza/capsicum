@@ -17,6 +17,7 @@ add_executable(${BINARY_NAME} WIN32
   "web_push_key_reader.cpp"
   "web_push_payload.cpp"
   "web_push_receive.cpp"
+  "web_push_text_util.cpp"
   "win_toast.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -26,15 +27,20 @@ add_executable(${BINARY_NAME} WIN32
 )
 
 # *_test.cpp は runner ターゲットに含めない（独自 main を持つスタンドアロン
-# 単体テスト）。VS Developer 環境で直接ビルド・実行する（フルビルド不要）:
+# 単体テスト）。CI (windows-release.yml の "Run native push unit tests" step) が
+# tag ビルドの前段で自動実行する。VS Developer 環境では手動でも実行できる
+# （フルビルド不要）。web_push_* は文字列プリミティブを web_push_text_util.cpp
+# に集約したため、それらをリンクするテストは同 .cpp も一緒にビルドする (#764):
 #   cl /EHsc /std:c++17 web_push_decrypt_test.cpp web_push_decrypt.cpp ^
 #      /link bcrypt.lib
 #   cl /EHsc /std:c++17 web_push_key_reader_test.cpp web_push_key_reader.cpp ^
+#      web_push_text_util.cpp ^
 #      /link crypt32.lib shell32.lib ole32.lib version.lib
-#   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp
+#   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp ^
+#      web_push_text_util.cpp
 #   cl /EHsc /std:c++17 web_push_receive_test.cpp web_push_receive.cpp ^
 #      web_push_key_reader.cpp web_push_decrypt.cpp web_push_payload.cpp ^
-#      notification_type_label.cpp ^
+#      web_push_text_util.cpp notification_type_label.cpp ^
 #      /link crypt32.lib bcrypt.lib shell32.lib ole32.lib version.lib
 
 # Apply the standard set of build settings. This can be removed for applications
@@ -79,6 +85,7 @@ add_library(capsicum_push_task SHARED
   "web_push_key_reader.cpp"
   "web_push_payload.cpp"
   "web_push_receive.cpp"
+  "web_push_text_util.cpp"
   "win_toast.cpp"
 )
 apply_standard_settings(capsicum_push_task)

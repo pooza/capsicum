@@ -55,4 +55,57 @@ void main() {
       expect(q('@foo　bar'), isNull);
     });
   });
+
+  // #685: 本文インライン読み補完。専用トリガ文字が無いため、カーソル直前の
+  // 確定済みひらがな連続そのものを「読み」クエリとして発火する。
+  group('composeReadingQuery — ひらがな連続自動検出', () {
+    String? r(
+      String text, {
+      int? cursor,
+      int minLength = composeReadingMinLength,
+    }) => composeReadingQuery(
+      text: text,
+      cursor: cursor ?? text.length,
+      minLength: minLength,
+    );
+
+    test('漢字・記号の境界で始まるひらがな連続を読みとして返す', () {
+      // 「技、せんか…」のように直前が非ひらがな (読点) なら読みだけを拾う。
+      expect(r('必殺技、せんかれっこうけん'), 'せんかれっこうけん');
+    });
+    test('先行する助詞も連続に含まれる（自動検出方式の既知の制約）', () {
+      // 「技はせんか…」の「は」もひらがなのため連続に含まれる。読み単体での
+      // 切り出しはできず、word/suggest 側で当たらなければ候補は出ない (graceful)。
+      expect(r('技はせんかれっこうけん'), 'はせんかれっこうけん');
+    });
+    test('既定長 (3) 未満は null', () {
+      expect(r('いま'), isNull);
+      expect(r('きみ'), isNull);
+    });
+    test('ちょうど 3 文字で発火', () {
+      expect(r('みゆき'), 'みゆき');
+    });
+    test('漢字や記号で連続が途切れる（直前部分のみ拾う）', () {
+      expect(r('技：かしこまり'), 'かしこまり');
+    });
+    test('長音符・小書き・促音も読みの一部に含む', () {
+      expect(r('きゅあっぷ'), 'きゅあっぷ');
+      expect(r('すーぱー'), 'すーぱー');
+    });
+    test('カーソル直後にもひらがなが続く（語の途中編集）なら null', () {
+      // 「せんか|れっこう」のカーソル位置。末尾入力ではないので発火しない。
+      expect(r('せんかれっこう', cursor: 3), isNull);
+    });
+    test('カーソルまでで判定（後続の漢字は無関係）', () {
+      expect(r('せんかれっこうけん拳', cursor: 9), 'せんかれっこうけん');
+    });
+    test('カタカナ・英数字は読みに含めない', () {
+      expect(r('テスト'), isNull);
+      expect(r('abc'), isNull);
+    });
+    test('カーソル範囲外は null', () {
+      expect(r('せんかれっこうけん', cursor: -1), isNull);
+      expect(r('せんかれっこうけん', cursor: 99), isNull);
+    });
+  });
 }

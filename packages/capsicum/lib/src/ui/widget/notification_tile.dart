@@ -19,6 +19,7 @@ import '../util/post_action_error.dart';
 import '../util/relative_time.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
+import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'emoji_text.dart';
@@ -155,6 +156,17 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  // Collections 通知 (#741): post を持たないため、対象コレクション名を
+                  // 「どのコレクションか」が分かるよう表示する（詳細画面は #742）。
+                  if (notification.collection != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      notification.collection!.name,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                   if (notification.post != null)
                     PostTouchActionRow(
                       targetPost:
@@ -269,6 +281,22 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
+                    );
+                  },
+                ),
+              if ((targetPost.scope == PostScope.public ||
+                      targetPost.scope == PostScope.unlisted) &&
+                  targetPost.url != null &&
+                  hasOtherAccounts(ref))
+                ListTile(
+                  leading: const Icon(Icons.repeat),
+                  title: Text('別アカウントで$boostLabel'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showCrossAccountBoostPicker(
+                      context: context,
+                      ref: ref,
+                      targetPost: targetPost,
                     );
                   },
                 ),
@@ -436,11 +464,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       return Row(
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
-          Text(
-            formatTimestamp(
-              notification.createdAt,
-              absolute: ref.watch(absoluteTimeProvider),
-            ),
+          TimestampText(
+            notification.createdAt,
+            absolute: ref.watch(absoluteTimeProvider),
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -474,11 +500,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          formatTimestamp(
-            notification.createdAt,
-            absolute: ref.watch(absoluteTimeProvider),
-          ),
+        TimestampText(
+          notification.createdAt,
+          absolute: ref.watch(absoluteTimeProvider),
           style: theme.textTheme.bodySmall,
         ),
       ],

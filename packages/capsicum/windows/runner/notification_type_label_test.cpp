@@ -49,6 +49,8 @@ int main() {
   const std::string kFollow =
       "\xe3\x83\x95\xe3\x82\xa9\xe3\x83\xad\xe3\x83\xbc";  // フォロー
   const std::string kGeneric = "\xe9\x80\x9a\xe7\x9f\xa5";  // 通知
+  const std::string kChatMessage =
+      "\xe3\x83\xa1\xe3\x83\x83\xe3\x82\xbb\xe3\x83\xbc\xe3\x82\xb8";  // メッセージ
   const std::string kEditSuffix =
       "\xe3\x82\x92\xe7\xb7\xa8\xe9\x9b\x86";  // 〜を編集
 
@@ -70,9 +72,13 @@ int main() {
   CheckEq(NotificationTypeDisplayLabel("update", reblog, post),
           post + kEditSuffix, "update → 投稿を編集");
 
-  // 3) 未知 type / 空 type は汎用 "通知"（newChatMessage も default に落ちる）。
-  CheckEq(NotificationTypeDisplayLabel("newChatMessage", reblog, post), kGeneric,
-          "未対応 type → 通知");
+  // 3) Misskey 新 chat の Web Push type はメッセージに寄せる (#765)。
+  CheckEq(NotificationTypeDisplayLabel("newChatMessage", reblog, post),
+          kChatMessage, "newChatMessage → メッセージ");
+
+  // 4) 未知 type / 空 type は汎用 "通知"。
+  CheckEq(NotificationTypeDisplayLabel("totally_unknown", reblog, post),
+          kGeneric, "未対応 type → 通知");
   CheckEq(NotificationTypeDisplayLabel("", reblog, post), kGeneric,
           "空 type → 通知");
 

@@ -33,6 +33,11 @@ enum NotificationTypeLabel {
             return "ログイン"
         case "create_token":
             return "アクセストークン作成"
+        // Misskey 新 chat の Web Push 専用 type (#248)。Dart
+        // notificationTypeDisplay / NotificationType.chat と同じく「メッセージ」に
+        // 寄せる。case が無いと title が「通知」にフォールバックしていた (#765)。
+        case "newChatMessage":
+            return "メッセージ"
         default:
             return "通知"
         }

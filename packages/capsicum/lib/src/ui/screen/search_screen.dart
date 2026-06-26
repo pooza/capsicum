@@ -229,14 +229,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       mode: LaunchMode.externalApplication,
                     ),
                   ),
-                  ActionChip(
-                    avatar: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Fediver'),
-                    onPressed: () => launchUrlSafely(
-                      AppConstants.fediverUrl,
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
                 ],
               ),
             ],

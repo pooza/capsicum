@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 
+#include "local_state_files.h"
 #include "push_diagnostics.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -76,7 +77,7 @@ std::string ReadFileUtf8(const std::wstring& path) {
 
 std::string ReadLocalStateKeysetJson() {
   try {
-    return ReadFileUtf8(LocalStateFilePath(L"push_keys.json"));
+    return ReadFileUtf8(LocalStateFilePath(capsicum::kLocalStateKeysetFile));
   } catch (...) {
     return std::string();
   }
@@ -108,7 +109,7 @@ std::string HostFromAccount(const std::string& account) {
 // 失敗は黙殺する（観測機構が通知本体を巻き込まない）。
 void RecordBgDiagnostic(const std::string& code, const std::string& host) {
   try {
-    const std::wstring path = LocalStateFilePath(L"push_diag.json");
+    const std::wstring path = LocalStateFilePath(capsicum::kLocalStateDiagFile);
     const std::string prev = ReadFileUtf8(path);
     const std::string next = capsicum::BuildPushDiagnosticJson(
         prev, code, host, NowUnixMs());
@@ -126,6 +127,9 @@ std::string DiagnosticCodeForError(const std::string& error) {
   if (error == "decryption failed") return "bgtask.decrypt_failed";
   if (error == "payload parse failed") return "bgtask.parse_failed";
   if (error == "not an encrypted notification") return "bgtask.not_encrypted";
+  // aes128gcm 以外の暗号化 push を Windows だけ捨てている可能性を、無暗号化
+  // (announcement) と区別して観測する (#765)。
+  if (error == "unsupported encoding") return "bgtask.unsupported_encoding";
   // invalid envelope / missing account / invalid body base64url 等。
   return "bgtask.bad_payload";
 }

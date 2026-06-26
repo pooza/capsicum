@@ -65,6 +65,16 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<>& call,
              std::unique_ptr<flutter::MethodResult<>> result) {
         if (call.method_name() == "requestChannelUri") {
+          // 受信ワーカーは初回要求でのみ起動する (#763)。requestChannelUri は
+          // 起動時に 1 度だけ呼ばれる想定だが、将来 URI 失効再取得などで複数回
+          // 呼ばれても MTA スレッドと PushNotificationReceived 購読が多重化
+          // しないよう一度きりに倒す。2 回目以降は URI 不変のため即 ack する
+          // （初回取得時に onChannelUri で Dart へ渡し済み）。再取得を真に
+          // サポートするときは stop イベントで旧購読を解除する設計へ拡張する。
+          if (wns_receiver_started_.exchange(true)) {
+            result->Success();
+            return;
+          }
           HWND hwnd = GetHandle();
           // 専用ワーカーで Channel URI 取得 + in-process 受信購読を回す
           // (#474 フェーズ1+3)。WinRT / 受信ロジックは wns_push に集約し、ここは

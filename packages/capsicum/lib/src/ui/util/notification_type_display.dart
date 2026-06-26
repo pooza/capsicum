@@ -65,6 +65,16 @@ NotificationTypeDisplay notificationTypeDisplay(
       );
     case NotificationType.announcement:
       return const NotificationTypeDisplay(icon: Icons.campaign, label: 'お知らせ');
+    case NotificationType.addedToCollection:
+      return const NotificationTypeDisplay(
+        icon: Icons.bookmark_add,
+        label: 'コレクションに追加',
+      );
+    case NotificationType.collectionUpdate:
+      return const NotificationTypeDisplay(
+        icon: Icons.collections_bookmark,
+        label: 'コレクションを更新',
+      );
     case NotificationType.other:
       return const NotificationTypeDisplay(
         icon: Icons.notifications,
@@ -113,6 +123,11 @@ NotificationType notificationTypeFromString(String? raw) {
     // Misskey 標準の通知 type には存在せず、capsicum-relay が独自に発火する。
     case 'announcement':
       return NotificationType.announcement;
+    // Mastodon 4.6 Collections の被フィーチャー通知 (#741)。
+    case 'added_to_collection':
+      return NotificationType.addedToCollection;
+    case 'collection_update':
+      return NotificationType.collectionUpdate;
     default:
       return NotificationType.other;
   }

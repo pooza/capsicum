@@ -13,6 +13,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
+import '../../platform/platform_info.dart';
 import '../../url_helper.dart';
 import '../util/post_action_error.dart';
 import '../../provider/account_manager_provider.dart';
@@ -20,9 +21,11 @@ import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import 'content_parser.dart';
+import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/post_scope_display.dart';
+import '../util/relative_time.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'post_touch_action_row.dart';
@@ -460,12 +463,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                                   for (final role in displayPost.author.roles)
                                     ..._buildRoleIcon(context, role),
                                   const SizedBox(width: 4),
-                                  Icon(
-                                    _scopeIcon(displayPost.scope),
-                                    size: 14,
-                                    color: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.color,
+                                  _maybeDesktopTooltip(
+                                    _scopeLabel(displayPost.scope),
+                                    Icon(
+                                      _scopeIcon(displayPost.scope),
+                                      size: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall?.color,
+                                    ),
                                   ),
                                   if (displayPost.localOnly) ...[
                                     const SizedBox(width: 2),
@@ -478,11 +484,14 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     ),
                                   ],
                                   const SizedBox(width: 4),
-                                  Text(
-                                    _formatTime(displayPost.postedAt),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                  _maybeDesktopTooltip(
+                                    _absoluteTimeTooltip(displayPost.postedAt),
+                                    Text(
+                                      _formatTime(displayPost.postedAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1095,6 +1104,22 @@ class _PostTileState extends ConsumerState<PostTile> {
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
+                    );
+                  },
+                ),
+              if ((targetPost.scope == PostScope.public ||
+                      targetPost.scope == PostScope.unlisted) &&
+                  targetPost.url != null &&
+                  hasOtherAccounts(ref))
+                ListTile(
+                  leading: const Icon(Icons.repeat),
+                  title: Text('別アカウントで$boostLabel'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showCrossAccountBoostPicker(
+                      context: context,
+                      ref: ref,
+                      targetPost: targetPost,
                     );
                   },
                 ),
@@ -1830,6 +1855,24 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   IconData _scopeIcon(PostScope scope) =>
       postScopeIcon(scope, ref.read(currentAdapterProvider));
+
+  String _scopeLabel(PostScope scope) =>
+      postScopeLabel(scope, ref.read(currentAdapterProvider));
+
+  /// 相対日時表示のときだけ、ホバー用の絶対日時文字列を返す（#754）。
+  /// 既に絶対日時を表示している場合はツールチップ不要なので null。
+  String? _absoluteTimeTooltip(DateTime postedAt) {
+    if (ref.watch(absoluteTimeProvider)) return null;
+    return formatAbsoluteTime(postedAt);
+  }
+
+  /// デスクトップでのみ [child] をツールチップで包む（#753 / #754）。
+  /// モバイルは投稿の長押しでアクションシートを出すため、Tooltip の長押し
+  /// 起動と競合させない。[message] が null/空のときも素の [child] を返す。
+  Widget _maybeDesktopTooltip(String? message, Widget child) {
+    if (!isDesktop || message == null || message.isEmpty) return child;
+    return Tooltip(message: message, child: child);
+  }
 }
 
 class _CountChip extends StatelessWidget {
@@ -1875,7 +1918,7 @@ class _CountChip extends StatelessWidget {
 }
 
 /// 短時間に同じリアクションへ繰り返しホバーしても API を叩き直さないための
-/// インメモリキャッシュ。key は `noteId reactionKey`。
+/// インメモリキャッシュ。key は `noteId reactionKey`。
 class _ReactionUsersCache {
   static final Map<String, List<User>> _cache = {};
 
@@ -1981,7 +2024,7 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
   bool _fetching = false;
   List<User>? _users;
 
-  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
+  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
 
   @override
   void dispose() {

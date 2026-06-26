@@ -55,6 +55,30 @@ void main() {
       expect(n.announcement?.content, '<p>メンテのお知らせ</p>');
     });
 
+    test('added_to_collection event carries the target collection (#741)', () {
+      final msg = jsonEncode({
+        'event': 'notification',
+        'payload': {
+          'id': '99',
+          'type': 'added_to_collection',
+          'created_at': '2026-06-07T00:00:00.000Z',
+          'account': _account(),
+          'collection': {
+            'id': 'c1',
+            'name': 'おすすめ',
+            'url': 'https://example.test/collections/c1',
+            'item_count': 5,
+          },
+        },
+      });
+      final n = MastodonNotificationStreaming.parseMessage(msg, 'example.test');
+      expect(n, isNotNull);
+      expect(n!.type, NotificationType.addedToCollection);
+      expect(n.collection?.id, 'c1');
+      expect(n.collection?.name, 'おすすめ');
+      expect(n.collection?.itemCount, 5);
+    });
+
     test('update event is ignored (out of scope, null)', () {
       final msg = jsonEncode({'event': 'update', 'payload': '{}'});
       expect(

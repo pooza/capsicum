@@ -770,9 +770,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return notifications
-        .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
-        .toList();
+    return _safeConvert(
+      notifications,
+      (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      (n) => n.id,
+    ).results;
   }
 
   @override

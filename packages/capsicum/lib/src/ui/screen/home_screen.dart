@@ -635,121 +635,119 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 : 'tl:${selectedType.name}',
           );
 
+    // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL をロード中
+    // は、直前文脈の TL（前のアカウントの投稿など）をそのまま残さずローディングを
+    // 出す。Riverpod は再計算中も valueOrNull に直前値を保持し、さらに account→
+    // adapter→timeline の dirty 伝播が HomeScreen の再 build より遅れることがある
+    // ため、isLoading 判定だけでは「前の文脈の値（しかも isLoading=false）」を
+    // 取りこぼす。そこで state.contextKey が現在の期待キーと食い違う＝前文脈の
+    // キャッシュなら、isLoading の有無に関わらずローディングへ落とす（同一アカウント
+    // 内のタブ切替でも前 TL を出さない、#758）。stale 判定は接続インジケータの色
+    // (_StreamStatusIndicator) と同じ [_timelineIsStale] を共有して drift を防ぐ
+    // (#764)。ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト
+    // 消失を防ぐ・RefreshIndicator が自前のスピナーを出す）。
+    final showingStale =
+        (timeline.isLoading ||
+            _timelineIsStale(timeline, expectedContextKey)) &&
+        !_pullRefreshing;
+    final effectiveTimeline = showingStale
+        ? const AsyncValue<TimelineState>.loading()
+        : timeline;
+
     Widget body = Column(
       children: [
         Expanded(
-          // 文脈切替（アカウント / タブ / ハッシュタグ / リスト変更）で TL を
-          // ロード中は、直前文脈の TL（前のアカウントの投稿など）をそのまま残さず
-          // ローディングを出す。Riverpod は再計算中も valueOrNull に直前値を保持し、
-          // さらに account→adapter→timeline の dirty 伝播が HomeScreen の再 build
-          // より遅れることがあるため、isLoading 判定だけでは「前の文脈の値（しかも
-          // isLoading=false）」を取りこぼす。そこで state.contextKey が現在の期待
-          // キーと食い違う＝前文脈のキャッシュなら、isLoading の有無に関わらず
-          // ローディングへ落とす（同一アカウント内のタブ切替でも前 TL を出さない）。
-          // ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト消失を
-          // 防ぐ・RefreshIndicator が自前のスピナーを出す）。
-          child:
-              ((timeline.isLoading ||
-                              (expectedContextKey != null &&
-                                  timeline.valueOrNull?.contextKey !=
-                                      expectedContextKey)) &&
-                          !_pullRefreshing
-                      ? const AsyncValue<TimelineState>.loading()
-                      : timeline)
-                  .when(
-                    data: (tlState) {
-                      // Restore marker position on first load (home timeline only).
-                      if (selectedList == null &&
-                          selectedType == TimelineType.home &&
-                          tlState.posts.isNotEmpty) {
-                        _restoreMarker(tlState.posts);
-                      }
-                      return RefreshIndicator(
-                        onRefresh: () async {
-                          _markerRestored = false;
-                          // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
-                          // データを残す。完了で必ず戻す。
-                          setState(() => _pullRefreshing = true);
-                          try {
-                            final Future<TimelineState> refreshed;
-                            if (selectedHashtag != null) {
-                              refreshed = ref.refresh(
-                                hashtagTimelineProvider(selectedHashtag).future,
-                              );
-                            } else if (selectedList != null) {
-                              refreshed = ref.refresh(
-                                listTimelineProvider(selectedList.id).future,
+          child: effectiveTimeline.when(
+            data: (tlState) {
+              // Restore marker position on first load (home timeline only).
+              if (selectedList == null &&
+                  selectedType == TimelineType.home &&
+                  tlState.posts.isNotEmpty) {
+                _restoreMarker(tlState.posts);
+              }
+              return RefreshIndicator(
+                onRefresh: () async {
+                  _markerRestored = false;
+                  // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
+                  // データを残す。完了で必ず戻す。
+                  setState(() => _pullRefreshing = true);
+                  try {
+                    final Future<TimelineState> refreshed;
+                    if (selectedHashtag != null) {
+                      refreshed = ref.refresh(
+                        hashtagTimelineProvider(selectedHashtag).future,
+                      );
+                    } else if (selectedList != null) {
+                      refreshed = ref.refresh(
+                        listTimelineProvider(selectedList.id).future,
+                      );
+                    } else {
+                      refreshed = ref.refresh(timelineProvider.future);
+                    }
+                    await refreshed;
+                  } finally {
+                    if (mounted) {
+                      setState(() => _pullRefreshing = false);
+                    }
+                  }
+                },
+                child: ScrollablePositionedList.separated(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  itemCount:
+                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index >= tlState.posts.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return PostTile(post: tlState.posts[index]);
+                  },
+                ),
+              );
+            },
+            loading: () {
+              if (_showScrollTop) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _showScrollTop = false);
+                });
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+            error: (error, stack) {
+              final message = _timelineErrorMessage(error);
+              final canRetry = !_isForbiddenError(error);
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(message, textAlign: TextAlign.center),
+                      if (canRetry) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (selectedList != null) {
+                              ref.invalidate(
+                                listTimelineProvider(selectedList.id),
                               );
                             } else {
-                              refreshed = ref.refresh(timelineProvider.future);
+                              ref.invalidate(timelineProvider);
                             }
-                            await refreshed;
-                          } finally {
-                            if (mounted) {
-                              setState(() => _pullRefreshing = false);
-                            }
-                          }
-                        },
-                        child: ScrollablePositionedList.separated(
-                          itemScrollController: _itemScrollController,
-                          itemPositionsListener: _itemPositionsListener,
-                          itemCount:
-                              tlState.posts.length +
-                              (tlState.isLoadingMore ? 1 : 0),
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            if (index >= tlState.posts.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            return PostTile(post: tlState.posts[index]);
                           },
+                          child: const Text('再試行'),
                         ),
-                      );
-                    },
-                    loading: () {
-                      if (_showScrollTop) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) setState(() => _showScrollTop = false);
-                        });
-                      }
-                      return const Center(child: CircularProgressIndicator());
-                    },
-                    error: (error, stack) {
-                      final message = _timelineErrorMessage(error);
-                      final canRetry = !_isForbiddenError(error);
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(message, textAlign: TextAlign.center),
-                              if (canRetry) ...[
-                                const SizedBox(height: 16),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    if (selectedList != null) {
-                                      ref.invalidate(
-                                        listTimelineProvider(selectedList.id),
-                                      );
-                                    } else {
-                                      ref.invalidate(timelineProvider);
-                                    }
-                                  },
-                                  child: const Text('再試行'),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                      ],
+                    ],
                   ),
+                ),
+              );
+            },
+          ),
         ),
         const SimplePostBar(),
       ],
@@ -1856,6 +1854,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 /// 本線タイムラインのライブ更新（streaming）接続状態を常時表示する小さな
 /// ドット (#714)。`timelineProvider` の [StreamConnectionState] を反映する。
 /// 枯渇可視化 (#588) も exhausted 状態として内包する。
+/// TL provider の現在値が「別文脈で取得した前のキャッシュ」か判定する (#758)。
+///
+/// 期待 contextKey（現在のアカウント＋タブ/タグ/リスト）と state が持つ
+/// contextKey が食い違えば stale。account→adapter→timeline の dirty 伝播が
+/// 遅れて `isLoading=false` のまま前文脈の値が残るケースを拾う。HomeScreen 本体
+/// の TL 差し替え（[_HomeScreenState.build]）と接続インジケータの色
+/// （[_StreamStatusIndicator]）が同じ判定を共有し、片方だけ条件が変わって
+/// silently drift するのを防ぐため 1 箇所に集約する (#764)。
+bool _timelineIsStale(AsyncValue<dynamic> async, String? expectedContextKey) =>
+    expectedContextKey != null &&
+    async.valueOrNull?.contextKey != expectedContextKey;
+
 class _StreamStatusIndicator extends ConsumerWidget {
   const _StreamStatusIndicator();
 
@@ -1874,9 +1884,7 @@ class _StreamStatusIndicator extends ConsumerWidget {
       ref.watch(currentAccountProvider)?.key,
       'tl:${ref.watch(selectedTimelineTypeProvider).name}',
     );
-    final stale =
-        expectedContextKey != null &&
-        async.valueOrNull?.contextKey != expectedContextKey;
+    final stale = _timelineIsStale(async, expectedContextKey);
     final conn = (async.isLoading || stale)
         ? StreamConnectionState.connecting
         : (async.valueOrNull?.streamConnectionState ??

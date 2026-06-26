@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../preset_servers.dart';
+import '../../url_helper.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key});
@@ -86,11 +88,22 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                 const SizedBox(height: 16),
                 Center(
                   child: Text(
-                    'サーバーを選択',
+                    'プリセットサーバーを選択',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
+                Center(
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('プリセットサーバーについて'),
+                    onPressed: () => launchUrlSafely(
+                      AppConstants.presetServersUrl,
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 ...visiblePresetServers().map((server) {
                   return ListTile(
                     leading: const Icon(Icons.dns),

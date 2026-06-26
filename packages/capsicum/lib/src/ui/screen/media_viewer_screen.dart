@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
@@ -12,6 +13,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
@@ -29,6 +31,20 @@ String _scrubMediaUrl(String url) {
   } catch (_) {
     return '(unparsable)';
   }
+}
+
+/// drag-out (#645) で OS に渡す virtual file の形式を添付の拡張子から決める。
+/// 既知の画像形式のみ対応し、未知の拡張子は null を返して drag-out 自体を
+/// 無効化する（誤った形式で壊れたファイルを渡さない）。動画/音声は player の
+/// 操作と gesture が競合するため別途・現状は対象外。
+FileFormat? _dragOutFileFormat(Attachment attachment) {
+  if (attachment.type != AttachmentType.image) return null;
+  final name = suggestedMediaFileName(attachment).toLowerCase();
+  if (name.endsWith('.png') || name.endsWith('.apng')) return Formats.png;
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return Formats.jpeg;
+  if (name.endsWith('.gif')) return Formats.gif;
+  if (name.endsWith('.webp')) return Formats.webp;
+  return null;
 }
 
 class MediaViewerScreen extends ConsumerStatefulWidget {
@@ -355,20 +371,37 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                 if (a.type == AttachmentType.audio) {
                   return _AudioPage(url: a.url);
                 }
+                final image = Image.network(
+                  a.url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
+                );
+                // デスクトップ (macOS / Windows) では画像を OS ファイラーへ
+                // drag-out できる (#645)。virtual file 対応 OS のみ・画像のみ
+                // (動画/音声は player の操作と gesture が競合するため対象外)。
+                final draggable =
+                    supportsMediaDragOut && _dragOutFileFormat(a) != null
+                    ? _DragOutImage(
+                        attachment: a,
+                        download: _downloadBytes,
+                        onDownloadError: (e, st) => reportOpFailure(
+                          tagKey: 'media.op',
+                          operation: 'drag_out',
+                          error: e,
+                          stackTrace: st,
+                          account: ref.read(currentAccountProvider),
+                        ),
+                        child: image,
+                      )
+                    : image;
                 return InteractiveViewer(
                   minScale: 1.0,
                   maxScale: 4.0,
-                  child: Center(
-                    child: Image.network(
-                      a.url,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white54,
-                        size: 64,
-                      ),
-                    ),
-                  ),
+                  child: Center(child: draggable),
                 );
               },
             ),
@@ -402,6 +435,76 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 画像を OS ファイラー（Finder / Explorer）へ drag-out する wrapper (#645)。
+/// super_drag_and_drop の virtual file（遅延ファイル生成）で、ネットワーク画像を
+/// OS がファイルとして受け取れるようにする。macOS / Windows のみ
+/// （[supportsMediaDragOut]）。画像用途に限定し、動画/音声は player の操作 gesture
+/// と競合するため対象外。
+///
+/// ダウンロードは drop 時に呼ばれる virtual file provider 内で行い、
+/// [dragItemProvider] は同期で DragItem を返す（await しない）。Windows の OLE
+/// ドラッグ（DoDragDrop）はジェスチャー内で同期的に開始する必要があり、開始前に
+/// await（ネットワーク取得）が挟まるとドラッグが起動したりしなかったりするため
+/// （drag-out が間欠的に不成立）。virtual file provider は「DL 等で時間がかかる
+/// on-demand 生成」を想定した API なので、取得はここに置くのが本来の設計
+/// （README / addVirtualFile の doc 参照）。取得失敗時は addError で空ファイルを
+/// 残さず中断する。
+class _DragOutImage extends StatelessWidget {
+  final Attachment attachment;
+  final Future<List<int>> Function(String url) download;
+  final void Function(Object error, StackTrace stackTrace) onDownloadError;
+  final Widget child;
+
+  const _DragOutImage({
+    required this.attachment,
+    required this.download,
+    required this.onDownloadError,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DragItemWidget(
+      allowedOperations: () => const [DropOperation.copy],
+      canAddItemToExistingSession: true,
+      dragItemProvider: (request) {
+        final format = _dragOutFileFormat(attachment);
+        if (format == null) return null;
+        final item = DragItem(
+          suggestedName: suggestedMediaFileName(attachment),
+          localData: attachment.id,
+        );
+        if (!item.virtualFileSupported) return null;
+        item.addVirtualFile(
+          format: format,
+          // drop 時に遅延ダウンロード。ドラッグ開始時に await しないことが要点
+          // （Windows のドラッグ起動を阻害しない）。sinkProvider は取得完了後に
+          // ファイルサイズ確定で呼ぶ。
+          provider: (sinkProvider, progress) {
+            unawaited(() async {
+              try {
+                final bytes = await download(attachment.url);
+                final sink = sinkProvider(fileSize: bytes.length);
+                sink.add(Uint8List.fromList(bytes));
+                sink.close();
+              } catch (e, st) {
+                // #645 は新機能のため初期は計装し、drag-out 固有の失敗率を
+                // host/backend tag 付きで観測する（save 系 #648 と同じ方針）。
+                onDownloadError(e, st);
+                // 取得失敗時は壊れた / 空ファイルを OS へ残さず中断する。
+                final sink = sinkProvider(fileSize: 0);
+                sink.addError(e);
+              }
+            }());
+          },
+        );
+        return item;
+      },
+      child: DraggableWidget(child: child),
     );
   }
 }

@@ -31,6 +31,8 @@ const char kLogin[] =
 const char kCreateToken[] =
     "\xe3\x82\xa2\xe3\x82\xaf\xe3\x82\xbb\xe3\x82\xb9\xe3\x83\x88\xe3\x83\xbc"
     "\xe3\x82\xaf\xe3\x83\xb3\xe4\xbd\x9c\xe6\x88\x90";  // アクセストークン作成
+const char kChatMessage[] =
+    "\xe3\x83\xa1\xe3\x83\x83\xe3\x82\xbb\xe3\x83\xbc\xe3\x82\xb8";  // メッセージ
 const char kGeneric[] = "\xe9\x80\x9a\xe7\x9f\xa5";  // 通知
 
 }  // namespace
@@ -71,6 +73,12 @@ std::string NotificationTypeDisplayLabel(const std::string& type,
   }
   if (type == "create_token") {
     return kCreateToken;
+  }
+  // Misskey 新 chat の Web Push 専用 type (#248)。Dart notificationTypeDisplay /
+  // NotificationType.chat と同じく「メッセージ」に寄せる。case が無いと title が
+  // 「通知」にフォールバックしていた (#765)。
+  if (type == "newChatMessage") {
+    return kChatMessage;
   }
   return kGeneric;
 }

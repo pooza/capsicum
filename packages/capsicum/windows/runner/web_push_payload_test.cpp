@@ -6,7 +6,8 @@
 // _id の string/number 均し・\uXXXX デコード・不正系を見る。
 //
 // ビルド & 実行（VS Developer 環境）:
-//   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp
+//   cl /EHsc /std:c++17 web_push_payload_test.cpp web_push_payload.cpp ^
+//      web_push_text_util.cpp
 //   .\web_push_payload_test.exe
 //
 // 期待値中の日本語も本体同様 \xHH（UTF-8）で表記し、実行文字セットに依存しない。

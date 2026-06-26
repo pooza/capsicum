@@ -15,6 +15,11 @@ class MastodonAccount {
   final int followingCount;
   final int statusesCount;
   final bool? bot;
+
+  /// 標準 Mastodon API の `group` boolean。Group アクター（PieFed コミュニティ
+  /// 等）を表す。`actor_type` は REST シリアライザが公開しないため、Group 判定
+  /// は基本的にこの field を使う（actorType はフォーク独自経路のフォールバック）。
+  final bool? group;
   final String? actorType;
   final Map<String, dynamic>? role;
   final List<Map<String, dynamic>>? roles;
@@ -36,6 +41,7 @@ class MastodonAccount {
     required this.followingCount,
     required this.statusesCount,
     this.bot,
+    this.group,
     this.actorType,
     this.role,
     this.roles,

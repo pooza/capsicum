@@ -13,6 +13,12 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 /// [measurementsMs] はミリ秒値（fetch / enrich / since_launch 等）。[tags] は
 /// 低カーディナリティの絞り込み軸（restore_read_position / found / jumped）。
 /// [data] は件数など（accounts / posts / fetches）。
+///
+/// **契約（#743）**: [tags] / [data] には host / token / username など PII /
+/// クレデンシャルを渡さないこと。transaction は `beforeSend` を通らず、保険の
+/// `beforeSendTransaction` も sensitive キー名（host/token/secret 等）の tag を
+/// filter するだけで、任意キーに入った値や [data] までは追えない。低カーディ
+/// ナリティの bool / 件数のみに留めること。
 void recordStartupPhase(
   String name, {
   required int durationMs,

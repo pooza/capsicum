@@ -5,6 +5,7 @@ library;
 export 'src/mastodon/announcement.dart';
 export 'src/mastodon/account.dart';
 export 'src/mastodon/application.dart';
+export 'src/mastodon/collection.dart';
 export 'src/mastodon/media_attachment.dart';
 export 'src/mastodon/notification.dart';
 export 'src/mastodon/status.dart';

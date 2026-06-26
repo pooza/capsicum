@@ -252,8 +252,9 @@ class _UnifiedNotificationTileState
       return Row(
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
-          Text(
-            formatTimestamp(createdAt, absolute: useAbsoluteTime),
+          TimestampText(
+            createdAt,
+            absolute: useAbsoluteTime,
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -280,8 +281,9 @@ class _UnifiedNotificationTileState
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          formatTimestamp(createdAt, absolute: useAbsoluteTime),
+        TimestampText(
+          createdAt,
+          absolute: useAbsoluteTime,
           style: theme.textTheme.bodySmall,
         ),
       ],

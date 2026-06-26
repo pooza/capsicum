@@ -1050,7 +1050,11 @@ class ContentRenderer {
       case _NodeType.ruby:
         return [
           WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
+            // ベース文字のベースラインを周囲テキストに揃える（読みは上に乗る）。
+            // _RubyWidget 側で base 行のベースラインが placeholder の
+            // baseline として報告されるよう組んでいる（#771）。
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
             child: _RubyWidget(
               base: node.text,
               reading: node.rubyReading ?? '',
@@ -1401,14 +1405,19 @@ class _RubyWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final readingSize = (baseStyle.fontSize ?? 14) * 0.5;
+    // base を子リストの先頭に置きつつ verticalDirection.up で視覚上は下段に配置する。
+    // Column（RenderFlex）は「子リスト先頭の子」のベースラインを placeholder の
+    // baseline として報告するため（defaultComputeDistanceToFirstActualBaseline）、
+    // これで base 行のベースラインが周囲テキストに揃い、読みがその上に乗る（#771）。
     return Column(
       mainAxisSize: MainAxisSize.min,
+      verticalDirection: VerticalDirection.up,
       children: [
+        Text(base, style: baseStyle.copyWith(height: 1)),
         Text(
           reading,
           style: baseStyle.copyWith(fontSize: readingSize, height: 1),
         ),
-        Text(base, style: baseStyle.copyWith(height: 1)),
       ],
     );
   }

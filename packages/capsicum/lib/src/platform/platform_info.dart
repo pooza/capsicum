@@ -11,6 +11,14 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
+/// メディアビューアから OS ファイラー（Finder / Explorer）への drag-out
+/// （#645）に対応するプラットフォームか。super_drag_and_drop の virtual file
+/// （遅延ファイル生成）は macOS / Windows のみ対応で、Linux (GTK) は drag-source
+/// として非対応のため除外する（Linux は別 issue）。UI 層に `Platform.isX` を
+/// 直書きしない設計指針に従い機能名で公開する。
+bool get supportsMediaDragOut =>
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+
 /// OAuth ログイン画面で「ブラウザから戻れないとき」の手動コード入力カードを
 /// 出すべきプラットフォームか（#556）。
 ///

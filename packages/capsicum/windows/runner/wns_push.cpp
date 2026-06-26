@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 
+#include "local_state_files.h"
 #include "web_push_key_reader.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -48,7 +49,8 @@ std::wstring PushKeysJsonPath() {
   try {
     winrt::hstring folder =
         winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    return std::wstring(folder.c_str(), folder.size()) + L"\\push_keys.json";
+    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
+           capsicum::kLocalStateKeysetFile;
   } catch (...) {
     return std::wstring();
   }
@@ -211,8 +213,8 @@ bool ConsumePushDiagnosticsJson(std::string* out_json) {
   try {
     winrt::hstring folder =
         winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    std::wstring path =
-        std::wstring(folder.c_str(), folder.size()) + L"\\push_diag.json";
+    std::wstring path = std::wstring(folder.c_str(), folder.size()) + L"\\" +
+                        capsicum::kLocalStateDiagFile;
     {
       std::ifstream f(path, std::ios::binary | std::ios::ate);
       if (!f) {

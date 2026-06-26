@@ -37,6 +37,17 @@ void main() {
         'お知らせ',
       );
     });
+
+    test('Collections の被フィーチャー通知にラベルが返る (#741)', () {
+      expect(
+        notificationTypeDisplay(NotificationType.addedToCollection).label,
+        'コレクションに追加',
+      );
+      expect(
+        notificationTypeDisplay(NotificationType.collectionUpdate).label,
+        'コレクションを更新',
+      );
+    });
   });
 
   group('notificationTypeFromString', () {
@@ -76,6 +87,17 @@ void main() {
       expect(
         notificationTypeFromString('announcement'),
         NotificationType.announcement,
+      );
+    });
+
+    test('Mastodon 4.6 Collections の type を変換する (#741)', () {
+      expect(
+        notificationTypeFromString('added_to_collection'),
+        NotificationType.addedToCollection,
+      );
+      expect(
+        notificationTypeFromString('collection_update'),
+        NotificationType.collectionUpdate,
       );
     });
   });

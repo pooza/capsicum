@@ -325,57 +325,124 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     });
 
     fetchSw?.stop();
-    final enrichSw = measureHomePaint ? (Stopwatch()..start()) : null;
-    final enriched = await _enrichIsCat(allVisible);
-    enrichSw?.stop();
 
+    // item3 (#716): isCat enrich をクリティカルパスから外す。初回描画は未 enrich の
+    // posts で即返し、moroheiya /account/is_cat による猫フラグ補完は描画後に
+    // バックグラウンドで適用する（キャッシュ駆動で冪等・装飾のみ）。Misskey は
+    // adapter 取得時点で isCat 確定済みのため、影響を受けるのは Mastodon×moroheiya
+    // のみ。first paint 計測はこの即返し時点を起点に記録する（enrich は除外）。
     if (measureHomePaint) {
       _homeFirstPaintReported = true;
-      _reportHomeFirstPaint(
-        fetchMs: fetchSw!.elapsedMilliseconds,
-        enrichMs: enrichSw!.elapsedMilliseconds,
-        posts: enriched.length,
+    }
+    unawaited(
+      _deferIsCatEnrich(
+        initialPosts: allVisible,
+        contextKey: contextKey,
+        measureHomePaint: measureHomePaint,
+        fetchMs: fetchSw?.elapsedMilliseconds ?? 0,
+        sinceLaunchAtPaintMs: measureHomePaint
+            ? appLaunchStopwatch.elapsedMilliseconds
+            : 0,
         fetches: fetches,
         // 既読位置復元 (#715) の ON/OFF で起動の体感は大きく変わる（ON は
         // first paint 後に getMarkers 往復＋古い位置へ着地）。混在させると平均が
         // 無意味になるため、計測を設定値で層別できるようタグ付けする。マーカー
         // 復元そのものの所要は home_screen 側の startup.marker_restore で測る。
         restoreReadPosition: ref.read(restoreReadPositionProvider),
-      );
-    }
+      ),
+    );
 
     return TimelineState(
-      posts: enriched,
+      posts: allVisible,
       hasMore: hasMore,
       pageCapHit: pageCapHit,
       contextKey: contextKey,
-      // _enrichIsCat の await 中に接続が live になっていることがあるため、
-      // 取りこぼさないよう現在値を反映する (#714)。
+      // 現在値を反映（stream 接続が即 live になっても取りこぼさない, #714）。
       streamConnectionState: _streamConnectionState,
     );
   }
 
-  /// ホーム TL の初回描画到達を計測ログ / Sentry breadcrumb に残す (#716)。
-  /// fetch_ms (サーバー応答) と enrich_ms (isCat 補完) を分離して持つことで、
-  /// 体感の主因がサーバー側か client 側 (item3 遅延化候補) かを切り分け、
-  /// since_launch_ms は時間帯をまたいでも比較できる起動全体の前段指標になる。
+  /// item3 (#716): 初回ページの isCat enrich を描画後に遅延適用する。
+  ///
+  /// build() は未 enrich の posts で即返しているため、ここで moroheiya
+  /// `/account/is_cat` を引いて猫フラグキャッシュを温め、その結果を **最新の**
+  /// state（描画後に streaming が prepend している可能性がある）へ再適用する。
+  /// enrich は装飾のみなので、失敗・dispose・文脈切替時は黙って破棄してよい。
+  Future<void> _deferIsCatEnrich({
+    required List<Post> initialPosts,
+    required String? contextKey,
+    required bool measureHomePaint,
+    required int fetchMs,
+    required int sinceLaunchAtPaintMs,
+    required int fetches,
+    required bool restoreReadPosition,
+  }) async {
+    final enrichSw = Stopwatch()..start();
+    try {
+      // キャッシュ温め目的。返り値は使わず、最新 state へ _applyIsCat で再適用する。
+      await _enrichIsCat(initialPosts);
+    } catch (_) {
+      // enrich は装飾。失敗しても初回描画は成立しているので握り潰す。
+    }
+    enrichSw.stop();
+
+    try {
+      final latest = state.valueOrNull;
+      if (latest != null && latest.contextKey == contextKey) {
+        final reapplied = latest.posts.map(_applyIsCat).toList();
+        if (_hasIsCatChange(reapplied, latest.posts)) {
+          state = AsyncData(latest.copyWith(posts: reapplied));
+        }
+      }
+    } catch (_) {
+      // dispose / 文脈切替の最中。装飾更新なので破棄してよい。
+    }
+
+    if (measureHomePaint) {
+      _reportHomeFirstPaint(
+        sinceLaunchMs: sinceLaunchAtPaintMs,
+        fetchMs: fetchMs,
+        enrichMs: enrichSw.elapsedMilliseconds,
+        posts: initialPosts.length,
+        fetches: fetches,
+        restoreReadPosition: restoreReadPosition,
+      );
+    }
+  }
+
+  /// 2 つの posts リストで isCat 再適用による差し替えが起きたか（要素の同一性で判定）。
+  bool _hasIsCatChange(List<Post> a, List<Post> b) {
+    if (a.length != b.length) return true;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return true;
+    }
+    return false;
+  }
+
+  /// ホーム TL の初回描画到達を計測ログ / Sentry transaction に残す (#716)。
+  /// since_launch_ms（起動→初回描画・enrich 除外）と fetch_ms（サーバー応答）で
+  /// 体感の主因を切り分ける。enrich_ms は item3 で描画後に遅延化した isCat 補完の
+  /// 所要で、もはやクリティカルパスには載らない参考値。
   void _reportHomeFirstPaint({
+    required int sinceLaunchMs,
     required int fetchMs,
     required int enrichMs,
     required int posts,
     required int fetches,
     required bool restoreReadPosition,
   }) {
-    final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
+    // since_launch_ms は初回描画（未 enrich の即返し）時点で確定させた値。
+    // item3 適用後は enrich がクリティカルパスから外れたため、この値には
+    // enrich_ms を含まない。enrich_ms は描画後の遅延 enrich の所要を別途記録する。
     debugPrint(
       'capsicum: startup: home timeline first paint in '
       '${sinceLaunchMs}ms since launch '
-      '(fetch=${fetchMs}ms enrich=${enrichMs}ms posts=$posts fetches=$fetches '
-      'restoreReadPosition=$restoreReadPosition)',
+      '(fetch=${fetchMs}ms deferred_enrich=${enrichMs}ms posts=$posts '
+      'fetches=$fetches restoreReadPosition=$restoreReadPosition)',
     );
     // 起動計測 (#716): transaction duration = since_launch_ms（起動→初回描画）。
-    // fetch_ms（サーバー）/ enrich_ms（isCat=item3 候補）は measurement、既読位置
-    // 復元の ON/OFF は tag で層別する。
+    // fetch_ms（サーバー）/ enrich_ms（描画後に遅延した isCat 補完）は measurement、
+    // 既読位置復元の ON/OFF は tag で層別する。
     recordStartupPhase(
       'app.startup.home_timeline',
       durationMs: sinceLaunchMs,
