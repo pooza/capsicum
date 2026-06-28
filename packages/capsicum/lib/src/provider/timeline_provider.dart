@@ -153,6 +153,20 @@ class TimelineState {
   );
 }
 
+/// 投稿 id を「新しい順（降順）」で比較する (#781)。タイムラインは Mastodon /
+/// Misskey とも id 降順で並ぶ前提（loadMore の maxId カーソルもこれに依存）。
+/// ギャップ補完で取り込んだ投稿を既存リストへ正しい位置に差し込むために使う。
+///
+/// Mastodon の id は数値（snowflake・桁が伸びるため文字列比較では不正確）なので
+/// BigInt で比較し、Misskey の aid（辞書順で時系列）はそのまま文字列比較する。
+/// 同一サーバーのタイムライン内で両形式が混ざることはない。
+int comparePostIdDesc(String a, String b) {
+  final na = BigInt.tryParse(a);
+  final nb = BigInt.tryParse(b);
+  if (na != null && nb != null) return nb.compareTo(na);
+  return b.compareTo(a);
+}
+
 /// Maximum number of automatic retries for [loadMore] on transient failure.
 const loadMoreMaxRetries = 2;
 
@@ -238,6 +252,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
 
+  /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
+  /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
+  /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
+  String? _newestKnownId;
+
+  /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
+  bool _catchUpInProgress = false;
+
   /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
   /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
   /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
@@ -252,6 +274,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _pendingPosts.clear();
     _isNearTop = true;
     _streamConnectionState = StreamConnectionState.connecting;
+    _newestKnownId = null;
+    _catchUpInProgress = false;
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
@@ -334,6 +358,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (measureHomePaint) {
       _homeFirstPaintReported = true;
     }
+
+    // ギャップ補完 (#781) の since_id 起点。初回 REST スナップショットの先頭を
+    // 記録しておき、WS が live になった時点でこの id より新しい投稿を取り直す。
+    _newestKnownId = allVisible.firstOrNull?.id;
+
     unawaited(
       _deferIsCatEnrich(
         initialPosts: allVisible,
@@ -545,6 +574,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // データがあればそれも更新する。
       onConnectionState: (connState) {
         _streamConnectionState = connState;
+        // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
+        // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
+        // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
+        // （実況中の取りこぼし報告の根因）。装飾でなく本機能なので最新 state へ
+        // マージする。
+        if (connState == StreamConnectionState.live) {
+          unawaited(_catchUpSinceTop());
+        }
         final current = state.valueOrNull;
         if (current == null) return;
         if (current.streamConnectionState == connState) return;
@@ -552,29 +589,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       },
     );
     _streamSubscription = stream.listen(
-      (newPost) {
-        final current = state.valueOrNull;
-        if (current == null) return;
-        if (newPost.filterAction == FilterAction.hide) return;
-        final hideLivecure = ref.read(hideLivecureProvider);
-        if (hideLivecure && _hasLivecureTag(newPost)) return;
-        // Avoid duplicates.
-        if (current.posts.any((p) => p.id == newPost.id)) return;
-        if (_pendingPosts.any((p) => p.id == newPost.id)) return;
-
-        if (_isNearTop) {
-          // User is at or near the top — prepend immediately.
-          state = AsyncData(
-            current.copyWith(posts: [newPost, ...current.posts]),
-          );
-        } else {
-          // User is scrolling — queue the post to avoid jumping.
-          _pendingPosts.add(newPost);
-          state = AsyncData(
-            current.copyWith(pendingCount: _pendingPosts.length),
-          );
-        }
-      },
+      (newPost) => _ingestLivePosts([newPost]),
       onError: (Object e, StackTrace st) {
         // controller 自体は error を流さない設計だが、adapter 側の .map
         // (_applyWordFilter 等) が投げると listener の error として届く。
@@ -612,6 +627,119 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     );
   }
 
+  /// streaming 受信とギャップ補完 (#781) の共通取り込み口。
+  ///
+  /// フィルタ (hide / hideLivecure) と重複排除 (表示中 + pending + バッチ内) を
+  /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
+  /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
+  /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
+  void _ingestLivePosts(List<Post> newPosts) {
+    if (newPosts.isEmpty) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final hideLivecure = ref.read(hideLivecureProvider);
+    final existingIds = {for (final p in current.posts) p.id};
+    final pendingIds = {for (final p in _pendingPosts) p.id};
+    final accepted = <Post>[];
+    final acceptedIds = <String>{};
+    for (final post in newPosts) {
+      if (post.filterAction == FilterAction.hide) continue;
+      if (hideLivecure && _hasLivecureTag(post)) continue;
+      if (existingIds.contains(post.id) || pendingIds.contains(post.id)) {
+        continue;
+      }
+      if (!acceptedIds.add(post.id)) continue; // バッチ内重複
+      accepted.add(post);
+    }
+    if (accepted.isEmpty) return;
+
+    if (_isNearTop) {
+      // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
+      // では実質 prepend だが、ギャップ補完バッチが streaming の prepend と
+      // 競合（fetch 待ちの間に新しい投稿が先に載る）しても順序が崩れないよう、
+      // ブロック prepend ではなくマージ＋ソートにする (#781)。タイムラインは
+      // 元々 id 降順なのでソートはほぼ冪等で、件数も数百どまり。
+      final merged = [...accepted, ...current.posts]
+        ..sort((a, b) => comparePostIdDesc(a.id, b.id));
+      _newestKnownId = merged.first.id;
+      state = AsyncData(current.copyWith(posts: merged));
+    } else {
+      // User is scrolling — queue to avoid jumping. flushPending で id 降順に
+      // 整列して取り込むため、ここでは順不同で積んでよい。
+      _pendingPosts.addAll(accepted);
+      _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
+      state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
+    }
+  }
+
+  /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
+  String _maxPostId(String? a, String b) {
+    if (a == null) return b;
+    return comparePostIdDesc(a, b) <= 0 ? a : b;
+  }
+
+  /// WS が live になった時点で、未接続の窓に流れて取りこぼした投稿を
+  /// `since_id` で取り直してマージする (#781)。
+  ///
+  /// 初回 REST スナップショット〜WS live、および各再接続の切断窓に作られた
+  /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
+  /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
+  /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
+  ///
+  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
+  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
+  /// 1 枚だけ取得してシードする (Codex #783)。
+  Future<void> _catchUpSinceTop() async {
+    if (_catchUpInProgress) return;
+    final since = _newestKnownId;
+    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
+    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
+    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
+    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
+    final capturedContextKey = state.valueOrNull?.contextKey;
+    _catchUpInProgress = true;
+    try {
+      final adapter = ref.read(currentAdapterProvider);
+      final type = ref.read(selectedTimelineTypeProvider);
+      if (adapter == null) return;
+
+      final gap = <Post>[];
+      final gapIds = <String>{};
+      String? maxId;
+      var fetches = 0;
+      while (fetches < kMaxVisibilityPageFetches) {
+        fetches++;
+        final response = await adapter.getTimeline(
+          type,
+          query: TimelineQuery(sinceId: since, maxId: maxId, limit: _pageSize),
+        );
+        for (final post in response.posts) {
+          if (gapIds.add(post.id)) gap.add(post);
+        }
+        // since が無い（アンカー未確立）ときは最新ページ 1 枚だけシードする。
+        // 全件フィルタ TL で毎 live フルページ走査するのを防ぎ、REST→live 窓の
+        // 取りこぼしだけ拾えれば十分（次回以降は _newestKnownId が since になる）。
+        if (since == null) break;
+        // rawCount が満ページ未満なら since_id まで到達済み（窓を読み切った）。
+        final rawLast = response.rawLastId ?? response.posts.lastOrNull?.id;
+        if (response.rawCount < _pageSize || rawLast == null) break;
+        maxId = rawLast; // since 方向（下）へページング。
+      }
+
+      if (gap.isEmpty) return;
+      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
+      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
+      if (state.valueOrNull?.contextKey != capturedContextKey) return;
+      // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
+      // 取り込み時に再度 state を読み、最新 state へマージする。
+      _ingestLivePosts(gap);
+    } catch (_) {
+      // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
+    } finally {
+      _catchUpInProgress = false;
+    }
+  }
+
   /// Called by the UI when the user's scroll position changes.
   void setNearTop(bool nearTop) {
     _isNearTop = nearTop;
@@ -623,8 +751,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (_pendingPosts.isEmpty) return;
     final current = state.valueOrNull;
     if (current == null) return;
-    final merged = [..._pendingPosts.reversed, ...current.posts];
+    // pending は順不同で積まれうる (#781: streaming 単発とギャップ補完バッチが
+    // 混在)。id でデデュープしつつ降順に整列して取り込む。
+    final seen = <String>{};
+    final merged = <Post>[];
+    for (final post in [..._pendingPosts, ...current.posts]) {
+      if (seen.add(post.id)) merged.add(post);
+    }
+    merged.sort((a, b) => comparePostIdDesc(a.id, b.id));
     _pendingPosts.clear();
+    if (merged.isNotEmpty) _newestKnownId = merged.first.id;
     state = AsyncData(current.copyWith(posts: merged, pendingCount: 0));
   }
 
@@ -680,6 +816,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // streaming は `!_isNearTop` のとき _pendingPosts にキューしてスクロール
     // ジャンプを防ぐが、自分の投稿は「投稿したのに出ない」を避けるため位置に
     // 関わらず即座に先頭へ出す（意図的に _isNearTop を見ない）。
+    // 自分の投稿は最新なので since_id 起点 (#781) も前進させる。
+    _newestKnownId = post.id;
     state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
   }
 

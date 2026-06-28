@@ -91,8 +91,10 @@ class MisskeyStreaming {
         _scheduleReconnect();
       },
       onDone: () {
-        _reconnectAttempts = 0;
-        _reconnectExhaustedNotified = false;
+        // onDone でバックオフをリセットすると「接続→onDone→reset→再接続→
+        // onDone→reset」のループでバックオフが基底値のまま動かず、上限到達に
+        // よる `onReconnectExhausted` 通知も出なくなる。リセットは接続成功
+        // (`ready.then`) 時のみに揃える（Mastodon 側 streaming.dart と同挙動）。
         _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
