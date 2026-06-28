@@ -685,10 +685,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 投稿はどの経路でも届かず永久欠落するため、live 遷移ごとにここで埋める。
   /// [_newestKnownId] を起点に、ギャップが 1 ページを超える場合は max_id で
   /// 下方向にページングして [kMaxVisibilityPageFetches] ページまで遡る。
+  ///
+  /// 初期可視リストが空（新規/空 TL・全件フィルタ・page-cap）で [_newestKnownId]
+  /// が null のときも、REST→live 窓に作られた投稿を取りこぼさないよう最新ページ
+  /// 1 枚だけ取得してシードする (Codex #783)。
   Future<void> _catchUpSinceTop() async {
     if (_catchUpInProgress) return;
     final since = _newestKnownId;
-    if (since == null) return; // 空 TL は streaming が今後の投稿で埋める。
+    // await 中にアカウント/種別が切り替わると build() が rerun して notifier が
+    // 新文脈に作り直されるが、この future はキャンセルされない。旧文脈で取得した
+    // 投稿を新文脈へマージしないよう、開始時の contextKey を捕捉し ingest 直前に
+    // 照合する (#758 / _deferIsCatEnrich と同型・Codex #783)。
+    final capturedContextKey = state.valueOrNull?.contextKey;
     _catchUpInProgress = true;
     try {
       final adapter = ref.read(currentAdapterProvider);
@@ -708,6 +716,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         for (final post in response.posts) {
           if (gapIds.add(post.id)) gap.add(post);
         }
+        // since が無い（アンカー未確立）ときは最新ページ 1 枚だけシードする。
+        // 全件フィルタ TL で毎 live フルページ走査するのを防ぎ、REST→live 窓の
+        // 取りこぼしだけ拾えれば十分（次回以降は _newestKnownId が since になる）。
+        if (since == null) break;
         // rawCount が満ページ未満なら since_id まで到達済み（窓を読み切った）。
         final rawLast = response.rawLastId ?? response.posts.lastOrNull?.id;
         if (response.rawCount < _pageSize || rawLast == null) break;
@@ -715,6 +727,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       }
 
       if (gap.isEmpty) return;
+      // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
+      // 汚染を防ぐ）。_ingestLivePosts は同期なので照合後の混入はない。
+      if (state.valueOrNull?.contextKey != capturedContextKey) return;
       // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
       // 取り込み時に再度 state を読み、最新 state へマージする。
       _ingestLivePosts(gap);
