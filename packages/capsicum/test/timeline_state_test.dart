@@ -95,4 +95,37 @@ void main() {
       expect(timelineContextKey(null, 'tl:home'), isNull);
     });
   });
+
+  group('comparePostIdDesc — ギャップ補完の id 整列 (#781)', () {
+    test('Mastodon 数値 id を新しい順（降順）で比較する', () {
+      expect(comparePostIdDesc('100', '99'), lessThan(0));
+      expect(comparePostIdDesc('99', '100'), greaterThan(0));
+      expect(comparePostIdDesc('100', '100'), 0);
+    });
+
+    test('数値 id は桁数が違っても数として比較する（文字列比較の罠を回避）', () {
+      // 文字列比較だと "9" > "100" になってしまうケース。
+      expect(
+        comparePostIdDesc('1000000000000000000', '999999999999999999'),
+        lessThan(0),
+      );
+      expect(comparePostIdDesc('9', '100'), greaterThan(0));
+    });
+
+    test('Misskey の aid は辞書順（時系列）で比較する', () {
+      // aid は新しいほど辞書順で後ろ。降順なら後ろの方が先に来る。
+      expect(comparePostIdDesc('9abd', '9abc'), lessThan(0));
+      expect(comparePostIdDesc('9abc', '9abd'), greaterThan(0));
+    });
+
+    test('リストを sort すると新しい順に並ぶ（数値）', () {
+      final ids = ['97', '100', '99', '101', '98']..sort(comparePostIdDesc);
+      expect(ids, ['101', '100', '99', '98', '97']);
+    });
+
+    test('リストを sort すると新しい順に並ぶ（aid）', () {
+      final ids = ['9aa3', '9aa1', '9aa5', '9aa2']..sort(comparePostIdDesc);
+      expect(ids, ['9aa5', '9aa3', '9aa2', '9aa1']);
+    });
+  });
 }
