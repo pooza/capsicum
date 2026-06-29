@@ -183,6 +183,57 @@ int comparePostIdDesc(String a, String b) {
   return b.compareTo(a);
 }
 
+/// 1 ページぶんの catch-up 取得結果（新しい順の投稿・生サーバー件数・最古 id）。
+typedef CatchUpPage = ({List<Post> posts, int rawCount, String? rawLastId});
+
+/// live 復帰時のギャップ補完 (#781/#784) のページング本体。provider 依存から
+/// 切り離した純粋関数で、`fetchUntilVisible` と同じく [fetch] 注入でテスト可能。
+///
+/// [since] より新しい投稿だけを **新しい順** で集めて返す（重複除去済み）。
+/// 重要: サーバーには **maxId のみ** を渡して常に DESC で取得する。Misskey は
+/// `sinceId` 単独指定だと結果が ASC（古い順）になり（本家 QueryService の
+/// `makePaginationQuery`: sinceId のみ → ASC / sinceId+untilId → DESC）、
+/// 「最古 id を次ページの maxId にして下へ」という DESC 前提のページングが壊れて
+/// ギャップの新しい側を取りこぼす。そこで since 到達はクライアント側で判定する
+/// （Mastodon は元から DESC なので無影響）。
+///
+/// [since] が null（アンカー未確立）のときは最新ページ 1 枚だけ取得してシードする。
+@visibleForTesting
+Future<List<Post>> collectCatchUpGap({
+  required String? since,
+  required int pageSize,
+  required int maxFetches,
+  required Future<CatchUpPage> Function(String? maxId) fetch,
+}) async {
+  final gap = <Post>[];
+  final gapIds = <String>{};
+  String? maxId;
+  var fetches = 0;
+  while (fetches < maxFetches) {
+    fetches++;
+    final page = await fetch(maxId);
+    var reachedAnchor = false;
+    for (final post in page.posts) {
+      // since 以下（= 既知）に達したら、posts は新しい順なので残りも既知。
+      // since 自身も既知なので等しい場合も含めて打ち切る。
+      if (since != null && comparePostIdDesc(post.id, since) >= 0) {
+        reachedAnchor = true;
+        break;
+      }
+      if (gapIds.add(post.id)) gap.add(post);
+    }
+    // since が無いときは最新ページ 1 枚だけシードする。全件フィルタ TL で毎 live
+    // フルページ走査するのを防ぎ、REST→live 窓の取りこぼしだけ拾えれば十分。
+    if (since == null) break;
+    // since まで読み切った、または満ページ未満（これ以上古い投稿が無い）なら停止。
+    if (reachedAnchor) break;
+    final rawLast = page.rawLastId ?? page.posts.lastOrNull?.id;
+    if (page.rawCount < pageSize || rawLast == null) break;
+    maxId = rawLast; // さらに古い方（下）へページング。
+  }
+  return gap;
+}
+
 /// Maximum number of automatic retries for [loadMore] on transient failure.
 const loadMoreMaxRetries = 2;
 
@@ -748,28 +799,22 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       final type = ref.read(selectedTimelineTypeProvider);
       if (adapter == null) return;
 
-      final gap = <Post>[];
-      final gapIds = <String>{};
-      String? maxId;
-      var fetches = 0;
-      while (fetches < kMaxVisibilityPageFetches) {
-        fetches++;
-        final response = await adapter.getTimeline(
-          type,
-          query: TimelineQuery(sinceId: since, maxId: maxId, limit: _pageSize),
-        );
-        for (final post in response.posts) {
-          if (gapIds.add(post.id)) gap.add(post);
-        }
-        // since が無い（アンカー未確立）ときは最新ページ 1 枚だけシードする。
-        // 全件フィルタ TL で毎 live フルページ走査するのを防ぎ、REST→live 窓の
-        // 取りこぼしだけ拾えれば十分（次回以降は _newestKnownId が since になる）。
-        if (since == null) break;
-        // rawCount が満ページ未満なら since_id まで到達済み（窓を読み切った）。
-        final rawLast = response.rawLastId ?? response.posts.lastOrNull?.id;
-        if (response.rawCount < _pageSize || rawLast == null) break;
-        maxId = rawLast; // since 方向（下）へページング。
-      }
+      final gap = await collectCatchUpGap(
+        since: since,
+        pageSize: _pageSize,
+        maxFetches: kMaxVisibilityPageFetches,
+        fetch: (maxId) async {
+          final response = await adapter.getTimeline(
+            type,
+            query: TimelineQuery(maxId: maxId, limit: _pageSize),
+          );
+          return (
+            posts: response.posts,
+            rawCount: response.rawCount,
+            rawLastId: response.rawLastId,
+          );
+        },
+      );
 
       if (gap.isEmpty) return;
       // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
