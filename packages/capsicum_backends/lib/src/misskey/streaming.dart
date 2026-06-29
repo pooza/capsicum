@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../streaming_backoff.dart';
 import 'extensions.dart';
 
 const _channelMap = <TimelineType, String>{
@@ -38,9 +40,13 @@ class MisskeyStreaming {
   bool _reconnectExhaustedNotified = false;
   StreamConnectionState? _lastConnectionState;
   int _reconnectAttempts = 0;
+  final Random _random = Random();
+  // 上限 = exhausted を一度だけ通知する閾値（give-up はしない, #784）。
   static const _maxReconnectAttempts = 10;
-  static const _baseReconnectDelay = Duration(seconds: 5);
-  static const _maxReconnectDelay = Duration(seconds: 300);
+  // 初動は速く（瞬間 503 / 瞬断から数秒で復帰）、上限は live クライアント向けに
+  // 短め。jitter は streaming_backoff 側で付与 (#784)。
+  static const _baseReconnectDelay = Duration(seconds: 1);
+  static const _maxReconnectDelay = Duration(seconds: 60);
 
   MisskeyStreaming({
     required this.host,
@@ -157,28 +163,29 @@ class MisskeyStreaming {
 
   void _scheduleReconnect() {
     if (_disposed) return;
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      // 諦めたまま _controller を開きっぱなしにすると UI 側は「接続中」の
-      // まま無期限に新規イベントを待つ。callback で外に出して呼び出し側に
-      // 判断させる (#586 / #552 と同型)。一度きり通知する。
-      if (!_reconnectExhaustedNotified) {
-        _reconnectExhaustedNotified = true;
-        try {
-          onReconnectExhausted?.call();
-        } catch (_) {
-          // 観測経路の失敗で本筋を止めない。
-        }
+    // 上限到達時、exhausted を一度だけ通知して呼び出し側 (UI / 観測) に知らせる
+    // (#586 / #552)。ただし **give-up はせず** 低頻度で再試行を続ける (#784)：
+    // 間欠的に失敗するサーバー / 瞬断回線でも live 復帰の機会を捨てない。復帰
+    // すれば since_id catch-up (#781) が穴を埋める。
+    if (_reconnectAttempts >= _maxReconnectAttempts &&
+        !_reconnectExhaustedNotified) {
+      _reconnectExhaustedNotified = true;
+      try {
+        onReconnectExhausted?.call();
+      } catch (_) {
+        // 観測経路の失敗で本筋を止めない。
       }
       _notifyConnectionState(StreamConnectionState.exhausted);
-      return;
     }
     _reconnectTimer?.cancel();
-    final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
-    final delay = Duration(
-      seconds: delaySecs.clamp(0, _maxReconnectDelay.inSeconds),
+    final delayMs = reconnectBackoffMs(
+      _reconnectAttempts,
+      baseMs: _baseReconnectDelay.inMilliseconds,
+      maxMs: _maxReconnectDelay.inMilliseconds,
+      random: _random,
     );
     _reconnectAttempts++;
-    _reconnectTimer = Timer(delay, () {
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!_disposed && _currentType != null) {
         _connect(_currentType!);
       }

@@ -633,10 +633,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
   /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
   /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
-  void _ingestLivePosts(List<Post> newPosts) {
-    if (newPosts.isEmpty) return;
+  ///
+  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
+  /// 補完の実効を観測する (#784) のに使う。
+  int _ingestLivePosts(List<Post> newPosts) {
+    if (newPosts.isEmpty) return 0;
     final current = state.valueOrNull;
-    if (current == null) return;
+    if (current == null) return 0;
     final hideLivecure = ref.read(hideLivecureProvider);
     final existingIds = {for (final p in current.posts) p.id};
     final pendingIds = {for (final p in _pendingPosts) p.id};
@@ -651,7 +654,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (!acceptedIds.add(post.id)) continue; // バッチ内重複
       accepted.add(post);
     }
-    if (accepted.isEmpty) return;
+    if (accepted.isEmpty) return 0;
 
     if (_isNearTop) {
       // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
@@ -670,6 +673,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
       state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
     }
+    return accepted.length;
   }
 
   /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
@@ -732,7 +736,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (state.valueOrNull?.contextKey != capturedContextKey) return;
       // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
       // 取り込み時に再度 state を読み、最新 state へマージする。
-      _ingestLivePosts(gap);
+      final recovered = _ingestLivePosts(gap);
+      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
+      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
+      // PII を載せない（件数のみ）。
+      if (recovered > 0) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            message: 'timeline.stream.catchup',
+            category: 'timeline.stream',
+            level: SentryLevel.info,
+            data: {'recovered': recovered, 'fetched': gap.length},
+          ),
+        );
+      }
     } catch (_) {
       // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
     } finally {
