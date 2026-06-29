@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../constants.dart';
+import '../util/exception_scrub.dart';
 
 /// デスクトップ常駐モード (#752)。オンのとき、メインウィンドウを閉じても
 /// アプリを終了させず、システムトレイ (Windows / Linux) / メニューバー
@@ -74,8 +76,20 @@ class ResidentModeService with WindowListener, TrayListener {
     if (Platform.isMacOS) {
       try {
         await _residentChannel.invokeMethod<void>('setResidentActive', value);
-      } catch (e) {
+      } catch (e, st) {
+        // pref（真実源）とネイティブの終了抑止状態が黙って乖離すると、UI は
+        // 常駐 ON のままウィンドウを閉じてもアプリが落ちる（ユーザーには無反応に
+        // 見える）。兄弟サービス launch_at_login (#763) と同じく Sentry に記録して
+        // 乖離を可視化する。debugPrint だけでは本番で観測できないため。
         debugPrint('capsicum: resident_mode: native sync($value) failed: $e');
+        Sentry.captureException(
+          scrubException(e),
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('service', 'resident_mode');
+            scope.setTag('desired', value.toString());
+          },
+        );
       }
     }
     try {
