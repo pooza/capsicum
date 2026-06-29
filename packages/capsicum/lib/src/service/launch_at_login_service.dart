@@ -15,8 +15,12 @@ import '../util/exception_scrub.dart';
 /// 実装が Runner への LaunchAtLogin Swift パッケージ統合（かつ SMAppService
 /// 経路は macOS 13+ 必須＝deployment target 引き上げ）を要し、得られる体験は
 /// システム設定 →「一般」→「ログイン項目」での手動登録と等価なため、自動化
-/// せずユーザーの手動登録に委ねる方針（#757）。Linux（~/.config/autostart）は
-/// 未着手。
+/// せずユーザーの手動登録に委ねる方針（#757）。Linux も同様に見送り: 自動化
+/// 自体は ~/.config/autostart に .desktop を書くだけで DE 非依存だが、配布
+/// チャネルで仕組みが分かれ（AppImage は resolvedExecutable が一時マウント先
+/// になるため $APPIMAGE 実体パスが必要・Flatpak は Background ポータルが必要で
+/// 生 .desktop は無効）、得られる体験は手動登録と等価。XDG autostart での手動
+/// 手順を packaging/linux/INSTALL.md に記載し、そちらに委ねる（#757）。
 class LaunchAtLoginService {
   static bool _setup = false;
 

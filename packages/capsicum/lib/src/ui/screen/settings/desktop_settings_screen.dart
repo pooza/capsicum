@@ -58,8 +58,9 @@ class DesktopSettingsScreen extends ConsumerWidget {
           // ログイン時起動 (#751)。OS のログイン時に capsicum を自動起動。
           // 常駐 (#752) と組み合わせると「ログイン → 常駐 → 通知を受け続ける」
           // が成立する。Windows のみ。macOS はシステム設定 →「一般」→「ログイン
-          // 項目」での手動登録に委ねる（SMAppService 統合 + macOS 13 必須の
-          // deployment target 引き上げに見合わないため・#757）。
+          // 項目」、Linux は ~/.config/autostart（INSTALL.md に手順）での手動
+          // 登録に委ねる（自動化が配布チャネル / ネイティブ統合に見合わない
+          // ため・#757）。詳細は LaunchAtLoginService の doc を参照。
           if (LaunchAtLoginService.isSupported)
             SwitchListTile(
               title: const Text('ログイン時に起動'),
