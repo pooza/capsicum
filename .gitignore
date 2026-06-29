@@ -4,7 +4,10 @@
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
-pubspec.lock
+# アプリ（pub workspace ルート）の pubspec.lock は再現ビルドのためコミットする
+# （Dart 公式: app は lock をコミット）。浮動依存が新版を publish しても CI が
+# 解決時刻依存で壊れるのを防ぐ。ライブラリ sub-package の lock は各
+# packages/*/.gitignore が引き続き無視する。build/ 配下は line 4 で無視済み。
 
 # Generated files
 *.g.dart
