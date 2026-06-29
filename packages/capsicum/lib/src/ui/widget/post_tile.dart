@@ -387,6 +387,8 @@ class _PostTileState extends ConsumerState<PostTile> {
             ? () => context.push('/post', extra: post)
             : null,
         onLongPress: () => _showActionMenu(context),
+        // デスクトップでは右クリックも長押しと同じアクションメニューを開く。
+        onSecondaryTap: () => _showActionMenu(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Stack(
