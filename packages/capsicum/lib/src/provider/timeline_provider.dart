@@ -112,6 +112,16 @@ class TimelineState {
   /// 食い違う state はそのまま描かずローディングへフォールバックする。
   final String? contextKey;
 
+  /// このセッション（build() 以降）で streaming が切断→再接続を試みた回数 (#782)。
+  /// インジケータに「ちょくちょく切れている」を**回数として正直に**出すための値。
+  /// 速い再接続は色のちらつきだけだと目視できないため、累積回数で見えるようにする。
+  /// build() 再実行（pull-to-refresh / 文脈切替）で 0 に戻る。
+  final int reconnectCount;
+
+  /// 直近で切断を検知した時刻 (#782)。インジケータの tooltip に「直近切断 HH:MM」
+  /// として出し、フラップの新しさを判断できるようにする。build() でクリアされる。
+  final DateTime? lastDisconnectedAt;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -122,6 +132,8 @@ class TimelineState {
     this.pageCapHit = false,
     this.streamConnectionState = StreamConnectionState.connecting,
     this.contextKey,
+    this.reconnectCount = 0,
+    this.lastDisconnectedAt,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -137,6 +149,8 @@ class TimelineState {
     bool? pageCapHit,
     StreamConnectionState? streamConnectionState,
     String? contextKey,
+    int? reconnectCount,
+    DateTime? lastDisconnectedAt,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -150,6 +164,8 @@ class TimelineState {
     pageCapHit: pageCapHit ?? this.pageCapHit,
     streamConnectionState: streamConnectionState ?? this.streamConnectionState,
     contextKey: contextKey ?? this.contextKey,
+    reconnectCount: reconnectCount ?? this.reconnectCount,
+    lastDisconnectedAt: lastDisconnectedAt ?? this.lastDisconnectedAt,
   );
 }
 
@@ -260,6 +276,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
   bool _catchUpInProgress = false;
 
+  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
+  /// で数え、state に反映する。build() でリセット。
+  int _reconnectCount = 0;
+  DateTime? _lastDisconnectedAt;
+
   /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
   /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
   /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
@@ -276,6 +297,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
     _catchUpInProgress = false;
+    _reconnectCount = 0;
+    _lastDisconnectedAt = null;
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
@@ -574,6 +597,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // データがあればそれも更新する。
       onConnectionState: (connState) {
         _streamConnectionState = connState;
+        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
+        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
+        if (connState == StreamConnectionState.disconnected) {
+          _reconnectCount++;
+          _lastDisconnectedAt = DateTime.now();
+        }
         // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
         // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
         // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
@@ -584,8 +613,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         }
         final current = state.valueOrNull;
         if (current == null) return;
-        if (current.streamConnectionState == connState) return;
-        state = AsyncData(current.copyWith(streamConnectionState: connState));
+        state = AsyncData(
+          current.copyWith(
+            streamConnectionState: connState,
+            reconnectCount: _reconnectCount,
+            lastDisconnectedAt: _lastDisconnectedAt,
+          ),
+        );
       },
     );
     _streamSubscription = stream.listen(

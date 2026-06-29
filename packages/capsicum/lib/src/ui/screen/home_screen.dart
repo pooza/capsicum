@@ -1866,12 +1866,53 @@ bool _timelineIsStale(AsyncValue<dynamic> async, String? expectedContextKey) =>
     expectedContextKey != null &&
     async.valueOrNull?.contextKey != expectedContextKey;
 
-class _StreamStatusIndicator extends ConsumerWidget {
+class _StreamStatusIndicator extends ConsumerStatefulWidget {
   const _StreamStatusIndicator();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_StreamStatusIndicator> createState() =>
+      _StreamStatusIndicatorState();
+}
+
+class _StreamStatusIndicatorState
+    extends ConsumerState<_StreamStatusIndicator> {
+  // 速い再接続は色のちらつきだけだと目視できないため、切断検知 (reconnectCount
+  // 増加) で一定時間 橙をラッチして必ず見えるようにする (#782)。
+  Timer? _flashTimer;
+  bool _flashing = false;
+  int? _seenReconnectCount;
+
+  @override
+  void dispose() {
+    _flashTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onReconnectCount(int count) {
+    final prev = _seenReconnectCount;
+    _seenReconnectCount = count;
+    if (prev != null && count > prev && mounted) {
+      _flashTimer?.cancel();
+      setState(() => _flashing = true);
+      _flashTimer = Timer(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _flashing = false);
+      });
+    }
+  }
+
+  static String _fmtTime(DateTime t) {
+    final l = t.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(l.hour)}:${two(l.minute)}:${two(l.second)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(timelineProvider);
+    // 切断検知 (reconnectCount 増加) を拾って flash を発火する (#782)。
+    ref.listen(timelineProvider, (prev, next) {
+      _onReconnectCount(next.valueOrNull?.reconnectCount ?? 0);
+    });
     // リロード中（アカウント/文脈切替・起動時の current 着地・pull-to-refresh）は
     // 直前 state の接続状態が valueOrNull に残るため、そのまま読むと「前のアカウント
     // の緑」を新しい文脈のロード完了まで見せてしまう。低速回線ではこの窓が数秒に
@@ -1885,24 +1926,56 @@ class _StreamStatusIndicator extends ConsumerWidget {
       'tl:${ref.watch(selectedTimelineTypeProvider).name}',
     );
     final stale = _timelineIsStale(async, expectedContextKey);
-    final conn = (async.isLoading || stale)
-        ? StreamConnectionState.connecting
-        : (async.valueOrNull?.streamConnectionState ??
-              StreamConnectionState.connecting);
-    final (Color color, String label) = switch (conn) {
+    // 前文脈のキャッシュや build 中は再接続カウント等を出さない（現在の文脈の
+    // 値だけを正直に出すため）。
+    final st = (async.isLoading || stale) ? null : async.valueOrNull;
+    final conn = st?.streamConnectionState ?? StreamConnectionState.connecting;
+    final (Color baseColor, String label) = switch (conn) {
       StreamConnectionState.live => (Colors.green, 'ライブ更新中'),
       StreamConnectionState.connecting => (Colors.amber, '接続中…'),
       StreamConnectionState.disconnected => (Colors.orange, '切断 — 再接続中'),
+      // #784 で give-up しなくなったため「停止」ではなく「不安定・再試行中」。
       StreamConnectionState.exhausted => (
         Theme.of(context).colorScheme.error,
-        'ライブ更新が停止（引っぱって再接続）',
+        '接続が不安定 — 再試行中',
       ),
     };
+    // 速い再接続でも見えるよう、flash 中は live でも切断色を見せる (#782)。
+    final color = (_flashing && conn == StreamConnectionState.live)
+        ? Colors.orange
+        : baseColor;
+
+    final count = st?.reconnectCount ?? 0;
+    final lastAt = st?.lastDisconnectedAt;
+    final tooltip = StringBuffer('ライブ更新: $label');
+    if (count > 0) {
+      tooltip.write('\n再接続 $count 回');
+      if (lastAt != null) tooltip.write('・直近切断 ${_fmtTime(lastAt)}');
+    }
+
     return Tooltip(
-      message: 'ライブ更新: $label',
+      message: tooltip.toString(),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Icon(Icons.circle, size: 10, color: color),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.circle, size: 10, color: color),
+            // 再接続回数を小さく併記し、「ちょくちょく切れている」を回数で正直に
+            // 見せる (#782)。0 のときは出さない。
+            if (count > 0) ...[
+              const SizedBox(width: 3),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
