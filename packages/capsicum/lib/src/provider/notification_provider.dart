@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../service/background_notification_service.dart';
+import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'timeline_provider.dart';
@@ -52,6 +53,7 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
     final response = await (adapter as NotificationSupport).getNotifications(
       query: const TimelineQuery(limit: _pageSize),
     );
+    reportSkippedNotifications(response.skippedPosts, source: 'notification');
     final notifications = await ref
         .read(isCatEnricherProvider)
         .enrichNotifications(response.notifications);
@@ -114,6 +116,11 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
             .getNotifications(
               query: TimelineQuery(maxId: lastId, limit: _pageSize),
             );
+        reportSkippedNotifications(
+          response.skippedPosts,
+          source: 'notification.loadMore',
+          maxId: lastId,
+        );
         final older = await ref
             .read(isCatEnricherProvider)
             .enrichNotifications(response.notifications);

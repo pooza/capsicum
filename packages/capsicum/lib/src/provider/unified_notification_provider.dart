@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
+import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 
@@ -71,6 +72,10 @@ class UnifiedNotificationNotifier
     try {
       final response = await (account.adapter as NotificationSupport)
           .getNotifications(query: const TimelineQuery(limit: _pageSize));
+      reportSkippedNotifications(
+        response.skippedPosts,
+        source: 'unified_notification',
+      );
       final enricher = IsCatEnricher.forAccount(account);
       final notifications = await enricher.enrichNotifications(
         response.notifications,
