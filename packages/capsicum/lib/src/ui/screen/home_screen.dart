@@ -63,6 +63,10 @@ class HomeNavItem {
   /// 0 なら非表示。お知らせの未読件数バッジ等に使う。
   final int badge;
 
+  /// macOS グローバルメニュー (#712) に割り当てるショートカット。null なら無し。
+  /// ドロワーの `ListTile` では使わない（モバイルにメニューショートカットは無い）。
+  final MenuSerializableShortcut? shortcut;
+
   /// 項目選択時のアクション。ドロワー経由ではドロワーを閉じてから、メニュー
   /// 経由ではそのまま呼ばれる（呼び分けは生成側の `onActivate` で吸収）。
   final VoidCallback onSelected;
@@ -71,6 +75,7 @@ class HomeNavItem {
     required this.title,
     required this.icon,
     this.badge = 0,
+    this.shortcut,
     required this.onSelected,
   });
 }
@@ -1078,6 +1083,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       HomeNavItem(
         title: '検索',
         icon: Icons.search,
+        shortcut: const SingleActivator(LogicalKeyboardKey.keyF, meta: true),
         onSelected: () => act(() => context.push('/search')),
       ),
       HomeNavItem(
@@ -1383,7 +1389,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           label: '移動',
           menus: [
             for (final item in navItems)
-              PlatformMenuItem(label: item.title, onSelected: item.onSelected),
+              PlatformMenuItem(
+                label: item.title,
+                shortcut: item.shortcut,
+                onSelected: item.onSelected,
+              ),
           ],
         ),
         if (accountState.accounts.isNotEmpty)
