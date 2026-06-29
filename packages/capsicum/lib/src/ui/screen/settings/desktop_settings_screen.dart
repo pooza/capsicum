@@ -47,9 +47,9 @@ class DesktopSettingsScreen extends ConsumerWidget {
           if (ResidentModeService.isSupported)
             SwitchListTile(
               title: const Text('ウィンドウを閉じても常駐'),
-              subtitle: const Text(
-                'オンにすると、ウィンドウを閉じてもアプリは終了せずトレイ'
-                '（macOS はメニューバー）に常駐し、通知を受け続けます',
+              subtitle: Text(
+                'オンにすると、ウィンドウを閉じてもアプリは終了せず'
+                '$residentTargetLabelに常駐し、通知を受け続けます',
               ),
               value: ref.watch(residentModeProvider),
               onChanged: (value) =>

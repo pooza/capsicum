@@ -11,6 +11,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
+/// 常駐モード (#752) の常駐先の OS 別呼称。macOS は「メニューバー」
+/// （NSStatusItem）、Windows / Linux は「トレイ」。設定画面の説明文を OS に
+/// 合わせて出し分けるために機能名で公開する（UI 層に `Platform.isX` を直書き
+/// しない設計指針・#650）。
+String get residentTargetLabel =>
+    !kIsWeb && Platform.isMacOS ? 'メニューバー' : 'トレイ';
+
 /// メディアビューアから OS ファイラー（Finder / Explorer）への drag-out
 /// （#645）に対応するプラットフォームか。super_drag_and_drop の virtual file
 /// （遅延ファイル生成）は macOS / Windows のみ対応で、Linux (GTK) は drag-source
