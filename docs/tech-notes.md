@@ -28,6 +28,10 @@
 
 MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL 抽出だと末尾の `)` が URL の一部として誤認識される。MFM パーサー実装時にこの問題も解消すること。
 
+### 外部パッケージの enum への網羅 switch は CI 時限爆弾（dio など）
+
+capsicum の依存は `^` 制約の浮動指定で `pubspec.lock` も `.gitignore` 対象のため、CI は毎回最新版を解決する。外部パッケージが enum に値を足すと、`default:` の無い網羅 switch が `non_exhaustive_switch_statement` でコンパイル不能になり、**ソース無変更のまま CI が突然全滅する**（手元は旧 lock を握っていて再現しない）。v1.42 で dio 5.10.0 の `DioExceptionType.transformTimeout` 追加により `push_relay_client.dart` の網羅 switch が落ち、develop の Analyze / Linux / Windows Release が全滅した。**外部パッケージの enum を switch するときは必ず `default:` を置く**（前方互換）。ローカル analyze が通っても CI と dio 解決バージョンがズレている可能性があるので、CI 失敗時はまず `dart pub upgrade <pkg>` で最新解決に揃えて再現確認する。
+
 ## デスクトップ（drag & drop / ネイティブ連携）
 
 ### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く
@@ -89,6 +93,10 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 ### `i/update` は空文字列禁止
 
 フィールドをクリアしたい場合、空文字列 `""` は 400 エラー。JSON で明示的に `null` を送ること。キー省略は「変更なし」の意味になる。
+
+### `sinceId` 単独指定は ASC（古い順）で返る — 下方向ページングが壊れる
+
+Misskey 本家 `QueryService.makePaginationQuery` は **`sinceId` のみ → ASC（古い順）／`sinceId`+`untilId` → DESC／`untilId` のみ → DESC** で並べる。Mastodon は `since_id` 指定でも常に DESC のため挙動が違う。「最古 id を次ページの `maxId` にして下方向へ辿る」DESC 前提のページングを Misskey で `sinceId` 単独で回すと、1 ページ目だけ ASC になって最古側しか拾えず、新しい側を取りこぼす（v1.42 の live 復帰 catch-up #784 でこのバグを踏んだ）。**ギャップを新しい順で全件辿りたいときは `sinceId` を渡さず `maxId`（untilId）のみで DESC 取得し、下端の判定はクライアント側で行う**（`collectCatchUpGap` がこの方式）。両 SNS で DESC に揃うので分岐も消える。
 
 ### ピン留め投稿の取得
 
