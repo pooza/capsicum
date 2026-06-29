@@ -1400,6 +1400,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           PlatformMenu(
             label: 'アカウント',
             menus: [
+              if (current != null)
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                      label: 'プロフィール',
+                      onSelected: () =>
+                          context.push('/profile', extra: current.user),
+                    ),
+                  ],
+                ),
               if (otherAccounts.isNotEmpty)
                 PlatformMenuItemGroup(
                   members: [
