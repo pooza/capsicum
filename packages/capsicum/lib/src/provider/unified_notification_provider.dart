@@ -69,10 +69,12 @@ class UnifiedNotificationNotifier
 
   Future<_FetchResult> _fetchFor(Account account) async {
     try {
-      var notifications = await (account.adapter as NotificationSupport)
+      final response = await (account.adapter as NotificationSupport)
           .getNotifications(query: const TimelineQuery(limit: _pageSize));
       final enricher = IsCatEnricher.forAccount(account);
-      notifications = await enricher.enrichNotifications(notifications);
+      final notifications = await enricher.enrichNotifications(
+        response.notifications,
+      );
       return _FetchResult(account: account, notifications: notifications);
     } catch (e) {
       return _FetchResult(account: account, notifications: const [], error: e);
