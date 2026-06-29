@@ -22,8 +22,11 @@ void main() {
         final c = computed(attempt);
         for (var i = 0; i < 30; i++) {
           final d = reconnectBackoffMs(attempt, baseMs: base, maxMs: max);
-          expect(d, inInclusiveRange(c ~/ 2, c),
-              reason: 'attempt=$attempt computed=$c');
+          expect(
+            d,
+            inInclusiveRange(c ~/ 2, c),
+            reason: 'attempt=$attempt computed=$c',
+          );
         }
       }
     });
@@ -39,15 +42,25 @@ void main() {
 
     test('overflow しない（諦めず attempt が増え続けても安全）', () {
       // 1 << attempt の overflow を内部クランプで防ぐ。
-      expect(() => reconnectBackoffMs(1 << 30, baseMs: base, maxMs: max),
-          returnsNormally);
+      expect(
+        () => reconnectBackoffMs(1 << 30, baseMs: base, maxMs: max),
+        returnsNormally,
+      );
     });
 
     test('seed 固定の Random で決定的（jitter は範囲内）', () {
-      final d1 = reconnectBackoffMs(2, baseMs: base, maxMs: max,
-          random: Random(42));
-      final d2 = reconnectBackoffMs(2, baseMs: base, maxMs: max,
-          random: Random(42));
+      final d1 = reconnectBackoffMs(
+        2,
+        baseMs: base,
+        maxMs: max,
+        random: Random(42),
+      );
+      final d2 = reconnectBackoffMs(
+        2,
+        baseMs: base,
+        maxMs: max,
+        random: Random(42),
+      );
       expect(d1, d2);
     });
   });
