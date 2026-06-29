@@ -333,8 +333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     // streaming 再接続上限到達時に silent failure にならないよう SnackBar
-    // 表示 (#602)。フラグは pull-to-refresh / タブ再選択の build() でクリア
-    // されるため、復帰経路もユーザーに伝わる文言にする。
+    // 表示 (#602)。#784 で give-up せず自動再試行を続けるため「停止」ではなく
+    // 「不安定・自動再接続中（引けば即時）」と伝える。フラグは live 復帰時
+    // (timeline_provider) と pull-to-refresh / タブ再選択の build() でクリアされる。
     ref.listen(listenTarget, (prev, next) {
       final exhausted = next.valueOrNull?.streamReconnectExhausted ?? false;
       final prevExhausted =
@@ -343,7 +344,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('ライブ更新が停止しました。下に引いて再接続してください'),
+              content: Text('ライブ更新が不安定です。自動で再接続中（下に引くと即時再接続）'),
               duration: Duration(seconds: 5),
             ),
           );

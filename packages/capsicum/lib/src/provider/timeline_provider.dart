@@ -618,6 +618,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
             streamConnectionState: connState,
             reconnectCount: _reconnectCount,
             lastDisconnectedAt: _lastDisconnectedAt,
+            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
+            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
+            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
+            // なる (Codex #780)。live 以外では現状維持（null）。
+            streamReconnectExhausted: connState == StreamConnectionState.live
+                ? false
+                : null,
           ),
         );
       },
