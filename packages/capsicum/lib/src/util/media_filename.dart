@@ -43,13 +43,32 @@ String? _sanitize(String? raw) {
   return cleaned.isEmpty ? null : cleaned;
 }
 
+/// 添付の元ファイル名 / URL から拡張子（小文字・先頭ドットなし）を取り出す。
+/// 名前にも URL にも拡張子が無ければ null を返す（[suggestedMediaFileName] と
+/// 違い、種別由来のデフォルト拡張子は補わない）。
+///
+/// 「実バイトの形式が分からないならデフォルトに倒さず諦める」用途向け。
+/// drag-out (#779) は既定 `.png` に倒すと JPEG/WebP を PNG として advertise して
+/// しまうため、この生の拡張子だけで判定する。
+String? rawMediaExtension(Attachment attachment) {
+  return _extensionOf(_sanitize(attachment.name)) ??
+      _extensionOf(_sanitize(_lastPathSegment(attachment.url)));
+}
+
+/// 末尾に近い位置に '.' があり、後続が拡張子らしい長さ (1〜5 文字) なら拡張子と
+/// みなして小文字で返す。それ以外は null。
+String? _extensionOf(String? name) {
+  if (name == null) return null;
+  final dot = name.lastIndexOf('.');
+  if (dot > 0 && dot < name.length - 1 && name.length - dot <= 6) {
+    return name.substring(dot + 1).toLowerCase();
+  }
+  return null;
+}
+
 /// 既に拡張子があればそのまま、無ければ種別由来の拡張子を付ける。
 String _ensureExtension(String name, AttachmentType type) {
-  final dot = name.lastIndexOf('.');
-  // 末尾に近い位置に '.' があり、後続が拡張子らしい長さなら拡張子ありとみなす。
-  if (dot > 0 && dot < name.length - 1 && name.length - dot <= 6) {
-    return name;
-  }
+  if (_extensionOf(name) != null) return name;
   return '$name${_defaultExtension(type)}';
 }
 
