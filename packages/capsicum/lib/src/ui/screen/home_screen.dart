@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -434,7 +435,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       wideLayout: wideLayout,
     );
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
         leading: wideLayout
@@ -581,6 +582,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               timeline,
             ),
     );
+
+    // macOS のみグローバルメニューバーをミラーする (#712)。Windows / Linux の
+    // in-window メニューは後続 #713。
+    if (Platform.isMacOS) {
+      return _buildMacMenuBar(
+        context,
+        scaffold,
+        account,
+        accountState,
+        unreadAnnouncements,
+      );
+    }
+    return scaffold;
   }
 
   Widget _buildBody(
@@ -1206,6 +1220,225 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (confirmed == true) {
       await ref.read(accountManagerProvider.notifier).logout(current);
     }
+  }
+
+  /// macOS グローバルメニュー (#712)。ドロワーと同じ [_buildNavItems] を単一
+  /// ソースに「移動」「アカウント」メニューを構成し、標準の App / 編集 / 表示 /
+  /// ウインドウを再構築する。
+  ///
+  /// 注意: [PlatformMenuBar] は macOS の native NSMenu（既定の MainMenu.xib）を
+  /// 丸ごと置き換えるため、About / 終了 / Services 等は [PlatformProvidedMenuItem]
+  /// で、Edit（コピー/ペースト等）は provided 型が無いので現在フォーカス中の
+  /// `EditableText` へ text-editing intent を dispatch して再現する。キーボード
+  /// ショートカット自体は Flutter 側で従来どおり機能するが、メニュー項目として
+  /// 温存するために明示的に並べる（issue の「標準 Edit / Window / Help は温存」）。
+  Widget _buildMacMenuBar(
+    BuildContext context,
+    Widget child,
+    Account? current,
+    AccountManagerState accountState,
+    int unreadAnnouncements,
+  ) {
+    final announcementsShownAsTab =
+        current != null &&
+        ref.watch(
+          isTabVisibleProvider((
+            storageKey: current.key.toStorageKey(),
+            tab: const AnnouncementsTab(),
+          )),
+        );
+    final navItems = _buildNavItems(
+      context,
+      current,
+      accountState,
+      unreadAnnouncements,
+      announcementsShownAsTab,
+    );
+    final otherAccounts = accountState.accounts
+        .where((a) => a.key != current?.key)
+        .toList();
+
+    // 編集アクションは現在フォーカス中のフィールドへ intent を送る。フォーカスが
+    // テキスト以外なら no-op（intent を処理する Action が無い）。
+    void editAction(Intent intent) {
+      final focusCtx = FocusManager.instance.primaryFocus?.context;
+      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
+    }
+
+    return PlatformMenuBar(
+      menus: [
+        // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。
+        PlatformMenu(
+          label: 'capsicum',
+          menus: [
+            PlatformMenuItem(
+              label: 'capsicum について',
+              onSelected: () => showAboutCapsicum(context),
+            ),
+            PlatformMenuItem(
+              label: '設定…',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.comma,
+                meta: true,
+              ),
+              onSelected: () => context.push('/settings'),
+            ),
+            const PlatformMenuItemGroup(
+              members: [
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.servicesSubmenu,
+                ),
+              ],
+            ),
+            const PlatformMenuItemGroup(
+              members: [
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hide,
+                ),
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hideOtherApplications,
+                ),
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.showAllApplications,
+                ),
+              ],
+            ),
+            const PlatformMenuItemGroup(
+              members: [
+                PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.quit,
+                ),
+              ],
+            ),
+          ],
+        ),
+        PlatformMenu(
+          label: '編集',
+          menus: [
+            PlatformMenuItem(
+              label: '取り消す',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyZ,
+                meta: true,
+              ),
+              onSelected: () => editAction(
+                const UndoTextIntent(SelectionChangedCause.keyboard),
+              ),
+            ),
+            PlatformMenuItem(
+              label: 'やり直す',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyZ,
+                meta: true,
+                shift: true,
+              ),
+              onSelected: () => editAction(
+                const RedoTextIntent(SelectionChangedCause.keyboard),
+              ),
+            ),
+            PlatformMenuItem(
+              label: 'カット',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyX,
+                meta: true,
+              ),
+              onSelected: () => editAction(
+                const CopySelectionTextIntent.cut(
+                  SelectionChangedCause.keyboard,
+                ),
+              ),
+            ),
+            PlatformMenuItem(
+              label: 'コピー',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyC,
+                meta: true,
+              ),
+              onSelected: () => editAction(CopySelectionTextIntent.copy),
+            ),
+            PlatformMenuItem(
+              label: 'ペースト',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyV,
+                meta: true,
+              ),
+              onSelected: () => editAction(
+                const PasteTextIntent(SelectionChangedCause.keyboard),
+              ),
+            ),
+            PlatformMenuItem(
+              label: 'すべて選択',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.keyA,
+                meta: true,
+              ),
+              onSelected: () => editAction(
+                const SelectAllTextIntent(SelectionChangedCause.keyboard),
+              ),
+            ),
+          ],
+        ),
+        // ドロワーと同じナビゲーション項目（単一ソース）。
+        PlatformMenu(
+          label: '移動',
+          menus: [
+            for (final item in navItems)
+              PlatformMenuItem(label: item.title, onSelected: item.onSelected),
+          ],
+        ),
+        if (accountState.accounts.isNotEmpty)
+          PlatformMenu(
+            label: 'アカウント',
+            menus: [
+              if (otherAccounts.isNotEmpty)
+                PlatformMenuItemGroup(
+                  members: [
+                    for (final a in otherAccounts)
+                      PlatformMenuItem(
+                        label: '@${a.user.username}@${a.key.host}',
+                        onSelected: () => ref
+                            .read(accountManagerProvider.notifier)
+                            .switchAccount(a),
+                      ),
+                  ],
+                ),
+              PlatformMenuItemGroup(
+                members: [
+                  PlatformMenuItem(
+                    label: 'アカウントを追加',
+                    onSelected: () => context.push('/server'),
+                  ),
+                  if (current != null)
+                    PlatformMenuItem(
+                      label: 'ログアウト',
+                      onSelected: () => _confirmLogout(context, current),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        const PlatformMenu(
+          label: '表示',
+          menus: [
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.toggleFullScreen,
+            ),
+          ],
+        ),
+        const PlatformMenu(
+          label: 'ウインドウ',
+          menus: [
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.minimizeWindow,
+            ),
+            PlatformProvidedMenuItem(
+              type: PlatformProvidedMenuItemType.zoomWindow,
+            ),
+          ],
+        ),
+      ],
+      child: child,
+    );
   }
 
   Widget _buildDrawer(
