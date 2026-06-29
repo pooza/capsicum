@@ -7,6 +7,14 @@ class MainFlutterWindow: NSWindow {
   private var notificationDedupPlugin: NotificationDedupPlugin?
 
   override func awakeFromNib() {
+    // macOS 自動ウインドウタブ機能を無効化する (#712)。capsicum は単一ウインドウ
+    // のため、既定 ON だと「表示」メニューに OS が「タブバーを表示」「すべての
+    // タブを表示」を注入し、ウインドウ上部に意味のない "capsicum" タブが出る。
+    // class プロパティでメニュー項目ごと抑止し、念のため当該ウインドウも
+    // tabbingMode=.disallowed にする。
+    NSWindow.allowsAutomaticWindowTabbing = false
+    self.tabbingMode = .disallowed
+
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
