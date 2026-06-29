@@ -568,8 +568,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (emojiQuery == null && _emojiSuggestions.isNotEmpty) {
       setState(() => _emojiSuggestions = []);
     }
-    if (readingQuery == null && _wordSuggestions.isNotEmpty) {
-      setState(() => _wordSuggestions = []);
+    if (readingQuery == null) {
+      // 読みクエリでなくなったら in-flight の suggestWords を無効化する。
+      // 世代を進めないと、await 中だった旧リクエストが完了時に世代チェックを
+      // 通過し、もう読みクエリでないテキストに stale な候補を再表示しうる
+      // (チップ未表示＝候補到着前でも fetch は in-flight でありうるので
+      // `_wordSuggestions.isNotEmpty` の外で進める)。#778
+      _wordFetchGen++;
+      if (_wordSuggestions.isNotEmpty) {
+        setState(() => _wordSuggestions = []);
+      }
     }
 
     if (mentionQuery != null) {
