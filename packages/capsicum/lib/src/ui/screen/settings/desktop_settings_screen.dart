@@ -11,8 +11,9 @@ import '../../../service/update_checker.dart';
 ///
 /// ウィンドウ常駐 (#752) / ログイン時起動 (#751) などデスクトップでしか意味を
 /// 持たない項目は、モバイルと共通の「表示」設定に混ぜると過密になるため、
-/// ここへ分離する。各項目はさらに OS / 配布チャネルでゲートする（常駐・ログイン
-/// 時起動は当面 Windows のみ＝後続は #757、更新確認は直配チャネルのみ）。
+/// ここへ分離する。各項目はさらに OS / 配布チャネルでゲートする（常駐は
+/// Windows + macOS メニューバー、ログイン時起動は Windows のみ〔macOS は
+/// システム設定での手動登録に委ねる・#757〕、更新確認は直配チャネルのみ）。
 class DesktopSettingsScreen extends ConsumerWidget {
   const DesktopSettingsScreen({super.key});
 
@@ -39,8 +40,8 @@ class DesktopSettingsScreen extends ConsumerWidget {
                   ref.read(mouseDragScrollProvider.notifier).setEnabled(value),
             ),
           // 常駐モード (#752)。ウィンドウを閉じてもトレイ / メニューバーに
-          // 常駐し、通知 (#569 WebSocket) を受け続ける。v1.40 は Windows のみ
-          // 有効化（macOS / Linux は検証後に #757 で広げる）。
+          // 常駐し、通知 (#569 WebSocket) を受け続ける。Windows（v1.40）+ macOS
+          // メニューバー（#757）で有効。Linux トレイは #757 の残作業。
           if (ResidentModeService.isSupported)
             SwitchListTile(
               title: const Text('ウィンドウを閉じても常駐'),
@@ -54,7 +55,9 @@ class DesktopSettingsScreen extends ConsumerWidget {
             ),
           // ログイン時起動 (#751)。OS のログイン時に capsicum を自動起動。
           // 常駐 (#752) と組み合わせると「ログイン → 常駐 → 通知を受け続ける」
-          // が成立する。v1.40 は Windows のみ（macOS / Linux は #757）。
+          // が成立する。Windows のみ。macOS はシステム設定 →「一般」→「ログイン
+          // 項目」での手動登録に委ねる（SMAppService 統合 + macOS 13 必須の
+          // deployment target 引き上げに見合わないため・#757）。
           if (LaunchAtLoginService.isSupported)
             SwitchListTile(
               title: const Text('ログイン時に起動'),

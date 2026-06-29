@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -23,18 +24,28 @@ class ResidentModeService with WindowListener, TrayListener {
   static final ResidentModeService instance = ResidentModeService._();
 
   /// 常駐モードを UI に露出する OS。実装コード自体は全デスクトップで動くが、
-  /// v1.40 では検証面の都合で Windows のみ有効化する。macOS（メニューバー）/
-  /// Linux（トレイ）の検証と有効化は #757 (v1.42) で行い、ここを広げる。
-  static bool get isSupported => Platform.isWindows;
+  /// 検証面の都合で OS ごとに段階的に有効化する。Windows は v1.40、macOS
+  /// （メニューバー = NSStatusItem）は #757 で実機検証して追加。Linux（トレイ）
+  /// は AppIndicator / GNOME 拡張依存の整理が残るため当面除外（#757 の残作業）。
+  static bool get isSupported => Platform.isWindows || Platform.isMacOS;
+
+  /// macOS のみ。常駐状態をネイティブ (AppDelegate) に伝え、ウィンドウを閉じても
+  /// プロセスを終了させないための channel。window_manager の preventClose が macOS
+  /// embedder では close を止めきれないため、終了抑止はネイティブ側で行う（#757）。
+  static const _residentChannel = MethodChannel('capsicum/resident');
 
   bool _enabled = false;
   bool _trayCreated = false;
   bool _attached = false;
 
-  /// Windows は .ico が確実。macOS / Linux は flutter asset の png を使う
-  /// （macOS は base64 化、Linux は libappindicator が png を扱える）。
+  /// Windows は .ico が確実。macOS はメニューバー用にモノクロ template png
+  /// （黒シルエット + alpha。`isTemplate` でライト/ダークのメニューバーに自動
+  /// 追従する。フルカラーの logo.png を template 指定すると黒塗り矩形になる）。
+  /// Linux は libappindicator が png を扱えるため logo.png（現状 UI 非露出）。
   String get _iconAsset => Platform.isWindows
       ? 'assets/images/tray_icon.ico'
+      : Platform.isMacOS
+      ? 'assets/images/tray_icon_macos_template.png'
       : 'assets/images/logo.png';
 
   /// window / tray のリスナー登録。サポート OS の起動時に 1 度だけ呼ぶ。
@@ -50,6 +61,15 @@ class ResidentModeService with WindowListener, TrayListener {
   Future<void> setEnabled(bool value) async {
     if (!isSupported) return;
     _enabled = value;
+    // macOS: ウィンドウを閉じてもプロセスを残すかをネイティブへ伝える。
+    // window 操作より先に伝えておき、close と入れ違っても終了抑止が効くようにする。
+    if (Platform.isMacOS) {
+      try {
+        await _residentChannel.invokeMethod<void>('setResidentActive', value);
+      } catch (e) {
+        debugPrint('capsicum: resident_mode: native sync($value) failed: $e');
+      }
+    }
     try {
       if (value) {
         await windowManager.setPreventClose(true);
@@ -69,7 +89,10 @@ class ResidentModeService with WindowListener, TrayListener {
 
   Future<void> _ensureTray() async {
     if (_trayCreated) return;
-    await trayManager.setIcon(_iconAsset);
+    // macOS のメニューバーは template 画像（モノクロ）として描かせる。これで
+    // システムがライト/ダークやハイライト時の色を自動で塗り分ける。Windows /
+    // Linux は通常のカラーアイコンなので isTemplate は無視される。
+    await trayManager.setIcon(_iconAsset, isTemplate: Platform.isMacOS);
     await trayManager.setToolTip(AppConstants.appName);
     await trayManager.setContextMenu(
       Menu(
@@ -90,26 +113,49 @@ class ResidentModeService with WindowListener, TrayListener {
   }
 
   Future<void> _showWindow() async {
+    // macOS: Dock / アプリスイッチャに戻す（.regular）。隠していた間は .accessory
+    // で Dock から消えているため、show より前に戻さないと最前面化が効きにくい。
+    await _setDockIconHidden(false);
     await windowManager.show();
     await windowManager.focus();
+  }
+
+  /// macOS のみ。Dock アイコンの出し入れをネイティブに依頼する。Windows は
+  /// 概念が無いので何もしない。
+  Future<void> _setDockIconHidden(bool hidden) async {
+    if (!Platform.isMacOS) return;
+    try {
+      await _residentChannel.invokeMethod<void>('setDockIconHidden', hidden);
+    } catch (e) {
+      debugPrint(
+        'capsicum: resident_mode: setDockIconHidden($hidden) failed: $e',
+      );
+    }
   }
 
   // --- WindowListener ---
 
   @override
   void onWindowClose() async {
-    // preventClose(true) のとき（= 常駐 ON）だけ呼ばれる。プロセスを残して
-    // トレイに退避する。トレイが何らかの理由で未作成でも再生成を試みる。
+    // 常駐 ON のときだけ退避する。macOS は window_manager の preventClose が
+    // close を止めきれず close イベントだけ出る（実際には閉じる）ため、終了抑止
+    // 自体はネイティブ (#757) に任せ、ここでは（閉じきる前に）ウィンドウを hide
+    // してトレイ退避の体裁を整える。Windows は preventClose が効くので従来どおり。
     if (!_enabled) return;
     await _ensureTray();
     await windowManager.hide();
+    // hide の後に Dock から消す（メニューバーのみの常駐）。key window がある状態で
+    // .accessory に移すと切替が効きにくいため hide → accessory の順を守る。
+    await _setDockIconHidden(true);
   }
 
   // --- TrayListener ---
 
   @override
   void onTrayIconMouseDown() {
-    // Windows / Linux: 左クリックでウィンドウ復帰。
+    // 左クリックでウィンドウ復帰（3 OS 共通）。macOS のメニューバーでも
+    // tray_manager はメニューを自動表示せず leftMouseDown を Dart へ転送する
+    // ため、Windows / Linux と同じ「左=復帰 / 右=メニュー」に揃う。
     _showWindow();
   }
 
