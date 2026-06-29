@@ -12,8 +12,9 @@ import '../../../service/update_checker.dart';
 /// ウィンドウ常駐 (#752) / ログイン時起動 (#751) などデスクトップでしか意味を
 /// 持たない項目は、モバイルと共通の「表示」設定に混ぜると過密になるため、
 /// ここへ分離する。各項目はさらに OS / 配布チャネルでゲートする（常駐は
-/// Windows + macOS メニューバー、ログイン時起動は Windows のみ〔macOS は
-/// システム設定での手動登録に委ねる・#757〕、更新確認は直配チャネルのみ）。
+/// Windows + macOS メニューバー + Linux トレイ、ログイン時起動は Windows のみ
+/// 〔macOS はシステム設定での手動登録に委ねる・#757〕、更新確認は直配チャネル
+/// のみ）。
 class DesktopSettingsScreen extends ConsumerWidget {
   const DesktopSettingsScreen({super.key});
 
@@ -41,7 +42,8 @@ class DesktopSettingsScreen extends ConsumerWidget {
             ),
           // 常駐モード (#752)。ウィンドウを閉じてもトレイ / メニューバーに
           // 常駐し、通知 (#569 WebSocket) を受け続ける。Windows（v1.40）+ macOS
-          // メニューバー（#757）で有効。Linux トレイは #757 の残作業。
+          // メニューバー + Linux トレイ（#757）で有効。Linux はトレイ非対応 DE
+          // でも最小化フォールバックで安全（ResidentModeService 参照）。
           if (ResidentModeService.isSupported)
             SwitchListTile(
               title: const Text('ウィンドウを閉じても常駐'),

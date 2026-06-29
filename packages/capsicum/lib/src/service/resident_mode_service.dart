@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -25,9 +26,14 @@ class ResidentModeService with WindowListener, TrayListener {
 
   /// 常駐モードを UI に露出する OS。実装コード自体は全デスクトップで動くが、
   /// 検証面の都合で OS ごとに段階的に有効化する。Windows は v1.40、macOS
-  /// （メニューバー = NSStatusItem）は #757 で実機検証して追加。Linux（トレイ）
-  /// は AppIndicator / GNOME 拡張依存の整理が残るため当面除外（#757 の残作業）。
-  static bool get isSupported => Platform.isWindows || Platform.isMacOS;
+  /// （メニューバー = NSStatusItem）は #757 で実機検証して追加。Linux（トレイ
+  /// = StatusNotifierItem）も #757 で追加。Linux ではトレイを持たない DE
+  /// （拡張なしの GNOME 等）でアイコンが不可視になりうるため、close 時に
+  /// トレイのホスト有無を DBus で検出し（[_linuxTrayHostAvailable]）、ホストが
+  /// 居れば hide（タスクバーからも消す）、居なければ最小化に倒す。これで
+  /// どの DE でもウィンドウを見失わない（クラッシュではなく安全側に倒す）。
+  static bool get isSupported =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
   /// macOS のみ。常駐状態をネイティブ (AppDelegate) に伝え、ウィンドウを閉じても
   /// プロセスを終了させないための channel。window_manager の preventClose が macOS
@@ -41,12 +47,14 @@ class ResidentModeService with WindowListener, TrayListener {
   /// Windows は .ico が確実。macOS はメニューバー用にモノクロ template png
   /// （黒シルエット + alpha。`isTemplate` でライト/ダークのメニューバーに自動
   /// 追従する。フルカラーの logo.png を template 指定すると黒塗り矩形になる）。
-  /// Linux は libappindicator が png を扱えるため logo.png（現状 UI 非露出）。
+  /// Linux（libayatana-appindicator）はフルカラー png をそのまま使うので、
+  /// 横長の logo.png ではなく正方形のアプリアイコン（tray_icon_linux.png・
+  /// app_icon 256px 由来）を使う。横長画像はトレイで潰れて見えるため。
   String get _iconAsset => Platform.isWindows
       ? 'assets/images/tray_icon.ico'
       : Platform.isMacOS
       ? 'assets/images/tray_icon_macos_template.png'
-      : 'assets/images/logo.png';
+      : 'assets/images/tray_icon_linux.png';
 
   /// window / tray のリスナー登録。サポート OS の起動時に 1 度だけ呼ぶ。
   void attach() {
@@ -77,8 +85,11 @@ class ResidentModeService with WindowListener, TrayListener {
       } else {
         await windowManager.setPreventClose(false);
         await _removeTray();
-        // 常駐 OFF をウィンドウ非表示中に行うと操作不能になるため復帰させる。
-        if (!await windowManager.isVisible()) {
+        // 常駐 OFF をウィンドウ非表示 / 最小化中に行うと操作不能になるため
+        // 復帰させる。Linux は close で最小化に退避する（hide しない）ため
+        // isMinimized も確認する。
+        if (!await windowManager.isVisible() ||
+            await windowManager.isMinimized()) {
           await _showWindow();
         }
       }
@@ -93,7 +104,13 @@ class ResidentModeService with WindowListener, TrayListener {
     // システムがライト/ダークやハイライト時の色を自動で塗り分ける。Windows /
     // Linux は通常のカラーアイコンなので isTemplate は無視される。
     await trayManager.setIcon(_iconAsset, isTemplate: Platform.isMacOS);
-    await trayManager.setToolTip(AppConstants.appName);
+    // setToolTip は tray_manager の Linux 実装に存在せず（AppIndicator /
+    // StatusNotifierItem はツールチップの概念を持たない）、呼ぶと
+    // MissingPluginException を投げて以降の setContextMenu（表示 / 終了
+    // メニュー）まで巻き添えで失敗する。Linux では飛ばす (#757)。
+    if (!Platform.isLinux) {
+      await trayManager.setToolTip(AppConstants.appName);
+    }
     await trayManager.setContextMenu(
       Menu(
         items: [
@@ -133,6 +150,38 @@ class ResidentModeService with WindowListener, TrayListener {
     }
   }
 
+  /// Linux のみ。SNI トレイのホスト（パネル側の表示先）が登録されているかを
+  /// DBus で問い合わせる。KDE / LXQt / トレイ拡張入り GNOME 等では true、
+  /// 拡張なしの GNOME 等では false。これにより close 時に「タスクバーから
+  /// 消す hide」か「タスクバーに残す最小化」かを選び分ける ([onWindowClose])。
+  ///
+  /// watcher 不在・取得失敗・タイムアウト時は **false（最小化フォールバック）**
+  /// を返す。トレイが見える保証が無い状態で hide すると復帰手段を失うため、
+  /// 不明なら安全側に倒す。
+  Future<bool> _linuxTrayHostAvailable() async {
+    if (!Platform.isLinux) return true;
+    final client = DBusClient.session();
+    try {
+      final watcher = DBusRemoteObject(
+        client,
+        name: 'org.kde.StatusNotifierWatcher',
+        path: DBusObjectPath('/StatusNotifierWatcher'),
+      );
+      final value = await watcher
+          .getProperty(
+            'org.kde.StatusNotifierWatcher',
+            'IsStatusNotifierHostRegistered',
+          )
+          .timeout(const Duration(seconds: 1));
+      return value.asBoolean();
+    } catch (e) {
+      debugPrint('capsicum: resident_mode: tray host probe failed: $e');
+      return false;
+    } finally {
+      await client.close();
+    }
+  }
+
   // --- WindowListener ---
 
   @override
@@ -140,9 +189,23 @@ class ResidentModeService with WindowListener, TrayListener {
     // 常駐 ON のときだけ退避する。macOS は window_manager の preventClose が
     // close を止めきれず close イベントだけ出る（実際には閉じる）ため、終了抑止
     // 自体はネイティブ (#757) に任せ、ここでは（閉じきる前に）ウィンドウを hide
-    // してトレイ退避の体裁を整える。Windows は preventClose が効くので従来どおり。
+    // してトレイ退避の体裁を整える。Windows / Linux は GTK / Win32 embedder で
+    // preventClose（delete-event で TRUE を返す）が効くので閉じない。
     if (!_enabled) return;
     await _ensureTray();
+    if (Platform.isLinux) {
+      // Linux: トレイの表示先（SNI ホスト＝パネル側）が居れば hide して
+      // タスクバーからも消す（トレイから復帰）。居ない環境（トレイ拡張なしの
+      // GNOME 等）で hide すると復帰手段を失う（ウィンドウ迷子）ため、その
+      // ときだけ最小化に倒し、タスクバー / ウィンドウ一覧に残して必ず復帰
+      // できるようにする（#757・B 案 + ホスト検出）。
+      if (await _linuxTrayHostAvailable()) {
+        await windowManager.hide();
+      } else {
+        await windowManager.minimize();
+      }
+      return;
+    }
     await windowManager.hide();
     // hide の後に Dock から消す（メニューバーのみの常駐）。key window がある状態で
     // .accessory に移すと切替が効きにくいため hide → accessory の順を守る。
