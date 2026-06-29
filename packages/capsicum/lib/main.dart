@@ -41,6 +41,7 @@ import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
 
@@ -167,7 +168,8 @@ Future<void> main() async {
       // 既定は 1.0。起動計測 (operation `app.start`) だけ tracesSampler で
       // 間引く（#743）。
       options.tracesSampleRate = 1.0;
-      options.tracesSampler = _startupAwareTracesSampler;
+      options.tracesSampler = (context) =>
+          startupAwareTracesSampler(context.transactionContext.operation);
       options.environment = const String.fromEnvironment(
         'SENTRY_ENV',
         defaultValue: 'debug',
@@ -233,23 +235,6 @@ FutureOr<SentryEvent?> _scrubEvent(SentryEvent event, Hint hint) {
 
 const _sensitiveHeaderNames = ['Authorization', 'X-Relay-Secret'];
 
-/// 起動計測 transaction（operation `app.start`）のサンプリングレート（#743）。
-///
-/// 起動ごとに `app.startup.*` が 3 本（restore / home_timeline / marker_restore）
-/// 発生するため、本番ユーザー数 × 起動回数 × 3 で transaction volume が膨らむ。
-/// 平均 / p95 の集計に必要な母数は残しつつ大半を間引く。母数が見えてきたら
-/// 調整する（[recordStartupPhase] 参照）。
-const _startupTracesSampleRate = 0.2;
-
-/// `app.start` の起動計測だけ [_startupTracesSampleRate] に落とし、その他の
-/// transaction は `options.tracesSampleRate`（1.0）にフォールバックさせる（#743）。
-double? _startupAwareTracesSampler(SentrySamplingContext context) {
-  if (context.transactionContext.operation == 'app.start') {
-    return _startupTracesSampleRate;
-  }
-  return null;
-}
-
 /// transaction は `beforeSend` を通らないため、events と同じ scrub をここで
 /// 適用する（#743）。request ヘッダー / breadcrumb を [_scrubEvent] で共通化し、
 /// 加えて sensitive なキー名の tag 値を filter する（将来 host/token/username を
@@ -264,7 +249,7 @@ FutureOr<SentryTransaction?> _scrubTransaction(
   if (tags != null && tags.isNotEmpty) {
     Map<String, String>? scrubbed;
     for (final key in tags.keys) {
-      if (_isSensitiveTagKey(key)) {
+      if (isSensitiveTagKey(key)) {
         scrubbed ??= Map<String, String>.from(tags);
         scrubbed[key] = '[Filtered]';
       }
@@ -272,17 +257,6 @@ FutureOr<SentryTransaction?> _scrubTransaction(
     if (scrubbed != null) transaction.tags = scrubbed;
   }
   return transaction;
-}
-
-bool _isSensitiveTagKey(String key) {
-  final k = key.toLowerCase();
-  return k == 'host' ||
-      k == 'username' ||
-      k.contains('token') ||
-      k.contains('secret') ||
-      k.contains('password') ||
-      k.contains('credential') ||
-      k.contains('authorization');
 }
 
 Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
