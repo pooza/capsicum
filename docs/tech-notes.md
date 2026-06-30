@@ -32,6 +32,14 @@ MFM のリンク記法 `[text](URL)` は、現状の正規表現ベースの URL
 
 capsicum の依存は `^` 制約の浮動指定で `pubspec.lock` も `.gitignore` 対象のため、CI は毎回最新版を解決する。外部パッケージが enum に値を足すと、`default:` の無い網羅 switch が `non_exhaustive_switch_statement` でコンパイル不能になり、**ソース無変更のまま CI が突然全滅する**（手元は旧 lock を握っていて再現しない）。v1.42 で dio 5.10.0 の `DioExceptionType.transformTimeout` 追加により `push_relay_client.dart` の網羅 switch が落ち、develop の Analyze / Linux / Windows Release が全滅した。**外部パッケージの enum を switch するときは必ず `default:` を置く**（前方互換）。ローカル analyze が通っても CI と dio 解決バージョンがズレている可能性があるので、CI 失敗時はまず `dart pub upgrade <pkg>` で最新解決に揃えて再現確認する。
 
+### Android 16KB ページサイズ：irondash の precompiled `.so` が 4KB で Play に弾かれる
+
+Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >= 16384`）でないと製品版昇格を `Artifact does not support 16KB page size` で拒否する（2026-06 にハード強制が有効化。それ以前は警告で、同じ 4KB バイナリのまま production に出ていた＝我々の回帰ではなくストア側の締め付け）。v1.42 build 138 で踏んだ。
+
+原因は `irondash_engine_context`（`super_drag_and_drop` → `super_native_extensions` の transitive 依存）。cargokit はデフォルトで **GitHub の precompiled `.so` をダウンロード**して使い、irondash 0.5.5（最新）の precompiled が 4KB 整列・upstream 修正なし（姉妹 super_native_extensions は build.rs に `cargo:rustc-link-arg=-Wl,-z,max-page-size=16384` があり precompiled も 16KB 済み）。**ELF セグメント整列は後から変えられない**ので zipalign 等では直らない。
+
+対処（恒久・コミット済み）: `packages/capsicum/android/cargokit_options.yaml` に `use_precompiled_binaries: false` を置いてローカル Rust ビルドへ切り替え（要 rustup + android ターゲット）、ビルド時に `CARGO_ENCODED_RUSTFLAGS=-Clink-arg=-Wl,-z,max-page-size=16384` を渡して 16KB 整列させる。**stale な gradle daemon は古い環境を握っていてフラグを取りこぼす**ので `./gradlew --stop` してから build。手順・検証の正本は docs/store-release-guide.md §4.2「Android: 16KB ページサイズ対応」。アップロード前に `.so` の `p_align` を必ず検証する。
+
 ### 仕様に迷ったらまず本家 Mastodon / Misskey の実装を確認する
 
 ストリーミング・ページネーション・通知など、SNS の挙動に関わる設計判断で迷ったら、推測する前に本家 WebUI の実装を読む癖をつける。手元のフォーク（`~/repos/mastodon` = bshockdon / `~/repos/misskey` = daisskey）に上流コードが入っており、`git fetch` で最新化して確認できる（[server-forks の経緯はメモリ参照]）。capsicum の方が手厚いこともあれば、本家の方が枯れていて正しいこともあるので、まず一次情報を当たる。
