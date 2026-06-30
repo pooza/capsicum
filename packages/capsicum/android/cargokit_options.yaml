@@ -1,0 +1,8 @@
+# irondash_engine_context 0.5.5 が配布する precompiled な Android .so は
+# 16KB ページサイズ非対応（LOAD セグメントが 4KB 整列）で、Google Play の
+# 製品版昇格が "Artifact does not support 16KB page size" で弾かれる。
+# precompiled を使わずローカル Rust ビルドに切り替え、ビルド時に
+# CARGO_ENCODED_RUSTFLAGS=-Clink-arg=-Wl,-z,max-page-size=16384 を渡して
+# 16KB 整列させる（docs/store-release-guide.md §4.2 / docs/tech-notes.md 参照）。
+# ローカルビルドには rustup + android ターゲットが必要。
+use_precompiled_binaries: false
