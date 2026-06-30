@@ -334,6 +334,55 @@ cd ..
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
 
+#### Android: 16KB ページサイズ対応（必須・irondash をローカルビルド）
+
+Google Play は **64bit ネイティブ `.so` の LOAD セグメントが 16KB 整列**（`p_align >= 16384`）でないと製品版昇格を `Artifact does not support 16KB page size` で拒否する（2026-06 にハード強制が有効化。それ以前は警告だったため v1.41.1 までは 4KB のまま production に出ていた）。
+
+問題のライブラリは `irondash_engine_context`（`super_drag_and_drop` → `super_native_extensions` の transitive 依存）。cargokit はデフォルトで **GitHub の precompiled `.so` をダウンロード**して使うが、irondash 0.5.5（最新）の precompiled は 4KB 整列で upstream に修正版がない（姉妹の super_native_extensions は precompiled が 16KB 済み）。precompiled は再整列できないため、**ローカル Rust ビルドに切り替えて 16KB リンカフラグを注入**する。
+
+恒久設定（コミット済み）: [`packages/capsicum/android/cargokit_options.yaml`](../packages/capsicum/android/cargokit_options.yaml) に `use_precompiled_binaries: false`。これで cargokit は irondash / super_native_extensions をローカルビルドする。
+
+**Android ビルドマシンの前提**: rustup + android ターゲットが必要（cargokit は rustup 不在だと precompiled に戻る）。
+
+```bash
+# 一度だけ（rustup 未導入のマシン）
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+export PATH="$HOME/.cargo/bin:$PATH"
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+```
+
+`flutter build appbundle` を走らせる際、§4.2 の手順に加えて **リンカフラグを export し、stale な gradle daemon を止める**（daemon が古い環境を握っていると cargokit にフラグが渡らず 4KB のままになる。一度これで踏んだ）:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"          # rustup を PATH に
+export CARGO_ENCODED_RUSTFLAGS='-Clink-arg=-Wl,-z,max-page-size=16384'
+( cd android && ./gradlew --stop )            # 古い daemon を破棄（新 daemon に env を継承させる）
+flutter clean && flutter pub get
+# …§4.2 の flutter build appbundle …
+```
+
+**アップロード前に必ず整列を検証する**（フラグが silent に効かないことがあるため必須ゲート）:
+
+```bash
+cd packages/capsicum
+unzip -o build/app/outputs/bundle/release/app-release.aab 'base/lib/arm64-v8a/*.so' -d /tmp/so >/dev/null
+# 各 .so の PT_LOAD p_align が 16384 以上であること（特に libirondash_engine_context_native.so）
+for f in /tmp/so/base/lib/arm64-v8a/*.so; do
+  printf '%s ' "$(basename "$f")"
+  python3 - "$f" <<'PY'
+import sys,struct
+d=open(sys.argv[1],'rb').read(); off=struct.unpack_from('<Q',d,0x20)[0]
+es=struct.unpack_from('<H',d,0x36)[0]; n=struct.unpack_from('<H',d,0x38)[0]; m=0
+for i in range(n):
+    o=off+i*es
+    if struct.unpack_from('<I',d,o)[0]==1: m=max(m,struct.unpack_from('<Q',d,o+0x30)[0])
+print('align',m,'OK' if m>=16384 else 'BAD')
+PY
+done
+```
+
+`libirondash_engine_context_native.so` が `BAD align=4096` なら、上の export / daemon 停止が効いていない。直してから upload すること。
+
 ### 4.3 製品版昇格・審査提出
 
 #### ストア掲載文の見直し要否（提出前に必ず判断する）
