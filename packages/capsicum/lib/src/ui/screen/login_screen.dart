@@ -138,6 +138,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loginCompleted = false;
   String? _error;
 
+  /// ループバック OAuth (#276) の最中に bind した localhost HTTP サーバ。
+  /// 認可完了 / タイムアウトで finally が閉じるが、ユーザーが完了前に画面を
+  /// 離れる（pop で dispose）と完了 future が 5 分 timeout まで生き残り、
+  /// ポート 7099 を掴みっぱなしにして次のログイン試行を塞ぐ。dispose で必ず
+  /// 閉じてポートを解放する。
+  HttpServer? _oauthServer;
+
   // Server info
   String? _serverName;
   String? _serverDescription;
@@ -152,6 +159,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     _fetchServerInfo();
+  }
+
+  @override
+  void dispose() {
+    // 完了前に画面を離れた場合に localhost OAuth サーバを閉じてポート 7099 を
+    // 解放する（掴みっぱなしだと次のログイン試行が「ポート占有」で塞がれる・#276）。
+    unawaited(_oauthServer?.close(force: true));
+    _oauthServer = null;
+    super.dispose();
   }
 
   Future<void> _fetchServerInfo() async {
@@ -339,6 +355,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       InternetAddress.loopbackIPv4,
       AppConstants.localhostOAuthPort,
     );
+    _oauthServer = server;
     _logLoginStep('oauth_server.listening');
     try {
       final launched = await launchUrlSafely(
@@ -399,6 +416,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       await server.close(force: true);
+      if (identical(_oauthServer, server)) _oauthServer = null;
     }
   }
 
