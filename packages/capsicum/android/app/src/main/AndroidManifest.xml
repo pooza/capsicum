@@ -50,14 +50,14 @@
             <!-- #276: 検証済み App Link (HTTPS) で OAuth callback を受ける。
                  capsicum:// カスタムスキームの Custom Tab bounce を根治する。
                  host / path は constants.dart の appLinkOAuth* と
-                 capsicum-site の /.well-known/assetlinks.json に一致させること。 -->
+                 relay 配信の /.well-known/assetlinks.json に一致させること。 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="capsicum.shrieker.net"
+                    android:host="relay.capsicum.shrieker.net"
                     android:path="/oauth/callback" />
             </intent-filter>
         </activity>

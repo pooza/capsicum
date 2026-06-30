@@ -46,12 +46,14 @@ class AppConstants {
   /// Android の Custom Tab は `capsicum://` カスタムスキームの redirect を
   /// 取りこぼし、ブラウザ内に bounce する既知の制約がある (Android 12+ の
   /// Verified Links 仕様変更以降に顕著・flutter_web_auth_2 / Custom Tabs 由来)。
-  /// `https://capsicum.shrieker.net/oauth/callback` を Digital Asset Links で
-  /// アプリに関連付け (autoVerify) すると、OS が確実にアプリへ戻すため bounce が
-  /// 根治する。アンカーは capsicum-site の `/.well-known/assetlinks.json`。
+  /// `https://relay.capsicum.shrieker.net/oauth/callback` を Digital Asset Links
+  /// でアプリに関連付け (autoVerify) すると、OS が確実にアプリへ戻すため bounce が
+  /// 根治する。アンカーは relay (capsicum-relay) が配信する
+  /// `/.well-known/assetlinks.json`（capsicum.shrieker.net = GitHub Pages は
+  /// 古い検証キャッシュが居座るため、キャッシュの無い relay 側に置く）。
   /// host / path は AndroidManifest の autoVerify intent-filter と
   /// `FlutterWebAuth2Options(httpsHost:httpsPath:)` に一致させること。
-  static const appLinkOAuthHost = 'capsicum.shrieker.net';
+  static const appLinkOAuthHost = 'relay.capsicum.shrieker.net';
   static const appLinkOAuthPath = '/oauth/callback';
   static const appLinkOAuthCallbackUrl =
       'https://$appLinkOAuthHost$appLinkOAuthPath';
