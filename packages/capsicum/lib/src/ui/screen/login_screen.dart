@@ -80,11 +80,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // ために Release.entitlements に com.apple.security.network.server が必要。
   bool get _useLocalhostCallback => isDesktop;
 
-  /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
+  /// Android は検証済み App Link (HTTPS) を OAuth callback に使う (#276)。
+  /// カスタムスキーム (`capsicum://`) の redirect を Custom Tab が取りこぼし
+  /// ブラウザ内に bounce する制約を、Digital Asset Links で関連付けた
+  /// `https://capsicum.shrieker.net/oauth/callback` で根治する。
+  /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため
+  /// 現状維持。
+  bool get _useAppLinkCallback => Platform.isAndroid;
+
+  /// OAuth redirect URI。デスクトップは
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
-  /// それ以外は `capsicum://oauth` カスタムスキーム。
+  /// Android は `appLinkOAuthCallbackUrl` (https App Link)、
+  /// iOS は `capsicum://oauth` カスタムスキーム。
   String get _redirectUri => _useLocalhostCallback
       ? AppConstants.localhostOAuthCallbackUrl
+      : _useAppLinkCallback
+      ? AppConstants.appLinkOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
 
   /// `FlutterWebAuth2.authenticate` の `callbackUrlScheme` 引数。
@@ -107,6 +118,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String get _authCallbackUrlScheme {
     if (_useLocalhostCallback && !Platform.isMacOS) {
       return AppConstants.localhostOAuthCallbackUrl;
+    }
+    // Android の App Link は scheme として `https` を渡し、host / path は
+    // `FlutterWebAuth2Options(httpsHost:httpsPath:)` で一致判定する (#276)。
+    if (_useAppLinkCallback) {
+      return 'https';
     }
     return AppConstants.callbackUrlScheme;
   }
@@ -477,6 +493,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             callbackUrlScheme: _authCallbackUrlScheme,
             options: _useLocalhostCallback
                 ? const FlutterWebAuth2Options(useWebview: false)
+                : _useAppLinkCallback
+                // Android: App Link の host / path を明示し、戻り URI が
+                // capsicum.shrieker.net/oauth/callback のときだけ callback と
+                // 判定させる (#276)。
+                ? const FlutterWebAuth2Options(
+                    httpsHost: AppConstants.appLinkOAuthHost,
+                    httpsPath: AppConstants.appLinkOAuthPath,
+                  )
                 : const FlutterWebAuth2Options(preferEphemeral: true),
           );
         }
