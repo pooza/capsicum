@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../capsicum-relay"
+		}
+	],
+	"settings": {}
+}

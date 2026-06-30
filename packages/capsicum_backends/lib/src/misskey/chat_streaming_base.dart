@@ -74,7 +74,10 @@ abstract class MisskeyChatStreamingBase {
       queryParameters: {'i': accessToken},
     );
 
-    final channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
+    final channel = IOWebSocketChannel.connect(
+      uri,
+      pingInterval: _pingInterval,
+    );
     _channel = channel;
     // listener / catchError は前世代 channel の close でも発火しうるので
     // 「現役 channel と同一か」をクロージャ捕捉した channel で判定し、旧世代の
