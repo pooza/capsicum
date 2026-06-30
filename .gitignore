@@ -17,6 +17,7 @@ build/
 .idea/
 *.iml
 .vscode/
+*.code-workspace
 
 # macOS
 .DS_Store
