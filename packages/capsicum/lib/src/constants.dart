@@ -37,26 +37,18 @@ class AppConstants {
 
   /// カスタムスキーム経由の OAuth redirect URI。
   /// iOS (ASWebAuthenticationSession) で使う。
-  /// macOS / Linux / Windows は localhost callback (`localhostOAuthCallbackUrl`)
-  /// を、Android は App Link (`appLinkOAuthCallbackUrl`) を使うため、
-  /// どれを採用するかは呼び出し側 (login_screen) で判定する。
+  /// macOS / Linux / Windows / Android は localhost callback
+  /// (`localhostOAuthCallbackUrl`) を使うため、どちらを採用するかは
+  /// 呼び出し側 (login_screen) で判定する。
   static const customSchemeOAuthCallbackUrl = '$callbackUrlScheme://oauth';
 
-  /// Android 用: 検証済み App Link (HTTPS) 経由の OAuth redirect URI (#276)。
-  /// Android の Custom Tab は `capsicum://` カスタムスキームの redirect を
-  /// 取りこぼし、ブラウザ内に bounce する既知の制約がある (Android 12+ の
-  /// Verified Links 仕様変更以降に顕著・flutter_web_auth_2 / Custom Tabs 由来)。
-  /// `https://relay.capsicum.shrieker.net/oauth/callback` を Digital Asset Links
-  /// でアプリに関連付け (autoVerify) すると、OS が確実にアプリへ戻すため bounce が
-  /// 根治する。アンカーは relay (capsicum-relay) が配信する
-  /// `/.well-known/assetlinks.json`（capsicum.shrieker.net = GitHub Pages は
-  /// 古い検証キャッシュが居座るため、キャッシュの無い relay 側に置く）。
-  /// host / path は AndroidManifest の autoVerify intent-filter と
-  /// `FlutterWebAuth2Options(httpsHost:httpsPath:)` に一致させること。
-  static const appLinkOAuthHost = 'relay.capsicum.shrieker.net';
-  static const appLinkOAuthPath = '/oauth/callback';
-  static const appLinkOAuthCallbackUrl =
-      'https://$appLinkOAuthHost$appLinkOAuthPath';
+  /// Android のループバック OAuth (#276) で、ブラウザの callback ページから
+  /// アプリを前面へ戻すための専用カスタムスキーム URL。capsicum の
+  /// `localhost` HTTP サーバが認可コードを受領した後、callback ページが
+  /// この URL へ遷移して MainActivity を前面に復帰させる（background activity
+  /// start 制限を受けない＝フォアグラウンドのブラウザが起動する経路）。
+  /// AndroidManifest の MainActivity intent-filter と一致させること。
+  static const androidOAuthReturnUrl = 'capsicumauth://complete';
 
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final presetServersUrl = Uri.parse(

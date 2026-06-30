@@ -30,6 +30,23 @@ const _oauthCallbackHtml =
     'padding:48px"><h2>ログイン処理が完了しました</h2>'
     '<p>このタブを閉じて capsicum に戻ってください。</p></body></html>';
 
+/// Android のループバック OAuth (#276) 用 callback ページ。code 受領後、
+/// `capsicumauth://complete`（= AppConstants.androidOAuthReturnUrl）へ遷移して
+/// MainActivity を前面へ復帰させる。自動遷移が Chrome のジェスチャ制約で
+/// 弾かれる端末向けに、タップ用の「capsicum に戻る」ボタンも併置する。
+const _oauthCallbackHtmlAndroid =
+    '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    '<title>capsicum</title>'
+    '<script>location.replace("capsicumauth://complete");</script></head>'
+    '<body style="font-family:sans-serif;text-align:center;padding:48px">'
+    '<h2>ログイン処理が完了しました</h2>'
+    '<p>capsicum に戻ります…</p>'
+    '<p><a href="capsicumauth://complete" style="display:inline-block;'
+    'margin-top:16px;padding:12px 24px;background:#d2691e;color:#fff;'
+    'border-radius:8px;text-decoration:none">capsicum に戻る</a></p>'
+    '</body></html>';
+
 /// macOS の自前 localhost OAuth フロー (#654) で、ユーザーが完了しなかった
 /// （ブラウザを閉じた / タイムアウトした）ことを表す。既存の cancel 判定
 /// (`e.toString().contains('CANCELED')`) に合流させるため、toString に
@@ -78,24 +95,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
   // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
   // ために Release.entitlements に com.apple.security.network.server が必要。
-  bool get _useLocalhostCallback => isDesktop;
+  /// Android もデスクトップと同じく localhost ループバックで OAuth callback を
+  /// 受ける (#276)。Android の Custom Tab はカスタムスキーム / 検証済み App Link
+  /// いずれの redirect もアプリに引き渡さず bounce するため（flutter_web_auth_2
+  /// #187 と同型）、ブラウザの引き渡しに依存しない loopback 方式に切替える。
+  /// アプリ内 HTTP サーバへブラウザが直接 HTTP 接続するので確実にコードを取れる。
+  /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため現状維持。
+  bool get _useLocalhostCallback => isDesktop || Platform.isAndroid;
 
-  /// Android は検証済み App Link (HTTPS) を OAuth callback に使う (#276)。
-  /// カスタムスキーム (`capsicum://`) の redirect を Custom Tab が取りこぼし
-  /// ブラウザ内に bounce する制約を、Digital Asset Links で関連付けた
-  /// `https://capsicum.shrieker.net/oauth/callback` で根治する。
-  /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため
-  /// 現状維持。
-  bool get _useAppLinkCallback => Platform.isAndroid;
-
-  /// OAuth redirect URI。デスクトップは
+  /// OAuth redirect URI。デスクトップ / Android は
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
-  /// Android は `appLinkOAuthCallbackUrl` (https App Link)、
   /// iOS は `capsicum://oauth` カスタムスキーム。
   String get _redirectUri => _useLocalhostCallback
       ? AppConstants.localhostOAuthCallbackUrl
-      : _useAppLinkCallback
-      ? AppConstants.appLinkOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
 
   /// `FlutterWebAuth2.authenticate` の `callbackUrlScheme` 引数。
@@ -118,11 +130,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String get _authCallbackUrlScheme {
     if (_useLocalhostCallback && !Platform.isMacOS) {
       return AppConstants.localhostOAuthCallbackUrl;
-    }
-    // Android の App Link は scheme として `https` を渡し、host / path は
-    // `FlutterWebAuth2Options(httpsHost:httpsPath:)` で一致判定する (#276)。
-    if (_useAppLinkCallback) {
-      return 'https';
     }
     return AppConstants.callbackUrlScheme;
   }
@@ -359,7 +366,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         request.response
           ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
           ..headers.contentType = ContentType.html
-          ..write(isCallback ? _oauthCallbackHtml : '<!doctype html>');
+          ..write(
+            isCallback
+                ? (Platform.isAndroid
+                      ? _oauthCallbackHtmlAndroid
+                      : _oauthCallbackHtml)
+                : '<!doctype html>',
+          );
         await request.response.close();
         if (isCallback && !completer.isCompleted) {
           completer.complete(uri);
@@ -472,12 +485,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           }
         }
         final String resultUrl;
-        if (Platform.isMacOS) {
-          // #654: macOS は flutter_web_auth_2 に localhost callback の server
-          // impl が無く、ASWebAuthenticationSession は ephemeral でパスワード
-          // マネージャ拡張も効かない。Linux / Windows の server impl 相当を
-          // 自前化し、システムブラウザ + 自前 localhost HTTP サーバで code を
-          // 受ける（OOB の手動コード入力を廃止）。
+        if (Platform.isMacOS || Platform.isAndroid) {
+          // macOS (#654): flutter_web_auth_2 に localhost server impl が無い。
+          // Android (#276): Custom Tab がカスタムスキーム / 検証済み App Link の
+          // どちらの redirect もアプリに引き渡さず bounce する (#187 同型)。
+          // 両者ともシステムブラウザ + 自前 localhost HTTP サーバで code を受ける
+          // loopback 方式に統一する（ブラウザの引き渡しに依存しない）。Android は
+          // コード受領後、callback ページが androidOAuthReturnUrl へ遷移して
+          // アプリを前面へ復帰させる（_authenticateViaLocalhostServer 内で処理）。
           resultUrl = await _authenticateViaLocalhostServer(
             startResult.authorizationUrl,
           );
@@ -493,14 +508,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             callbackUrlScheme: _authCallbackUrlScheme,
             options: _useLocalhostCallback
                 ? const FlutterWebAuth2Options(useWebview: false)
-                : _useAppLinkCallback
-                // Android: App Link の host / path を明示し、戻り URI が
-                // capsicum.shrieker.net/oauth/callback のときだけ callback と
-                // 判定させる (#276)。
-                ? const FlutterWebAuth2Options(
-                    httpsHost: AppConstants.appLinkOAuthHost,
-                    httpsPath: AppConstants.appLinkOAuthPath,
-                  )
                 : const FlutterWebAuth2Options(preferEphemeral: true),
           );
         }
