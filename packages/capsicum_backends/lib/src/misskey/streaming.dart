@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../streaming_backoff.dart';
@@ -47,6 +48,9 @@ class MisskeyStreaming {
   // 短め。jitter は streaming_backoff 側で付与 (#784)。
   static const _baseReconnectDelay = Duration(seconds: 1);
   static const _maxReconnectDelay = Duration(seconds: 60);
+  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
+  // 再接続が走る (#788)。本線タイムラインは即時性が要るので短め。
+  static const _pingInterval = Duration(seconds: 30);
 
   MisskeyStreaming({
     required this.host,
@@ -88,7 +92,7 @@ class MisskeyStreaming {
       queryParameters: {'i': accessToken},
     );
 
-    _channel = WebSocketChannel.connect(uri);
+    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.stream.listen(
       _onMessage,
       onError: (Object error, StackTrace stack) {

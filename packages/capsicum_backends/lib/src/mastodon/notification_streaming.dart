@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'extensions.dart';
@@ -31,6 +32,9 @@ class MastodonNotificationStreaming {
   static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
   static const _maxReconnectDelay = Duration(seconds: 300);
+  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
+  // 再接続が走る (#788)。通知は緊急性が低めなので timeline より長め。
+  static const _pingInterval = Duration(seconds: 60);
 
   MastodonNotificationStreaming({
     required this.host,
@@ -59,7 +63,7 @@ class MastodonNotificationStreaming {
       queryParameters: {'access_token': accessToken, 'stream': 'user'},
     );
 
-    _channel = WebSocketChannel.connect(uri);
+    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.ready
         .then((_) {
           _reconnectAttempts = 0;

@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../streaming_backoff.dart';
@@ -48,6 +49,13 @@ class MastodonStreaming {
   // 短め（5 分待ちは実況で長すぎる）。jitter は streaming_backoff 側で付与 (#784)。
   static const _baseReconnectDelay = Duration(seconds: 1);
   static const _maxReconnectDelay = Duration(seconds: 60);
+  // 無音切断（NAT/プロキシのアイドル切断・ungraceful な離脱）では FIN/RST が
+  // 来ず onDone/onError が発火しないため、ping/pong を張らないと「繋がっている
+  // つもり」で死んだソケットに座り続け再接続が走らない (#788)。pingInterval を
+  // 設定すると dart:io が ping を送り、同間隔内に pong が無ければ自動で close →
+  // onDone 発火 → 既存の再接続ロジックが動く。検知時間 ≒ pingInterval。本線
+  // タイムラインは即時性が要るので短め。
+  static const _pingInterval = Duration(seconds: 30);
 
   MastodonStreaming({
     required this.host,
@@ -90,7 +98,7 @@ class MastodonStreaming {
       queryParameters: {'access_token': accessToken, 'stream': stream},
     );
 
-    _channel = WebSocketChannel.connect(uri);
+    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.ready
         .then((_) {
           _reconnectAttempts = 0;
