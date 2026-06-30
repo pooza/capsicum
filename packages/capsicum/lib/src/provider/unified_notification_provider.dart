@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
+import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 
@@ -69,10 +70,16 @@ class UnifiedNotificationNotifier
 
   Future<_FetchResult> _fetchFor(Account account) async {
     try {
-      var notifications = await (account.adapter as NotificationSupport)
+      final response = await (account.adapter as NotificationSupport)
           .getNotifications(query: const TimelineQuery(limit: _pageSize));
+      reportSkippedNotifications(
+        response.skippedPosts,
+        source: 'unified_notification',
+      );
       final enricher = IsCatEnricher.forAccount(account);
-      notifications = await enricher.enrichNotifications(notifications);
+      final notifications = await enricher.enrichNotifications(
+        response.notifications,
+      );
       return _FetchResult(account: account, notifications: notifications);
     } catch (e) {
       return _FetchResult(account: account, notifications: const [], error: e);

@@ -1,7 +1,7 @@
-import '../../model/notification.dart';
+import '../../model/notification_response.dart';
 import '../../model/timeline_query.dart';
 
 abstract mixin class NotificationSupport {
-  Future<List<Notification>> getNotifications({TimelineQuery? query});
+  Future<NotificationResponse> getNotifications({TimelineQuery? query});
   Future<void> clearAllNotifications();
 }

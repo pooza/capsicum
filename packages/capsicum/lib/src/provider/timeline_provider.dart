@@ -112,6 +112,16 @@ class TimelineState {
   /// 食い違う state はそのまま描かずローディングへフォールバックする。
   final String? contextKey;
 
+  /// このセッション（build() 以降）で streaming が切断→再接続を試みた回数 (#782)。
+  /// インジケータに「ちょくちょく切れている」を**回数として正直に**出すための値。
+  /// 速い再接続は色のちらつきだけだと目視できないため、累積回数で見えるようにする。
+  /// build() 再実行（pull-to-refresh / 文脈切替）で 0 に戻る。
+  final int reconnectCount;
+
+  /// 直近で切断を検知した時刻 (#782)。インジケータの tooltip に「直近切断 HH:MM」
+  /// として出し、フラップの新しさを判断できるようにする。build() でクリアされる。
+  final DateTime? lastDisconnectedAt;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -122,6 +132,8 @@ class TimelineState {
     this.pageCapHit = false,
     this.streamConnectionState = StreamConnectionState.connecting,
     this.contextKey,
+    this.reconnectCount = 0,
+    this.lastDisconnectedAt,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -137,6 +149,8 @@ class TimelineState {
     bool? pageCapHit,
     StreamConnectionState? streamConnectionState,
     String? contextKey,
+    int? reconnectCount,
+    DateTime? lastDisconnectedAt,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -150,6 +164,8 @@ class TimelineState {
     pageCapHit: pageCapHit ?? this.pageCapHit,
     streamConnectionState: streamConnectionState ?? this.streamConnectionState,
     contextKey: contextKey ?? this.contextKey,
+    reconnectCount: reconnectCount ?? this.reconnectCount,
+    lastDisconnectedAt: lastDisconnectedAt ?? this.lastDisconnectedAt,
   );
 }
 
@@ -165,6 +181,57 @@ int comparePostIdDesc(String a, String b) {
   final nb = BigInt.tryParse(b);
   if (na != null && nb != null) return nb.compareTo(na);
   return b.compareTo(a);
+}
+
+/// 1 ページぶんの catch-up 取得結果（新しい順の投稿・生サーバー件数・最古 id）。
+typedef CatchUpPage = ({List<Post> posts, int rawCount, String? rawLastId});
+
+/// live 復帰時のギャップ補完 (#781/#784) のページング本体。provider 依存から
+/// 切り離した純粋関数で、`fetchUntilVisible` と同じく [fetch] 注入でテスト可能。
+///
+/// [since] より新しい投稿だけを **新しい順** で集めて返す（重複除去済み）。
+/// 重要: サーバーには **maxId のみ** を渡して常に DESC で取得する。Misskey は
+/// `sinceId` 単独指定だと結果が ASC（古い順）になり（本家 QueryService の
+/// `makePaginationQuery`: sinceId のみ → ASC / sinceId+untilId → DESC）、
+/// 「最古 id を次ページの maxId にして下へ」という DESC 前提のページングが壊れて
+/// ギャップの新しい側を取りこぼす。そこで since 到達はクライアント側で判定する
+/// （Mastodon は元から DESC なので無影響）。
+///
+/// [since] が null（アンカー未確立）のときは最新ページ 1 枚だけ取得してシードする。
+@visibleForTesting
+Future<List<Post>> collectCatchUpGap({
+  required String? since,
+  required int pageSize,
+  required int maxFetches,
+  required Future<CatchUpPage> Function(String? maxId) fetch,
+}) async {
+  final gap = <Post>[];
+  final gapIds = <String>{};
+  String? maxId;
+  var fetches = 0;
+  while (fetches < maxFetches) {
+    fetches++;
+    final page = await fetch(maxId);
+    var reachedAnchor = false;
+    for (final post in page.posts) {
+      // since 以下（= 既知）に達したら、posts は新しい順なので残りも既知。
+      // since 自身も既知なので等しい場合も含めて打ち切る。
+      if (since != null && comparePostIdDesc(post.id, since) >= 0) {
+        reachedAnchor = true;
+        break;
+      }
+      if (gapIds.add(post.id)) gap.add(post);
+    }
+    // since が無いときは最新ページ 1 枚だけシードする。全件フィルタ TL で毎 live
+    // フルページ走査するのを防ぎ、REST→live 窓の取りこぼしだけ拾えれば十分。
+    if (since == null) break;
+    // since まで読み切った、または満ページ未満（これ以上古い投稿が無い）なら停止。
+    if (reachedAnchor) break;
+    final rawLast = page.rawLastId ?? page.posts.lastOrNull?.id;
+    if (page.rawCount < pageSize || rawLast == null) break;
+    maxId = rawLast; // さらに古い方（下）へページング。
+  }
+  return gap;
 }
 
 /// Maximum number of automatic retries for [loadMore] on transient failure.
@@ -260,6 +327,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
   bool _catchUpInProgress = false;
 
+  /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
+  /// で数え、state に反映する。build() でリセット。
+  int _reconnectCount = 0;
+  DateTime? _lastDisconnectedAt;
+
   /// streaming 接続状態の真実の値 (#714)。build() 中（state がまだ
   /// AsyncLoading で valueOrNull が null）に live 等が発火しても取りこぼさない
   /// よう、callback はここへ常時記録し、build() の返り値にもこの値を反映する。
@@ -276,6 +348,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
     _catchUpInProgress = false;
+    _reconnectCount = 0;
+    _lastDisconnectedAt = null;
 
     final adapter = ref.watch(currentAdapterProvider);
     final type = ref.watch(selectedTimelineTypeProvider);
@@ -574,6 +648,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // データがあればそれも更新する。
       onConnectionState: (connState) {
         _streamConnectionState = connState;
+        // 切断を検知したら回数・時刻を記録する (#782)。source 側で同一状態は
+        // dedup されるため、disconnected の発火 = 1 回の接続失敗サイクル。
+        if (connState == StreamConnectionState.disconnected) {
+          _reconnectCount++;
+          _lastDisconnectedAt = DateTime.now();
+        }
         // WS が live になるたび（初回接続・各再接続）、接続が確立していなかった
         // 窓に流れた投稿を since_id で取り直す (#781)。これが無いと「初回 REST →
         // WS live までの窓」「切断〜再接続の窓」に入った投稿が永久に欠落する
@@ -584,8 +664,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         }
         final current = state.valueOrNull;
         if (current == null) return;
-        if (current.streamConnectionState == connState) return;
-        state = AsyncData(current.copyWith(streamConnectionState: connState));
+        state = AsyncData(
+          current.copyWith(
+            streamConnectionState: connState,
+            reconnectCount: _reconnectCount,
+            lastDisconnectedAt: _lastDisconnectedAt,
+            // #784 で give-up せず再試行を続けるため、live 復帰時に exhausted
+            // フラグをクリアする。これが無いと一度 exhausted を踏むと復帰後も
+            // 「停止」表示が残り、次の枯渇で false→true の SnackBar も出なく
+            // なる (Codex #780)。live 以外では現状維持（null）。
+            streamReconnectExhausted: connState == StreamConnectionState.live
+                ? false
+                : null,
+          ),
+        );
       },
     );
     _streamSubscription = stream.listen(
@@ -633,10 +725,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 単発受信・バッチ補完で同一に適用する。[newPosts] は **新しい順**（先頭が
   /// 最新）で渡す。near-top なら先頭へブロック prepend、スクロール中なら
   /// streaming と同じく pending キューへ積んでジャンプを防ぐ。
-  void _ingestLivePosts(List<Post> newPosts) {
-    if (newPosts.isEmpty) return;
+  ///
+  /// 戻り値は実際に取り込んだ（フィルタ・重複排除を通過した）件数。ギャップ
+  /// 補完の実効を観測する (#784) のに使う。
+  int _ingestLivePosts(List<Post> newPosts) {
+    if (newPosts.isEmpty) return 0;
     final current = state.valueOrNull;
-    if (current == null) return;
+    if (current == null) return 0;
     final hideLivecure = ref.read(hideLivecureProvider);
     final existingIds = {for (final p in current.posts) p.id};
     final pendingIds = {for (final p in _pendingPosts) p.id};
@@ -651,7 +746,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (!acceptedIds.add(post.id)) continue; // バッチ内重複
       accepted.add(post);
     }
-    if (accepted.isEmpty) return;
+    if (accepted.isEmpty) return 0;
 
     if (_isNearTop) {
       // accepted を現在リストへマージし id 降順を保つ。単発 streaming（常に最新）
@@ -670,6 +765,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       _newestKnownId = _maxPostId(_newestKnownId, accepted.first.id);
       state = AsyncData(current.copyWith(pendingCount: _pendingPosts.length));
     }
+    return accepted.length;
   }
 
   /// 2 つの id のうち新しい（降順で前に来る）方を返す (#781)。
@@ -703,28 +799,22 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       final type = ref.read(selectedTimelineTypeProvider);
       if (adapter == null) return;
 
-      final gap = <Post>[];
-      final gapIds = <String>{};
-      String? maxId;
-      var fetches = 0;
-      while (fetches < kMaxVisibilityPageFetches) {
-        fetches++;
-        final response = await adapter.getTimeline(
-          type,
-          query: TimelineQuery(sinceId: since, maxId: maxId, limit: _pageSize),
-        );
-        for (final post in response.posts) {
-          if (gapIds.add(post.id)) gap.add(post);
-        }
-        // since が無い（アンカー未確立）ときは最新ページ 1 枚だけシードする。
-        // 全件フィルタ TL で毎 live フルページ走査するのを防ぎ、REST→live 窓の
-        // 取りこぼしだけ拾えれば十分（次回以降は _newestKnownId が since になる）。
-        if (since == null) break;
-        // rawCount が満ページ未満なら since_id まで到達済み（窓を読み切った）。
-        final rawLast = response.rawLastId ?? response.posts.lastOrNull?.id;
-        if (response.rawCount < _pageSize || rawLast == null) break;
-        maxId = rawLast; // since 方向（下）へページング。
-      }
+      final gap = await collectCatchUpGap(
+        since: since,
+        pageSize: _pageSize,
+        maxFetches: kMaxVisibilityPageFetches,
+        fetch: (maxId) async {
+          final response = await adapter.getTimeline(
+            type,
+            query: TimelineQuery(maxId: maxId, limit: _pageSize),
+          );
+          return (
+            posts: response.posts,
+            rawCount: response.rawCount,
+            rawLastId: response.rawLastId,
+          );
+        },
+      );
 
       if (gap.isEmpty) return;
       // await 中に文脈が変わっていたら破棄（旧文脈の投稿の混入・_newestKnownId
@@ -732,7 +822,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       if (state.valueOrNull?.contextKey != capturedContextKey) return;
       // getTimeline は新しい順・ページも新しい方から取得するため gap は新しい順。
       // 取り込み時に再度 state を読み、最新 state へマージする。
-      _ingestLivePosts(gap);
+      final recovered = _ingestLivePosts(gap);
+      // 再接続のたびに何件を補完できたかを観測する (#784 item 3)。resilience
+      // (#784) × catch-up (#781) の実効を本番で追跡するための軽量シグナル。
+      // PII を載せない（件数のみ）。
+      if (recovered > 0) {
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            message: 'timeline.stream.catchup',
+            category: 'timeline.stream',
+            level: SentryLevel.info,
+            data: {'recovered': recovered, 'fetched': gap.length},
+          ),
+        );
+      }
     } catch (_) {
       // 補完の失敗で本筋を止めない。次の live 遷移 / pull-to-refresh で再試行。
     } finally {

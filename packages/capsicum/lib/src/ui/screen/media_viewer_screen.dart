@@ -37,14 +37,27 @@ String _scrubMediaUrl(String url) {
 /// 既知の画像形式のみ対応し、未知の拡張子は null を返して drag-out 自体を
 /// 無効化する（誤った形式で壊れたファイルを渡さない）。動画/音声は player の
 /// 操作と gesture が競合するため別途・現状は対象外。
+///
+/// 判定には [suggestedMediaFileName] のデフォルト拡張子に頼らず生の拡張子
+/// ([rawMediaExtension]) を使う。前者は拡張子の無い添付に既定 `.png` を当てるため、
+/// 実バイトが JPEG/WebP でも PNG として advertise してしまう (#779)。生の拡張子が
+/// 無い＝形式不明なら drag-out を無効化する。
 FileFormat? _dragOutFileFormat(Attachment attachment) {
   if (attachment.type != AttachmentType.image) return null;
-  final name = suggestedMediaFileName(attachment).toLowerCase();
-  if (name.endsWith('.png') || name.endsWith('.apng')) return Formats.png;
-  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return Formats.jpeg;
-  if (name.endsWith('.gif')) return Formats.gif;
-  if (name.endsWith('.webp')) return Formats.webp;
-  return null;
+  switch (rawMediaExtension(attachment)) {
+    case 'png':
+    case 'apng':
+      return Formats.png;
+    case 'jpg':
+    case 'jpeg':
+      return Formats.jpeg;
+    case 'gif':
+      return Formats.gif;
+    case 'webp':
+      return Formats.webp;
+    default:
+      return null;
+  }
 }
 
 class MediaViewerScreen extends ConsumerStatefulWidget {

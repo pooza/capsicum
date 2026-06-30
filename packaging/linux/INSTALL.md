@@ -69,6 +69,37 @@ chmod +x install.sh
 
 5. (任意) デスクトップ統合 (アプリ一覧への登録): [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) を導入しておくと、初回起動時にアプリ一覧への追加とアイコン登録を自動でやってくれます
 
+## ログイン時に自動起動する (任意)
+
+> capsicum 自身にはログイン時起動のトグルがありません (Windows のみ対応)。Linux
+> は配布チャネルごとに自動起動の仕組みが異なる (AppImage は XDG autostart、
+> Flatpak は Background ポータル等) ため、アプリ側では自動化せず、主要デスクトップ
+> 共通の **XDG autostart** での手動登録に委ねています。設定 → デスクトップの
+> 「ウィンドウを閉じても常駐」と併用すると、ログイン後ずっとトレイに常駐して
+> 通知を受け続けられます。
+
+`~/.config/autostart/` に `.desktop` を 1 枚置くだけで、GNOME / KDE / XFCE /
+LXQt / Cinnamon など主要デスクトップが共通でログイン時に起動します。一度きりの
+作業です。
+
+ワンライナー / `install.sh` で導入していれば、安定 symlink
+`~/Applications/capsicum` (バージョンを上げても同じパスを指す) と、それを
+Exec に持つ `.desktop` が既に配置済みです。その `.desktop` を autostart に
+コピーするだけで完了します:
+
+```sh
+mkdir -p ~/.config/autostart
+cp ~/.local/share/applications/net.shrieker.capsicum.desktop ~/.config/autostart/
+```
+
+Exec が `~/Applications/capsicum` (symlink) を指すため、以後 AppImage を新しい
+バージョンに入れ替えても autostart は張り替え不要で動き続けます。
+
+> 多くのデスクトップ環境には GUI もあります (GNOME「自動起動するアプリ」/ KDE
+> 「自動起動」/ XFCE「セッションと起動」/ LXQt「セッション設定 → 自動起動」)。
+> そこで `~/Applications/capsicum` を追加しても同じです。自動起動の解除は
+> `~/.config/autostart/net.shrieker.capsicum.desktop` を削除するだけです。
+
 ## FUSE2 が無い環境向けの fallback
 
 AppImage は **libfuse2** に依存します (`libfuse2` / `libfuse2t64` 等のパッケージ名はディストロ依存)。FUSE2 が無い環境 (FUSE3 のみのディストロ、コンテナ等) で `dlopen(): libfuse.so.2: cannot open shared object file` のようなエラーが出る場合は、抽出モードで起動できます:

@@ -764,17 +764,23 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // NotificationSupport
 
   @override
-  Future<List<Notification>> getNotifications({TimelineQuery? query}) async {
+  Future<NotificationResponse> getNotifications({TimelineQuery? query}) async {
     final notifications = await client.getNotifications(
       maxId: query?.maxId,
       sinceId: query?.sinceId,
       limit: query?.limit,
     );
-    return _safeConvert(
+    final converted = _safeConvert(
       notifications,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
-    ).results;
+    );
+    return NotificationResponse(
+      notifications: converted.results,
+      rawCount: converted.rawCount,
+      rawLastId: converted.rawLastId,
+      skippedPosts: converted.skipped,
+    );
   }
 
   @override

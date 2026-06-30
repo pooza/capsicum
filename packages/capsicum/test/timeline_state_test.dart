@@ -96,6 +96,32 @@ void main() {
     });
   });
 
+  group('TimelineState — reconnectCount / lastDisconnectedAt (#782)', () {
+    test('デフォルトは 0 / null', () {
+      const state = TimelineState();
+      expect(state.reconnectCount, 0);
+      expect(state.lastDisconnectedAt, isNull);
+    });
+
+    test('copyWith で再接続カウントと直近切断時刻を更新できる', () {
+      final at = DateTime(2026, 6, 29, 10, 15, 30);
+      final next = const TimelineState().copyWith(
+        reconnectCount: 3,
+        lastDisconnectedAt: at,
+      );
+      expect(next.reconnectCount, 3);
+      expect(next.lastDisconnectedAt, at);
+    });
+
+    test('copyWith 省略時は既存値を保持する', () {
+      final at = DateTime(2026, 6, 29, 10, 15, 30);
+      final base = TimelineState(reconnectCount: 5, lastDisconnectedAt: at);
+      final next = base.copyWith(pendingCount: 1);
+      expect(next.reconnectCount, 5);
+      expect(next.lastDisconnectedAt, at);
+    });
+  });
+
   group('comparePostIdDesc — ギャップ補完の id 整列 (#781)', () {
     test('Mastodon 数値 id を新しい順（降順）で比較する', () {
       expect(comparePostIdDesc('100', '99'), lessThan(0));

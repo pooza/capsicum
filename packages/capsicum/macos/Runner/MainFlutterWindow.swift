@@ -6,7 +6,25 @@ class MainFlutterWindow: NSWindow {
   // window が強参照して生かしておく。
   private var notificationDedupPlugin: NotificationDedupPlugin?
 
+  // 常駐状態を Dart から受ける channel (#757)。setMethodCallHandler の保持先として
+  // window が強参照する。
+  private var residentChannel: FlutterMethodChannel?
+
   override func awakeFromNib() {
+    // macOS 自動ウインドウタブ機能を無効化する (#712)。capsicum は単一ウインドウ
+    // のため、既定 ON だと「表示」メニューに OS が「タブバーを表示」「すべての
+    // タブを表示」を注入し、ウインドウ上部に意味のない "capsicum" タブが出る。
+    // class プロパティでメニュー項目ごと抑止し、念のため当該ウインドウも
+    // tabbingMode=.disallowed にする。
+    NSWindow.allowsAutomaticWindowTabbing = false
+    self.tabbingMode = .disallowed
+
+    // 常駐モード (#757) でウィンドウを閉じてもプロセスを残すため、閉じても
+    // ウィンドウ実体を解放しない。これでメニューバーから window_manager.show()
+    // 再表示できる。close ボタンの「閉じる＝終了」抑止は AppDelegate の
+    // applicationShouldTerminateAfterLastWindowClosed が担う。
+    self.isReleasedWhenClosed = false
+
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
@@ -54,6 +72,34 @@ class MainFlutterWindow: NSWindow {
     if let plugin = notificationDedupPlugin {
       (NSApp.delegate as? AppDelegate)?.attachDedupPlugin(plugin)
     }
+
+    // 常駐モード (#757) の状態を Dart から受け取り AppDelegate に反映する channel。
+    // 値は ResidentModeService.setEnabled が macOS のときに push する。
+    let residentChannel = FlutterMethodChannel(
+      name: "capsicum/resident",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    residentChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setResidentActive":
+        if let active = call.arguments as? Bool {
+          (NSApp.delegate as? AppDelegate)?.setResidentActive(active)
+          result(nil)
+        } else {
+          result(FlutterError(code: "bad_args", message: "expected Bool", details: nil))
+        }
+      case "setDockIconHidden":
+        if let hidden = call.arguments as? Bool {
+          (NSApp.delegate as? AppDelegate)?.setDockIconHidden(hidden)
+          result(nil)
+        } else {
+          result(FlutterError(code: "bad_args", message: "expected Bool", details: nil))
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    self.residentChannel = residentChannel
 
     super.awakeFromNib()
   }

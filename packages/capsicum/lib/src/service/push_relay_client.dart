@@ -225,6 +225,12 @@ class PushRelayClient {
       case DioExceptionType.badCertificate:
       case DioExceptionType.cancel:
         return false;
+      // dio が将来追加する型（5.10 の `transformTimeout` 等）は応答取得後の
+      // 段階で起きるもので接続自体は成立しているため transient 扱いしない。
+      // dio は `^` 制約の浮動依存で pubspec.lock も非コミットのため新 enum 値が
+      // 随時入る。網羅 switch を default で塞いで CI（analyze）破壊を防ぐ。
+      default:
+        return false;
     }
   }
 

@@ -18,7 +18,10 @@ Fediverse クライアント
 
 ## 詳細な説明文
 
-capsicum は、Mastodon / Misskey 対応の Fediverse クライアントアプリです。コードの大半は Claude Code によって書かれています。
+capsicum は、Mastodon / Misskey 対応の Fediverse クライアントアプリです。
+
+capsicum is a Japanese-only app.
+There is no English localization, and an English version is not planned. The interface, in-app text, documentation, and support are all provided in Japanese only. Please take this into account before downloading.
 
 capsicum が提案するのは、アプリ単体の体験ではなく、サーバーとの一体感です。開発者自身が運営するサーバーでは、サーバーサイド拡張との連携により、アニメ実況支援をはじめとした独自機能が利用できます。この一体感こそが capsicum の存在意義です。
 
@@ -44,7 +47,7 @@ Misskey は upstream の仕様上、通常サードパーティアプリから�
 
 ◆ 主な機能
 
-- ナウプレ共有 — Apple Music や Spotify などの「共有」から capsicum を選ぶだけで `#nowplaying` 付きの投稿を作成
+- ナウプレ共有 — Apple Music や Spotify など、再生アプリの「共有」から capsicum を選ぶだけで `#nowplaying` 付きの投稿を作成
 - Annict 連携 — 視聴中のアニメに対する実況投稿〜視聴後の感想記録までを capsicum 内で完結
 - 劇中ワードサジェスト — IME の変換候補に出ない専門ワード（必殺技名・キャラ名など）を、ひらがな読みから補完。アニメ実況の即時入力を支援
 - 複数サーバー・アカウントの切り替え
@@ -57,6 +60,8 @@ Misskey は upstream の仕様上、通常サードパーティアプリから�
 - テーマカラー・フォントサイズ・表示カスタマイズ（絶対時間・画像ぼかし・投稿前確認）
 - リアルタイム更新（WebSocket ストリーミング）
 - サポーター（投げ銭）— 開発を応援できる投げ銭機能
+
+コードの大半は Claude Code によって書かれています。
 
 capsicum はオープンソース（AGPL-3.0）です。
 https://capsicum.shrieker.net

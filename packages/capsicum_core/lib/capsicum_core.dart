@@ -19,6 +19,7 @@ export 'src/model/flash.dart';
 export 'src/model/gallery_post.dart';
 export 'src/model/instance.dart';
 export 'src/model/notification.dart';
+export 'src/model/notification_response.dart';
 export 'src/model/now_playing.dart';
 export 'src/model/page.dart';
 export 'src/model/poll.dart';

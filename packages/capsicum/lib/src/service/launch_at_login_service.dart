@@ -11,14 +11,22 @@ import '../util/exception_scrub.dart';
 /// 本アプリを登録 / 解除する。`launchAtLoginProvider` の値変化を受けて
 /// OS 状態を張り替える（pref が真実源・OS は従属）。
 ///
-/// v1.40 は **Windows のみ有効化**（[isSupported]）。macOS（ログイン項目 /
-/// MAS は SMAppService）・Linux（~/.config/autostart）の検証と有効化は
-/// #757 (v1.42) で行い、[isSupported] を広げる。
+/// **Windows のみ有効化**（[isSupported]）。macOS は launch_at_startup の
+/// 実装が Runner への LaunchAtLogin Swift パッケージ統合（かつ SMAppService
+/// 経路は macOS 13+ 必須＝deployment target 引き上げ）を要し、得られる体験は
+/// システム設定 →「一般」→「ログイン項目」での手動登録と等価なため、自動化
+/// せずユーザーの手動登録に委ねる方針（#757）。Linux も同様に見送り: 自動化
+/// 自体は ~/.config/autostart に .desktop を書くだけで DE 非依存だが、配布
+/// チャネルで仕組みが分かれ（AppImage は resolvedExecutable が一時マウント先
+/// になるため $APPIMAGE 実体パスが必要・Flatpak は Background ポータルが必要で
+/// 生 .desktop は無効）、得られる体験は手動登録と等価。XDG autostart での手動
+/// 手順を packaging/linux/INSTALL.md に記載し、そちらに委ねる（#757）。
 class LaunchAtLoginService {
   static bool _setup = false;
 
   /// ログイン時起動を UI に露出する OS。コードは launch_at_startup で全
-  /// デスクトップ対応だが、v1.40 では検証済みの Windows のみ有効化する。
+  /// デスクトップ対応だが、検証済みかつネイティブ統合が要らない Windows のみ
+  /// 有効化する（macOS の方針は本クラスの doc を参照）。
   static bool get isSupported => Platform.isWindows;
 
   static void _ensureSetup() {

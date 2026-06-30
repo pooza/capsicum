@@ -15,8 +15,31 @@ class AppDelegate: FlutterAppDelegate {
   // attach する (強参照は MainFlutterWindow 側が保持)。
   private weak var dedupPlugin: NotificationDedupPlugin?
 
+  // 常駐モード (#752 / macOS は #757) が ON のあいだだけ true。MainFlutterWindow が
+  // "capsicum/resident" channel 経由で Dart から張り替える。
+  private var residentActive: Bool = false
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    return true
+    // 常駐 ON のときはウィンドウを閉じてもプロセスを残す（メニューバー常駐）。
+    // window_manager の preventClose は macOS embedder では close を止めきれず
+    // （close イベントは出るが実際には閉じる・#757 の debug 実機で確認）、ここで
+    // 終了を抑止しないと閉じた瞬間にアプリごと終わってしまう。MainFlutterWindow は
+    // isReleasedWhenClosed=false なのでウィンドウ実体は残り、メニューバーから再表示
+    // できる。非常駐時は従来どおり最後のウィンドウを閉じたら終了する。
+    return !residentActive
+  }
+
+  /// MainFlutterWindow が "capsicum/resident" channel 経由で常駐状態を反映する。
+  func setResidentActive(_ active: Bool) {
+    residentActive = active
+  }
+
+  /// Dock アイコン / アプリスイッチャからの出し入れ (#757)。常駐中にウィンドウを
+  /// 隠したら .accessory（メニューバーのみ＝Dock から消える）、表示に戻すときは
+  /// .regular。ウィンドウを隠した直後に .accessory へ移すこと（key window があると
+  /// 切替が効きにくいため hide → accessory の順を Dart 側で守る）。
+  func setDockIconHidden(_ hidden: Bool) {
+    NSApp.setActivationPolicy(hidden ? .accessory : .regular)
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
