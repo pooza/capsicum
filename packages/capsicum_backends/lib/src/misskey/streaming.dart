@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../streaming_backoff.dart';
@@ -31,6 +32,13 @@ class MisskeyStreaming {
   /// 接続ライフサイクルの遷移を呼び出し側 (UI インジケータ) へ流す (#714)。
   final void Function(StreamConnectionState state)? onConnectionState;
 
+  /// 切断 (onDone) 時の WebSocket closeCode / closeReason を観測層へ流す (#788)。
+  /// 無音切断の検知層 (pingInterval) を入れた今、本番で「どんな切れ方をして
+  /// いるか」(1000 正常 / 1001 ping タイムアウト goingAway / 1006 異常 …) を
+  /// Sentry で見るための計装。現象すら未把握なので原因対処はせず計器のみ。
+  /// null なら無視。
+  final void Function(int? closeCode, String? closeReason)? onDisconnect;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
@@ -47,6 +55,9 @@ class MisskeyStreaming {
   // 短め。jitter は streaming_backoff 側で付与 (#784)。
   static const _baseReconnectDelay = Duration(seconds: 1);
   static const _maxReconnectDelay = Duration(seconds: 60);
+  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
+  // 再接続が走る (#788)。本線タイムラインは即時性が要るので短め。
+  static const _pingInterval = Duration(seconds: 30);
 
   MisskeyStreaming({
     required this.host,
@@ -56,6 +67,7 @@ class MisskeyStreaming {
     this.onStreamError,
     this.onReconnectExhausted,
     this.onConnectionState,
+    this.onDisconnect,
   });
 
   // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
@@ -88,7 +100,7 @@ class MisskeyStreaming {
       queryParameters: {'i': accessToken},
     );
 
-    _channel = WebSocketChannel.connect(uri);
+    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.stream.listen(
       _onMessage,
       onError: (Object error, StackTrace stack) {
@@ -101,6 +113,7 @@ class MisskeyStreaming {
         // onDone→reset」のループでバックオフが基底値のまま動かず、上限到達に
         // よる `onReconnectExhausted` 通知も出なくなる。リセットは接続成功
         // (`ready.then`) 時のみに揃える（Mastodon 側 streaming.dart と同挙動）。
+        _notifyDisconnect();
         _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
@@ -129,6 +142,14 @@ class MisskeyStreaming {
           _notifyConnectionState(StreamConnectionState.disconnected);
           _scheduleReconnect();
         });
+  }
+
+  // onDone 時の closeCode/closeReason を観測層へ。閉じた直後なので channel に
+  // closeCode が乗っている。観測経路の失敗で本筋を止めない (#788)。
+  void _notifyDisconnect() {
+    try {
+      onDisconnect?.call(_channel?.closeCode, _channel?.closeReason);
+    } catch (_) {}
   }
 
   void _notifyStreamError(Object error, StackTrace stack) {

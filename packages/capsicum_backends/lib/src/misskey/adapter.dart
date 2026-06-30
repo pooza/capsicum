@@ -1388,6 +1388,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
     void Function(StreamConnectionState state)? onConnectionState,
+    void Function(int? closeCode, String? closeReason)? onDisconnect,
   }) {
     _streaming?.dispose();
     final token = client.accessToken;
@@ -1400,6 +1401,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       onStreamError: onStreamError,
       onReconnectExhausted: onReconnectExhausted,
       onConnectionState: onConnectionState,
+      onDisconnect: onDisconnect,
     );
     return _streaming!.connect(type).map(_applyWordFilter);
   }

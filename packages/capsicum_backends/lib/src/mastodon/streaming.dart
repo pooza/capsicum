@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../streaming_backoff.dart';
@@ -33,6 +34,13 @@ class MastodonStreaming {
   /// 接続ライフサイクルの遷移を呼び出し側 (UI インジケータ) へ流す (#714)。
   final void Function(StreamConnectionState state)? onConnectionState;
 
+  /// 切断 (onDone) 時の WebSocket closeCode / closeReason を観測層へ流す (#788)。
+  /// 無音切断の検知層 (pingInterval) を入れた今、本番で「どんな切れ方をして
+  /// いるか」(1000 正常 / 1001 ping タイムアウト goingAway / 1006 異常 …) を
+  /// Sentry で見るための計装。現象すら未把握なので原因対処はせず計器のみ。
+  /// null なら無視。
+  final void Function(int? closeCode, String? closeReason)? onDisconnect;
+
   WebSocketChannel? _channel;
   StreamController<Post>? _controller;
   Timer? _reconnectTimer;
@@ -48,6 +56,13 @@ class MastodonStreaming {
   // 短め（5 分待ちは実況で長すぎる）。jitter は streaming_backoff 側で付与 (#784)。
   static const _baseReconnectDelay = Duration(seconds: 1);
   static const _maxReconnectDelay = Duration(seconds: 60);
+  // 無音切断（NAT/プロキシのアイドル切断・ungraceful な離脱）では FIN/RST が
+  // 来ず onDone/onError が発火しないため、ping/pong を張らないと「繋がっている
+  // つもり」で死んだソケットに座り続け再接続が走らない (#788)。pingInterval を
+  // 設定すると dart:io が ping を送り、同間隔内に pong が無ければ自動で close →
+  // onDone 発火 → 既存の再接続ロジックが動く。検知時間 ≒ pingInterval。本線
+  // タイムラインは即時性が要るので短め。
+  static const _pingInterval = Duration(seconds: 30);
 
   MastodonStreaming({
     required this.host,
@@ -57,6 +72,7 @@ class MastodonStreaming {
     this.onStreamError,
     this.onReconnectExhausted,
     this.onConnectionState,
+    this.onDisconnect,
   });
 
   // 同じ状態が連続するときは UI へ重複通知しない (#714)。観測経路の失敗で
@@ -90,7 +106,7 @@ class MastodonStreaming {
       queryParameters: {'access_token': accessToken, 'stream': stream},
     );
 
-    _channel = WebSocketChannel.connect(uri);
+    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
     _channel!.ready
         .then((_) {
           _reconnectAttempts = 0;
@@ -115,6 +131,7 @@ class MastodonStreaming {
         // 上限到達による `onReconnectExhausted` 通知も出なくなる。リセット
         // は `ready.then` の接続成功時のみ行い、DM (`chat_streaming.dart`) /
         // ルーム (`chat_room_streaming.dart`) と挙動を揃える。
+        _notifyDisconnect();
         _notifyConnectionState(StreamConnectionState.disconnected);
         _scheduleReconnect();
       },
@@ -127,6 +144,14 @@ class MastodonStreaming {
     } catch (_) {
       // 観測経路の失敗で本筋を止めない。
     }
+  }
+
+  // onDone 時の closeCode/closeReason を観測層へ。閉じた直後なので channel に
+  // closeCode が乗っている。観測経路の失敗で本筋を止めない (#788)。
+  void _notifyDisconnect() {
+    try {
+      onDisconnect?.call(_channel?.closeCode, _channel?.closeReason);
+    } catch (_) {}
   }
 
   void _onMessage(dynamic message) {

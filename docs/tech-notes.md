@@ -50,6 +50,12 @@ Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >
 - **Misskey**: `reconnecting-websocket`（バックオフ付き自動再接続、misskey-js `streaming.ts`）。再接続時はチャンネルを張り直すのみで、切断中のギャップを能動回収はしない（realtime は prepend 任せ・非 realtime は `fetchNewer` ポーリング）。
 - **capsicum**: live 復帰時に since までさかのぼって REST 差分を能動回収（`collectCatchUpGap`）。取りこぼし対策はむしろ両本家より手厚い。#784/#782 の方向性が正しかったことの裏取りにもなった。
 
+### `WebSocketChannel.connect` には liveness が無い — 無音切断検知には `pingInterval` 必須（#788）
+
+`web_socket_channel` の `WebSocketChannel.connect(uri)` を引数なしで張ると ping/pong を一切送らない。無音切断（NAT/プロキシのアイドル切断・モバイル回線・サーバーの ungraceful な離脱）では TCP に FIN/RST が来ず、`onDone`/`onError` が発火しないため、capsicum は「繋がっているつもり」で死んだソケットに座り続け **再接続トリガー自体が引かれない**。バックオフをいくら粘らせても、検知が無ければ復帰しない（#784/#782 は「検知後」の層なので無音切断には効かない）。
+
+対処は `IOWebSocketChannel.connect(uri, pingInterval: ...)`。dart:io が `pingInterval` ごとに WS ping を送り、同間隔内に pong が無ければ自動で close → `onDone` 発火 → 既存の再接続ロジックが動く。検知時間 ≒ `pingInterval`。本家 Misskey WebUI が「頻繁に再接続している」のはこの検知が効いて素早く復帰しているからで、頻度の高さは弱点ではない。capsicum は timeline=30s / notification・chat=60s で設定（Mastodon/Misskey 両プロトコル共通の欠落だったため両方に入れた）。`pingInterval` は dart:io 由来で web では使えないが、capsicum は web を出荷対象にしていないため `IOWebSocketChannel` 直叩きで問題ない。md.korako.me（Mastodon）と きゅあすきー（Misskey）の両方で「再接続できない」が同時報告されたのが発見の端緒（karasu_sue 報告）。
+
 ## デスクトップ（drag & drop / ネイティブ連携）
 
 ### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く

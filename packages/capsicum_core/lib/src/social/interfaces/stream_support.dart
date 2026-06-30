@@ -18,12 +18,17 @@ abstract mixin class StreamSupport {
   /// [onConnectionState] は接続ライフサイクル (connecting / live / disconnected
   /// / exhausted) の遷移ごとに呼ばれる。常時の接続インジケータを出す用途を
   /// 想定 (#714)。同じ状態が連続するときは重複通知しない。
+  ///
+  /// [onDisconnect] は WebSocket が onDone で閉じたときに closeCode / closeReason
+  /// とともに呼ばれる。本番でどんな切れ方をしているか (1000 / 1001 / 1006 …) を
+  /// Sentry で観測する用途を想定 (#788)。null なら無視。
   Stream<Post> streamTimeline(
     TimelineType type, {
     void Function(Object error, StackTrace stack)? onParseError,
     void Function(Object error, StackTrace stack)? onStreamError,
     void Function()? onReconnectExhausted,
     void Function(StreamConnectionState state)? onConnectionState,
+    void Function(int? closeCode, String? closeReason)? onDisconnect,
   });
 
   /// Closes the current streaming connection.

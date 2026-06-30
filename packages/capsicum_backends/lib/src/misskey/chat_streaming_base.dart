@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Misskey の `/streaming` WebSocket を 1 本張り、指数バックオフ再接続つきで
@@ -32,6 +33,9 @@ abstract class MisskeyChatStreamingBase {
   static const _maxReconnectAttempts = 10;
   static const _baseReconnectDelay = Duration(seconds: 5);
   static const _maxReconnectDelay = Duration(seconds: 300);
+  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
+  // 再接続が走る (#788)。チャットは緊急性が低めなので timeline より長め。
+  static const _pingInterval = Duration(seconds: 60);
 
   MisskeyChatStreamingBase({
     required this.host,
@@ -70,7 +74,10 @@ abstract class MisskeyChatStreamingBase {
       queryParameters: {'i': accessToken},
     );
 
-    final channel = WebSocketChannel.connect(uri);
+    final channel = IOWebSocketChannel.connect(
+      uri,
+      pingInterval: _pingInterval,
+    );
     _channel = channel;
     // listener / catchError は前世代 channel の close でも発火しうるので
     // 「現役 channel と同一か」をクロージャ捕捉した channel で判定し、旧世代の

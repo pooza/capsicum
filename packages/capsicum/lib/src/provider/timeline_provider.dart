@@ -564,6 +564,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   DateTime? _lastParseCapture;
   DateTime? _lastConnectCapture;
   DateTime? _lastListenCapture;
+  // 切断 (onDone) の closeCode 観測用バケット (#788)。性質が違うので
+  // connect/parse/listen とは独立に持つ。
+  DateTime? _lastDisconnectCapture;
   static const _captureThrottle = Duration(seconds: 60);
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
@@ -677,6 +680,33 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
                 ? false
                 : null,
           ),
+        );
+      },
+      // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
+      // ので原因対処はせず計器のみ。closeCode 分布 (1000 正常 / 1001 ping
+      // タイムアウト goingAway / 1006 異常 …) で正体に近づく。host 分岐は入れ
+      // ない (全サーバー共通)。closeReason はサーバー任意文字列を持ちうるため
+      // 内容は載せず、有無のみ。throttle で切断連発の spam を抑える。
+      onDisconnect: (closeCode, closeReason) {
+        final now = DateTime.now();
+        if (_lastDisconnectCapture != null &&
+            now.difference(_lastDisconnectCapture!) < _captureThrottle) {
+          return;
+        }
+        _lastDisconnectCapture = now;
+        final code = closeCode?.toString() ?? 'none';
+        Sentry.captureMessage(
+          'timeline.stream.disconnected',
+          level: SentryLevel.info,
+          withScope: (scope) {
+            scope.setTag('timeline.stream', 'disconnected');
+            scope.setTag('timeline.stream.close_code', code);
+            scope.setTag(
+              'timeline.stream.has_reason',
+              (closeReason != null && closeReason.isNotEmpty).toString(),
+            );
+            scope.fingerprint = ['timeline.stream.disconnected', code];
+          },
         );
       },
     );
