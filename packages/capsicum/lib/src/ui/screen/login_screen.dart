@@ -38,11 +38,12 @@ const _oauthCallbackHtmlAndroid =
     '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width, initial-scale=1">'
     '<title>capsicum</title>'
-    '<script>location.replace("capsicumauth://complete");</script></head>'
+    '<script>location.replace("${AppConstants.androidOAuthReturnUrl}");'
+    '</script></head>'
     '<body style="font-family:sans-serif;text-align:center;padding:48px">'
     '<h2>ログイン処理が完了しました</h2>'
     '<p>capsicum に戻ります…</p>'
-    '<p><a href="capsicumauth://complete" style="display:inline-block;'
+    '<p><a href="${AppConstants.androidOAuthReturnUrl}" style="display:inline-block;'
     'margin-top:16px;padding:12px 24px;background:#d2691e;color:#fff;'
     'border-radius:8px;text-decoration:none">capsicum に戻る</a></p>'
     '</body></html>';
@@ -375,24 +376,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ).path;
       final completer = Completer<Uri>();
       final subscription = server.listen((request) async {
-        final uri = request.uri;
-        // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトとみなす。
-        // favicon 等パスの異なるノイズ要求は 404 で受け流す。
-        final isCallback =
-            uri.path == callbackPath && uri.queryParameters.isNotEmpty;
-        request.response
-          ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
-          ..headers.contentType = ContentType.html
-          ..write(
-            isCallback
-                ? (Platform.isAndroid
-                      ? _oauthCallbackHtmlAndroid
-                      : _oauthCallbackHtml)
-                : '<!doctype html>',
-          );
-        await request.response.close();
-        if (isCallback && !completer.isCompleted) {
-          completer.complete(uri);
+        // dispose() が受信処理の最中に server.close(force:true) すると
+        // response の write/close が StateError/HttpException を投げ、未捕捉
+        // async エラー（zone→Sentry ノイズ）になる。サーバ終了中の失敗は
+        // 無害なので握りつぶす。
+        try {
+          final uri = request.uri;
+          // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトと
+          // みなす。favicon 等パスの異なるノイズ要求は 404 で受け流す。
+          final isCallback =
+              uri.path == callbackPath && uri.queryParameters.isNotEmpty;
+          request.response
+            ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
+            ..headers.contentType = ContentType.html
+            ..write(
+              isCallback
+                  ? (Platform.isAndroid
+                        ? _oauthCallbackHtmlAndroid
+                        : _oauthCallbackHtml)
+                  : '<!doctype html>',
+            );
+          await request.response.close();
+          if (isCallback && !completer.isCompleted) {
+            completer.complete(uri);
+          }
+        } catch (_) {
+          // サーバ終了中のレスポンス書き込み失敗等。認可コードは completer
+          // で受領済みか、未受領なら timeout/cancel 経路に合流するため無視。
         }
       });
 
@@ -596,11 +606,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           await _finishLogin(adapter, completeResult);
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          // MiAuth ポーリング枯渇 (#276): 承認がまだ反映されていない／ユーザーが
+          // 拒否した場合は Misskey が `{ok:false}` を返し続け、poll が尽きて
+          // MisskeyMiAuthPending で失敗する。ジェネリック失敗と区別し、再試行を
+          // 促す文言にする（Sentry は例外クラスで既に区別可能だが、枯渇率を
+          // 追えるよう breadcrumb も残す）。
+          final pollExhausted = completeResult.error is MisskeyMiAuthPending;
+          if (pollExhausted) {
+            _logLoginStep('completeLogin.miauth_poll_exhausted');
+          }
           Sentry.captureException(
             scrubException(completeResult.error),
             stackTrace: completeResult.stackTrace,
           );
-          if (mounted) setState(() => _error = 'ログインに失敗しました');
+          if (mounted) {
+            setState(
+              () => _error = pollExhausted
+                  ? '承認がまだ反映されていないか、承認が完了していません。'
+                        'もう一度お試しください。'
+                  : 'ログインに失敗しました',
+            );
+          }
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');

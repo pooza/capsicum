@@ -91,9 +91,7 @@ void main() {
     });
 
     test('最大試行まで未承認なら LoginFailure を返す', () async {
-      final adapter = await _adapter(
-        List<Object>.filled(3, (200, _pending)),
-      );
+      final adapter = await _adapter(List<Object>.filled(3, (200, _pending)));
       adapter.miauthPollMaxAttempts = 3;
 
       final result = await adapter.completeLogin(

@@ -49,7 +49,13 @@ class MisskeyClient {
       data: createBody(),
     );
     final data = response.data as Map<String, dynamic>;
-    if (data['ok'] != true || data['token'] == null) {
+    // 未承認（ユーザーがまだ承認していない）と、ユーザーが「拒否」した場合の
+    // 両方で Misskey は HTTP 200 `{ok:false}` を返す（deny でも token 行が
+    // 生成されず恒久的に ok:false）。サーバーに deny を区別する signal が無い
+    // ため、どちらも pending 扱いにし、拒否はポーリング枯渇→失敗として扱う。
+    // `ok` 欠落等の不正応答は pending で潰さず、下の fromJson で必須フィールド
+    // 欠落として surface させる（ok:true は常に token/user を伴う）。
+    if (data['ok'] == false) {
       throw const MisskeyMiAuthPending();
     }
     return MisskeyCheckSessionResponse.fromJson(data);
