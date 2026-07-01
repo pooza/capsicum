@@ -549,6 +549,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
   }
 
+  /// #276 MiAuth ポーリングの間隔と最大試行回数。ユーザー承認とサーバー反映の
+  /// 間のレース窓 (数百 ms〜1 秒程度) と、一過性の通信エラー (Sentry
+  /// CAPSICUM-39: connectionError) を吸収する。既定 8 回 × 400ms ≒ 3 秒弱。
+  /// テストからゼロ遅延に差し替えられるよう可変フィールドにしている。
+  Duration miauthPollDelay = const Duration(milliseconds: 400);
+  int miauthPollMaxAttempts = 8;
+
   @override
   Future<LoginResult> completeLogin(
     Uri callbackUri,
@@ -556,7 +563,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   ) async {
     try {
       final session = extra['session']!;
-      final response = await client.checkSession(session);
+      final response = await _pollCheckSession(session);
       client.setAccessToken(response.token);
 
       return LoginSuccess(
@@ -567,6 +574,41 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       return LoginFailure(e, s);
     }
   }
+
+  /// MiAuth の `/check` を短時間ポーリングする (#276)。承認反映のレースで
+  /// 返る未承認応答 ([MisskeyMiAuthPending]) と、一過性の通信エラー
+  /// (connectionError / 各種 timeout) のみ再試行する。恒久的なエラー
+  /// (4xx 等の badResponse) は即座に投げ直して無駄な待ちを避ける。従来は
+  /// 単発チェックだったため、承認直後に叩くと「ログインに失敗しました」と
+  /// 出て手動で数回やり直す必要があった。
+  ///
+  /// 注意 (one-shot): `/check` はトークンを初回成功時のみ返し、以降は
+  /// `{ok:false}` になる。よって**成功したら即 return** し、成功後に再度
+  /// `/check` を呼んではならない（呼ぶと pending 扱いになりトークンを失う）。
+  /// また Misskey は「拒否」も `{ok:false}` で返すため、拒否時は本ループが
+  /// 枯渇（既定 8 回 ≒ 3 秒）してから失敗する（client 側で短絡不可）。
+  Future<MisskeyCheckSessionResponse> _pollCheckSession(String session) async {
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        return await client.checkSession(session);
+      } on MisskeyMiAuthPending {
+        if (attempt >= miauthPollMaxAttempts) rethrow;
+      } on DioException catch (e) {
+        if (!_isTransientDioError(e) || attempt >= miauthPollMaxAttempts) {
+          rethrow;
+        }
+      }
+      await Future<void>.delayed(miauthPollDelay);
+    }
+  }
+
+  static bool _isTransientDioError(DioException e) =>
+      e.type == DioExceptionType.connectionError ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.sendTimeout;
 
   // PinSupport
 

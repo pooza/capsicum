@@ -5,6 +5,17 @@ import 'package:http_parser/http_parser.dart';
 
 import '../rate_limit_interceptor.dart';
 
+/// MiAuth の `/check` がセッションを承認済みとして返さなかった (`ok:false` /
+/// token 欠落) ことを示す。MiAuth はユーザー承認とサーバー反映の間に僅かな
+/// レースがあり、ループバックログイン (#276) で承認直後に `/check` を叩くと
+/// この未承認応答が返ることがある。呼び出し側 (completeLogin) はこの例外を
+/// 受けて短時間ポーリングし、恒久的失敗と区別する。
+class MisskeyMiAuthPending implements Exception {
+  const MisskeyMiAuthPending();
+  @override
+  String toString() => 'MisskeyMiAuthPending: MiAuth session not yet approved';
+}
+
 class MisskeyClient {
   final Dio dio;
   final String host;
@@ -26,14 +37,28 @@ class MisskeyClient {
   }
 
   /// POST /api/miauth/{session}/check
+  ///
+  /// MiAuth は未承認のセッションに対し HTTP 200 + `{ok: false}` (token/user
+  /// 無し) を返す。承認済みなら `{ok: true, token, user}`。承認直後のレース
+  /// (#276) で未承認応答が返った場合は [MisskeyMiAuthPending] を投げ、
+  /// 呼び出し側のポーリングに委ねる (欠損フィールドの parse 失敗として
+  /// 潰さない)。
   Future<MisskeyCheckSessionResponse> checkSession(String session) async {
     final response = await dio.post(
       '/api/miauth/$session/check',
       data: createBody(),
     );
-    return MisskeyCheckSessionResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    final data = response.data as Map<String, dynamic>;
+    // 未承認（ユーザーがまだ承認していない）と、ユーザーが「拒否」した場合の
+    // 両方で Misskey は HTTP 200 `{ok:false}` を返す（deny でも token 行が
+    // 生成されず恒久的に ok:false）。サーバーに deny を区別する signal が無い
+    // ため、どちらも pending 扱いにし、拒否はポーリング枯渇→失敗として扱う。
+    // `ok` 欠落等の不正応答は pending で潰さず、下の fromJson で必須フィールド
+    // 欠落として surface させる（ok:true は常に token/user を伴う）。
+    if (data['ok'] == false) {
+      throw const MisskeyMiAuthPending();
+    }
+    return MisskeyCheckSessionResponse.fromJson(data);
   }
 
   /// POST /api/i
