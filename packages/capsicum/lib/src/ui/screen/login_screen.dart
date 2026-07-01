@@ -460,7 +460,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final existing = accounts
             .where((a) => a.key.host == widget.host && a.clientSecret != null)
             .firstOrNull;
-        if (existing != null) {
+        // Android (#276): 既存アカウントの cached client は旧 `capsicum://oauth`
+        // で登録された可能性があり、localhost redirect へ移行した今これを再利用
+        // すると Mastodon が /oauth/authorize を invalid_redirect_uri で蹴る。
+        // その場合 localhost へ redirect されず（redirect が無いので `?error=`
+        // 自己回復も発火せず）loopback が 5 分ハングする。account-scoped client は
+        // 登録時の redirect_uri を保持しないため Android では使わず、redirect_uri
+        // で scope された host 保存（getHostClientCredentials）か fresh 登録に
+        // 委ねる。移行後の初回ログインで localhost client が host 保存されるので、
+        // 再登録は host あたり 1 回で済む。
+        if (existing != null && !Platform.isAndroid) {
           adapter.setCachedClientCredentials(existing.clientSecret);
           usedCachedCreds = true;
         } else {
