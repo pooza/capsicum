@@ -428,11 +428,20 @@ backend は購入成立 → `markTipped` 永続化成功 → 消費報告、の�
 Microsoft Store パートナーセンターで**消耗型（Consumable）アドオンを 3 つ**作成する。
 表示名・説明は既存 C-2c と同一文言で揃える（ストア横断で統一）。
 
-| アプリ内 SKU（既存） | MS Store Product ID（案） | 価格（¥基準） | 表示名 | 説明 |
+**登録実績（2026-07-02、pooza 作業・登録済み）**: 3 商品とも下表の Product ID で登録。
+種別は **開発者管理の消費型（developer-managed consumable）**を選択（残高管理なし・
+購入ごとに `ReportConsumableFulfillmentAsync` で消費報告して再投げ銭可能化＝E-4 の設計
+どおり。Store 管理は数量残高を持つ通貨型向けなので不採用）。コンテンツの種類は
+**電子ソフトウェアのダウンロード（Electronic software download）**（MS 公式の「大半の
+アドオンはこれ」ガイダンス準拠。配信物のない投げ銭も総合枠に収める）。個人情報の収集は
+「使用しない」。価格帯は MS の最低帯が ¥120 のため small は ¥120、medium/big は ¥500/¥800
+ちょうどが取れた。提出（審査）と税務／支払いプロファイルは別途。
+
+| アプリ内 SKU（既存） | MS Store Product ID（登録済み） | 価格（実登録） | 表示名 | 説明 |
 |---|---|---|---|---|
-| `supporter.tip.small` | `supporter.tip.small` | ¥100 に最も近い MS 価格帯 | ちょこっとサポート | capsicum の開発と通知リレー運用へのささやかな応援です。 |
-| `supporter.tip.medium` | `supporter.tip.medium` | ¥500 相当 | しっかりサポート | capsicum の開発と通知リレー運用へのしっかりした応援です。 |
-| `supporter.tip.big` | `supporter.tip.big` | ¥800 相当 | たっぷりサポート | capsicum の開発と通知リレー運用への大きな応援です。 |
+| `supporter.tip.small` | `supporter.tip.small` | ¥120（MS 最低帯・¥100 相当枠） | ちょこっとサポート | capsicum の開発と通知リレー運用へのささやかな応援です。 |
+| `supporter.tip.medium` | `supporter.tip.medium` | ¥500 | しっかりサポート | capsicum の開発と通知リレー運用へのしっかりした応援です。 |
+| `supporter.tip.big` | `supporter.tip.big` | ¥800 | たっぷりサポート | capsicum の開発と通知リレー運用への大きな応援です。 |
 
 - **Product ID をアプリ内 SKU と一致**させると `supporterTipProductIds` をそのまま
   使え分岐が減る（MS は Product ID に英数字ドットを許容）。不一致なら Windows backend
