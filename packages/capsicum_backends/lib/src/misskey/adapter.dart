@@ -1603,7 +1603,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // では HTTP 400 + `{error: {code: 'ACCESS_DENIED'}}` を返す。再試行しても
       // 成功しない既知の仕様制約。Misskey フォークによっては `/api/sw/register`
       // 自体を削除している場合 (404) や、別形状の 400 を返す場合もあるため、
-      // /api/sw/register に対する 400 / 404 はすべて非対応扱いに寄せる (#365)。
+      // /api/sw/register に対する 400 / 403 / 404 はすべて非対応扱いに寄せる
+      // (#365 / #705)。
       if (_isUnsupportedRegistration(e)) {
         throw PushRegistrationNotSupportedException(
           'Misskey upstream blocks third-party Web Push registration '
@@ -1615,8 +1616,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   bool _isUnsupportedRegistration(DioException e) {
+    // サーバー・バージョンによっては同じ push 登録拒否を 400 / 404 のほか
+    // 403 で返すものもある（misskey.io ほか非プリセットの公開サーバーで実測。
+    // Sentry CAPSICUM-1T）。特定サーバー分岐ではなくステータスコード一般で
+    // graceful 降格し、いずれも「このサーバーは push 非対応」に寄せる (#705)。
     final status = e.response?.statusCode;
-    return status == 400 || status == 404;
+    return status == 400 || status == 403 || status == 404;
   }
 
   @override
