@@ -98,6 +98,18 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(restoreReadPositionProvider.notifier).toggle(),
           ),
+          SwitchListTile(
+            title: const Text('接続の再接続回数を表示'),
+            subtitle: const Text(
+              'ライブ更新インジケータに再接続回数と直近の切断時刻を表示します。'
+              '切断・再接続はストリーミングの通常の挙動です。診断したいときだけ'
+              'オンにしてください',
+            ),
+            value: ref.watch(showStreamReconnectDetailProvider),
+            onChanged: (value) => ref
+                .read(showStreamReconnectDetailProvider.notifier)
+                .setEnabled(value),
+          ),
           // 常駐 (#752) / ログイン時起動 (#751) / マウスドラッグスクロール (#574) /
           // 起動時の更新確認 (#641) などデスクトップ専用の設定は「デスクトップ」
           // 画面 (DesktopSettingsScreen) へ分離した。ここはモバイルと共通の表示
