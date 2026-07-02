@@ -335,9 +335,7 @@ final supporterPurchaseProvider =
 final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (supporterPurchaseSupported) return true;
   if (Platform.isWindows) {
-    return ref.watch(
-      supporterPurchaseProvider.select((s) => s.isAvailable),
-    );
+    return ref.watch(supporterPurchaseProvider.select((s) => s.isAvailable));
   }
   return false;
 });
