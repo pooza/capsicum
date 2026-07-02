@@ -57,13 +57,14 @@ class AnnouncementView extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   if (infoBotAcct != null) {
                     if (index == 0) {
+                      final infoBotUser = ref
+                          .watch(_infoBotUserProvider)
+                          .valueOrNull;
                       return _InfoBotBanner(
                         acct: infoBotAcct,
+                        displayName: _infoBotDisplayName(infoBotUser),
                         onTap: () => _openInfoBotProfile(context, ref),
-                        avatarUrl: ref
-                            .watch(_infoBotUserProvider)
-                            .valueOrNull
-                            ?.avatarUrl,
+                        avatarUrl: infoBotUser?.avatarUrl,
                       );
                     }
                     index -= 1;
@@ -101,6 +102,15 @@ class AnnouncementView extends ConsumerWidget {
     );
   }
 
+  /// お知らせボットの表示名。取得前・未設定時は従来の固定文言にフォールバックする。
+  String _infoBotDisplayName(User? user) {
+    final displayName = user?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) return displayName;
+    final username = user?.username.trim();
+    if (username != null && username.isNotEmpty) return username;
+    return 'お知らせボット';
+  }
+
   Future<void> _openInfoBotProfile(BuildContext context, WidgetRef ref) async {
     final user = ref.read(_infoBotUserProvider).valueOrNull;
     if (user != null && context.mounted) {
@@ -111,11 +121,13 @@ class AnnouncementView extends ConsumerWidget {
 
 class _InfoBotBanner extends StatelessWidget {
   final String acct;
+  final String displayName;
   final VoidCallback onTap;
   final String? avatarUrl;
 
   const _InfoBotBanner({
     required this.acct,
+    required this.displayName,
     required this.onTap,
     this.avatarUrl,
   });
@@ -149,7 +161,7 @@ class _InfoBotBanner extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'お知らせボット (${acct.startsWith('@') ? acct : '@$acct'})',
+                '$displayName (${acct.startsWith('@') ? acct : '@$acct'})',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
