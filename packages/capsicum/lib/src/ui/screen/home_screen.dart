@@ -510,12 +510,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // ライブ更新の接続インジケータ (#714)。streaming する本線 TL
-                // (home / local / social / federated) のときだけ出す。DM や
-                // ハッシュタグ / リスト TL は別 provider / 非 streaming のため
-                // 出さない。
-                if (selectedHashtag == null &&
-                    selectedList == null &&
-                    selectedType != TimelineType.directMessages)
+                // (home / local / social / federated) のタブを開いているときだけ
+                // 出す。以前は「ハッシュタグでない ∧ リストでない ∧ DM でない」の
+                // 消去法だったため、お知らせ / 通知 / チャンネル / メッセージの
+                // 各タブ (TimelineTab でない or 別購読) を素通りさせ、表示中の
+                // 内容と無関係な裏のホーム購読状態を出していた (#793)。現在の
+                // タブが本線 TimelineTab か否かを積極判定して直す。
+                if (ref.watch(selectedTabProvider) case TimelineTab(
+                  :final type,
+                ) when type != TimelineType.directMessages)
                   const _StreamStatusIndicator(),
                 _LivecureFilterButton(ref: ref),
                 IconButton(
@@ -2206,10 +2209,14 @@ class _StreamStatusIndicatorState
         ? Colors.orange
         : baseColor;
 
+    // 再接続の詳細 (回数バッジ + 直近切断時刻) は既定で隠し、診断したい人だけ
+    // 設定で ON にする (#786)。切断・再接続は正常挙動で、回数表示は一般ユーザーを
+    // 不安にさせる逆効果のため。接続状態ラベルと flash は設定に関わらず常時出す。
+    final showDetail = ref.watch(showStreamReconnectDetailProvider);
     final count = st?.reconnectCount ?? 0;
     final lastAt = st?.lastDisconnectedAt;
     final tooltip = StringBuffer('ライブ更新: $label');
-    if (count > 0) {
+    if (showDetail && count > 0) {
       tooltip.write('\n再接続 $count 回');
       if (lastAt != null) tooltip.write('・直近切断 ${_fmtTime(lastAt)}');
     }
@@ -2223,8 +2230,9 @@ class _StreamStatusIndicatorState
           children: [
             Icon(Icons.circle, size: 10, color: color),
             // 再接続回数を小さく併記し、「ちょくちょく切れている」を回数で正直に
-            // 見せる (#782)。0 のときは出さない。
-            if (count > 0) ...[
+            // 見せる (#782)。既定では隠し、詳細表示 ON かつ 0 でないときだけ出す
+            // (#786)。
+            if (showDetail && count > 0) ...[
               const SizedBox(width: 3),
               Text(
                 '$count',
