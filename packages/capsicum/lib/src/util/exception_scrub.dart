@@ -19,7 +19,14 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 /// `client_secret`) の値をマスクして詰め替える。
 Object scrubException(Object e) {
   if (e is DioException) {
-    final path = e.requestOptions.path.split('?').first;
+    // クエリだけでなくパスセグメントにも機密が載ることがある。MiAuth の
+    // `/api/miauth/<session>/check` は認可待ちのセッション UUID をパスに持つ
+    // ため、ポーリング失敗 (#276) の DioException でそのまま載ると Sentry に
+    // 有効な session が出る。既知の機密セグメントはマスクする (#790 レビュー)。
+    final path = e.requestOptions.path
+        .split('?')
+        .first
+        .replaceAllMapped(_sensitivePathSegment, (m) => '${m[1]}***${m[2]}');
     return StateError(
       'DioException ${e.type.name} '
       'status=${e.response?.statusCode ?? '-'} '
@@ -52,3 +59,7 @@ final _sensitiveQueryParam = RegExp(
   r'''([?&](?:i|token|access_token|push_token|client_secret)=)[^&\s'"]+''',
   caseSensitive: false,
 );
+
+/// パスに載る機密セグメントのマスク。現状は MiAuth の
+/// `/api/miauth/<session>/check` の session UUID を対象にする (#790)。
+final _sensitivePathSegment = RegExp(r'(/api/miauth/)[^/]+(/check)');
