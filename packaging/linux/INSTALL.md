@@ -39,6 +39,7 @@ chmod +x install.sh
 - 安定 symlink `~/Applications/capsicum` を AppImage に張る (バージョンを上げてもメニューの「お気に入り」が壊れないように)
 - `.desktop` を `~/.local/share/applications/` に展開 (Exec を上記 symlink に書き換え)
 - hicolor アイコンを `~/.local/share/icons/hicolor/*/apps/` に展開
+- `~/Applications/` に溜まった旧バージョンの `capsicum-<version>-x86_64.AppImage` を掃除 (最新 + 直前 1 世代のみ残す。rollback 用に直前だけ残す)
 - `update-desktop-database` / `gtk-update-icon-cache` を実行 (best-effort)
 
 完了後、アプリメニュー / ランチャーから「capsicum」を起動できます。

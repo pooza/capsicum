@@ -43,6 +43,20 @@ else
   echo "warn: desktop entry not found at $DESKTOP_ENTRY (already uninstalled?)" >&2
 fi
 
+# 上の Exec= 追跡は最新 (symlink 先) しか消さない。install.sh は最新 + 直前
+# 1 世代を残すため、残った旧 AppImage が孤児になる。アンインストールでは
+# 自前の命名 (capsicum-*-x86_64.AppImage) に一致する実ファイルを一掃する。
+# 他アプリの AppImage や手製 symlink には触れない。
+if [[ -d "$APPLICATIONS_DIR" ]]; then
+  while IFS= read -r -d '' appimage; do
+    echo "==> Removing AppImage $appimage"
+    rm -f "$appimage"
+  done < <(
+    find "$APPLICATIONS_DIR" -maxdepth 1 -type f \
+      -name 'capsicum-*-x86_64.AppImage' -print0
+  )
+fi
+
 if [[ -d "$ICON_BASE" ]]; then
   while IFS= read -r -d '' icon; do
     echo "==> Removing icon $icon"
