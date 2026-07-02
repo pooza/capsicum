@@ -146,6 +146,15 @@ flutter:
 # 別 MSIX として bundle する（Microsoft Store 側で arch 振り分け）。
 msix_config:
   display_name: capsicum
+  # MSIX パッケージバージョン。未指定だと pubspec version から `1.43.0.0` に
+  # なり、ビルド番号がパッケージバージョンに乗らない。Store は同一フルネーム
+  # (9AFBB08E.capsicum_1.43.0.0_x64) の別内容パッケージを拒否するため、開発中の
+  # Store フライト等で 1.43.0.0 を消費すると製品版提出が「フル ネームが重複」で
+  # 弾かれる (v1.43.0 で実際に発生)。第4オクテット (Revision) は Store 予約で
+  # 0 固定なので、ビルド番号を第3オクテット (Build) に載せて一意化する。
+  # スキーム: <major>.<minor>.<pubspec のビルド番号>.0 → **毎リリース、pubspec
+  # の version(+N) に合わせてここも更新すること**（例 1.43.0+147 → 1.43.147.0）。
+  msix_version: 1.43.147.0
   # 3 ストア（Apple / Google / Microsoft）すべて個人発行元 (小石達也) で
   # 整合させる方針。法人 (有限会社ビーショック) への切替は税務・ブランド
   # 要請が顕在化した時点で一括移行する。詳細は CLAUDE.md「運営元」節参照。
