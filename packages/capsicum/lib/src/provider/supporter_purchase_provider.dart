@@ -6,28 +6,29 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../util/exception_scrub.dart';
+import 'supporter_purchase_backend.dart';
 import 'supporter_status_provider.dart';
 
-/// 投げ銭 SKU (#428 B-2: 3 階層・円基準 ¥100 / ¥500 / ¥800)。
-///
-/// 命名は将来のリレー利用権 SKU 統合を見据えた前方互換 (`supporter.*`)。
-/// 実際の表示価格はストアの [ProductDetails.price] を使う（コード側に
-/// 金額をハードコードしない）。リスト順が UI の表示順。
-const supporterTipProductIds = <String>[
-  'supporter.tip.small', // ¥100 相当
-  'supporter.tip.medium', // ¥500 相当
-  'supporter.tip.big', // ¥800 相当
-];
+export 'supporter_purchase_backend.dart' show supporterTipProductIds;
 
 /// 購入導線を出すプラットフォーム (#428 D-1)。iOS / Android に加え、#598 で
 /// macOS (Mac App Store IAP) を解放。iOS / macOS は Universal Purchase
 /// (同一 App レコード) のため ASC の消耗型 3 商品をそのまま共有し、
 /// `in_app_purchase` も macOS を in_app_purchase_storekit で公式サポートする。
-/// Linux / Windows はストア IAP 不在 (Windows は #599 で検討)。
-/// `in_app_purchase` は非対応 OS で `InAppPurchase.instance` 取得時に
-/// 落ちるため、触る前に判定する。
+/// Windows は #599 でストア IAP（Microsoft Store）を解放するが、購入は
+/// **Store からインストールされたコピーでのみ**成立するため、入口の可否は
+/// 実行時に商品問い合わせが通るか（[SupporterPurchaseState.isAvailable]）で
+/// 決める。この getter はコンパイル時に backend の有無だけを表す。Linux は
+/// ストア IAP 不在。
 bool get supporterPurchaseSupported =>
     Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+
+/// この OS に投げ銭の課金 backend が存在するか（サポート画面のハード無効表示を
+/// 出すかの判定）。Windows は Store 版のみ購入成立だが backend 自体は存在する
+/// ため true にし、実際に購入できるか（Store 版か・商品を取得できたか）は
+/// [SupporterPurchaseState.isAvailable] で別途出し分ける (#599 §E-2)。
+bool get supporterPurchaseHasBackend =>
+    supporterPurchaseSupported || Platform.isWindows;
 
 enum SupporterPurchaseOutcomeKind { success, canceled, error }
 
@@ -94,15 +95,19 @@ class SupporterPurchaseState {
 /// 購入は画面を閉じた後に確定し得るためアプリ寿命で購読する
 /// （autoDispose しない）。
 class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
-  StreamSubscription<List<PurchaseDetails>>? _sub;
+  late final SupporterPurchaseBackend _backend;
+  StreamSubscription<SupporterPurchaseEvent>? _sub;
 
   @override
   SupporterPurchaseState build() {
-    if (!supporterPurchaseSupported) {
+    // 課金経路を OS ごとの backend に閉じる (#599 §E-3)。iOS / Android / macOS は
+    // in_app_purchase、Windows は Windows.Services.Store の自前 channel。
+    _backend = createSupporterPurchaseBackend();
+    if (!_backend.isSupported) {
       return const SupporterPurchaseState();
     }
-    _sub = InAppPurchase.instance.purchaseStream.listen(
-      _onPurchaseUpdates,
+    _sub = _backend.purchaseEvents.listen(
+      _onEvent,
       onError: (Object e, StackTrace st) {
         Sentry.captureException(
           scrubException(e),
@@ -126,7 +131,10 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
         );
       },
     );
-    ref.onDispose(() => _sub?.cancel());
+    ref.onDispose(() {
+      _sub?.cancel();
+      _backend.dispose();
+    });
     // 商品問い合わせを起動（結果は state に反映）。
     scheduleMicrotask(loadProducts);
     return const SupporterPurchaseState(isLoadingProducts: true);
@@ -134,21 +142,18 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
 
   /// ストアから商品情報を取得する。画面再表示時に UI から再呼び出し可。
   Future<void> loadProducts() async {
-    if (!supporterPurchaseSupported) return;
+    if (!_backend.isSupported) return;
     state = state.copyWith(isLoadingProducts: true);
     try {
-      final available = await InAppPurchase.instance.isAvailable();
+      final available = await _backend.isAvailable();
       if (!available) {
         state = state.copyWith(isAvailable: false, isLoadingProducts: false);
         return;
       }
-      final response = await InAppPurchase.instance.queryProductDetails(
+      final products = await _backend.queryProducts(
         supporterTipProductIds.toSet(),
       );
-      if (response.error != null) {
-        throw response.error!;
-      }
-      final byId = {for (final p in response.productDetails) p.id: p};
+      final byId = {for (final p in products) p.id: p};
       // 定義順（金額昇順）に整列。ストアに存在しない ID は黙って除外する。
       final ordered = [
         for (final id in supporterTipProductIds)
@@ -175,17 +180,13 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     }
   }
 
-  /// 指定 SKU を消耗型として購入する。結果は購入ストリーム経由で
+  /// 指定 SKU を消耗型として購入する。結果は購入イベント経由で
   /// [state] / [SupporterStatusNotifier] に反映される。
   Future<void> buy(ProductDetails product) async {
-    if (!supporterPurchaseSupported || state.purchaseInProgress) return;
+    if (!_backend.isSupported || state.purchaseInProgress) return;
     state = state.copyWith(purchaseInProgress: true, lastOutcome: null);
     try {
-      // autoConsume=true: Android は即 consume して再投げ銭可能に。
-      // iOS / macOS (StoreKit) は consumable のため指定は無視される。
-      await InAppPurchase.instance.buyConsumable(
-        purchaseParam: PurchaseParam(productDetails: product),
-      );
+      await _backend.buy(product);
     } catch (e, st) {
       Sentry.captureException(
         scrubException(e),
@@ -207,39 +208,80 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
     }
   }
 
-  Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
-    for (final p in purchases) {
-      // 永続化に失敗した購入はストアトランザクションを完了させず、次回
-      // 起動時の再配信に委ねる（下の completePurchase をスキップする）。
-      var persisted = true;
-      switch (p.status) {
-        case PurchaseStatus.pending:
-          state = state.copyWith(purchaseInProgress: true);
-          break;
-        case PurchaseStatus.canceled:
-          // ユーザー操作。例外ではないので breadcrumb のみ。
-          Sentry.addBreadcrumb(
-            Breadcrumb(
-              category: 'supporter.purchase',
-              level: SentryLevel.info,
-              message: 'canceled',
-            ),
-          );
+  /// backend が正規化した購入イベント 1 件を状態遷移へ落とす。
+  ///
+  /// in_app_purchase の `List<PurchaseDetails>` 単位の処理を、backend 抽象
+  /// （[SupporterPurchaseEvent]）の 1 件単位に置き換えたもの。トランザクション
+  /// 完了（in_app_purchase の completePurchase / Windows の消費報告）は
+  /// [SupporterPurchaseBackend.complete] に委ね、ローカル永続化が成立した
+  /// 購入だけを確定させる。
+  Future<void> _onEvent(SupporterPurchaseEvent event) async {
+    switch (event.status) {
+      case SupporterPurchaseEventStatus.pending:
+        state = state.copyWith(purchaseInProgress: true);
+        return;
+      case SupporterPurchaseEventStatus.canceled:
+        // ユーザー操作。例外ではないので breadcrumb のみ。
+        Sentry.addBreadcrumb(
+          Breadcrumb(
+            category: 'supporter.purchase',
+            level: SentryLevel.info,
+            message: 'canceled',
+          ),
+        );
+        state = state.copyWith(
+          purchaseInProgress: false,
+          lastOutcome: const SupporterPurchaseOutcome(
+            SupporterPurchaseOutcomeKind.canceled,
+          ),
+        );
+        return;
+      case SupporterPurchaseEventStatus.error:
+        Sentry.captureException(
+          scrubException(Exception('purchase error')),
+          withScope: (scope) {
+            scope.setTag('supporter.purchase', 'purchase_error');
+            scope.fingerprint = [
+              'supporter.purchase.error',
+              event.errorCode ?? 'unknown',
+            ];
+          },
+        );
+        state = state.copyWith(
+          purchaseInProgress: false,
+          lastOutcome: const SupporterPurchaseOutcome(
+            SupporterPurchaseOutcomeKind.error,
+          ),
+        );
+        return;
+      case SupporterPurchaseEventStatus.purchased:
+        // 消耗型につきレシート検証は最小（ストアを信頼）。サーバー側
+        // 保持に移行した時点で検証経路を抽象層内に追加する（B-4）。
+        var persisted = true;
+        try {
+          await ref
+              .read(supporterStatusProvider.notifier)
+              .markTipped(sku: event.productId);
           state = state.copyWith(
             purchaseInProgress: false,
             lastOutcome: const SupporterPurchaseOutcome(
-              SupporterPurchaseOutcomeKind.canceled,
+              SupporterPurchaseOutcomeKind.success,
             ),
           );
-          break;
-        case PurchaseStatus.error:
+        } catch (e, st) {
+          // 課金はストア側で成立済みだが、ローカル記録の永続化に失敗。
+          // purchaseInProgress を必ず戻してボタン固着を防ぐ（#298 同型）。
+          // complete を呼ばないことで、in_app_purchase は次回起動の再配信、
+          // Windows は次回購入時の AlreadyPurchased で markTipped を再試行する。
+          persisted = false;
           Sentry.captureException(
-            scrubException(p.error ?? Exception('purchase error')),
+            scrubException(e),
+            stackTrace: st,
             withScope: (scope) {
-              scope.setTag('supporter.purchase', 'purchase_error');
+              scope.setTag('supporter.purchase', 'mark_tipped_failed');
               scope.fingerprint = [
-                'supporter.purchase.error',
-                (p.error?.code ?? 'unknown'),
+                'supporter.purchase.mark_tipped',
+                e.runtimeType.toString(),
               ];
             },
           );
@@ -249,52 +291,30 @@ class SupporterPurchaseNotifier extends Notifier<SupporterPurchaseState> {
               SupporterPurchaseOutcomeKind.error,
             ),
           );
-          break;
-        case PurchaseStatus.purchased:
-        case PurchaseStatus.restored:
-          // 消耗型につきレシート検証は最小（ストアを信頼）。サーバー側
-          // 保持に移行した時点で検証経路を抽象層内に追加する（B-4）。
+        }
+        // ストアトランザクションを確定させる（未確定だと再配信され続ける /
+        // 消耗型残高が残る）。永続化に失敗した購入はあえて確定させず再試行に委ねる。
+        if (persisted && event.needsCompletion) {
           try {
-            await ref
-                .read(supporterStatusProvider.notifier)
-                .markTipped(sku: p.productID);
-            state = state.copyWith(
-              purchaseInProgress: false,
-              lastOutcome: const SupporterPurchaseOutcome(
-                SupporterPurchaseOutcomeKind.success,
-              ),
-            );
+            await _backend.complete(event);
           } catch (e, st) {
-            // 課金はストア側で成立済みだが、ローカル記録の永続化に失敗。
-            // purchaseInProgress を必ず戻してボタン固着を防ぐ（#298 同型）。
-            // completePurchase を呼ばないことで、次回起動時にストアが
-            // トランザクションを再配信し markTipped を再試行する。
-            persisted = false;
+            // 確定（completePurchase / 消費報告）に失敗。ローカルのバッジは
+            // 成立済み。未確定トランザクションは再配信 / AlreadyPurchased で
+            // 拾い直せるため、観測だけして本筋は止めない。
             Sentry.captureException(
               scrubException(e),
               stackTrace: st,
               withScope: (scope) {
-                scope.setTag('supporter.purchase', 'mark_tipped_failed');
+                scope.setTag('supporter.purchase', 'complete_failed');
                 scope.fingerprint = [
-                  'supporter.purchase.mark_tipped',
+                  'supporter.purchase.complete',
                   e.runtimeType.toString(),
                 ];
               },
             );
-            state = state.copyWith(
-              purchaseInProgress: false,
-              lastOutcome: const SupporterPurchaseOutcome(
-                SupporterPurchaseOutcomeKind.error,
-              ),
-            );
           }
-          break;
-      }
-      // ストアトランザクションを完了させる（未完了だと再配信され続ける）。
-      // 永続化に失敗した購入はあえて完了させず、再配信での再試行に委ねる。
-      if (persisted && p.pendingCompletePurchase) {
-        await InAppPurchase.instance.completePurchase(p);
-      }
+        }
+        return;
     }
   }
 }
@@ -303,3 +323,21 @@ final supporterPurchaseProvider =
     NotifierProvider<SupporterPurchaseNotifier, SupporterPurchaseState>(
       SupporterPurchaseNotifier.new,
     );
+
+/// 設定に投げ銭エントリ（購入導線）を出すか (#428 D-1 / #599 §E-2)。
+///
+/// iOS / Android / macOS は常に出す（[supporterPurchaseSupported]）。Windows は
+/// 購入が **Microsoft Store からインストールされたコピーでのみ**成立するため、
+/// 商品問い合わせが通って利用可能になった（= Store 版）ときだけ出す。直配版
+/// （自己署名 MSIX）や非対応 OS では隠す（§E-2(a)・空振りの入口を出さない）。
+/// mobile では `supporterPurchaseSupported` で短絡し、購入 provider を余計に
+/// 起動しない。
+final supporterEntryVisibleProvider = Provider<bool>((ref) {
+  if (supporterPurchaseSupported) return true;
+  if (Platform.isWindows) {
+    return ref.watch(
+      supporterPurchaseProvider.select((s) => s.isAvailable),
+    );
+  }
+  return false;
+});
