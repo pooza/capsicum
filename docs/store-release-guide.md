@@ -573,16 +573,16 @@ curl -fsSL https://capsicum.shrieker.net/install.sh | bash
 
 ### 4.6 Windows 配布（v1.25〜）
 
-Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。配布経路は 2 系統:
+Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。**公式配布は Microsoft Store 単独**（[#760](https://github.com/pooza/capsicum/issues/760)、2026-07-02〜）:
 
-1. **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。一般ユーザー向けの主要配布経路（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
-2. **GitHub Releases 経由の自己署名 MSIX 直配** ([#423](https://github.com/pooza/capsicum/issues/423)、v1.25〜): 信頼ストア import を厭わない上級ユーザー向け補助路線。draft Release を pooza が即時 publish できるため、Store 認定中の先行配布・先行検証経路としても機能する
+- **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。**Windows 唯一の公式配布ルート**（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
+- **自己署名 MSIX（draft Release 添付）は非公式・非サポート**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは (a) pooza が Store 手動 publish 用に `.msix` を取り出す口、(b) 証明書 import を厭わない上級者が自己責任で使う非公式経路、であって公式配布ではない。**README / 公式サイト / [INSTALL.md](../packaging/windows/INSTALL.md) では宣伝しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留。毎リリースの Store publish は **Partner Center Web UI から手動** が前提。
 
-`pubspec.yaml` の `msix_config.store: false` のまま生成した自己署名 MSIX を Web UI に upload する経路で初回審査通過済み（Store 側で再署名されるため self-signed のまま submit 可）。両配布経路で同一 MSIX 成果物を使い回す。
+`pubspec.yaml` の `msix_config.store: false` のまま生成した自己署名 MSIX を Web UI に upload する経路で初回審査通過済み（Store 側で再署名されるため self-signed のまま submit 可）。Store 提出用の `.msix` は draft Release 添付（または CI の `capsicum-msix` artifact）から取り出して使う。
 
-OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534)) は Store 経由配布が主ルートになったため当面不要（Store 経由は MS が再署名、自己署名直配は上級者向け補助路線として継続）。
+OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534)) は Store 経由配布が唯一の公式ルートになったため不要（Store 経由は MS が再署名、自己署名直配は #760 で非公式化）。
 
 #### MSIX
 
