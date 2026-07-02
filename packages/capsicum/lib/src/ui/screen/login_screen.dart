@@ -348,7 +348,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// loopback の listen には Release.entitlements の
   /// `com.apple.security.network.server` が必要。ポート占有は呼び出し前に
   /// [_checkOAuthPortAvailability] で弾く前提。
-  Future<String> _authenticateViaLocalhostServer(Uri authorizationUrl) async {
+  /// [expectedState] を渡すと、callback の `state` が一致したリクエストだけを
+  /// 認可応答として受け付ける (#790)。Mastodon は認可/エラー応答に state を
+  /// エコーするため、同一端末の別アプリ/ページからのコード注入・DoS レースを
+  /// 受け流せる。Misskey MiAuth は state を使わず（`?session=` のみ・completeLogin
+  /// が inbound を無視するため非注入）null を渡して従来どおり受ける。
+  Future<String> _authenticateViaLocalhostServer(
+    Uri authorizationUrl, {
+    String? expectedState,
+  }) async {
     // 127.0.0.1 で listen する。redirect_uri は `localhost` だが、macOS の
     // getaddrinfo は ::1 と 127.0.0.1 の両方を返し、ブラウザは Happy Eyeballs
     // で IPv4 にフォールバックするため loopbackIPv4 で受けられる。
@@ -386,18 +394,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // みなす。favicon 等パスの異なるノイズ要求は 404 で受け流す。
           final isCallback =
               uri.path == callbackPath && uri.queryParameters.isNotEmpty;
+          // state 照合 (#790): expectedState 指定時（Mastodon）は inbound state が
+          // 一致したものだけを認可応答として受け付け、別アプリ/別ページからの
+          // コード注入・DoS レースは 404 で受け流して本物の callback を待ち続ける。
+          // expectedState が null（Misskey MiAuth）なら従来どおり最初の callback。
+          final stateOk =
+              expectedState == null ||
+              uri.queryParameters['state'] == expectedState;
+          final accept = isCallback && stateOk;
           request.response
-            ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
+            ..statusCode = accept ? HttpStatus.ok : HttpStatus.notFound
             ..headers.contentType = ContentType.html
             ..write(
-              isCallback
+              accept
                   ? (Platform.isAndroid
                         ? _oauthCallbackHtmlAndroid
                         : _oauthCallbackHtml)
                   : '<!doctype html>',
             );
           await request.response.close();
-          if (isCallback && !completer.isCompleted) {
+          if (accept && !completer.isCompleted) {
             completer.complete(uri);
           }
         } catch (_) {
@@ -532,6 +548,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // アプリを前面へ復帰させる（_authenticateViaLocalhostServer 内で処理）。
           resultUrl = await _authenticateViaLocalhostServer(
             startResult.authorizationUrl,
+            // Mastodon は startLogin で state を発行する。Misskey MiAuth は
+            // 発行しない（extra に 'state' 無し→null）ため従来どおり受ける。
+            expectedState: startResult.extra['state'],
           );
         } else {
           // localhost callback では `desktop_webview_window` の GLX 系 native
