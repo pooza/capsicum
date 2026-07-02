@@ -334,6 +334,8 @@ cd ..
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
 
+> ⚠️ **各プラットフォームは「ビルド → beta アップロード（§4.2）→ 審査提出（§4.3）」まで一気通貫でやり切ってから次の OS に移ること。** `flutter clean` は `build/` 全体を消すため、iOS をビルド→beta 後に Android / macOS をビルドすると、その `flutter clean` で `build/ios/ipa/capsicum.ipa` が消え、§4.3 の iOS `fastlane release`（`ipa:` パスを検証する）が `Could not find ipa file` で落ちる（v1.43.0 で実際に踏んだ）。加えて **iOS/macOS のアーカイブはビルド毎にビルド番号を自動 +1 する**ため、消えた ipa を後から再ビルドすると番号がズレ（147→148）、`skip_binary_upload:true` の deliver が「未アップロードの 148」を待ち続けてハングする。復旧するなら、`ipa:` を外して `app_identifier:` + `build_number:'<既に VALID なビルド番号>'` を渡した `upload_to_app_store`（`skip_binary_upload:true`）で既存ビルドを名指し提出する。
+
 #### Android: 16KB ページサイズ対応（必須・irondash をローカルビルド）
 
 Google Play は **64bit ネイティブ `.so` の LOAD セグメントが 16KB 整列**（`p_align >= 16384`）でないと製品版昇格を `Artifact does not support 16KB page size` で拒否する（2026-06 にハード強制が有効化。それ以前は警告だったため v1.41.1 までは 4KB のまま production に出ていた）。

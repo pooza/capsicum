@@ -1,0 +1,2 @@
+変更内容の詳細は GitHub リリースページをご覧ください。
+https://github.com/pooza/capsicum/releases
