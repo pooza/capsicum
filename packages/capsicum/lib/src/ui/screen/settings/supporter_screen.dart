@@ -76,13 +76,15 @@ class SupporterScreen extends ConsumerWidget {
   }
 
   List<Widget> _buildPurchaseSection(BuildContext context, WidgetRef ref) {
-    if (!supporterPurchaseSupported) {
+    if (!supporterPurchaseHasBackend) {
+      // 課金 backend が無い OS（Linux）。Windows は backend があるため、購入可否は
+      // 下の isAvailable / products で出し分ける（非 Store 版はそこで案内）。
       return const [
         Padding(
           padding: EdgeInsets.all(16),
           child: Text(
             'このプラットフォームではアプリ内での投げ銭に対応していません。'
-            'iOS / Android 版からご利用ください。',
+            'モバイル / デスクトップの対応版からご利用ください。',
             style: TextStyle(fontSize: 13),
           ),
         ),

@@ -36,6 +36,16 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="text/plain"/>
             </intent-filter>
+            <!-- #276: ループバック OAuth の callback ページから MainActivity を
+                 前面へ復帰させる専用スキーム。フォアグラウンドのブラウザが起動
+                 するため background activity start 制限を受けない。スキーム/ホストは
+                 constants.dart の androidOAuthReturnUrl と一致させること。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="capsicumauth" android:host="complete"/>
+            </intent-filter>
         </activity>
         <activity
             android:name="com.linusu.flutter_web_auth_2.CallbackActivity"

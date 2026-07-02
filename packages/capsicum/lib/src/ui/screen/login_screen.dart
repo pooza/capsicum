@@ -30,6 +30,24 @@ const _oauthCallbackHtml =
     'padding:48px"><h2>ログイン処理が完了しました</h2>'
     '<p>このタブを閉じて capsicum に戻ってください。</p></body></html>';
 
+/// Android のループバック OAuth (#276) 用 callback ページ。code 受領後、
+/// `capsicumauth://complete`（= AppConstants.androidOAuthReturnUrl）へ遷移して
+/// MainActivity を前面へ復帰させる。自動遷移が Chrome のジェスチャ制約で
+/// 弾かれる端末向けに、タップ用の「capsicum に戻る」ボタンも併置する。
+const _oauthCallbackHtmlAndroid =
+    '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    '<title>capsicum</title>'
+    '<script>location.replace("${AppConstants.androidOAuthReturnUrl}");'
+    '</script></head>'
+    '<body style="font-family:sans-serif;text-align:center;padding:48px">'
+    '<h2>ログイン処理が完了しました</h2>'
+    '<p>capsicum に戻ります…</p>'
+    '<p><a href="${AppConstants.androidOAuthReturnUrl}" style="display:inline-block;'
+    'margin-top:16px;padding:12px 24px;background:#d2691e;color:#fff;'
+    'border-radius:8px;text-decoration:none">capsicum に戻る</a></p>'
+    '</body></html>';
+
 /// macOS の自前 localhost OAuth フロー (#654) で、ユーザーが完了しなかった
 /// （ブラウザを閉じた / タイムアウトした）ことを表す。既存の cancel 判定
 /// (`e.toString().contains('CANCELED')`) に合流させるため、toString に
@@ -78,11 +96,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //   して OOB の手動コード入力に落としていたが、#654 で通常フローへ復帰。）
   // Mac App Store ビルドは Sandbox 下で loopback の listen / bind が成立する
   // ために Release.entitlements に com.apple.security.network.server が必要。
-  bool get _useLocalhostCallback => isDesktop;
+  /// Android もデスクトップと同じく localhost ループバックで OAuth callback を
+  /// 受ける (#276)。Android の Custom Tab はカスタムスキーム / 検証済み App Link
+  /// いずれの redirect もアプリに引き渡さず bounce するため（flutter_web_auth_2
+  /// #187 と同型）、ブラウザの引き渡しに依存しない loopback 方式に切替える。
+  /// アプリ内 HTTP サーバへブラウザが直接 HTTP 接続するので確実にコードを取れる。
+  /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため現状維持。
+  bool get _useLocalhostCallback => isDesktop || Platform.isAndroid;
 
-  /// OAuth redirect URI。`_useLocalhostCallback` のときだけ
+  /// OAuth redirect URI。デスクトップ / Android は
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
-  /// それ以外は `capsicum://oauth` カスタムスキーム。
+  /// iOS は `capsicum://oauth` カスタムスキーム。
   String get _redirectUri => _useLocalhostCallback
       ? AppConstants.localhostOAuthCallbackUrl
       : AppConstants.customSchemeOAuthCallbackUrl;
@@ -115,6 +139,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loginCompleted = false;
   String? _error;
 
+  /// ループバック OAuth (#276) の最中に bind した localhost HTTP サーバ。
+  /// 認可完了 / タイムアウトで finally が閉じるが、ユーザーが完了前に画面を
+  /// 離れる（pop で dispose）と完了 future が 5 分 timeout まで生き残り、
+  /// ポート 7099 を掴みっぱなしにして次のログイン試行を塞ぐ。dispose で必ず
+  /// 閉じてポートを解放する。
+  HttpServer? _oauthServer;
+
   // Server info
   String? _serverName;
   String? _serverDescription;
@@ -129,6 +160,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     _fetchServerInfo();
+  }
+
+  @override
+  void dispose() {
+    // 完了前に画面を離れた場合に localhost OAuth サーバを閉じてポート 7099 を
+    // 解放する（掴みっぱなしだと次のログイン試行が「ポート占有」で塞がれる・#276）。
+    unawaited(_oauthServer?.close(force: true));
+    _oauthServer = null;
+    super.dispose();
   }
 
   Future<void> _fetchServerInfo() async {
@@ -308,7 +348,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// loopback の listen には Release.entitlements の
   /// `com.apple.security.network.server` が必要。ポート占有は呼び出し前に
   /// [_checkOAuthPortAvailability] で弾く前提。
-  Future<String> _authenticateViaLocalhostServer(Uri authorizationUrl) async {
+  /// [expectedState] を渡すと、callback の `state` が一致したリクエストだけを
+  /// 認可応答として受け付ける (#790)。Mastodon は認可/エラー応答に state を
+  /// エコーするため、同一端末の別アプリ/ページからのコード注入・DoS レースを
+  /// 受け流せる。Misskey MiAuth は state を使わず（`?session=` のみ・completeLogin
+  /// が inbound を無視するため非注入）null を渡して従来どおり受ける。
+  Future<String> _authenticateViaLocalhostServer(
+    Uri authorizationUrl, {
+    String? expectedState,
+  }) async {
     // 127.0.0.1 で listen する。redirect_uri は `localhost` だが、macOS の
     // getaddrinfo は ::1 と 127.0.0.1 の両方を返し、ブラウザは Happy Eyeballs
     // で IPv4 にフォールバックするため loopbackIPv4 で受けられる。
@@ -316,6 +364,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       InternetAddress.loopbackIPv4,
       AppConstants.localhostOAuthPort,
     );
+    _oauthServer = server;
     _logLoginStep('oauth_server.listening');
     try {
       final launched = await launchUrlSafely(
@@ -335,18 +384,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ).path;
       final completer = Completer<Uri>();
       final subscription = server.listen((request) async {
-        final uri = request.uri;
-        // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトとみなす。
-        // favicon 等パスの異なるノイズ要求は 404 で受け流す。
-        final isCallback =
-            uri.path == callbackPath && uri.queryParameters.isNotEmpty;
-        request.response
-          ..statusCode = isCallback ? HttpStatus.ok : HttpStatus.notFound
-          ..headers.contentType = ContentType.html
-          ..write(isCallback ? _oauthCallbackHtml : '<!doctype html>');
-        await request.response.close();
-        if (isCallback && !completer.isCompleted) {
-          completer.complete(uri);
+        // dispose() が受信処理の最中に server.close(force:true) すると
+        // response の write/close が StateError/HttpException を投げ、未捕捉
+        // async エラー（zone→Sentry ノイズ）になる。サーバ終了中の失敗は
+        // 無害なので握りつぶす。
+        try {
+          final uri = request.uri;
+          // コールバックパスへの非空クエリ付きリクエストを認可リダイレクトと
+          // みなす。favicon 等パスの異なるノイズ要求は 404 で受け流す。
+          final isCallback =
+              uri.path == callbackPath && uri.queryParameters.isNotEmpty;
+          // state 照合 (#790): expectedState 指定時（Mastodon）は inbound state が
+          // 一致したものだけを認可応答として受け付け、別アプリ/別ページからの
+          // コード注入・DoS レースは 404 で受け流して本物の callback を待ち続ける。
+          // expectedState が null（Misskey MiAuth）なら従来どおり最初の callback。
+          final stateOk =
+              expectedState == null ||
+              uri.queryParameters['state'] == expectedState;
+          final accept = isCallback && stateOk;
+          request.response
+            ..statusCode = accept ? HttpStatus.ok : HttpStatus.notFound
+            ..headers.contentType = ContentType.html
+            ..write(
+              accept
+                  ? (Platform.isAndroid
+                        ? _oauthCallbackHtmlAndroid
+                        : _oauthCallbackHtml)
+                  : '<!doctype html>',
+            );
+          await request.response.close();
+          if (accept && !completer.isCompleted) {
+            completer.complete(uri);
+          }
+        } catch (_) {
+          // サーバ終了中のレスポンス書き込み失敗等。認可コードは completer
+          // で受領済みか、未受領なら timeout/cancel 経路に合流するため無視。
         }
       });
 
@@ -370,6 +442,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       await server.close(force: true);
+      if (identical(_oauthServer, server)) _oauthServer = null;
     }
   }
 
@@ -403,7 +476,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final existing = accounts
             .where((a) => a.key.host == widget.host && a.clientSecret != null)
             .firstOrNull;
-        if (existing != null) {
+        // Android (#276): 既存アカウントの cached client は旧 `capsicum://oauth`
+        // で登録された可能性があり、localhost redirect へ移行した今これを再利用
+        // すると Mastodon が /oauth/authorize を invalid_redirect_uri で蹴る。
+        // その場合 localhost へ redirect されず（redirect が無いので `?error=`
+        // 自己回復も発火せず）loopback が 5 分ハングする。account-scoped client は
+        // 登録時の redirect_uri を保持しないため Android では使わず、redirect_uri
+        // で scope された host 保存（getHostClientCredentials）か fresh 登録に
+        // 委ねる。移行後の初回ログインで localhost client が host 保存されるので、
+        // 再登録は host あたり 1 回で済む。
+        if (existing != null && !Platform.isAndroid) {
           adapter.setCachedClientCredentials(existing.clientSecret);
           usedCachedCreds = true;
         } else {
@@ -456,14 +538,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           }
         }
         final String resultUrl;
-        if (Platform.isMacOS) {
-          // #654: macOS は flutter_web_auth_2 に localhost callback の server
-          // impl が無く、ASWebAuthenticationSession は ephemeral でパスワード
-          // マネージャ拡張も効かない。Linux / Windows の server impl 相当を
-          // 自前化し、システムブラウザ + 自前 localhost HTTP サーバで code を
-          // 受ける（OOB の手動コード入力を廃止）。
+        if (Platform.isMacOS || Platform.isAndroid) {
+          // macOS (#654): flutter_web_auth_2 に localhost server impl が無い。
+          // Android (#276): Custom Tab がカスタムスキーム / 検証済み App Link の
+          // どちらの redirect もアプリに引き渡さず bounce する (#187 同型)。
+          // 両者ともシステムブラウザ + 自前 localhost HTTP サーバで code を受ける
+          // loopback 方式に統一する（ブラウザの引き渡しに依存しない）。Android は
+          // コード受領後、callback ページが androidOAuthReturnUrl へ遷移して
+          // アプリを前面へ復帰させる（_authenticateViaLocalhostServer 内で処理）。
           resultUrl = await _authenticateViaLocalhostServer(
             startResult.authorizationUrl,
+            // Mastodon は startLogin で state を発行する。Misskey MiAuth は
+            // 発行しない（extra に 'state' 無し→null）ため従来どおり受ける。
+            expectedState: startResult.extra['state'],
           );
         } else {
           // localhost callback では `desktop_webview_window` の GLX 系 native
@@ -547,11 +634,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           await _finishLogin(adapter, completeResult);
         } else if (completeResult is LoginFailure) {
           debugPrint('Login failed: ${completeResult.error}');
+          // MiAuth ポーリング枯渇 (#276): 承認がまだ反映されていない／ユーザーが
+          // 拒否した場合は Misskey が `{ok:false}` を返し続け、poll が尽きて
+          // MisskeyMiAuthPending で失敗する。ジェネリック失敗と区別し、再試行を
+          // 促す文言にする（Sentry は例外クラスで既に区別可能だが、枯渇率を
+          // 追えるよう breadcrumb も残す）。
+          final pollExhausted = completeResult.error is MisskeyMiAuthPending;
+          if (pollExhausted) {
+            _logLoginStep('completeLogin.miauth_poll_exhausted');
+          }
           Sentry.captureException(
             scrubException(completeResult.error),
             stackTrace: completeResult.stackTrace,
           );
-          if (mounted) setState(() => _error = 'ログインに失敗しました');
+          if (mounted) {
+            setState(
+              () => _error = pollExhausted
+                  ? '承認がまだ反映されていないか、承認が完了していません。'
+                        'もう一度お試しください。'
+                  : 'ログインに失敗しました',
+            );
+          }
         }
       } else if (startResult is LoginFailure) {
         debugPrint('Login start failed: ${startResult.error}');
@@ -1044,46 +1147,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: const Text('ブラウザでログイン'),
                   ),
           ),
-          if (requiresManualCodeFallbackCard) ...[
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'ブラウザから戻れないとき',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Android ではブラウザから自動でアプリに戻れないことがあります。'
-                      'その場合は端末のスワイプや戻るボタンでアプリに戻ってください。'
-                      '多くの場合、認証は自動で完了します。\n\n'
-                      '認証画面以外（タイムラインなど）に遷移してしまった場合は、'
-                      '一度スワイプで戻ると認証コード入力ダイアログが出るので、'
-                      'そこからブラウザを開き直して認証コードを取得・貼り付けて'
-                      'ログインできます。',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

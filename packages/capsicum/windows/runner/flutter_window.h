@@ -4,8 +4,11 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
+#include <flutter/method_result.h>
 
 #include <atomic>
+#include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -17,6 +20,12 @@
 // プラットフォーム（UI）スレッド affinity を持つため、MTA ワーカーで取得した
 // 結果を PostMessage で UI スレッドに marshal してから Dart へ返す。
 #define WM_WNS_CHANNEL_READY (WM_APP + 1)
+
+// Store IAP (#599) の非同期ワーカーが結果を UI スレッドへ返すためのメッセージ。
+// MethodResult はプラットフォーム（UI）スレッドでしか触れないため、MTA ワーカーで
+// 得た結果を PostMessage で marshal し、UI スレッド側で Success/Error を返す。
+// wparam に結果 id を載せる。
+#define WM_STORE_IAP_RESULT (WM_APP + 2)
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -54,6 +63,22 @@ class FlutterWindow : public Win32Window {
   // 複数回起動すると MTA スレッドと PushNotificationReceived 購読が多重化し、
   // 同一 raw 通知でトーストが複数回出る。
   std::atomic<bool> wns_receiver_started_{false};
+
+  // 投げ銭 IAP (#599) 用メソッドチャンネル。Dart 側 WindowsStoreBackend が
+  // 'queryProducts' / 'purchase' / 'reportFulfillment' を呼ぶ。WinRT 呼び出しは
+  // MTA ワーカーで回し、完了を WM_STORE_IAP_RESULT で UI スレッドへ marshal する。
+  std::unique_ptr<flutter::MethodChannel<>> store_iap_channel_;
+  std::mutex store_mutex_;
+  int store_next_id_ = 0;
+  // ワーカー完了までペンディングする MethodResult と、ワーカーが書き込む結果値。
+  // id で対応づけ、UI スレッドの WM_STORE_IAP_RESULT ハンドラが取り出して返す。
+  std::map<int, std::shared_ptr<flutter::MethodResult<>>> store_pending_;
+  std::map<int, flutter::EncodableValue> store_outcomes_;
+
+  // WinRT を叩く |work| を MTA ワーカーで実行し、結果を UI スレッド経由で
+  // |result| へ返す。work が例外を投げた / null を返したら Error を返す。
+  void DispatchStoreWork(std::unique_ptr<flutter::MethodResult<>> result,
+                         std::function<flutter::EncodableValue()> work);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

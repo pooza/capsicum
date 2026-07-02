@@ -25,12 +25,3 @@ String get residentTargetLabel =>
 /// 直書きしない設計指針に従い機能名で公開する。
 bool get supportsMediaDragOut =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows);
-
-/// OAuth ログイン画面で「ブラウザから戻れないとき」の手動コード入力カードを
-/// 出すべきプラットフォームか（#556）。
-///
-/// Android は Custom Tabs からアプリへ自動復帰できず、認証後にタイムライン等へ
-/// 遷移してしまうケースがあるため、手動コード貼り付け導線を案内する必要がある。
-/// UI 層に `Platform.isAndroid` を直書きしない（CLAUDE.md デスクトップ対応の
-/// 設計指針）ため、機能名で公開する feature flag。
-bool get requiresManualCodeFallbackCard => !kIsWeb && Platform.isAndroid;

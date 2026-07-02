@@ -50,6 +50,7 @@ class MastodonClient {
     required String redirectUri,
     String? code,
     String? scope,
+    String? codeVerifier,
   }) async {
     final response = await dio.post(
       '/oauth/token',
@@ -60,6 +61,9 @@ class MastodonClient {
         'redirect_uri': redirectUri,
         'code': ?code,
         'scope': ?scope,
+        // PKCE (#790)。認可リクエストで code_challenge を送った場合、Mastodon は
+        // token 交換で対応する code_verifier を要求する。
+        'code_verifier': ?codeVerifier,
       },
     );
     return MastodonToken.fromJson(response.data as Map<String, dynamic>);

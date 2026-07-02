@@ -23,22 +23,22 @@ const List<PresetServer> kPresetServers = [
   // ステージング（デバッグビルドでのみ UI に出す。プッシュ登録判定は
   // ビルドに関わらず通す）。
   PresetServer(
-    host: 'st.mstdn.b-shock.org',
+    host: 'st2.mstdn.b-shock.org',
     displayName: '美食丼 (stg)',
     isStaging: true,
   ),
   PresetServer(
-    host: 'st2.mstdn.delmulin.com',
+    host: 'st3.mstdn.delmulin.com',
     displayName: 'デルムリン丼 (stg)',
     isStaging: true,
   ),
   PresetServer(
-    host: 'st.precure.ml',
+    host: 'st2.precure.ml',
     displayName: 'キュアスタ！ (stg)',
     isStaging: true,
   ),
   PresetServer(
-    host: 'st.misskey.delmulin.com',
+    host: 'st2.misskey.delmulin.com',
     displayName: 'ダイスキー (stg)',
     isStaging: true,
   ),

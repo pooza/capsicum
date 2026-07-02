@@ -81,6 +81,13 @@ class MisskeyStreaming {
   }
 
   Stream<Post> connect(TimelineType type) {
+    // streaming チャンネルを持たない種別 (DM 等) は購読しない。以前は購読時に
+    // `_channelMap[type] ?? 'homeTimeline'` で homeTimeline に化け、DM タブが
+    // 裏でホームを隠れ購読していた (#793)。Mastodon 側 (streamTimeline が DM で
+    // Stream.empty を返す) と挙動を揃える。
+    if (!_channelMap.containsKey(type)) {
+      return const Stream.empty();
+    }
     _currentType = type;
     _controller?.close();
     _controller = StreamController<Post>.broadcast(onCancel: dispose);
@@ -120,8 +127,11 @@ class MisskeyStreaming {
     );
 
     // Subscribe to the timeline channel after connecting.
+    // connect() で _channelMap 未登録の種別は弾いているため、ここに来る type は
+    // 必ずマップに存在する (#793)。念のため未登録なら購読を張らず抜ける。
     _subscriptionId = const Uuid().v4();
-    final channelName = _channelMap[type] ?? 'homeTimeline';
+    final channelName = _channelMap[type];
+    if (channelName == null) return;
     final channel = _channel!;
     final subId = _subscriptionId!;
     channel.ready

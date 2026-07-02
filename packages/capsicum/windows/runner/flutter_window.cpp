@@ -6,13 +6,18 @@
 
 #include <winrt/Windows.Foundation.h>
 
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "smtc_now_playing.h"
+#include "windows_store_iap.h"
 #include "wns_push.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -117,6 +122,60 @@ bool FlutterWindow::OnCreate() {
         }
       });
 
+  // 投げ銭 (サポーター) IAP のチャンネル (#599 / plan §E-6-1)。Dart 側
+  // WindowsStoreBackend が商品取得・購入・消費報告を呼ぶ。WinRT は STA でブロック
+  // すると停止しうるため、いずれも MTA ワーカーで回して結果を UI スレッドへ返す。
+  store_iap_channel_ = std::make_unique<flutter::MethodChannel<>>(
+      flutter_controller_->engine()->messenger(), "capsicum/store_iap",
+      &flutter::StandardMethodCodec::GetInstance());
+  store_iap_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<>& call,
+             std::unique_ptr<flutter::MethodResult<>> result) {
+        const std::string& method = call.method_name();
+        if (method == "queryProducts") {
+          // args: EncodableList<String> のアプリ内 SKU。
+          std::vector<std::string> ids;
+          if (const auto* list =
+                  std::get_if<flutter::EncodableList>(call.arguments())) {
+            for (const auto& v : *list) {
+              if (const auto* s = std::get_if<std::string>(&v)) {
+                ids.push_back(*s);
+              }
+            }
+          }
+          DispatchStoreWork(std::move(result),
+                            [ids]() { return QueryStoreProducts(ids); });
+        } else if (method == "purchase" || method == "reportFulfillment") {
+          // args: EncodableMap { "storeId": String }。
+          std::string store_id;
+          if (const auto* map =
+                  std::get_if<flutter::EncodableMap>(call.arguments())) {
+            auto it = map->find(flutter::EncodableValue("storeId"));
+            if (it != map->end()) {
+              if (const auto* s = std::get_if<std::string>(&it->second)) {
+                store_id = *s;
+              }
+            }
+          }
+          if (store_id.empty()) {
+            result->Error("bad_args", "storeId is required");
+            return;
+          }
+          HWND hwnd = GetHandle();
+          if (method == "purchase") {
+            DispatchStoreWork(std::move(result), [hwnd, store_id]() {
+              return RequestStorePurchase(hwnd, store_id);
+            });
+          } else {
+            DispatchStoreWork(std::move(result), [store_id]() {
+              return ReportStoreConsumable(store_id);
+            });
+          }
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -172,7 +231,69 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       }
       return 0;
     }
+    case WM_STORE_IAP_RESULT: {
+      // MTA ワーカーが完了した Store IAP 呼び出しの結果を UI スレッドで Dart へ
+      // 返す (#599)。id で保留中の MethodResult と結果値を取り出す。
+      int id = static_cast<int>(wparam);
+      std::shared_ptr<flutter::MethodResult<>> result;
+      flutter::EncodableValue outcome;
+      {
+        std::lock_guard<std::mutex> lock(store_mutex_);
+        auto rit = store_pending_.find(id);
+        if (rit != store_pending_.end()) {
+          result = rit->second;
+          store_pending_.erase(rit);
+        }
+        auto oit = store_outcomes_.find(id);
+        if (oit != store_outcomes_.end()) {
+          outcome = std::move(oit->second);
+          store_outcomes_.erase(oit);
+        }
+      }
+      if (result) {
+        if (std::holds_alternative<std::monostate>(outcome)) {
+          // ワーカーが例外で null を書いた = WinRT 呼び出し自体が失敗。
+          result->Error("store_error", "Windows.Services.Store call failed");
+        } else {
+          result->Success(outcome);
+        }
+      }
+      return 0;
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+void FlutterWindow::DispatchStoreWork(
+    std::unique_ptr<flutter::MethodResult<>> result,
+    std::function<flutter::EncodableValue()> work) {
+  int id;
+  {
+    std::lock_guard<std::mutex> lock(store_mutex_);
+    id = store_next_id_++;
+    store_pending_[id] =
+        std::shared_ptr<flutter::MethodResult<>>(std::move(result));
+  }
+  HWND hwnd = GetHandle();
+  // WinRT 呼び出しは専用 MTA スレッドで回す。購入ダイアログ (RequestPurchaseAsync)
+  // はユーザー操作待ちで長時間ブロックしうるため、SMTC のようなタイムアウトは
+  // かけず完了まで待つ (UI スレッドは別なので固まらない)。
+  std::thread([this, hwnd, id, work = std::move(work)]() {
+    flutter::EncodableValue outcome;  // 既定は null (std::monostate)
+    try {
+      winrt::init_apartment(winrt::apartment_type::multi_threaded);
+      outcome = work();
+      winrt::uninit_apartment();
+    } catch (...) {
+      // WinRT 例外等。outcome は null のままにし、UI 側で Error を返す。
+    }
+    {
+      std::lock_guard<std::mutex> lock(store_mutex_);
+      store_outcomes_[id] = std::move(outcome);
+    }
+    if (hwnd) {
+      PostMessage(hwnd, WM_STORE_IAP_RESULT, static_cast<WPARAM>(id), 0);
+    }
+  }).detach();
 }

@@ -96,6 +96,25 @@ void main() {
       );
     });
 
+    test('403 (サーバーが push 登録を拒否するケース) も '
+        'PushRegistrationNotSupportedException に寄せる', () async {
+      // #705: misskey.io ほか非プリセットの公開サーバーが /api/sw/register を
+      // 403 で拒否するケース（Sentry CAPSICUM-1T）。400 / 404 と同じ非対応扱い。
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _StaticAdapter(403, {
+        'error': {'code': 'ACCESS_DENIED', 'message': 'Access denied.'},
+      });
+
+      expect(
+        () => adapter.subscribePush(
+          endpoint: 'https://relay.example/push/abc',
+          p256dh: 'p256dh-dummy',
+          auth: 'auth-dummy',
+        ),
+        throwsA(isA<PushRegistrationNotSupportedException>()),
+      );
+    });
+
     test('other status codes rethrow the DioException as-is', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
       adapter.client.dio.httpClientAdapter = _StaticAdapter(500, {

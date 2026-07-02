@@ -1,6 +1,6 @@
-# Windows インストール手順 (MSIX 自己署名直配)
+# Windows インストール手順 (MSIX 自己署名直配・非公式)
 
-> ℹ️ 一般のユーザーは [Microsoft Store](https://apps.microsoft.com/detail/9np2gr7m2w6p) からの導入を推奨します（証明書 import 不要、v1.27 で公開）。本手順は Store publish 完了前の先行検証や、最新ビルドをいち早く試したい上級ユーザー向けの GitHub Releases 経由・自己署名 MSIX 直配です。
+> ⚠️ **この直配ルートは公式配布としては廃止しました（#760）。Windows の公式配布は [Microsoft Store](https://apps.microsoft.com/detail/9np2gr7m2w6p) 単独です**（証明書 import 不要、v1.27 で公開）。自己署名 MSIX の直接インストールは**非公式・サポート外**で、証明書 import を厭わない上級者が自己責任で行う場合の参考情報としてのみ残しています（README / 公式サイトからは案内していません）。
 
 ## インストール手順
 

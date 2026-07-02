@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "smtc_now_playing.cpp"
+  "windows_store_iap.cpp"
   "wns_push.cpp"
   "notification_type_label.cpp"
   "push_diagnostics.cpp"

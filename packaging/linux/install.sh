@@ -155,6 +155,36 @@ chmod +x "$DEST"
 STABLE_LINK="$APPLICATIONS_DIR/$APP_NAME"
 ln -sfn "$DEST" "$STABLE_LINK"
 
+# 旧バージョンの掃除。~/Applications はインストーラ管理下で、参照は常に
+# 安定 symlink (=最新) に向くため、旧 AppImage は誰も参照しないゴミになる。
+# 放置すると溜まる一方なので、最新 + 直前 1 世代だけ残して古いものを消す。
+# 削除対象は自前の命名 (capsicum-*-x86_64.AppImage) に厳密一致する「実
+# ファイル」だけ。今入れた実体 ($DEST) / symlink / 他アプリの AppImage には
+# 触れない。起動中の旧 AppImage を消しても Linux では inode がプロセス終了
+# まで残るので実行中プロセスは壊れない。
+KEEP=2
+prune_old_appimages() {
+  local all keep f
+  # バージョン昇順 (sort -V) で並べたファイル名一覧 (実ファイルのみ)。
+  all=$(find "$APPLICATIONS_DIR" -maxdepth 1 -type f \
+        -name 'capsicum-*-x86_64.AppImage' -printf '%f\n' | sort -V)
+  [[ -z "$all" ]] && return 0
+  # 残すのは「新しい方 KEEP 件」+「今入れた実体 ($FILENAME)」。後者は世代数に
+  # 関わらず必ず保護する (ローカル指定で旧バージョンを入れ直したケースでも
+  # 消さないため)。連想配列を避け、改行区切りの keep リストへの完全一致
+  # (grep -xF) で判定する (bash 3.2 でも動く)。
+  keep=$(printf '%s\n' "$all" | tail -n "$KEEP")
+  keep=$(printf '%s\n%s\n' "$keep" "$FILENAME")
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if ! printf '%s\n' "$keep" | grep -qxF -- "$f"; then
+      echo "==> Removing old AppImage $APPLICATIONS_DIR/$f"
+      rm -f "$APPLICATIONS_DIR/$f"
+    fi
+  done <<< "$all"
+}
+prune_old_appimages
+
 # AppImage の中身 (.desktop / hicolor アイコン) を一時ディレクトリに展開
 # して再利用する。リポジトリのファイル構成を仮定しないので、AppImage 単独
 # + install.sh だけで動く。

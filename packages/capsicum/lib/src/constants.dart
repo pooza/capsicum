@@ -36,10 +36,19 @@ class AppConstants {
       'http://localhost:$localhostOAuthPort/oauth/callback';
 
   /// カスタムスキーム経由の OAuth redirect URI。
-  /// iOS / Android (ASWebAuthenticationSession / Custom Tabs) で使う。
-  /// macOS / Linux / Windows は localhost callback (`localhostOAuthCallbackUrl`)
-  /// を使うため、どちらを採用するかは呼び出し側 (login_screen) で判定する。
+  /// iOS (ASWebAuthenticationSession) で使う。
+  /// macOS / Linux / Windows / Android は localhost callback
+  /// (`localhostOAuthCallbackUrl`) を使うため、どちらを採用するかは
+  /// 呼び出し側 (login_screen) で判定する。
   static const customSchemeOAuthCallbackUrl = '$callbackUrlScheme://oauth';
+
+  /// Android のループバック OAuth (#276) で、ブラウザの callback ページから
+  /// アプリを前面へ戻すための専用カスタムスキーム URL。capsicum の
+  /// `localhost` HTTP サーバが認可コードを受領した後、callback ページが
+  /// この URL へ遷移して MainActivity を前面に復帰させる（background activity
+  /// start 制限を受けない＝フォアグラウンドのブラウザが起動する経路）。
+  /// AndroidManifest の MainActivity intent-filter と一致させること。
+  static const androidOAuthReturnUrl = 'capsicumauth://complete';
 
   static final websiteUrl = Uri.parse('https://capsicum.shrieker.net');
   static final presetServersUrl = Uri.parse(

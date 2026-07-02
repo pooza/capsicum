@@ -47,6 +47,7 @@ const _residentModeKey = 'resident_mode';
 const _launchAtLoginKey = 'launch_at_login';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
+const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -825,6 +826,39 @@ class MouseDragScrollNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_mouseDragScrollKey, value);
+  }
+}
+
+/// 接続インジケータで再接続の詳細 (再接続回数バッジ + 直近切断時刻) を出すか
+/// (#786)。default OFF。切断・再接続はストリーミングのごく普通の挙動で、回数が
+/// 増えても不具合ではない。一般ユーザーには「壊れている？」と誤解させる逆効果の
+/// ため既定では隠し、診断したい人だけ ON にする。フラッシュ (速い再接続の橙
+/// ラッチ) と接続状態そのものは常時表示なのでこの設定の影響を受けない。
+final showStreamReconnectDetailProvider =
+    NotifierProvider<ShowStreamReconnectDetailNotifier, bool>(
+      ShowStreamReconnectDetailNotifier.new,
+    );
+
+class ShowStreamReconnectDetailNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return false;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_showStreamReconnectDetailKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showStreamReconnectDetailKey, value);
   }
 }
 

@@ -72,9 +72,11 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/push'),
             ),
-          // 投げ銭の購入導線は iOS / Android のみ (#428 D-1)。push 設定と
-          // 同じく、対応していないプラットフォームでは設定エントリを隠す。
-          if (supporterPurchaseSupported)
+          // 投げ銭の購入導線は iOS / Android / macOS、および Store 版 Windows
+          // (#599 §E-2)。push 設定と同じく、対応しない環境では設定エントリを隠す。
+          // Windows は Store 版でのみ購入が成立するため、商品問い合わせが通った
+          // ときだけ出す（判定は supporterEntryVisibleProvider）。
+          if (ref.watch(supporterEntryVisibleProvider))
             ListTile(
               leading: Image.asset(
                 AppConstants.supporterIconAsset,

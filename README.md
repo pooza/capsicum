@@ -24,7 +24,7 @@ capsicum が提案するのは、アプリ単体の体験ではなく、サー�
   ```
 
 - **Linux の日本語入力（IM）**: GTK IM module の `ibus` / `fcitx5` / `uim` を AppImage に同梱。`ibus-mozc` (開発者環境) と `fcitx5` (外部ユーザー報告) は動作確認済み。`uim` 経路は **未検証 (best-effort)**。動かない場合は [Issue](https://github.com/pooza/capsicum/issues) にご報告ください
-- **Windows**: [Microsoft Store](https://apps.microsoft.com/detail/9np2gr7m2w6p) から導入できます（v1.27 で公開）。Store 公開前の先行配布や証明書 import を厭わない上級者向けに、[GitHub Releases](https://github.com/pooza/capsicum/releases) からの自己署名 MSIX 直配も継続しています（[インストール手順](https://github.com/pooza/capsicum/blob/main/packaging/windows/INSTALL.md)）
+- **Windows**: [Microsoft Store](https://apps.microsoft.com/detail/9np2gr7m2w6p) から導入できます（v1.27 で公開）。Windows の公式配布ルートは Microsoft Store 単独です
 
 ## モロヘイヤ連携
 

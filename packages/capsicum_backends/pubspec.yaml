@@ -12,6 +12,7 @@ dependencies:
     path: ../capsicum_core
   fediverse_objects:
     path: ../fediverse_objects
+  crypto: ^3.0.0
   dio: ^5.8.0+1
   http_parser: ^4.1.0
   uuid: ^4.0.0

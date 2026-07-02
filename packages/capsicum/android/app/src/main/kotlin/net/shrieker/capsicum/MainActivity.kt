@@ -21,6 +21,15 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
+        // #276 ループバック OAuth の前面復帰用スキーム (capsicumauth://complete) は
+        // 「アプリを前面に戻す」ことだけが目的。data を残したまま super に渡すと
+        // Flutter の deep link 処理経由で go_router が該当ルート無しの例外
+        // (GoException: no routes for location: capsicumauth://...) を投げるため、
+        // data / action を中和してから委譲し、ルートとして解釈させない。
+        if (intent.data?.scheme == "capsicumauth") {
+            intent.data = null
+            intent.action = Intent.ACTION_MAIN
+        }
         super.onNewIntent(intent)
         setIntent(intent)
     }

@@ -9,6 +9,7 @@ import 'dart:developer' as developer;
 import 'client.dart';
 import 'extensions.dart';
 import 'notification_streaming.dart';
+import 'oauth_pkce.dart';
 import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
@@ -526,12 +527,20 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         clientSecret = app.clientSecret!;
       }
 
+      // PKCE + state (#790)。loopback / カスタムスキーム callback への認可コード
+      // 注入（同一端末の別アプリ/ページによる login-CSRF）を防ぐ。verifier は
+      // extra に退避し token 交換で送る。state は callback 照合用に持ち回る。
+      final pkce = OAuthPkceParams.generate();
+
       final authUrl = Uri.https(host, '/oauth/authorize', {
         'response_type': 'code',
         'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
         'force_login': 'true',
+        'state': pkce.state,
+        'code_challenge': pkce.codeChallenge,
+        'code_challenge_method': OAuthPkceParams.codeChallengeMethod,
       });
 
       return LoginNeedsOAuth(
@@ -541,6 +550,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           'client_secret': clientSecret,
           'redirect_uri': application.redirectUri.toString(),
           'scopes': _scopes.join(' '),
+          'state': pkce.state,
+          'code_verifier': pkce.codeVerifier,
         },
       );
     } on DioException catch (e, s) {
@@ -559,6 +570,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     Map<String, String> extra,
   ) async {
     try {
+      // state 照合 (#790): 全プラットフォーム共通のバックストップ。startLogin で
+      // 生成した state と callback の state が一致しなければ、別アプリ/別ページから
+      // のコード注入（login-CSRF）とみなして token 交換に進まない。iOS カスタム
+      // スキームや desktop の flutter_web_auth_2 経路（loopback server 側の照合が
+      // 効かない経路）もここで守る。
+      final expectedState = extra['state'];
+      if (expectedState != null &&
+          callbackUri.queryParameters['state'] != expectedState) {
+        return LoginFailure(StateError('OAuth state mismatch'));
+      }
+
       final code = callbackUri.queryParameters['code'];
       if (code == null) {
         return LoginFailure(StateError('No code in callback'));
@@ -571,6 +593,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         redirectUri: extra['redirect_uri']!,
         code: code,
         scope: extra['scopes'],
+        codeVerifier: extra['code_verifier'],
       );
 
       client.setAccessToken(token.accessToken!);

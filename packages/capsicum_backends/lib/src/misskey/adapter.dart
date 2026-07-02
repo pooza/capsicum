@@ -549,6 +549,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }
   }
 
+  /// #276 MiAuth ポーリングの間隔と最大試行回数。ユーザー承認とサーバー反映の
+  /// 間のレース窓 (数百 ms〜1 秒程度) と、一過性の通信エラー (Sentry
+  /// CAPSICUM-39: connectionError) を吸収する。既定 8 回 × 400ms ≒ 3 秒弱。
+  /// テストからゼロ遅延に差し替えられるよう可変フィールドにしている。
+  Duration miauthPollDelay = const Duration(milliseconds: 400);
+  int miauthPollMaxAttempts = 8;
+
   @override
   Future<LoginResult> completeLogin(
     Uri callbackUri,
@@ -556,7 +563,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   ) async {
     try {
       final session = extra['session']!;
-      final response = await client.checkSession(session);
+      final response = await _pollCheckSession(session);
       client.setAccessToken(response.token);
 
       return LoginSuccess(
@@ -567,6 +574,41 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       return LoginFailure(e, s);
     }
   }
+
+  /// MiAuth の `/check` を短時間ポーリングする (#276)。承認反映のレースで
+  /// 返る未承認応答 ([MisskeyMiAuthPending]) と、一過性の通信エラー
+  /// (connectionError / 各種 timeout) のみ再試行する。恒久的なエラー
+  /// (4xx 等の badResponse) は即座に投げ直して無駄な待ちを避ける。従来は
+  /// 単発チェックだったため、承認直後に叩くと「ログインに失敗しました」と
+  /// 出て手動で数回やり直す必要があった。
+  ///
+  /// 注意 (one-shot): `/check` はトークンを初回成功時のみ返し、以降は
+  /// `{ok:false}` になる。よって**成功したら即 return** し、成功後に再度
+  /// `/check` を呼んではならない（呼ぶと pending 扱いになりトークンを失う）。
+  /// また Misskey は「拒否」も `{ok:false}` で返すため、拒否時は本ループが
+  /// 枯渇（既定 8 回 ≒ 3 秒）してから失敗する（client 側で短絡不可）。
+  Future<MisskeyCheckSessionResponse> _pollCheckSession(String session) async {
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        return await client.checkSession(session);
+      } on MisskeyMiAuthPending {
+        if (attempt >= miauthPollMaxAttempts) rethrow;
+      } on DioException catch (e) {
+        if (!_isTransientDioError(e) || attempt >= miauthPollMaxAttempts) {
+          rethrow;
+        }
+      }
+      await Future<void>.delayed(miauthPollDelay);
+    }
+  }
+
+  static bool _isTransientDioError(DioException e) =>
+      e.type == DioExceptionType.connectionError ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.sendTimeout;
 
   // PinSupport
 
@@ -1561,7 +1603,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // では HTTP 400 + `{error: {code: 'ACCESS_DENIED'}}` を返す。再試行しても
       // 成功しない既知の仕様制約。Misskey フォークによっては `/api/sw/register`
       // 自体を削除している場合 (404) や、別形状の 400 を返す場合もあるため、
-      // /api/sw/register に対する 400 / 404 はすべて非対応扱いに寄せる (#365)。
+      // /api/sw/register に対する 400 / 403 / 404 はすべて非対応扱いに寄せる
+      // (#365 / #705)。
       if (_isUnsupportedRegistration(e)) {
         throw PushRegistrationNotSupportedException(
           'Misskey upstream blocks third-party Web Push registration '
@@ -1573,8 +1616,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   bool _isUnsupportedRegistration(DioException e) {
+    // サーバー・バージョンによっては同じ push 登録拒否を 400 / 404 のほか
+    // 403 で返すものもある（misskey.io ほか非プリセットの公開サーバーで実測。
+    // Sentry CAPSICUM-1T）。特定サーバー分岐ではなくステータスコード一般で
+    // graceful 降格し、いずれも「このサーバーは push 非対応」に寄せる (#705)。
     final status = e.response?.statusCode;
-    return status == 400 || status == 404;
+    return status == 400 || status == 403 || status == 404;
   }
 
   @override
