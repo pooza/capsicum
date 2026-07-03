@@ -94,11 +94,11 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 | 操作 | Mastodon | Misskey | 備考 |
 |------|----------|---------|------|
-| お気に入り | FavoriteSupport | ―（リアクションで代替） | Misskey は ReactionSupport で対応予定 |
+| お気に入り | FavoriteSupport | ―（リアクションで代替） | Misskey は ReactionSupport で対応済み |
 | ブックマーク | BookmarkSupport | BookmarkSupport（内部は favorites API） | Misskey の「お気に入り」は意味的にブックマーク相当 |
 | ブースト / リノート | repeatPost() | repeatPost()（renote） | ラベルは ReactionSupport の有無で切替 |
 
-- Misskey adapter は `FavoriteSupport` mixin を持たない（リアクション対応時に吸収）
+- Misskey adapter は `FavoriteSupport` mixin を持たない（リアクションで代替済み）
 - Misskey 判定は `adapter is ReactionSupport` で行う
 
 ### DM / メッセージの方針
