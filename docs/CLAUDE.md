@@ -179,8 +179,9 @@ capsicum/
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
     milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
+    doc-maintenance.md    # ドキュメント/メモリの棚卸し手順（不定期・陳腐化改善・memory↔docs 移送・アーカイブ）
     store-release-guide.md  # ストアリリース手順書（運用正本）
-    archive/              # 過去の記録（現役運用では参照しない。release-pipeline.md 等）
+    archive/              # 過去の記録（現役運用では参照しない。release-log.md / release-pipeline.md 等）
   packages/               # モノレポ構成（Melos）
     capsicum/             # メインアプリ
     capsicum_core/        # ドメインモデル・Adapter インターフェース
@@ -358,4 +359,4 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ### CLAUDE.md の定期見直し
 
-CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。
+CLAUDE.md はセッション開始時に全文読み込むため、完了済みの情報や歴史的経緯が蓄積するとノイズとなり、重要な設計方針の認識精度が下がる。マイルストーン数回ごとに CLAUDE.md を見直し、完了済み・陳腐化した情報を削除するか外部参照に集約する。具体的な棚卸し手順（陳腐化改善・memory↔docs の移送・役目を終えた docs のアーカイブ）は [doc-maintenance.md](doc-maintenance.md) に手順化してある（不定期・オンデマンド実施）。
