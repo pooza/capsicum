@@ -74,6 +74,15 @@ class User {
   /// chat 概念のないサーバーでは null。
   final bool? canChat;
 
+  /// Mastodon 4.6 のプロフィールタブ表示設定（#732）。所有者が閲覧側に対して
+  /// 表示を制御する。null は未対応サーバー（＝従来どおり全て表示）。
+  /// - showMedia == false → メディアタブを隠す
+  /// - showFeatured == false → 固定投稿（フィーチャー）セクションを隠す
+  /// - hideCollections == true → フォロー/フォロワーのカウント・導線を隠す
+  final bool? showMedia;
+  final bool? showFeatured;
+  final bool? hideCollections;
+
   const User({
     required this.id,
     required this.username,
@@ -98,6 +107,9 @@ class User {
     this.createdAt,
     this.defaultScope,
     this.canChat,
+    this.showMedia,
+    this.showFeatured,
+    this.hideCollections,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -124,5 +136,8 @@ class User {
     createdAt: createdAt,
     defaultScope: defaultScope,
     canChat: canChat,
+    showMedia: showMedia,
+    showFeatured: showFeatured,
+    hideCollections: hideCollections,
   );
 }

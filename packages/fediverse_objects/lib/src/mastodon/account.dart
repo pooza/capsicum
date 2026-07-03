@@ -16,6 +16,13 @@ class MastodonAccount {
   /// （アクセシビリティ、#733）。未対応サーバーでは null。
   final String? avatarDescription;
   final String? headerDescription;
+
+  /// Mastodon 4.6 のプロフィールタブ表示設定（#732）。所有者が閲覧側に対して
+  /// メディア/フィーチャー/フォロー一覧の表示可否を制御する。未対応サーバーでは
+  /// null（＝従来どおり全て表示）。
+  final bool? showMedia;
+  final bool? showFeatured;
+  final bool? hideCollections;
   final int followersCount;
   final int followingCount;
   final int statusesCount;
@@ -44,6 +51,9 @@ class MastodonAccount {
     required this.header,
     this.avatarDescription,
     this.headerDescription,
+    this.showMedia,
+    this.showFeatured,
+    this.hideCollections,
     required this.followersCount,
     required this.followingCount,
     required this.statusesCount,
