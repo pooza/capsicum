@@ -20,6 +20,7 @@ import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
+import '../util/relative_time.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
@@ -1150,7 +1151,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           if (widget.user.url != null)
             const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
           if (rel.muting)
-            const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
+            PopupMenuItem(
+              value: 'unmute',
+              child: Text(
+                rel.mutingExpiresAt != null
+                    ? 'ミュート解除（${formatAbsoluteTime(rel.mutingExpiresAt!)}まで）'
+                    : 'ミュート解除',
+              ),
+            )
           else ...[
             const PopupMenuItem(value: 'mute', child: Text('ミュート')),
             const PopupMenuItem(

@@ -692,6 +692,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       followedBy: r['followed_by'] as bool? ?? false,
       muting: r['muting'] as bool? ?? false,
       blocking: r['blocking'] as bool? ?? false,
+      mutingExpiresAt: r['muting_expires_at'] is String
+          ? DateTime.tryParse(r['muting_expires_at'] as String)
+          : null,
     );
   }
 
