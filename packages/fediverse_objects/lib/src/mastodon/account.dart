@@ -23,6 +23,10 @@ class MastodonAccount {
   final bool? showMedia;
   final bool? showFeatured;
   final bool? hideCollections;
+
+  /// Mastodon 4.6 の feature_approval（コレクション掲載の承認ポリシー、#742）。
+  /// `{ automatic: [...], manual: [...], current_user: ... }`。未対応では null。
+  final Map<String, dynamic>? featureApproval;
   final int followersCount;
   final int followingCount;
   final int statusesCount;
@@ -54,6 +58,7 @@ class MastodonAccount {
     this.showMedia,
     this.showFeatured,
     this.hideCollections,
+    this.featureApproval,
     required this.followersCount,
     required this.followingCount,
     required this.statusesCount,

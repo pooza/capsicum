@@ -1,3 +1,4 @@
+import 'collection.dart';
 import 'post_scope.dart';
 
 class UserField {
@@ -83,6 +84,10 @@ class User {
   final bool? showFeatured;
   final bool? hideCollections;
 
+  /// このアカウントをコレクションに載せる際の承認ポリシー
+  /// （Mastodon 4.6 の feature_approval、#742）。未対応サーバーでは null。
+  final FeatureApproval? featureApproval;
+
   const User({
     required this.id,
     required this.username,
@@ -110,6 +115,7 @@ class User {
     this.showMedia,
     this.showFeatured,
     this.hideCollections,
+    this.featureApproval,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -139,5 +145,6 @@ class User {
     showMedia: showMedia,
     showFeatured: showFeatured,
     hideCollections: hideCollections,
+    featureApproval: featureApproval,
   );
 }

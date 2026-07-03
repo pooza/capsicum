@@ -71,8 +71,21 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       showMedia: showMedia,
       showFeatured: showFeatured,
       hideCollections: hideCollections,
+      featureApproval: _parseFeatureApproval(featureApproval),
     );
   }
+}
+
+FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
+  if (raw == null) return null;
+  List<String> keys(Object? v) => v is List
+      ? v.map((e) => e.toString()).toList()
+      : const <String>[];
+  return FeatureApproval(
+    automatic: keys(raw['automatic']),
+    manual: keys(raw['manual']),
+    currentUser: raw['current_user']?.toString(),
+  );
 }
 
 extension CapsicumMastodonStatusExtension on MastodonStatus {

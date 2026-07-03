@@ -227,6 +227,71 @@ class MastodonClient {
     await dio.post('/api/v1/accounts/$id/unblock');
   }
 
+  // --- Collections (Mastodon 4.6, FEP-7aa9, #722 / #742) ---
+  // 応答は adapter によりルート key が付く（index は `collections`、単体は
+  // `collection`）。呼び出し側で defensive にアンラップするため、ここでは
+  // dynamic のまま返す。
+
+  /// GET /api/v1/accounts/:id/collections（所有コレクション一覧）
+  Future<dynamic> getAccountCollections(String accountId) async {
+    final response = await dio.get('/api/v1/accounts/$accountId/collections');
+    return response.data;
+  }
+
+  /// GET /api/v1/accounts/:id/in_collections（載せられているコレクション一覧）
+  Future<dynamic> getInCollections(String accountId) async {
+    final response = await dio.get('/api/v1/accounts/$accountId/in_collections');
+    return response.data;
+  }
+
+  /// GET /api/v1/collections/:id（詳細＋accounts）
+  Future<Map<String, dynamic>> getCollection(String id) async {
+    final response = await dio.get('/api/v1/collections/$id');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/collections
+  Future<dynamic> createCollection(Map<String, dynamic> body) async {
+    final response = await dio.post('/api/v1/collections', data: body);
+    return response.data;
+  }
+
+  /// PATCH /api/v1/collections/:id
+  Future<dynamic> updateCollection(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await dio.patch('/api/v1/collections/$id', data: body);
+    return response.data;
+  }
+
+  /// DELETE /api/v1/collections/:id
+  Future<void> deleteCollection(String id) async {
+    await dio.delete('/api/v1/collections/$id');
+  }
+
+  /// POST /api/v1/collections/:id/items（body: account_id）
+  Future<dynamic> addCollectionItem(
+    String collectionId,
+    String accountId,
+  ) async {
+    final response = await dio.post(
+      '/api/v1/collections/$collectionId/items',
+      data: {'account_id': accountId},
+    );
+    return response.data;
+  }
+
+  /// DELETE /api/v1/collections/:id/items/:itemId（所有者がメンバー削除）
+  Future<void> removeCollectionItem(String collectionId, String itemId) async {
+    await dio.delete('/api/v1/collections/$collectionId/items/$itemId');
+  }
+
+  /// POST /api/v1/collections/:id/items/:itemId/revoke（本人が opt-out）
+  Future<void> revokeCollectionItem(String collectionId, String itemId) async {
+    await dio.post('/api/v1/collections/$collectionId/items/$itemId/revoke');
+  }
+
   /// GET /api/v1/timelines/home
   Future<List<MastodonStatus>> getHomeTimeline({
     String? maxId,
