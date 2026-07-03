@@ -865,6 +865,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
             url: (e['static_url'] as String?) ?? (e['url'] as String?) ?? '',
             category: e['category'] as String?,
             visibleInPicker: e['visible_in_picker'] != false,
+            featured: e['featured'] == true,
           ),
         )
         .toList();
