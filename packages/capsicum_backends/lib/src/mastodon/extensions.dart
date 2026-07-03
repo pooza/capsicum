@@ -29,6 +29,8 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       host: atHost ?? localHost,
       avatarUrl: avatar,
       bannerUrl: header,
+      avatarDescription: avatarDescription,
+      bannerDescription: headerDescription,
       description: note,
       followersCount: followersCount,
       followingCount: followingCount,

@@ -469,7 +469,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 fit: StackFit.expand,
                 children: [
                   if (user.bannerUrl != null)
-                    Image.network(user.bannerUrl!, fit: BoxFit.cover)
+                    Image.network(
+                      user.bannerUrl!,
+                      fit: BoxFit.cover,
+                      semanticLabel: user.bannerDescription,
+                    )
                   else
                     Container(color: colorScheme.primaryContainer),
                   Container(

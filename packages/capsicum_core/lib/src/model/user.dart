@@ -49,6 +49,11 @@ class User {
   final String? host;
   final String? avatarUrl;
   final String? bannerUrl;
+
+  /// アバター/ヘッダー画像の alt テキスト（Mastodon 4.6 の
+  /// avatar_description / header_description、#733）。未対応サーバーでは null。
+  final String? avatarDescription;
+  final String? bannerDescription;
   final String? description;
   final int followersCount;
   final int followingCount;
@@ -76,6 +81,8 @@ class User {
     this.host,
     this.avatarUrl,
     this.bannerUrl,
+    this.avatarDescription,
+    this.bannerDescription,
     this.description,
     this.followersCount = 0,
     this.followingCount = 0,
@@ -100,6 +107,8 @@ class User {
     host: host,
     avatarUrl: avatarUrl,
     bannerUrl: bannerUrl,
+    avatarDescription: avatarDescription,
+    bannerDescription: bannerDescription,
     description: description,
     followersCount: followersCount,
     followingCount: followingCount,
