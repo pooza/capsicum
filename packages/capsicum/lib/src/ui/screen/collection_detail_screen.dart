@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -345,6 +346,10 @@ class _CollectionDetailScreenState
     var focusRequested = false;
     List<User> results = [];
     bool searching = false;
+    // 追加結果はシート内に表示する。SnackBar はボトムシートの裏に隠れて
+    // 見えないため（#722）。
+    String? feedback;
+    bool feedbackIsError = false;
 
     showModalBottomSheet(
       context: context,
@@ -388,7 +393,10 @@ class _CollectionDetailScreenState
                       ),
                       onSubmitted: (query) async {
                         if (query.trim().isEmpty) return;
-                        setSheetState(() => searching = true);
+                        setSheetState(() {
+                          searching = true;
+                          feedback = null;
+                        });
                         final adapter = ref.read(currentAdapterProvider);
                         if (adapter is SearchSupport) {
                           try {
@@ -406,6 +414,48 @@ class _CollectionDetailScreenState
                       },
                     ),
                   ),
+                  if (feedback != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      color: feedbackIsError
+                          ? Theme.of(context).colorScheme.errorContainer
+                          : Theme.of(context).colorScheme.secondaryContainer,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            feedbackIsError
+                                ? Icons.error_outline
+                                : Icons.check_circle_outline,
+                            size: 18,
+                            color: feedbackIsError
+                                ? Theme.of(context).colorScheme.onErrorContainer
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              feedback!,
+                              style: TextStyle(
+                                color: feedbackIsError
+                                    ? Theme.of(
+                                        context,
+                                      ).colorScheme.onErrorContainer
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Expanded(
                     child: ListView.separated(
                       itemCount: results.length,
@@ -433,8 +483,13 @@ class _CollectionDetailScreenState
                               ? const Icon(Icons.check, color: Colors.grey)
                               : IconButton(
                                   icon: const Icon(Icons.add),
-                                  onPressed: () =>
-                                      _addMember(user, setSheetState),
+                                  onPressed: () async {
+                                    final r = await _addMember(user);
+                                    setSheetState(() {
+                                      feedback = r.message;
+                                      feedbackIsError = !r.ok;
+                                    });
+                                  },
                                 ),
                         );
                       },
@@ -449,33 +504,47 @@ class _CollectionDetailScreenState
     );
   }
 
-  Future<void> _addMember(
-    User user,
-    void Function(void Function()) setSheetState,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
+  /// メンバー追加を試み、シートに出す結果メッセージを返す。
+  /// 追加不可（相手が featureable でない等）はサーバーが 403 を返すため、
+  /// 定型文でなく理由の当たりを付けた文面にする（#722）。
+  Future<({bool ok, String message})> _addMember(User user) async {
     final currentCount = _detail?.accounts.length ?? 0;
     // 所有者アカウントも accounts に含まれるためメンバー数は -1 で数える。
     if (currentCount - 1 >= _maxMembers) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('コレクションは最大25アカウントまでです')),
-      );
-      return;
+      return (ok: false, message: 'コレクションは最大25アカウントまでです。');
     }
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! CollectionsSupport) return;
+    if (adapter is! CollectionsSupport) {
+      return (ok: false, message: 'この操作はこのサーバーでは使えません。');
+    }
     try {
       await (adapter as CollectionsSupport).addCollectionItem(
         widget.collectionId,
         user.id,
       );
-      messenger.showSnackBar(
-        SnackBar(content: Text('@${user.username} を追加しました')),
-      );
       await _load();
-      setSheetState(() {});
+      return (ok: true, message: '@${user.username} を追加しました。');
+    } on DioException catch (e) {
+      return (ok: false, message: _addMemberErrorMessage(e));
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('メンバーの追加に失敗しました')));
+      return (ok: false, message: 'メンバーの追加に失敗しました。');
     }
+  }
+
+  /// 追加失敗の HTTP ステータスから、相手側の設定に起因する不可を案内する。
+  /// 403 は「相手がコレクションに載ることを許可していない」= サーバーの
+  /// featureable_by? 判定（公開・鍵/フォロー・ブロック関係・4.6 の承認方針）。
+  String _addMemberErrorMessage(DioException e) {
+    final status = e.response?.statusCode;
+    if (status == 403) {
+      return 'この相手はコレクションに追加できません。\n'
+          '相手のプロフィールが非公開（ディレクトリ非掲載）、'
+          '鍵アカウントで承認済みフォロワーでない、'
+          'または相手側の承認設定・ブロック関係のためです。相手の設定によります。';
+    }
+    if (status == 422) {
+      return 'このアカウントは追加できません（すでにメンバー、または対象が不正です）。';
+    }
+    return 'メンバーの追加に失敗しました（通信エラー）。';
   }
 }
