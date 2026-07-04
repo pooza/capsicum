@@ -122,51 +122,21 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
   }
 
   Future<void> _showCreateDialog() async {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
-    final created = await showDialog<bool>(
+    final result = await showDialog<({String name, String description})>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('コレクションを作成'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: '名前'),
-            ),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(labelText: '説明（任意）'),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('作成'),
-          ),
-        ],
-      ),
+      builder: (context) => const _CreateCollectionDialog(),
     );
-    if (created != true) return;
-    final name = nameController.text.trim();
+    if (result == null) return;
+    final name = result.name.trim();
     if (name.isEmpty) return;
+    final description = result.description.trim();
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! CollectionsSupport) return;
     try {
       final collection = await (adapter as CollectionsSupport).createCollection(
         name: name,
-        description: descController.text.trim().isEmpty
-            ? null
-            : descController.text.trim(),
+        description: description.isEmpty ? null : description,
       );
       if (!mounted) return;
       await _load();
@@ -175,5 +145,81 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     } catch (_) {
       messenger.showSnackBar(const SnackBar(content: Text('作成に失敗しました')));
     }
+  }
+}
+
+/// コレクション作成ダイアログ。
+///
+/// macOS の `showDialog` では `autofocus: true` の TextField が
+/// ダイアログ barrier の FocusScope と競合し、「A KeyDownEvent is dispatched,
+/// but ... already pressed」の例外を毎キー打つたびに投げてキー入力を取りこぼす
+/// （#722）。autofocus を使わず、初回フレーム後に FocusNode で明示フォーカスを
+/// 要求してこのレースを避ける。
+class _CreateCollectionDialog extends StatefulWidget {
+  const _CreateCollectionDialog();
+
+  @override
+  State<_CreateCollectionDialog> createState() =>
+      _CreateCollectionDialogState();
+}
+
+class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
+  final _nameController = TextEditingController();
+  final _descController = TextEditingController();
+  final _nameFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // ダイアログが完全に構築され barrier の FocusScope が確定してから
+    // フォーカスを渡す（autofocus のレースを避ける）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    _nameFocus.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.pop(
+      context,
+      (name: _nameController.text, description: _descController.text),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('コレクションを作成'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            focusNode: _nameFocus,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: '名前'),
+          ),
+          TextField(
+            controller: _descController,
+            decoration: const InputDecoration(labelText: '説明（任意）'),
+            maxLines: 3,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('作成')),
+      ],
+    );
   }
 }

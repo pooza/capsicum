@@ -338,101 +338,114 @@ class _CollectionDetailScreenState
 
   void _showAddMemberSheet() {
     final controller = TextEditingController();
+    // macOS の modal では autofocus が barrier の FocusScope と競合し
+    // キー入力を取りこぼす（#722 と同型）。autofocus せず初回フレーム後に
+    // FocusNode で明示フォーカスを要求する。
+    final searchFocus = FocusNode();
+    var focusRequested = false;
     List<User> results = [];
     bool searching = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: 'アカウントを検索',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: searching
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+      builder: (sheetContext) {
+        if (!focusRequested) {
+          focusRequested = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (searchFocus.context != null) searchFocus.requestFocus();
+          });
+        }
+        return StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      controller: controller,
+                      focusNode: searchFocus,
+                      decoration: InputDecoration(
+                        hintText: 'アカウントを検索',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: searching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
-                              ),
-                            )
-                          : null,
-                    ),
-                    onSubmitted: (query) async {
-                      if (query.trim().isEmpty) return;
-                      setSheetState(() => searching = true);
-                      final adapter = ref.read(currentAdapterProvider);
-                      if (adapter is SearchSupport) {
-                        try {
-                          final r = await (adapter as SearchSupport).search(
-                            query.trim(),
-                          );
-                          setSheetState(() {
-                            results = r.users;
-                            searching = false;
-                          });
-                        } catch (_) {
-                          setSheetState(() => searching = false);
+                              )
+                            : null,
+                      ),
+                      onSubmitted: (query) async {
+                        if (query.trim().isEmpty) return;
+                        setSheetState(() => searching = true);
+                        final adapter = ref.read(currentAdapterProvider);
+                        if (adapter is SearchSupport) {
+                          try {
+                            final r = await (adapter as SearchSupport).search(
+                              query.trim(),
+                            );
+                            setSheetState(() {
+                              results = r.users;
+                              searching = false;
+                            });
+                          } catch (_) {
+                            setSheetState(() => searching = false);
+                          }
                         }
-                      }
-                    },
+                      },
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: results.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final user = results[index];
-                      final alreadyMember =
-                          _detail?.accounts.any((m) => m.id == user.id) ??
-                          false;
-                      return ListTile(
-                        leading: UserAvatar(user: user, size: 40),
-                        title: EmojiText(
-                          user.displayName ?? user.username,
-                          emojis: user.emojis,
-                          fallbackHost: user.host,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '@${user.username}${user.host != null ? '@${user.host}' : ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: alreadyMember
-                            ? const Icon(Icons.check, color: Colors.grey)
-                            : IconButton(
-                                icon: const Icon(Icons.add),
-                                onPressed: () =>
-                                    _addMember(user, setSheetState),
-                              ),
-                      );
-                    },
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: results.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final user = results[index];
+                        final alreadyMember =
+                            _detail?.accounts.any((m) => m.id == user.id) ??
+                            false;
+                        return ListTile(
+                          leading: UserAvatar(user: user, size: 40),
+                          title: EmojiText(
+                            user.displayName ?? user.username,
+                            emojis: user.emojis,
+                            fallbackHost: user.host,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: alreadyMember
+                              ? const Icon(Icons.check, color: Colors.grey)
+                              : IconButton(
+                                  icon: const Icon(Icons.add),
+                                  onPressed: () =>
+                                      _addMember(user, setSheetState),
+                                ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
