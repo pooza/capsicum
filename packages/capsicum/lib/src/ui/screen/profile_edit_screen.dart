@@ -26,9 +26,20 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final List<_FieldEntry> _fields = [];
   XFile? _avatarFile;
   XFile? _bannerFile;
+  // 画像を「削除してデフォルトに戻す」フラグ（#736）。差し替え（_avatarFile 等）
+  // と排他で、picker で新規選択すると解除される。
+  bool _removeAvatar = false;
+  bool _removeBanner = false;
   bool _saving = false;
   int? _maxFields;
   bool _loaded = false;
+
+  /// アバター/ヘッダーの削除導線を出せるバックエンドか（Mastodon 4.6、#736）。
+  bool get _canRemoveImages {
+    final adapter = ref.read(currentAccountProvider)?.adapter;
+    return adapter is ProfileEditSupport &&
+        (adapter as ProfileEditSupport).supportsProfileImageRemoval;
+  }
 
   @override
   void initState() {
@@ -114,12 +125,22 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   Future<void> _pickAvatar() async {
     final file = await ref.read(mediaPickerProvider).pickImage();
-    if (file != null) setState(() => _avatarFile = file);
+    if (file != null) {
+      setState(() {
+        _avatarFile = file;
+        _removeAvatar = false;
+      });
+    }
   }
 
   Future<void> _pickBanner() async {
     final file = await ref.read(mediaPickerProvider).pickImage();
-    if (file != null) setState(() => _bannerFile = file);
+    if (file != null) {
+      setState(() {
+        _bannerFile = file;
+        _removeBanner = false;
+      });
+    }
   }
 
   void _addField() {
@@ -193,6 +214,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         avatarFilePath: _avatarFile?.path,
         bannerFilePath: _bannerFile?.path,
         fields: fields,
+        removeAvatar: _removeAvatar,
+        removeHeader: _removeBanner,
       );
 
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
@@ -304,32 +327,32 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   }
 
   Widget _buildBannerPicker(User? user) {
-    final bannerWidget = _bannerFile != null
+    final placeholder = Container(
+      height: 150,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: const Center(child: Icon(Icons.panorama, size: 48)),
+    );
+    final Widget bannerWidget = _bannerFile != null
         ? Image.file(
             File(_bannerFile!.path),
             height: 150,
             width: double.infinity,
             fit: BoxFit.cover,
           )
-        : (user?.bannerUrl != null
-              ? Image.network(
+        // 削除マーク時、または元々画像が無いときはプレースホルダ（デフォルト）。
+        : (_removeBanner || user?.bannerUrl == null
+              ? placeholder
+              : Image.network(
                   user!.bannerUrl!,
                   height: 150,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    height: 150,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    child: const Center(child: Icon(Icons.panorama, size: 48)),
-                  ),
-                )
-              : Container(
-                  height: 150,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Center(child: Icon(Icons.panorama, size: 48)),
+                  errorBuilder: (_, _, _) => placeholder,
                 ));
+
+    // 削除可能で、現在画像があり、差し替えも削除もしていないときだけ削除ボタン。
+    final canRemove =
+        _canRemoveImages && _bannerFile == null && user?.bannerUrl != null;
 
     return GestureDetector(
       onTap: _pickBanner,
@@ -346,13 +369,63 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 child: Icon(Icons.camera_alt, color: Colors.white, size: 32),
               ),
             ),
+            if (_removeBanner)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: _undoRemoveButton(
+                  () => setState(() => _removeBanner = false),
+                ),
+              )
+            else if (canRemove)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: _removeImageButton(
+                  'ヘッダーを削除',
+                  () => setState(() => _removeBanner = true),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
+  /// 画像削除ボタン（差し替え用 GestureDetector と競合しないよう独立タップ）。
+  Widget _removeImageButton(String tooltip, VoidCallback onPressed) {
+    return Material(
+      color: Colors.black54,
+      shape: const CircleBorder(),
+      child: IconButton(
+        icon: const Icon(Icons.delete_outline, color: Colors.white, size: 18),
+        tooltip: tooltip,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  /// 削除の取り消しボタン（デフォルトに戻す指定を解除）。
+  Widget _undoRemoveButton(VoidCallback onPressed) {
+    return Material(
+      color: Colors.black54,
+      shape: const CircleBorder(),
+      child: IconButton(
+        icon: const Icon(Icons.undo, color: Colors.white, size: 18),
+        tooltip: '削除を取り消す',
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
   Widget _buildAvatarPicker(User? user) {
+    // 削除マーク時、または元々画像が無いときはデフォルト（人型アイコン）。
+    final showNetwork =
+        _avatarFile == null && !_removeAvatar && user?.avatarUrl != null;
     final avatarWidget = _avatarFile != null
         ? CircleAvatar(
             radius: 40,
@@ -360,13 +433,14 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           )
         : CircleAvatar(
             radius: 40,
-            backgroundImage: user?.avatarUrl != null
+            backgroundImage: showNetwork
                 ? NetworkImage(user!.avatarUrl!)
                 : null,
-            child: user?.avatarUrl == null
-                ? const Icon(Icons.person, size: 40)
-                : null,
+            child: showNetwork ? null : const Icon(Icons.person, size: 40),
           );
+
+    final canRemove =
+        _canRemoveImages && _avatarFile == null && user?.avatarUrl != null;
 
     return GestureDetector(
       onTap: _pickAvatar,
@@ -374,15 +448,34 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         alignment: Alignment.bottomRight,
         children: [
           avatarWidget,
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            child: Icon(
-              Icons.camera_alt,
-              size: 14,
-              color: Theme.of(context).colorScheme.onPrimary,
+          if (_removeAvatar)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _undoRemoveButton(
+                () => setState(() => _removeAvatar = false),
+              ),
+            )
+          else ...[
+            if (canRemove)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: _removeImageButton(
+                  'アイコンを削除',
+                  () => setState(() => _removeAvatar = true),
+                ),
+              ),
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              child: Icon(
+                Icons.camera_alt,
+                size: 14,
+                color: Theme.of(context).colorScheme.onPrimary,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

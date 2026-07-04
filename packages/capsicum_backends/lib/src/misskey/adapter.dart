@@ -1518,6 +1518,11 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String? avatarFilePath,
     String? bannerFilePath,
     List<UserField>? fields,
+    // Misskey は i/update の avatarId/bannerId を明示 null で消せるが、
+    // 現状 client が「省略」と「null 送信」を区別しないため未対応（#736 は
+    // Mastodon 4.6 スコープ）。supportsProfileImageRemoval は既定 false。
+    bool removeAvatar = false,
+    bool removeHeader = false,
   }) async {
     String? avatarId;
     String? bannerId;

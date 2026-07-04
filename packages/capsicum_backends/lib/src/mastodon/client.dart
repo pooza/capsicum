@@ -966,6 +966,19 @@ class MastodonClient {
     return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// DELETE /api/v1/profile/avatar（Mastodon 4.6、#736）
+  /// アバターを削除しデフォルトに戻す。応答は CredentialAccount（account 互換）。
+  Future<MastodonAccount> deleteProfileAvatar() async {
+    final response = await dio.delete('/api/v1/profile/avatar');
+    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DELETE /api/v1/profile/header（Mastodon 4.6、#736）
+  Future<MastodonAccount> deleteProfileHeader() async {
+    final response = await dio.delete('/api/v1/profile/header');
+    return MastodonAccount.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// POST /api/v1/markers
   Future<void> saveMarkers({
     String? homeLastReadId,

@@ -1258,8 +1258,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String? avatarFilePath,
     String? bannerFilePath,
     List<UserField>? fields,
+    bool removeAvatar = false,
+    bool removeHeader = false,
   }) async {
-    final account = await client.updateCredentials(
+    var account = await client.updateCredentials(
       displayName: displayName,
       note: description,
       avatarPath: avatarFilePath,
@@ -1268,8 +1270,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           ?.map((f) => {'name': f.name, 'value': f.value})
           .toList(),
     );
+    // 画像削除は update_credentials では表現できないため 4.6 の destroy
+    // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
+    if (removeAvatar) account = await client.deleteProfileAvatar();
+    if (removeHeader) account = await client.deleteProfileHeader();
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  @override
+  bool get supportsProfileImageRemoval => true;
 
   // ReportSupport
 
