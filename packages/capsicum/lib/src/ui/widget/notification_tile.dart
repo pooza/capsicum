@@ -119,6 +119,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     return InkWell(
       onTap: notification.post != null
           ? () => context.push('/post', extra: notification.post!)
+          // Collections 通知 (#741): post を持たないため、タップで対象コレクション
+          // の詳細（#742）を開く。
+          : notification.collection != null
+          ? () =>
+                context.push('/collection', extra: notification.collection!.id)
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)
@@ -157,7 +162,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                     ),
                   ],
                   // Collections 通知 (#741): post を持たないため、対象コレクション名を
-                  // 「どのコレクションか」が分かるよう表示する（詳細画面は #742）。
+                  // 表示する。タイル全体のタップで詳細（#742）へ遷移する。
                   if (notification.collection != null) ...[
                     const SizedBox(height: 4),
                     Text(

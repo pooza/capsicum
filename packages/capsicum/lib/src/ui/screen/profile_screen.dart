@@ -1194,6 +1194,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ownerView: false,
                 title: 'コレクション',
               );
+            case 'view_in_collections':
+              _openCollections(
+                inCollections: true,
+                ownerView: false,
+                title: '載っているコレクション',
+              );
           }
         },
         itemBuilder: (_) => [
@@ -1224,11 +1230,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
           else
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
-          if (_supportsCollections)
+          if (_supportsCollections) ...[
             const PopupMenuItem(
               value: 'view_collections',
               child: Text('コレクション'),
             ),
+            const PopupMenuItem(
+              value: 'view_in_collections',
+              child: Text('載っているコレクション'),
+            ),
+          ],
         ],
       ),
     ];
