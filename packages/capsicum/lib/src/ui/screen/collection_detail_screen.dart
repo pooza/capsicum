@@ -125,15 +125,20 @@ class _CollectionDetailScreenState
       return const Center(child: Text('コレクションの読み込みに失敗しました'));
     }
     final theme = Theme.of(context);
-    // 先頭は所有者アカウント（CollectionWithAccounts の仕様）。作成者と
-    // メンバーを見出しで分けて区別できるようにする。
+    // API 仕様上 accounts の先頭が所有者、以降が items 由来のメンバー
+    // （[object.account] + items.map(&:account)）。所有者が自分のコレクションに
+    // 自分を入れると先頭とメンバーの両方に現れるため、作成者節は先頭 1 件のみ、
+    // メンバー節は先頭以外（自分を入れていれば所有者も含む）で分ける。
     final ownerId = detail.collection.ownerAccountId;
-    final owner = detail.accounts
-        .where((u) => u.id == ownerId)
-        .toList(growable: false);
-    final others = detail.accounts
-        .where((u) => u.id != ownerId)
-        .toList(growable: false);
+    final accounts = detail.accounts;
+    final ownerRow = accounts.isNotEmpty && accounts.first.id == ownerId
+        ? accounts.first
+        : null;
+    // ownerRow を採れたら先頭を落とす。採れない（先頭が所有者でない異常時）は
+    // id で除外してフォールバックする。
+    final others = ownerRow != null
+        ? accounts.sublist(1)
+        : accounts.where((u) => u.id != ownerId).toList(growable: false);
     final myItem = _myItem;
     return RefreshIndicator(
       onRefresh: _load,
@@ -160,9 +165,9 @@ class _CollectionDetailScreenState
                 onPressed: () => _confirmRevoke(myItem),
               ),
             ),
-          if (owner.isNotEmpty) ...[
+          if (ownerRow != null) ...[
             _sectionHeader(theme, '作成者'),
-            ...owner.map((user) => _memberTile(user, detail.collection)),
+            _memberTile(ownerRow, detail.collection),
           ],
           _sectionHeader(theme, 'メンバー'),
           if (others.isEmpty)
@@ -171,7 +176,12 @@ class _CollectionDetailScreenState
               child: Text('メンバーはいません', style: TextStyle(color: Colors.grey)),
             )
           else
-            ...others.map((user) => _memberTile(user, detail.collection)),
+            // メンバー節に所有者が出る（自分を入れた）ときは作成者タグを付け、
+            // 作成者節との重複が意図的だと分かるようにする。
+            ...others.map(
+              (user) =>
+                  _memberTile(user, detail.collection, showOwnerTag: true),
+            ),
         ],
       ),
     );
@@ -193,17 +203,45 @@ class _CollectionDetailScreenState
     );
   }
 
-  Widget _memberTile(User user, Collection collection) {
+  Widget _memberTile(
+    User user,
+    Collection collection, {
+    bool showOwnerTag = false,
+  }) {
     final isOwnerAccount = user.id == collection.ownerAccountId;
     return ListTile(
       onTap: () => context.push('/profile', extra: user),
       leading: UserAvatar(user: user, size: 40),
-      title: EmojiText(
-        user.displayName ?? user.username,
-        emojis: user.emojis,
-        fallbackHost: user.host,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: Row(
+        children: [
+          Flexible(
+            child: EmojiText(
+              user.displayName ?? user.username,
+              emojis: user.emojis,
+              fallbackHost: user.host,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // メンバー節に所有者本人が現れるとき（自分を入れた）だけ作成者と
+          // 明示し、作成者節との重複が意図的だと分かるようにする。
+          if (showOwnerTag && isOwnerAccount) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '作成者',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
       subtitle: Text(
         '@${user.username}${user.host != null ? '@${user.host}' : ''}',
