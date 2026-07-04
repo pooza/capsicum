@@ -796,6 +796,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     ];
   }
 
+  /// ミュート中の相手には「ミュート中」バッジをプロフィール本体にも出す。
+  /// 期限付きミュート（Mastodon 4.6, #734）は「〇〇まで」を併記する。
+  /// 自分のプロフィール・関係性未ロード・非ミュートでは何も出さない。
+  /// ブロック中はプロフィール画面へ到達しないため対象外。
+  List<Widget> _buildMuteBadge(ThemeData theme) {
+    final rel = _relationship;
+    if (_isOwnProfile || rel == null || !rel.muting) return const [];
+    final label = rel.mutingExpiresAt != null
+        ? 'ミュート中（${formatAbsoluteTime(rel.mutingExpiresAt!)}まで）'
+        : 'ミュート中';
+    return [
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.volume_off,
+                size: 16,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
   Widget _buildProfileHeader(BuildContext context, User user) {
     final theme = Theme.of(context);
 
@@ -877,6 +920,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ],
           ),
+          ..._buildMuteBadge(theme),
           if (user.description != null && user.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
             _buildBio(user, theme),
