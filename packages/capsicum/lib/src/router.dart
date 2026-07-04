@@ -25,6 +25,8 @@ import 'ui/screen/chat_room_timeline_screen.dart';
 import 'ui/screen/chat_thread_list_screen.dart';
 import 'ui/screen/chat_thread_screen.dart';
 import 'ui/screen/clip_notes_screen.dart';
+import 'ui/screen/collection_detail_screen.dart';
+import 'ui/screen/collections_list_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
 import 'ui/screen/gallery_screen.dart';
@@ -264,6 +266,23 @@ final routerProvider = Provider<GoRouter>((ref) {
             fetcher: extra['fetcher'] as UserListFetcher,
           );
         },
+      ),
+      GoRoute(
+        path: '/collections',
+        builder: (context, state) {
+          final extra = state.extra! as Map<String, dynamic>;
+          return CollectionsListScreen(
+            accountId: extra['accountId'] as String,
+            inCollections: extra['inCollections'] as bool? ?? false,
+            ownerView: extra['ownerView'] as bool? ?? false,
+            title: extra['title'] as String,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/collection',
+        builder: (context, state) =>
+            CollectionDetailScreen(collectionId: state.extra! as String),
       ),
       GoRoute(
         path: '/hashtag/:tag',

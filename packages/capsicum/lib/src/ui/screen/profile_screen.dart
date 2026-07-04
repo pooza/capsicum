@@ -1188,6 +1188,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               await _confirmAndBlock(adapter);
             case 'unblock':
               _performAction(() => adapter.unblockUser(widget.user.id));
+            case 'view_collections':
+              _openCollections(
+                inCollections: false,
+                ownerView: false,
+                title: 'コレクション',
+              );
           }
         },
         itemBuilder: (_) => [
@@ -1218,6 +1224,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
           else
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
+          if (_supportsCollections)
+            const PopupMenuItem(
+              value: 'view_collections',
+              child: Text('コレクション'),
+            ),
         ],
       ),
     ];
@@ -1235,13 +1246,55 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             _copyAcct(context);
           case 'copy_url':
             _copyUrl(context);
+          case 'my_collections':
+            _openCollections(
+              inCollections: false,
+              ownerView: true,
+              title: '自分のコレクション',
+            );
+          case 'in_collections':
+            _openCollections(
+              inCollections: true,
+              ownerView: false,
+              title: '載っているコレクション',
+            );
         }
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'copy_acct', child: Text('ユーザー名をコピー')),
         if (widget.user.url != null)
           const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
+        if (_supportsCollections) ...[
+          const PopupMenuItem(
+            value: 'my_collections',
+            child: Text('自分のコレクション'),
+          ),
+          const PopupMenuItem(
+            value: 'in_collections',
+            child: Text('載っているコレクション'),
+          ),
+        ],
       ],
+    );
+  }
+
+  /// Mastodon 4.6 Collections（#722 / #742）に対応したアダプタか。
+  bool get _supportsCollections =>
+      ref.read(currentAdapterProvider) is CollectionsSupport;
+
+  void _openCollections({
+    required bool inCollections,
+    required bool ownerView,
+    required String title,
+  }) {
+    context.push(
+      '/collections',
+      extra: {
+        'accountId': widget.user.id,
+        'inCollections': inCollections,
+        'ownerView': ownerView,
+        'title': title,
+      },
     );
   }
 
