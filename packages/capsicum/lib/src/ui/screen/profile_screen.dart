@@ -509,30 +509,40 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ),
             flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (user.bannerUrl != null)
-                    Image.network(
-                      user.bannerUrl!,
-                      fit: BoxFit.cover,
-                      semanticLabel: user.bannerDescription,
-                    )
-                  else
-                    Container(color: colorScheme.primaryContainer),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.5),
-                        ],
+              background: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
+                onTap: user.bannerUrl != null
+                    ? () => _openImageViewer(
+                        user.bannerUrl!,
+                        user.bannerDescription,
+                      )
+                    : null,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (user.bannerUrl != null)
+                      Image.network(
+                        user.bannerUrl!,
+                        fit: BoxFit.cover,
+                        semanticLabel: user.bannerDescription,
+                      )
+                    else
+                      Container(color: colorScheme.primaryContainer),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.5),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -796,7 +806,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         children: [
           Row(
             children: [
-              UserAvatar(user: user, size: 72, borderRadius: 8),
+              GestureDetector(
+                onTap: user.avatarUrl != null
+                    ? () => _openImageViewer(
+                        user.avatarUrl!,
+                        user.avatarDescription,
+                      )
+                    : null,
+                child: UserAvatar(user: user, size: 72, borderRadius: 8),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -1292,6 +1310,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   /// Mastodon 4.6 Collections（#722 / #742）に対応したアダプタか。
   bool get _supportsCollections =>
       ref.read(currentAdapterProvider) is CollectionsSupport;
+
+  /// アバター/ヘッダー画像をメディアビューアで全画面表示する。alt テキスト
+  /// （avatar_description / header_description、#733）を説明キャプションに載せる。
+  void _openImageViewer(String url, String? description) {
+    context.push(
+      '/media',
+      extra: {
+        'attachments': [
+          Attachment(
+            id: 'profile-image',
+            type: AttachmentType.image,
+            url: url,
+            description: description,
+          ),
+        ],
+        'initialIndex': 0,
+      },
+    );
+  }
 
   void _openCollections({
     required bool inCollections,
