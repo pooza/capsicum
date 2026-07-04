@@ -240,7 +240,9 @@ class MastodonClient {
 
   /// GET /api/v1/accounts/:id/in_collections（載せられているコレクション一覧）
   Future<dynamic> getInCollections(String accountId) async {
-    final response = await dio.get('/api/v1/accounts/$accountId/in_collections');
+    final response = await dio.get(
+      '/api/v1/accounts/$accountId/in_collections',
+    );
     return response.data;
   }
 
@@ -257,10 +259,7 @@ class MastodonClient {
   }
 
   /// PATCH /api/v1/collections/:id
-  Future<dynamic> updateCollection(
-    String id,
-    Map<String, dynamic> body,
-  ) async {
+  Future<dynamic> updateCollection(String id, Map<String, dynamic> body) async {
     final response = await dio.patch('/api/v1/collections/$id', data: body);
     return response.data;
   }

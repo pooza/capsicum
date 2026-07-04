@@ -45,7 +45,10 @@ abstract mixin class CollectionsSupport {
   Future<void> deleteCollection(String id);
 
   /// メンバー追加（`POST /api/v1/collections/:id/items`、body `account_id`）。
-  Future<CollectionItem> addCollectionItem(String collectionId, String accountId);
+  Future<CollectionItem> addCollectionItem(
+    String collectionId,
+    String accountId,
+  );
 
   /// メンバー削除（所有者操作、`DELETE /api/v1/collections/:id/items/:itemId`）。
   Future<void> removeCollectionItem(String collectionId, String itemId);

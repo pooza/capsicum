@@ -78,9 +78,8 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
 
 FeatureApproval? _parseFeatureApproval(Map<String, dynamic>? raw) {
   if (raw == null) return null;
-  List<String> keys(Object? v) => v is List
-      ? v.map((e) => e.toString()).toList()
-      : const <String>[];
+  List<String> keys(Object? v) =>
+      v is List ? v.map((e) => e.toString()).toList() : const <String>[];
   return FeatureApproval(
     automatic: keys(raw['automatic']),
     manual: keys(raw['manual']),
