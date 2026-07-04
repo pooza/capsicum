@@ -123,10 +123,13 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
 
   Future<void> _showCreateDialog() async {
     final messenger = ScaffoldMessenger.of(context);
-    final result = await showDialog<({String name, String description})>(
-      context: context,
-      builder: (context) => const _CreateCollectionDialog(),
-    );
+    final result =
+        await showDialog<
+          ({String name, String description, bool discoverable})
+        >(
+          context: context,
+          builder: (context) => const _CreateCollectionDialog(),
+        );
     if (result == null) return;
     final name = result.name.trim();
     if (name.isEmpty) return;
@@ -134,9 +137,13 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! CollectionsSupport) return;
     try {
+      // sensitive / discoverable はサーバー側で null 不可（既定値なし）のため
+      // 明示送信する。未送信だと 422 で作成が失敗する（#722）。
       final collection = await (adapter as CollectionsSupport).createCollection(
         name: name,
         description: description.isEmpty ? null : description,
+        discoverable: result.discoverable,
+        sensitive: false,
       );
       if (!mounted) return;
       await _load();
@@ -167,6 +174,7 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   final _nameFocus = FocusNode();
+  bool _discoverable = true;
 
   @override
   void initState() {
@@ -187,10 +195,11 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   }
 
   void _submit() {
-    Navigator.pop(
-      context,
-      (name: _nameController.text, description: _descController.text),
-    );
+    Navigator.pop(context, (
+      name: _nameController.text,
+      description: _descController.text,
+      discoverable: _discoverable,
+    ));
   }
 
   @override
@@ -210,6 +219,14 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
             controller: _descController,
             decoration: const InputDecoration(labelText: '説明（任意）'),
             maxLines: 3,
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('公開'),
+            subtitle: const Text('一覧や検索に表示する'),
+            value: _discoverable,
+            onChanged: (v) => setState(() => _discoverable = v),
           ),
         ],
       ),
