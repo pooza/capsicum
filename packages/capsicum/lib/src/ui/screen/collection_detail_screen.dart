@@ -125,8 +125,15 @@ class _CollectionDetailScreenState
       return const Center(child: Text('コレクションの読み込みに失敗しました'));
     }
     final theme = Theme.of(context);
-    // 先頭は所有者アカウント（CollectionWithAccounts の仕様）。
-    final members = detail.accounts;
+    // 先頭は所有者アカウント（CollectionWithAccounts の仕様）。作成者と
+    // メンバーを見出しで分けて区別できるようにする。
+    final ownerId = detail.collection.ownerAccountId;
+    final owner = detail.accounts
+        .where((u) => u.id == ownerId)
+        .toList(growable: false);
+    final others = detail.accounts
+        .where((u) => u.id != ownerId)
+        .toList(growable: false);
     final myItem = _myItem;
     return RefreshIndicator(
       onRefresh: _load,
@@ -140,7 +147,7 @@ class _CollectionDetailScreenState
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
-              '${detail.collection.itemCount ?? members.length} アカウント',
+              '${others.length} アカウント',
               style: theme.textTheme.labelMedium,
             ),
           ),
@@ -153,9 +160,35 @@ class _CollectionDetailScreenState
                 onPressed: () => _confirmRevoke(myItem),
               ),
             ),
-          const Divider(height: 1),
-          ...members.map((user) => _memberTile(user, detail.collection)),
+          if (owner.isNotEmpty) ...[
+            _sectionHeader(theme, '作成者'),
+            ...owner.map((user) => _memberTile(user, detail.collection)),
+          ],
+          _sectionHeader(theme, 'メンバー'),
+          if (others.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Text('メンバーはいません', style: TextStyle(color: Colors.grey)),
+            )
+          else
+            ...others.map((user) => _memberTile(user, detail.collection)),
         ],
+      ),
+    );
+  }
+
+  /// リスト内の区切り見出し（作成者 / メンバー）。
+  Widget _sectionHeader(ThemeData theme, String label) {
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
