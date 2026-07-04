@@ -137,6 +137,12 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   if (account.empty()) {
     return fail("missing account");
   }
+  // account はエンベロープ平文。復号や encoding 判定より前に out へ載せておき、
+  // 失敗パス（unsupported encoding / no keys 等）でも呼び出し側が host を観測に
+  // 出せるようにする (#800)。username は載せず HostFromAccount で host のみ使う。
+  if (out != nullptr) {
+    out->account = account;
+  }
   const std::string encoding = MapGet(envelope, "encoding");
   const std::string body_b64 = MapGet(envelope, "body");
   // announcement push 等は body / encoding を持たない。暗号化通知だけここで扱い、
@@ -183,7 +189,7 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
     return fail("payload parse failed");
   }
 
-  out->account = account;
+  // out->account は上流で設定済み (#800)。
   // 表示 title を統一ラベルで解決する (#474 空タイトル修正)。Misskey は
   // payload に title を持たず（type だけ）、Mastodon もサーバー生成 title は
   // 表記揺れがあるため、type→ラベル変換を優先する。macOS NSE と同じ優先順位。

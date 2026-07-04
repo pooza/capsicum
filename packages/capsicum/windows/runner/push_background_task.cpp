@@ -160,9 +160,12 @@ struct PushBackgroundTask
                                    /*launch_arg=*/"", display.notification_id);
             RecordBgDiagnostic("bgtask.shown", HostFromAccount(display.account));
           } else {
-            // 復号できない通知（鍵不在・announcement 等）は捨てるが、無言だと
-            // bg task が動いたかすら分からないため観測コードを残す。
-            RecordBgDiagnostic(DiagnosticCodeForError(error), std::string());
+            // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと
+            // bg task が動いたかすら分からないため観測コードを残す。account は
+            // 復号前にエンベロープから display に載っているので、host を観測へ
+            // 出して発生元サーバーを特定できるようにする (#800)。
+            RecordBgDiagnostic(DiagnosticCodeForError(error),
+                               HostFromAccount(display.account));
           }
         }
       } else {
