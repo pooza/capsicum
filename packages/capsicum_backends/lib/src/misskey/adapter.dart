@@ -462,6 +462,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<Instance> getInstance() async {
     final data = await client.getMeta();
+
+    // 設立日 = 最古のローカルユーザーの作成日 (#804)。付加情報なので失敗しても
+    // getInstance 本体は壊さない。
+    DateTime? foundedAt;
+    try {
+      foundedAt = await client.getOldestLocalUserCreatedAt();
+    } catch (_) {
+      foundedAt = null;
+    }
     final rulesRaw = data['serverRules'] as List<dynamic>? ?? [];
     final rules = rulesRaw
         .map((r) {
@@ -487,6 +496,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: data['privacyPolicyUrl'] as String?,
       statusUrl: data['statusUrl'] as String?,
+      foundedAt: foundedAt,
       imageSizeLimit: maxFileSize,
       videoSizeLimit: maxFileSize,
       audioSizeLimit: maxFileSize,

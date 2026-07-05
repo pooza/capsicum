@@ -406,14 +406,29 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<Instance> getInstance() async {
+    final foundedAt = await _fetchFoundedAt();
     try {
-      return _parseInstanceV2(await client.getInstanceV2());
+      return _parseInstanceV2(await client.getInstanceV2(), foundedAt: foundedAt);
     } on DioException {
-      return _parseInstanceV1(await client.getInstanceV1());
+      return _parseInstanceV1(await client.getInstanceV1(), foundedAt: foundedAt);
     }
   }
 
-  Instance _parseInstanceV2(Map<String, dynamic> data) {
+  /// 設立日 = 連番 id の最初 `accounts/1`（最初に作られたアカウント）の作成日
+  /// (#804 サーバー情報)。取得不能なら null を返し、parse 側で contact_account
+  /// （管理者）の作成日にフォールバックする。管理者が創立者と異なる鯖でも
+  /// accounts/1 なら真の設立日を返せる。
+  Future<DateTime?> _fetchFoundedAt() async {
+    try {
+      return (await client.getAccount('1')).createdAt;
+    } catch (_) {
+      // 設立日は付加情報。id=1 が凍結/削除/instance actor 等で取れなくても
+      // getInstance 本体を壊さない。
+      return null;
+    }
+  }
+
+  Instance _parseInstanceV2(Map<String, dynamic> data, {DateTime? foundedAt}) {
     final contact = data['contact'] as Map<String, dynamic>? ?? {};
     final config = data['configuration'] as Map<String, dynamic>? ?? {};
     final urls = config['urls'] as Map<String, dynamic>? ?? {};
@@ -443,13 +458,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
       statusUrl: urls['status'] as String?,
+      foundedAt: foundedAt ?? contactAccount?.createdAt,
       imageSizeLimit: (media['image_size_limit'] as num?)?.toInt(),
       videoSizeLimit: (media['video_size_limit'] as num?)?.toInt(),
       audioSizeLimit: (media['audio_size_limit'] as num?)?.toInt(),
     );
   }
 
-  Instance _parseInstanceV1(Map<String, dynamic> data) {
+  Instance _parseInstanceV1(Map<String, dynamic> data, {DateTime? foundedAt}) {
     final contactData = data['contact_account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (contactData != null) {
@@ -471,6 +487,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       contactAccount: contactAccount,
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
+      foundedAt: foundedAt ?? contactAccount?.createdAt,
     );
   }
 

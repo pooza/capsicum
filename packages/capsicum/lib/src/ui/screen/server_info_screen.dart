@@ -86,6 +86,17 @@ class ServerInfoScreen extends ConsumerWidget {
               ],
             ),
           ),
+        if (instance.foundedAt != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              // API に創立日が無いため最初に作られたアカウントの作成日で近似
+              // する（#804）。日付粒度なのでローカル変換で日がズレないよう
+              // そのまま year/month/day を使う。
+              '設立: ${instance.foundedAt!.year}年'
+              '${instance.foundedAt!.month}月${instance.foundedAt!.day}日',
+            ),
+          ),
 
         // Contact
         if (instance.contactAccount != null ||

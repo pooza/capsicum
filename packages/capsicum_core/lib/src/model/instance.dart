@@ -17,6 +17,14 @@ class Instance {
   final String? privacyPolicyUrl;
   final String? statusUrl;
 
+  /// サーバーの設立日。API に創立日フィールドは無いため、**最初に作られた
+  /// アカウントの作成日**で近似する。Mastodon は連番 id の最初 `accounts/1`
+  /// の作成日（取得不能時は `contact_account` 管理者の作成日にフォールバック）、
+  /// Misskey は最古ローカルユーザーの `createdAt`。取得不能なら null（非表示）。
+  /// 管理者が創立者と異なる鯖（例: 2代目管理人）でも accounts/1 なら真の設立日を
+  /// 返せる（contact_account だと管理者の参加日になり後ろにズレる）。
+  final DateTime? foundedAt;
+
   /// 添付ファイルの種別ごとの最大サイズ（bytes）。サーバーが上限を返さない
   /// 場合は null（事前チェックをスキップして従来どおりサーバーエラー経路に
   /// 任せる）。Misskey は MIME によらず単一値のため、image/video/audio に
@@ -40,6 +48,7 @@ class Instance {
     this.rules = const [],
     this.privacyPolicyUrl,
     this.statusUrl,
+    this.foundedAt,
     this.imageSizeLimit,
     this.videoSizeLimit,
     this.audioSizeLimit,

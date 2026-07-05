@@ -67,6 +67,29 @@ class MisskeyClient {
     return MisskeyUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// POST /api/users — 最古のローカルユーザーの `createdAt` を返す（設立日の
+  /// 近似、#804 サーバー情報）。公開 API。`sort=+createdAt` で古い順・先頭 1 件。
+  /// 取得できなければ null。
+  Future<DateTime?> getOldestLocalUserCreatedAt() async {
+    final response = await dio.post(
+      '/api/users',
+      data: createBody({
+        'sort': '+createdAt',
+        'state': 'all',
+        'origin': 'local',
+        'limit': 1,
+      }),
+    );
+    final list = response.data;
+    if (list is List && list.isNotEmpty) {
+      final first = list.first;
+      if (first is Map<String, dynamic> && first['createdAt'] is String) {
+        return DateTime.tryParse(first['createdAt'] as String);
+      }
+    }
+    return null;
+  }
+
   /// POST /api/users/show
   Future<MisskeyUser> showUser(String userId) async {
     final response = await dio.post(
