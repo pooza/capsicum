@@ -931,15 +931,27 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Collection>> getAccountCollections(String accountId) async {
-    final data = await client.getAccountCollections(accountId);
-    return _collectionMapList(data).map(_collectionFromMap).toList();
+  Future<CollectionPage> getAccountCollections(
+    String accountId, {
+    int? offset,
+  }) async {
+    final page = await client.getAccountCollections(accountId, offset: offset);
+    return (
+      collections: _collectionMapList(page.data).map(_collectionFromMap).toList(),
+      nextOffset: page.nextOffset,
+    );
   }
 
   @override
-  Future<List<Collection>> getInCollections(String accountId) async {
-    final data = await client.getInCollections(accountId);
-    return _collectionMapList(data).map(_collectionFromMap).toList();
+  Future<CollectionPage> getInCollections(
+    String accountId, {
+    int? offset,
+  }) async {
+    final page = await client.getInCollections(accountId, offset: offset);
+    return (
+      collections: _collectionMapList(page.data).map(_collectionFromMap).toList(),
+      nextOffset: page.nextOffset,
+    );
   }
 
   @override

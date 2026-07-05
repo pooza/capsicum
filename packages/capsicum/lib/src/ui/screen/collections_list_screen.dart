@@ -33,12 +33,37 @@ class CollectionsListScreen extends ConsumerStatefulWidget {
 class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
   List<Collection>? _collections;
   bool _loading = true;
+  bool _loadingMore = false;
+
+  /// 次ページの offset (#802)。null なら続きなし（終端 or 未取得）。
+  int? _nextOffset;
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
   }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 600) {
+      _loadMore();
+    }
+  }
+
+  Future<CollectionPage> _fetchPage(CollectionsSupport support, {int? offset}) =>
+      widget.inCollections
+      ? support.getInCollections(widget.accountId, offset: offset)
+      : support.getAccountCollections(widget.accountId, offset: offset);
 
   Future<void> _load() async {
     final adapter = ref.read(currentAdapterProvider);
@@ -47,13 +72,11 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
       return;
     }
     try {
-      final support = adapter as CollectionsSupport;
-      final list = widget.inCollections
-          ? await support.getInCollections(widget.accountId)
-          : await support.getAccountCollections(widget.accountId);
+      final page = await _fetchPage(adapter as CollectionsSupport);
       if (mounted) {
         setState(() {
-          _collections = list;
+          _collections = page.collections;
+          _nextOffset = page.nextOffset;
           _loading = false;
         });
       }
@@ -66,6 +89,43 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         account: ref.read(currentAccountProvider),
       );
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final offset = _nextOffset;
+    if (_loadingMore || _loading || offset == null) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! CollectionsSupport) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await _fetchPage(
+        adapter as CollectionsSupport,
+        offset: offset,
+      );
+      if (mounted) {
+        setState(() {
+          _collections = [...?_collections, ...page.collections];
+          _nextOffset = page.nextOffset;
+          _loadingMore = false;
+        });
+      }
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: widget.inCollections ? 'load_in_more' : 'load_more',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
+      // 継続エラー時の自動再試行ストームを避けるため next offset を止める
+      // （回復は pull-to-refresh で _load が再取得）。
+      if (mounted) {
+        setState(() {
+          _nextOffset = null;
+          _loadingMore = false;
+        });
+      }
     }
   }
 
@@ -104,9 +164,17 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
-        itemCount: collections.length,
+        controller: _scrollController,
+        // 末尾の loadMore スピナー行を 1 つ足す (#802)。
+        itemCount: collections.length + (_loadingMore ? 1 : 0),
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
+          if (index >= collections.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
           final c = collections[index];
           return ListTile(
             leading: const Icon(Icons.collections_bookmark_outlined),

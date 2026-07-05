@@ -7,6 +7,17 @@ import 'package:http_parser/http_parser.dart';
 
 import '../rate_limit_interceptor.dart';
 
+/// Link ヘッダの rel="next" から offset を取り出す（offset ページング、#802）。
+/// Collections API 用。次ページが無い / Link が無い / 解析不能なら null。
+/// テスト可能なようトップレベルに切り出す。
+int? parseNextOffsetFromLink(String? link) {
+  if (link == null) return null;
+  final match = RegExp(
+    r'<[^>]*[?&]offset=(\d+)[^>]*>;\s*rel="next"',
+  ).firstMatch(link);
+  return match == null ? null : int.tryParse(match.group(1)!);
+}
+
 class MastodonClient {
   final Dio dio;
   final String host;
@@ -187,6 +198,11 @@ class MastodonClient {
     return nextMatch?.group(1);
   }
 
+  /// Parse the Link header to extract offset from rel="next" (offset-based
+  /// paging; Collections API #802). null when there is no next page.
+  static int? _parseLinkNextOffset(dynamic response) =>
+      parseNextOffsetFromLink(response.headers.value('link'));
+
   /// GET /api/v1/accounts/relationships
   Future<List<Map<String, dynamic>>> getRelationships(List<String> ids) async {
     final response = await dio.get(
@@ -234,18 +250,31 @@ class MastodonClient {
   // `collection`）。呼び出し側で defensive にアンラップするため、ここでは
   // dynamic のまま返す。
 
-  /// GET /api/v1/accounts/:id/collections（所有コレクション一覧）
-  Future<dynamic> getAccountCollections(String accountId) async {
-    final response = await dio.get('/api/v1/accounts/$accountId/collections');
-    return response.data;
+  /// GET /api/v1/accounts/:id/collections（所有コレクション一覧・offset ページング）
+  Future<({dynamic data, int? nextOffset})> getAccountCollections(
+    String accountId, {
+    int? offset,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/accounts/$accountId/collections',
+      queryParameters: {'offset': ?offset, 'limit': ?limit},
+    );
+    return (data: response.data, nextOffset: _parseLinkNextOffset(response));
   }
 
-  /// GET /api/v1/accounts/:id/in_collections（載せられているコレクション一覧）
-  Future<dynamic> getInCollections(String accountId) async {
+  /// GET /api/v1/accounts/:id/in_collections（載せられているコレクション一覧・
+  /// offset ページング）
+  Future<({dynamic data, int? nextOffset})> getInCollections(
+    String accountId, {
+    int? offset,
+    int? limit,
+  }) async {
     final response = await dio.get(
       '/api/v1/accounts/$accountId/in_collections',
+      queryParameters: {'offset': ?offset, 'limit': ?limit},
     );
-    return response.data;
+    return (data: response.data, nextOffset: _parseLinkNextOffset(response));
   }
 
   /// GET /api/v1/collections/:id（詳細＋accounts）

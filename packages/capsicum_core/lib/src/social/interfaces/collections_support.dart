@@ -8,14 +8,15 @@ import '../../model/collection.dart';
 /// mixin は一覧閲覧・opt-out・作成/編集の操作系を担う。
 abstract mixin class CollectionsSupport {
   /// 指定アカウントが**所有する**コレクション一覧
-  /// （`GET /api/v1/accounts/:id/collections`）。offset ページングだが 1
-  /// アカウントの保有数は小さいため v1 は先頭ページのみ取得する。
-  Future<List<Collection>> getAccountCollections(String accountId);
+  /// （`GET /api/v1/accounts/:id/collections`）。offset ページング (#802)。
+  /// [offset] 省略で先頭ページ。戻り値の `nextOffset` が non-null なら続きあり。
+  Future<CollectionPage> getAccountCollections(String accountId, {int? offset});
 
   /// 指定アカウントが**載せられている**コレクション一覧
   /// （`GET /api/v1/accounts/:id/in_collections`）。各 Collection の `items` に
-  /// 自分の item が含まれ、revoke に使う item id を引ける。
-  Future<List<Collection>> getInCollections(String accountId);
+  /// 自分の item が含まれ、revoke に使う item id を引ける。offset ページング
+  /// (#802)。戻り値の `nextOffset` が non-null なら続きあり。
+  Future<CollectionPage> getInCollections(String accountId, {int? offset});
 
   /// コレクション詳細＋メンバーアカウント
   /// （`GET /api/v1/collections/:id`、CollectionWithAccounts）。
