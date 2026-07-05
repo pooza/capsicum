@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/sentry_op_failure.dart';
 
 /// Mastodon 4.6 Collections（#722 / #742）の一覧画面。
 ///
@@ -56,7 +57,14 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: widget.inCollections ? 'load_in_list' : 'load_list',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -149,7 +157,14 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
       await _load();
       if (mounted) await context.push('/collection', extra: collection.id);
       if (mounted) _load();
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'create',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       messenger.showSnackBar(const SnackBar(content: Text('作成に失敗しました')));
     }
   }

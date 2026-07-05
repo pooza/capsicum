@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -40,7 +41,17 @@ class _CollectionDetailScreenState
 
   Future<void> _load() async {
     final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! CollectionsSupport) return;
+    if (adapter is! CollectionsSupport) {
+      // 対応しないサーバーではローディングを畳んで失敗表示に落とす
+      // （放置すると無限スピナーになる。一覧画面と挙動を揃える）。
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+        });
+      }
+      return;
+    }
     try {
       final detail = await (adapter as CollectionsSupport).getCollection(
         widget.collectionId,
@@ -56,7 +67,14 @@ class _CollectionDetailScreenState
         );
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'load_detail',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       if (mounted) {
         setState(() {
           _loading = false;
@@ -296,7 +314,14 @@ class _CollectionDetailScreenState
       );
       messenger.showSnackBar(const SnackBar(content: Text('コレクションから外れました')));
       await _load();
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'revoke',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
     }
   }
@@ -316,7 +341,14 @@ class _CollectionDetailScreenState
         SnackBar(content: Text('@${user.username} を外しました')),
       );
       await _load();
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'remove_member',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       messenger.showSnackBar(const SnackBar(content: Text('メンバーの削除に失敗しました')));
     }
   }
@@ -350,7 +382,14 @@ class _CollectionDetailScreenState
       );
       messenger.showSnackBar(const SnackBar(content: Text('コレクションを削除しました')));
       navigator.pop();
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'delete',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       messenger.showSnackBar(const SnackBar(content: Text('削除に失敗しました')));
     }
   }
@@ -362,53 +401,65 @@ class _CollectionDetailScreenState
     final descController = TextEditingController(
       text: collection.description ?? '',
     );
-    final messenger = ScaffoldMessenger.of(context);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('コレクションを編集'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: '名前'),
+    try {
+      final messenger = ScaffoldMessenger.of(context);
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('コレクションを編集'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: '名前'),
+              ),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(labelText: '説明'),
+                maxLines: 3,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
             ),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(labelText: '説明'),
-              maxLines: 3,
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('保存'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    if (saved != true) return;
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! CollectionsSupport) return;
-    try {
-      await (adapter as CollectionsSupport).updateCollection(
-        widget.collectionId,
-        name: nameController.text.trim(),
-        description: descController.text.trim(),
       );
-      await _load();
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
+      if (saved != true) return;
+      final adapter = ref.read(currentAdapterProvider);
+      if (adapter is! CollectionsSupport) return;
+      try {
+        await (adapter as CollectionsSupport).updateCollection(
+          widget.collectionId,
+          name: nameController.text.trim(),
+          description: descController.text.trim(),
+        );
+        await _load();
+      } catch (e, st) {
+        reportOpFailure(
+          tagKey: 'collections.op',
+          operation: 'update',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
+        messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
+      }
+    } finally {
+      nameController.dispose();
+      descController.dispose();
     }
   }
 
-  void _showAddMemberSheet() {
+  Future<void> _showAddMemberSheet() async {
     final controller = TextEditingController();
     // macOS の modal では autofocus が barrier の FocusScope と競合し
     // キー入力を取りこぼす（#722 と同型）。autofocus せず初回フレーム後に
@@ -422,157 +473,180 @@ class _CollectionDetailScreenState
     String? feedback;
     bool feedbackIsError = false;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        if (!focusRequested) {
-          focusRequested = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (searchFocus.context != null) searchFocus.requestFocus();
-          });
-        }
-        return StatefulBuilder(
-          builder: (context, setSheetState) => Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: TextField(
-                      controller: controller,
-                      focusNode: searchFocus,
-                      decoration: InputDecoration(
-                        hintText: 'アカウントを検索',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: searching
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          if (!focusRequested) {
+            focusRequested = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (searchFocus.context != null) searchFocus.requestFocus();
+            });
+          }
+          return StatefulBuilder(
+            builder: (context, setSheetState) => Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: TextField(
+                        controller: controller,
+                        focusNode: searchFocus,
+                        decoration: InputDecoration(
+                          hintText: 'アカウントを検索',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: searching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : null,
-                      ),
-                      onSubmitted: (query) async {
-                        if (query.trim().isEmpty) return;
-                        setSheetState(() {
-                          searching = true;
-                          feedback = null;
-                        });
-                        final adapter = ref.read(currentAdapterProvider);
-                        if (adapter is SearchSupport) {
-                          try {
-                            final r = await (adapter as SearchSupport).search(
-                              query.trim(),
-                            );
-                            setSheetState(() {
-                              results = r.users;
-                              searching = false;
-                            });
-                          } catch (_) {
-                            setSheetState(() => searching = false);
+                                )
+                              : null,
+                        ),
+                        onSubmitted: (query) async {
+                          if (query.trim().isEmpty) return;
+                          setSheetState(() {
+                            searching = true;
+                            feedback = null;
+                          });
+                          final adapter = ref.read(currentAdapterProvider);
+                          if (adapter is SearchSupport) {
+                            try {
+                              final r = await (adapter as SearchSupport).search(
+                                query.trim(),
+                              );
+                              // シートが閉じられた後の setState を避ける。
+                              if (!context.mounted) return;
+                              setSheetState(() {
+                                results = r.users;
+                                searching = false;
+                              });
+                            } catch (e, st) {
+                              reportOpFailure(
+                                tagKey: 'collections.op',
+                                operation: 'search_member',
+                                error: e,
+                                stackTrace: st,
+                                account: ref.read(currentAccountProvider),
+                              );
+                              if (!context.mounted) return;
+                              setSheetState(() {
+                                searching = false;
+                                feedback = '検索に失敗しました。';
+                                feedbackIsError = true;
+                              });
+                            }
                           }
-                        }
-                      },
-                    ),
-                  ),
-                  if (feedback != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
+                        },
                       ),
-                      color: feedbackIsError
-                          ? Theme.of(context).colorScheme.errorContainer
-                          : Theme.of(context).colorScheme.secondaryContainer,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            feedbackIsError
-                                ? Icons.error_outline
-                                : Icons.check_circle_outline,
-                            size: 18,
-                            color: feedbackIsError
-                                ? Theme.of(context).colorScheme.onErrorContainer
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              feedback!,
-                              style: TextStyle(
-                                color: feedbackIsError
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onErrorContainer
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.onSecondaryContainer,
+                    ),
+                    if (feedback != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        color: feedbackIsError
+                            ? Theme.of(context).colorScheme.errorContainer
+                            : Theme.of(context).colorScheme.secondaryContainer,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              feedbackIsError
+                                  ? Icons.error_outline
+                                  : Icons.check_circle_outline,
+                              size: 18,
+                              color: feedbackIsError
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onErrorContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondaryContainer,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                feedback!,
+                                style: TextStyle(
+                                  color: feedbackIsError
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.onErrorContainer
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSecondaryContainer,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: results.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final user = results[index];
+                          final alreadyMember =
+                              _detail?.accounts.any((m) => m.id == user.id) ??
+                              false;
+                          return ListTile(
+                            leading: UserAvatar(user: user, size: 40),
+                            title: EmojiText(
+                              user.displayName ?? user.username,
+                              emojis: user.emojis,
+                              fallbackHost: user.host,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: alreadyMember
+                                ? const Icon(Icons.check, color: Colors.grey)
+                                : IconButton(
+                                    icon: const Icon(Icons.add),
+                                    onPressed: () async {
+                                      final r = await _addMember(user);
+                                      // シートが閉じられた後の setState を避ける。
+                                      if (!context.mounted) return;
+                                      setSheetState(() {
+                                        feedback = r.message;
+                                        feedbackIsError = !r.ok;
+                                      });
+                                    },
+                                  ),
+                          );
+                        },
                       ),
                     ),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: results.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final user = results[index];
-                        final alreadyMember =
-                            _detail?.accounts.any((m) => m.id == user.id) ??
-                            false;
-                        return ListTile(
-                          leading: UserAvatar(user: user, size: 40),
-                          title: EmojiText(
-                            user.displayName ?? user.username,
-                            emojis: user.emojis,
-                            fallbackHost: user.host,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '@${user.username}${user.host != null ? '@${user.host}' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: alreadyMember
-                              ? const Icon(Icons.check, color: Colors.grey)
-                              : IconButton(
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () async {
-                                    final r = await _addMember(user);
-                                    setSheetState(() {
-                                      feedback = r.message;
-                                      feedbackIsError = !r.ok;
-                                    });
-                                  },
-                                ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+      searchFocus.dispose();
+    }
   }
 
   /// メンバー追加を試み、シートに出す結果メッセージを返す。
@@ -582,7 +656,7 @@ class _CollectionDetailScreenState
     final currentCount = _detail?.accounts.length ?? 0;
     // 所有者アカウントも accounts に含まれるためメンバー数は -1 で数える。
     if (currentCount - 1 >= _maxMembers) {
-      return (ok: false, message: 'コレクションは最大25アカウントまでです。');
+      return (ok: false, message: 'コレクションは最大$_maxMembersアカウントまでです。');
     }
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! CollectionsSupport) {
@@ -596,8 +670,16 @@ class _CollectionDetailScreenState
       await _load();
       return (ok: true, message: '@${user.username} を追加しました。');
     } on DioException catch (e) {
+      // 403/422 は相手側設定に起因する想定内の失敗のため Sentry には流さない。
       return (ok: false, message: _addMemberErrorMessage(e));
-    } catch (_) {
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'add_member',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       return (ok: false, message: 'メンバーの追加に失敗しました。');
     }
   }
