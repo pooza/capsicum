@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.44.0+148
+version: 1.45.0+149
 
 environment:
   sdk: ^3.11.0
@@ -154,7 +154,7 @@ msix_config:
   # 0 固定なので、ビルド番号を第3オクテット (Build) に載せて一意化する。
   # スキーム: <major>.<minor>.<pubspec のビルド番号>.0 → **毎リリース、pubspec
   # の version(+N) に合わせてここも更新すること**（例 1.43.0+147 → 1.43.147.0）。
-  msix_version: 1.44.148.0
+  msix_version: 1.45.149.0
   # 3 ストア（Apple / Google / Microsoft）すべて個人発行元 (小石達也) で
   # 整合させる方針。法人 (有限会社ビーショック) への切替は税務・ブランド
   # 要請が顕在化した時点で一括移行する。詳細は CLAUDE.md「運営元」節参照。
