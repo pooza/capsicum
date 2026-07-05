@@ -18,11 +18,16 @@ class Instance {
   final String? statusUrl;
 
   /// サーバーの設立日。API に創立日フィールドは無いため、**最初に作られた
-  /// アカウントの作成日**で近似する。Mastodon は連番 id の最初 `accounts/1`
-  /// の作成日（取得不能時は `contact_account` 管理者の作成日にフォールバック）、
-  /// Misskey は最古ローカルユーザーの `createdAt`。取得不能なら null（非表示）。
-  /// 管理者が創立者と異なる鯖（例: 2代目管理人）でも accounts/1 なら真の設立日を
-  /// 返せる（contact_account だと管理者の参加日になり後ろにズレる）。
+  /// アカウントの作成日**で近似する。
+  ///
+  /// - Mastodon: `accounts/1` の作成日。account id は 2021-03 の timestamp_id
+  ///   移行より前は連番だったため、それ以前開設の鯖には id=1（最初のローカル
+  ///   アカウント）が残り真の設立日を返せる（2代目管理人の鯖でも正しい）。移行後
+  ///   開設の鯖は id が snowflake になり id=1 が無いため、`contact_account`
+  ///   （管理者）の作成日にフォールバックする。
+  /// - Misskey: 最古ローカルユーザーの `createdAt`。
+  ///
+  /// 取得不能なら null（非表示）。
   final DateTime? foundedAt;
 
   /// 添付ファイルの種別ごとの最大サイズ（bytes）。サーバーが上限を返さない

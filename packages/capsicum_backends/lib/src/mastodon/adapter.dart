@@ -414,15 +414,22 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     }
   }
 
-  /// 設立日 = 連番 id の最初 `accounts/1`（最初に作られたアカウント）の作成日
-  /// (#804 サーバー情報)。取得不能なら null を返し、parse 側で contact_account
-  /// （管理者）の作成日にフォールバックする。管理者が創立者と異なる鯖でも
-  /// accounts/1 なら真の設立日を返せる。
+  /// 設立日 = 最初に作られたアカウント `accounts/1` の作成日 (#815 サーバー情報)。
+  ///
+  /// Mastodon のアカウント id は **2021-03 の timestamp_id 移行より前は連番**
+  /// だったため、それ以前に開設された鯖には id=1（＝最初のローカルアカウント）が
+  /// 残っており、その created_at が真の設立日になる（管理者が創立者と異なる 2 代目
+  /// 管理人の鯖でも accounts/1 なら正しく取れる）。移行後に作られたアカウントは
+  /// snowflake（大きな整数）id になるため、**近年フレッシュに開設された鯖では
+  /// id=1 が存在せず 404** になる。その場合や凍結/削除時は null を返し、parse 側で
+  /// contact_account（管理者・新規個人鯖では創立者と一致しがち）の作成日に
+  /// フォールバックする。リモート（管理者権限なし）から「最古アカウント」を確実に
+  /// 引く公開 API は無いため、これが実用的な最善。
   Future<DateTime?> _fetchFoundedAt() async {
     try {
       return (await client.getAccount('1')).createdAt;
     } catch (_) {
-      // 設立日は付加情報。id=1 が凍結/削除/instance actor 等で取れなくても
+      // 設立日は付加情報。id=1 が無い(snowflake 世代)/凍結/削除でも
       // getInstance 本体を壊さない。
       return null;
     }
