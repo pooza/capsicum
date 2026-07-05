@@ -132,7 +132,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       timeline = ref.read(timelineProvider).valueOrNull;
     }
-    if (timeline != null && !timeline.isLoadingMore) {
+    // 継続エラー時 (loadMoreError) は自動再試行を止め、リトライストームで末尾の
+    // ローディングが固化するのを防ぐ (#678)。回復は pull-to-refresh / タブ再選択で
+    // build() が再実行され loadMoreError がクリアされたとき。
+    if (timeline != null &&
+        !timeline.isLoadingMore &&
+        timeline.loadMoreError == null) {
       final maxIndex = positions
           .map((p) => p.index)
           .reduce((a, b) => a > b ? a : b);

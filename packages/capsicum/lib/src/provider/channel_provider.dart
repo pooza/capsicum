@@ -58,16 +58,22 @@ class ChannelTimelineNotifier
             posts: [...base.posts, ...older],
             isLoadingMore: false,
             hasMore: raw.length >= _pageSize,
+            loadMoreError: null,
           ),
         );
         return;
-      } catch (_) {
+      } catch (e) {
         if (attempt < loadMoreMaxRetries) {
           await Future<void>.delayed(loadMoreRetryDelay);
           continue;
         }
+        // 最終失敗時は loadMoreError を立て、トリガー側の再試行抑止を効かせる
+        // (#678、TimelineState / list_provider と同型の番兵パターン)。
         state = AsyncData(
-          (state.valueOrNull ?? current).copyWith(isLoadingMore: false),
+          (state.valueOrNull ?? current).copyWith(
+            isLoadingMore: false,
+            loadMoreError: e,
+          ),
         );
       }
     }

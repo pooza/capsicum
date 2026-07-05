@@ -44,6 +44,13 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
+      // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。isLoadingMore /
+      // hasMore は loadMore 側でも弾くが、リトライストーム抑止のため loadMoreError
+      // はトリガー段で見る。回復は pull-to-refresh で build() 再実行時。
+      final state = ref
+          .read(channelTimelineProvider(widget.channelId))
+          .valueOrNull;
+      if (state != null && state.loadMoreError != null) return;
       ref.read(channelTimelineProvider(widget.channelId).notifier).loadMore();
     }
   }
