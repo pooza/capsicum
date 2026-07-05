@@ -102,7 +102,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// #187 と同型）、ブラウザの引き渡しに依存しない loopback 方式に切替える。
   /// アプリ内 HTTP サーバへブラウザが直接 HTTP 接続するので確実にコードを取れる。
   /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため現状維持。
-  bool get _useLocalhostCallback => isDesktop || Platform.isAndroid;
+  bool get _useLocalhostCallback => usesLoopbackOAuthCallback;
 
   /// OAuth redirect URI。デスクトップ / Android は
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
@@ -407,7 +407,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ..headers.contentType = ContentType.html
             ..write(
               accept
-                  ? (Platform.isAndroid
+                  ? (oauthCallbackNeedsAppReturn
                         ? _oauthCallbackHtmlAndroid
                         : _oauthCallbackHtml)
                   : '<!doctype html>',
@@ -485,7 +485,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // で scope された host 保存（getHostClientCredentials）か fresh 登録に
         // 委ねる。移行後の初回ログインで localhost client が host 保存されるので、
         // 再登録は host あたり 1 回で済む。
-        if (existing != null && !Platform.isAndroid) {
+        if (existing != null && canReuseAccountScopedOAuthClient) {
           adapter.setCachedClientCredentials(existing.clientSecret);
           usedCachedCreds = true;
         } else {
@@ -538,7 +538,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           }
         }
         final String resultUrl;
-        if (Platform.isMacOS || Platform.isAndroid) {
+        if (usesSelfHostedOAuthLoopbackServer) {
           // macOS (#654): flutter_web_auth_2 に localhost server impl が無い。
           // Android (#276): Custom Tab がカスタムスキーム / 検証済み App Link の
           // どちらの redirect もアプリに引き渡さず bounce する (#187 同型)。

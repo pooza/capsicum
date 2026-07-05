@@ -25,3 +25,32 @@ String get residentTargetLabel =>
 /// 直書きしない設計指針に従い機能名で公開する。
 bool get supportsMediaDragOut =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+
+/// OAuth の redirect を localhost ループバックで受けるプラットフォームか
+/// (#276 / #654)。デスクトップ 3 OS と Android は、ブラウザ / Custom Tab が
+/// custom scheme をアプリへ確実に引き渡せない（flutter_web_auth_2 #187 同型）
+/// ため loopback で受ける。iOS は ASWebAuthenticationSession で custom scheme が
+/// 確実に戻るため対象外。UI 層に `Platform.isX` を直書きしない設計指針
+/// （#650・docs/CLAUDE.md）に従い機能名で公開する。
+bool get usesLoopbackOAuthCallback =>
+    isDesktop || (!kIsWeb && Platform.isAndroid);
+
+/// loopback OAuth の受け口を、flutter_web_auth_2 の server impl ではなく
+/// **自前の localhost HTTP サーバ**で立てるプラットフォームか (#276 / #654)。
+/// macOS は fwa2 に localhost server impl が無く、Android は Custom Tab が
+/// redirect を bounce するため、両者とも自前サーバで受ける。Linux / Windows は
+/// fwa2 の server impl が `http://localhost:{port}` を直接受ける。
+bool get usesSelfHostedOAuthLoopbackServer =>
+    !kIsWeb && (Platform.isMacOS || Platform.isAndroid);
+
+/// loopback callback ページから、コード受領後にアプリを前面へ戻す遷移
+/// （androidOAuthReturnUrl）が必要なプラットフォームか (#276)。Android は
+/// システムブラウザからアプリへ自動復帰しないため専用の callback HTML を返す。
+bool get oauthCallbackNeedsAppReturn => !kIsWeb && Platform.isAndroid;
+
+/// 既存アカウントの account-scoped cached client を OAuth に再利用してよいか
+/// (#276)。Android の account-scoped client は登録時の redirect_uri を保持せず、
+/// custom scheme → localhost 移行後に再利用すると invalid_redirect_uri で
+/// loopback がハングするため、Android では再利用しない（host 保存 or fresh 登録
+/// に委ねる）。他プラットフォームは従来どおり再利用してよい。
+bool get canReuseAccountScopedOAuthClient => kIsWeb || !Platform.isAndroid;
