@@ -587,7 +587,7 @@ curl -fsSL https://capsicum.shrieker.net/install.sh | bash
 Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。**公式配布は Microsoft Store 単独**（[#760](https://github.com/pooza/capsicum/issues/760)、2026-07-02〜）:
 
 - **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。**Windows 唯一の公式配布ルート**（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
-- **自己署名 MSIX（draft Release 添付）は非公式・非サポート**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは (a) pooza が Store 手動 publish 用に `.msix` を取り出す口、(b) 証明書 import を厭わない上級者が自己責任で使う非公式経路、であって公式配布ではない。**README / 公式サイト / [INSTALL.md](../packaging/windows/INSTALL.md) では宣伝しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）
+- **自己署名 MSIX（draft Release 添付）は非公式・非サポート・案内しない**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止、2026-07-05 に案内自体を全面停止）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは **pooza が Store 手動 publish 用に `.msix` を取り出す口**であって、エンドユーザー向けの配布経路ではない。**リリースノート・README・公式サイト・[INSTALL.md](../packaging/windows/INSTALL.md) のいずれでも import 手順を案内しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）。Windows の配布は Microsoft Store 単独に一本化する
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留。毎リリースの Store publish は **Partner Center Web UI から手動** が前提。
 
@@ -680,16 +680,14 @@ msstore CLI 経由の自動 publish は個人開発者アカウントから Entr
 
 #### GitHub Release のリリースノート（Windows セクションテンプレート）
 
-タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
+タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。
+
+> ⚠️ **自己署名 MSIX 直配はリリースノートに一切書かない**（2026-07-05 方針確定）。この配布方法は今後一切案内しない。CI は従来どおり `.msix` + `.cer` を draft Release に添付し続けるが（pooza が Store 手動 publish 用に `.msix` を取り出す口）、**リリースノート・README・公式サイト・INSTALL.md のいずれでも import 手順を案内しない**。Windows の公式配布は Microsoft Store 単独（#760 をさらに徹底）。
 
 ````markdown
 ## Windows
 
-Microsoft Store からのインストールが推奨です: [apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)
-
-### GitHub Releases から自己署名 MSIX を直接 import（補助・上級者向け）
-
-Store publish 完了前の先行検証用・証明書 import に抵抗のないユーザー向け。本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
+Microsoft Store からインストールできます: [apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)
 ````
 
 #### Windows ローカルビルド確認
