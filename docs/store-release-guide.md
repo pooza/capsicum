@@ -669,7 +669,7 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 3. **Packages**: draft Release に添付された `capsicum.msix` をそのまま upload（`msix_config.store: false` のままで OK、Store 側で再署名される）
 4. **Submission Options > Notes for Certification**: 毎回必須。確定文面・根本原因・Windows 固有の注意は [msstore-review-notes-login.md](msstore-review-notes-login.md) を single source of truth とする（capsicum は OAuth + 外部サーバー前提のため、書かないと Policy 10.3.1 *App Is Testable - Test Account* で差し戻し）
 5. **System Requirements (推奨環境)**: 「イマーシブヘッドセット」項目に **明示的にチェックを入れる**罠あり（実体としては不要だが、UI が空欄を許容せず submission に進めない仕様。2026-05-16 にはまった経緯あり、参考: <https://mstdn.b-shock.org/@pooza/116586587890264199>）
-6. **Submit for certification**: 認定期間は通常 1-3 日（初回は 3-7 日）。通過後に Store listing が自動で publish される
+6. **Submit for certification**: Microsoft 公称の認定期間は最大 1-3 日（初回は 3-7 日）だが、**実績では問題がなければ 1 時間程度で通過することが多い**（Android と同様に速い）。数時間経っても Pending のままなら審査で引っかかっている可能性を疑う。通過後に Store listing が自動で publish される
 7. **動作確認**: Store からインストールして SmartScreen 警告なしで起動できることを確認
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留のため、毎リリース手動で行う。
