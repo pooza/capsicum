@@ -420,6 +420,8 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+> ⚠️ **iOS の `fastlane release` は §4.2 の ipa が build/ に残っている前提**。iOS ベータの後に Android / macOS を `flutter clean` 込みでビルドすると `build/ios/ipa/capsicum.ipa` が消え、`skip_binary_upload: true` でもレーンが ipa パスの存在検証で `Could not find ipa file` で落ちる。復旧は `flutter build ipa`（build 番号据え置き = 再アップロードされない）で ipa を再生成してから `fastlane release`。ただし再生成後の submit で deliver が **「Waiting for the build to show up in the build list」ループから抜けられずハングする**ことがある（既存 build は ASC 上に存在するのに API 選択が回らない。v1.44.0 で発生）。数分待って進まなければ **ASC UI から該当 build を手動で「審査へ提出」する方が速い**（1分程度）。macOS の pkg は最後にビルドしたものが残るため、iOS の ipa 再生成で `flutter clean` する前に macOS の submit を先に済ませること。
+>
 > ⚠️ **fastlane の出力を `| tail` 等にパイプしない**。パイプすると `$?` がパイプ末尾コマンド（tail）の exit code になり、**fastlane の失敗を取りこぼす**。ログはファイルにリダイレクトし（`fastlane release > log 2>&1; echo $?`）、exit code を明示確認すること。
 >
 > ⚠️ **`fastlane release`（Android）は内部トラックの「現在の」リリースを製品版へ promote する**ため、自分の `fastlane internal` アップロードが失敗していると、トラックに残っている**別ビルドを誤って昇格**しうる。とくに**複数端末で並行ビルドすると versionCode が衝突**し（Google Play は同一トラックの versionCode 重複を拒否）、後発の upload が失敗→既存ビルドが promote される事故が起きる。v1.35.0 で実際に「マージン調整前の 102」が製品版に出た（`| tail` で upload 失敗を見落とし）。**対策**: (1) build 後に実バイナリで versionCode と secrets を確認、(2) 昇格後に Play API で production の versionCode が意図どおりか確認する（手順は §4.4 の Play 版確認、または ASC 同様の service-account JWT で `edits.tracks.get`）。衝突時は `flutter build appbundle --build-number=<次番号>` で採番し直して再 upload→再 promote。
