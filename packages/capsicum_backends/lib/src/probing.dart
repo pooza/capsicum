@@ -31,9 +31,18 @@ BackendType? _detectBackendType(String? name) {
 
 class InstanceProbe {
   final BackendType type;
+
+  /// nodeinfo の `software.name`（小文字）。フォークを含む生の識別子で、`type`
+  /// が fedibird 等も mastodon に**マップ**するのと違い、本家名（mastodon /
+  /// misskey）完全一致の判定（バージョン追従チェックのゲート等）に使える。
+  final String? softwareName;
   final String? softwareVersion;
 
-  const InstanceProbe({required this.type, this.softwareVersion});
+  const InstanceProbe({
+    required this.type,
+    this.softwareName,
+    this.softwareVersion,
+  });
 }
 
 Map<String, dynamic> _ensureMap(dynamic data) {
@@ -77,7 +86,11 @@ Future<InstanceProbe?> probeInstance(Dio dio, String host) async {
     final version = software['version'] as String?;
     final type = _detectBackendType(name);
     if (type == null) return null;
-    return InstanceProbe(type: type, softwareVersion: version);
+    return InstanceProbe(
+      type: type,
+      softwareName: name,
+      softwareVersion: version,
+    );
   } on DioException catch (e) {
     throw Exception('サーバーに接続できません: ${e.message}');
   }

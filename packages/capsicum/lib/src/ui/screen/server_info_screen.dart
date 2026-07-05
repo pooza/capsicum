@@ -2,10 +2,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_info_provider.dart';
+import '../../provider/server_version_provider.dart';
+import '../../service/server_version_checker.dart';
 import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
@@ -42,6 +45,8 @@ class ServerInfoScreen extends ConsumerWidget {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
+    // ソフト正体 + 本家 latest 追従状況 (#815)。取得中/失敗/非対応は null。
+    final versionStatus = ref.watch(serverVersionStatusProvider).valueOrNull;
 
     return ListView(
       children: [
@@ -61,12 +66,7 @@ class ServerInfoScreen extends ConsumerWidget {
                 )
               : const Icon(Icons.dns, size: 40),
           title: Text(instance.name),
-          subtitle: Text(
-            [
-              if (instance.softwareName != null) instance.softwareName!,
-              if (instance.version != null) 'v${instance.version}',
-            ].join(' '),
-          ),
+          subtitle: _softwareSubtitle(context, instance, versionStatus),
         ),
         if (instance.description != null && instance.description!.isNotEmpty)
           Padding(
@@ -380,6 +380,55 @@ class _HtmlText extends StatelessWidget {
   String _strip(String s) =>
       _unescape.convert(s.replaceAll(RegExp(r'<[^>]*>'), ''));
 }
+
+/// 基本情報のソフト名 + 版 + 本家 latest 追従の注記 (#815)。
+///
+/// `Mastodon v4.6.3 · 最新` / `Misskey v2025.4.1 · 最新は 2026.6.0`。Mastodon /
+/// Misskey を名乗らないソフト（fedibird 等）は追従注記を出さず素性のみ示す
+/// （`Fedibird v0.1`）。取得中/失敗は素の版表示に戻す。
+Widget _softwareSubtitle(
+  BuildContext context,
+  Instance instance,
+  ServerVersionStatus? status,
+) {
+  final theme = Theme.of(context);
+  final softwareLabel = status != null
+      ? _capitalizeSoftware(status.software)
+      : instance.softwareName;
+  final base = [
+    if (softwareLabel != null && softwareLabel.isNotEmpty) softwareLabel,
+    if (instance.version != null) 'v${instance.version}',
+  ].join(' ');
+
+  String? currency;
+  Color? currencyColor;
+  if (status?.behind == true) {
+    currency = status!.latestVersion != null
+        ? '最新は ${status.latestVersion}'
+        : '更新推奨';
+    currencyColor = theme.colorScheme.error;
+  } else if (status?.behind == false) {
+    currency = '最新';
+    currencyColor = theme.colorScheme.primary;
+  }
+
+  if (currency == null) return Text(base);
+  return Wrap(
+    spacing: 6,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      Text(base),
+      Text(
+        '· $currency',
+        style: TextStyle(color: currencyColor, fontWeight: FontWeight.bold),
+      ),
+    ],
+  );
+}
+
+/// nodeinfo の software 名（小文字）を表示用に頭大文字化する。
+String _capitalizeSoftware(String s) =>
+    s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
 class _SectionHeader extends StatelessWidget {
   final String title;
