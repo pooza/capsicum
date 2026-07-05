@@ -102,6 +102,7 @@ class MastodonClient {
     int? limit,
     bool? pinned,
     bool? onlyMedia,
+    bool? excludeReplies,
   }) async {
     final response = await dio.get(
       '/api/v1/accounts/$id/statuses',
@@ -110,6 +111,7 @@ class MastodonClient {
         'limit': ?limit,
         'pinned': ?pinned,
         'only_media': ?onlyMedia,
+        'exclude_replies': ?excludeReplies,
       },
     );
     return (response.data as List)

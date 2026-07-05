@@ -218,12 +218,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String id, {
     String? maxId,
     bool? onlyMedia,
+    bool? excludeReplies,
   }) async {
     final statuses = await client.getAccountStatuses(
       id,
       maxId: maxId,
       limit: 20,
       onlyMedia: onlyMedia,
+      excludeReplies: excludeReplies,
     );
     return _safeConvert(
       statuses,

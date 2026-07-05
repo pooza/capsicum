@@ -201,6 +201,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String id, {
     String? maxId,
     bool? onlyMedia,
+    // Mastodon の show_media_replies (#809) 相当が Misskey には無いため受理のみ。
+    // プロフィール画面は dynamic dispatch で両アダプタに同じ引数を渡すので、
+    // シグネチャを揃える。Misskey のユーザー投稿では常に未指定 (null) になる。
+    bool? excludeReplies,
   }) async {
     final notes = await client.getUserNotes(
       id,
