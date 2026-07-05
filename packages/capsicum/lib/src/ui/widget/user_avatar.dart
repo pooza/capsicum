@@ -52,6 +52,7 @@ class UserAvatar extends ConsumerWidget {
               width: size,
               height: size,
               fit: BoxFit.cover,
+              semanticLabel: user.avatarDescription,
               errorBuilder: (_, _, _) => _fallback(context),
             )
           : _fallback(context),

@@ -11,12 +11,18 @@ class CustomEmoji {
   /// 無いバックエンドは default true のまま。
   final bool visibleInPicker;
 
+  /// Mastodon 4.6 の `featured`。カテゴリごとの代表（フィーチャー指定）絵文字を
+  /// 表す。picker で「フィーチャー」セクションに優先表示する (#735)。未対応
+  /// サーバーや featured 未指定の絵文字は false。
+  final bool featured;
+
   const CustomEmoji({
     required this.shortcode,
     required this.url,
     this.category,
     this.aliases = const [],
     this.visibleInPicker = true,
+    this.featured = false,
   });
 }
 

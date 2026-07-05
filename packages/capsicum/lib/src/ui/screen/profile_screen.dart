@@ -20,6 +20,12 @@ import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
+import '../util/relative_time.dart';
+
+/// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
+/// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの
+/// 直書きをやめ、この列挙で意味付けする。
+enum _ProfileTab { posts, media, gallery, pages }
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final User user;
@@ -31,9 +37,9 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _scrollController = ScrollController();
-  late final TabController _tabController;
+  late TabController _tabController;
   late User _user = widget.user;
   List<Post> _pinnedPosts = [];
   List<Post> _posts = [];
@@ -61,8 +67,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   bool get _hasGalleryTab => ref.read(currentAdapterProvider) is GallerySupport;
   bool get _hasPagesTab => ref.read(currentAdapterProvider) is PagesSupport;
-  int get _pagesTabIndex => _hasGalleryTab ? 3 : 2;
-  int get _tabCount => 2 + (_hasGalleryTab ? 1 : 0) + (_hasPagesTab ? 1 : 0);
+
+  /// 表示するタブの順序付きリスト。adapter のケーパビリティに加え、Mastodon 4.6
+  /// の show_media 設定（#732）でメディアタブの有無が決まる。show_media が未対応
+  /// サーバー（null）や true のときは従来どおりメディアタブを出す。
+  List<_ProfileTab> get _visibleTabs => [
+    _ProfileTab.posts,
+    if (_user.showMedia != false) _ProfileTab.media,
+    if (_hasGalleryTab) _ProfileTab.gallery,
+    if (_hasPagesTab) _ProfileTab.pages,
+  ];
+
+  static const _tabLabels = <_ProfileTab, String>{
+    _ProfileTab.posts: '投稿',
+    _ProfileTab.media: 'メディア',
+    _ProfileTab.gallery: 'ギャラリー',
+    _ProfileTab.pages: 'ページ',
+  };
 
   UserRelationship? _relationship;
   bool _relationshipLoading = false;
@@ -95,7 +116,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabCount, vsync: this);
+    _tabController = TabController(length: _visibleTabs.length, vsync: this);
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _fetchFullUser();
@@ -122,16 +143,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _onTabChanged() {
-    if (_tabController.index == 1 && !_mediaTabLoaded) {
-      _loadMediaPosts();
-    }
-    if (_hasGalleryTab && _tabController.index == 2 && !_galleryTabLoaded) {
-      _loadGalleryPosts();
-    }
-    if (_hasPagesTab &&
-        _tabController.index == _pagesTabIndex &&
-        !_pagesTabLoaded) {
-      _loadPages();
+    // タブ切替でコンテンツ sliver（_buildTabContent は _tabController.index を
+    // 参照）を追従させるため、settle 時に rebuild する。
+    if (!_tabController.indexIsChanging && mounted) setState(() {});
+    final tabs = _visibleTabs;
+    if (_tabController.index >= tabs.length) return;
+    switch (tabs[_tabController.index]) {
+      case _ProfileTab.media:
+        if (!_mediaTabLoaded) _loadMediaPosts();
+      case _ProfileTab.gallery:
+        if (!_galleryTabLoaded) _loadGalleryPosts();
+      case _ProfileTab.pages:
+        if (!_pagesTabLoaded) _loadPages();
+      case _ProfileTab.posts:
+        break;
     }
   }
 
@@ -148,15 +173,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
-      final i = _tabController.index;
-      if (i == 0) {
-        _loadMorePosts();
-      } else if (i == 1) {
-        _loadMoreMediaPosts();
-      } else if (_hasGalleryTab && i == 2) {
-        _loadMoreGalleryPosts();
-      } else if (_hasPagesTab && i == _pagesTabIndex) {
-        _loadMorePages();
+      final tabs = _visibleTabs;
+      if (_tabController.index >= tabs.length) return;
+      switch (tabs[_tabController.index]) {
+        case _ProfileTab.posts:
+          _loadMorePosts();
+        case _ProfileTab.media:
+          _loadMoreMediaPosts();
+        case _ProfileTab.gallery:
+          _loadMoreGalleryPosts();
+        case _ProfileTab.pages:
+          _loadMorePages();
       }
     }
   }
@@ -418,10 +445,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     try {
       var fullUser = await adapter.getUserById(widget.user.id);
       fullUser = await ref.read(isCatEnricherProvider).enrichUser(fullUser);
-      if (mounted) setState(() => _user = fullUser);
+      if (mounted) {
+        setState(() => _user = fullUser);
+        // 完全な user 取得で show_media が判明しタブ集合が変わることがある（#732）。
+        _syncTabController();
+      }
     } catch (_) {
       // Keep the original user data if full fetch fails.
     }
+  }
+
+  /// [_visibleTabs] の件数が現行 TabController と食い違ったら作り直す。
+  /// 初期の widget.user に show_media が無く、_fetchFullUser 後に判明して
+  /// メディアタブが増減するケースに対応する（#732）。
+  void _syncTabController() {
+    final desired = _visibleTabs.length;
+    if (_tabController.length == desired) return;
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    _tabController = TabController(length: desired, vsync: this);
+    _tabController.addListener(_onTabChanged);
+    if (mounted) setState(() {});
   }
 
   Future<List<Post>> _fetchUserPosts(
@@ -465,26 +509,40 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ),
             flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (user.bannerUrl != null)
-                    Image.network(user.bannerUrl!, fit: BoxFit.cover)
-                  else
-                    Container(color: colorScheme.primaryContainer),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.5),
-                        ],
+              background: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
+                onTap: user.bannerUrl != null
+                    ? () => _openImageViewer(
+                        user.bannerUrl!,
+                        user.bannerDescription,
+                      )
+                    : null,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (user.bannerUrl != null)
+                      Image.network(
+                        user.bannerUrl!,
+                        fit: BoxFit.cover,
+                        semanticLabel: user.bannerDescription,
+                      )
+                    else
+                      Container(color: colorScheme.primaryContainer),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.5),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -494,12 +552,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             delegate: _TabBarDelegate(
               TabBar(
                 controller: _tabController,
-                tabs: [
-                  const Tab(text: '投稿'),
-                  const Tab(text: 'メディア'),
-                  if (_hasGalleryTab) const Tab(text: 'ギャラリー'),
-                  if (_hasPagesTab) const Tab(text: 'ページ'),
-                ],
+                tabs: _visibleTabs
+                    .map((t) => Tab(text: _tabLabels[t]))
+                    .toList(),
               ),
               colorScheme.surface,
             ),
@@ -511,22 +566,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   List<Widget> _buildTabContent(ColorScheme colorScheme) {
-    final i = _tabController.index;
-    if (i == 0) {
-      return _buildPostsTab(colorScheme);
-    } else if (i == 1) {
-      return _buildMediaTab();
-    } else if (_hasGalleryTab && i == 2) {
-      return _buildGalleryTab();
-    } else if (_hasPagesTab && i == _pagesTabIndex) {
-      return _buildPagesTab();
+    final tabs = _visibleTabs;
+    if (_tabController.index >= tabs.length) {
+      return [const SliverFillRemaining(child: SizedBox.shrink())];
     }
-    return [const SliverFillRemaining(child: SizedBox.shrink())];
+    switch (tabs[_tabController.index]) {
+      case _ProfileTab.posts:
+        return _buildPostsTab(colorScheme);
+      case _ProfileTab.media:
+        return _buildMediaTab();
+      case _ProfileTab.gallery:
+        return _buildGalleryTab();
+      case _ProfileTab.pages:
+        return _buildPagesTab();
+    }
   }
 
   List<Widget> _buildPostsTab(ColorScheme colorScheme) {
     return [
-      if (_pinnedPosts.isNotEmpty) ...[
+      // show_featured == false のとき固定投稿（フィーチャー）を隠す（#732）。
+      if (_pinnedPosts.isNotEmpty && _user.showFeatured != false) ...[
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -737,6 +796,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     ];
   }
 
+  /// ミュート中の相手には「ミュート中」バッジをプロフィール本体にも出す。
+  /// 期限付きミュート（Mastodon 4.6, #734）は「〇〇まで」を併記する。
+  /// 自分のプロフィール・関係性未ロード・非ミュートでは何も出さない。
+  /// ブロック中はプロフィール画面へ到達しないため対象外。
+  List<Widget> _buildMuteBadge(ThemeData theme) {
+    final rel = _relationship;
+    if (_isOwnProfile || rel == null || !rel.muting) return const [];
+    final label = rel.mutingExpiresAt != null
+        ? 'ミュート中（${formatAbsoluteTime(rel.mutingExpiresAt!)}まで）'
+        : 'ミュート中';
+    return [
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.volume_off,
+                size: 16,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
   Widget _buildProfileHeader(BuildContext context, User user) {
     final theme = Theme.of(context);
 
@@ -747,7 +849,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         children: [
           Row(
             children: [
-              UserAvatar(user: user, size: 72, borderRadius: 8),
+              GestureDetector(
+                onTap: user.avatarUrl != null
+                    ? () => _openImageViewer(
+                        user.avatarUrl!,
+                        user.avatarDescription,
+                      )
+                    : null,
+                child: UserAvatar(user: user, size: 72, borderRadius: 8),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -810,6 +920,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ),
             ],
           ),
+          ..._buildMuteBadge(theme),
           if (user.description != null && user.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
             _buildBio(user, theme),
@@ -818,42 +929,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           Row(
             children: [
               _statItem(context, ref.watch(postLabelProvider), user.postCount),
-              const SizedBox(width: 24),
-              GestureDetector(
-                onTap: () {
-                  final adapter =
-                      ref.read(currentAdapterProvider)! as FollowSupport;
-                  context.push(
-                    '/users',
-                    extra: {
-                      'title': 'フォロー',
-                      'fetcher': (String? cursor) => adapter.getFollowing(
-                        user.id,
-                        query: TimelineQuery(maxId: cursor, limit: 20),
-                      ),
-                    },
-                  );
-                },
-                child: _statItem(context, 'フォロー', user.followingCount),
-              ),
-              const SizedBox(width: 24),
-              GestureDetector(
-                onTap: () {
-                  final adapter =
-                      ref.read(currentAdapterProvider)! as FollowSupport;
-                  context.push(
-                    '/users',
-                    extra: {
-                      'title': 'フォロワー',
-                      'fetcher': (String? cursor) => adapter.getFollowers(
-                        user.id,
-                        query: TimelineQuery(maxId: cursor, limit: 20),
-                      ),
-                    },
-                  );
-                },
-                child: _statItem(context, 'フォロワー', user.followersCount),
-              ),
+              // hide_collections == true のときフォロー/フォロワーの
+              // カウント・導線を隠す（Mastodon 4.6、#732）。
+              if (user.hideCollections != true) ...[
+                const SizedBox(width: 24),
+                GestureDetector(
+                  onTap: () {
+                    final adapter =
+                        ref.read(currentAdapterProvider)! as FollowSupport;
+                    context.push(
+                      '/users',
+                      extra: {
+                        'title': 'フォロー',
+                        'fetcher': (String? cursor) => adapter.getFollowing(
+                          user.id,
+                          query: TimelineQuery(maxId: cursor, limit: 20),
+                        ),
+                      },
+                    );
+                  },
+                  child: _statItem(context, 'フォロー', user.followingCount),
+                ),
+                const SizedBox(width: 24),
+                GestureDetector(
+                  onTap: () {
+                    final adapter =
+                        ref.read(currentAdapterProvider)! as FollowSupport;
+                    context.push(
+                      '/users',
+                      extra: {
+                        'title': 'フォロワー',
+                        'fetcher': (String? cursor) => adapter.getFollowers(
+                          user.id,
+                          query: TimelineQuery(maxId: cursor, limit: 20),
+                        ),
+                      },
+                    );
+                  },
+                  child: _statItem(context, 'フォロワー', user.followersCount),
+                ),
+              ],
             ],
           ),
           ..._buildProfileActionRow(context, user),
@@ -1135,6 +1250,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               await _confirmAndBlock(adapter);
             case 'unblock':
               _performAction(() => adapter.unblockUser(widget.user.id));
+            case 'view_collections':
+              _openCollections(
+                inCollections: false,
+                ownerView: false,
+                title: 'コレクション',
+              );
+            case 'view_in_collections':
+              _openCollections(
+                inCollections: true,
+                ownerView: false,
+                title: '載っているコレクション',
+              );
           }
         },
         itemBuilder: (_) => [
@@ -1146,7 +1273,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           if (widget.user.url != null)
             const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
           if (rel.muting)
-            const PopupMenuItem(value: 'unmute', child: Text('ミュート解除'))
+            PopupMenuItem(
+              value: 'unmute',
+              child: Text(
+                rel.mutingExpiresAt != null
+                    ? 'ミュート解除（${formatAbsoluteTime(rel.mutingExpiresAt!)}まで）'
+                    : 'ミュート解除',
+              ),
+            )
           else ...[
             const PopupMenuItem(value: 'mute', child: Text('ミュート')),
             const PopupMenuItem(
@@ -1158,6 +1292,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
           else
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
+          if (_supportsCollections) ...[
+            const PopupMenuItem(
+              value: 'view_collections',
+              child: Text('コレクション'),
+            ),
+            const PopupMenuItem(
+              value: 'view_in_collections',
+              child: Text('載っているコレクション'),
+            ),
+          ],
         ],
       ),
     ];
@@ -1175,13 +1319,74 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             _copyAcct(context);
           case 'copy_url':
             _copyUrl(context);
+          case 'my_collections':
+            _openCollections(
+              inCollections: false,
+              ownerView: true,
+              title: '自分のコレクション',
+            );
+          case 'in_collections':
+            _openCollections(
+              inCollections: true,
+              ownerView: false,
+              title: '載っているコレクション',
+            );
         }
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'copy_acct', child: Text('ユーザー名をコピー')),
         if (widget.user.url != null)
           const PopupMenuItem(value: 'copy_url', child: Text('URL をコピー')),
+        if (_supportsCollections) ...[
+          const PopupMenuItem(
+            value: 'my_collections',
+            child: Text('自分のコレクション'),
+          ),
+          const PopupMenuItem(
+            value: 'in_collections',
+            child: Text('載っているコレクション'),
+          ),
+        ],
       ],
+    );
+  }
+
+  /// Mastodon 4.6 Collections（#722 / #742）に対応したアダプタか。
+  bool get _supportsCollections =>
+      ref.read(currentAdapterProvider) is CollectionsSupport;
+
+  /// アバター/ヘッダー画像をメディアビューアで全画面表示する。alt テキスト
+  /// （avatar_description / header_description、#733）を説明キャプションに載せる。
+  void _openImageViewer(String url, String? description) {
+    context.push(
+      '/media',
+      extra: {
+        'attachments': [
+          Attachment(
+            id: 'profile-image',
+            type: AttachmentType.image,
+            url: url,
+            description: description,
+          ),
+        ],
+        'initialIndex': 0,
+      },
+    );
+  }
+
+  void _openCollections({
+    required bool inCollections,
+    required bool ownerView,
+    required String title,
+  }) {
+    context.push(
+      '/collections',
+      extra: {
+        'accountId': widget.user.id,
+        'inCollections': inCollections,
+        'ownerView': ownerView,
+        'title': title,
+      },
     );
   }
 

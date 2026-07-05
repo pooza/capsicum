@@ -91,6 +91,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         PinSupport,
         PushSubscriptionSupport,
         ScheduleSupport,
+        CollectionsSupport,
         TranslationSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
@@ -692,6 +693,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       followedBy: r['followed_by'] as bool? ?? false,
       muting: r['muting'] as bool? ?? false,
       blocking: r['blocking'] as bool? ?? false,
+      mutingExpiresAt: r['muting_expires_at'] is String
+          ? DateTime.tryParse(r['muting_expires_at'] as String)
+          : null,
     );
   }
 
@@ -865,10 +869,155 @@ class MastodonAdapter extends DecentralizedBackendAdapter
             url: (e['static_url'] as String?) ?? (e['url'] as String?) ?? '',
             category: e['category'] as String?,
             visibleInPicker: e['visible_in_picker'] != false,
+            featured: e['featured'] == true,
           ),
         )
         .toList();
   }
+
+  // CollectionsSupport (Mastodon 4.6, FEP-7aa9, #722 / #742)
+
+  /// index 応答は adapter によって `{ "collections": [...] }` で包まれる場合と
+  /// 素の List の場合があるため defensive にアンラップする。
+  List<Map<String, dynamic>> _collectionMapList(Object? data) {
+    if (data is List) return data.whereType<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic> && data['collections'] is List) {
+      return (data['collections'] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+    return const [];
+  }
+
+  /// 単体応答は `{ "<key>": {...} }` で包まれることも素のオブジェクトのことも
+  /// あるためアンラップする。
+  Map<String, dynamic> _unwrapMap(Object? data, String key) {
+    if (data is Map<String, dynamic>) {
+      final inner = data[key];
+      if (inner is Map<String, dynamic>) return inner;
+      return data;
+    }
+    return const {};
+  }
+
+  CollectionItem _collectionItemFromMap(Map<String, dynamic> m) =>
+      CollectionItem(
+        id: m['id']?.toString() ?? '',
+        state: collectionItemStateFromString(m['state'] as String?),
+        accountId: m['account_id']?.toString(),
+      );
+
+  Collection _collectionFromMap(Map<String, dynamic> m) {
+    final itemsRaw = m['items'];
+    return Collection(
+      id: m['id']?.toString() ?? '',
+      name: m['name'] as String? ?? '',
+      url: m['url'] as String?,
+      itemCount: (m['item_count'] as num?)?.toInt(),
+      description: m['description'] as String?,
+      ownerAccountId: m['account_id']?.toString(),
+      discoverable: m['discoverable'] as bool?,
+      sensitive: m['sensitive'] as bool?,
+      tagName: (m['tag'] as Map<String, dynamic>?)?['name'] as String?,
+      items: itemsRaw is List
+          ? itemsRaw
+                .whereType<Map<String, dynamic>>()
+                .map(_collectionItemFromMap)
+                .toList()
+          : const [],
+    );
+  }
+
+  @override
+  Future<List<Collection>> getAccountCollections(String accountId) async {
+    final data = await client.getAccountCollections(accountId);
+    return _collectionMapList(data).map(_collectionFromMap).toList();
+  }
+
+  @override
+  Future<List<Collection>> getInCollections(String accountId) async {
+    final data = await client.getInCollections(accountId);
+    return _collectionMapList(data).map(_collectionFromMap).toList();
+  }
+
+  @override
+  Future<CollectionDetail> getCollection(String id) async {
+    final data = await client.getCollection(id);
+    final collectionMap = data['collection'] as Map<String, dynamic>? ?? data;
+    final accountsRaw = data['accounts'];
+    final accounts = accountsRaw is List
+        ? accountsRaw
+              .whereType<Map<String, dynamic>>()
+              .map(
+                (a) => MastodonAccount.fromJson(
+                  a,
+                ).toCapsicum(host, adminRoleIds: _adminRoleIds),
+              )
+              .toList()
+        : <User>[];
+    return CollectionDetail(
+      collection: _collectionFromMap(collectionMap),
+      accounts: accounts,
+    );
+  }
+
+  @override
+  Future<Collection> createCollection({
+    required String name,
+    String? description,
+    String? tagName,
+    bool? discoverable,
+    bool? sensitive,
+    List<String> accountIds = const [],
+  }) async {
+    final body = <String, dynamic>{'name': name};
+    if (description != null) body['description'] = description;
+    if (tagName != null) body['tag_name'] = tagName;
+    if (discoverable != null) body['discoverable'] = discoverable;
+    if (sensitive != null) body['sensitive'] = sensitive;
+    if (accountIds.isNotEmpty) body['account_ids'] = accountIds;
+    final data = await client.createCollection(body);
+    return _collectionFromMap(_unwrapMap(data, 'collection'));
+  }
+
+  @override
+  Future<Collection> updateCollection(
+    String id, {
+    String? name,
+    String? description,
+    String? tagName,
+    bool? discoverable,
+    bool? sensitive,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (description != null) body['description'] = description;
+    if (tagName != null) body['tag_name'] = tagName;
+    if (discoverable != null) body['discoverable'] = discoverable;
+    if (sensitive != null) body['sensitive'] = sensitive;
+    final data = await client.updateCollection(id, body);
+    return _collectionFromMap(_unwrapMap(data, 'collection'));
+  }
+
+  @override
+  Future<void> deleteCollection(String id) => client.deleteCollection(id);
+
+  @override
+  Future<CollectionItem> addCollectionItem(
+    String collectionId,
+    String accountId,
+  ) async {
+    final data = await client.addCollectionItem(collectionId, accountId);
+    return _collectionItemFromMap(_unwrapMap(data, 'collection_item'));
+  }
+
+  @override
+  Future<void> removeCollectionItem(String collectionId, String itemId) =>
+      client.removeCollectionItem(collectionId, itemId);
+
+  @override
+  Future<void> revokeCollectionItem(String collectionId, String itemId) =>
+      client.revokeCollectionItem(collectionId, itemId);
 
   // ListSupport
 
@@ -1109,8 +1258,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String? avatarFilePath,
     String? bannerFilePath,
     List<UserField>? fields,
+    bool removeAvatar = false,
+    bool removeHeader = false,
   }) async {
-    final account = await client.updateCredentials(
+    var account = await client.updateCredentials(
       displayName: displayName,
       note: description,
       avatarPath: avatarFilePath,
@@ -1119,8 +1270,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
           ?.map((f) => {'name': f.name, 'value': f.value})
           .toList(),
     );
+    // 画像削除は update_credentials では表現できないため 4.6 の destroy
+    // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
+    if (removeAvatar) account = await client.deleteProfileAvatar();
+    if (removeHeader) account = await client.deleteProfileHeader();
     return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
+
+  @override
+  bool get supportsProfileImageRemoval => true;
 
   // ReportSupport
 

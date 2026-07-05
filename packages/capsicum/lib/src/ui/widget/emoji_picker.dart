@@ -567,6 +567,10 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
     final hasPalette = widget.adapter is ReactionSupport;
 
+    // Featured custom emojis (Mastodon 4.6 のカテゴリ代表絵文字、#735)。
+    // 各カテゴリの代表を先頭のセクションにまとめて素早く到達できるようにする。
+    final featured = emojis.where((e) => e.featured).toList();
+
     // Recent custom emojis.
     final recentCustom = ref
         .watch(recentEmojisProvider)
@@ -594,6 +598,20 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
                 return const SizedBox.shrink();
               }).toList(),
             ),
+          ),
+        ],
+        // Featured section (Mastodon 4.6 カテゴリ代表絵文字、#735)。
+        if (featured.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text(
+              'フィーチャー',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Wrap(children: featured.map(_buildCustomEmojiTile).toList()),
           ),
         ],
         // Palette section (imported from Web UI or empty).

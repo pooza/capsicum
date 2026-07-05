@@ -198,6 +198,24 @@ int main() {
     CheckErr(ok, err, "invalid envelope", "壊れたエンベロープ");
   }
 
+  // 8) aes128gcm 以外（レガシー aesgcm）→ unsupported encoding。#800: 復号前に
+  //    account を out へ載せ、失敗パスでも host を観測に出せることを確認する。
+  {
+    PushDisplay d;
+    std::string err;
+    bool ok = HandleWnsRawPayload(Envelope(kAccount, "aesgcm", kBody), dat, &d,
+                                  &err);
+    CheckErr(ok, err, "unsupported encoding", "レガシー aesgcm は unsupported");
+    if (d.account == kAccount) {
+      std::printf("  ok   - unsupported encoding でも account が観測に載る (#800)\n");
+    } else {
+      std::printf(
+          "  FAIL - unsupported encoding で account 未設定 (got=\"%s\")\n",
+          d.account.c_str());
+      ++g_failures;
+    }
+  }
+
   _wremove(dat.c_str());
 
   if (g_failures == 0) {
