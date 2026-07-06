@@ -93,6 +93,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     if (hasCustom) {
       _loadCustomEmojis();
     }
+    if (_hasWordSuggest) {
+      // 劇中ワード辞書を事前充填し、最初の読み検索で取得待ちが出ないようにする
+      // (#687)。best-effort。
+      widget.mulukhiya?.prewarmWordDictionary();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusActiveTabSearch();
     });
@@ -367,7 +372,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     final service = widget.mulukhiya;
     if (service == null) return;
     try {
-      final results = await service.suggestWords(q: query, limit: 30);
+      // 一括取得 + ローカル絞り込み (#687)。辞書が温まっていれば往復ゼロで即応する。
+      final results = await service.suggestWordsLocal(q: query, limit: 30);
       if (!mounted || generation != _wordGeneration) return;
       setState(() {
         _wordResults = results;
