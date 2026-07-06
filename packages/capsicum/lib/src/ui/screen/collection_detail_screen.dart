@@ -266,8 +266,10 @@ class _CollectionDetailScreenState
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      // 所有者はメンバー（自分以外）を削除できる。
-      trailing: (_isOwner && !isOwnerAccount)
+      // 所有者はメンバーを外せる。作成者が自分をメンバーに入れている場合
+      // （メンバー節に作成者本人が出る = showOwnerTag）も、その item を外せる
+      // ようにする（#808）。作成者節（先頭・showOwnerTag=false）の行には出さない。
+      trailing: (_isOwner && (!isOwnerAccount || showOwnerTag))
           ? IconButton(
               icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
               tooltip: '外す',
