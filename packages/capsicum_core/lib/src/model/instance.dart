@@ -59,6 +59,50 @@ class Instance {
     this.audioSizeLimit,
   });
 
+  /// 一部フィールドだけ差し替えた複製を返す。プロバイダ側で NodeInfo 由来の
+  /// [softwareName] を後付けするといった enrich 用途に使う。手写しの再構築だと
+  /// フィールド追加のたびにコピー漏れ（例: #815 の foundedAt が #816 の再構築で
+  /// 欠落した）が起きるため、複製はここに集約する。
+  Instance copyWith({
+    String? name,
+    String? softwareName,
+    String? description,
+    String? iconUrl,
+    String? version,
+    String? themeColor,
+    int? userCount,
+    int? postCount,
+    String? contactEmail,
+    User? contactAccount,
+    String? contactUrl,
+    List<String>? rules,
+    String? privacyPolicyUrl,
+    String? statusUrl,
+    DateTime? foundedAt,
+    int? imageSizeLimit,
+    int? videoSizeLimit,
+    int? audioSizeLimit,
+  }) => Instance(
+    name: name ?? this.name,
+    softwareName: softwareName ?? this.softwareName,
+    description: description ?? this.description,
+    iconUrl: iconUrl ?? this.iconUrl,
+    version: version ?? this.version,
+    themeColor: themeColor ?? this.themeColor,
+    userCount: userCount ?? this.userCount,
+    postCount: postCount ?? this.postCount,
+    contactEmail: contactEmail ?? this.contactEmail,
+    contactAccount: contactAccount ?? this.contactAccount,
+    contactUrl: contactUrl ?? this.contactUrl,
+    rules: rules ?? this.rules,
+    privacyPolicyUrl: privacyPolicyUrl ?? this.privacyPolicyUrl,
+    statusUrl: statusUrl ?? this.statusUrl,
+    foundedAt: foundedAt ?? this.foundedAt,
+    imageSizeLimit: imageSizeLimit ?? this.imageSizeLimit,
+    videoSizeLimit: videoSizeLimit ?? this.videoSizeLimit,
+    audioSizeLimit: audioSizeLimit ?? this.audioSizeLimit,
+  );
+
   /// 添付ファイル種別に対応する最大サイズ（bytes）。サーバーが上限を返さない
   /// 場合や、種別が判定できない場合は null。
   int? maxAttachmentSizeBytes(AttachmentType type) {
