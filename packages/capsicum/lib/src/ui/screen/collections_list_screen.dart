@@ -1,4 +1,5 @@
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -225,6 +226,17 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
       await _load();
       if (mounted) await context.push('/collection', extra: collection.id);
       if (mounted) _load();
+    } on DioException catch (e, st) {
+      reportOpFailure(
+        tagKey: 'collections.op',
+        operation: 'create',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(_createErrorMessage(e.response?.statusCode))),
+      );
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'collections.op',
@@ -235,6 +247,18 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
       );
       messenger.showSnackBar(const SnackBar(content: Text('作成に失敗しました')));
     }
+  }
+
+  /// 作成失敗の HTTP ステータスから理由の当たりを付けた文面にする（#806）。
+  /// _addMemberErrorMessage と同じく、定型文でなくステータス別に案内する。
+  String _createErrorMessage(int? status) {
+    if (status == 422) {
+      return 'コレクションを作成できませんでした（名前が不正、または上限に達しています）。';
+    }
+    if (status == 403) {
+      return 'コレクションを作成する権限がありません。';
+    }
+    return 'コレクションの作成に失敗しました（通信エラー）。';
   }
 }
 
@@ -318,7 +342,15 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('キャンセル'),
         ),
-        TextButton(onPressed: _submit, child: const Text('作成')),
+        // 名前が空のときは作成を無効化する（無言で閉じる silent no-op を避け、
+        // 押せない理由を可視化する。#806）。
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _nameController,
+          builder: (context, value, _) => TextButton(
+            onPressed: value.text.trim().isEmpty ? null : _submit,
+            child: const Text('作成'),
+          ),
+        ),
       ],
     );
   }

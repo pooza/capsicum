@@ -221,6 +221,29 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
 
       if (mounted) context.pop(updatedUser);
+    } on ProfileUpdatePartialException catch (e) {
+      // 本文（表示名・自己紹介・項目）は保存済みで、画像削除だけが失敗した
+      // 部分成功（#806）。全失敗表示にせず、保存済み分を反映しつつ実態に沿った
+      // 文面を出す。画像はサーバーに残っているので、再編集で削除を再試行できる。
+      ref.read(accountManagerProvider.notifier).updateCurrentUser(e.user);
+      reportOpFailure(
+        tagKey: 'profile.op',
+        operation: 'save_partial',
+        error: e.cause,
+        stackTrace: e.stackTrace,
+        account: account,
+      );
+      if (mounted) {
+        final what = e.avatarRemoveFailed && e.headerRemoveFailed
+            ? 'アイコンとヘッダーの削除'
+            : e.avatarRemoveFailed
+            ? 'アイコンの削除'
+            : 'ヘッダーの削除';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('プロフィールを更新しましたが、$whatに失敗しました。')),
+        );
+        context.pop(e.user);
+      }
     } catch (e, st) {
       // updateProfile (PATCH update_credentials / Misskey i/update) の失敗。
       // 「保存に失敗しました」だけだと 4.6 ステージング等での不安定を後追い

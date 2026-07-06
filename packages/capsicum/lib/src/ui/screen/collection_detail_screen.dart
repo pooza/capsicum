@@ -39,7 +39,9 @@ class _CollectionDetailScreenState
     _load();
   }
 
-  Future<void> _load() async {
+  /// 詳細を読み込む。成功したら true、失敗したら false を返す。
+  /// 追加/削除後のリロード結果を呼び出し側が判別できるようにする（#806）。
+  Future<bool> _load() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! CollectionsSupport) {
       // 対応しないサーバーではローディングを畳んで失敗表示に落とす
@@ -50,7 +52,7 @@ class _CollectionDetailScreenState
           _failed = true;
         });
       }
-      return;
+      return false;
     }
     try {
       final detail = await (adapter as CollectionsSupport).getCollection(
@@ -59,14 +61,16 @@ class _CollectionDetailScreenState
       final accounts = await ref
           .read(isCatEnricherProvider)
           .enrichUsers(detail.accounts);
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() {
         _detail = CollectionDetail(
           collection: detail.collection,
           accounts: accounts,
         );
         _loading = false;
+        _failed = false;
       });
+      return true;
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'collections.op',
@@ -78,9 +82,13 @@ class _CollectionDetailScreenState
       if (mounted) {
         setState(() {
           _loading = false;
-          _failed = true;
+          // 既に内容を表示できているときは、再読み込みの一時失敗で画面を
+          // 失敗表示に落とさない（追加は成功しているのに裏が失敗表示になる
+          // 食い違いを避ける。次のリフレッシュで自己回復する。#806）。
+          if (_detail == null) _failed = true;
         });
       }
+      return false;
     }
   }
 
@@ -669,8 +677,16 @@ class _CollectionDetailScreenState
         widget.collectionId,
         user.id,
       );
-      await _load();
-      return (ok: true, message: '@${user.username} を追加しました。');
+      // 追加は成功。直後のリロードが失敗しても操作自体は成功なので ok:true を
+      // 返しつつ、一覧反映が遅れる旨を添える（緑「追加しました」の裏で画面が
+      // 失敗表示になる食い違いは _load 側で解消済み。#806）。
+      final reloaded = await _load();
+      return (
+        ok: true,
+        message: reloaded
+            ? '@${user.username} を追加しました。'
+            : '@${user.username} を追加しました（一覧の反映は次の更新時）。',
+      );
     } on DioException catch (e) {
       // 403/422 は相手側設定に起因する想定内の失敗のため Sentry には流さない。
       return (ok: false, message: _addMemberErrorMessage(e));

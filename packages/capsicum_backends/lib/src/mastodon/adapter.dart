@@ -1310,9 +1310,39 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     // 画像削除は update_credentials では表現できないため 4.6 の destroy
     // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
-    if (removeAvatar) account = await client.deleteProfileAvatar();
-    if (removeHeader) account = await client.deleteProfileHeader();
-    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    // 本文更新は上で成功済みなので、削除ステップの失敗はまとめて捕捉し、
+    // 部分成功として呼び出し側に返す（全失敗表示にしない、#806）。
+    final failedSteps = <String>[];
+    Object? firstError;
+    StackTrace? firstStack;
+    if (removeAvatar) {
+      try {
+        account = await client.deleteProfileAvatar();
+      } catch (e, st) {
+        failedSteps.add('avatar_remove');
+        firstError ??= e;
+        firstStack ??= st;
+      }
+    }
+    if (removeHeader) {
+      try {
+        account = await client.deleteProfileHeader();
+      } catch (e, st) {
+        failedSteps.add('header_remove');
+        firstError ??= e;
+        firstStack ??= st;
+      }
+    }
+    final user = account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    if (failedSteps.isNotEmpty) {
+      throw ProfileUpdatePartialException(
+        user: user,
+        failedSteps: failedSteps,
+        cause: firstError!,
+        stackTrace: firstStack!,
+      );
+    }
+    return user;
   }
 
   @override
