@@ -68,12 +68,28 @@ class FlutterWindow : public Win32Window {
   // 'queryProducts' / 'purchase' / 'reportFulfillment' を呼ぶ。WinRT 呼び出しは
   // MTA ワーカーで回し、完了を WM_STORE_IAP_RESULT で UI スレッドへ marshal する。
   std::unique_ptr<flutter::MethodChannel<>> store_iap_channel_;
-  std::mutex store_mutex_;
-  int store_next_id_ = 0;
-  // ワーカー完了までペンディングする MethodResult と、ワーカーが書き込む結果値。
-  // id で対応づけ、UI スレッドの WM_STORE_IAP_RESULT ハンドラが取り出して返す。
-  std::map<int, std::shared_ptr<flutter::MethodResult<>>> store_pending_;
-  std::map<int, flutter::EncodableValue> store_outcomes_;
+
+  // Store IAP ワーカーの共有状態 (#795)。detached MTA ワーカーは購入ダイアログ
+  // (RequestPurchaseAsync) のユーザー操作待ちで数分ブロックしうるため、その間に
+  // メインウィンドウを閉じる (= Windows ではアプリ終了) と FlutterWindow が先に
+  // 破棄され、ワーカーが解放済みの mutex / map / stale HWND を触る UAF になる。
+  // これらを shared_ptr の状態ブロックに移し、ワーカーと UI スレッド (MessageHandler)
+  // の双方が所有することで FlutterWindow より長生きさせる。window_alive は
+  // OnDestroy で false にし、ワーカーは破棄後は結果を書かず PostMessage もしない。
+  struct StoreDispatchState {
+    std::mutex mutex;
+    int next_id = 0;
+    // ワーカー完了までペンディングする MethodResult と、ワーカーが書き込む結果値。
+    // id で対応づけ、UI スレッドの WM_STORE_IAP_RESULT ハンドラが取り出して返す。
+    std::map<int, std::shared_ptr<flutter::MethodResult<>>> pending;
+    std::map<int, flutter::EncodableValue> outcomes;
+    // ウィンドウ (と hwnd) が生存しているか。OnDestroy で false + hwnd=nullptr に
+    // する。false の間はワーカーは結果を捨て PostMessage しない (返す先が無い)。
+    bool window_alive = true;
+    HWND hwnd = nullptr;
+  };
+  std::shared_ptr<StoreDispatchState> store_state_ =
+      std::make_shared<StoreDispatchState>();
 
   // WinRT を叩く |work| を MTA ワーカーで実行し、結果を UI スレッド経由で
   // |result| へ返す。work が例外を投げた / null を返したら Error を返す。
