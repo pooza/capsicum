@@ -596,6 +596,42 @@ msstore CLI 経由の自動 publish は個人開発者アカウントから Entr
 
 OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534)) は Store 経由配布が唯一の公式ルートになったため不要（Store 経由は MS が再署名、自己署名直配は #760 で非公式化）。
 
+#### Windows 内部ベータ提出（他 OS の TestFlight / Play 内部トラック相当・[#797](https://github.com/pooza/capsicum/issues/797)）
+
+製品版を Store へ submit する前に、**release ビルドを実機で検証する経路**。iOS の TestFlight / Android の Play 内部トラックに対応する。v1.43 で投げ銭（[#599](https://github.com/pooza/capsicum/issues/599)）を release ビルド検証なしで製品版提出した反省（軽量な検証経路が未確立だった）から手順化した。検証内容に応じて 2 経路を使い分ける。
+
+**A. CI artifact sideload（軽量・既定）** — ほとんどの release ビルド検証はこれで足りる。
+
+CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の PR でも走り、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
+
+```powershell
+# develop の最新成功ビルドを取得してインストール（run 自動選択）
+pwsh packaging/windows/install-internal-beta.ps1
+# 特定の run を指定（artifact 保持は 14 日）
+pwsh packaging/windows/install-internal-beta.ps1 -Run <run-id>
+```
+
+- **カバー範囲**: push 通知 / OAuth / ストリーミング / メディア再生 / UI / SMTC など **投げ銭以外のほぼ全機能**。OS 連携系（[#382](https://github.com/pooza/capsicum/issues/382) / [#559](https://github.com/pooza/capsicum/issues/559) のような native 連携）もこの経路で先行検証できる。
+- **カバーしない**: **#599 投げ銭（Microsoft Store IAP）は動作しない**。自己署名 sideload 版はライセンスコンテキストが Store と異なり、`Windows.Services.Store` の購入は成立しない。IAP を触るリリースは経路 B を併用する。
+- ARM64 Windows でローカル x64 ビルドが通らない制約（ATL / jni / crashpad）とも独立して回せる（CI 産の x64 MSIX を落とすだけ）。手動の `gh run download` → ダブルクリック運用（従来）を script 化したもの。
+
+**B. MS Store package flight（IAP 検証が要るリリースのみ）** — Store-signed の実配布と同一バイナリで、実際の購入まで検証できる唯一の経路。
+
+Partner Center の **package flight** は、本番 submission と別に限定テスターへ Store 経由で配る仕組み（TestFlight のサンドボックス購入に相当）。#599 投げ銭のように **Store-install 版でしか挙動しない機能**を release ビルドで検証するときに使う。
+
+1. Partner Center → アプリ「capsicum」→ **Package flights** → 新規 flight を作成（テスターの MSA / AAD メールを flight group に登録）
+2. draft Release 添付（または `capsicum-msix` artifact）の `capsicum.msix` を flight の Packages に upload（本番 submission と同じ MSIX でよい）
+3. Submit for certification（本番より軽い審査）→ 通過後、テスターに配られる **flight 専用の Store リンク**からインストール
+4. Store-install 版として起動し、投げ銭の購入ダイアログ〜消費報告まで実機確認
+
+> Partner Center の UI 名称は変わりやすい。「Package flights」が見つからないときはアプリ概要から辿る。flight は本番審査より速いが、証明書認定は要るため経路 A より重い。
+
+**使い分けの原則**:
+
+- 既定は **A（sideload）**。毎リリース、製品版昇格（§4.3）の前に回す。
+- リリースに **#599 IAP を含む / Store-install 固有挙動を触る**場合は **B（flight）も**回してから submit する。
+- どちらも `Add-AppxPackage` は同一 identity（`9AFBB08E.capsicum`）を置き換えるため、**Store 版を常用している端末では検証後に Store 版へ戻す**（sideload 版をアンインストール → Store から再インストール、または flight リンクから本番版へ）ことに注意。
+
 #### MSIX
 
 タグ駆動 (`v*.*.*`) で `windows-release.yml` の `msix` ジョブが起動し:
@@ -664,6 +700,8 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 #### Microsoft Store 手動 publish の毎回手順（毎回・[#544](https://github.com/pooza/capsicum/issues/544)）
 
 タグ駆動ビルドで draft Release に添付された `capsicum.msix` を Partner Center Web UI から手動で submission する。初回審査は 2026-05-20 通過、以降は同じ流れで毎リリース回す。
+
+> 提出の前に §「Windows 内部ベータ提出」で release ビルドを実機検証してから publish すること（既定は sideload、#599 IAP を触るリリースは package flight も）。
 
 1. **Partner Center にログイン**: <https://partner.microsoft.com/dashboard> → アプリ「capsicum」(`identity_name=9AFBB08E.capsicum` / `publisher_display_name=小石達也`)
 2. **新規 Submission を開始**
