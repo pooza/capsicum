@@ -36,19 +36,24 @@ struct PushDisplay {
 //   - 暗号化通知でない（body / encoding!=aes128gcm。announcement 等は呼び出し側で
 //     別途処理する）
 //   - body の base64url が不正 / 鍵不在 / 復号失敗 / payload パース失敗
+// [push_labels_json] は LocalState の push_labels.json 内容（#770）。account 別の
+// reblog / post 表示ラベルを引くのに使い、空 / 該当なしのときは既定ラベル
+// （ブースト / 投稿）へフォールバックする。title 文言のみに影響し、鍵・復号には
+// 関与しない。
 bool HandleWnsRawPayload(const std::string& raw_payload,
                          const std::wstring& dat_file_path, PushDisplay* out,
-                         std::string* error = nullptr);
+                         std::string* error = nullptr,
+                         const std::string& push_labels_json = std::string());
 
 // [HandleWnsRawPayload] と同じだが、鍵を flutter_secure_storage.dat ではなく
 // 平文の鍵セット JSON マップ（ExtractPushKeysetMapJson 出力）から引く版
 // (#474 フェーズ C / Option A)。AppContainer のバックグラウンドタスクは
 // ローミング %APPDATA% の .dat を読めないため、LocalState に置いた鍵セット JSON
 // を読んでこちらに渡す。
-bool HandleWnsRawPayloadFromKeysetJson(const std::string& raw_payload,
-                                       const std::string& keyset_map_json,
-                                       PushDisplay* out,
-                                       std::string* error = nullptr);
+bool HandleWnsRawPayloadFromKeysetJson(
+    const std::string& raw_payload, const std::string& keyset_map_json,
+    PushDisplay* out, std::string* error = nullptr,
+    const std::string& push_labels_json = std::string());
 
 }  // namespace capsicum
 

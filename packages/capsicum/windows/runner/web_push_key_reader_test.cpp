@@ -237,6 +237,41 @@ int main() {
     Expect(!ok, "ファイル不在は false");
   }
 
+  // 7) push_labels.json からアカウント別 reblog/post ラベルを引く (#770)。
+  //    形式は鍵セットと同じ「値が JSON 文字列の入れ子」なので OuterJson で組める。
+  {
+    const std::string inner = "{" + JsonStr("reblog") + ":" + JsonStr("RB") +
+                              "," + JsonStr("post") + ":" + JsonStr("PO") + "}";
+    const std::string labels = OuterJson({{account, inner}});
+
+    std::string rb = "def_rb", po = "def_po";
+    capsicum::ReadPushLabelsFromJson(labels, account, &rb, &po);
+    Expect(rb == "RB" && po == "PO", "push_labels: 該当アカウントのラベルを反映");
+
+    std::string rb2 = "def_rb", po2 = "def_po";
+    capsicum::ReadPushLabelsFromJson(labels, "other@example.test", &rb2, &po2);
+    Expect(rb2 == "def_rb" && po2 == "def_po",
+           "push_labels: 該当なしは既定のまま");
+
+    std::string rb3 = "def_rb", po3 = "def_po";
+    capsicum::ReadPushLabelsFromJson("", account, &rb3, &po3);
+    Expect(rb3 == "def_rb" && po3 == "def_po", "push_labels: 空JSONは既定のまま");
+
+    std::string rb4 = "def_rb", po4 = "def_po";
+    capsicum::ReadPushLabelsFromJson("{broken", account, &rb4, &po4);
+    Expect(rb4 == "def_rb" && po4 == "def_po", "push_labels: 不正JSONは既定のまま");
+
+    // 片方だけ入っている / 空文字列は、その項目だけ既定のまま据え置く。
+    const std::string innerReblogOnly =
+        "{" + JsonStr("reblog") + ":" + JsonStr("ONLY") + "," +
+        JsonStr("post") + ":" + JsonStr("") + "}";
+    const std::string labels2 = OuterJson({{account, innerReblogOnly}});
+    std::string rb5 = "def_rb", po5 = "def_po";
+    capsicum::ReadPushLabelsFromJson(labels2, account, &rb5, &po5);
+    Expect(rb5 == "ONLY" && po5 == "def_po",
+           "push_labels: 欠け/空項目は既定のまま");
+  }
+
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;

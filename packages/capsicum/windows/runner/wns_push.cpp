@@ -56,6 +56,43 @@ std::wstring PushKeysJsonPath() {
   }
 }
 
+// LocalState の push_labels.json 絶対パス (#770)。LocalFolder 解決失敗時は空文字列。
+std::wstring PushLabelsJsonPath() {
+  try {
+    winrt::hstring folder =
+        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
+    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
+           capsicum::kLocalStatePushLabelsFile;
+  } catch (...) {
+    return std::wstring();
+  }
+}
+
+// push_labels.json 内容を読む（in-process 受信のラベル解決用、#770）。不在・空・
+// 失敗時は空文字列を返し、呼び出し側は既定ラベルにフォールバックする。
+std::string ReadPushLabelsJson() {
+  try {
+    const std::wstring path = PushLabelsJsonPath();
+    if (path.empty()) {
+      return std::string();
+    }
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f) {
+      return std::string();
+    }
+    std::streamoff size = f.tellg();
+    if (size <= 0) {
+      return std::string();
+    }
+    std::string out(static_cast<size_t>(size), '\0');
+    f.seekg(0);
+    f.read(out.data(), static_cast<std::streamsize>(size));
+    return out;
+  } catch (...) {
+    return std::string();
+  }
+}
+
 // アプリ完全終了中の WNS raw 受信用バックグラウンドタスクを 1 度だけ登録する
 // (#474 フェーズ C)。既存登録があればスキップ。MTA スレッドから呼ぶこと。
 void RegisterPushBackgroundTaskOnce() {
@@ -82,9 +119,12 @@ void RegisterPushBackgroundTaskOnce() {
 // 失敗）は黙って捨てる。title / body はサーバーが生成・ローカライズ済み。
 void DisplayRawNotification(const std::string& content) {
   capsicum::PushDisplay display;
+  // アカウント別 reblog/post ラベル（リノート / リキュア！等）を LocalState の
+  // push_labels.json から引く (#770)。無ければ既定（ブースト / 投稿）に倒れる。
+  const std::string labels = ReadPushLabelsJson();
   if (!capsicum::HandleWnsRawPayload(
-          content, capsicum::DefaultSecureStorageDatPath(), &display,
-          nullptr)) {
+          content, capsicum::DefaultSecureStorageDatPath(), &display, nullptr,
+          labels)) {
     return;
   }
   // tag に SNS 通知 ID を使い、#569 WebSocket 経路との将来 dedup / 差し替えに
@@ -130,6 +170,31 @@ void SyncWnsPushKeysToLocalState() {
     }
   } catch (...) {
     // 書き出し失敗は致命でない（in-process 受信は引き続き動く）。
+  }
+}
+
+void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
+  // push_keys とは別ファイルなので独立した mutex で書き込みを直列化する。
+  static std::mutex labels_mutex;
+  std::lock_guard<std::mutex> guard(labels_mutex);
+  try {
+    const std::wstring path = PushLabelsJsonPath();
+    if (path.empty()) {
+      return;  // LocalFolder 解決不可。次の機会に再同期される。
+    }
+    if (labels_json.empty()) {
+      // ログイン中アカウントが無い等。古いラベルを残さず削除する（読めなければ
+      // 既定ラベルにフォールバックするので安全側）。
+      _wremove(path.c_str());
+      return;
+    }
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f) {
+      f.write(labels_json.data(),
+              static_cast<std::streamsize>(labels_json.size()));
+    }
+  } catch (...) {
+    // 書き出し失敗は致命でない（既定ラベルで表示は続く）。
   }
 }
 

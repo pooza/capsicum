@@ -123,7 +123,8 @@ namespace {
 bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
                              const std::wstring* dat_file_path,
                              const std::string* keyset_map_json,
-                             PushDisplay* out, std::string* error) {
+                             PushDisplay* out, std::string* error,
+                             const std::string& push_labels_json) {
   auto fail = [&](const char* message) {
     if (error != nullptr) *error = message;
     return false;
@@ -193,7 +194,13 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
   // 表示 title を統一ラベルで解決する (#474 空タイトル修正)。Misskey は
   // payload に title を持たず（type だけ）、Mastodon もサーバー生成 title は
   // 表記揺れがあるため、type→ラベル変換を優先する。macOS NSE と同じ優先順位。
-  out->title = ResolveDisplayTitle(parsed.type, parsed.title);
+  // reblog / post はサーバー / アカウント別のカスタムラベル（リノート / リキュア！
+  // 等）を push_labels.json から引き、無ければ既定（ブースト / 投稿）に倒す (#770)。
+  std::string reblog_label = kDefaultReblogLabel;
+  std::string post_label = kDefaultPostLabel;
+  ReadPushLabelsFromJson(push_labels_json, account, &reblog_label, &post_label);
+  out->title =
+      ResolveDisplayTitle(parsed.type, parsed.title, reblog_label, post_label);
   out->body = parsed.body;
   out->type = parsed.type;
   out->notification_id = parsed.notification_id;
@@ -205,16 +212,18 @@ bool HandleWnsRawPayloadImpl(const std::string& raw_payload,
 
 bool HandleWnsRawPayload(const std::string& raw_payload,
                          const std::wstring& dat_file_path, PushDisplay* out,
-                         std::string* error) {
+                         std::string* error,
+                         const std::string& push_labels_json) {
   return HandleWnsRawPayloadImpl(raw_payload, &dat_file_path, nullptr, out,
-                                 error);
+                                 error, push_labels_json);
 }
 
 bool HandleWnsRawPayloadFromKeysetJson(const std::string& raw_payload,
                                        const std::string& keyset_map_json,
-                                       PushDisplay* out, std::string* error) {
+                                       PushDisplay* out, std::string* error,
+                                       const std::string& push_labels_json) {
   return HandleWnsRawPayloadImpl(raw_payload, nullptr, &keyset_map_json, out,
-                                 error);
+                                 error, push_labels_json);
 }
 
 }  // namespace capsicum

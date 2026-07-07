@@ -83,6 +83,17 @@ std::string ReadLocalStateKeysetJson() {
   }
 }
 
+// FullTrust 本体（Dart 由来）が書いた push_labels.json を読む (#770)。アカウント別
+// の reblog/post 表示ラベル。不在・失敗時は空文字列で、トースト側が既定ラベル
+// （ブースト / 投稿）にフォールバックする（ラベル欠落は表示を止めない）。
+std::string ReadLocalStateLabelsJson() {
+  try {
+    return ReadFileUtf8(LocalStateFilePath(capsicum::kLocalStatePushLabelsFile));
+  } catch (...) {
+    return std::string();
+  }
+}
+
 // UNIX エポックからのミリ秒。FILETIME（1601 起点・100ns 単位）から換算する。
 int64_t NowUnixMs() {
   FILETIME ft;
@@ -153,8 +164,11 @@ struct PushBackgroundTask
         } else {
           capsicum::PushDisplay display;
           std::string error;
-          if (capsicum::HandleWnsRawPayloadFromKeysetJson(content, keyset,
-                                                          &display, &error)) {
+          // アカウント別 reblog/post ラベルを LocalState から読む (#770)。無ければ
+          // 既定ラベルにフォールバックする（title 文言のみ・鍵/復号には無関係）。
+          const std::string labels = ReadLocalStateLabelsJson();
+          if (capsicum::HandleWnsRawPayloadFromKeysetJson(
+                  content, keyset, &display, &error, labels)) {
             // title / body はサーバー生成・ローカライズ済み。tag に SNS 通知 ID。
             capsicum::ShowRawToast(display.title, display.body,
                                    /*launch_arg=*/"", display.notification_id);

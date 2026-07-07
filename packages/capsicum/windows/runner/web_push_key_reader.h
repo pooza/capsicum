@@ -73,6 +73,18 @@ bool ReadPushKeysFromKeysetJson(const std::string& keyset_map_json,
                                 PushKeys* out,
                                 std::string* error = nullptr);
 
+// LocalState の push_labels.json（[kLocalStatePushLabelsFile]）内容から `account`
+// (`username@host`) の reblog / post 表示ラベルを引く (#770)。形式は
+//   { "user@host": "{\"reblog\":\"リキュア！\",\"post\":\"投稿\"}" }
+// （値は鍵セットと同じく JSON 文字列の入れ子）。**見つかった項目だけ** `*reblog` /
+// `*post` を上書きするので、呼び出し側は既定ラベル（ブースト/投稿）を入れてから
+// 呼ぶこと。JSON 空・パース不能・account 不在・項目欠落・空文字列のときは何もしない
+// （既定ラベルのまま）。鍵と違い失敗しても通知表示自体は続くので戻り値は持たない。
+void ReadPushLabelsFromJson(const std::string& labels_json,
+                            const std::string& account,
+                            std::string* reblog,
+                            std::string* post);
+
 // 既定の保存先 `%APPDATA%\{CompanyName}\{ProductName}\flutter_secure_storage.dat`
 // を返す（path_provider の Windows 実装と同じ解決規則。CompanyName /
 // ProductName は **実行中 exe** のバージョン情報から取る）。解決に失敗したときは

@@ -107,6 +107,20 @@ bool FlutterWindow::OnCreate() {
           // detached スレッドで実行し UI を塞がない。要求受理だけ即 ack する。
           std::thread([]() { SyncWnsPushKeysToLocalState(); }).detach();
           result->Success();
+        } else if (call.method_name() == "syncPushLabels") {
+          // Dart（全ログイン中アカウントの reblog/post ラベル）が用意した
+          // push_labels.json 内容を LocalState へ書く (#770)。bg task / in-process
+          // 受信がアカウント別のカスタムラベル（リノート / リキュア！等）を読む。
+          // ファイル I/O のため detached スレッドで実行し UI を塞がない。要求受理
+          // だけ即 ack する。空文字列（ログイン中アカウント無し）なら削除される。
+          std::string labels_json;
+          if (const auto* s = std::get_if<std::string>(call.arguments())) {
+            labels_json = *s;
+          }
+          std::thread([labels_json]() {
+            SyncWnsPushLabelsToLocalState(labels_json);
+          }).detach();
+          result->Success();
         } else if (call.method_name() == "consumePushDiagnostics") {
           // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測
           // レコードを 1 件読み出して返す（読んだら消す）。Dart 側が Sentry へ

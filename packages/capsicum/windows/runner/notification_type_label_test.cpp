@@ -93,6 +93,20 @@ int main() {
   CheckEq(ResolveDisplayTitle("", ""), kGeneric,
           "type も title も無し: 汎用 通知（空タイトルにしない）");
 
+  // 5) #770: サーバー / アカウント別のカスタム reblog/post ラベルを渡すと反映する
+  //    （リノート / リキュア！等）。文言は ASCII で passthrough だけ検証する。
+  CheckEq(ResolveDisplayTitle("reblog", "", "CUSTOM_RB", "CUSTOM_PO"),
+          "CUSTOM_RB", "reblog: カスタム reblog ラベルを反映");
+  CheckEq(ResolveDisplayTitle("renote", "", "CUSTOM_RB", "CUSTOM_PO"),
+          "CUSTOM_RB", "renote: カスタム reblog ラベルを反映");
+  CheckEq(ResolveDisplayTitle("reblog", ""), reblog,
+          "reblog: ラベル省略時は既定（ブースト）");
+  // post ラベルは update（「〜を編集」）で使う。suffix 込みで反映されること。
+  CheckEq(NotificationTypeDisplayLabel("update", "CUSTOM_RB", "CUSTOM_PO"),
+          "CUSTOM_PO" +
+              std::string("\xe3\x82\x92\xe7\xb7\xa8\xe9\x9b\x86"),  // を編集
+          "update: カスタム post ラベル + 「を編集」");
+
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;
