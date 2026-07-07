@@ -189,6 +189,27 @@ jobs:
           [System.IO.File]::WriteAllBytes($cerPath, $x509.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
           "CERT_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # MSIX パッケージバージョンを pubspec の version
+      # (<major>.<minor>.<patch>+<build>) から <major>.<minor>.<build>.0 へ自動
+      # 導出する (#798)。第4オクテット (Revision) は Store 予約で 0 固定・build を
+      # 第3オクテット (Build) に載せてビルドごとに一意化する (build は全体で単調
+      # 増加のため minor 跨ぎでも単調)。導出値を --version で msix:build /
+      # msix:pack に渡す (configuration.dart:87 のとおり --version は pubspec の
+      # msix_config.msix_version より優先)。これで毎リリース手動で msix_version を
+      # 上げ忘れ、Store フルネーム (9AFBB08E.capsicum_X.Y.Z.0) 重複で製品版提出が
+      # 弾かれる footgun を根絶する (v1.43.0 で実際に発生)。
+      - name: Derive MSIX version from pubspec build number
+        shell: pwsh
+        run: |
+          $pubspec = Get-Content packages/capsicum/pubspec.yaml -Raw
+          if ($pubspec -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)') {
+            Write-Host "::error::Could not parse 'version: <major>.<minor>.<patch>+<build>' from packages/capsicum/pubspec.yaml"
+            exit 1
+          }
+          $msixVersion = "$($Matches[1]).$($Matches[2]).$($Matches[4]).0"
+          Write-Host "Derived MSIX version: $msixVersion (pubspec version: $($Matches[1]).$($Matches[2]).$($Matches[3])+$($Matches[4]))"
+          "MSIX_VERSION=$msixVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       # MSIX 生成は build → patch → pack の 3 段に分ける (#474 フェーズ C)。
       # msix package (3.17.0) は windows.backgroundTasks /
       # activatableClass.inProcessServer 拡張を msix_config から宣言できないため、
@@ -204,12 +225,16 @@ jobs:
       # - --certificate-path 指定で pubspec.yaml の `store: true` より署名フローが
       #   優先される。manifest の Publisher も cert 主体から解決されるため build
       #   段にも渡す。Microsoft Store 公開 (#544) 再開時は別途 `--store` を組む。
+      # - --version で前段導出の MSIX_VERSION を渡す (#798)。Identity Version は
+      #   build 段が AppxManifest.xml に書くため build に必須。pack にも同値を渡し
+      #   config を一貫させる。
       - name: Build MSIX files (unpacked)
         shell: pwsh
         run: |
           Push-Location packages/capsicum
           dart run msix:build `
             --build-windows false `
+            --version "$env:MSIX_VERSION" `
             --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
             --certificate-password "$env:CERT_PASSWORD"
           Pop-Location
@@ -234,6 +259,7 @@ jobs:
           Push-Location packages/capsicum
           dart run msix:pack `
             --build-windows false `
+            --version "$env:MSIX_VERSION" `
             --certificate-path "${{ runner.temp }}\capsicum-signing.pfx" `
             --certificate-password "$env:CERT_PASSWORD"
           Pop-Location

@@ -250,12 +250,13 @@ v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart fo
 # 注意: ビルド番号（+N）は一度ストアにアップロードすると、リリースを破棄しても再利用不可。
 # 上げ直す場合は必ずビルド番号をインクリメントすること。
 
-# ⚠️ Windows: pubspec.yaml の `msix_config.msix_version` も一緒に上げること。
-# スキームは <major>.<minor>.<新しいビルド番号>.0（例 1.43.0+147 → 1.43.147.0）。
-# MSIX は第4オクテット（Revision）が Store 予約で 0 固定のため、ビルド番号は
-# 第3オクテットに載せて一意化する。放置すると 1.43.0.0 のまま固定になり、
-# 開発中の Store フライトが同じ full name を消費していると製品版提出が
-# 「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれる（v1.43.0 で実踏）。
+# Windows の MSIX パッケージバージョンは手動更新不要（#798）。windows-release.yml が
+# pubspec の version(+build) から <major>.<minor>.<build>.0 を導出し --version で
+# msix:build / msix:pack に渡す（pubspec の msix_config.msix_version は未指定）。
+# 第4オクテット（Revision）は Store 予約で 0 固定、ビルド番号を第3オクテットに載せて
+# full name を一意化する。この自動化以前は msix_version を手動で上げる運用で、上げ忘れると
+# 1.43.0.0 のまま固定され、開発中の Store フライトが同じ full name を消費していると
+# 製品版提出が「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれた（v1.43.0 で実踏）。
 
 # 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
 cd packages/capsicum
