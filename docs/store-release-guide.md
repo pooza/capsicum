@@ -625,11 +625,13 @@ Partner Center の **package flight** は、本番 submission と別に限定テ
 4. Store-install 版として起動し、投げ銭の購入ダイアログ〜消費報告まで実機確認
 
 > Partner Center の UI 名称は変わりやすい。「Package flights」が見つからないときはアプリ概要から辿る。flight は本番審査より速いが、証明書認定は要るため経路 A より重い。
+>
+> ⚠️ **flight は「捨てアカウント」で受けること（2026-07-07 に実害）。** package flight の**テスターグループに登録した Microsoft アカウントは製品版（本番リング）を受け取れない**。flight package が本番より古いと、本番が新しくなってもそのアカウントは古い版に固着する。厄介なのは **submission を削除しても戻らない**点で、真の blocker は**テスターグループのメンバー登録**。wsreset / Store 再サインイン / アンインストール→再インストールのどれでも剥がれない（client 側では直せない）。v1.43 の投げ銭検証で日常アカウントをフライトに入れた結果、v1.44 公開後もそのアカウントが 1.43 に固着した（一般ユーザーは無風＝おま環）。**復旧は self-service**：Partner Center でそのアカウントを**フライトのテスターグループから外す**と製品版が installable になる（MS サポート不要。過度に恐れる必要はないが、submission 削除だけでは戻らない=使い勝手が悪い）。原則 **日常使いの Microsoft アカウントをフライトに入れない**。
 
 **使い分けの原則**:
 
 - 既定は **A（sideload）**。毎リリース、製品版昇格（§4.3）の前に回す。
-- リリースに **#599 IAP を含む / Store-install 固有挙動を触る**場合は **B（flight）も**回してから submit する。
+- リリースに **#599 IAP を含む / Store-install 固有挙動を触る**場合は **B（flight）も**回してから submit する。**ただし flight は日常アカウントでなく捨てアカウントで受ける**（上記の固着を避けるため）。IAP の実購入検証がどうしても要るときだけ B を使い、それ以外は A で十分。
 - どちらも `Add-AppxPackage` は同一 identity（`9AFBB08E.capsicum`）を置き換えるため、**Store 版を常用している端末では検証後に Store 版へ戻す**（sideload 版をアンインストール → Store から再インストール、または flight リンクから本番版へ）ことに注意。
 
 #### MSIX
