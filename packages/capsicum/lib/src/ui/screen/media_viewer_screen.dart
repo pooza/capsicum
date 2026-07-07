@@ -393,9 +393,10 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                     size: 64,
                   ),
                 );
-                // デスクトップ (macOS / Windows) では画像を OS ファイラーへ
-                // drag-out できる (#645)。virtual file 対応 OS のみ・画像のみ
-                // (動画/音声は player の操作と gesture が競合するため対象外)。
+                // デスクトップ (macOS / Windows / Linux) では画像を OS ファイラーへ
+                // drag-out できる (#645 / #776)。画像のみ (動画/音声は player の
+                // 操作と gesture が競合するため対象外)。macOS / Windows は virtual
+                // file、Linux は temp 実ファイル経路（_DragOutImage 内で分岐）。
                 final draggable =
                     supportsMediaDragOut && _dragOutFileFormat(a) != null
                     ? _DragOutImage(
@@ -452,20 +453,30 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   }
 }
 
-/// 画像を OS ファイラー（Finder / Explorer）へ drag-out する wrapper (#645)。
-/// super_drag_and_drop の virtual file（遅延ファイル生成）で、ネットワーク画像を
-/// OS がファイルとして受け取れるようにする。macOS / Windows のみ
-/// （[supportsMediaDragOut]）。画像用途に限定し、動画/音声は player の操作 gesture
-/// と競合するため対象外。
+/// drag-out の Linux 用 temp 実ファイルを置く一意な副ディレクトリ名の連番
+/// (#776)。同一添付を続けてドラッグしても衝突せず、掃除時に別ドラッグの
+/// ファイルを取り違えて消さないため、毎回インクリメントして使う。
+int _dragOutTempSeq = 0;
+
+/// 画像を OS ファイラー（Finder / Explorer / Nautilus）へ drag-out する wrapper
+/// (#645 / #776)。ネットワーク画像を OS がファイルとして受け取れるようにする。
+/// デスクトップ 3 OS が対象（[supportsMediaDragOut]）で、渡し方を OS 能力で分岐:
 ///
-/// ダウンロードは drop 時に呼ばれる virtual file provider 内で行い、
-/// [dragItemProvider] は同期で DragItem を返す（await しない）。Windows の OLE
-/// ドラッグ（DoDragDrop）はジェスチャー内で同期的に開始する必要があり、開始前に
-/// await（ネットワーク取得）が挟まるとドラッグが起動したりしなかったりするため
-/// （drag-out が間欠的に不成立）。virtual file provider は「DL 等で時間がかかる
-/// on-demand 生成」を想定した API なので、取得はここに置くのが本来の設計
-/// （README / addVirtualFile の doc 参照）。取得失敗時は addError で空ファイルを
-/// 残さず中断する。
+/// - **macOS / Windows**（[DragItem.virtualFileSupported] が true）: virtual file
+///   （遅延ファイル生成）。ダウンロードは drop 時に呼ばれる virtual file provider
+///   内で行い、[dragItemProvider] は同期で DragItem を返す（await しない）。
+///   Windows の OLE ドラッグ（DoDragDrop）はジェスチャー内で同期的に開始する
+///   必要があり、開始前に await（ネットワーク取得）が挟まるとドラッグが起動したり
+///   しなかったりするため（drag-out が間欠的に不成立）。virtual file provider は
+///   「DL 等で時間がかかる on-demand 生成」を想定した API なので、取得はここに
+///   置くのが本来の設計（README / addVirtualFile の doc 参照）。取得失敗時は
+///   addError で空ファイルを残さず中断する。
+/// - **Linux (GTK)**: virtual file 非対応のため、ドラッグ開始時に temp へ実ファイル
+///   を書き出し、その file URI（`text/uri-list`）を渡す（#776）。[DragItemProvider]
+///   は `FutureOr` を許すので、この経路だけ provider が Future を返す（GTK は OLE の
+///   ような同期開始制約が無い）。取得失敗時は item を返さずドラッグを不成立にする。
+///
+/// 画像用途に限定し、動画/音声は player の操作 gesture と競合するため対象外。
 class _DragOutImage extends StatelessWidget {
   final Attachment attachment;
   final Future<List<int>> Function(String url) download;
@@ -491,34 +502,68 @@ class _DragOutImage extends StatelessWidget {
           suggestedName: suggestedMediaFileName(attachment),
           localData: attachment.id,
         );
-        if (!item.virtualFileSupported) return null;
-        item.addVirtualFile(
-          format: format,
-          // drop 時に遅延ダウンロード。ドラッグ開始時に await しないことが要点
-          // （Windows のドラッグ起動を阻害しない）。sinkProvider は取得完了後に
-          // ファイルサイズ確定で呼ぶ。
-          provider: (sinkProvider, progress) {
-            unawaited(() async {
-              try {
-                final bytes = await download(attachment.url);
-                final sink = sinkProvider(fileSize: bytes.length);
-                sink.add(Uint8List.fromList(bytes));
-                sink.close();
-              } catch (e, st) {
-                // #645 は新機能のため初期は計装し、drag-out 固有の失敗率を
-                // host/backend tag 付きで観測する（save 系 #648 と同じ方針）。
-                onDownloadError(e, st);
-                // 取得失敗時は壊れた / 空ファイルを OS へ残さず中断する。
-                final sink = sinkProvider(fileSize: 0);
-                sink.addError(e);
-              }
-            }());
-          },
-        );
-        return item;
+        if (item.virtualFileSupported) {
+          item.addVirtualFile(
+            format: format,
+            // drop 時に遅延ダウンロード。ドラッグ開始時に await しないことが要点
+            // （Windows のドラッグ起動を阻害しない）。sinkProvider は取得完了後に
+            // ファイルサイズ確定で呼ぶ。
+            provider: (sinkProvider, progress) {
+              unawaited(() async {
+                try {
+                  final bytes = await download(attachment.url);
+                  final sink = sinkProvider(fileSize: bytes.length);
+                  sink.add(Uint8List.fromList(bytes));
+                  sink.close();
+                } catch (e, st) {
+                  // #645 は新機能のため初期は計装し、drag-out 固有の失敗率を
+                  // host/backend tag 付きで観測する（save 系 #648 と同じ方針）。
+                  onDownloadError(e, st);
+                  // 取得失敗時は壊れた / 空ファイルを OS へ残さず中断する。
+                  final sink = sinkProvider(fileSize: 0);
+                  sink.addError(e);
+                }
+              }());
+            },
+          );
+          return item;
+        }
+        // Linux (GTK): virtual file 非対応。実ファイルを書き出してから返す（async）。
+        return _provideLinuxFileItem(item);
       },
       child: DraggableWidget(child: child),
     );
+  }
+
+  /// Linux 用: 添付を temp へ実ファイルとして書き出し、その file URI を [item] に
+  /// 積んで返す (#776)。DL / 書き込み失敗時は計装して null を返し（ドラッグ不成立）、
+  /// 空 / 壊れたファイルを OS へ残さない。書き出したファイルは OS がドロップを
+  /// 処理し終えた（[DataWriterItem.onDisposed]）時点で best-effort で掃除する。
+  Future<DragItem?> _provideLinuxFileItem(DragItem item) async {
+    Directory? dir;
+    try {
+      final bytes = await download(attachment.url);
+      final tempDir = await getTemporaryDirectory();
+      dir = Directory(
+        '${tempDir.path}/capsicum_dragout/${_dragOutTempSeq++}',
+      );
+      await dir.create(recursive: true);
+      final file = File('${dir.path}/${suggestedMediaFileName(attachment)}');
+      await file.writeAsBytes(bytes);
+      item.add(Formats.fileUri(Uri.file(file.path)));
+      final createdDir = dir;
+      item.onDisposed.addListener(() {
+        // ドロップ完了後に temp を掃除（失敗しても OS が回収する領域）。
+        createdDir.delete(recursive: true).ignore();
+      });
+      return item;
+    } catch (e, st) {
+      // #776 も新機能のため計装（macOS/Windows の #645 と同じ media.op tag）。
+      onDownloadError(e, st);
+      // 途中まで作った temp は残さない。
+      dir?.delete(recursive: true).ignore();
+      return null;
+    }
   }
 }
 

@@ -18,13 +18,16 @@ bool get isDesktop =>
 String get residentTargetLabel =>
     !kIsWeb && Platform.isMacOS ? 'メニューバー' : 'トレイ';
 
-/// メディアビューアから OS ファイラー（Finder / Explorer）への drag-out
-/// （#645）に対応するプラットフォームか。super_drag_and_drop の virtual file
-/// （遅延ファイル生成）は macOS / Windows のみ対応で、Linux (GTK) は drag-source
-/// として非対応のため除外する（Linux は別 issue）。UI 層に `Platform.isX` を
-/// 直書きしない設計指針に従い機能名で公開する。
+/// メディアビューアから OS ファイラー（Finder / Explorer / Nautilus）への
+/// drag-out（#645 / #776）に対応するプラットフォームか。デスクトップ 3 OS で
+/// 対応する。ただし渡し方は OS で分かれる: macOS / Windows は
+/// super_drag_and_drop の virtual file（遅延ファイル生成）、Linux (GTK) は
+/// virtual file 非対応のため drag 開始時に temp へ実ファイルを書き出して file
+/// URI を渡す（#776）。この差は package の `DragItem.virtualFileSupported`
+/// capability で分岐し、UI 層に `Platform.isX` は直書きしない。
 bool get supportsMediaDragOut =>
-    !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+    !kIsWeb &&
+    (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
 /// OAuth の redirect を localhost ループバックで受けるプラットフォームか
 /// (#276 / #654)。デスクトップ 3 OS と Android は、ブラウザ / Custom Tab が
