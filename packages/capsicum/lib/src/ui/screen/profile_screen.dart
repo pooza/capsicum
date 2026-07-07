@@ -451,9 +451,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       var fullUser = await adapter.getUserById(widget.user.id);
       fullUser = await ref.read(isCatEnricherProvider).enrichUser(fullUser);
       if (mounted) {
+        final excludeRepliesBefore = _excludeMediaReplies;
         setState(() => _user = fullUser);
         // 完全な user 取得で show_media が判明しタブ集合が変わることがある（#732）。
         _syncTabController();
+        // メディアタブを先に開いた後で Mastodon 4.6 の show_media_replies=false が
+        // 判明した場合、返信添付を含んだ初回結果を破棄して読み直す（#809 race）。
+        if (_mediaTabLoaded && _excludeMediaReplies != excludeRepliesBefore) {
+          _mediaTabLoaded = false;
+          setState(() {
+            _mediaPosts = [];
+            _loadingMediaPosts = true;
+          });
+          _loadMediaPosts();
+        }
       }
     } catch (_) {
       // Keep the original user data if full fetch fails.
