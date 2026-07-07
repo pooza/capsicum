@@ -51,8 +51,14 @@ void main() {
     });
 
     test('桁数違いは欠けた桁を 0 とみなす', () {
-      expect(ServerVersionChecker.isBehind('4.6', '4.6.3'), isTrue); // 4.6.0<4.6.3
-      expect(ServerVersionChecker.isBehind('4.6.3', '4.6'), isFalse); // 4.6.3>4.6.0
+      expect(
+        ServerVersionChecker.isBehind('4.6', '4.6.3'),
+        isTrue,
+      ); // 4.6.0<4.6.3
+      expect(
+        ServerVersionChecker.isBehind('4.6.3', '4.6'),
+        isFalse,
+      ); // 4.6.3>4.6.0
     });
   });
 }

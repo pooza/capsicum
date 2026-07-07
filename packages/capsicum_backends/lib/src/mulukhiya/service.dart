@@ -219,10 +219,16 @@ List<WordSuggestion> filterWordSuggestions(
 
 /// 候補マッチの優先度（小さいほど上位）。マッチしなければ null。
 /// サーバー `match_rank` と同一: 読み前方一致 0 / 表層前方一致 1 / 読み部分一致 2。
-int? _wordMatchRank(WordSuggestion entry, String readingQuery, String surfaceQuery) {
+int? _wordMatchRank(
+  WordSuggestion entry,
+  String readingQuery,
+  String surfaceQuery,
+) {
   final reading = entry.reading;
   if (reading.startsWith(readingQuery)) return 0;
-  if (surfaceQuery.isNotEmpty && entry.surface.startsWith(surfaceQuery)) return 1;
+  if (surfaceQuery.isNotEmpty && entry.surface.startsWith(surfaceQuery)) {
+    return 1;
+  }
   if (reading.contains(readingQuery)) return 2;
   return null;
 }
@@ -931,8 +937,7 @@ class MulukhiyaService {
 
   bool get _wordDictionaryStale {
     final at = _wordDictionaryFetchedAt;
-    return at == null ||
-        DateTime.now().difference(at) >= _wordDictionaryTtl;
+    return at == null || DateTime.now().difference(at) >= _wordDictionaryTtl;
   }
 
   /// 辞書キャッシュが空 / 失効していれば `/word/all` で取得・再検証する。

@@ -408,9 +408,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<Instance> getInstance() async {
     final foundedAt = await _fetchFoundedAt();
     try {
-      return _parseInstanceV2(await client.getInstanceV2(), foundedAt: foundedAt);
+      return _parseInstanceV2(
+        await client.getInstanceV2(),
+        foundedAt: foundedAt,
+      );
     } on DioException {
-      return _parseInstanceV1(await client.getInstanceV1(), foundedAt: foundedAt);
+      return _parseInstanceV1(
+        await client.getInstanceV1(),
+        foundedAt: foundedAt,
+      );
     }
   }
 
@@ -961,7 +967,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) async {
     final page = await client.getAccountCollections(accountId, offset: offset);
     return (
-      collections: _collectionMapList(page.data).map(_collectionFromMap).toList(),
+      collections: _collectionMapList(
+        page.data,
+      ).map(_collectionFromMap).toList(),
       nextOffset: page.nextOffset,
     );
   }
@@ -973,7 +981,9 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) async {
     final page = await client.getInCollections(accountId, offset: offset);
     return (
-      collections: _collectionMapList(page.data).map(_collectionFromMap).toList(),
+      collections: _collectionMapList(
+        page.data,
+      ).map(_collectionFromMap).toList(),
       nextOffset: page.nextOffset,
     );
   }

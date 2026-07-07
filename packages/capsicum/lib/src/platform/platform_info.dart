@@ -26,8 +26,7 @@ String get residentTargetLabel =>
 /// URI を渡す（#776）。この差は package の `DragItem.virtualFileSupported`
 /// capability で分岐し、UI 層に `Platform.isX` は直書きしない。
 bool get supportsMediaDragOut =>
-    !kIsWeb &&
-    (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
 /// OAuth の redirect を localhost ループバックで受けるプラットフォームか
 /// (#276 / #654)。デスクトップ 3 OS と Android は、ブラウザ / Custom Tab が

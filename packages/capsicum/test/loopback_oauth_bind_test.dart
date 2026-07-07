@@ -32,7 +32,11 @@ void main() {
           sleep: (_) async => sleeps++,
         ),
         throwsA(
-          isA<LoopbackPortOccupiedException>().having((e) => e.port, 'port', port),
+          isA<LoopbackPortOccupiedException>().having(
+            (e) => e.port,
+            'port',
+            port,
+          ),
         ),
       );
       // 3 回試行 = 試行間の sleep は 2 回。

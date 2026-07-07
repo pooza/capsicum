@@ -68,13 +68,14 @@ class MisskeyClient {
   }
 
   /// POST /api/users — 最古のローカルユーザーの `createdAt` を返す（設立日の
-  /// 近似、#804 サーバー情報）。公開 API。`sort=+createdAt` で古い順・先頭 1 件。
-  /// 取得できなければ null。
+  /// 近似、#804 サーバー情報）。公開 API。Misskey は `sort=-createdAt` が
+  /// `user.id ASC`（＝古い順）なので、先頭 1 件で最古ユーザーを引く
+  /// （`+createdAt` は `user.id DESC`＝新しい順で誤り）。取得できなければ null。
   Future<DateTime?> getOldestLocalUserCreatedAt() async {
     final response = await dio.post(
       '/api/users',
       data: createBody({
-        'sort': '+createdAt',
+        'sort': '-createdAt',
         'state': 'all',
         'origin': 'local',
         'limit': 1,

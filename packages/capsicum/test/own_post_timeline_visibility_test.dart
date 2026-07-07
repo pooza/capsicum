@@ -24,7 +24,10 @@ void main() {
     for (final type in [TimelineType.home, TimelineType.social]) {
       test('$type: public / unlisted / followersOnly は載る', () {
         expect(ownPostAppearsInTimeline(type, post(PostScope.public)), isTrue);
-        expect(ownPostAppearsInTimeline(type, post(PostScope.unlisted)), isTrue);
+        expect(
+          ownPostAppearsInTimeline(type, post(PostScope.unlisted)),
+          isTrue,
+        );
         expect(
           ownPostAppearsInTimeline(type, post(PostScope.followersOnly)),
           isTrue,
@@ -37,7 +40,10 @@ void main() {
 
       test('$type: localOnly でも公開範囲が通れば載る', () {
         expect(
-          ownPostAppearsInTimeline(type, post(PostScope.public, localOnly: true)),
+          ownPostAppearsInTimeline(
+            type,
+            post(PostScope.public, localOnly: true),
+          ),
           isTrue,
         );
       });
@@ -84,7 +90,10 @@ void main() {
   group('ownPostAppearsInTimeline — federated は public かつ非 localOnly のみ', () {
     test('public は載る', () {
       expect(
-        ownPostAppearsInTimeline(TimelineType.federated, post(PostScope.public)),
+        ownPostAppearsInTimeline(
+          TimelineType.federated,
+          post(PostScope.public),
+        ),
         isTrue,
       );
     });
@@ -115,7 +124,10 @@ void main() {
         isFalse,
       );
       expect(
-        ownPostAppearsInTimeline(TimelineType.federated, post(PostScope.direct)),
+        ownPostAppearsInTimeline(
+          TimelineType.federated,
+          post(PostScope.direct),
+        ),
         isFalse,
       );
     });

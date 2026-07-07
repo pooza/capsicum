@@ -61,8 +61,10 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     }
   }
 
-  Future<CollectionPage> _fetchPage(CollectionsSupport support, {int? offset}) =>
-      widget.inCollections
+  Future<CollectionPage> _fetchPage(
+    CollectionsSupport support, {
+    int? offset,
+  }) => widget.inCollections
       ? support.getInCollections(widget.accountId, offset: offset)
       : support.getAccountCollections(widget.accountId, offset: offset);
 

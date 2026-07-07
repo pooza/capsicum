@@ -986,7 +986,6 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
   }
 
-
   /// Remove all posts by a user (e.g. after block/mute).
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;

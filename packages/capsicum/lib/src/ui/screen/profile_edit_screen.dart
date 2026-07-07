@@ -239,9 +239,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             : e.avatarRemoveFailed
             ? 'アイコンの削除'
             : 'ヘッダーの削除';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('プロフィールを更新しましたが、$whatに失敗しました。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('プロフィールを更新しましたが、$whatに失敗しました。')));
         context.pop(e.user);
       }
     } catch (e, st) {
