@@ -458,6 +458,9 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 /// ファイルを取り違えて消さないため、毎回インクリメントして使う。
 int _dragOutTempSeq = 0;
 
+/// Linux drag-out の temp 実ファイルを置くベースディレクトリ名 (#776)。
+const _dragOutTempDirName = 'capsicum_dragout';
+
 /// 画像を OS ファイラー（Finder / Explorer / Nautilus）へ drag-out する wrapper
 /// (#645 / #776)。ネットワーク画像を OS がファイルとして受け取れるようにする。
 /// デスクトップ 3 OS が対象（[supportsMediaDragOut]）で、渡し方を OS 能力で分岐:
@@ -475,6 +478,10 @@ int _dragOutTempSeq = 0;
 ///   を書き出し、その file URI（`text/uri-list`）を渡す（#776）。[DragItemProvider]
 ///   は `FutureOr` を許すので、この経路だけ provider が Future を返す（GTK は OLE の
 ///   ような同期開始制約が無い）。取得失敗時は item を返さずドラッグを不成立にする。
+///   temp の掃除は **ドロップ完了時に即消さず**、次のドラッグ開始時に前回分を消す
+///   遅延方式にする。file URI 方式では受け側（特に pcmanfm-qt 等の Qt ファイラ）が
+///   XdndFinished を返した後に実ファイルをコピーする実装があり、`onDisposed` で
+///   即削除するとコピー前に消えてドロップが不成立になるため（#776）。
 ///
 /// 画像用途に限定し、動画/音声は player の操作 gesture と競合するため対象外。
 class _DragOutImage extends StatelessWidget {
@@ -537,25 +544,34 @@ class _DragOutImage extends StatelessWidget {
 
   /// Linux 用: 添付を temp へ実ファイルとして書き出し、その file URI を [item] に
   /// 積んで返す (#776)。DL / 書き込み失敗時は計装して null を返し（ドラッグ不成立）、
-  /// 空 / 壊れたファイルを OS へ残さない。書き出したファイルは OS がドロップを
-  /// 処理し終えた（[DataWriterItem.onDisposed]）時点で best-effort で掃除する。
+  /// 空 / 壊れたファイルを OS へ残さない。
+  ///
+  /// 掃除は遅延方式: **今回のファイルは残し、次回ドラッグ開始時に前回までの temp を
+  /// 消す**。ドロップ完了（onDisposed）で即消すと、file URI を受け取った側が
+  /// XdndFinished 後にコピーする実装（pcmanfm-qt 等の Qt ファイラ）でコピー前に
+  /// ファイルが消えてドロップが不成立になるため。残るのは高々「最後にドラッグした
+  /// 1 ファイル」で、次のドラッグ or OS の /tmp 回収で消える。
   Future<DragItem?> _provideLinuxFileItem(DragItem item) async {
     Directory? dir;
     try {
       final bytes = await download(attachment.url);
       final tempDir = await getTemporaryDirectory();
-      dir = Directory(
-        '${tempDir.path}/capsicum_dragout/${_dragOutTempSeq++}',
-      );
+      final baseDir = Directory('${tempDir.path}/$_dragOutTempDirName');
+      // 前回までの drag-out temp を先に掃除する（今回作る副ディレクトリより前の分）。
+      if (baseDir.existsSync()) {
+        for (final entry in baseDir.listSync()) {
+          try {
+            entry.deleteSync(recursive: true);
+          } catch (_) {
+            // 使用中 / 権限等で消せなくても致命的でない（/tmp は OS が回収する）。
+          }
+        }
+      }
+      dir = Directory('${baseDir.path}/${_dragOutTempSeq++}');
       await dir.create(recursive: true);
       final file = File('${dir.path}/${suggestedMediaFileName(attachment)}');
       await file.writeAsBytes(bytes);
       item.add(Formats.fileUri(Uri.file(file.path)));
-      final createdDir = dir;
-      item.onDisposed.addListener(() {
-        // ドロップ完了後に temp を掃除（失敗しても OS が回収する領域）。
-        createdDir.delete(recursive: true).ignore();
-      });
       return item;
     } catch (e, st) {
       // #776 も新機能のため計装（macOS/Windows の #645 と同じ media.op tag）。
