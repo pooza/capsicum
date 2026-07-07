@@ -36,6 +36,15 @@ void RunWnsChannelReceiver(
 // push_keys.json を削除する。書き込みは内部 mutex で直列化されスレッドセーフ。
 void SyncWnsPushKeysToLocalState();
 
+// Dart（[NotificationLabelCache] 相当の全アカウントのラベル）が用意した
+// push_labels.json 内容を LocalState に書き出す (#770)。in-process 受信 / bg task が
+// アカウント別の reblog/post 表示ラベル（リノート / リキュア！等）を読むための
+// プロセス跨ぎファイル。push 鍵同期（[SyncWnsPushKeysToLocalState]）と同じ
+// LocalState 契約で、Dart の WnsService.syncPushLabels → flutter_window の
+// メソッドチャネル経由で呼ぶ。`labels_json` が空（ログイン中アカウント無し等）の
+// ときは push_labels.json を削除する。書き込みは内部 mutex で直列化する。
+void SyncWnsPushLabelsToLocalState(const std::string& labels_json);
+
 // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測レコード
 // (push_diag.json) を 1 件読み出してファイルを消す。FullTrust 起動時に呼び、
 // 内容（push_diagnostics の単一スロット JSON）を `*out_json` に入れて Dart へ

@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
-import 'package:web_socket_channel/io.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../notification_streaming_base.dart';
 import 'extensions.dart';
 
 /// Mastodon の `user` stream から notification / announcement event を拾って
@@ -13,108 +11,37 @@ import 'extensions.dart';
 ///
 /// timeline 用の [MastodonStreaming] とは**別接続**にする。timeline streaming は
 /// home_screen の lifecycle に縛られるため流用すると通知の発火が画面表示中に
-/// 限定されてしまう。reconnect / backoff は [MastodonStreaming] と同じ機構。
-class MastodonNotificationStreaming {
-  final String host;
-  final String accessToken;
-  final Set<String> adminRoleIds;
-
-  final void Function(Object error, StackTrace stack)? onParseError;
-  final void Function(Object error, StackTrace stack)? onStreamError;
-  final void Function()? onReconnectExhausted;
-
-  WebSocketChannel? _channel;
-  StreamController<Notification>? _controller;
-  Timer? _reconnectTimer;
-  bool _disposed = false;
-  bool _reconnectExhaustedNotified = false;
-  int _reconnectAttempts = 0;
-  static const _maxReconnectAttempts = 10;
-  static const _baseReconnectDelay = Duration(seconds: 5);
-  static const _maxReconnectDelay = Duration(seconds: 300);
-  // 無音切断を検知するための WS ping/pong。pong が無ければ自動 close → onDone →
-  // 再接続が走る (#788)。通知は緊急性が低めなので timeline より長め。
-  static const _pingInterval = Duration(seconds: 60);
-
+/// 限定されてしまう。reconnect / backoff の共通機構は [NotificationStreamingBase]
+/// に集約 (#676)。
+class MastodonNotificationStreaming extends NotificationStreamingBase {
   MastodonNotificationStreaming({
-    required this.host,
-    required this.accessToken,
-    this.adminRoleIds = const {},
-    this.onParseError,
-    this.onStreamError,
-    this.onReconnectExhausted,
+    required super.host,
+    required super.accessToken,
+    super.adminRoleIds,
+    super.onParseError,
+    super.onStreamError,
+    super.onReconnectExhausted,
   });
 
-  Stream<Notification> connect() {
-    _controller?.close();
-    _controller = StreamController<Notification>.broadcast(onCancel: dispose);
-    _connect();
-    return _controller!.stream;
-  }
+  @override
+  Uri buildStreamUri() => Uri(
+    scheme: 'wss',
+    host: host,
+    path: '/api/v1/streaming',
+    queryParameters: {'access_token': accessToken, 'stream': 'user'},
+  );
 
-  void _connect() {
-    if (_disposed) return;
-    _channel?.sink.close();
+  // `user` stream は URI の `stream=user` で購読が確定するため subscribe 不要。
+  @override
+  String? buildSubscribeMessage() => null;
 
-    final uri = Uri(
-      scheme: 'wss',
-      host: host,
-      path: '/api/v1/streaming',
-      queryParameters: {'access_token': accessToken, 'stream': 'user'},
-    );
-
-    _channel = IOWebSocketChannel.connect(uri, pingInterval: _pingInterval);
-    _channel!.ready
-        .then((_) {
-          _reconnectAttempts = 0;
-          _reconnectExhaustedNotified = false;
-        })
-        .catchError((Object error, StackTrace stack) {
-          _notifyStreamError(error, stack);
-          _scheduleReconnect();
-        });
-    _channel!.stream.listen(
-      _onMessage,
-      onError: (Object error, StackTrace stack) {
-        _notifyStreamError(error, stack);
-        _scheduleReconnect();
-      },
-      // onDone でバックオフをリセットしない理由は MastodonStreaming と同じ
-      // (接続成功時のみ ready.then でリセット)。
-      onDone: _scheduleReconnect,
-    );
-  }
-
-  void _notifyStreamError(Object error, StackTrace stack) {
-    try {
-      onStreamError?.call(error, stack);
-    } catch (_) {
-      // 観測経路の失敗で本筋を止めない。
-    }
-  }
-
-  void _onMessage(dynamic message) {
-    if (message is! String) return;
-    try {
-      final notification = parseMessage(
-        message,
-        host,
-        adminRoleIds: adminRoleIds,
-      );
-      if (notification != null) _controller?.add(notification);
-    } catch (e, st) {
-      // raw payload を捨てる前に観測層へ流す (MastodonStreaming と同型、#586)。
-      try {
-        onParseError?.call(e, st);
-      } catch (_) {
-        // 観測経路の失敗で本筋を止めない。
-      }
-    }
-  }
+  @override
+  Notification? parseNotificationMessage(String message) =>
+      parseMessage(message, host, adminRoleIds: adminRoleIds);
 
   /// `user` stream の 1 メッセージを [Notification] に変換する。notification /
   /// announcement 以外の event (update / delete 等) は本経路の対象外で null。
-  /// JSON / schema 不正は throw し、[_onMessage] 側で観測層に流す。
+  /// JSON / schema 不正は throw し、`_onMessage` 側で観測層に流す。
   static Notification? parseMessage(
     String message,
     String host, {
@@ -146,37 +73,5 @@ class MastodonNotificationStreaming {
       );
     }
     return null;
-  }
-
-  void _scheduleReconnect() {
-    if (_disposed) return;
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      if (!_reconnectExhaustedNotified) {
-        _reconnectExhaustedNotified = true;
-        try {
-          onReconnectExhausted?.call();
-        } catch (_) {
-          // 観測経路の失敗で本筋を止めない。
-        }
-      }
-      return;
-    }
-    _reconnectTimer?.cancel();
-    final delaySecs = _baseReconnectDelay.inSeconds * (1 << _reconnectAttempts);
-    final delay = Duration(
-      seconds: delaySecs.clamp(0, _maxReconnectDelay.inSeconds),
-    );
-    _reconnectAttempts++;
-    _reconnectTimer = Timer(delay, () {
-      if (!_disposed) _connect();
-    });
-  }
-
-  void dispose() {
-    _disposed = true;
-    _reconnectTimer?.cancel();
-    _channel?.sink.close();
-    _controller?.close();
-    _controller = null;
   }
 }

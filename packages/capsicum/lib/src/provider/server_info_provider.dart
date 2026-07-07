@@ -64,25 +64,9 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
       }
     } catch (_) {}
 
-    final enriched = Instance(
-      name: instance.name,
-      softwareName: softwareName,
-      description: instance.description,
-      iconUrl: instance.iconUrl,
-      version: instance.version,
-      themeColor: instance.themeColor,
-      userCount: instance.userCount,
-      postCount: instance.postCount,
-      contactEmail: instance.contactEmail,
-      contactAccount: instance.contactAccount,
-      contactUrl: instance.contactUrl,
-      rules: instance.rules,
-      privacyPolicyUrl: instance.privacyPolicyUrl,
-      statusUrl: instance.statusUrl,
-      imageSizeLimit: instance.imageSizeLimit,
-      videoSizeLimit: instance.videoSizeLimit,
-      audioSizeLimit: instance.audioSizeLimit,
-    );
+    // NodeInfo 由来のソフト名だけ後付けする。他フィールドは copyWith で確実に
+    // 引き継ぐ（手写しだと foundedAt 等の新規フィールドを取りこぼす）。
+    final enriched = instance.copyWith(softwareName: softwareName);
     return ServerInfoState(instance: enriched);
   }
 

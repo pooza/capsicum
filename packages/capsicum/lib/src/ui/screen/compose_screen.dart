@@ -409,6 +409,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   @override
   void initState() {
     super.initState();
+    if (ref.read(currentMulukhiyaProvider)?.wordSuggestEnabled == true) {
+      // 劇中ワード辞書を事前充填し、本文インライン補完の初回打鍵で取得待ちが
+      // 出ないようにする (#687)。best-effort。
+      ref.read(currentMulukhiyaProvider)?.prewarmWordDictionary();
+    }
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
     if (redraft != null) {
@@ -717,7 +722,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (mulukhiya == null) return;
     final gen = ++_wordFetchGen;
     try {
-      final words = await mulukhiya.suggestWords(q: query, limit: 5);
+      // 一括取得 + ローカル絞り込み (#687)。辞書が温まっていれば往復ゼロで即応し、
+      // 未対応サーバー/未充填時は都度クエリ (word/suggest) に自動フォールバックする。
+      final words = await mulukhiya.suggestWordsLocal(q: query, limit: 5);
       // 後着レスポンス破棄 (#581 観点2 と同型)。await 中に新しい入力で再発火
       // していたら世代が進んでいる。
       if (gen != _wordFetchGen) return;

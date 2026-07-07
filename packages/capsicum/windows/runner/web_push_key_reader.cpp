@@ -242,6 +242,35 @@ bool ReadPushKeysFromKeysetJson(const std::string& keyset_map_json,
   return fail("no push keys for account");
 }
 
+void ReadPushLabelsFromJson(const std::string& labels_json,
+                            const std::string& account, std::string* reblog,
+                            std::string* post) {
+  if (labels_json.empty()) {
+    return;
+  }
+  std::map<std::string, std::string> outer;
+  if (!ParseJsonStringMap(labels_json, &outer)) {
+    return;
+  }
+  auto it = outer.find(account);
+  if (it == outer.end()) {
+    return;
+  }
+  // 値は `{"reblog":..,"post":..}` の JSON 文字列（鍵セットの内側と同形式）。
+  std::map<std::string, std::string> fields;
+  if (!ParseJsonStringMap(it->second, &fields)) {
+    return;
+  }
+  auto r = fields.find("reblog");
+  if (r != fields.end() && !r->second.empty()) {
+    *reblog = r->second;
+  }
+  auto p = fields.find("post");
+  if (p != fields.end() && !p->second.empty()) {
+    *post = p->second;
+  }
+}
+
 bool ReadPushKeys(const std::wstring& dat_file_path, const std::string& account,
                   PushKeys* out, std::string* error) {
   auto fail = [&](const char* message) {

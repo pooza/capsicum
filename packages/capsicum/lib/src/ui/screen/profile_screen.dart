@@ -266,7 +266,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     _mediaTabLoaded = true;
     try {
-      final posts = await _fetchUserPosts(adapter, onlyMedia: true);
+      final posts = await _fetchUserPosts(
+        adapter,
+        onlyMedia: true,
+        excludeReplies: _excludeMediaReplies,
+      );
       if (mounted) {
         setState(() {
           _mediaPosts = posts;
@@ -293,6 +297,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         adapter,
         maxId: _mediaPosts.last.id,
         onlyMedia: true,
+        excludeReplies: _excludeMediaReplies,
       );
       if (mounted) {
         setState(() {
@@ -446,9 +451,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       var fullUser = await adapter.getUserById(widget.user.id);
       fullUser = await ref.read(isCatEnricherProvider).enrichUser(fullUser);
       if (mounted) {
+        final excludeRepliesBefore = _excludeMediaReplies;
         setState(() => _user = fullUser);
         // 完全な user 取得で show_media が判明しタブ集合が変わることがある（#732）。
         _syncTabController();
+        // メディアタブを先に開いた後で Mastodon 4.6 の show_media_replies=false が
+        // 判明した場合、返信添付を含んだ初回結果を破棄して読み直す（#809 race）。
+        if (_mediaTabLoaded && _excludeMediaReplies != excludeRepliesBefore) {
+          _mediaTabLoaded = false;
+          setState(() {
+            _mediaPosts = [];
+            _loadingMediaPosts = true;
+          });
+          _loadMediaPosts();
+        }
       }
     } catch (_) {
       // Keep the original user data if full fetch fails.
@@ -472,6 +488,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     BackendAdapter adapter, {
     String? maxId,
     bool? onlyMedia,
+    bool? excludeReplies,
   }) async {
     // Use dynamic dispatch to call getUserPosts on the concrete adapter.
     // Both MastodonAdapter and MisskeyAdapter define this method.
@@ -480,10 +497,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               widget.user.id,
               maxId: maxId,
               onlyMedia: onlyMedia,
+              excludeReplies: excludeReplies,
             )
             as List<Post>;
     return ref.read(isCatEnricherProvider).enrichPosts(posts);
   }
+
+  /// メディアタブで返信の添付を除外すべきか (#809)。所有者が Mastodon 4.6 の
+  /// `show_media_replies=false` を設定している場合のみ true。未対応サーバー
+  /// (null) や true のときは従来どおり返信も含める。
+  bool get _excludeMediaReplies => _user.showMediaReplies == false;
 
   @override
   Widget build(BuildContext context) {

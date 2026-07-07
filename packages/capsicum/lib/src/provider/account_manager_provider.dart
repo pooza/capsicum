@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -15,6 +17,7 @@ import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
+import '../service/wns_service.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
 
@@ -100,6 +103,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // registerAccount より先に完了させる: 登録直後に届く最初のプッシュが
     // ラベル未保存のまま既定値（ブースト/投稿）に化けないように。
     await _persistNotificationLabels(enriched);
+    await _syncWindowsPushLabels();
 
     // プッシュ通知登録（ベストエフォート）。
     // 既存アカウントにプリセットサーバーがあれば、新規アカウントも登録対象。
@@ -152,6 +156,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : state.current;
 
     state = AccountManagerState(accounts: remaining, current: next);
+    // 残ったアカウントのラベルで push_labels.json を更新（削除分を落とす、#770）。
+    await _syncWindowsPushLabels();
   }
 
   /// Re-detect mulukhiya on the current account's server and update state.
@@ -180,6 +186,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         .toList();
     state = AccountManagerState(accounts: accounts, current: updated);
     await _persistNotificationLabels(updated);
+    await _syncWindowsPushLabels();
     return true;
   }
 
@@ -197,16 +204,46 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 呼び出し元は push 登録前に await すること: 登録直後の最初のプッシュが
   /// ラベル未保存のまま既定値に化けるレースを避けるため。
   Future<void> _persistNotificationLabels(Account account) async {
+    final labels = _resolveNotificationLabels(account);
+    await NotificationLabelCache.save(
+      _notificationLabelKey(account),
+      reblogLabel: labels.reblog,
+      postLabel: labels.post,
+    );
+  }
+
+  /// [Account] から reblog（ブースト/リノート/リキュア！等）と post（投稿）の
+  /// 表示ラベルを解決する。[main._resolveReblogLabelForAccount] / Windows native
+  /// の既定（notification_type_label.cpp）と文言を揃えること。
+  static ({String reblog, String post}) _resolveNotificationLabels(
+    Account account,
+  ) {
     final mulukhiya = account.mulukhiya;
     final reblog =
         mulukhiya?.reblogLabel ??
         (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
     final post = mulukhiya?.postLabel ?? '投稿';
-    await NotificationLabelCache.save(
-      _notificationLabelKey(account),
-      reblogLabel: reblog,
-      postLabel: post,
-    );
+    return (reblog: reblog, post: post);
+  }
+
+  /// Windows: 完全終了中の bg task / 起動中の in-process 受信が読む
+  /// push_labels.json を、現在ログイン中の全アカウントのラベルで更新する (#770)。
+  /// native はプロセスを跨いで Dart の shared_preferences（[NotificationLabelCache]）
+  /// を読めないため、push 鍵同期（[WnsService.syncPushKeys]）と同じ LocalState
+  /// 契約でラベルを渡す。ラベル変更（ログイン / ログアウト / mulukhiya 再検出 /
+  /// 復元）のたびに呼ぶ。Windows 以外は no-op。鍵と違い欠落しても native は既定
+  /// ラベルにフォールバックするためベストエフォート。
+  Future<void> _syncWindowsPushLabels() async {
+    if (!Platform.isWindows) return;
+    final map = <String, String>{};
+    for (final account in state.accounts) {
+      final labels = _resolveNotificationLabels(account);
+      map[_notificationLabelKey(account)] = jsonEncode({
+        'reblog': labels.reblog,
+        'post': labels.post,
+      });
+    }
+    await WnsService.syncPushLabels(jsonEncode(map));
   }
 
   /// Detect software version via NodeInfo on the given host.
@@ -316,6 +353,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
       // 反映後の後処理: 通知ラベル永続化（並列）とバッジ用メタのプリフェッチ。
       await Future.wait(restored.map(_persistNotificationLabels));
+      await _syncWindowsPushLabels();
       for (final account in restored) {
         ServerMetadataCache.instance.fetch(account.key.host);
       }
@@ -456,6 +494,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
 
     await _persistNotificationLabels(account);
+    await _syncWindowsPushLabels();
 
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);

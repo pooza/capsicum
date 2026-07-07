@@ -84,10 +84,11 @@ std::string NotificationTypeDisplayLabel(const std::string& type,
 }
 
 std::string ResolveDisplayTitle(const std::string& type,
-                                const std::string& server_title) {
+                                const std::string& server_title,
+                                const std::string& reblog_label,
+                                const std::string& post_label) {
   if (!type.empty()) {
-    return NotificationTypeDisplayLabel(type, kDefaultReblogLabel,
-                                        kDefaultPostLabel);
+    return NotificationTypeDisplayLabel(type, reblog_label, post_label);
   }
   if (!server_title.empty()) {
     return server_title;

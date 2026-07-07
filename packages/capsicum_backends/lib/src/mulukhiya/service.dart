@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 
@@ -144,6 +146,91 @@ class WordSuggestion {
     required this.reading,
     this.category,
   });
+}
+
+/// 読みクエリの正規化（サーバー `PronunciationDictionary#normalize_reading` の
+/// 実用版近似・capsicum#687）。
+///
+/// ユーザーが打鍵できるのはひらがな読みで、辞書側 `reading` はカタカナのため、
+/// **ひらがな→カタカナ**へ寄せて突き合わせ空間を揃えるのが要点。前後空白も除く。
+/// サーバーは加えて NFKC（半角カナ・互換/全角英数の畳み込み）を行うが、依存を
+/// 増やさないためここでは再現しない。NFKC 相当が要る入力（半角カナ等）は
+/// [MulukhiyaService.suggestWordsLocal] がサーバー `word/suggest` へ委ねて救う
+/// （方針: 実用版＋サーバー fallback）。
+String normalizeReadingQuery(String value) {
+  final buffer = StringBuffer();
+  for (final rune in value.trim().runes) {
+    // ひらがな (ぁ 0x3041 – ゖ 0x3096) をカタカナ (ァ 0x30A1 – ヶ 0x30F6) へ。
+    if (rune >= 0x3041 && rune <= 0x3096) {
+      buffer.writeCharCode(rune + 0x60);
+    } else {
+      buffer.writeCharCode(rune);
+    }
+  }
+  return buffer.toString();
+}
+
+/// 実用版正規化が取りこぼす文字（NFKC で畳まれ得る半角カナ・全角/半角形）を
+/// クエリが含むか。含むときだけローカル 0 件でもサーバー正規化に委ねる判断に
+/// 使う。純粋なかな/漢字のクエリは、同じ辞書を突き合わせる以上ローカル 0 件が
+/// 確定（サーバーも 0）なので fallback しない（capsicum#687）。
+bool queryMayNeedServerNormalization(String value) {
+  for (final rune in value.runes) {
+    // U+FF00–FFEF: 半角・全角形（全角英数 FF01–FF5E / 半角カナ FF61–FF9F 等）。
+    if (rune >= 0xFF00 && rune <= 0xFFEF) return true;
+  }
+  return false;
+}
+
+/// 一括取得した劇中ワード辞書 [entries] を [query] でローカル絞り込みする
+/// （サーバー `PronunciationDictionary#suggest` の再現・capsicum#687）。
+///
+/// ランク: 0=読み前方一致 / 1=表層前方一致 / 2=読み部分一致。マッチしなければ
+/// 除外。同ランク内は読み（カタカナ）の辞書順 → 短い順で安定ソートし、[limit]
+/// 件に丸める。サーバーと同じ並びを保つことで、都度クエリ（`word/suggest`）と
+/// 体感の並びを揃える。
+List<WordSuggestion> filterWordSuggestions(
+  List<WordSuggestion> entries,
+  String query, {
+  int? limit,
+}) {
+  final surfaceQuery = query.trim();
+  final readingQuery = normalizeReadingQuery(surfaceQuery);
+  if (readingQuery.isEmpty) return const [];
+  final scored = <({int rank, WordSuggestion entry})>[];
+  for (final entry in entries) {
+    final rank = _wordMatchRank(entry, readingQuery, surfaceQuery);
+    if (rank == null) continue;
+    scored.add((rank: rank, entry: entry));
+  }
+  scored.sort((a, b) {
+    final byRank = a.rank.compareTo(b.rank);
+    if (byRank != 0) return byRank;
+    final byReading = a.entry.reading.compareTo(b.entry.reading);
+    if (byReading != 0) return byReading;
+    return a.entry.reading.length.compareTo(b.entry.reading.length);
+  });
+  final result = [for (final s in scored) s.entry];
+  if (limit != null && limit >= 0 && limit < result.length) {
+    return result.sublist(0, limit);
+  }
+  return result;
+}
+
+/// 候補マッチの優先度（小さいほど上位）。マッチしなければ null。
+/// サーバー `match_rank` と同一: 読み前方一致 0 / 表層前方一致 1 / 読み部分一致 2。
+int? _wordMatchRank(
+  WordSuggestion entry,
+  String readingQuery,
+  String surfaceQuery,
+) {
+  final reading = entry.reading;
+  if (reading.startsWith(readingQuery)) return 0;
+  if (surfaceQuery.isNotEmpty && entry.surface.startsWith(surfaceQuery)) {
+    return 1;
+  }
+  if (reading.contains(readingQuery)) return 2;
+  return null;
 }
 
 class MediaCatalogItem {
@@ -308,6 +395,19 @@ class MulukhiyaService {
 
   final List<String> adminRoleIds;
   final String? infoBotAcct;
+
+  // 劇中ワード辞書のローカルキャッシュ (#687)。`/word/all` を一括取得して TTL
+  // 内はローカル絞り込みで即応し、TTL 経過後は stale-while-revalidate で古い
+  // 辞書のまま即応しつつ裏で digest (If-None-Match) 再検証する。サービスは
+  // アカウントに紐づき寿命が安定なので、投稿セッションを跨いでキャッシュが効く。
+  List<WordSuggestion>? _wordDictionary;
+  String? _wordDictionaryDigest;
+  DateTime? _wordDictionaryFetchedAt;
+  Future<void>? _wordDictionaryInflight;
+
+  /// 辞書は「意外と頻繁に」更新されるため TTL は短め。失効しても再取得は
+  /// 条件付き GET (304 なら本文なし) で軽い。
+  static const _wordDictionaryTtl = Duration(minutes: 5);
 
   MulukhiyaService._({
     required Dio dio,
@@ -789,6 +889,115 @@ class MulukhiyaService {
       // 投稿フォーム本体は通常どおり動かす。5xx/network は rethrow して上位へ。
       if (e.response?.statusCode == 404 || _isAuthError(e)) return [];
       rethrow;
+    }
+  }
+
+  /// 劇中ワードサジェストを **一括取得 + ローカル絞り込み** で引く (#687)。
+  ///
+  /// 打鍵ごとにサーバー `word/suggest` を叩く [suggestWords] の最適化版。辞書全体
+  /// (`/word/all`) を一度取得してローカルで絞り込むため、2 打鍵目以降は往復ゼロで
+  /// 即応し、実況の打鍵テンポを損なわない。呼び出し規約 (q / limit / 戻り値) は
+  /// [suggestWords] と同一で、そのまま差し替えられる。
+  ///
+  /// フォールバック方針 (実用版正規化 + サーバー救済):
+  /// - `/word/all` が使えない (未対応の旧モロヘイヤ = 404 / cold-cache / エラー)
+  ///   ときは、都度クエリの [suggestWords] にそのまま倒す (従来挙動)。
+  /// - ローカル 0 件でも、クエリが実用版正規化の穴 (NFKC 相当が要る半角カナ等) を
+  ///   含むときはサーバー正規化に委ねる。純粋なかな/漢字なら 0 件は確定 (同じ
+  ///   辞書を突き合わせる以上サーバーも 0) なので往復しない。
+  Future<List<WordSuggestion>> suggestWordsLocal({
+    required String q,
+    int? limit,
+  }) async {
+    if (_wordDictionary == null) {
+      // 初回のみ取得を待つ (以降は即応)。prewarmWordDictionary で事前充填すれば
+      // この待ちも消える。
+      await _ensureWordDictionary();
+    } else if (_wordDictionaryStale) {
+      // stale-while-revalidate: 古い辞書で即応しつつ裏で再検証する。
+      unawaited(_ensureWordDictionary());
+    }
+    final dictionary = _wordDictionary;
+    if (dictionary == null) {
+      // 一括取得が使えない。従来の都度クエリに倒す。
+      return suggestWords(q: q, limit: limit);
+    }
+    final local = filterWordSuggestions(dictionary, q, limit: limit);
+    if (local.isNotEmpty) return local;
+    if (queryMayNeedServerNormalization(q)) {
+      return suggestWords(q: q, limit: limit);
+    }
+    return const [];
+  }
+
+  /// 劇中ワード辞書を事前に充填する (#687)。投稿画面や絵文字ピッカーの劇中ワード
+  /// タブが有効になった時点で呼ぶと、最初の打鍵で辞書取得を待たずに済む。best-effort
+  /// で、失敗しても [suggestWordsLocal] が都度クエリに倒すため投稿フローは止まらない。
+  Future<void> prewarmWordDictionary() => _ensureWordDictionary();
+
+  bool get _wordDictionaryStale {
+    final at = _wordDictionaryFetchedAt;
+    return at == null || DateTime.now().difference(at) >= _wordDictionaryTtl;
+  }
+
+  /// 辞書キャッシュが空 / 失効していれば `/word/all` で取得・再検証する。
+  /// 同時多重取得は in-flight future を共有して 1 本に束ねる。
+  Future<void> _ensureWordDictionary() {
+    final inflight = _wordDictionaryInflight;
+    if (inflight != null) return inflight;
+    if (_wordDictionary != null && !_wordDictionaryStale) {
+      return Future.value();
+    }
+    final future = _fetchWordDictionary();
+    _wordDictionaryInflight = future;
+    return future.whenComplete(() {
+      if (identical(_wordDictionaryInflight, future)) {
+        _wordDictionaryInflight = null;
+      }
+    });
+  }
+
+  /// GET /mulukhiya/api/word/all (#687 / mulukhiya#4430)。digest を保持している
+  /// ときは If-None-Match を付け、304 なら本文なしで鮮度だけ更新する。取得失敗は
+  /// best-effort で握りつぶし、キャッシュを従来経路に委ねる。
+  Future<void> _fetchWordDictionary() async {
+    try {
+      final digest = _wordDictionaryDigest;
+      final response = await _dio.get(
+        '$baseUrl/word/all',
+        options: Options(
+          headers: {if (digest != null) 'If-None-Match': '"$digest"'},
+          // 304 (未変更) を例外にしない。
+          validateStatus: (s) =>
+              s != null && (s == 304 || (s >= 200 && s < 300)),
+        ),
+      );
+      if (response.statusCode == 304) {
+        _wordDictionaryFetchedAt = DateTime.now();
+        return;
+      }
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return;
+      final words = data['words'];
+      if (words is! List) return;
+      _wordDictionary = words
+          .whereType<Map<String, dynamic>>()
+          .where((m) => m['surface'] is String && m['reading'] is String)
+          .map(
+            (m) => WordSuggestion(
+              surface: m['surface'] as String,
+              reading: m['reading'] as String,
+              category: m['category'] as String?,
+            ),
+          )
+          .toList();
+      _wordDictionaryDigest = data['digest'] as String?;
+      _wordDictionaryFetchedAt = DateTime.now();
+    } on DioException {
+      // 404 (旧モロヘイヤに /word/all 無し) / 403 (認証必須) / 5xx / network は
+      // すべて best-effort。キャッシュを空のままにし、suggestWordsLocal 側の
+      // 都度クエリ fallback に委ねる (rethrow すると初回 await が投げてしまう)。
+      return;
     }
   }
 

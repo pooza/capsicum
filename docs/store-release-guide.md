@@ -250,12 +250,13 @@ v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart fo
 # 注意: ビルド番号（+N）は一度ストアにアップロードすると、リリースを破棄しても再利用不可。
 # 上げ直す場合は必ずビルド番号をインクリメントすること。
 
-# ⚠️ Windows: pubspec.yaml の `msix_config.msix_version` も一緒に上げること。
-# スキームは <major>.<minor>.<新しいビルド番号>.0（例 1.43.0+147 → 1.43.147.0）。
-# MSIX は第4オクテット（Revision）が Store 予約で 0 固定のため、ビルド番号は
-# 第3オクテットに載せて一意化する。放置すると 1.43.0.0 のまま固定になり、
-# 開発中の Store フライトが同じ full name を消費していると製品版提出が
-# 「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれる（v1.43.0 で実踏）。
+# Windows の MSIX パッケージバージョンは手動更新不要（#798）。windows-release.yml が
+# pubspec の version(+build) から <major>.<minor>.<build>.0 を導出し --version で
+# msix:build / msix:pack に渡す（pubspec の msix_config.msix_version は未指定）。
+# 第4オクテット（Revision）は Store 予約で 0 固定、ビルド番号を第3オクテットに載せて
+# full name を一意化する。この自動化以前は msix_version を手動で上げる運用で、上げ忘れると
+# 1.43.0.0 のまま固定され、開発中の Store フライトが同じ full name を消費していると
+# 製品版提出が「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれた（v1.43.0 で実踏）。
 
 # 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
 cd packages/capsicum
@@ -420,6 +421,8 @@ cd macos && fastlane release && cd ..
 
 審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
 
+> ⚠️ **iOS の `fastlane release` は §4.2 の ipa が build/ に残っている前提**。iOS ベータの後に Android / macOS を `flutter clean` 込みでビルドすると `build/ios/ipa/capsicum.ipa` が消え、`skip_binary_upload: true` でもレーンが ipa パスの存在検証で `Could not find ipa file` で落ちる。復旧は `flutter build ipa`（build 番号据え置き = 再アップロードされない）で ipa を再生成してから `fastlane release`。ただし再生成後の submit で deliver が **「Waiting for the build to show up in the build list」ループから抜けられずハングする**ことがある（既存 build は ASC 上に存在するのに API 選択が回らない。v1.44.0 で発生）。数分待って進まなければ **ASC UI から該当 build を手動で「審査へ提出」する方が速い**（1分程度）。macOS の pkg は最後にビルドしたものが残るため、iOS の ipa 再生成で `flutter clean` する前に macOS の submit を先に済ませること。
+>
 > ⚠️ **fastlane の出力を `| tail` 等にパイプしない**。パイプすると `$?` がパイプ末尾コマンド（tail）の exit code になり、**fastlane の失敗を取りこぼす**。ログはファイルにリダイレクトし（`fastlane release > log 2>&1; echo $?`）、exit code を明示確認すること。
 >
 > ⚠️ **`fastlane release`（Android）は内部トラックの「現在の」リリースを製品版へ promote する**ため、自分の `fastlane internal` アップロードが失敗していると、トラックに残っている**別ビルドを誤って昇格**しうる。とくに**複数端末で並行ビルドすると versionCode が衝突**し（Google Play は同一トラックの versionCode 重複を拒否）、後発の upload が失敗→既存ビルドが promote される事故が起きる。v1.35.0 で実際に「マージン調整前の 102」が製品版に出た（`| tail` で upload 失敗を見落とし）。**対策**: (1) build 後に実バイナリで versionCode と secrets を確認、(2) 昇格後に Play API で production の versionCode が意図どおりか確認する（手順は §4.4 の Play 版確認、または ASC 同様の service-account JWT で `edits.tracks.get`）。衝突時は `flutter build appbundle --build-number=<次番号>` で採番し直して再 upload→再 promote。
@@ -585,13 +588,51 @@ curl -fsSL https://capsicum.shrieker.net/install.sh | bash
 Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。**公式配布は Microsoft Store 単独**（[#760](https://github.com/pooza/capsicum/issues/760)、2026-07-02〜）:
 
 - **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。**Windows 唯一の公式配布ルート**（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
-- **自己署名 MSIX（draft Release 添付）は非公式・非サポート**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは (a) pooza が Store 手動 publish 用に `.msix` を取り出す口、(b) 証明書 import を厭わない上級者が自己責任で使う非公式経路、であって公式配布ではない。**README / 公式サイト / [INSTALL.md](../packaging/windows/INSTALL.md) では宣伝しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）
+- **自己署名 MSIX（draft Release 添付）は非公式・非サポート・案内しない**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止、2026-07-05 に案内自体を全面停止）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは **pooza が Store 手動 publish 用に `.msix` を取り出す口**であって、エンドユーザー向けの配布経路ではない。**リリースノート・README・公式サイト・[INSTALL.md](../packaging/windows/INSTALL.md) のいずれでも import 手順を案内しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）。Windows の配布は Microsoft Store 単独に一本化する
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留。毎リリースの Store publish は **Partner Center Web UI から手動** が前提。
 
 `pubspec.yaml` の `msix_config.store: false` のまま生成した自己署名 MSIX を Web UI に upload する経路で初回審査通過済み（Store 側で再署名されるため self-signed のまま submit 可）。Store 提出用の `.msix` は draft Release 添付（または CI の `capsicum-msix` artifact）から取り出して使う。
 
 OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534)) は Store 経由配布が唯一の公式ルートになったため不要（Store 経由は MS が再署名、自己署名直配は #760 で非公式化）。
+
+#### Windows 内部ベータ提出（他 OS の TestFlight / Play 内部トラック相当・[#797](https://github.com/pooza/capsicum/issues/797)）
+
+製品版を Store へ submit する前に、**release ビルドを実機で検証する経路**。iOS の TestFlight / Android の Play 内部トラックに対応する。v1.43 で投げ銭（[#599](https://github.com/pooza/capsicum/issues/599)）を release ビルド検証なしで製品版提出した反省（軽量な検証経路が未確立だった）から手順化した。検証内容に応じて 2 経路を使い分ける。
+
+**A. CI artifact sideload（軽量・既定）** — ほとんどの release ビルド検証はこれで足りる。
+
+CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の PR でも走り、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
+
+```powershell
+# develop の最新成功ビルドを取得してインストール（run 自動選択）
+pwsh packaging/windows/install-internal-beta.ps1
+# 特定の run を指定（artifact 保持は 14 日）
+pwsh packaging/windows/install-internal-beta.ps1 -Run <run-id>
+```
+
+- **カバー範囲**: push 通知 / OAuth / ストリーミング / メディア再生 / UI / SMTC など **投げ銭以外のほぼ全機能**。OS 連携系（[#382](https://github.com/pooza/capsicum/issues/382) / [#559](https://github.com/pooza/capsicum/issues/559) のような native 連携）もこの経路で先行検証できる。
+- **カバーしない**: **#599 投げ銭（Microsoft Store IAP）は動作しない**。自己署名 sideload 版はライセンスコンテキストが Store と異なり、`Windows.Services.Store` の購入は成立しない。IAP を触るリリースは経路 B を併用する。
+- ARM64 Windows でローカル x64 ビルドが通らない制約（ATL / jni / crashpad）とも独立して回せる（CI 産の x64 MSIX を落とすだけ）。手動の `gh run download` → ダブルクリック運用（従来）を script 化したもの。
+
+**B. MS Store package flight（IAP 検証が要るリリースのみ）** — Store-signed の実配布と同一バイナリで、実際の購入まで検証できる唯一の経路。
+
+Partner Center の **package flight** は、本番 submission と別に限定テスターへ Store 経由で配る仕組み（TestFlight のサンドボックス購入に相当）。#599 投げ銭のように **Store-install 版でしか挙動しない機能**を release ビルドで検証するときに使う。
+
+1. Partner Center → アプリ「capsicum」→ **Package flights** → 新規 flight を作成（テスターの MSA / AAD メールを flight group に登録）
+2. draft Release 添付（または `capsicum-msix` artifact）の `capsicum.msix` を flight の Packages に upload（本番 submission と同じ MSIX でよい）
+3. Submit for certification（本番より軽い審査）→ 通過後、テスターに配られる **flight 専用の Store リンク**からインストール
+4. Store-install 版として起動し、投げ銭の購入ダイアログ〜消費報告まで実機確認
+
+> Partner Center の UI 名称は変わりやすい。「Package flights」が見つからないときはアプリ概要から辿る。flight は本番審査より速いが、証明書認定は要るため経路 A より重い。
+>
+> ⚠️ **flight は「捨てアカウント」で受けること（2026-07-07 に実害）。** package flight の**テスターグループに登録した Microsoft アカウントは製品版（本番リング）を受け取れない**。flight package が本番より古いと、本番が新しくなってもそのアカウントは古い版に固着する。厄介なのは **submission を削除しても戻らない**点で、真の blocker は**テスターグループのメンバー登録**。wsreset / Store 再サインイン / アンインストール→再インストールのどれでも剥がれない（client 側では直せない）。v1.43 の投げ銭検証で日常アカウントをフライトに入れた結果、v1.44 公開後もそのアカウントが 1.43 に固着した（一般ユーザーは無風＝おま環）。**復旧は self-service**：Partner Center でそのアカウントを**フライトのテスターグループから外す**と製品版が installable になる（MS サポート不要。過度に恐れる必要はないが、submission 削除だけでは戻らない=使い勝手が悪い）。原則 **日常使いの Microsoft アカウントをフライトに入れない**。
+
+**使い分けの原則**:
+
+- 既定は **A（sideload）**。毎リリース、製品版昇格（§4.3）の前に回す。
+- リリースに **#599 IAP を含む / Store-install 固有挙動を触る**場合は **B（flight）も**回してから submit する。**ただし flight は日常アカウントでなく捨てアカウントで受ける**（上記の固着を避けるため）。IAP の実購入検証がどうしても要るときだけ B を使い、それ以外は A で十分。
+- どちらも `Add-AppxPackage` は同一 identity（`9AFBB08E.capsicum`）を置き換えるため、**Store 版を常用している端末では検証後に Store 版へ戻す**（sideload 版をアンインストール → Store から再インストール、または flight リンクから本番版へ）ことに注意。
 
 #### MSIX
 
@@ -662,12 +703,14 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 
 タグ駆動ビルドで draft Release に添付された `capsicum.msix` を Partner Center Web UI から手動で submission する。初回審査は 2026-05-20 通過、以降は同じ流れで毎リリース回す。
 
+> 提出の前に §「Windows 内部ベータ提出」で release ビルドを実機検証してから publish すること（既定は sideload、#599 IAP を触るリリースは package flight も）。
+
 1. **Partner Center にログイン**: <https://partner.microsoft.com/dashboard> → アプリ「capsicum」(`identity_name=9AFBB08E.capsicum` / `publisher_display_name=小石達也`)
 2. **新規 Submission を開始**
 3. **Packages**: draft Release に添付された `capsicum.msix` をそのまま upload（`msix_config.store: false` のままで OK、Store 側で再署名される）
 4. **Submission Options > Notes for Certification**: 毎回必須。確定文面・根本原因・Windows 固有の注意は [msstore-review-notes-login.md](msstore-review-notes-login.md) を single source of truth とする（capsicum は OAuth + 外部サーバー前提のため、書かないと Policy 10.3.1 *App Is Testable - Test Account* で差し戻し）
 5. **System Requirements (推奨環境)**: 「イマーシブヘッドセット」項目に **明示的にチェックを入れる**罠あり（実体としては不要だが、UI が空欄を許容せず submission に進めない仕様。2026-05-16 にはまった経緯あり、参考: <https://mstdn.b-shock.org/@pooza/116586587890264199>）
-6. **Submit for certification**: 認定期間は通常 1-3 日（初回は 3-7 日）。通過後に Store listing が自動で publish される
+6. **Submit for certification**: Microsoft 公称の認定期間は最大 1-3 日（初回は 3-7 日）だが、**実績では問題がなければ 1 時間程度で通過することが多い**（Android と同様に速い）。数時間経っても Pending のままなら審査で引っかかっている可能性を疑う。通過後に Store listing が自動で publish される
 7. **動作確認**: Store からインストールして SmartScreen 警告なしで起動できることを確認
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留のため、毎リリース手動で行う。
@@ -678,16 +721,14 @@ msstore CLI 経由の自動 publish は個人開発者アカウントから Entr
 
 #### GitHub Release のリリースノート（Windows セクションテンプレート）
 
-タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。手順本体は [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) を single source of truth とし、リリースノートからはタグ permalink でリンクする（永続性のためブランチ参照ではなくタグ参照にすること）。
+タグごとの GitHub Release description に追記するテンプレート。pooza がドラフト Release を編集する際に貼り付ける。
+
+> ⚠️ **自己署名 MSIX 直配はリリースノートに一切書かない**（2026-07-05 方針確定）。この配布方法は今後一切案内しない。CI は従来どおり `.msix` + `.cer` を draft Release に添付し続けるが（pooza が Store 手動 publish 用に `.msix` を取り出す口）、**リリースノート・README・公式サイト・INSTALL.md のいずれでも import 手順を案内しない**。Windows の公式配布は Microsoft Store 単独（#760 をさらに徹底）。
 
 ````markdown
 ## Windows
 
-Microsoft Store からのインストールが推奨です: [apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)
-
-### GitHub Releases から自己署名 MSIX を直接 import（補助・上級者向け）
-
-Store publish 完了前の先行検証用・証明書 import に抵抗のないユーザー向け。本 Release のアセットから `capsicum.msix` + `capsicum-signing.cer` をダウンロードし、[インストール手順](https://github.com/pooza/capsicum/blob/vX.Y.Z/packaging/windows/INSTALL.md) に従って導入してください（`vX.Y.Z` を本 Release のタグに置換）。
+Microsoft Store からインストールできます: [apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)
 ````
 
 #### Windows ローカルビルド確認

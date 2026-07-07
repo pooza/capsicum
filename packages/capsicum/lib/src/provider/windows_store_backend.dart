@@ -87,11 +87,22 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
     ];
   }
 
+  /// [_events] へイベントを流す。購入ダイアログ (RequestPurchaseAsync) は
+  /// ユーザー操作待ちで数分ブロックしうるため、その await 中に container teardown
+  /// で [dispose] が [_events] を close していることがある (#795)。閉鎖済みへ add
+  /// すると StateError になるので、閉じていれば黙って捨てる (返す先が無い)。
+  /// [supporterPurchaseProvider] は app-lifetime の非 autoDispose なので、実際に
+  /// 起きるのは container 破棄時のシャットダウンレースに限られる。
+  void _emit(SupporterPurchaseEvent event) {
+    if (_events.isClosed) return;
+    _events.add(event);
+  }
+
   @override
   Future<void> buy(ProductDetails product) async {
     final storeId = _storeIds[product.id];
     if (storeId == null) {
-      _events.add(
+      _emit(
         SupporterPurchaseEvent(
           productId: product.id,
           status: SupporterPurchaseEventStatus.error,
@@ -109,7 +120,7 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
     switch (status) {
       case 0: // Succeeded
       case 1: // AlreadyPurchased（未消費の消耗型が残存）→ 付与して消費報告する。
-        _events.add(
+        _emit(
           SupporterPurchaseEvent(
             productId: product.id,
             status: SupporterPurchaseEventStatus.purchased,
@@ -119,7 +130,7 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
         );
         break;
       case 2: // NotPurchased（ユーザーがダイアログをキャンセル）。
-        _events.add(
+        _emit(
           SupporterPurchaseEvent(
             productId: product.id,
             status: SupporterPurchaseEventStatus.canceled,
@@ -127,7 +138,7 @@ class WindowsStoreBackend implements SupporterPurchaseBackend {
         );
         break;
       default: // NetworkError / ServerError。
-        _events.add(
+        _emit(
           SupporterPurchaseEvent(
             productId: product.id,
             status: SupporterPurchaseEventStatus.error,

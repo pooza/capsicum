@@ -69,6 +69,7 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       createdAt: createdAt,
       defaultScope: mastodonVisibilityRosetta[source?['privacy'] as String?],
       showMedia: showMedia,
+      showMediaReplies: showMediaReplies,
       showFeatured: showFeatured,
       hideCollections: hideCollections,
       featureApproval: _parseFeatureApproval(featureApproval),

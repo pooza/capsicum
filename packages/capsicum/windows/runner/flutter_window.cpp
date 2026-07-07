@@ -107,6 +107,20 @@ bool FlutterWindow::OnCreate() {
           // detached スレッドで実行し UI を塞がない。要求受理だけ即 ack する。
           std::thread([]() { SyncWnsPushKeysToLocalState(); }).detach();
           result->Success();
+        } else if (call.method_name() == "syncPushLabels") {
+          // Dart（全ログイン中アカウントの reblog/post ラベル）が用意した
+          // push_labels.json 内容を LocalState へ書く (#770)。bg task / in-process
+          // 受信がアカウント別のカスタムラベル（リノート / リキュア！等）を読む。
+          // ファイル I/O のため detached スレッドで実行し UI を塞がない。要求受理
+          // だけ即 ack する。空文字列（ログイン中アカウント無し）なら削除される。
+          std::string labels_json;
+          if (const auto* s = std::get_if<std::string>(call.arguments())) {
+            labels_json = *s;
+          }
+          std::thread([labels_json]() {
+            SyncWnsPushLabelsToLocalState(labels_json);
+          }).detach();
+          result->Success();
         } else if (call.method_name() == "consumePushDiagnostics") {
           // バックグラウンドタスク (#474 フェーズ C) が LocalState に残した観測
           // レコードを 1 件読み出して返す（読んだら消す）。Dart 側が Sentry へ
@@ -185,10 +199,28 @@ bool FlutterWindow::OnCreate() {
   // window is shown. It is a no-op if the first frame hasn't completed yet.
   flutter_controller_->ForceRedraw();
 
+  // Store IAP ワーカーが結果を marshal する先の HWND を共有状態へ控える (#795)。
+  // OnDestroy で nullptr にし、破棄後のワーカーが stale/recycle された HWND へ
+  // PostMessage するのを防ぐ。
+  {
+    std::lock_guard<std::mutex> lock(store_state_->mutex);
+    store_state_->hwnd = GetHandle();
+  }
+
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  // Store IAP の in-flight ワーカー (購入ダイアログ待ちで数分ブロックしうる) が、
+  // ウィンドウ破棄後に解放済みメンバや stale HWND を触らないよう、共有状態へ
+  // 「ウィンドウ消滅」を通知する (#795)。以降ワーカーは結果を捨て PostMessage
+  // しない。ワーカー自身は shared_ptr で状態を延命するので join 不要。
+  {
+    std::lock_guard<std::mutex> lock(store_state_->mutex);
+    store_state_->window_alive = false;
+    store_state_->hwnd = nullptr;
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -238,16 +270,16 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       std::shared_ptr<flutter::MethodResult<>> result;
       flutter::EncodableValue outcome;
       {
-        std::lock_guard<std::mutex> lock(store_mutex_);
-        auto rit = store_pending_.find(id);
-        if (rit != store_pending_.end()) {
+        std::lock_guard<std::mutex> lock(store_state_->mutex);
+        auto rit = store_state_->pending.find(id);
+        if (rit != store_state_->pending.end()) {
           result = rit->second;
-          store_pending_.erase(rit);
+          store_state_->pending.erase(rit);
         }
-        auto oit = store_outcomes_.find(id);
-        if (oit != store_outcomes_.end()) {
+        auto oit = store_state_->outcomes.find(id);
+        if (oit != store_state_->outcomes.end()) {
           outcome = std::move(oit->second);
-          store_outcomes_.erase(oit);
+          store_state_->outcomes.erase(oit);
         }
       }
       if (result) {
@@ -268,18 +300,21 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 void FlutterWindow::DispatchStoreWork(
     std::unique_ptr<flutter::MethodResult<>> result,
     std::function<flutter::EncodableValue()> work) {
+  // 共有状態を shared_ptr でワーカーへ渡す (#795)。ワーカーは FlutterWindow より
+  // 長生きしうる (購入ダイアログのブロック中にウィンドウが破棄される) ため、
+  // this ではなく state 経由で mutex / map / HWND を触る。
+  auto state = store_state_;
   int id;
   {
-    std::lock_guard<std::mutex> lock(store_mutex_);
-    id = store_next_id_++;
-    store_pending_[id] =
+    std::lock_guard<std::mutex> lock(state->mutex);
+    id = state->next_id++;
+    state->pending[id] =
         std::shared_ptr<flutter::MethodResult<>>(std::move(result));
   }
-  HWND hwnd = GetHandle();
   // WinRT 呼び出しは専用 MTA スレッドで回す。購入ダイアログ (RequestPurchaseAsync)
   // はユーザー操作待ちで長時間ブロックしうるため、SMTC のようなタイムアウトは
   // かけず完了まで待つ (UI スレッドは別なので固まらない)。
-  std::thread([this, hwnd, id, work = std::move(work)]() {
+  std::thread([state, id, work = std::move(work)]() {
     flutter::EncodableValue outcome;  // 既定は null (std::monostate)
     try {
       winrt::init_apartment(winrt::apartment_type::multi_threaded);
@@ -288,9 +323,17 @@ void FlutterWindow::DispatchStoreWork(
     } catch (...) {
       // WinRT 例外等。outcome は null のままにし、UI 側で Error を返す。
     }
+    HWND hwnd = nullptr;
     {
-      std::lock_guard<std::mutex> lock(store_mutex_);
-      store_outcomes_[id] = std::move(outcome);
+      std::lock_guard<std::mutex> lock(state->mutex);
+      if (!state->window_alive) {
+        // ウィンドウ破棄済み = アプリ終了中。結果を返す先が無いので捨てる。
+        // 保留していた MethodResult は pending に残ったまま state と一緒に破棄
+        // される (Dart エンジンも teardown 中で応答先が無い)。
+        return;
+      }
+      state->outcomes[id] = std::move(outcome);
+      hwnd = state->hwnd;
     }
     if (hwnd) {
       PostMessage(hwnd, WM_STORE_IAP_RESULT, static_cast<WPARAM>(id), 0);

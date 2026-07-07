@@ -47,6 +47,34 @@ const Object _keepLoadMoreError = Object();
 String? timelineContextKey(AccountKey? accountKey, String kind) =>
     accountKey == null ? null : '${accountKey.toStorageKey()}|$kind';
 
+/// 自分の投稿が、指定した TL 種別に実際に載るかを判定する (#814)。
+/// 楽観挿入 ([TimelineNotifier.insertOwnPost]) が、載らないはずの投稿
+/// （例: ローカル/連合を見ているときの unlisted・フォロワー限定）を先頭へ
+/// 差し込んで「リフレッシュで消える幻の投稿」を作らないためのゲート。
+///
+/// - **home / social**（Misskey hybrid = home + local）: 自分の投稿は direct
+///   以外の全公開範囲（public / unlisted / followersOnly）が載る。
+/// - **local / federated**: 公開系 TL は `public` のみを表示し、unlisted
+///   （Misskey の home 相当）・followersOnly は載らない。federated（連合 /
+///   グローバル）はさらに `localOnly` 投稿を除く（連合しないため）。
+/// - **directMessages**: DM 一覧は楽観挿入の対象外（direct は元々挿入しない）。
+///
+/// 各種別のエンドポイント対応は Mastodon / Misskey アダプタの `getTimeline`
+/// 参照（local=public?local / local-timeline、federated=public / global）。
+bool ownPostAppearsInTimeline(TimelineType type, Post post) {
+  switch (type) {
+    case TimelineType.home:
+    case TimelineType.social:
+      return post.scope != PostScope.direct;
+    case TimelineType.local:
+      return post.scope == PostScope.public;
+    case TimelineType.federated:
+      return post.scope == PostScope.public && !post.localOnly;
+    case TimelineType.directMessages:
+      return false;
+  }
+}
+
 /// build() / fetchUntilVisible のページ取得ループの試行ページ数上限 (#601)。
 /// 実況フィルタ ON で API が満杯ページを返し続けると、可視投稿が 1 件見つかる
 /// までページ取得が連発しレートリミットに達しうるため上限で打ち切る。
@@ -925,7 +953,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
   /// 投稿成功直後に呼ぶ。この provider は [selectedTimelineTypeProvider] を
   /// watch するため、挿入先は home 固定ではなく今表示中の TL（home / local /
-  /// federated）になる。
+  /// social / federated）になる。
   ///
   /// 旧実装は投稿後に `invalidate(timelineProvider)` で REST 全再取得していたが、
   /// 取得タイミング次第（連合/負荷時のサーバー伝播レース）で自分の投稿がまだ
@@ -935,12 +963,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   ///
   /// ストリーミング受信時 ([_streamSubscription] の listener) と同じフィルタを
   /// 適用する: フィルタ hide / hideLivecure 中の #実況（#433 の SnackBar 告知に
-  /// 委ねる）は挿入しない。DM (direct) は公開 TL に出さない。
+  /// 委ねる）は挿入しない。加えて、**表示中の TL に実際に載る投稿だけ**を挿入する
+  /// ([_ownPostVisibleInTimeline]、#814)。載らない投稿を差し込むとリフレッシュで
+  /// 消える幻の投稿になるため。
   void insertOwnPost(Post post) {
     final current = state.valueOrNull;
     // build 中・未構築なら何もしない（後続の REST / streaming が拾う）。
     if (current == null) return;
-    if (post.scope == PostScope.direct) return;
+    // 表示中の TL 種別にこの投稿が実際に載るか（種別 × 公開範囲）で弾く (#814)。
+    final type = ref.read(selectedTimelineTypeProvider);
+    if (!ownPostAppearsInTimeline(type, post)) return;
     if (post.filterAction == FilterAction.hide) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;

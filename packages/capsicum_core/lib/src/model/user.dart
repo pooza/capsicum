@@ -78,9 +78,11 @@ class User {
   /// Mastodon 4.6 のプロフィールタブ表示設定（#732）。所有者が閲覧側に対して
   /// 表示を制御する。null は未対応サーバー（＝従来どおり全て表示）。
   /// - showMedia == false → メディアタブを隠す
+  /// - showMediaReplies == false → メディアタブに返信の添付を含めない（#809）
   /// - showFeatured == false → 固定投稿（フィーチャー）セクションを隠す
   /// - hideCollections == true → フォロー/フォロワーのカウント・導線を隠す
   final bool? showMedia;
+  final bool? showMediaReplies;
   final bool? showFeatured;
   final bool? hideCollections;
 
@@ -113,6 +115,7 @@ class User {
     this.defaultScope,
     this.canChat,
     this.showMedia,
+    this.showMediaReplies,
     this.showFeatured,
     this.hideCollections,
     this.featureApproval,
@@ -143,6 +146,7 @@ class User {
     defaultScope: defaultScope,
     canChat: canChat,
     showMedia: showMedia,
+    showMediaReplies: showMediaReplies,
     showFeatured: showFeatured,
     hideCollections: hideCollections,
     featureApproval: featureApproval,

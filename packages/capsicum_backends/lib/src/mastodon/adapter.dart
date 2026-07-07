@@ -218,12 +218,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     String id, {
     String? maxId,
     bool? onlyMedia,
+    bool? excludeReplies,
   }) async {
     final statuses = await client.getAccountStatuses(
       id,
       maxId: maxId,
       limit: 20,
       onlyMedia: onlyMedia,
+      excludeReplies: excludeReplies,
     );
     return _safeConvert(
       statuses,
@@ -404,14 +406,42 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<Instance> getInstance() async {
+    final foundedAt = await _fetchFoundedAt();
     try {
-      return _parseInstanceV2(await client.getInstanceV2());
+      return _parseInstanceV2(
+        await client.getInstanceV2(),
+        foundedAt: foundedAt,
+      );
     } on DioException {
-      return _parseInstanceV1(await client.getInstanceV1());
+      return _parseInstanceV1(
+        await client.getInstanceV1(),
+        foundedAt: foundedAt,
+      );
     }
   }
 
-  Instance _parseInstanceV2(Map<String, dynamic> data) {
+  /// 設立日 = 最初に作られたアカウント `accounts/1` の作成日 (#815 サーバー情報)。
+  ///
+  /// Mastodon のアカウント id は **2021-03 の timestamp_id 移行より前は連番**
+  /// だったため、それ以前に開設された鯖には id=1（＝最初のローカルアカウント）が
+  /// 残っており、その created_at が真の設立日になる（管理者が創立者と異なる 2 代目
+  /// 管理人の鯖でも accounts/1 なら正しく取れる）。移行後に作られたアカウントは
+  /// snowflake（大きな整数）id になるため、**近年フレッシュに開設された鯖では
+  /// id=1 が存在せず 404** になる。その場合や凍結/削除時は null を返し、parse 側で
+  /// contact_account（管理者・新規個人鯖では創立者と一致しがち）の作成日に
+  /// フォールバックする。リモート（管理者権限なし）から「最古アカウント」を確実に
+  /// 引く公開 API は無いため、これが実用的な最善。
+  Future<DateTime?> _fetchFoundedAt() async {
+    try {
+      return (await client.getAccount('1')).createdAt;
+    } catch (_) {
+      // 設立日は付加情報。id=1 が無い(snowflake 世代)/凍結/削除でも
+      // getInstance 本体を壊さない。
+      return null;
+    }
+  }
+
+  Instance _parseInstanceV2(Map<String, dynamic> data, {DateTime? foundedAt}) {
     final contact = data['contact'] as Map<String, dynamic>? ?? {};
     final config = data['configuration'] as Map<String, dynamic>? ?? {};
     final urls = config['urls'] as Map<String, dynamic>? ?? {};
@@ -441,13 +471,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
       statusUrl: urls['status'] as String?,
+      foundedAt: foundedAt ?? contactAccount?.createdAt,
       imageSizeLimit: (media['image_size_limit'] as num?)?.toInt(),
       videoSizeLimit: (media['video_size_limit'] as num?)?.toInt(),
       audioSizeLimit: (media['audio_size_limit'] as num?)?.toInt(),
     );
   }
 
-  Instance _parseInstanceV1(Map<String, dynamic> data) {
+  Instance _parseInstanceV1(Map<String, dynamic> data, {DateTime? foundedAt}) {
     final contactData = data['contact_account'] as Map<String, dynamic>?;
     User? contactAccount;
     if (contactData != null) {
@@ -469,6 +500,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       contactAccount: contactAccount,
       rules: rules,
       privacyPolicyUrl: 'https://$host/privacy-policy',
+      foundedAt: foundedAt ?? contactAccount?.createdAt,
     );
   }
 
@@ -929,15 +961,31 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
-  Future<List<Collection>> getAccountCollections(String accountId) async {
-    final data = await client.getAccountCollections(accountId);
-    return _collectionMapList(data).map(_collectionFromMap).toList();
+  Future<CollectionPage> getAccountCollections(
+    String accountId, {
+    int? offset,
+  }) async {
+    final page = await client.getAccountCollections(accountId, offset: offset);
+    return (
+      collections: _collectionMapList(
+        page.data,
+      ).map(_collectionFromMap).toList(),
+      nextOffset: page.nextOffset,
+    );
   }
 
   @override
-  Future<List<Collection>> getInCollections(String accountId) async {
-    final data = await client.getInCollections(accountId);
-    return _collectionMapList(data).map(_collectionFromMap).toList();
+  Future<CollectionPage> getInCollections(
+    String accountId, {
+    int? offset,
+  }) async {
+    final page = await client.getInCollections(accountId, offset: offset);
+    return (
+      collections: _collectionMapList(
+        page.data,
+      ).map(_collectionFromMap).toList(),
+      nextOffset: page.nextOffset,
+    );
   }
 
   @override
@@ -1272,9 +1320,39 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     );
     // 画像削除は update_credentials では表現できないため 4.6 の destroy
     // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
-    if (removeAvatar) account = await client.deleteProfileAvatar();
-    if (removeHeader) account = await client.deleteProfileHeader();
-    return account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    // 本文更新は上で成功済みなので、削除ステップの失敗はまとめて捕捉し、
+    // 部分成功として呼び出し側に返す（全失敗表示にしない、#806）。
+    final failedSteps = <String>[];
+    Object? firstError;
+    StackTrace? firstStack;
+    if (removeAvatar) {
+      try {
+        account = await client.deleteProfileAvatar();
+      } catch (e, st) {
+        failedSteps.add('avatar_remove');
+        firstError ??= e;
+        firstStack ??= st;
+      }
+    }
+    if (removeHeader) {
+      try {
+        account = await client.deleteProfileHeader();
+      } catch (e, st) {
+        failedSteps.add('header_remove');
+        firstError ??= e;
+        firstStack ??= st;
+      }
+    }
+    final user = account.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    if (failedSteps.isNotEmpty) {
+      throw ProfileUpdatePartialException(
+        user: user,
+        failedSteps: failedSteps,
+        cause: firstError!,
+        stackTrace: firstStack!,
+      );
+    }
+    return user;
   }
 
   @override

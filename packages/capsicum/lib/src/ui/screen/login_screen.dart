@@ -14,6 +14,7 @@ import '../../constants.dart';
 import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
+import '../../platform/loopback_oauth_bind.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -102,7 +103,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// #187 と同型）、ブラウザの引き渡しに依存しない loopback 方式に切替える。
   /// アプリ内 HTTP サーバへブラウザが直接 HTTP 接続するので確実にコードを取れる。
   /// iOS は ASWebAuthenticationSession でカスタムスキームが確実に戻るため現状維持。
-  bool get _useLocalhostCallback => isDesktop || Platform.isAndroid;
+  bool get _useLocalhostCallback => usesLoopbackOAuthCallback;
 
   /// OAuth redirect URI。デスクトップ / Android は
   /// `localhostOAuthCallbackUrl` (http://localhost:7099/oauth/callback)、
@@ -357,11 +358,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     Uri authorizationUrl, {
     String? expectedState,
   }) async {
+    // 前回のログイン試行のサーバが残っていると同一ポートに再 bind できず
+    // EADDRINUSE (errno98) になる (#813)。bind 前に必ず閉じてポートを解放する。
+    final previous = _oauthServer;
+    if (previous != null) {
+      _oauthServer = null;
+      await previous.close(force: true);
+    }
     // 127.0.0.1 で listen する。redirect_uri は `localhost` だが、macOS の
     // getaddrinfo は ::1 と 127.0.0.1 の両方を返し、ブラウザは Happy Eyeballs
-    // で IPv4 にフォールバックするため loopbackIPv4 で受けられる。
-    final server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
+    // で IPv4 にフォールバックするため loopbackIPv4 で受けられる。固定ポートは
+    // 登録済み redirect_uri (http://localhost:7099/oauth/callback) と一致させる
+    // 必要があり、Doorkeeper は port まで厳密一致するためエフェメラル化できない。
+    // 直前クローズの解放遅延など一時的な EADDRINUSE はリトライで吸収し、使い切れば
+    // LoopbackPortOccupiedException を投げて呼び出し側で友好エラーに昇格させる。
+    final server = await bindLoopbackOAuthServer(
       AppConstants.localhostOAuthPort,
     );
     _oauthServer = server;
@@ -407,7 +418,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ..headers.contentType = ContentType.html
             ..write(
               accept
-                  ? (Platform.isAndroid
+                  ? (oauthCallbackNeedsAppReturn
                         ? _oauthCallbackHtmlAndroid
                         : _oauthCallbackHtml)
                   : '<!doctype html>',
@@ -448,6 +459,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _login({bool isRetry = false}) async {
     if (_loginCompleted) return;
+    // 進行中の多重起動を弾く。二重タップ等で _authenticateViaLocalhostServer が
+    // 同一ポート 7099 に二重 bind すると EADDRINUSE (errno98) を招く (#813)。
+    // retry 経路 (isRetry:true) は進行中の同一フローからの続行なので通す。
+    if (_isLoggingIn && !isRetry) return;
     setState(() {
       _isLoggingIn = true;
       _error = null;
@@ -485,7 +500,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // で scope された host 保存（getHostClientCredentials）か fresh 登録に
         // 委ねる。移行後の初回ログインで localhost client が host 保存されるので、
         // 再登録は host あたり 1 回で済む。
-        if (existing != null && !Platform.isAndroid) {
+        if (existing != null && canReuseAccountScopedOAuthClient) {
           adapter.setCachedClientCredentials(existing.clientSecret);
           usedCachedCreds = true;
         } else {
@@ -525,12 +540,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }());
         _logLoginStep('authenticate.begin');
         reachedAuthenticate = true;
-        // localhost callback 経路では port 7099 が別プロセスで bind 済みだと
-        // flutter_web_auth_2 server impl が internally EADDRINUSE を握って
-        // authorization code を受け取れず、UX が「ログインに失敗しました」と
-        // 出るだけでポート競合と判別できなくなる (#503)。authenticate 呼び出し
-        // 直前に短時間 ServerSocket.bind を試して占有を専用エラーに昇格させる。
-        if (_useLocalhostCallback) {
+        // flutter_web_auth_2 の server impl (Linux / Windows) は内部で 7099 に
+        // bind するが、EADDRINUSE を握って authorization code を取り逃がすだけで
+        // ポート競合と判別できない (#503)。authenticate 直前に短時間
+        // ServerSocket.bind を試して占有を専用エラーに昇格させる。self-hosted
+        // 経路 (Android / macOS) は _authenticateViaLocalhostServer 側が
+        // 旧サーバ close + bind リトライ + 友好エラーで自己完結するため、ここで
+        // 二重 bind して自己 TOCTOU を招かないよう precheck を掛けない (#813)。
+        if (_useLocalhostCallback && !usesSelfHostedOAuthLoopbackServer) {
           final portError = await _checkOAuthPortAvailability();
           if (portError != null) {
             if (mounted) setState(() => _error = portError);
@@ -538,7 +555,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           }
         }
         final String resultUrl;
-        if (Platform.isMacOS || Platform.isAndroid) {
+        if (usesSelfHostedOAuthLoopbackServer) {
           // macOS (#654): flutter_web_auth_2 に localhost server impl が無い。
           // Android (#276): Custom Tab がカスタムスキーム / 検証済み App Link の
           // どちらの redirect もアプリに引き渡さず bounce する (#187 同型)。
@@ -670,6 +687,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       }
     } catch (e, st) {
+      // 自前 loopback サーバの bind がリトライを使い切った (#813)。ポート占有を
+      // ユーザーに伝わる文言へ昇格させ、cancel/フォールバック経路には流さない
+      // （OOB 手貼り等に落ちる前に原因を提示する）。
+      if (e is LoopbackPortOccupiedException) {
+        _logLoginStep('oauth_server.bind_exhausted', data: {'port': e.port});
+        if (mounted) {
+          setState(
+            () => _error =
+                'OAuth コールバック用ポート ${e.port} が他プロセスに占有されています。'
+                '占有中のアプリを閉じてから再試行してください。',
+          );
+        }
+        return;
+      }
       final isCancelled =
           e.toString().contains('CANCELED') ||
           e.toString().contains('cancelled');

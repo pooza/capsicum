@@ -21,6 +21,11 @@ class MastodonAccount {
   /// メディア/フィーチャー/フォロー一覧の表示可否を制御する。未対応サーバーでは
   /// null（＝従来どおり全て表示）。
   final bool? showMedia;
+
+  /// メディアタブに返信の添付を含めるか（Mastodon 4.6 `show_media_replies`、
+  /// #809）。false のとき所有者はメディア返信を非表示にしたいので、メディアタブ
+  /// の取得で返信を除外する。null は未対応サーバー（＝従来どおり返信も表示）。
+  final bool? showMediaReplies;
   final bool? showFeatured;
   final bool? hideCollections;
 
@@ -56,6 +61,7 @@ class MastodonAccount {
     this.avatarDescription,
     this.headerDescription,
     this.showMedia,
+    this.showMediaReplies,
     this.showFeatured,
     this.hideCollections,
     this.featureApproval,

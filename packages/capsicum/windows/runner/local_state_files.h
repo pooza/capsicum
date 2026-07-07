@@ -14,6 +14,14 @@ constexpr wchar_t kLocalStateKeysetFile[] = L"push_keys.json";
 // bg task が書き、FullTrust 起動時に runner が読んで消す観測単一スロット。
 constexpr wchar_t kLocalStateDiagFile[] = L"push_diag.json";
 
+// FullTrust 本体（Dart 由来）が書き、in-process 受信 / bg task が読む、アカウント
+// 別の reblog/post 表示ラベル (#770)。native はプロセスを跨いで Dart の
+// shared_preferences（NotificationLabelCache）を読めないため、push_keys.json と
+// 同じ「Dart が用意 → LocalState 経由で native が読む」契約で共有する。形式は
+// { "user@host": "{\"reblog\":\"リキュア！\",\"post\":\"投稿\"}" }（値は鍵セットと
+// 同じく JSON 文字列の入れ子）。不在時は既定ラベル（ブースト/投稿）へフォールバック。
+constexpr wchar_t kLocalStatePushLabelsFile[] = L"push_labels.json";
+
 }  // namespace capsicum
 
 #endif  // RUNNER_LOCAL_STATE_FILES_H_

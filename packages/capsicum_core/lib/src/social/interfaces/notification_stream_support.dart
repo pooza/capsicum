@@ -26,6 +26,12 @@ abstract mixin class NotificationStreamSupport {
     void Function()? onReconnectExhausted,
   });
 
-  /// 通知ストリーミング接続をクローズする。アカウント切替時 / dispose 時に呼ぶ。
+  /// 通知ストリーミング接続を明示的にクローズする（アカウント切替 / dispose 時）。
+  ///
+  /// 通常の teardown は購読側（`DesktopNotificationDispatcher`）が
+  /// [streamNotifications] の subscription を cancel し、broadcast controller の
+  /// `onCancel` が streaming 実装の `dispose` を呼ぶ経路で完結する。再ログイン時も
+  /// 新しい adapter が作られるため、本メソッドは実運用では呼ばれない防御的経路
+  /// （明示破棄したい呼び出し元向けの契約）である (#676 で確認)。
   void disposeNotificationStream();
 }

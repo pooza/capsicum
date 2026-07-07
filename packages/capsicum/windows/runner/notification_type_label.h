@@ -29,9 +29,16 @@ std::string NotificationTypeDisplayLabel(const std::string& type,
 // 表示する最終 title を決める。macOS NSE の didReceive と同じ優先順位:
 //   type があれば type→ラベル変換を優先（サーバー title の表記揺れを統一）、
 //   無ければサーバー生成 title、いずれも空なら汎用 "通知"。
-// reblog / post ラベルは既定値を使う。
+// [reblog_label] / [post_label] はサーバー / アカウント別のカスタムラベル
+// （リノート / リキュア！等）を渡す (#770)。省略時は既定値（ブースト / 投稿）。
+// Windows では LocalState の push_labels.json から引いた値を渡し、無ければ既定に
+// フォールバックする。
 std::string ResolveDisplayTitle(const std::string& type,
-                                const std::string& server_title);
+                                const std::string& server_title,
+                                const std::string& reblog_label =
+                                    kDefaultReblogLabel,
+                                const std::string& post_label =
+                                    kDefaultPostLabel);
 
 }  // namespace capsicum
 

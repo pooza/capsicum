@@ -7,6 +7,10 @@ library;
 
 import 'user.dart';
 
+/// コレクション一覧の 1 ページ（offset ページング、#802）。[nextOffset] が
+/// non-null なら次ページがある（Link ヘッダ rel="next" の offset）。null で終端。
+typedef CollectionPage = ({List<Collection> collections, int? nextOffset});
+
 /// コレクション内の 1 メンバー（`REST::CollectionItemSerializer`）。
 /// `state` は招待の承認状態で、revoke（opt-out）対象かの判定に使う。
 enum CollectionItemState { pending, accepted, rejected, revoked, unknown }

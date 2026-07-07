@@ -96,6 +96,12 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 600) {
+      // 継続エラー時 (loadMoreError) は自動再試行を止める (#678)。回復は
+      // pull-to-refresh で build() 再実行時。
+      final state = ref
+          .read(hashtagTimelineProvider(widget.hashtag))
+          .valueOrNull;
+      if (state != null && state.loadMoreError != null) return;
       ref.read(hashtagTimelineProvider(widget.hashtag).notifier).loadMore();
     }
   }
