@@ -1679,7 +1679,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 }),
               ],
               // 到達不能でオフライン保持中のアカウント (#792)。消さずに greyed で
-              // 一覧へ残す。タップで即時再試行し、復帰すれば通常アカウントへ昇格。
+              // 一覧へ残す。タップ / 再試行アイコンで即時再試行し、復帰すれば通常
+              // アカウントへ昇格。サーバーがドメインごと消えて戻る見込みが無い
+              // 場合はゴミ箱で端末から削除できる。
               if (accountState.offlineAccounts.isNotEmpty)
                 ...accountState.offlineAccounts.map((offline) {
                   final disabledColor = Theme.of(context).disabledColor;
@@ -1695,7 +1697,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       offline.retrying ? '接続できません（再試行中…）' : '接続できません',
                       style: TextStyle(color: disabledColor),
                     ),
-                    trailing: Icon(Icons.refresh, color: disabledColor),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.refresh, color: disabledColor),
+                          tooltip: '再試行',
+                          onPressed: () {
+                            ref
+                                .read(accountManagerProvider.notifier)
+                                .retryOfflineRestores();
+                            dismiss();
+                          },
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline, color: disabledColor),
+                          tooltip: 'このアカウントを削除',
+                          onPressed: () =>
+                              confirmRemoveOfflineAccount(context, ref, offline),
+                        ),
+                      ],
+                    ),
                     onTap: () {
                       ref
                           .read(accountManagerProvider.notifier)
@@ -2441,7 +2463,8 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     trailing: IconButton(
                       icon: const Icon(Icons.logout),
                       tooltip: 'このアカウントを削除',
-                      onPressed: () => _confirmRemove(context, ref, o),
+                      onPressed: () =>
+                        confirmRemoveOfflineAccount(context, ref, o),
                     ),
                   ),
                 ),
@@ -2466,35 +2489,39 @@ class _OfflineHomeScaffold extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmRemove(
-    BuildContext context,
-    WidgetRef ref,
-    OfflineAccount offline,
-  ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('アカウントを削除'),
-        content: Text(
-          '${offline.handle} をこの端末から削除します。'
-          'サーバーが復帰しても自動では戻らず、再ログインが必要になります。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('削除'),
-          ),
-        ],
+}
+
+/// オフライン保持中のアカウントを、確認ダイアログ付きで端末から削除する
+/// (#792)。ドロワーの切替リストとオフラインプレースホルダの両方から使う。
+/// サーバーがドメインごと消えて復帰見込みが無いアカウントの片付け用。
+Future<void> confirmRemoveOfflineAccount(
+  BuildContext context,
+  WidgetRef ref,
+  OfflineAccount offline,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('アカウントを削除'),
+      content: Text(
+        '${offline.handle} をこの端末から削除します。'
+        'サーバーが復帰しても自動では戻らず、再ログインが必要になります。',
       ),
-    );
-    if (ok == true) {
-      await ref
-          .read(accountManagerProvider.notifier)
-          .removeOfflineAccount(offline.key);
-    }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('削除'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) {
+    await ref
+        .read(accountManagerProvider.notifier)
+        .removeOfflineAccount(offline.key);
   }
 }
