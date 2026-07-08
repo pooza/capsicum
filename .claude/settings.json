@@ -105,9 +105,9 @@
     ],
     "defaultMode": "auto",
     "additionalDirectories": [
-      "/tmp",
       "/opt/local",
-      "/private/tmp"
+      "/private/tmp",
+      "/tmp"
     ]
   }
 }
