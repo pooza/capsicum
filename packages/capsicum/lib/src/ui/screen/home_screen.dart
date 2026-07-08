@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
+import '../../model/offline_account.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
@@ -248,6 +249,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final account = ref.watch(currentAccountProvider);
     final accountState = ref.watch(accountManagerProvider);
+
+    // オンラインで使えるアカウントが 1 つも無く、到達不能でオフライン保持中の
+    // アカウントだけがある状態（サーバー停止 / 再構築中）。ログイン画面へ戻さず
+    // 「接続できません／再試行中」を表示し、復帰したら自動でタイムラインへ戻る
+    // (#792)。
+    if (account == null && accountState.offlineAccounts.isNotEmpty) {
+      return const _OfflineHomeScaffold();
+    }
+
     final selectedType = ref.watch(selectedTimelineTypeProvider);
     final selectedList = ref.watch(selectedListProvider);
     final selectedHashtag = ref.watch(selectedHashtagProvider);
@@ -1668,6 +1678,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   );
                 }),
               ],
+              // 到達不能でオフライン保持中のアカウント (#792)。消さずに greyed で
+              // 一覧へ残す。タップで即時再試行し、復帰すれば通常アカウントへ昇格。
+              if (accountState.offlineAccounts.isNotEmpty)
+                ...accountState.offlineAccounts.map((offline) {
+                  final disabledColor = Theme.of(context).disabledColor;
+                  return ListTile(
+                    leading: Icon(Icons.person_off_outlined, color: disabledColor),
+                    title: Text(
+                      offline.handle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: disabledColor),
+                    ),
+                    subtitle: Text(
+                      offline.retrying ? '接続できません（再試行中…）' : '接続できません',
+                      style: TextStyle(color: disabledColor),
+                    ),
+                    trailing: Icon(Icons.refresh, color: disabledColor),
+                    onTap: () {
+                      ref
+                          .read(accountManagerProvider.notifier)
+                          .retryOfflineRestores();
+                      dismiss();
+                    },
+                  );
+                }),
               ListTile(
                 leading: const Icon(Icons.person_add),
                 title: const Text('アカウントを追加'),
@@ -2344,5 +2380,121 @@ class _NotificationBellButton extends StatelessWidget {
       ],
     );
     if (selection != null && context.mounted) context.push(selection);
+  }
+}
+
+/// オンラインで使えるアカウントが無く、到達不能でオフライン保持中のアカウント
+/// だけがある状態の代替ホーム (#792)。ログイン画面へ戻さずに「接続できません
+/// ／再試行中」を表示し、サーバー復帰で自動的に通常のタイムラインへ戻る
+/// （復元成功でオフライン → オンライン昇格し、`account != null` になった時点で
+/// [HomeScreen.build] が通常経路を返す）。
+class _OfflineHomeScaffold extends ConsumerWidget {
+  const _OfflineHomeScaffold();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offline = ref.watch(offlineAccountsProvider);
+    final anyRetrying = offline.any((o) => o.retrying);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('接続できません'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(24),
+            children: [
+              Icon(
+                Icons.cloud_off,
+                size: 64,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                anyRetrying ? 'サーバーに接続中…' : 'サーバーに接続できません',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'ログイン中のサーバーが停止しているか、再構築中の可能性があります。'
+                'アカウントは保持しているので、サーバーが復帰すると自動的に'
+                'タイムラインへ戻ります。',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 24),
+              for (final o in offline)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.person_off_outlined),
+                    title: Text(
+                      o.handle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(o.retrying ? '再試行中…' : '接続できません'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.logout),
+                      tooltip: 'このアカウントを削除',
+                      onPressed: () => _confirmRemove(context, ref, o),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => ref
+                    .read(accountManagerProvider.notifier)
+                    .retryOfflineRestores(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('今すぐ再試行'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/server'),
+                icon: const Icon(Icons.person_add),
+                label: const Text('別のアカウントでログイン'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove(
+    BuildContext context,
+    WidgetRef ref,
+    OfflineAccount offline,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('アカウントを削除'),
+        content: Text(
+          '${offline.handle} をこの端末から削除します。'
+          'サーバーが復帰しても自動では戻らず、再ログインが必要になります。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ref
+          .read(accountManagerProvider.notifier)
+          .removeOfflineAccount(offline.key);
+    }
   }
 }

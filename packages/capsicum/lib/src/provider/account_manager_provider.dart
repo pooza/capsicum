@@ -12,6 +12,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../constants.dart';
 import '../model/account.dart';
 import '../model/account_key.dart';
+import '../model/offline_account.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
@@ -26,13 +27,26 @@ class AccountManagerState {
   final List<Account> accounts;
   final Account? current;
 
-  const AccountManagerState({this.accounts = const [], this.current});
+  /// 到達不能でオンライン復元できていないログイン済みアカウント (#792)。
+  /// 一覧から消さず切替 UI に greyed 表示し、背景リトライで [accounts] へ昇格
+  /// させる。`accounts` が空でもこれが非空なら「ログアウト」ではない。
+  final List<OfflineAccount> offlineAccounts;
 
-  AccountManagerState copyWith({List<Account>? accounts, Account? current}) =>
-      AccountManagerState(
-        accounts: accounts ?? this.accounts,
-        current: current ?? this.current,
-      );
+  const AccountManagerState({
+    this.accounts = const [],
+    this.current,
+    this.offlineAccounts = const [],
+  });
+
+  AccountManagerState copyWith({
+    List<Account>? accounts,
+    Account? current,
+    List<OfflineAccount>? offlineAccounts,
+  }) => AccountManagerState(
+    accounts: accounts ?? this.accounts,
+    current: current ?? this.current,
+    offlineAccounts: offlineAccounts ?? this.offlineAccounts,
+  );
 }
 
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
@@ -94,7 +108,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         : account;
 
     final newAccounts = [enriched, ...state.accounts];
-    state = AccountManagerState(accounts: newAccounts, current: enriched);
+    // 手動ログインで復帰したサーバーがオフライン保持中なら、その entry を落と
+    // して二重表示を防ぐ (#792)。
+    final offline = state.offlineAccounts
+        .where((o) => o.key != enriched.key)
+        .toList();
+    state = AccountManagerState(
+      accounts: newAccounts,
+      current: enriched,
+      offlineAccounts: offline,
+    );
 
     // Prefetch server metadata for badge display (non-blocking).
     ServerMetadataCache.instance.fetch(account.key.host);
@@ -116,7 +139,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       account,
       ...state.accounts.where((a) => a.key != account.key),
     ];
-    state = AccountManagerState(accounts: reordered, current: account);
+    state = AccountManagerState(
+      accounts: reordered,
+      current: account,
+      offlineAccounts: state.offlineAccounts,
+    );
 
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
@@ -136,7 +163,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final accounts = state.accounts
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
-    state = AccountManagerState(accounts: accounts, current: updated);
+    state = AccountManagerState(
+      accounts: accounts,
+      current: updated,
+      offlineAccounts: state.offlineAccounts,
+    );
   }
 
   Future<void> logout(Account account) async {
@@ -155,7 +186,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         ? (remaining.isNotEmpty ? remaining.first : null)
         : state.current;
 
-    state = AccountManagerState(accounts: remaining, current: next);
+    state = AccountManagerState(
+      accounts: remaining,
+      current: next,
+      offlineAccounts: state.offlineAccounts
+          .where((o) => o.key != account.key)
+          .toList(),
+    );
     // 残ったアカウントのラベルで push_labels.json を更新（削除分を落とす、#770）。
     await _syncWindowsPushLabels();
   }
@@ -184,7 +221,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final accounts = state.accounts
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
-    state = AccountManagerState(accounts: accounts, current: updated);
+    state = AccountManagerState(
+      accounts: accounts,
+      current: updated,
+      offlineAccounts: state.offlineAccounts,
+    );
     await _persistNotificationLabels(updated);
     await _syncWindowsPushLabels();
     return true;
@@ -294,9 +335,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final storage = ref.read(accountStorageProvider);
     final keys = await storage.getAccountKeys();
     var skippedCount = 0;
-    // ネットワーク一過性で落ちたアカウント（secret は有効）。バックグラウンドで
-    // 再試行する (#730)。
-    final transientFailures =
+    // 一時的な到達不能で落ちたアカウント（secret は有効）。オフライン保持し
+    // ながらバックグラウンドで再試行する (#730 / #792)。ネットワーク不通に
+    // 加えサーバー 5xx（再構築中など）も含む。
+    final retriableFailures =
         <({String keyStr, Map<String, String> secrets})>[];
 
     // secret を読み出せたアカウントだけを probe 対象に集める。順序は
@@ -329,26 +371,47 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 完了順ではなく entries（＝MRU 順）の並びで結果を確定し、並び・current の
     // ブレを防ぐ。
     final restored = <Account>[];
+    final offline = <OfflineAccount>[];
     for (var i = 0; i < entries.length; i++) {
       final r = results[i];
       if (r.account != null) {
         restored.add(r.account!);
-      } else if (r.transient) {
-        transientFailures.add(entries[i]);
+      } else if (r.outcome == RestoreOutcome.retriable) {
+        // 一時的な到達不能。消さずオフライン保持し、背景リトライへ回す (#792)。
+        // AccountKey が parse できない破損 key はオフライン表現を作れないので
+        // 従来どおり skip する。
+        AccountKey? key;
+        try {
+          key = AccountKey.fromStorageKey(entries[i].keyStr);
+        } catch (_) {
+          key = null;
+        }
+        if (key != null) {
+          offline.add(OfflineAccount(key: key));
+          retriableFailures.add(entries[i]);
+        } else {
+          skippedCount++;
+        }
       } else {
+        // authRevoked（再ログイン）/ giveUp（secret 系・4xx・不明）は従来どおり
+        // skip して観測する。
         skippedCount++;
       }
     }
 
-    if (restored.isNotEmpty) {
+    if (restored.isNotEmpty || offline.isNotEmpty) {
       // MRU 順を保ったまま一括反映する。current は先頭（＝MRU 先頭）。splash 中は
       // 通常 state は空だが、万一別経路が先に追加したアカウントがあれば温存する。
       final existing = state.accounts
           .where((a) => restored.every((r) => r.key != a.key))
           .toList();
+      final onlineAccounts = [...restored, ...existing];
       state = AccountManagerState(
-        accounts: [...restored, ...existing],
-        current: state.current ?? restored.first,
+        accounts: onlineAccounts,
+        current:
+            state.current ??
+            (onlineAccounts.isNotEmpty ? onlineAccounts.first : null),
+        offlineAccounts: offline,
       );
 
       // 反映後の後処理: 通知ラベル永続化（並列）とバッジ用メタのプリフェッチ。
@@ -359,10 +422,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       }
     }
 
-    if (transientFailures.isNotEmpty) {
+    if (retriableFailures.isNotEmpty) {
       // 起動を待たせないよう、再試行はバックグラウンドへ逃がす（splash は
       // restoreSessions 完走として先へ進み、復帰したアカウントは後から現れる）。
-      unawaited(_retryTransientRestores(transientFailures));
+      unawaited(_retryOfflineRestores(retriableFailures));
     }
     return skippedCount;
   }
@@ -371,30 +434,33 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// （[restoreSessions]）から使う。state は変更しない（反映は呼び出し側で一括）。
   ///
   /// - `account != null` … 復元成功
-  /// - `transient == true` … ネットワーク一過性。secret は有効なのでバック
-  ///   グラウンド再試行へ回す (#730)。
-  /// - いずれも false … auth 失効 / secret 系 / 不明。skip して観測する。
-  Future<({Account? account, bool transient})> _probeForRestore(
+  /// - `outcome == retriable` … 一時的な到達不能（ネットワーク不通 / サーバー
+  ///   5xx）。secret は有効なのでオフライン保持しバックグラウンド再試行へ回す
+  ///   (#730 / #792)。
+  /// - `outcome == authRevoked` / `giveUp` … auth 失効 / secret 系 / 不明。
+  ///   skip して観測する。
+  Future<({Account? account, RestoreOutcome? outcome})> _probeForRestore(
     String keyStr,
     Map<String, String> secrets,
   ) async {
     try {
       final account = await _probeAccount(keyStr, secrets);
-      return (account: account, transient: false);
+      return (account: account, outcome: null);
     } catch (e, st) {
-      // ネットワーク一過性（host lookup / connection / timeout）の失敗は、
-      // secret は有効なのに probe（getMyself 等）が落ちただけ。これを
-      // 「復元不能＝ログアウト」へ降格させない (#730)。回線ブリップ時に複数
-      // アカウントの getMyself() が同時に失敗→全 skip→「一斉ログアウト」に
-      // 見える事象の根治。secret は無傷なのでバックグラウンドで再試行し、
-      // ユーザー操作なしで自動回復させる。auth 失効（401=server 応答）や
-      // secret 系・不明はこれまで通り skip + 観測する。
-      if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
+      // 一時的な到達不能（host lookup / connection / timeout / サーバー 5xx）の
+      // 失敗は、secret は有効なのに probe（getMyself 等）が落ちただけ。これを
+      // 「復元不能＝ログアウト」へ降格させない (#730 / #792)。回線ブリップや
+      // サーバー再構築時に複数アカウントの getMyself() が同時に失敗→全 skip→
+      // 「一斉ログアウト／サーバーごと消えた」に見える事象の根治。secret は
+      // 無傷なのでオフライン保持＋背景再試行し、ユーザー操作なしで自動回復
+      // させる。auth 失効（401/403）や secret 系・不明は従来通り skip + 観測。
+      final outcome = classifyRestoreFailure(e);
+      if (outcome == RestoreOutcome.retriable) {
         debugPrint(
-          'capsicum: restoreSessions: transient network for $keyStr, '
-          'will retry in background: $e',
+          'capsicum: restoreSessions: transient failure for $keyStr, '
+          'kept offline and will retry in background: $e',
         );
-        return (account: null, transient: true);
+        return (account: null, outcome: RestoreOutcome.retriable);
       }
       // 復元中の例外を以前は完全に握りつぶしていたが、Linux で Misskey
       // アカウントだけ silently に消える挙動の追跡が不可能になっていた
@@ -403,7 +469,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // 埋めないように)。
       debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
       _reportRestoreOnce(keyStr, e, st);
-      return (account: null, transient: false);
+      return (account: null, outcome: outcome);
     }
   }
 
@@ -477,20 +543,29 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   /// 1 アカウントを probe して、成功したら state へ追加する。
-  /// バックグラウンド再試行 [_retryTransientRestores] から使う（初回の一括復元は
+  /// バックグラウンド再試行 [_retryOfflineRestores] から使う（初回の一括復元は
   /// [restoreSessions] が [_probeForRestore] で並列化し、まとめて反映する）。
-  /// 例外は呼び出し側で分類する（ネットワーク一過性なら再試行、それ以外は skip）。
+  /// 例外は呼び出し側で分類する（一時的な到達不能なら再試行、それ以外は skip）。
   Future<void> _restoreOne(String keyStr, Map<String, String> secrets) async {
     final account = await _probeAccount(keyStr, secrets);
 
     // append 直前の最終重複ガード。probe は複数 await をまたぐため、その間に
     // 別経路（手動ログイン / 初回復元）で同一 key が復元されると二重 append に
     // なりうる。ここで再確認する (#730 リトライ経路の防御)。
-    if (state.accounts.any((a) => a.key == account.key)) return;
+    if (state.accounts.any((a) => a.key == account.key)) {
+      // 既にオンラインなら、オフライン保持が残っていても落としておく。
+      _removeOffline(account.key);
+      return;
+    }
 
+    // 復元成功＝オフライン保持からオンラインへ昇格。offline entry を除去する
+    // (#792)。
     state = AccountManagerState(
       accounts: [...state.accounts, account],
       current: state.current ?? account,
+      offlineAccounts: state.offlineAccounts
+          .where((o) => o.key != account.key)
+          .toList(),
     );
 
     await _persistNotificationLabels(account);
@@ -500,12 +575,34 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     ServerMetadataCache.instance.fetch(account.key.host);
   }
 
-  /// ネットワーク一過性で初回復元に失敗したアカウントを、回線復帰を待って
-  /// バックグラウンドで再試行する (#730)。短い backoff を数回かけ、成功すれば
-  /// state に現れてユーザー操作なしで自動回復する。手動ログイン等で既に
-  /// 復元済みのものはスキップ。ネットワーク以外（auth 失効等）へ転じたら諦めて
-  /// 観測。全 backoff 後も不通なら観測のみ残す（ユーザーは手動で再ログイン可能）。
-  Future<void> _retryTransientRestores(
+  /// [key] のオフライン保持を除去する (#792)。昇格・drop・手動削除で使う。
+  void _removeOffline(AccountKey key) {
+    if (!state.offlineAccounts.any((o) => o.key == key)) return;
+    state = state.copyWith(
+      offlineAccounts: state.offlineAccounts
+          .where((o) => o.key != key)
+          .toList(),
+    );
+  }
+
+  /// [key] のオフライン保持の [OfflineAccount.retrying] フラグを更新する
+  /// (#792)。背景リトライを尽くした後は false（手動再試行は可能）。
+  void _markOfflineRetrying(AccountKey key, bool retrying) {
+    final idx = state.offlineAccounts.indexWhere((o) => o.key == key);
+    if (idx < 0) return;
+    final updated = [...state.offlineAccounts];
+    updated[idx] = updated[idx].copyWith(retrying: retrying);
+    state = state.copyWith(offlineAccounts: updated);
+  }
+
+  /// 一時的な到達不能で初回復元に失敗し、オフライン保持したアカウントを、
+  /// 回線 / サーバー復帰を待ってバックグラウンドで再試行する (#730 / #792)。
+  /// 短い backoff を数回かけ、成功すればオンラインへ昇格してユーザー操作なしで
+  /// 自動回復する（offline entry は [_restoreOne] が除去）。手動ログイン等で
+  /// 既に復元済みのものはスキップ。auth 失効（401/403）等へ転じたら再ログイン
+  /// 扱いで offline から drop + 観測。全 backoff 後も不通なら offline 保持のまま
+  /// `retrying=false` にし（手動再試行は可能）、観測を 1 度残す。
+  Future<void> _retryOfflineRestores(
     List<({String keyStr, Map<String, String> secrets})> pending,
   ) async {
     const delays = [
@@ -528,13 +625,15 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         try {
           await _restoreOne(item.keyStr, item.secrets);
         } catch (e, st) {
-          if (classifyLoginFailure(e).kind == LoginFailureKind.network) {
-            stillFailing.add(item); // まだ不通。次の backoff で再試行。
+          if (classifyRestoreFailure(e) == RestoreOutcome.retriable) {
+            stillFailing.add(item); // まだ到達不能。次の backoff で再試行。
           } else {
-            // ネットワーク以外（auth 失効等）へ転じたら諦めて観測する。
+            // auth 失効（401/403）等へ転じたら再ログイン扱い。offline から
+            // drop して観測する（一覧に残すと復帰しないゾンビになる）。
             debugPrint(
               'capsicum: account_restore: retry gave up for ${item.keyStr}: $e',
             );
+            _dropOfflineByKeyStr(item.keyStr);
             _reportRestoreOnce(item.keyStr, e, st);
           }
         }
@@ -544,16 +643,78 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     if (remaining.isNotEmpty) {
       debugPrint(
         'capsicum: restoreSessions: ${remaining.length} account(s) still '
-        'unreachable after retries; user can re-login manually',
+        'unreachable after retries; kept offline (user can retry / re-login)',
       );
       // 全 backoff 後も不通＝「一過性」前提が外れて恒久障害だった可能性がある。
-      // #730 は一斉ログアウト誤認を防ぐのが主目的だが、握り潰しが恒久障害を
-      // 覆い隠さないよう、枯渇したアカウントを per-process dedup で 1 度だけ
-      // 観測する（network 系として path タグで区別）。
+      // #792 では消さずオフライン保持したまま retrying=false にして「再試行
+      // 中」表示を止める（手動再試行 / 再ログインは可能）。#730 と同じく、
+      // 握り潰しが恒久障害を覆い隠さないよう per-process dedup で 1 度だけ観測。
       for (final item in remaining) {
+        _markOfflineByKeyStr(item.keyStr, retrying: false);
         _reportRestoreExhaustedOnce(item.keyStr);
       }
     }
+  }
+
+  /// keyStr（storage key）から offline entry を除去する。破損 key は無視。
+  void _dropOfflineByKeyStr(String keyStr) {
+    try {
+      _removeOffline(AccountKey.fromStorageKey(keyStr));
+    } catch (_) {
+      // parse 不能 key は offline 表現を持たないので何もしない。
+    }
+  }
+
+  /// keyStr（storage key）から offline entry の retrying フラグを更新する。
+  void _markOfflineByKeyStr(String keyStr, {required bool retrying}) {
+    try {
+      _markOfflineRetrying(AccountKey.fromStorageKey(keyStr), retrying);
+    } catch (_) {
+      // parse 不能 key は無視。
+    }
+  }
+
+  /// オフライン保持中のアカウントを、ユーザー操作で即時に再試行する (#792)。
+  /// オフラインプレースホルダ / 切替 UI の「再試行」から呼ぶ。secret は state に
+  /// 持たず storage から読み直す。成功すればオンラインへ昇格する。
+  Future<void> retryOfflineRestores() async {
+    final storage = ref.read(accountStorageProvider);
+    // 反復中に state.offlineAccounts が変化するのでスナップショットを取る。
+    final targets = [...state.offlineAccounts];
+    for (final offline in targets) {
+      final keyStr = offline.key.toStorageKey();
+      if (state.accounts.any((a) => a.key == offline.key)) {
+        _removeOffline(offline.key);
+        continue;
+      }
+      _markOfflineRetrying(offline.key, true);
+      final secrets = await storage.getSecrets(keyStr);
+      if (secrets == null) {
+        // secret が消えていれば復元不能。drop + 観測。
+        _dropOfflineByKeyStr(keyStr);
+        _reportNullSecretSkipOnce(keyStr);
+        continue;
+      }
+      try {
+        await _restoreOne(keyStr, secrets);
+      } catch (e, st) {
+        if (classifyRestoreFailure(e) == RestoreOutcome.retriable) {
+          _markOfflineRetrying(offline.key, false);
+        } else {
+          _dropOfflineByKeyStr(keyStr);
+          _reportRestoreOnce(keyStr, e, st);
+        }
+      }
+    }
+  }
+
+  /// オフライン保持中のアカウントをユーザー操作で一覧から削除する (#792)。
+  /// secret も storage から消す（＝明示ログアウト相当）。
+  Future<void> removeOfflineAccount(AccountKey key) async {
+    final storage = ref.read(accountStorageProvider);
+    await storage.removeAccount(key.toStorageKey());
+    _removeOffline(key);
+    await _syncWindowsPushLabels();
   }
 
   static final Set<String> _reportedRestoreErrors = {};
@@ -708,6 +869,11 @@ final accountStorageProvider = Provider<AccountStorage>(
 /// Convenience provider for the currently selected account.
 final currentAccountProvider = Provider<Account?>((ref) {
   return ref.watch(accountManagerProvider).current;
+});
+
+/// 到達不能でオフライン保持中のアカウント一覧 (#792)。
+final offlineAccountsProvider = Provider<List<OfflineAccount>>((ref) {
+  return ref.watch(accountManagerProvider).offlineAccounts;
 });
 
 /// Convenience provider for the current adapter.

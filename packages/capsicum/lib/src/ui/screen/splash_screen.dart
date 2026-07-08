@@ -107,7 +107,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     await shareIntentReady;
     if (!mounted) return;
 
-    final hasAccount = ref.read(accountManagerProvider).current != null;
+    final accountState = ref.read(accountManagerProvider);
+    // オンラインで使えるアカウントがあるか（共有 → compose の可否判定用）。
+    final hasAccount = accountState.current != null;
+    // ログイン済みか（/home か /server かの分岐用）。到達不能でオフライン保持中の
+    // アカウントも「ログイン済み」に含め、サーバー停止 / 再構築中に /server（ログ
+    // イン画面）へ飛ばして「ログアウトされた」ように見せない (#792)。
+    final hasSession = hasAccount || accountState.offlineAccounts.isNotEmpty;
 
     // If a share intent is pending and the user is logged in, go to compose.
     final shared = pendingSharedText;
@@ -124,7 +130,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       return;
     }
 
-    final nextRoute = hasAccount ? '/home' : '/server';
+    final nextRoute = hasSession ? '/home' : '/server';
     if (!eulaAccepted) {
       context.go('/eula', extra: nextRoute);
     } else {
