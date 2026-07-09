@@ -85,17 +85,25 @@ class ServerVersionChecker {
   /// 比較し、桁数違いは欠けた桁を 0 とみなす。Mastodon の semver も Misskey の
   /// 日付版（YYYY.M.P）も同じ tuple 比較で扱える。
   @visibleForTesting
-  static bool isBehind(String serverVersion, String latestVersion) {
-    final s = _parts(serverVersion);
-    final l = _parts(latestVersion);
-    final len = s.length > l.length ? s.length : l.length;
+  static bool isBehind(String serverVersion, String latestVersion) =>
+      !isAtLeast(serverVersion, latestVersion);
+
+  /// [version] が [minimum] 以上か。base を dotted int で比較し、桁数違いは
+  /// 欠けた桁を 0 とみなす。フォーク suffix / build 番号は [baseVersion] で
+  /// 落とすため `4.6.3-bshockdon` も `4.6.3` として扱える。数値でない版
+  /// （`Glitch` 等）は `[0]` に倒れるため minimum 未満と判定される。機能が
+  /// 特定バージョンで追加された API のゲートに使う（例: Collections=4.6、#810）。
+  static bool isAtLeast(String version, String minimum) {
+    final v = _parts(version);
+    final m = _parts(minimum);
+    final len = v.length > m.length ? v.length : m.length;
     for (var i = 0; i < len; i++) {
-      final sv = i < s.length ? s[i] : 0;
-      final lv = i < l.length ? l[i] : 0;
-      if (sv < lv) return true;
-      if (sv > lv) return false;
+      final vv = i < v.length ? v[i] : 0;
+      final mv = i < m.length ? m[i] : 0;
+      if (vv > mv) return true;
+      if (vv < mv) return false;
     }
-    return false;
+    return true;
   }
 
   static List<int> _parts(String v) =>
