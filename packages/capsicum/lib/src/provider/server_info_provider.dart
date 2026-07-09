@@ -64,9 +64,21 @@ class ServerInfoNotifier extends AutoDisposeAsyncNotifier<ServerInfoState> {
       }
     } catch (_) {}
 
+    // モロヘイヤ導入鯖では設立日(正式オープン)・プレ公開日を `/about` から採用
+    // する (#818)。モロヘイヤの founded_at は手設定 or 最古アカウント近似を
+    // サーバー側で吸収済みなので、client のヒューリスティック [Instance.foundedAt]
+    // より優先する。founded_at が null (DB 未接続等) の時は copyWith の `?? this`
+    // で client 側ヒューリスティックにフォールバックする。preopened_at は手設定
+    // 時のみ非 null。
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+
     // NodeInfo 由来のソフト名だけ後付けする。他フィールドは copyWith で確実に
     // 引き継ぐ（手写しだと foundedAt 等の新規フィールドを取りこぼす）。
-    final enriched = instance.copyWith(softwareName: softwareName);
+    final enriched = instance.copyWith(
+      softwareName: softwareName,
+      foundedAt: mulukhiya?.foundedAt,
+      preopenedAt: mulukhiya?.preopenedAt,
+    );
     return ServerInfoState(instance: enriched);
   }
 

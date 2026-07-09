@@ -17,18 +17,30 @@ class Instance {
   final String? privacyPolicyUrl;
   final String? statusUrl;
 
-  /// サーバーの設立日。API に創立日フィールドは無いため、**最初に作られた
-  /// アカウントの作成日**で近似する。
+  /// サーバーの設立日（正式オープン日）。
   ///
-  /// - Mastodon: `accounts/1` の作成日。account id は 2021-03 の timestamp_id
-  ///   移行より前は連番だったため、それ以前開設の鯖には id=1（最初のローカル
-  ///   アカウント）が残り真の設立日を返せる（2代目管理人の鯖でも正しい）。移行後
-  ///   開設の鯖は id が snowflake になり id=1 が無いため、`contact_account`
-  ///   （管理者）の作成日にフォールバックする。
-  /// - Misskey: 最古ローカルユーザーの `createdAt`。
+  /// - **モロヘイヤ導入鯖**: `/about` の `config.founded_at` を単純採用する
+  ///   (#818)。運用者が `/founded_on` を手設定していればその値、未設定なら
+  ///   サーバー側が下記ヒューリスティックで近似した値が入る。合流は
+  ///   server_info_provider が行う。
+  /// - **非モロヘイヤ鯖**: API に創立日フィールドが無いため、**最初に作られた
+  ///   アカウントの作成日**で近似する。
+  ///   - Mastodon: `accounts/1` の作成日。account id は 2021-03 の timestamp_id
+  ///     移行より前は連番だったため、それ以前開設の鯖には id=1（最初のローカル
+  ///     アカウント）が残り真の設立日を返せる（2代目管理人の鯖でも正しい）。移行後
+  ///     開設の鯖は id が snowflake になり id=1 が無いため、`contact_account`
+  ///     （管理者）の作成日にフォールバックする。
+  ///   - Misskey: 最古ローカルユーザーの `createdAt`。
   ///
   /// 取得不能なら null（非表示）。
   final DateTime? foundedAt;
+
+  /// サーバーのプレ公開（限定公開）開始日。モロヘイヤ導入鯖で運用者が
+  /// `/preopened_on` を手設定した時のみ非 null（`/about` の `config.preopened_at`、
+  /// #818）。[foundedAt] と違い最古アカウント fallback は持たず、プレ公開を経た
+  /// サーバーだけが値を持つ。`preopenedAt <= foundedAt` の関係になり、サーバー
+  /// 情報画面では設立日の前に別行で表示する。取得不能・未設定なら null（非表示）。
+  final DateTime? preopenedAt;
 
   /// 添付ファイルの種別ごとの最大サイズ（bytes）。サーバーが上限を返さない
   /// 場合は null（事前チェックをスキップして従来どおりサーバーエラー経路に
@@ -54,6 +66,7 @@ class Instance {
     this.privacyPolicyUrl,
     this.statusUrl,
     this.foundedAt,
+    this.preopenedAt,
     this.imageSizeLimit,
     this.videoSizeLimit,
     this.audioSizeLimit,
@@ -79,6 +92,7 @@ class Instance {
     String? privacyPolicyUrl,
     String? statusUrl,
     DateTime? foundedAt,
+    DateTime? preopenedAt,
     int? imageSizeLimit,
     int? videoSizeLimit,
     int? audioSizeLimit,
@@ -98,6 +112,7 @@ class Instance {
     privacyPolicyUrl: privacyPolicyUrl ?? this.privacyPolicyUrl,
     statusUrl: statusUrl ?? this.statusUrl,
     foundedAt: foundedAt ?? this.foundedAt,
+    preopenedAt: preopenedAt ?? this.preopenedAt,
     imageSizeLimit: imageSizeLimit ?? this.imageSizeLimit,
     videoSizeLimit: videoSizeLimit ?? this.videoSizeLimit,
     audioSizeLimit: audioSizeLimit ?? this.audioSizeLimit,

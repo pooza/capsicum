@@ -94,6 +94,15 @@ enum AnnictRatingState {
   String get apiValue => name.toUpperCase();
 }
 
+/// モロヘイヤ `/about` の日付フィールド (`founded_at` / `preopened_at`) を
+/// パースする (#4434 / capsicum#818)。モロヘイヤは ISO 8601 date (`YYYY-MM-DD`)
+/// で返すため、時刻を持たないローカル日付として扱う (year/month/day 表示で日が
+/// ズレない)。未設定・空・パース不能は null。
+DateTime? _parseIsoDate(dynamic value) {
+  if (value is! String || value.isEmpty) return null;
+  return DateTime.tryParse(value);
+}
+
 /// Extract the first default hashtag (without '#') from the about response.
 String? _parseDefaultHashtag(dynamic value) {
   if (value is String && value.isNotEmpty) {
@@ -393,6 +402,20 @@ class MulukhiyaService {
   /// ボタンを出さない (連携導線は設定画面が担う) ため、欠落時は false に倒す。
   final bool spotifyLinked;
 
+  /// `config.founded_at` (#4434 / capsicum#818)。サーバーの**正式オープン日**
+  /// (本公開日)。モロヘイヤ側で `/founded_on` を手設定していればその値、未設定なら
+  /// 最古ローカルアカウント作成日で近似した値がサーバー側で入る (capsicum は
+  /// ヒューリスティックを持たず本値を単純採用する)。DB 未接続・取得不能なら null。
+  /// 非モロヘイヤ鯖では [Instance.foundedAt] のクライアント側ヒューリスティックが
+  /// 使われる。
+  final DateTime? foundedAt;
+
+  /// `config.preopened_at` (#4434 / capsicum#818)。プレ公開 (限定公開) を経た
+  /// サーバーの、正式オープン前の公開開始日。`/preopened_on` を手設定した時のみ
+  /// 非 null で、[foundedAt] と違い最古アカウント fallback は持たない (プレ公開の
+  /// 有無は運用者しか知り得ないため)。`preopenedAt <= foundedAt` の関係になる。
+  final DateTime? preopenedAt;
+
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -428,6 +451,8 @@ class MulukhiyaService {
     this.nowplayingUrlResolverEnabled = false,
     this.spotifyEnabled = false,
     this.spotifyLinked = false,
+    this.foundedAt,
+    this.preopenedAt,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -507,6 +532,8 @@ class MulukhiyaService {
         spotifyEnabled: features?['spotify_enabled'] == true,
         // 欠落・未連携時はナウプレ挿入導線を出さない (#570)。連携導線は設定画面側。
         spotifyLinked: features?['spotify_linked'] == true,
+        foundedAt: _parseIsoDate(config['founded_at']),
+        preopenedAt: _parseIsoDate(config['preopened_at']),
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
