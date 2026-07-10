@@ -692,6 +692,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // （OOB 手貼り等に落ちる前に原因を提示する）。
       if (e is LoopbackPortOccupiedException) {
         _logLoginStep('oauth_server.bind_exhausted', data: {'port': e.port});
+        // #813 で堅牢化した bind リトライが枯渇した実頻度を計測する (#822)。UX は
+        // 友好エラーで良好だが、breadcrumb だけでは後続の captured event に
+        // 相乗りしない限り送られず、ポート占有でログインがブロックされる頻度が
+        // 見えない。warning を 1 発上げる。生 URL / トークンは載せず、既存 scrub
+        // 方針どおり host / backend / port の非 PII タグのみ。
+        Sentry.captureMessage(
+          'oauth_server.bind_exhausted (port=${e.port})',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('service', 'oauth_loopback');
+            scope.setTag('login.host', widget.host);
+            scope.setTag('login.backend', widget.backendType.name);
+            scope.setTag('oauth.port', e.port.toString());
+            // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
+            scope.fingerprint = ['oauth_server.bind_exhausted'];
+          },
+        );
         if (mounted) {
           setState(
             () => _error =
