@@ -120,10 +120,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     // フォアグラウンド復帰時にサーバーメタデータの鮮度を取り直す。バージョン
-    // 表示は起動時に一度きり probe され再起動まで古いままだった (#774)。TTL 内なら
-    // キャッシュ即返しでネットワークは走らない。
+    // 表示 (#774) とモロヘイヤ機能フラグ (#775) は起動時に一度きり probe され
+    // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
-      ref.read(accountManagerProvider.notifier).refreshCurrentServerVersion();
+      final manager = ref.read(accountManagerProvider.notifier);
+      manager.refreshCurrentServerVersion();
+      manager.refreshCurrentMulukhiya();
     }
   }
 
@@ -469,13 +471,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
 
     final scaffold = Scaffold(
-      // ドロワーを開くたびにサーバーバージョン表示 (#774) の鮮度を取り直す。
-      // ドロワー最下部の `host (種別) vX.Y.Z` を最新化する。TTL 内は no-op。
+      // ドロワーを開くたびにサーバーメタデータの鮮度を取り直す。バージョン表示
+      // (#774) と、ドロワーから辿る機能（メディアカタログ等）のモロヘイヤフラグ
+      // (#775) を最新化する。いずれも TTL 内は no-op。
       onDrawerChanged: (isOpened) {
         if (isOpened) {
-          ref
-              .read(accountManagerProvider.notifier)
-              .refreshCurrentServerVersion();
+          final manager = ref.read(accountManagerProvider.notifier);
+          manager.refreshCurrentServerVersion();
+          manager.refreshCurrentMulukhiya();
         }
       },
       appBar: AppBar(

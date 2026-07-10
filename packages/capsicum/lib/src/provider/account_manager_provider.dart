@@ -53,6 +53,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
   AccountManagerState build() => const AccountManagerState();
 
+  /// host ごとのモロヘイヤ自動再検出の最終実行時刻。フォアグラウンド復帰 / ドロワー
+  /// 表示のたびに `/about` を叩かないよう TTL で間引く (#775)。
+  final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
+  static const _mulukhiyaAutoRefreshTtl = Duration(hours: 1);
+
   Future<void> addAccount(Account account) async {
     final storage = ref.read(accountStorageProvider);
     final secrets = <String, String>{
@@ -226,6 +231,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       current: updated,
       offlineAccounts: state.offlineAccounts,
     );
+    // 手動再検出も自動再検出 (#775) の TTL を消費させ、直後のフォアグラウンド
+    // 復帰で二重に `/about` を叩かないようにする。
+    _mulukhiyaAutoRefreshedAt[current.key.host] = DateTime.now();
     await _persistNotificationLabels(updated);
     await _syncWindowsPushLabels();
     return true;
@@ -268,6 +276,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       current: state.current?.key == updated.key ? updated : state.current,
       offlineAccounts: state.offlineAccounts,
     );
+  }
+
+  /// 現在アカウントのモロヘイヤ機能フラグ（version / `config.features.*`）を TTL で
+  /// 自動再検出する (#775)。#774 の softwareVersion と同じく起動時一度きり probe で、
+  /// サーバー側でモロヘイヤをアップデート / 機能を有効化しても再起動または手動
+  /// 「再検出」まで反映されず、「使えるはずの機能（メディアカタログ / 劇中ワード辞書 /
+  /// nowplaying 等）が使えないまま」になっていた。[refreshCurrentServerVersion] と
+  /// 同じトリガー（フォアグラウンド復帰・ドロワー表示）から呼ぶ。
+  ///
+  /// [redetectMulukhiya] は `/about` を叩き push ラベル永続化まで伴うため、host
+  /// ごとの TTL で間引く。手動再検出ボタンは即時性が要るので TTL を経由しない。
+  Future<void> refreshCurrentMulukhiya() async {
+    final current = state.current;
+    if (current == null) return;
+    final host = current.key.host;
+    final last = _mulukhiyaAutoRefreshedAt[host];
+    if (last != null &&
+        DateTime.now().difference(last) < _mulukhiyaAutoRefreshTtl) {
+      return;
+    }
+    // 再入・多重呼び出しの抑止も兼ねて、実行前に時刻を記録する。TTL 内の失敗も
+    // 次の TTL 満了まで待つ（非モロヘイヤ鯖で毎復帰ごとに /about を叩かない）。
+    _mulukhiyaAutoRefreshedAt[host] = DateTime.now();
+    await redetectMulukhiya();
   }
 
   /// [Account] を `username@host` 形式に直す。capsicum-relay が push payload
