@@ -69,7 +69,9 @@ class ServerMetadataCache {
         ),
       );
       final metadata =
-          await _tryMastodon(dio, host) ?? await _tryMisskey(dio, host);
+          await _tryMastodon(dio, host) ??
+          await _tryMisskey(dio, host) ??
+          await _tryPieFed(dio, host);
       _cache[host] = _CacheEntry(metadata, DateTime.now());
       _pending.remove(host);
       return metadata;
@@ -127,6 +129,30 @@ class ServerMetadataCache {
       }
     } on DioException {
       // Not Misskey.
+    }
+    return null;
+  }
+
+  /// PieFed (Lemmy 系) のサイト情報。Mastodon / Misskey 判定が空振りしたときの
+  /// フォールバック (#807)。プリセット圏ではグループアカウントの多くが PieFed
+  /// サーバー由来で、capsicum の公式コミュニティ自体も PieFed のもの。REST API は
+  /// 実験的（エンドポイントが `/api/alpha` 下）なので変化に備え失敗は握り潰す。
+  Future<ServerMetadata?> _tryPieFed(Dio dio, String host) async {
+    try {
+      final res = await dio.get('https://$host/api/alpha/site');
+      if (res.statusCode == 200) {
+        final data = res.data as Map<String, dynamic>;
+        final site = data['site'] as Map<String, dynamic>?;
+        if (site == null) return null;
+        return ServerMetadata(
+          name: site['name'] as String? ?? host,
+          iconUrl: site['icon'] as String?,
+          themeColor: null,
+          softwareVersion: data['version'] as String?,
+        );
+      }
+    } on DioException {
+      // Not PieFed.
     }
     return null;
   }
