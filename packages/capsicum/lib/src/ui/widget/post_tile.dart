@@ -401,12 +401,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                     if (post.reblog != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: EmojiText(
-                          '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
-                          emojis: post.author.emojis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                          fallbackHost: post.emojiHost,
-                        ),
+                        // グループ（AP Group アクター）の Announce は通常のブースト
+                        // と区別し、グループアイコン＋プロフィール導線を出す (#811)。
+                        child: post.author.isGroup
+                            ? _buildGroupReblogHeader(context, post)
+                            : EmojiText(
+                                '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
+                                emojis: post.author.emojis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                                fallbackHost: post.emojiHost,
+                              ),
                       ),
                     // 末尾アイコン列 (bot / group / role / scope / localOnly /
                     // 時刻) はレイアウト幅 60% を上限とした ConstrainedBox に
@@ -1806,6 +1810,34 @@ class _PostTileState extends ConsumerState<PostTile> {
         },
       );
     }
+  }
+
+  /// グループ（AP Group アクター）が Announce した投稿のリブログヘッダー (#811)。
+  /// 通常の「X がブースト」と区別し、グループアイコン＋「〇〇 グループに投稿」を出す。
+  /// タップでグループのプロフィール（＝Announce 済み投稿が並ぶ実質グループ TL）へ
+  /// 遷移する。タイル本体の onTap（/post 遷移）より内側の GestureDetector が優先。
+  Widget _buildGroupReblogHeader(BuildContext context, Post post) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.push('/profile', extra: post.author),
+      child: Row(
+        children: [
+          Icon(Icons.groups, size: 14, color: style?.color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: EmojiText(
+              '${post.author.displayName ?? post.author.username} グループに投稿',
+              emojis: post.author.emojis,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              fallbackHost: post.emojiHost,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   List<Widget> _buildRoleIcon(BuildContext context, UserRole role) {
