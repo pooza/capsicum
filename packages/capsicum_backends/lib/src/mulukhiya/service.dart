@@ -379,6 +379,13 @@ class MulukhiyaService {
   /// フォールバックし、従来どおりボタンを出す (押下時に OAuth 連携を促す)。
   final bool annictLinked;
 
+  /// `features.annict_review` フラグ (mulukhiya #4433 / capsicum#677)。感想投稿
+  /// エンドポイント `/api/annict/review`（mulukhiya #4342 追加）を備えるサーバーで
+  /// のみ `true`。未デプロイのサーバーでは POST が 404 になり汎用エラーだけが出る
+  /// ため、`annictEnabled && annictReviewEnabled` で感想ボタンを gate する。旧
+  /// モロヘイヤ (フラグ未提供) は false にフォールバックし、ボタンを出さない。
+  final bool annictReviewEnabled;
+
   /// モロヘイヤ 5.23.0+ の `features.media_catalog` フラグ (#606)。
   /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
@@ -467,6 +474,7 @@ class MulukhiyaService {
     this.reblogLabel,
     this.annictEnabled = false,
     this.annictLinked = true,
+    this.annictReviewEnabled = false,
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
     this.wordSuggestEnabled = false,
@@ -546,6 +554,7 @@ class MulukhiyaService {
         annictEnabled: features?['annict'] == true,
         // 欠落時は連携状態を判別できないため true にフォールバック (#611)。
         annictLinked: features?['annict_linked'] != false,
+        annictReviewEnabled: features?['annict_review'] == true,
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         wordSuggestEnabled: features?['word_suggest'] == true,
