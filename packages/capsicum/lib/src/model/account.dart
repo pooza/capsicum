@@ -42,4 +42,14 @@ class Account {
     mulukhiya: mulukhiya,
     softwareVersion: softwareVersion,
   );
+
+  Account copyWithSoftwareVersion(String? softwareVersion) => Account(
+    key: key,
+    adapter: adapter,
+    user: user,
+    userSecret: userSecret,
+    clientSecret: clientSecret,
+    mulukhiya: mulukhiya,
+    softwareVersion: softwareVersion,
+  );
 }

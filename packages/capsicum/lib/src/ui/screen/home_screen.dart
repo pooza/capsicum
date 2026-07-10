@@ -88,7 +88,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   bool _markerRestored = false;
@@ -105,13 +106,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
     _throttleTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    // フォアグラウンド復帰時にサーバーメタデータの鮮度を取り直す。バージョン
+    // 表示は起動時に一度きり probe され再起動まで古いままだった (#774)。TTL 内なら
+    // キャッシュ即返しでネットワークは走らない。
+    if (lifecycleState == AppLifecycleState.resumed) {
+      ref.read(accountManagerProvider.notifier).refreshCurrentServerVersion();
+    }
   }
 
   void _onPositionsChanged() {
@@ -456,6 +469,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
 
     final scaffold = Scaffold(
+      // ドロワーを開くたびにサーバーバージョン表示 (#774) の鮮度を取り直す。
+      // ドロワー最下部の `host (種別) vX.Y.Z` を最新化する。TTL 内は no-op。
+      onDrawerChanged: (isOpened) {
+        if (isOpened) {
+          ref
+              .read(accountManagerProvider.notifier)
+              .refreshCurrentServerVersion();
+        }
+      },
       appBar: AppBar(
         automaticallyImplyLeading: false,
         leading: wideLayout
@@ -1686,7 +1708,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ...accountState.offlineAccounts.map((offline) {
                   final disabledColor = Theme.of(context).disabledColor;
                   return ListTile(
-                    leading: Icon(Icons.person_off_outlined, color: disabledColor),
+                    leading: Icon(
+                      Icons.person_off_outlined,
+                      color: disabledColor,
+                    ),
                     title: Text(
                       offline.handle,
                       maxLines: 1,
@@ -1711,10 +1736,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           },
                         ),
                         IconButton(
-                          icon: Icon(Icons.delete_outline, color: disabledColor),
+                          icon: Icon(
+                            Icons.delete_outline,
+                            color: disabledColor,
+                          ),
                           tooltip: 'このアカウントを削除',
-                          onPressed: () =>
-                              confirmRemoveOfflineAccount(context, ref, offline),
+                          onPressed: () => confirmRemoveOfflineAccount(
+                            context,
+                            ref,
+                            offline,
+                          ),
                         ),
                       ],
                     ),
@@ -2464,7 +2495,7 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                       icon: const Icon(Icons.logout),
                       tooltip: 'このアカウントを削除',
                       onPressed: () =>
-                        confirmRemoveOfflineAccount(context, ref, o),
+                          confirmRemoveOfflineAccount(context, ref, o),
                     ),
                   ),
                 ),
@@ -2488,7 +2519,6 @@ class _OfflineHomeScaffold extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 /// オフライン保持中のアカウントを、確認ダイアログ付きで端末から削除する

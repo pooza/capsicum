@@ -8,7 +8,17 @@ class ServerMetadata {
   final String? iconUrl;
   final String? themeColor;
 
-  const ServerMetadata({required this.name, this.iconUrl, this.themeColor});
+  /// サーバーソフトウェアのバージョン（Mastodon `/api/v(1|2)/instance` の
+  /// `version` / Misskey `/api/meta` の `version`）。NodeInfo `software.version`
+  /// と同値で、ドロワーのバージョン表示 (#774) を TTL で鮮度更新するために保持する。
+  final String? softwareVersion;
+
+  const ServerMetadata({
+    required this.name,
+    this.iconUrl,
+    this.themeColor,
+    this.softwareVersion,
+  });
 }
 
 class _CacheEntry {
@@ -39,9 +49,12 @@ class ServerMetadataCache {
     return entry.metadata;
   }
 
-  Future<ServerMetadata?> fetch(String host) {
+  /// [forceRefresh] が true のときは TTL 内でも再取得する。「サーバー情報」画面を
+  /// 開いた直後にドロワー表示を確実に最新化する用途 (#774 method 2)。進行中の
+  /// fetch があればそれに相乗りする（多重リクエストは避ける）。
+  Future<ServerMetadata?> fetch(String host, {bool forceRefresh = false}) {
     final entry = _cache[host];
-    if (entry != null && !entry.isExpired) {
+    if (!forceRefresh && entry != null && !entry.isExpired) {
       return Future.value(entry.metadata);
     }
     return _pending.putIfAbsent(host, () => _doFetch(host));
@@ -77,6 +90,7 @@ class ServerMetadataCache {
           name: data['title'] as String? ?? host,
           iconUrl: _extractIcon(data, host),
           themeColor: _extractColor(data),
+          softwareVersion: data['version'] as String?,
         );
       }
     } on DioException {
@@ -90,6 +104,7 @@ class ServerMetadataCache {
           name: data['title'] as String? ?? host,
           iconUrl: 'https://$host/favicon.ico',
           themeColor: null,
+          softwareVersion: data['version'] as String?,
         );
       }
     } on DioException {
@@ -107,6 +122,7 @@ class ServerMetadataCache {
           name: data['name'] as String? ?? host,
           iconUrl: data['iconUrl'] as String?,
           themeColor: data['themeColor'] as String?,
+          softwareVersion: data['version'] as String?,
         );
       }
     } on DioException {

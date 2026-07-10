@@ -231,6 +231,45 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     return true;
   }
 
+  /// 現在アカウントのサーバーソフトウェアバージョンを [ServerMetadataCache]
+  /// （TTL 付き）経由で取り直し、変化していれば state に反映する (#774)。
+  /// `softwareVersion` はセッション復元時に NodeInfo を一度だけ probe して保持され、
+  /// サーバーをアップデートしても再起動まで古いままだった。フォアグラウンド復帰
+  /// （[_HomeScreenState]）とドロワー / サーバー情報画面表示のたびに呼ぶ。TTL 内なら
+  /// キャッシュ即返しでネットワークは走らない。[force] で TTL を無視して再取得する
+  /// （サーバー情報画面を開いた直後の確実な最新化）。
+  ///
+  /// version が取得できなかった（null）ときは既存値を維持する。version は
+  /// Collections のゲート (#810) にも使うため、一過性の取得失敗で good な値を
+  /// null に落とさない。
+  Future<void> refreshCurrentServerVersion({bool force = false}) async {
+    final before = state.current;
+    if (before == null) return;
+    final host = before.key.host;
+    final metadata = await ServerMetadataCache.instance.fetch(
+      host,
+      forceRefresh: force,
+    );
+    final version = metadata?.softwareVersion;
+    if (version == null) return;
+
+    // await 中にアカウント切替 / ログアウトが起きている可能性があるため、対象
+    // アカウントが今も存在し version が実際に変化した場合のみ反映する。
+    final idx = state.accounts.indexWhere((a) => a.key == before.key);
+    if (idx < 0) return;
+    final target = state.accounts[idx];
+    if (target.softwareVersion == version) return;
+
+    final updated = target.copyWithSoftwareVersion(version);
+    final accounts = [...state.accounts];
+    accounts[idx] = updated;
+    state = AccountManagerState(
+      accounts: accounts,
+      current: state.current?.key == updated.key ? updated : state.current,
+      offlineAccounts: state.offlineAccounts,
+    );
+  }
+
   /// [Account] を `username@host` 形式に直す。capsicum-relay が push payload
   /// に載せる `account` 文字列・[NotificationLabelCache] のキー・通知ルート
   /// 解決用と全経路で同一フォーマットを使う。

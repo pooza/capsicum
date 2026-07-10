@@ -14,11 +14,29 @@ import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
-class ServerInfoScreen extends ConsumerWidget {
+class ServerInfoScreen extends ConsumerStatefulWidget {
   const ServerInfoScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ServerInfoScreen> createState() => _ServerInfoScreenState();
+}
+
+class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // サーバー情報画面を開いたら、ドロワーのバージョン表示 (#774) を確実に最新化
+    // する。TTL を無視して再取得し、変化があれば AccountManager 経由で state に
+    // 反映する（ドロワーと表示を整合させる）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(accountManagerProvider.notifier)
+          .refreshCurrentServerVersion(force: true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asyncState = ref.watch(serverInfoProvider);
 
     return Scaffold(
