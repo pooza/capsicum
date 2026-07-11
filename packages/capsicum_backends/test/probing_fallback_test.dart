@@ -121,4 +121,18 @@ void main() {
 
     expect(() => probeInstance(dio, _host), throwsA(isA<Exception>()));
   });
+
+  test('TLS 証明書エラーも到達不能として例外を投げる（未対応と誤判定しない）', () async {
+    when(
+      () => dio.get<dynamic>(_nodeInfoUrl),
+    ).thenThrow(_err(_nodeInfoUrl, type: DioExceptionType.badCertificate));
+    when(
+      () => dio.post<dynamic>(_metaUrl, data: any(named: 'data')),
+    ).thenThrow(_err(_metaUrl, type: DioExceptionType.badCertificate));
+    when(
+      () => dio.get<dynamic>(_instanceUrl),
+    ).thenThrow(_err(_instanceUrl, type: DioExceptionType.badCertificate));
+
+    expect(() => probeInstance(dio, _host), throwsA(isA<Exception>()));
+  });
 }

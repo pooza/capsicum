@@ -204,36 +204,45 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
   /// Re-detect mulukhiya on the current account's server and update state.
   Future<bool> redetectMulukhiya() async {
-    final current = state.current;
-    if (current == null) return false;
+    final before = state.current;
+    if (before == null) return false;
 
     final mulukhiya = await _detectMulukhiya(
-      current.key.host,
-      token: current.userSecret.accessToken,
+      before.key.host,
+      token: before.userSecret.accessToken,
     );
     if (mulukhiya == null) return false;
 
-    if (current.adapter is MastodonAdapter) {
-      (current.adapter as MastodonAdapter).applyAdminRoleIds(
+    // await 中にアカウント切替 / ログアウトが起きている可能性がある。自動再検出
+    // (#775) はドロワー表示・フォアグラウンド復帰から発火し、ドロワーはアカウント
+    // 切替 UI そのものなので、`/about` 往復中に current が変わりうる。対象アカウント
+    // が今も存在する場合のみ反映する（[refreshCurrentServerVersion] と同じガード）。
+    // これが無いと、切替後に current が旧アカウントへ巻き戻る／ログアウト済みの
+    // アカウントを current が指すゾンビ状態になる。
+    final idx = state.accounts.indexWhere((a) => a.key == before.key);
+    if (idx < 0) return false;
+    final target = state.accounts[idx];
+
+    if (target.adapter is MastodonAdapter) {
+      (target.adapter as MastodonAdapter).applyAdminRoleIds(
         mulukhiya.adminRoleIds,
       );
-    } else if (current.adapter is MisskeyAdapter) {
-      (current.adapter as MisskeyAdapter).applyAdminRoleIds(
+    } else if (target.adapter is MisskeyAdapter) {
+      (target.adapter as MisskeyAdapter).applyAdminRoleIds(
         mulukhiya.adminRoleIds,
       );
     }
-    final updated = current.copyWithMulukhiya(mulukhiya);
-    final accounts = state.accounts
-        .map((a) => a.key == updated.key ? updated : a)
-        .toList();
+    final updated = target.copyWithMulukhiya(mulukhiya);
+    final accounts = [...state.accounts];
+    accounts[idx] = updated;
     state = AccountManagerState(
       accounts: accounts,
-      current: updated,
+      current: state.current?.key == updated.key ? updated : state.current,
       offlineAccounts: state.offlineAccounts,
     );
     // 手動再検出も自動再検出 (#775) の TTL を消費させ、直後のフォアグラウンド
     // 復帰で二重に `/about` を叩かないようにする。
-    _mulukhiyaAutoRefreshedAt[current.key.host] = DateTime.now();
+    _mulukhiyaAutoRefreshedAt[before.key.host] = DateTime.now();
     await _persistNotificationLabels(updated);
     await _syncWindowsPushLabels();
     return true;

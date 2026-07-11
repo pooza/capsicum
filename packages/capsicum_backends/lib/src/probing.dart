@@ -162,10 +162,15 @@ Future<InstanceProbe?> _probeViaEndpoints(Dio dio, String host) async {
   return null;
 }
 
-/// サーバー到達不能（接続エラー / タイムアウト）か。HTTP ステータス応答
-/// (`badResponse`, 404 等) はサーバーが生きている＝未対応の判断材料なので除く。
+/// サーバー到達不能（接続エラー / タイムアウト / TLS 失敗）か。HTTP ステータス
+/// 応答 (`badResponse`, 404 等) はサーバーが生きている＝未対応の判断材料なので除く。
+/// `badCertificate`（証明書エラー）や分類不能 (`unknown`, TlsException 等) は接続
+/// レベルの失敗なので到達不能扱いにし、ログイン画面が「未対応」でなく「接続失敗」を
+/// 出せるようにする（[classifyLoginFailure] の「badResponse 以外は network」と揃える）。
 bool _isUnreachable(DioException e) =>
     e.type == DioExceptionType.connectionError ||
     e.type == DioExceptionType.connectionTimeout ||
     e.type == DioExceptionType.receiveTimeout ||
-    e.type == DioExceptionType.sendTimeout;
+    e.type == DioExceptionType.sendTimeout ||
+    e.type == DioExceptionType.badCertificate ||
+    e.type == DioExceptionType.unknown;
