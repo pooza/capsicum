@@ -113,8 +113,14 @@ void main() {
     });
 
     test('サーバー 5xx（再構築中など） → retriable', () {
-      expect(classifyRestoreFailure(badResponse(500)), RestoreOutcome.retriable);
-      expect(classifyRestoreFailure(badResponse(503)), RestoreOutcome.retriable);
+      expect(
+        classifyRestoreFailure(badResponse(500)),
+        RestoreOutcome.retriable,
+      );
+      expect(
+        classifyRestoreFailure(badResponse(503)),
+        RestoreOutcome.retriable,
+      );
     });
 
     test('401 / 403（認証失効） → authRevoked', () {
