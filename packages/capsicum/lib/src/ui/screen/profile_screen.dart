@@ -12,6 +12,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_status_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
@@ -1374,9 +1375,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  /// Mastodon 4.6 Collections（#722 / #742）に対応したアダプタか。
-  bool get _supportsCollections =>
-      ref.read(currentAdapterProvider) is CollectionsSupport;
+  /// Mastodon 4.6 Collections（#722 / #742）の操作を出せるか。
+  ///
+  /// アダプタ型（CollectionsSupport＝Mastodon）は `CollectionsSupport` を一律
+  /// mixin しているため全 Mastodon で true になる。だが Collections API は
+  /// Mastodon 4.6.0 追加で、4.5 以前ではメニューを出しても 404 になる（#810）。
+  /// そこで**サーバー版が 4.6 以上**であることも要求する。版が未取得（null）の
+  /// ときは安全側に倒して出さない（版はログイン / セッション復元時に nodeinfo で
+  /// 再取得されるため、恒久的に消えるわけではない）。
+  bool get _supportsCollections {
+    if (ref.read(currentAdapterProvider) is! CollectionsSupport) return false;
+    final version = ref.read(currentAccountProvider)?.softwareVersion;
+    if (version == null) return false;
+    return ServerVersionChecker.isAtLeast(version, '4.6.0');
+  }
 
   /// アバター/ヘッダー画像をメディアビューアで全画面表示する。alt テキスト
   /// （avatar_description / header_description、#733）を説明キャプションに載せる。

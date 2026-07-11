@@ -94,6 +94,15 @@ enum AnnictRatingState {
   String get apiValue => name.toUpperCase();
 }
 
+/// モロヘイヤ `/about` の日付フィールド (`founded_at` / `preopened_at`) を
+/// パースする (#4434 / capsicum#818)。モロヘイヤは ISO 8601 date (`YYYY-MM-DD`)
+/// で返すため、時刻を持たないローカル日付として扱う (year/month/day 表示で日が
+/// ズレない)。未設定・空・パース不能は null。
+DateTime? _parseIsoDate(dynamic value) {
+  if (value is! String || value.isEmpty) return null;
+  return DateTime.tryParse(value);
+}
+
 /// Extract the first default hashtag (without '#') from the about response.
 String? _parseDefaultHashtag(dynamic value) {
   if (value is String && value.isNotEmpty) {
@@ -170,15 +179,38 @@ String normalizeReadingQuery(String value) {
   return buffer.toString();
 }
 
-/// 実用版正規化が取りこぼす文字（NFKC で畳まれ得る半角カナ・全角/半角形）を
-/// クエリが含むか。含むときだけローカル 0 件でもサーバー正規化に委ねる判断に
-/// 使う。純粋なかな/漢字のクエリは、同じ辞書を突き合わせる以上ローカル 0 件が
-/// 確定（サーバーも 0）なので fallback しない（capsicum#687）。
+/// 実用版正規化 ([normalizeReadingQuery]) が取りこぼす文字（サーバーの NFKC で
+/// のみ畳まれる文字）をクエリが含むか。含むときだけローカル 0 件でもサーバー
+/// 正規化に委ねる判断に使う（capsicum#687）。
+///
+/// 判定は「ローカルだけで完結できると確信できる文字」allowlist の裏返し
+/// （#821）。ひらがな / カタカナ / 基本ラテン / CJK 統合漢字 / 空白は NFKC でも
+/// 畳まれず、client の ひらがな→カタカナ 変換だけでサーバーと同じ突き合わせに
+/// なるため、これらのみのクエリはローカル 0 件がサーバーでも 0 件で確定し
+/// fallback 不要。半角カナ・全角英数・互換合成文字（例: ① → 1）などは NFKC で
+/// のみ畳まれサーバーだけが救えるため fallback する。以前は U+FF00–FFEF の範囲
+/// 列挙で、その外側の互換文字を取りこぼしていた。
 bool queryMayNeedServerNormalization(String value) {
-  for (final rune in value.runes) {
-    // U+FF00–FFEF: 半角・全角形（全角英数 FF01–FF5E / 半角カナ FF61–FF9F 等）。
-    if (rune >= 0xFF00 && rune <= 0xFFEF) return true;
+  for (final rune in value.trim().runes) {
+    if (!_isLocallyNormalizableRune(rune)) return true;
   }
+  return false;
+}
+
+/// [normalizeReadingQuery] だけでサーバー NFKC と同じ突き合わせになる（＝NFKC で
+/// 畳まれない）文字か。ここに無い文字を含むクエリはサーバー正規化に委ねうる。
+bool _isLocallyNormalizableRune(int rune) {
+  // 空白（前後は trim 済みだが、語中空白も安全側で許容）。
+  if (rune == 0x20 || rune == 0x09 || rune == 0x0A || rune == 0x0D) return true;
+  // 基本ラテン（NFKC 不変。全角ラテン FF01–FF5E は畳まれるので allowlist 外）。
+  if (rune >= 0x0021 && rune <= 0x007E) return true;
+  // ひらがな。
+  if (rune >= 0x3040 && rune <= 0x309F) return true;
+  // カタカナ（長音符 ー U+30FC を含む）。
+  if (rune >= 0x30A0 && rune <= 0x30FF) return true;
+  // CJK 統合漢字（拡張 A / 基本面。互換漢字 U+F900–FAFF は NFKC で畳まれるため除外）。
+  if (rune >= 0x3400 && rune <= 0x4DBF) return true;
+  if (rune >= 0x4E00 && rune <= 0x9FFF) return true;
   return false;
 }
 
@@ -347,6 +379,13 @@ class MulukhiyaService {
   /// フォールバックし、従来どおりボタンを出す (押下時に OAuth 連携を促す)。
   final bool annictLinked;
 
+  /// `features.annict_review` フラグ (mulukhiya #4433 / capsicum#677)。感想投稿
+  /// エンドポイント `/api/annict/review`（mulukhiya #4342 追加）を備えるサーバーで
+  /// のみ `true`。未デプロイのサーバーでは POST が 404 になり汎用エラーだけが出る
+  /// ため、`annictEnabled && annictReviewEnabled` で感想ボタンを gate する。旧
+  /// モロヘイヤ (フラグ未提供) は false にフォールバックし、ボタンを出さない。
+  final bool annictReviewEnabled;
+
   /// モロヘイヤ 5.23.0+ の `features.media_catalog` フラグ (#606)。
   /// 5.23.0 でデフォルト無効化されたため `true` の時だけメディアカタログ画面を
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
@@ -393,6 +432,20 @@ class MulukhiyaService {
   /// ボタンを出さない (連携導線は設定画面が担う) ため、欠落時は false に倒す。
   final bool spotifyLinked;
 
+  /// `config.founded_at` (#4434 / capsicum#818)。サーバーの**正式オープン日**
+  /// (本公開日)。モロヘイヤ側で `/founded_on` を手設定していればその値、未設定なら
+  /// 最古ローカルアカウント作成日で近似した値がサーバー側で入る (capsicum は
+  /// ヒューリスティックを持たず本値を単純採用する)。DB 未接続・取得不能なら null。
+  /// 非モロヘイヤ鯖では [Instance.foundedAt] のクライアント側ヒューリスティックが
+  /// 使われる。
+  final DateTime? foundedAt;
+
+  /// `config.preopened_at` (#4434 / capsicum#818)。プレ公開 (限定公開) を経た
+  /// サーバーの、正式オープン前の公開開始日。`/preopened_on` を手設定した時のみ
+  /// 非 null で、[foundedAt] と違い最古アカウント fallback は持たない (プレ公開の
+  /// 有無は運用者しか知り得ないため)。`preopenedAt <= foundedAt` の関係になる。
+  final DateTime? preopenedAt;
+
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -421,6 +474,7 @@ class MulukhiyaService {
     this.reblogLabel,
     this.annictEnabled = false,
     this.annictLinked = true,
+    this.annictReviewEnabled = false,
     this.mediaCatalogEnabled = false,
     this.announcementPushEnabled = false,
     this.wordSuggestEnabled = false,
@@ -428,6 +482,8 @@ class MulukhiyaService {
     this.nowplayingUrlResolverEnabled = false,
     this.spotifyEnabled = false,
     this.spotifyLinked = false,
+    this.foundedAt,
+    this.preopenedAt,
     this.adminRoleIds = const [],
     this.infoBotAcct,
   }) : _dio = dio;
@@ -498,6 +554,7 @@ class MulukhiyaService {
         annictEnabled: features?['annict'] == true,
         // 欠落時は連携状態を判別できないため true にフォールバック (#611)。
         annictLinked: features?['annict_linked'] != false,
+        annictReviewEnabled: features?['annict_review'] == true,
         mediaCatalogEnabled: features?['media_catalog'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         wordSuggestEnabled: features?['word_suggest'] == true,
@@ -507,6 +564,8 @@ class MulukhiyaService {
         spotifyEnabled: features?['spotify_enabled'] == true,
         // 欠落・未連携時はナウプレ挿入導線を出さない (#570)。連携導線は設定画面側。
         spotifyLinked: features?['spotify_linked'] == true,
+        foundedAt: _parseIsoDate(config['founded_at']),
+        preopenedAt: _parseIsoDate(config['preopened_at']),
         adminRoleIds: adminRoleIds,
         infoBotAcct: infoBot?['acct'] as String?,
       );
@@ -987,16 +1046,24 @@ class MulukhiyaService {
             (m) => WordSuggestion(
               surface: m['surface'] as String,
               reading: m['reading'] as String,
-              category: m['category'] as String?,
+              // category が想定外の型 (数値等) でもエントリを落とさず null に倒す
+              // (#821)。`as String?` だと非 String 非 null で TypeError になり、
+              // .toList() が辞書全体の parse を巻き添えに飛ばしていた。
+              category: m['category'] is String
+                  ? m['category'] as String
+                  : null,
             ),
           )
           .toList();
       _wordDictionaryDigest = data['digest'] as String?;
       _wordDictionaryFetchedAt = DateTime.now();
-    } on DioException {
-      // 404 (旧モロヘイヤに /word/all 無し) / 403 (認証必須) / 5xx / network は
-      // すべて best-effort。キャッシュを空のままにし、suggestWordsLocal 側の
-      // 都度クエリ fallback に委ねる (rethrow すると初回 await が投げてしまう)。
+    } catch (_) {
+      // DioException (404 旧モロヘイヤに /word/all 無し / 403 認証必須 / 5xx /
+      // network) に加え、想定外レスポンスの TypeError 等も best-effort で握りつぶす
+      // (#821)。キャッシュを空のままにし、suggestWordsLocal 側の都度クエリ
+      // fallback に委ねる。rethrow すると初回 await が投げ、stale-revalidate の
+      // unawaited(_ensureWordDictionary()) 経路は未捕捉 async エラー (Sentry
+      // ノイズ) になる。
       return;
     }
   }

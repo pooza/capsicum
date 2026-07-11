@@ -85,4 +85,74 @@ void main() {
       expect(r.message, 'ログインに失敗しました');
     });
   });
+
+  group('classifyRestoreFailure (#792)', () {
+    DioException badResponse(int code) => DioException(
+      requestOptions: RequestOptions(path: '/'),
+      type: DioExceptionType.badResponse,
+      response: Response(
+        requestOptions: RequestOptions(path: '/'),
+        statusCode: code,
+      ),
+    );
+
+    test('ネットワーク不通 → retriable', () {
+      expect(
+        classifyRestoreFailure(const SocketException('Failed host lookup')),
+        RestoreOutcome.retriable,
+      );
+      expect(
+        classifyRestoreFailure(
+          DioException(
+            requestOptions: RequestOptions(path: '/'),
+            type: DioExceptionType.connectionError,
+          ),
+        ),
+        RestoreOutcome.retriable,
+      );
+    });
+
+    test('サーバー 5xx（再構築中など） → retriable', () {
+      expect(
+        classifyRestoreFailure(badResponse(500)),
+        RestoreOutcome.retriable,
+      );
+      expect(
+        classifyRestoreFailure(badResponse(503)),
+        RestoreOutcome.retriable,
+      );
+    });
+
+    test('401 / 403（認証失効） → authRevoked', () {
+      expect(
+        classifyRestoreFailure(badResponse(401)),
+        RestoreOutcome.authRevoked,
+      );
+      expect(
+        classifyRestoreFailure(badResponse(403)),
+        RestoreOutcome.authRevoked,
+      );
+    });
+
+    test('その他 4xx → giveUp', () {
+      expect(classifyRestoreFailure(badResponse(404)), RestoreOutcome.giveUp);
+      expect(classifyRestoreFailure(badResponse(400)), RestoreOutcome.giveUp);
+    });
+
+    test('secure storage 失敗 → giveUp', () {
+      expect(
+        classifyRestoreFailure(
+          PlatformException(
+            code: '-25308',
+            message: 'errSecInteractionNotAllowed',
+          ),
+        ),
+        RestoreOutcome.giveUp,
+      );
+    });
+
+    test('未分類の例外 → giveUp', () {
+      expect(classifyRestoreFailure(StateError('boom')), RestoreOutcome.giveUp);
+    });
+  });
 }

@@ -331,7 +331,11 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
     final mulukhiya = _mulukhiya;
     // review は作品単位なので episode の有無に関わらず作品を開いていれば出す。
     // 未連携でも隠さず、押下時に連携フローを促す (record と同じ方針、#611)。
-    final showAnnictReview = mulukhiya?.annictEnabled ?? false;
+    // ただし review エンドポイント (#4342) 未対応サーバーでは 404 になるため、
+    // annict_review capability も要求する (#677)。
+    final showAnnictReview =
+        (mulukhiya?.annictEnabled ?? false) &&
+        (mulukhiya?.annictReviewEnabled ?? false);
     final annictLinked = mulukhiya?.annictLinked ?? false;
     return Scaffold(
       appBar: AppBar(
@@ -400,8 +404,11 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       // 劇場版などエピソードに分かれない作品はここに来る。record の投稿先が
       // ないため、Annict 対応サーバーなら作品全体感想 (review) の導線を出す
       // (#592)。AppBar のアイコンだけだと発見されにくいので空状態にも明示。
+      // review エンドポイント未対応サーバーでは出さない (#677)。
       final mulukhiya = _mulukhiya;
-      final showAnnictReview = mulukhiya?.annictEnabled ?? false;
+      final showAnnictReview =
+          (mulukhiya?.annictEnabled ?? false) &&
+          (mulukhiya?.annictReviewEnabled ?? false);
       final annictLinked = mulukhiya?.annictLinked ?? false;
       return Center(
         child: Padding(

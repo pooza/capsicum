@@ -88,12 +88,26 @@ void main() {
       expect(queryMayNeedServerNormalization('閃華'), isFalse);
     });
 
+    test('カタカナ・長音・基本ラテンは fallback 不要', () {
+      expect(queryMayNeedServerNormalization('センカー'), isFalse);
+      expect(queryMayNeedServerNormalization('ABC'), isFalse);
+      // 前後空白は trim して判定（空白理由で fallback しない）。
+      expect(queryMayNeedServerNormalization('  せんか  '), isFalse);
+    });
+
     test('半角カナは fallback 対象', () {
       expect(queryMayNeedServerNormalization('ｾﾝｶ'), isTrue);
     });
 
     test('全角英数は fallback 対象', () {
       expect(queryMayNeedServerNormalization('ＡＢＣ'), isTrue);
+    });
+
+    test('U+FF00–FFEF 外の互換合成文字も fallback 対象 (#821)', () {
+      // ① (U+2460) は NFKC で "1" に畳まれる。旧 range 列挙では取りこぼしていた。
+      expect(queryMayNeedServerNormalization('①'), isTrue);
+      // ㌔ (U+3314, 全角カタカナ合字) も NFKC で "キロメートル" に展開される。
+      expect(queryMayNeedServerNormalization('㌔'), isTrue);
     });
   });
 }

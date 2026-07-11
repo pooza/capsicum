@@ -14,11 +14,29 @@ import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/user_avatar.dart';
 
-class ServerInfoScreen extends ConsumerWidget {
+class ServerInfoScreen extends ConsumerStatefulWidget {
   const ServerInfoScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ServerInfoScreen> createState() => _ServerInfoScreenState();
+}
+
+class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // サーバー情報画面を開いたら、ドロワーのバージョン表示 (#774) を確実に最新化
+    // する。TTL を無視して再取得し、変化があれば AccountManager 経由で state に
+    // 反映する（ドロワーと表示を整合させる）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(accountManagerProvider.notifier)
+          .refreshCurrentServerVersion(force: true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asyncState = ref.watch(serverInfoProvider);
 
     return Scaffold(
@@ -86,17 +104,13 @@ class ServerInfoScreen extends ConsumerWidget {
               ],
             ),
           ),
+        // サーバー沿革（#818）。プレ公開日→設立日の順に古い方から並べる。
+        // プレ公開はモロヘイヤ導入鯖で運用者が明示設定した時のみ表示。設立は
+        // モロヘイヤ由来 or 非モロヘイヤ鯖のヒューリスティックで、取得できれば表示。
+        if (instance.preopenedAt != null)
+          _serverDateRow('プレ公開', instance.preopenedAt!),
         if (instance.foundedAt != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(
-              // API に創立日が無いため最初に作られたアカウントの作成日で近似
-              // する（#804）。日付粒度なのでローカル変換で日がズレないよう
-              // そのまま year/month/day を使う。
-              '設立: ${instance.foundedAt!.year}年'
-              '${instance.foundedAt!.month}月${instance.foundedAt!.day}日',
-            ),
-          ),
+          _serverDateRow('設立', instance.foundedAt!),
 
         // Contact
         if (instance.contactAccount != null ||
@@ -429,6 +443,13 @@ Widget _softwareSubtitle(
 /// nodeinfo の software 名（小文字）を表示用に頭大文字化する。
 String _capitalizeSoftware(String s) =>
     s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+/// サーバー沿革の日付行（プレ公開 / 設立）。日付粒度なのでローカル変換で日が
+/// ズレないよう year/month/day をそのまま使う（#818）。
+Widget _serverDateRow(String label, DateTime date) => Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+  child: Text('$label: ${date.year}年${date.month}月${date.day}日'),
+);
 
 class _SectionHeader extends StatelessWidget {
   final String title;

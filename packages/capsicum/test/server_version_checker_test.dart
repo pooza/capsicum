@@ -61,4 +61,40 @@ void main() {
       ); // 4.6.3>4.6.0
     });
   });
+
+  group('ServerVersionChecker.isAtLeast — 機能ゲート (#810 Collections=4.6)', () {
+    test('4.6.0 以上を満たす（等号含む・フォーク suffix / patch 上）', () {
+      expect(ServerVersionChecker.isAtLeast('4.6.0', '4.6.0'), isTrue);
+      expect(ServerVersionChecker.isAtLeast('4.6.3', '4.6.0'), isTrue);
+      expect(
+        ServerVersionChecker.isAtLeast('4.6.3-bshockdon', '4.6.0'),
+        isTrue,
+      );
+      expect(ServerVersionChecker.isAtLeast('4.7.0', '4.6.0'), isTrue);
+      expect(ServerVersionChecker.isAtLeast('5.0.0', '4.6.0'), isTrue);
+    });
+
+    test('4.6.0 未満は満たさない', () {
+      expect(ServerVersionChecker.isAtLeast('4.5.13', '4.6.0'), isFalse);
+      expect(ServerVersionChecker.isAtLeast('4.5.13-glitch', '4.6.0'), isFalse);
+      expect(ServerVersionChecker.isAtLeast('3.5.0', '4.6.0'), isFalse);
+    });
+
+    test('桁数違いは欠けた桁を 0 とみなす', () {
+      expect(ServerVersionChecker.isAtLeast('4.6', '4.6.0'), isTrue); // 4.6.0
+      expect(ServerVersionChecker.isAtLeast('4.6', '4.6.1'), isFalse); // 4.6.0
+    });
+
+    test('数値でない版は minimum 未満扱い（0 に倒れる）', () {
+      expect(ServerVersionChecker.isAtLeast('Glitch', '4.6.0'), isFalse);
+      expect(ServerVersionChecker.isAtLeast('', '4.6.0'), isFalse);
+    });
+
+    test('isBehind とは補集合の関係（境界含む）', () {
+      expect(ServerVersionChecker.isAtLeast('4.6.3', '4.6.3'), isTrue);
+      expect(ServerVersionChecker.isBehind('4.6.3', '4.6.3'), isFalse);
+      expect(ServerVersionChecker.isAtLeast('4.5.0', '4.6.0'), isFalse);
+      expect(ServerVersionChecker.isBehind('4.5.0', '4.6.0'), isTrue);
+    });
+  });
 }

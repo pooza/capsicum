@@ -34,7 +34,15 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     });
 
     try {
-      final dio = Dio();
+      // タイムアウトを明示する。#723 で probeInstance が NodeInfo → /api/meta →
+      // /api/v1/instance を直列に試すようになったため、パケットを黙って捨てる
+      // blackhole ホストでは無指定だと OS 既定 × 最大3回ぶんハングし得る。
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: kNetworkConnectTimeout,
+          receiveTimeout: kNetworkReceiveTimeout,
+        ),
+      );
       final probe = await probeInstance(dio, host);
       // async gap 後に widget が dispose されているケース (CAPSICUM-1D / #472)。
       // 以下の各 setState 前に必ず mounted ガード。

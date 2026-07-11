@@ -71,3 +71,39 @@ LoginFailureInfo classifyLoginFailure(Object error) {
 
   return (kind: LoginFailureKind.unknown, message: 'ログインに失敗しました');
 }
+
+/// セッション復元 (`restoreSessions`) の失敗を、アカウントをどう扱うかの
+/// 観点で分類する (#792)。
+///
+/// [classifyLoginFailure] の `server` は 4xx/5xx を一括りにしているが、復元
+/// では「サーバーが一時的に落ちている (5xx / ネットワーク不通)」と「認証が
+/// 失効した (401/403)」を区別しないと、前者を誤ってログアウト扱いしてしまう。
+enum RestoreOutcome {
+  /// 一時的な到達不能 (ネットワーク不通 / サーバー 5xx)。secret は有効なので
+  /// アカウントを消さずオフライン保持し、背景リトライで自動回復させる。
+  retriable,
+
+  /// 認証が失効した (401/403)。正規のログアウトなので再ログインを促す扱い。
+  /// オフライン保持しない。
+  authRevoked,
+
+  /// 上記以外 (secure storage 失敗 / 4xx / 不明)。従来どおり skip + 観測。
+  giveUp,
+}
+
+/// 復元例外 [error] を [RestoreOutcome] に分類する (#792)。
+///
+/// - ネットワーク不通 → `retriable`
+/// - サーバー応答 5xx → `retriable` (一時障害・再構築中など)
+/// - サーバー応答 401/403 → `authRevoked`
+/// - それ以外 (secure storage / 4xx / 不明) → `giveUp`
+RestoreOutcome classifyRestoreFailure(Object error) {
+  final kind = classifyLoginFailure(error).kind;
+  if (kind == LoginFailureKind.network) return RestoreOutcome.retriable;
+  if (error is DioException && error.type == DioExceptionType.badResponse) {
+    final code = error.response?.statusCode;
+    if (code == 401 || code == 403) return RestoreOutcome.authRevoked;
+    if (code != null && code >= 500) return RestoreOutcome.retriable;
+  }
+  return RestoreOutcome.giveUp;
+}
