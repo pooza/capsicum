@@ -1128,13 +1128,22 @@ class ContentRenderer {
             (uri != null
                 ? _shortenUrl(Uri.decodeFull(uri.toString()))
                 : resolvedUrl);
-        if (onLinkLongPress != null && uri != null) {
+        // ベタ貼り URL も onLinkTap 経由にする (#820)。fediverse の投稿/アカウント
+        // URL はアプリ内スレッド/プロフィールへ resolve され、それ以外はハンドラ側
+        // でブラウザに落ちる。onLinkTap 未指定の呼び出し元では従来どおり直接開く。
+        void Function()? handleTap;
+        if (onLinkTap != null) {
+          handleTap = () => onLinkTap!.call(resolvedUrl);
+        } else if (uri != null) {
+          handleTap = () => launchUrlSafely(uri);
+        }
+        if (onLinkLongPress != null && handleTap != null) {
           return [
             WidgetSpan(
               alignment: PlaceholderAlignment.baseline,
               baseline: TextBaseline.alphabetic,
               child: GestureDetector(
-                onTap: () => launchUrlSafely(uri),
+                onTap: handleTap,
                 onLongPress: () => onLinkLongPress!.call(resolvedUrl),
                 child: Text(
                   displayUrl,
@@ -1144,8 +1153,7 @@ class ContentRenderer {
             ),
           ];
         }
-        final recognizer = TapGestureRecognizer()
-          ..onTap = uri != null ? () => launchUrlSafely(uri) : null;
+        final recognizer = TapGestureRecognizer()..onTap = handleTap;
         _recognizers.add(recognizer);
         return [
           TextSpan(
