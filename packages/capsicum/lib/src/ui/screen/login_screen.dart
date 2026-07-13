@@ -538,7 +538,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // cancel / timeout / `?error=` で中断すると登録済みアプリが捨てられ、次回
         // また `POST /api/v1/apps` で 1 枠消費していた（5/30min の登録上限を正規
         // クライアントの失敗連続で食い潰す＝「正しい資格情報でもログイン不能」）。
-        // ここで銀行すれば以降は cached creds を使い回し、被害が host あたり実質
+        // ここで保存すれば以降は cached creds を使い回し、被害が host あたり実質
         // 1 回に収まる。cached creds 再利用時 (usedCachedCreds) は既に保存済みの
         // ため二重書きしない。保存失敗はログインを止めず best-effort。
         if (_isMastodon && !usedCachedCreds) {

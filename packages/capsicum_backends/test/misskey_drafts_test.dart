@@ -47,24 +47,27 @@ void main() {
     test('getDrafts: NoteDraft を Draft にマップする（visibility→scope・添付）', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
       adapter.client.dio.httpClientAdapter = _CapturingAdapter({
-        'notes/drafts/list': (200, [
-          {
-            'id': 'd1',
-            'createdAt': '2026-07-13T01:02:03.000Z',
-            'text': 'こんにちは',
-            'cw': '注意',
-            'visibility': 'home',
-            'files': [
-              {
-                'id': 'f1',
-                'name': 'a.png',
-                'type': 'image/png',
-                'url': 'https://misskey.example/files/f1',
-                'isSensitive': false,
-              },
-            ],
-          },
-        ]),
+        'notes/drafts/list': (
+          200,
+          [
+            {
+              'id': 'd1',
+              'createdAt': '2026-07-13T01:02:03.000Z',
+              'text': 'こんにちは',
+              'cw': '注意',
+              'visibility': 'home',
+              'files': [
+                {
+                  'id': 'f1',
+                  'name': 'a.png',
+                  'type': 'image/png',
+                  'url': 'https://misskey.example/files/f1',
+                  'isSensitive': false,
+                },
+              ],
+            },
+          ],
+        ),
       });
 
       final drafts = await adapter.getDrafts();
@@ -83,9 +86,7 @@ void main() {
 
     test('getDrafts: list は scheduled:false で引く（予約投稿を除外）', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
-      final capture = _CapturingAdapter({
-        'notes/drafts/list': (200, []),
-      });
+      final capture = _CapturingAdapter({'notes/drafts/list': (200, [])});
       adapter.client.dio.httpClientAdapter = capture;
 
       await adapter.getDrafts();

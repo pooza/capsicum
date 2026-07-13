@@ -24,7 +24,10 @@ void main() {
     });
 
     test('外部サイトのフォーム → false（resolve せずブラウザ）', () {
-      expect(check('https://docs.google.com/forms/d/e/abcXYZ/viewform'), isFalse);
+      expect(
+        check('https://docs.google.com/forms/d/e/abcXYZ/viewform'),
+        isFalse,
+      );
     });
 
     test('素の外部サイト → false', () {

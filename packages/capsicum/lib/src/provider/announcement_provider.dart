@@ -62,6 +62,17 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
     if (current == null) return;
     final original = current.announcements;
 
+    // ロールバック用に対象お知らせの付け外し前スナップショットだけを控える
+    // （リスト全体でなく該当 1 件のみ戻すことで、in-flight 中に別お知らせへ
+    // 加わった変更を巻き込んで取り消さないようにする）。
+    Announcement? originalTarget;
+    for (final a in original) {
+      if (a.id == id) {
+        originalTarget = a;
+        break;
+      }
+    }
+
     // 楽観更新: 対象お知らせのリアクションを付け外しする。
     final optimistic = original
         .map((a) => a.id == id ? _applyToggle(a, name, add: add) : a)
@@ -105,10 +116,15 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
         // reconcile 失敗は致命的でない（楽観値を維持）。
       }
     } catch (e) {
-      // API 失敗: 楽観更新を取り消す。
+      // API 失敗: 該当お知らせのみ付け外し前の値へ戻す。リスト全体を original で
+      // 上書きすると、in-flight 中に別お知らせへ加わった変更まで巻き戻すため
+      // （既読化・他お知らせへのリアクション等）、対象 1 件だけ差し替える。
       final latest = state.valueOrNull;
-      if (latest != null) {
-        state = AsyncData(latest.copyWith(announcements: original));
+      if (latest != null && originalTarget != null) {
+        final reverted = latest.announcements
+            .map((a) => a.id == id ? originalTarget! : a)
+            .toList();
+        state = AsyncData(latest.copyWith(announcements: reverted));
       }
       rethrow;
     }

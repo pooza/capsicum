@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/announcement_provider.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -19,13 +21,21 @@ class _FakeAdapter extends Mock
   List<Announcement> server;
   bool failReaction = false;
 
+  /// 非 null のとき、reaction API はこの gate が完了するまで待つ。in-flight 中に
+  /// 別の state 変更を差し込む並行テストで使う。
+  Completer<void>? reactionGate;
+
   _FakeAdapter(this.server);
 
   @override
   Future<List<Announcement>> getAnnouncements() async => server;
 
   @override
+  Future<void> dismissAnnouncement(String id) async {}
+
+  @override
   Future<void> addAnnouncementReaction(String id, String name) async {
+    if (reactionGate != null) await reactionGate!.future;
     if (failReaction) throw Exception('rate limited');
     _mutate(id, name, add: true);
   }
@@ -65,12 +75,13 @@ class _FakeAdapter extends Mock
   }
 }
 
-Announcement _ann(String id, List<AnnouncementReaction> reactions) => Announcement(
-  id: id,
-  content: 'body',
-  publishedAt: DateTime(2026, 7, 13),
-  reactions: reactions,
-);
+Announcement _ann(String id, List<AnnouncementReaction> reactions) =>
+    Announcement(
+      id: id,
+      content: 'body',
+      publishedAt: DateTime(2026, 7, 13),
+      reactions: reactions,
+    );
 
 Future<(ProviderContainer, AnnouncementNotifier)> _boot(
   _FakeAdapter adapter,
@@ -147,6 +158,37 @@ void main() {
 
     expect(_hasReaction(container, '1', '👍'), isFalse);
   });
+
+  test(
+    'ロールバックは in-flight 中の別お知らせへの変更を巻き込まない (#819 surgical rollback)',
+    () async {
+      final gate = Completer<void>();
+      final adapter = _FakeAdapter([_ann('1', const []), _ann('2', const [])])
+        ..failReaction = true
+        ..reactionGate = gate;
+      final (container, notifier) = await _boot(adapter);
+
+      // '1' へのリアクション付与を開始（gate で API 内部を止める）。
+      final pending = notifier.toggleReaction('1', '👍', add: true);
+
+      // in-flight 中に別お知らせ '2' を既読化する。
+      await notifier.dismiss('2');
+
+      // '1' の API を失敗させ、ロールバックを発火させる。
+      gate.complete();
+      await expectLater(pending, throwsA(isA<Exception>()));
+
+      // '1' はロールバックされて元の空状態に戻る。
+      expect(_hasReaction(container, '1', '👍'), isFalse);
+      // '2' の既読化は保持される（リスト全体を巻き戻さない）。
+      final ann2 = container
+          .read(announcementProvider)
+          .value!
+          .announcements
+          .firstWhere((a) => a.id == '2');
+      expect(ann2.read, isTrue);
+    },
+  );
 
   test('リアクション非対応アダプタでは何もしない（例外を投げない）', () async {
     // AnnouncementReactionSupport を実装しない素の AnnouncementSupport 相当。
