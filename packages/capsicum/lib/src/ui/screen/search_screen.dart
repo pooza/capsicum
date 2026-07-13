@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../util/fediverse_link.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
@@ -459,24 +460,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  Future<void> _resolveAndOpen(String url) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter == null || adapter is! SearchSupport) {
-      launchUrlSafely(Uri.parse(url), mode: LaunchMode.externalApplication);
-      return;
-    }
-    try {
-      final results = await (adapter as SearchSupport).search(url);
-      if (!mounted) return;
-      if (results.posts.isNotEmpty) {
-        context.push('/post', extra: results.posts.first);
-        return;
-      }
-    } catch (_) {}
-    if (mounted) {
-      launchUrlSafely(Uri.parse(url), mode: LaunchMode.externalApplication);
-    }
-  }
+  Future<void> _resolveAndOpen(String url) => openFediverseLink(
+    context,
+    ref,
+    url,
+    browserMode: LaunchMode.externalApplication,
+  );
 
   Widget _buildPostList(List<Post> posts) {
     if (posts.isEmpty) {

@@ -13,7 +13,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
-import '../../url_helper.dart';
+import '../util/fediverse_link.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_action_error.dart';
 import '../util/relative_time.dart';
@@ -92,10 +92,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) launchUrlSafely(uri);
-      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
       onHashtagTap: (tag) => context.push('/hashtag/$tag'),
       onEmojiTap: post != null
           ? (shortcode, emojiUrl) =>

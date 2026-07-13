@@ -6,7 +6,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
-import '../../url_helper.dart';
+import '../util/fediverse_link.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
 
@@ -72,10 +72,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) launchUrlSafely(uri);
-      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return announcement.isHtml

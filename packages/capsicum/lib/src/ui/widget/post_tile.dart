@@ -24,6 +24,7 @@ import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../util/fediverse_link.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
 import 'emoji_action_sheet.dart';
@@ -311,7 +312,8 @@ class _PostTileState extends ConsumerState<PostTile> {
             return;
           }
         }
-        launchUrlSafely(uri);
+        // fediverse 投稿 / アカウント URL はアプリ内へ resolve (#820)。
+        openFediverseLink(context, ref, url);
       },
       onLinkLongPress: (url) {
         Clipboard.setData(ClipboardData(text: url));

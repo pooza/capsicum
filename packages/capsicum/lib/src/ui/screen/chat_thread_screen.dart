@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
-import '../../url_helper.dart';
+import '../util/fediverse_link.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
@@ -354,10 +354,7 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
         if (host != null) return 'https://$host/emoji/$shortcode.webp';
         return null;
       },
-      onLinkTap: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) launchUrlSafely(uri);
-      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
       onLinkLongPress: (url) {
         Clipboard.setData(ClipboardData(text: url));
         ScaffoldMessenger.of(context).showSnackBar(
