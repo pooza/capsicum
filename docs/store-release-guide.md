@@ -71,7 +71,7 @@ macOS ネイティブビルドは iOS と同じ Bundle ID `jp.co.b-shock.capsicu
 ```bash
 cat > ~/.config/capsicum/secrets.env <<'EOF'
 export SENTRY_DSN="https://a4789a0cce4143a06e1cb643ba8ac7ab@o4511026200117248.ingest.us.sentry.io/4511026210471936"
-export RELAY_SECRET="<flauros の settings.yml に設定した shared_secret>"
+export RELAY_SECRET="<リレーサーバーの settings.yml に設定した shared_secret>"
 EOF
 chmod 600 ~/.config/capsicum/secrets.env
 ```
