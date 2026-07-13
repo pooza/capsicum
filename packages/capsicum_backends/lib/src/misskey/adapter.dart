@@ -914,9 +914,31 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<SearchResults> search(String query) async {
-    final isUrl = Uri.tryParse(query)?.hasScheme ?? false;
+    final uri = Uri.tryParse(query);
+    final isUrl = uri?.hasScheme ?? false;
 
     if (isUrl) {
+      // Misskey の ap/show はローカルの `/@username` プロフィール web URL を
+      // 解決できない（`getUserFromApId` が `/users/<id>` 形式しか受けず、自
+      // ホストだとリモート resolve にも回らず noSuchObject になる・#820）。
+      // プロフィール URL は users/show（handle 解決）で先に試し、取れなければ
+      // 下の ap/show（`/users/<id>` 形式や投稿 URL 用）へフォールバックする。
+      final handle = _profileHandleFromUri(uri!);
+      if (handle != null) {
+        try {
+          final user = await client.showUserByName(
+            handle.username,
+            handle.host,
+          );
+          if (user != null) {
+            return SearchResults(
+              users: [user.toCapsicum(host, adminRoleIds: _adminRoleIds)],
+            );
+          }
+        } catch (_) {
+          // fall through to ap/show
+        }
+      }
       try {
         final data = await client.apShow(query);
         final type = data['type'] as String?;
@@ -951,6 +973,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           .toList(),
       hashtags: hashtags,
     );
+  }
+
+  /// `/@username` / `/@username@host` 形式のプロフィール web URL から
+  /// users/show 用の handle を取り出す (#820)。それ以外（投稿 URL・
+  /// `/@user/pages/...`・`/users/<id>` 等）は null を返し ap/show に委ねる。
+  ({String username, String? host})? _profileHandleFromUri(Uri uri) {
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    // プロフィールはパスが `@handle` 単一セグメントのときのみ。`/@user/123`
+    // (投稿) や `/@user/pages/x` は対象外にする。
+    if (segments.length != 1) return null;
+    final seg = segments.first;
+    if (!seg.startsWith('@')) return null;
+    final handle = seg.substring(1);
+    final parts = handle.split('@');
+    final username = parts.first;
+    if (username.isEmpty) return null;
+    // `@user@remote` 形式は remote を明示。ホスト無しの `@user` は URL の
+    // ホストで判断し、自ホストなら null（ローカル lookup）、他ホストなら
+    // そのホストを渡して連合越しに解決する。
+    final explicitHost = parts.length > 1 ? parts[1] : null;
+    final resolvedHost = explicitHost ?? (uri.host == host ? null : uri.host);
+    return (username: username, host: resolvedHost);
   }
 
   @override
