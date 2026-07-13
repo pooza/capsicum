@@ -14,6 +14,12 @@ const kPushRelayReceiveTimeout = Duration(seconds: 10);
 /// APNs / FCM のデバイストークン到着待ち（初回 subscribe 直後）。
 const kDeviceTokenWait = Duration(seconds: 10);
 
+/// サーバーメタデータの鮮度 TTL。バージョン表示 (#774) とモロヘイヤ機能フラグ
+/// (#775) は起動時に一度きり probe した値を保持するため、この期間を超えたら
+/// 取り直す。ServerMetadataCache の成功キャッシュと AccountManagerNotifier の
+/// モロヘイヤ自動再検出で同一の鮮度を共用する (#828)。
+const kServerMetadataFreshnessTtl = Duration(hours: 1);
+
 /// アプリ全体で使用する定数。
 class AppConstants {
   static const appName = 'capsicum';

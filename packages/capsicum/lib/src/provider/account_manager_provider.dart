@@ -38,13 +38,17 @@ class AccountManagerState {
     this.offlineAccounts = const [],
   });
 
+  /// 未指定と「明示 null」を区別するための番兵。`current` は logout で null に
+  /// 落とす経路があるため、`current ?? this.current` だと null 化を表現できない。
+  static const _unset = Object();
+
   AccountManagerState copyWith({
     List<Account>? accounts,
-    Account? current,
+    Object? current = _unset,
     List<OfflineAccount>? offlineAccounts,
   }) => AccountManagerState(
     accounts: accounts ?? this.accounts,
-    current: current ?? this.current,
+    current: identical(current, _unset) ? this.current : current as Account?,
     offlineAccounts: offlineAccounts ?? this.offlineAccounts,
   );
 }
@@ -56,7 +60,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// host ごとのモロヘイヤ自動再検出の最終実行時刻。フォアグラウンド復帰 / ドロワー
   /// 表示のたびに `/about` を叩かないよう TTL で間引く (#775)。
   final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
-  static const _mulukhiyaAutoRefreshTtl = Duration(hours: 1);
+  static const _mulukhiyaAutoRefreshTtl = kServerMetadataFreshnessTtl;
 
   Future<void> addAccount(Account account) async {
     final storage = ref.read(accountStorageProvider);
@@ -118,7 +122,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final offline = state.offlineAccounts
         .where((o) => o.key != enriched.key)
         .toList();
-    state = AccountManagerState(
+    state = state.copyWith(
       accounts: newAccounts,
       current: enriched,
       offlineAccounts: offline,
@@ -148,11 +152,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       account,
       ...state.accounts.where((a) => a.key != account.key),
     ];
-    state = AccountManagerState(
-      accounts: reordered,
-      current: account,
-      offlineAccounts: state.offlineAccounts,
-    );
+    state = state.copyWith(accounts: reordered, current: account);
 
     // Persist MRU order in background (failure is non-fatal).
     final storage = ref.read(accountStorageProvider);
@@ -176,11 +176,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final accounts = state.accounts
         .map((a) => a.key == updated.key ? updated : a)
         .toList();
-    state = AccountManagerState(
-      accounts: accounts,
-      current: updated,
-      offlineAccounts: state.offlineAccounts,
-    );
+    state = state.copyWith(accounts: accounts, current: updated);
   }
 
   Future<void> logout(Account account) async {
@@ -199,7 +195,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         ? (remaining.isNotEmpty ? remaining.first : null)
         : state.current;
 
-    state = AccountManagerState(
+    state = state.copyWith(
       accounts: remaining,
       current: next,
       offlineAccounts: state.offlineAccounts
@@ -243,10 +239,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final updated = target.copyWithMulukhiya(mulukhiya);
     final accounts = [...state.accounts];
     accounts[idx] = updated;
-    state = AccountManagerState(
+    state = state.copyWith(
       accounts: accounts,
       current: state.current?.key == updated.key ? updated : state.current,
-      offlineAccounts: state.offlineAccounts,
     );
     // 手動再検出も自動再検出 (#775) の TTL を消費させ、直後のフォアグラウンド
     // 復帰で二重に `/about` を叩かないようにする。
@@ -292,10 +287,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final updated = target.copyWithSoftwareVersion(version);
     final accounts = [...state.accounts];
     accounts[idx] = updated;
-    state = AccountManagerState(
+    state = state.copyWith(
       accounts: accounts,
       current: state.current?.key == updated.key ? updated : state.current,
-      offlineAccounts: state.offlineAccounts,
     );
   }
 
@@ -321,6 +315,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 次の TTL 満了まで待つ（非モロヘイヤ鯖で毎復帰ごとに /about を叩かない）。
     _mulukhiyaAutoRefreshedAt[host] = DateTime.now();
     await redetectMulukhiya();
+  }
+
+  /// フォアグラウンド復帰・ドロワー表示から呼ぶサーバーメタデータ鮮度更新の
+  /// まとめ口 (#828)。バージョン表示 (#774) とモロヘイヤ機能フラグ (#775) は
+  /// 常に対で取り直すため、呼び出し側の二重記述を避けてここに集約する。
+  /// いずれも TTL 内は no-op。
+  Future<void> refreshCurrentServerMetadata() async {
+    await Future.wait([
+      refreshCurrentServerVersion(),
+      refreshCurrentMulukhiya(),
+    ]);
   }
 
   /// [Account] を `username@host` 形式に直す。capsicum-relay が push payload
@@ -498,7 +503,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           .where((a) => restored.every((r) => r.key != a.key))
           .toList();
       final onlineAccounts = [...restored, ...existing];
-      state = AccountManagerState(
+      state = state.copyWith(
         accounts: onlineAccounts,
         current:
             state.current ??
@@ -655,7 +660,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     // 復元成功＝オフライン保持からオンラインへ昇格。offline entry を除去する
     // (#792)。
-    state = AccountManagerState(
+    state = state.copyWith(
       accounts: [...state.accounts, account],
       current: state.current ?? account,
       offlineAccounts: state.offlineAccounts

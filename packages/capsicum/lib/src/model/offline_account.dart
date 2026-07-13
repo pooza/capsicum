@@ -1,4 +1,3 @@
-import '../util/login_error.dart';
 import 'account_key.dart';
 
 /// 到達不能でオンライン復元できていないログイン済みアカウントの軽量表現
@@ -15,26 +14,14 @@ import 'account_key.dart';
 class OfflineAccount {
   final AccountKey key;
 
-  /// 直近の復元失敗の分類。オフライン保持するのは [RestoreOutcome.retriable]
-  /// （ネットワーク不通 / サーバー 5xx）のみ。
-  final RestoreOutcome lastOutcome;
-
   /// 背景リトライがまだ継続中か。false は backoff を尽くしても復帰しなかった
   /// （手動再試行は可能）。
   final bool retrying;
 
-  const OfflineAccount({
-    required this.key,
-    this.lastOutcome = RestoreOutcome.retriable,
-    this.retrying = true,
-  });
+  const OfflineAccount({required this.key, this.retrying = true});
 
-  OfflineAccount copyWith({RestoreOutcome? lastOutcome, bool? retrying}) =>
-      OfflineAccount(
-        key: key,
-        lastOutcome: lastOutcome ?? this.lastOutcome,
-        retrying: retrying ?? this.retrying,
-      );
+  OfflineAccount copyWith({bool? retrying}) =>
+      OfflineAccount(key: key, retrying: retrying ?? this.retrying);
 
   /// 切替 UI 用の `@username@host` ラベル（profile 不在でも表示できる）。
   String get handle => '@${key.username}@${key.host}';

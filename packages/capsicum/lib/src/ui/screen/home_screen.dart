@@ -123,9 +123,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 表示 (#774) とモロヘイヤ機能フラグ (#775) は起動時に一度きり probe され
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
-      final manager = ref.read(accountManagerProvider.notifier);
-      manager.refreshCurrentServerVersion();
-      manager.refreshCurrentMulukhiya();
+      ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
     }
   }
 
@@ -476,9 +474,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // (#775) を最新化する。いずれも TTL 内は no-op。
       onDrawerChanged: (isOpened) {
         if (isOpened) {
-          final manager = ref.read(accountManagerProvider.notifier);
-          manager.refreshCurrentServerVersion();
-          manager.refreshCurrentMulukhiya();
+          ref
+              .read(accountManagerProvider.notifier)
+              .refreshCurrentServerMetadata();
         }
       },
       appBar: AppBar(
@@ -2495,7 +2493,9 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     ),
                     subtitle: Text(o.retrying ? '再試行中…' : '接続できません'),
                     trailing: IconButton(
-                      icon: const Icon(Icons.logout),
+                      // 削除操作は delete_outline に統一する (#828)。logout は
+                      // 実ログアウト (ドロワー) と紛れるため使わない。
+                      icon: const Icon(Icons.delete_outline),
                       tooltip: 'このアカウントを削除',
                       onPressed: () =>
                           confirmRemoveOfflineAccount(context, ref, o),

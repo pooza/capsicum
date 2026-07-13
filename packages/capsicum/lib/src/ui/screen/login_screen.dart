@@ -697,18 +697,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 相乗りしない限り送られず、ポート占有でログインがブロックされる頻度が
         // 見えない。warning を 1 発上げる。生 URL / トークンは載せず、既存 scrub
         // 方針どおり host / backend / port の非 PII タグのみ。
-        Sentry.captureMessage(
-          'oauth_server.bind_exhausted (port=${e.port})',
-          level: SentryLevel.warning,
-          withScope: (scope) {
-            scope.setTag('service', 'oauth_loopback');
-            scope.setTag('login.host', widget.host);
-            scope.setTag('login.backend', widget.backendType.name);
-            scope.setTag('oauth.port', e.port.toString());
-            // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
-            scope.fingerprint = ['oauth_server.bind_exhausted'];
-          },
-        );
+        // 計測のために友好エラー表示 (下) を巻き添えにしない。restore 系の
+        // captureMessage (account_manager_provider) と同じく try/catch で保護
+        // する (#828 parity)。Sentry は初期化済みで同期 throw しない設計だが、
+        // 観測のための計装が UX 経路を壊さないことを構造で担保する。
+        try {
+          Sentry.captureMessage(
+            'oauth_server.bind_exhausted (port=${e.port})',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('service', 'oauth_loopback');
+              scope.setTag('login.host', widget.host);
+              scope.setTag('login.backend', widget.backendType.name);
+              scope.setTag('oauth.port', e.port.toString());
+              // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
+              scope.fingerprint = ['oauth_server.bind_exhausted'];
+            },
+          );
+        } catch (_) {
+          // 計装失敗は握りつぶす（友好エラー表示を優先）。
+        }
         if (mounted) {
           setState(
             () => _error =
