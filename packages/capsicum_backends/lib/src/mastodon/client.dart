@@ -699,6 +699,23 @@ class MastodonClient {
     await dio.post('/api/v1/announcements/$id/dismiss');
   }
 
+  /// PUT /api/v1/announcements/:id/reactions/:name (#819)
+  ///
+  /// [name] は Unicode 絵文字またはカスタム絵文字の shortcode（コロン無し）。
+  /// パスに載るためエンコードする。
+  Future<void> putAnnouncementReaction(String id, String name) async {
+    await dio.put(
+      '/api/v1/announcements/$id/reactions/${Uri.encodeComponent(name)}',
+    );
+  }
+
+  /// DELETE /api/v1/announcements/:id/reactions/:name (#819)
+  Future<void> deleteAnnouncementReaction(String id, String name) async {
+    await dio.delete(
+      '/api/v1/announcements/$id/reactions/${Uri.encodeComponent(name)}',
+    );
+  }
+
   /// DELETE /api/v1/statuses/:id
   Future<void> deleteStatus(String id) async {
     await dio.delete('/api/v1/statuses/$id');

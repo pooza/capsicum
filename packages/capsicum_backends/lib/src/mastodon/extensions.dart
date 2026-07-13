@@ -355,7 +355,15 @@ extension CapsicumMastodonAnnouncementExtension on MastodonAnnouncement {
       publishedAt: publishedAt,
       read: read,
       isHtml: true,
+      reactions: reactions.map((r) => r.toCapsicum()).toList(),
     );
+  }
+}
+
+extension CapsicumMastodonAnnouncementReactionExtension
+    on MastodonAnnouncementReaction {
+  AnnouncementReaction toCapsicum() {
+    return AnnouncementReaction(name: name, count: count, me: me, url: url);
   }
 }
 

@@ -75,6 +75,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         FavoriteSupport,
         BookmarkSupport,
         AnnouncementSupport,
+        AnnouncementReactionSupport,
         FollowSupport,
         NotificationSupport,
         SearchSupport,
@@ -712,6 +713,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> dismissAnnouncement(String id) => client.dismissAnnouncement(id);
+
+  @override
+  Future<void> addAnnouncementReaction(String id, String name) =>
+      client.putAnnouncementReaction(id, name);
+
+  @override
+  Future<void> removeAnnouncementReaction(String id, String name) =>
+      client.deleteAnnouncementReaction(id, name);
 
   // FollowSupport
 
