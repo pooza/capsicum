@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../model/offline_account.dart';
@@ -1551,7 +1552,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .where((a) => a.key != current?.key)
         .toList();
 
+    // 編集アクションは現在フォーカス中のフィールドへ intent を送る（macOS の
+    // [_buildMacMenuBar] と同じ挙動）。フォーカスがテキスト以外なら no-op。
+    void editAction(Intent intent) {
+      final focusCtx = FocusManager.instance.primaryFocus?.context;
+      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
+    }
+
     return Column(
+      // メニューバーはウィンドウ幅いっぱいに伸ばし、項目は左寄せにする（デスクトップ
+      // の一般的なメニューバー体裁）(#713)。Column 既定の中央揃えだと content 幅の
+      // バーが中央に浮いて見える。
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MenuBar(
           children: [
@@ -1567,6 +1579,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ],
               child: const Text('capsicum'),
+            ),
+            // 編集メニュー: macOS と同じテキスト intent を流用（Win/Linux では
+            // 修飾キー表記が異なるためショートカット表示は出さない。機能自体は
+            // 各テキストフィールドの標準ショートカットが担う）。
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () => editAction(
+                    const UndoTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('取り消す'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editAction(
+                    const RedoTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('やり直す'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editAction(
+                    const CopySelectionTextIntent.cut(
+                      SelectionChangedCause.keyboard,
+                    ),
+                  ),
+                  child: const Text('カット'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editAction(CopySelectionTextIntent.copy),
+                  child: const Text('コピー'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editAction(
+                    const PasteTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('ペースト'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editAction(
+                    const SelectAllTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('すべて選択'),
+                ),
+              ],
+              child: const Text('編集'),
             ),
             SubmenuButton(
               menuChildren: [
@@ -1611,6 +1667,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ],
                 child: const Text('アカウント'),
               ),
+            // 表示メニュー: 全画面表示の切り替え（macOS の toggleFullScreen 相当）。
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () async {
+                    final full = await windowManager.isFullScreen();
+                    await windowManager.setFullScreen(!full);
+                  },
+                  child: const Text('全画面表示を切り替え'),
+                ),
+              ],
+              child: const Text('表示'),
+            ),
+            // ウインドウメニュー: 最小化 / 最大化（macOS の minimize / zoom 相当）。
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () => windowManager.minimize(),
+                  child: const Text('最小化'),
+                ),
+                MenuItemButton(
+                  onPressed: () async {
+                    if (await windowManager.isMaximized()) {
+                      await windowManager.unmaximize();
+                    } else {
+                      await windowManager.maximize();
+                    }
+                  },
+                  child: const Text('最大化'),
+                ),
+              ],
+              child: const Text('ウインドウ'),
+            ),
           ],
         ),
         Expanded(child: child),
