@@ -436,11 +436,14 @@ class MisskeyClient {
     );
   }
 
-  /// POST /api/notes/drafts/create — create a scheduled note.
-  Future<void> createScheduledNote({
+  /// POST /api/notes/drafts/create — 下書き / 予約投稿を作成する (#174)。
+  ///
+  /// Misskey は下書きと予約投稿を同じ `NoteDraft` で扱う。[scheduledAt] を渡すと
+  /// `isActuallyScheduled: true` の予約投稿、渡さなければ素の下書きになる。
+  Future<void> createNoteDraft({
     required String text,
     required String visibility,
-    required DateTime scheduledAt,
+    DateTime? scheduledAt,
     String? replyId,
     String? renoteId,
     List<String>? fileIds,
@@ -453,8 +456,9 @@ class MisskeyClient {
       data: createBody({
         'text': text,
         'visibility': visibility,
-        'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
-        'isActuallyScheduled': true,
+        if (scheduledAt != null)
+          'scheduledAt': scheduledAt.toUtc().millisecondsSinceEpoch,
+        if (scheduledAt != null) 'isActuallyScheduled': true,
         'replyId': ?replyId,
         'renoteId': ?renoteId,
         'fileIds': ?fileIds,
@@ -463,6 +467,40 @@ class MisskeyClient {
         'channelId': ?channelId,
       }),
     );
+  }
+
+  /// POST /api/notes/drafts/create — create a scheduled note (#174 で
+  /// [createNoteDraft] に一般化。予約投稿はその scheduledAt 付き特殊化)。
+  Future<void> createScheduledNote({
+    required String text,
+    required String visibility,
+    required DateTime scheduledAt,
+    String? replyId,
+    String? renoteId,
+    List<String>? fileIds,
+    String? cw,
+    bool? localOnly,
+    String? channelId,
+  }) => createNoteDraft(
+    text: text,
+    visibility: visibility,
+    scheduledAt: scheduledAt,
+    replyId: replyId,
+    renoteId: renoteId,
+    fileIds: fileIds,
+    cw: cw,
+    localOnly: localOnly,
+    channelId: channelId,
+  );
+
+  /// POST /api/notes/drafts/list — 素の下書き（予約投稿を除く）の生データ (#174)。
+  /// 復元でメディアやリプライ情報を使うため、パースは呼び出し側 (adapter) に委ねる。
+  Future<List<Map<String, dynamic>>> getNoteDrafts() async {
+    final response = await dio.post(
+      '/api/notes/drafts/list',
+      data: createBody({'scheduled': false}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
   }
 
   /// POST /api/notes/drafts/list — list scheduled notes.
@@ -514,8 +552,8 @@ class MisskeyClient {
     );
   }
 
-  /// POST /api/notes/drafts/delete — cancel a scheduled note.
-  Future<void> deleteScheduledNote(String id) async {
+  /// POST /api/notes/drafts/delete — 下書き / 予約投稿の削除（共通・#174）。
+  Future<void> deleteNoteDraft(String id) async {
     await dio.post(
       '/api/notes/drafts/delete',
       data: createBody({'draftId': id}),

@@ -2,10 +2,13 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
+import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
-import '../../url_helper.dart';
+import '../util/fediverse_link.dart';
 import 'content_parser.dart';
+import 'emoji_picker.dart';
 
 class AnnouncementTile extends ConsumerStatefulWidget {
   final Announcement announcement;
@@ -69,10 +72,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) launchUrlSafely(uri);
-      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return announcement.isHtml
@@ -149,7 +149,165 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
                 ),
               ),
             ],
+            _buildReactions(context, theme),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// お知らせのリアクション行 (#819)。リアクション対応アダプタ（Mastodon）でのみ
+  /// 表示する。既存チップはタップで付け外し、末尾の「+」で絵文字ピッカーを開く。
+  Widget _buildReactions(BuildContext context, ThemeData theme) {
+    final adapter = ref.watch(currentAdapterProvider);
+    if (adapter is! AnnouncementReactionSupport) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          for (final r in announcement.reactions)
+            _AnnouncementReactionChip(
+              reaction: r,
+              onTap: () => _toggle(r.name, add: !r.me),
+            ),
+          _AddReactionButton(onTap: () => _openReactionPicker(context)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggle(String name, {required bool add}) async {
+    try {
+      await ref
+          .read(announcementProvider.notifier)
+          .toggleReaction(announcement.id, name, add: add);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('リアクションを更新できませんでした')));
+      }
+    }
+  }
+
+  void _openReactionPicker(BuildContext context) {
+    final account = ref.read(currentAccountProvider);
+    final adapter = account?.adapter;
+    if (account == null || adapter is! AnnouncementReactionSupport) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final screenHeight = MediaQuery.of(context).size.height;
+        final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: SizedBox(
+            height: (screenHeight - keyboardInset) * 0.5,
+            child: EmojiPicker(
+              adapter: adapter as BackendAdapter,
+              host: account.key.host,
+              mulukhiya: account.mulukhiya,
+              accessToken: account.userSecret.accessToken,
+              forReaction: true,
+              onSelected: (emoji) {
+                Navigator.pop(sheetContext);
+                // ピッカーはカスタム絵文字を `:shortcode:`、Unicode は素の文字で
+                // 返す。Mastodon の reaction API はコロン無し shortcode を要求
+                // するため剥がす。
+                final name = emoji.startsWith(':') && emoji.endsWith(':')
+                    ? emoji.substring(1, emoji.length - 1)
+                    : emoji;
+                _toggle(name, add: true);
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// お知らせのリアクションチップ (#819)。カスタム絵文字は [AnnouncementReaction.url]
+/// を画像表示し、無ければ素のテキスト（Unicode 絵文字 / 未 reconcile の shortcode）。
+class _AnnouncementReactionChip extends StatelessWidget {
+  final AnnouncementReaction reaction;
+  final VoidCallback onTap;
+
+  const _AnnouncementReactionChip({
+    required this.reaction,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isMine = reaction.me;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isMine ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isMine ? scheme.primary : scheme.outlineVariant,
+            width: isMine ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (reaction.url != null)
+              Image.network(
+                reaction.url!,
+                height: 18,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Text(reaction.name),
+              )
+            else
+              Text(reaction.name, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 4),
+            Text(
+              '${reaction.count}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: isMine ? scheme.onPrimaryContainer : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddReactionButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddReactionButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Icon(
+          Icons.add_reaction_outlined,
+          size: 18,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );

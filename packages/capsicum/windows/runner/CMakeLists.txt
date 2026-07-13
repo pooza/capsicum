@@ -97,7 +97,12 @@ target_include_directories(capsicum_push_task PRIVATE "${CMAKE_SOURCE_DIR}")
 # 出力名はマニフェスト inProcessServer の Path と一致させる。
 set_target_properties(capsicum_push_task PROPERTIES OUTPUT_NAME "push_background_task")
 # capsicum.exe と同じ Release バンドルフォルダへ同梱する（MSIX が拾えるように）。
-install(TARGETS capsicum_push_task RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+# CMAKE_INSTALL_PREFIX は Flutter の上書きブロック（windows/CMakeLists.txt）が
+# このサブディレクトリより後で走るため、ここではまだ既定値
+# （C:/Program Files/capsicum）を指す。順序に依存せず capsicum.exe と同じ
+# バンドルフォルダへ入れるため、TARGET_FILE_DIR を直接指定する。
+install(TARGETS capsicum_push_task RUNTIME
+  DESTINATION "$<TARGET_FILE_DIR:${BINARY_NAME}>"
   COMPONENT Runtime)
 
 # Run the Flutter tool portions of the build. This must not be removed.

@@ -256,6 +256,10 @@ class ComposeScreen extends ConsumerStatefulWidget {
   final String? sharedText;
   final String? initialText;
 
+  /// サーバー下書き（Misskey `notes/drafts`）から復元する場合の元下書き (#174)。
+  /// 本文・CW・公開範囲・添付を prefill し、投稿成功時に元下書きを削除する。
+  final Draft? restoreDraft;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -265,6 +269,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.channelName,
     this.sharedText,
     this.initialText,
+    this.restoreDraft,
   });
 
   @override
@@ -300,6 +305,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _insertingNowPlaying = false;
   bool _localOnly = false;
   DateTime? _scheduledAt;
+  // サーバー下書きから復元した場合の元下書き id (#174)。投稿成功時に削除する。
+  String? _restoredDraftId;
   String? _language;
   List<User> _mentionSuggestions = [];
   List<String> _hashtagSuggestions = [];
@@ -416,7 +423,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
     final redraft = widget.redraft;
     final replyTo = widget.replyTo;
-    if (redraft != null) {
+    final restoreDraft = widget.restoreDraft;
+    if (restoreDraft != null) {
+      // サーバー下書き（Misskey）からの復元 (#174)。Misskey の本文は MFM 平文
+      // なので HTML 復元は不要。CW・公開範囲・添付（drive エントリ）を引き継ぐ。
+      _restoredDraftId = restoreDraft.id;
+      _controller.text = restoreDraft.content ?? '';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+      _scope = restoreDraft.scope;
+      if (restoreDraft.spoilerText != null &&
+          restoreDraft.spoilerText!.isNotEmpty) {
+        _cwEnabled = true;
+        _cwController.text = restoreDraft.spoilerText!;
+      }
+      if (restoreDraft.attachments.isNotEmpty) {
+        _attachments.addAll(restoreDraft.attachments.map(_MediaEntry.drive));
+      }
+    } else if (redraft != null) {
       // 本文: リモートメンションを `@user@host` に復元して平文化 (#703)。
       // Mastodon (isHtml) のみ host 復元が必要。Misskey の MFM は元から
       // フル acct なので従来どおり _extractPlainText に委ねる。
@@ -2221,6 +2246,83 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _submit();
   }
 
+  /// 現在の内容をサーバー下書き（Misskey `notes/drafts`）として保存する (#174)。
+  /// DraftSupport のあるアダプタでのみ AppBar に導線が出る。復元元の下書きが
+  /// あれば新規保存に一本化するため削除する。
+  ///
+  /// ローカル自動保存の下書き（[_restoreDraft] / SharedPreferences）とは別物。
+  Future<void> _saveServerDraft() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty && _attachments.isEmpty) return;
+
+    final adapter = ref.read(currentAdapterProvider);
+    // DraftSupport は mixin で DecentralizedBackendAdapter の subtype ではない
+    // ため is! では promote されない。ScheduleSupport と同様に明示 cast で使う。
+    if (adapter == null || adapter is! DraftSupport) return;
+
+    setState(() => _sending = true);
+    try {
+      final mediaIds = await Future.wait(
+        _attachments.map((entry) async {
+          if (entry.isDrive) return entry.driveFile!.id;
+          final d = AttachmentDraft(
+            filePath: entry.file!.path,
+            description: entry.description.isNotEmpty
+                ? entry.description
+                : null,
+            mimeType: entry.file!.mimeType,
+            sensitive: _effectiveSensitive || entry.sensitive,
+          );
+          final attachment = await adapter.uploadAttachment(d);
+          return attachment.id;
+        }),
+      );
+
+      final spoilerText = _cwEnabled ? _cwController.text.trim() : null;
+      await (adapter as DraftSupport).saveDraft(
+        PostDraft(
+          content: text.isNotEmpty ? text : null,
+          scope: _scope,
+          inReplyToId: widget.replyTo?.id,
+          quoteId: _quotedPost?.id,
+          mediaIds: mediaIds,
+          spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
+          sensitive: _effectiveSensitive,
+          localOnly: _localOnly,
+          channelId: _effectiveChannelId,
+        ),
+      );
+
+      // 復元元の下書きは新規保存に置き換えるため削除する（best-effort）。
+      final restoredId = _restoredDraftId;
+      if (restoredId != null) {
+        try {
+          await (adapter as DraftSupport).deleteDraft(restoredId);
+        } catch (_) {
+          // 削除失敗は保存の成否に影響しない。
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('下書きを保存しました')));
+        if (context.canPop()) {
+          context.pop(true);
+        } else {
+          context.go('/home');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _sending = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('下書きの保存に失敗しました')));
+      }
+    }
+  }
+
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
@@ -2316,6 +2418,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // not touch an unrelated draft.
       if (_draftAutoSave) {
         await _clearDraft();
+      }
+      // サーバー下書きから復元して投稿した場合、その下書きを消費済みとして
+      // 削除する (#174・best-effort)。予約投稿設定時も下書きは残さない。
+      final restoredId = _restoredDraftId;
+      if (restoredId != null && adapter is DraftSupport) {
+        try {
+          await (adapter as DraftSupport).deleteDraft(restoredId);
+        } catch (_) {
+          // 削除失敗は投稿の成否に影響しない。
+        }
       }
       if (mounted) {
         if (_scheduledAt != null) {
@@ -2417,6 +2529,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          // サーバー下書き保存 (#174)。DraftSupport のあるアダプタ（Misskey）
+          // のみ表示。予約投稿（_scheduledAt）とは併用しない（予約は送信で成立）。
+          if (ref.watch(currentAdapterProvider) is DraftSupport &&
+              _scheduledAt == null)
+            IconButton(
+              onPressed: _sending ? null : _saveServerDraft,
+              icon: const Icon(Icons.save_outlined),
+              tooltip: '下書き保存',
+            ),
           IconButton(
             onPressed: _sending ? null : _showPreview,
             icon: const Icon(Icons.preview_outlined),

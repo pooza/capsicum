@@ -68,6 +68,7 @@ sudo apt install -y \
   clang cmake ninja-build pkg-config \
   libgtk-3-dev libsecret-1-dev libwebkit2gtk-4.1-dev \
   libcurl4-openssl-dev default-jdk-headless \
+  libmpv-dev libasound2-dev libayatana-appindicator3-dev \
   libfuse2t64 patchelf
 ```
 
@@ -75,7 +76,12 @@ sudo apt install -y \
 - `libwebkit2gtk-4.1-dev`: `flutter_web_auth_2` が transitive で引く `desktop_webview_window` の OAuth 用 WebView (#382 で OS デフォルトブラウザ方式に切り替えれば不要になる候補)
 - `libcurl4-openssl-dev`: sentry-native の HTTP 送信
 - `default-jdk-headless`: `sentry_flutter` が transitive で引く `jni` のヘッダ (ビルド時のみ。実行時は使われない)
+- `libmpv-dev`: `media_kit_video`（[#492](https://github.com/pooza/capsicum/issues/492) media_kit 移行 v1.30）が cmake で `PkgConfig::mpv` を要求。同梱 libmpv があってもビルド時に system 側が要る
+- `libasound2-dev`: `volume_controller` が ALSA（`find_package(ALSA)`）を要求
+- `libayatana-appindicator3-dev`: `tray_manager`（デスクトップ常駐トレイ [#752](https://github.com/pooza/capsicum/issues/752)）が `ayatana-appindicator3-0.1` を要求
 - `libfuse2t64` / `patchelf`: AppImage 起動と linuxdeploy の依存解決
+
+なお、上記 system 依存に加えて、フレッシュな checkout では **`melos bootstrap` + `melos run build_runner`（`fediverse_objects` の `*.g.dart` 生成）が済んでいないと `flutter build/run linux` が `_$XxxFromJson` 未定義でコンパイル失敗**する。melos は Pub Cache bin が PATH 外だと解決に失敗するため `export PATH="$PATH:$HOME/.pub-cache/bin"` を通しておく（Windows 固有節の build_runner 注記と同型）。
 
 配布パイプライン作業時の `linuxdeploy` / `linuxdeploy-plugin-gtk.sh` / `appimagetool` は GitHub Releases から `~/.local/bin/` に直接配置（`sentry-cli` と同じ運用）。具体手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md)。
 

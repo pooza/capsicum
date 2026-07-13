@@ -28,9 +28,9 @@ class _CacheEntry {
   _CacheEntry(this.metadata, this.fetchedAt);
 
   bool get isExpired {
-    // 成功時は1時間、失敗（null）時は5分で期限切れ
+    // 成功時は鮮度 TTL(1h)、失敗（null）時は5分で期限切れ。
     final ttl = metadata != null
-        ? const Duration(hours: 1)
+        ? kServerMetadataFreshnessTtl
         : const Duration(minutes: 5);
     return DateTime.now().difference(fetchedAt) > ttl;
   }
@@ -52,15 +52,32 @@ class ServerMetadataCache {
   /// [forceRefresh] が true のときは TTL 内でも再取得する。「サーバー情報」画面を
   /// 開いた直後にドロワー表示を確実に最新化する用途 (#774 method 2)。進行中の
   /// fetch があればそれに相乗りする（多重リクエストは避ける）。
-  Future<ServerMetadata?> fetch(String host, {bool forceRefresh = false}) {
+  ///
+  /// [preferMisskey] が true のときは Misskey (`/api/meta`) を Mastodon より先に
+  /// 試す (#827)。Sharkey / Firefish 等の Mastodon 互換 API を持つ Misskey フォークは
+  /// `/api/v2/instance` に「4.x (compatible)」相当の偽バージョンを返すため、
+  /// Mastodon 優先のままだと version / name / icon がフォークの実体でなく Mastodon
+  /// 互換の見かけに化ける。host → ソフトウェア種別は一意なので、呼び出し側の
+  /// アダプタ型（Misskey 系か）をそのまま渡してよい。
+  Future<ServerMetadata?> fetch(
+    String host, {
+    bool forceRefresh = false,
+    bool preferMisskey = false,
+  }) {
     final entry = _cache[host];
     if (!forceRefresh && entry != null && !entry.isExpired) {
       return Future.value(entry.metadata);
     }
-    return _pending.putIfAbsent(host, () => _doFetch(host));
+    return _pending.putIfAbsent(
+      host,
+      () => _doFetch(host, preferMisskey: preferMisskey),
+    );
   }
 
-  Future<ServerMetadata?> _doFetch(String host) async {
+  Future<ServerMetadata?> _doFetch(
+    String host, {
+    bool preferMisskey = false,
+  }) async {
     try {
       final dio = Dio(
         BaseOptions(
@@ -68,10 +85,13 @@ class ServerMetadataCache {
           receiveTimeout: kNetworkReceiveTimeout,
         ),
       );
-      final metadata =
-          await _tryMastodon(dio, host) ??
-          await _tryMisskey(dio, host) ??
-          await _tryPieFed(dio, host);
+      final metadata = preferMisskey
+          ? (await _tryMisskey(dio, host) ??
+                await _tryMastodon(dio, host) ??
+                await _tryPieFed(dio, host))
+          : (await _tryMastodon(dio, host) ??
+                await _tryMisskey(dio, host) ??
+                await _tryPieFed(dio, host));
       _cache[host] = _CacheEntry(metadata, DateTime.now());
       _pending.remove(host);
       return metadata;
@@ -92,7 +112,7 @@ class ServerMetadataCache {
           name: data['title'] as String? ?? host,
           iconUrl: _extractIcon(data, host),
           themeColor: _extractColor(data),
-          softwareVersion: data['version'] as String?,
+          softwareVersion: _versionOf(data),
         );
       }
     } on DioException {
@@ -106,7 +126,7 @@ class ServerMetadataCache {
           name: data['title'] as String? ?? host,
           iconUrl: 'https://$host/favicon.ico',
           themeColor: null,
-          softwareVersion: data['version'] as String?,
+          softwareVersion: _versionOf(data),
         );
       }
     } on DioException {
@@ -124,7 +144,7 @@ class ServerMetadataCache {
           name: data['name'] as String? ?? host,
           iconUrl: data['iconUrl'] as String?,
           themeColor: data['themeColor'] as String?,
-          softwareVersion: data['version'] as String?,
+          softwareVersion: _versionOf(data),
         );
       }
     } on DioException {
@@ -148,7 +168,7 @@ class ServerMetadataCache {
           name: site['name'] as String? ?? host,
           iconUrl: site['icon'] as String?,
           themeColor: null,
-          softwareVersion: data['version'] as String?,
+          softwareVersion: _versionOf(data),
         );
       }
     } on DioException {
@@ -174,6 +194,12 @@ class ServerMetadataCache {
     }
     return 'https://$host/favicon.ico';
   }
+
+  /// `version` は稀に非 String（数値等）で返すサーバーがある。`as String?` だと
+  /// TypeError で metadata 全体が catch → null に倒れるため、型ガードで該当
+  /// フィールドだけ null にする (#821 と同型・#828)。
+  static String? _versionOf(Map<String, dynamic> data) =>
+      data['version'] is String ? data['version'] as String : null;
 
   String? _extractColor(Map<String, dynamic> v2Data) {
     // Mastodon 4.3+ includes accent_color in configuration.

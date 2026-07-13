@@ -533,6 +533,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (startResult is LoginNeedsOAuth) {
         oauthExtra = startResult.extra;
 
+        // 新規登録した OAuth アプリを「登録成功直後」に host 保存する (#824)。
+        // 従来は _finishLogin（トークン交換完了後）まで保存せず、以降の OAuth を
+        // cancel / timeout / `?error=` で中断すると登録済みアプリが捨てられ、次回
+        // また `POST /api/v1/apps` で 1 枠消費していた（5/30min の登録上限を正規
+        // クライアントの失敗連続で食い潰す＝「正しい資格情報でもログイン不能」）。
+        // ここで保存すれば以降は cached creds を使い回し、被害が host あたり実質
+        // 1 回に収まる。cached creds 再利用時 (usedCachedCreds) は既に保存済みの
+        // ため二重書きしない。保存失敗はログインを止めず best-effort。
+        if (_isMastodon && !usedCachedCreds) {
+          final clientId = startResult.extra['client_id'];
+          final clientSecret = startResult.extra['client_secret'];
+          if (clientId != null && clientSecret != null) {
+            try {
+              await ref
+                  .read(accountStorageProvider)
+                  .saveHostClientCredentials(
+                    widget.host,
+                    clientId,
+                    clientSecret,
+                    _redirectUri,
+                  );
+            } catch (e) {
+              _logLoginStep(
+                'host_creds.bank_failed',
+                data: {'type': e.runtimeType.toString()},
+              );
+            }
+          }
+        }
+
         // Open browser and wait for callback redirect.
         assert(() {
           debugPrint('capsicum: OAuth URL: ${startResult.authorizationUrl}');
@@ -596,6 +626,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 「No code in callback」で失敗していた。cache 由来かつ初回に限り、
         // cache を破棄して POST /api/v1/apps からやり直す (#620 と同型の自己回復)。
         // Misskey MiAuth は `?session=` で戻り error も code も無いため対象外。
+        //
+        // ただし delete+再登録は **cache が stale なとき**にだけ意味がある (#824)。
+        // `access_denied`（ユーザーが拒否）や `temporarily_unavailable`・レート制限
+        // 由来の error では cache は正常なのに 1 枠を無駄に消費し、登録上限の枯渇を
+        // 早める。stale を示す error コードに限って自己回復する。
         if (callbackUri.queryParameters.containsKey('error') &&
             !callbackUri.queryParameters.containsKey('code')) {
           final oauthError = callbackUri.queryParameters['error'];
@@ -603,7 +638,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             'authenticate.error_redirect',
             data: {'error': oauthError, 'usedCachedCreds': usedCachedCreds},
           );
-          if (usedCachedCreds && _isMastodon && !isRetry) {
+          // cache 済みクライアントが「古いスコープ / 無効なクライアント / 未登録
+          // redirect_uri」で登録されていることを示す error のみ再登録に値する。
+          const staleCredsErrors = {
+            'invalid_scope',
+            'invalid_client',
+            'invalid_redirect_uri',
+          };
+          if (usedCachedCreds &&
+              _isMastodon &&
+              !isRetry &&
+              staleCredsErrors.contains(oauthError)) {
             _logLoginStep('login.error_retry.begin');
             try {
               final storage = ref.read(accountStorageProvider);
@@ -697,18 +742,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 相乗りしない限り送られず、ポート占有でログインがブロックされる頻度が
         // 見えない。warning を 1 発上げる。生 URL / トークンは載せず、既存 scrub
         // 方針どおり host / backend / port の非 PII タグのみ。
-        Sentry.captureMessage(
-          'oauth_server.bind_exhausted (port=${e.port})',
-          level: SentryLevel.warning,
-          withScope: (scope) {
-            scope.setTag('service', 'oauth_loopback');
-            scope.setTag('login.host', widget.host);
-            scope.setTag('login.backend', widget.backendType.name);
-            scope.setTag('oauth.port', e.port.toString());
-            // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
-            scope.fingerprint = ['oauth_server.bind_exhausted'];
-          },
-        );
+        // 計測のために友好エラー表示 (下) を巻き添えにしない。restore 系の
+        // captureMessage (account_manager_provider) と同じく try/catch で保護
+        // する (#828 parity)。Sentry は初期化済みで同期 throw しない設計だが、
+        // 観測のための計装が UX 経路を壊さないことを構造で担保する。
+        try {
+          Sentry.captureMessage(
+            'oauth_server.bind_exhausted (port=${e.port})',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('service', 'oauth_loopback');
+              scope.setTag('login.host', widget.host);
+              scope.setTag('login.backend', widget.backendType.name);
+              scope.setTag('oauth.port', e.port.toString());
+              // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
+              scope.fingerprint = ['oauth_server.bind_exhausted'];
+            },
+          );
+        } catch (_) {
+          // 計装失敗は握りつぶす（友好エラー表示を優先）。
+        }
         if (mounted) {
           setState(
             () => _error =

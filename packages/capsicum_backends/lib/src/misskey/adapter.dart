@@ -93,6 +93,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PinSupport,
         PushSubscriptionSupport,
         ScheduleSupport,
+        DraftSupport,
         TranslationSupport,
         DriveSupport,
         PagesSupport,
@@ -277,7 +278,55 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> cancelScheduledPost(String id) async {
-    await client.deleteScheduledNote(id);
+    await client.deleteNoteDraft(id);
+  }
+
+  // DraftSupport (#174)
+
+  @override
+  Future<void> saveDraft(PostDraft draft) async {
+    // 予約投稿と同じ notes/drafts に載るが、scheduledAt を渡さないので素の
+    // 下書きになる。visibility / メディア / リプライ等は postStatus と同じ
+    // マッピングを流用する。
+    await client.createNoteDraft(
+      text: draft.content ?? '',
+      visibility: misskeyVisibilityFromScope(draft.scope),
+      replyId: draft.inReplyToId,
+      renoteId: draft.quoteId,
+      fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+      cw: draft.spoilerText,
+      localOnly: draft.localOnly ? true : null,
+      channelId: draft.channelId,
+    );
+  }
+
+  @override
+  Future<List<Draft>> getDrafts() async {
+    final raw = await client.getNoteDrafts();
+    return raw.map((json) {
+      final attachments =
+          (json['files'] as List?)
+              ?.map(
+                (f) => MisskeyDriveFile.fromJson(
+                  f as Map<String, dynamic>,
+                ).toCapsicum(),
+              )
+              .toList() ??
+          const <Attachment>[];
+      return Draft(
+        id: json['id'] as String,
+        content: json['text'] as String?,
+        spoilerText: json['cw'] as String?,
+        scope: misskeyVisibilityRosetta[json['visibility']] ?? PostScope.public,
+        attachments: attachments,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<void> deleteDraft(String id) async {
+    await client.deleteNoteDraft(id);
   }
 
   @override
@@ -865,9 +914,31 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<SearchResults> search(String query) async {
-    final isUrl = Uri.tryParse(query)?.hasScheme ?? false;
+    final uri = Uri.tryParse(query);
+    final isUrl = uri?.hasScheme ?? false;
 
     if (isUrl) {
+      // Misskey の ap/show はローカルの `/@username` プロフィール web URL を
+      // 解決できない（`getUserFromApId` が `/users/<id>` 形式しか受けず、自
+      // ホストだとリモート resolve にも回らず noSuchObject になる・#820）。
+      // プロフィール URL は users/show（handle 解決）で先に試し、取れなければ
+      // 下の ap/show（`/users/<id>` 形式や投稿 URL 用）へフォールバックする。
+      final handle = _profileHandleFromUri(uri!);
+      if (handle != null) {
+        try {
+          final user = await client.showUserByName(
+            handle.username,
+            handle.host,
+          );
+          if (user != null) {
+            return SearchResults(
+              users: [user.toCapsicum(host, adminRoleIds: _adminRoleIds)],
+            );
+          }
+        } catch (_) {
+          // fall through to ap/show
+        }
+      }
       try {
         final data = await client.apShow(query);
         final type = data['type'] as String?;
@@ -902,6 +973,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
           .toList(),
       hashtags: hashtags,
     );
+  }
+
+  /// `/@username` / `/@username@host` 形式のプロフィール web URL から
+  /// users/show 用の handle を取り出す (#820)。それ以外（投稿 URL・
+  /// `/@user/pages/...`・`/users/<id>` 等）は null を返し ap/show に委ねる。
+  ({String username, String? host})? _profileHandleFromUri(Uri uri) {
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    // プロフィールはパスが `@handle` 単一セグメントのときのみ。`/@user/123`
+    // (投稿) や `/@user/pages/x` は対象外にする。
+    if (segments.length != 1) return null;
+    final seg = segments.first;
+    if (!seg.startsWith('@')) return null;
+    final handle = seg.substring(1);
+    final parts = handle.split('@');
+    final username = parts.first;
+    if (username.isEmpty) return null;
+    // `@user@remote` 形式は remote を明示。ホスト無しの `@user` は URL の
+    // ホストで判断し、自ホストなら null（ローカル lookup）、他ホストなら
+    // そのホストを渡して連合越しに解決する。
+    final explicitHost = parts.length > 1 ? parts[1] : null;
+    final resolvedHost = explicitHost ?? (uri.host == host ? null : uri.host);
+    return (username: username, host: resolvedHost);
   }
 
   @override

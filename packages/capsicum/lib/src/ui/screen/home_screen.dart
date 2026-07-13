@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../model/offline_account.dart';
@@ -123,9 +124,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 表示 (#774) とモロヘイヤ機能フラグ (#775) は起動時に一度きり probe され
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
-      final manager = ref.read(accountManagerProvider.notifier);
-      manager.refreshCurrentServerVersion();
-      manager.refreshCurrentMulukhiya();
+      ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
     }
   }
 
@@ -476,9 +475,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // (#775) を最新化する。いずれも TTL 内は no-op。
       onDrawerChanged: (isOpened) {
         if (isOpened) {
-          final manager = ref.read(accountManagerProvider.notifier);
-          manager.refreshCurrentServerVersion();
-          manager.refreshCurrentMulukhiya();
+          ref
+              .read(accountManagerProvider.notifier)
+              .refreshCurrentServerMetadata();
         }
       },
       appBar: AppBar(
@@ -631,10 +630,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
     );
 
-    // macOS のみグローバルメニューバーをミラーする (#712)。Windows / Linux の
-    // in-window メニューは後続 #713。
+    // macOS はグローバルメニューバー (#712)、Windows / Linux は OS メニューが
+    // 無いのでウィンドウ内 MenuBar (#713) をミラーする。いずれも同じ
+    // [_buildNavItems] を単一ソースにする。
     if (Platform.isMacOS) {
       return _buildMacMenuBar(
+        context,
+        scaffold,
+        account,
+        accountState,
+        unreadAnnouncements,
+      );
+    }
+    if (Platform.isWindows || Platform.isLinux) {
+      return _buildInWindowMenuBar(
         context,
         scaffold,
         account,
@@ -1229,6 +1238,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           icon: Icons.schedule,
           onSelected: () => act(() => context.push('/scheduled')),
         ),
+      if (adapter is DraftSupport)
+        HomeNavItem(
+          title: '下書き',
+          icon: Icons.edit_note,
+          onSelected: () => act(() => context.push('/drafts')),
+        ),
       HomeNavItem(
         title: 'サーバー情報',
         icon: Icons.dns_outlined,
@@ -1501,6 +1516,281 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ],
       child: child,
+    );
+  }
+
+  /// Windows / Linux のウィンドウ内メニューバー (#713)。OS のトップメニューが
+  /// 無いため、タイトルバー下に Material の [MenuBar] を自前で配置する。macOS の
+  /// [_buildMacMenuBar] と同じ [_buildNavItems] を単一ソースに「移動」「アカウント」
+  /// を構成する。OS 提供項目（About/終了/Services 等）や Edit は macOS の NSMenu
+  /// 固有なので持たず、アプリ内で意味のある「capsicum について」「設定」だけを
+  /// 先頭メニューに置く。ショートカット表示は修飾キーがプラットフォームで異なる
+  /// ため出さない（機能自体は各所の Shortcuts が担う）。
+  Widget _buildInWindowMenuBar(
+    BuildContext context,
+    Widget child,
+    Account? current,
+    AccountManagerState accountState,
+    int unreadAnnouncements,
+  ) {
+    final announcementsShownAsTab =
+        current != null &&
+        ref.watch(
+          isTabVisibleProvider((
+            storageKey: current.key.toStorageKey(),
+            tab: const AnnouncementsTab(),
+          )),
+        );
+    final navItems = _buildNavItems(
+      context,
+      current,
+      accountState,
+      unreadAnnouncements,
+      announcementsShownAsTab,
+    );
+    final otherAccounts = accountState.accounts
+        .where((a) => a.key != current?.key)
+        .toList();
+
+    // 編集アクションは現在フォーカス中のフィールドへ intent を送る（macOS の
+    // [_buildMacMenuBar] と同じ挙動）。フォーカスがテキスト以外なら no-op。
+    void editAction(Intent intent) {
+      final focusCtx = FocusManager.instance.primaryFocus?.context;
+      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
+    }
+
+    // メニュー表示の詰め (#713): 縦長の圧迫感を抑えるため、ドロップダウンに
+    // 最小幅を与えて横方向にゆとりを持たせ、各項目に左右マージンと左アイコンを
+    // 付けて左端を揃える。全 MenuItemButton で共有する。
+    final submenuStyle = MenuStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(248, 0)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 6)),
+    );
+    final itemStyle = MenuItemButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+    );
+    Icon menuIcon(IconData data) => Icon(data, size: 18);
+
+    return Column(
+      // メニューバーはウィンドウ幅いっぱいに伸ばし、項目は左寄せにする（デスクトップ
+      // の一般的なメニューバー体裁）(#713)。Column 既定の中央揃えだと content 幅の
+      // バーが中央に浮いて見える。
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MenuBar(
+          children: [
+            SubmenuButton(
+              menuStyle: submenuStyle,
+              // 先頭メニューはブランドの唐辛子アイコン＋アプリ名（#713）。
+              leadingIcon: Image.asset(
+                'assets/images/capsicum_icon.webp',
+                width: 18,
+                height: 18,
+              ),
+              menuChildren: [
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.info_outline),
+                  onPressed: () => showAboutCapsicum(context),
+                  child: const Text('capsicum について'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.settings),
+                  onPressed: () => context.push('/settings'),
+                  child: const Text('設定'),
+                ),
+              ],
+              child: const Text('capsicum'),
+            ),
+            // 編集メニュー: macOS と同じテキスト intent を流用（Win/Linux では
+            // 修飾キー表記が異なるためショートカット表示は出さない。機能自体は
+            // 各テキストフィールドの標準ショートカットが担う）。
+            SubmenuButton(
+              menuStyle: submenuStyle,
+              menuChildren: [
+                // shortcut は表示専用（Material MenuBar は shortcut を登録せず
+                // 発火もしない）。実際の発火は Flutter の
+                // DefaultTextEditingShortcuts が Win/Linux 共通で担うため、
+                // ここに出すラベルと実挙動は一致する（#713・二重発火なし）。
+                // ナビ/ウィンドウ系は配線が無く発火しないのでラベルを出さない。
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.undo),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyZ,
+                    control: true,
+                  ),
+                  onPressed: () => editAction(
+                    const UndoTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('取り消す'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.redo),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyZ,
+                    control: true,
+                    shift: true,
+                  ),
+                  onPressed: () => editAction(
+                    const RedoTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('やり直す'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.content_cut),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyX,
+                    control: true,
+                  ),
+                  onPressed: () => editAction(
+                    const CopySelectionTextIntent.cut(
+                      SelectionChangedCause.keyboard,
+                    ),
+                  ),
+                  child: const Text('カット'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.content_copy),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyC,
+                    control: true,
+                  ),
+                  onPressed: () => editAction(CopySelectionTextIntent.copy),
+                  child: const Text('コピー'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.content_paste),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyV,
+                    control: true,
+                  ),
+                  onPressed: () => editAction(
+                    const PasteTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('ペースト'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.select_all),
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.keyA,
+                    control: true,
+                  ),
+                  onPressed: () => editAction(
+                    const SelectAllTextIntent(SelectionChangedCause.keyboard),
+                  ),
+                  child: const Text('すべて選択'),
+                ),
+              ],
+              child: const Text('編集'),
+            ),
+            SubmenuButton(
+              menuStyle: submenuStyle,
+              menuChildren: [
+                // 「設定」は先頭の capsicum メニューにあるため、移動メニューでは
+                // 重複を避けて除外する（#713 整理）。ドロワー側は従来どおり表示。
+                for (final item in navItems.where((i) => i.title != '設定'))
+                  MenuItemButton(
+                    style: itemStyle,
+                    leadingIcon: menuIcon(item.icon),
+                    onPressed: item.onSelected,
+                    child: Text(
+                      item.badge > 0
+                          ? '${item.title}（${item.badge}）'
+                          : item.title,
+                    ),
+                  ),
+              ],
+              child: const Text('移動'),
+            ),
+            if (accountState.accounts.isNotEmpty)
+              SubmenuButton(
+                menuStyle: submenuStyle,
+                menuChildren: [
+                  if (current != null)
+                    MenuItemButton(
+                      style: itemStyle,
+                      leadingIcon: menuIcon(Icons.person_outline),
+                      onPressed: () =>
+                          context.push('/profile', extra: current.user),
+                      child: const Text('プロフィール'),
+                    ),
+                  for (final a in otherAccounts)
+                    MenuItemButton(
+                      style: itemStyle,
+                      leadingIcon: menuIcon(Icons.switch_account),
+                      onPressed: () => ref
+                          .read(accountManagerProvider.notifier)
+                          .switchAccount(a),
+                      child: Text('@${a.user.username}@${a.key.host}'),
+                    ),
+                  MenuItemButton(
+                    style: itemStyle,
+                    leadingIcon: menuIcon(Icons.person_add_alt),
+                    onPressed: () => context.push('/server'),
+                    child: const Text('アカウントを追加'),
+                  ),
+                  if (current != null)
+                    MenuItemButton(
+                      style: itemStyle,
+                      leadingIcon: menuIcon(Icons.logout),
+                      onPressed: () => _confirmLogout(context, current),
+                      child: const Text('ログアウト'),
+                    ),
+                ],
+                child: const Text('アカウント'),
+              ),
+            // 表示メニュー: 全画面表示の切り替え（macOS の toggleFullScreen 相当）。
+            SubmenuButton(
+              menuStyle: submenuStyle,
+              menuChildren: [
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.fullscreen),
+                  onPressed: () async {
+                    final full = await windowManager.isFullScreen();
+                    await windowManager.setFullScreen(!full);
+                  },
+                  child: const Text('全画面表示を切り替え'),
+                ),
+              ],
+              child: const Text('表示'),
+            ),
+            // ウインドウメニュー: 最小化 / 最大化（macOS の minimize / zoom 相当）。
+            SubmenuButton(
+              menuStyle: submenuStyle,
+              menuChildren: [
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.minimize),
+                  onPressed: () => windowManager.minimize(),
+                  child: const Text('最小化'),
+                ),
+                MenuItemButton(
+                  style: itemStyle,
+                  leadingIcon: menuIcon(Icons.crop_square),
+                  onPressed: () async {
+                    if (await windowManager.isMaximized()) {
+                      await windowManager.unmaximize();
+                    } else {
+                      await windowManager.maximize();
+                    }
+                  },
+                  child: const Text('最大化'),
+                ),
+              ],
+              child: const Text('ウインドウ'),
+            ),
+          ],
+        ),
+        Expanded(child: child),
+      ],
     );
   }
 
@@ -2495,7 +2785,9 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     ),
                     subtitle: Text(o.retrying ? '再試行中…' : '接続できません'),
                     trailing: IconButton(
-                      icon: const Icon(Icons.logout),
+                      // 削除操作は delete_outline に統一する (#828)。logout は
+                      // 実ログアウト (ドロワー) と紛れるため使わない。
+                      icon: const Icon(Icons.delete_outline),
                       tooltip: 'このアカウントを削除',
                       onPressed: () =>
                           confirmRemoveOfflineAccount(context, ref, o),
