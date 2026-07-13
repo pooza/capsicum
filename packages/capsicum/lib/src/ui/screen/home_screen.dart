@@ -629,10 +629,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
     );
 
-    // macOS のみグローバルメニューバーをミラーする (#712)。Windows / Linux の
-    // in-window メニューは後続 #713。
+    // macOS はグローバルメニューバー (#712)、Windows / Linux は OS メニューが
+    // 無いのでウィンドウ内 MenuBar (#713) をミラーする。いずれも同じ
+    // [_buildNavItems] を単一ソースにする。
     if (Platform.isMacOS) {
       return _buildMacMenuBar(
+        context,
+        scaffold,
+        account,
+        accountState,
+        unreadAnnouncements,
+      );
+    }
+    if (Platform.isWindows || Platform.isLinux) {
+      return _buildInWindowMenuBar(
         context,
         scaffold,
         account,
@@ -1505,6 +1515,106 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ],
       child: child,
+    );
+  }
+
+  /// Windows / Linux のウィンドウ内メニューバー (#713)。OS のトップメニューが
+  /// 無いため、タイトルバー下に Material の [MenuBar] を自前で配置する。macOS の
+  /// [_buildMacMenuBar] と同じ [_buildNavItems] を単一ソースに「移動」「アカウント」
+  /// を構成する。OS 提供項目（About/終了/Services 等）や Edit は macOS の NSMenu
+  /// 固有なので持たず、アプリ内で意味のある「capsicum について」「設定」だけを
+  /// 先頭メニューに置く。ショートカット表示は修飾キーがプラットフォームで異なる
+  /// ため出さない（機能自体は各所の Shortcuts が担う）。
+  Widget _buildInWindowMenuBar(
+    BuildContext context,
+    Widget child,
+    Account? current,
+    AccountManagerState accountState,
+    int unreadAnnouncements,
+  ) {
+    final announcementsShownAsTab =
+        current != null &&
+        ref.watch(
+          isTabVisibleProvider((
+            storageKey: current.key.toStorageKey(),
+            tab: const AnnouncementsTab(),
+          )),
+        );
+    final navItems = _buildNavItems(
+      context,
+      current,
+      accountState,
+      unreadAnnouncements,
+      announcementsShownAsTab,
+    );
+    final otherAccounts = accountState.accounts
+        .where((a) => a.key != current?.key)
+        .toList();
+
+    return Column(
+      children: [
+        MenuBar(
+          children: [
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () => showAboutCapsicum(context),
+                  child: const Text('capsicum について'),
+                ),
+                MenuItemButton(
+                  onPressed: () => context.push('/settings'),
+                  child: const Text('設定'),
+                ),
+              ],
+              child: const Text('capsicum'),
+            ),
+            SubmenuButton(
+              menuChildren: [
+                for (final item in navItems)
+                  MenuItemButton(
+                    leadingIcon: Icon(item.icon, size: 18),
+                    onPressed: item.onSelected,
+                    child: Text(
+                      item.badge > 0
+                          ? '${item.title}（${item.badge}）'
+                          : item.title,
+                    ),
+                  ),
+              ],
+              child: const Text('移動'),
+            ),
+            if (accountState.accounts.isNotEmpty)
+              SubmenuButton(
+                menuChildren: [
+                  if (current != null)
+                    MenuItemButton(
+                      onPressed: () =>
+                          context.push('/profile', extra: current.user),
+                      child: const Text('プロフィール'),
+                    ),
+                  for (final a in otherAccounts)
+                    MenuItemButton(
+                      onPressed: () => ref
+                          .read(accountManagerProvider.notifier)
+                          .switchAccount(a),
+                      child: Text('@${a.user.username}@${a.key.host}'),
+                    ),
+                  MenuItemButton(
+                    onPressed: () => context.push('/server'),
+                    child: const Text('アカウントを追加'),
+                  ),
+                  if (current != null)
+                    MenuItemButton(
+                      onPressed: () => _confirmLogout(context, current),
+                      child: const Text('ログアウト'),
+                    ),
+                ],
+                child: const Text('アカウント'),
+              ),
+          ],
+        ),
+        Expanded(child: child),
+      ],
     );
   }
 
