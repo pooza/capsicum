@@ -599,6 +599,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
     _streamSubscription?.cancel();
+    // 切断系イベント (disconnected / reconnect_exhausted) を Sentry 上で
+    // サーバー別に切り分けられるよう host を控える (#826)。挙動は host で分岐
+    // しない (per-server workaround は入れない)。付与するのは観測タグのみで、
+    // push.host と同型に host のみ載せ生 URL / トークンは載せない。
+    final host = ref.read(currentAccountProvider)?.key.host;
     final stream = adapter.streamTimeline(
       type,
       onParseError: (e, st) {
@@ -662,6 +667,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           level: SentryLevel.warning,
           withScope: (scope) {
             scope.setTag('timeline.stream', 'reconnect_exhausted');
+            if (host != null) scope.setTag('timeline.stream.host', host);
             scope.fingerprint = ['timeline.stream.reconnect_exhausted'];
           },
         );
@@ -711,10 +717,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         );
       },
       // 「どんな切れ方をしているか」を本番で観測する (#788)。現象すら未把握な
-      // ので原因対処はせず計器のみ。closeCode 分布 (1000 正常 / 1001 ping
-      // タイムアウト goingAway / 1006 異常 …) で正体に近づく。host 分岐は入れ
-      // ない (全サーバー共通)。closeReason はサーバー任意文字列を持ちうるため
-      // 内容は載せず、有無のみ。throttle で切断連発の spam を抑える。
+      // ので原因対処はせず計器のみ。実測 (2026-07-11) では close_code 1002
+      // (protocol error) が支配的で、1001 (going away) / 1000 (正常) /
+      // 1006 (異常) が続く。host タグで発生サーバーを切り分ける (#826) が、
+      // 挙動は host で分岐しない (per-server workaround は入れない)。closeReason
+      // はサーバー任意文字列を持ちうるため内容は載せず、有無のみ。throttle で
+      // 切断連発の spam を抑える。
       onDisconnect: (closeCode, closeReason) {
         final now = DateTime.now();
         if (_lastDisconnectCapture != null &&
@@ -728,6 +736,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           level: SentryLevel.info,
           withScope: (scope) {
             scope.setTag('timeline.stream', 'disconnected');
+            if (host != null) scope.setTag('timeline.stream.host', host);
             scope.setTag('timeline.stream.close_code', code);
             scope.setTag(
               'timeline.stream.has_reason',
