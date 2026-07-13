@@ -124,8 +124,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       offlineAccounts: offline,
     );
 
-    // Prefetch server metadata for badge display (non-blocking).
-    ServerMetadataCache.instance.fetch(account.key.host);
+    // Prefetch server metadata for badge display (non-blocking). Misskey
+    // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
+    ServerMetadataCache.instance.fetch(
+      account.key.host,
+      preferMisskey: account.adapter is ReactionSupport,
+    );
 
     // 通知ラベル（ブースト/投稿）を FCM バックグラウンド isolate 用に焼く。
     // registerAccount より先に完了させる: 登録直後に届く最初のプッシュが
@@ -157,8 +161,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // Clear unread notification count for the account we're switching to.
     BackgroundNotificationService.clearUnreadCount(account.key.toStorageKey());
 
-    // Prefetch server metadata for badge display (non-blocking).
-    ServerMetadataCache.instance.fetch(account.key.host);
+    // Prefetch server metadata for badge display (non-blocking). Misskey
+    // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
+    ServerMetadataCache.instance.fetch(
+      account.key.host,
+      preferMisskey: account.adapter is ReactionSupport,
+    );
   }
 
   void updateCurrentUser(User user) {
@@ -263,9 +271,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final before = state.current;
     if (before == null) return;
     final host = before.key.host;
+    // Misskey フォーク（Sharkey/Firefish 等）は /api/v2/instance に偽 Mastodon
+    // 互換版を返すため、Misskey 系アダプタでは /api/meta を優先して真のフォーク版
+    // を取り直す (#827)。これが無いと初回リフレッシュで表示版が 4.x に化ける。
     final metadata = await ServerMetadataCache.instance.fetch(
       host,
       forceRefresh: force,
+      preferMisskey: before.adapter is ReactionSupport,
     );
     final version = metadata?.softwareVersion;
     if (version == null) return;
@@ -498,7 +510,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       await Future.wait(restored.map(_persistNotificationLabels));
       await _syncWindowsPushLabels();
       for (final account in restored) {
-        ServerMetadataCache.instance.fetch(account.key.host);
+        ServerMetadataCache.instance.fetch(
+          account.key.host,
+          preferMisskey: account.adapter is ReactionSupport,
+        );
       }
     }
 
@@ -651,8 +666,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     await _persistNotificationLabels(account);
     await _syncWindowsPushLabels();
 
-    // Prefetch server metadata for badge display (non-blocking).
-    ServerMetadataCache.instance.fetch(account.key.host);
+    // Prefetch server metadata for badge display (non-blocking). Misskey
+    // フォークの偽 Mastodon 互換版で name/icon が化けないよう型ヒントを渡す (#827)。
+    ServerMetadataCache.instance.fetch(
+      account.key.host,
+      preferMisskey: account.adapter is ReactionSupport,
+    );
   }
 
   /// [key] のオフライン保持を除去する (#792)。昇格・drop・手動削除で使う。

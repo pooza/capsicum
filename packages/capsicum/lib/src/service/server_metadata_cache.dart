@@ -52,15 +52,32 @@ class ServerMetadataCache {
   /// [forceRefresh] が true のときは TTL 内でも再取得する。「サーバー情報」画面を
   /// 開いた直後にドロワー表示を確実に最新化する用途 (#774 method 2)。進行中の
   /// fetch があればそれに相乗りする（多重リクエストは避ける）。
-  Future<ServerMetadata?> fetch(String host, {bool forceRefresh = false}) {
+  ///
+  /// [preferMisskey] が true のときは Misskey (`/api/meta`) を Mastodon より先に
+  /// 試す (#827)。Sharkey / Firefish 等の Mastodon 互換 API を持つ Misskey フォークは
+  /// `/api/v2/instance` に「4.x (compatible)」相当の偽バージョンを返すため、
+  /// Mastodon 優先のままだと version / name / icon がフォークの実体でなく Mastodon
+  /// 互換の見かけに化ける。host → ソフトウェア種別は一意なので、呼び出し側の
+  /// アダプタ型（Misskey 系か）をそのまま渡してよい。
+  Future<ServerMetadata?> fetch(
+    String host, {
+    bool forceRefresh = false,
+    bool preferMisskey = false,
+  }) {
     final entry = _cache[host];
     if (!forceRefresh && entry != null && !entry.isExpired) {
       return Future.value(entry.metadata);
     }
-    return _pending.putIfAbsent(host, () => _doFetch(host));
+    return _pending.putIfAbsent(
+      host,
+      () => _doFetch(host, preferMisskey: preferMisskey),
+    );
   }
 
-  Future<ServerMetadata?> _doFetch(String host) async {
+  Future<ServerMetadata?> _doFetch(
+    String host, {
+    bool preferMisskey = false,
+  }) async {
     try {
       final dio = Dio(
         BaseOptions(
@@ -68,10 +85,13 @@ class ServerMetadataCache {
           receiveTimeout: kNetworkReceiveTimeout,
         ),
       );
-      final metadata =
-          await _tryMastodon(dio, host) ??
-          await _tryMisskey(dio, host) ??
-          await _tryPieFed(dio, host);
+      final metadata = preferMisskey
+          ? (await _tryMisskey(dio, host) ??
+                await _tryMastodon(dio, host) ??
+                await _tryPieFed(dio, host))
+          : (await _tryMastodon(dio, host) ??
+                await _tryMisskey(dio, host) ??
+                await _tryPieFed(dio, host));
       _cache[host] = _CacheEntry(metadata, DateTime.now());
       _pending.remove(host);
       return metadata;
