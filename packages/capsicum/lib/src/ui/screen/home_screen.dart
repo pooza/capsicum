@@ -1227,6 +1227,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           icon: Icons.schedule,
           onSelected: () => act(() => context.push('/scheduled')),
         ),
+      if (adapter is DraftSupport)
+        HomeNavItem(
+          title: '下書き',
+          icon: Icons.edit_note,
+          onSelected: () => act(() => context.push('/drafts')),
+        ),
       HomeNavItem(
         title: 'サーバー情報',
         icon: Icons.dns_outlined,

@@ -93,6 +93,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         PinSupport,
         PushSubscriptionSupport,
         ScheduleSupport,
+        DraftSupport,
         TranslationSupport,
         DriveSupport,
         PagesSupport,
@@ -277,7 +278,55 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> cancelScheduledPost(String id) async {
-    await client.deleteScheduledNote(id);
+    await client.deleteNoteDraft(id);
+  }
+
+  // DraftSupport (#174)
+
+  @override
+  Future<void> saveDraft(PostDraft draft) async {
+    // 予約投稿と同じ notes/drafts に載るが、scheduledAt を渡さないので素の
+    // 下書きになる。visibility / メディア / リプライ等は postStatus と同じ
+    // マッピングを流用する。
+    await client.createNoteDraft(
+      text: draft.content ?? '',
+      visibility: misskeyVisibilityFromScope(draft.scope),
+      replyId: draft.inReplyToId,
+      renoteId: draft.quoteId,
+      fileIds: draft.mediaIds.isNotEmpty ? draft.mediaIds : null,
+      cw: draft.spoilerText,
+      localOnly: draft.localOnly ? true : null,
+      channelId: draft.channelId,
+    );
+  }
+
+  @override
+  Future<List<Draft>> getDrafts() async {
+    final raw = await client.getNoteDrafts();
+    return raw.map((json) {
+      final attachments =
+          (json['files'] as List?)
+              ?.map(
+                (f) => MisskeyDriveFile.fromJson(
+                  f as Map<String, dynamic>,
+                ).toCapsicum(),
+              )
+              .toList() ??
+          const <Attachment>[];
+      return Draft(
+        id: json['id'] as String,
+        content: json['text'] as String?,
+        spoilerText: json['cw'] as String?,
+        scope: misskeyVisibilityRosetta[json['visibility']] ?? PostScope.public,
+        attachments: attachments,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<void> deleteDraft(String id) async {
+    await client.deleteNoteDraft(id);
   }
 
   @override

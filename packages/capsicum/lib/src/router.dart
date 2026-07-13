@@ -57,6 +57,7 @@ import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/list_management_screen.dart';
 import 'ui/screen/list_members_screen.dart';
+import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
@@ -202,12 +203,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             channelName: extra?['channelName'] as String?,
             sharedText: extra?['sharedText'] as String?,
             initialText: extra?['initialText'] as String?,
+            restoreDraft: extra?['restoreDraft'] as Draft?,
           );
         },
       ),
       GoRoute(
         path: '/scheduled',
         builder: (context, state) => const ScheduledPostsScreen(),
+      ),
+      GoRoute(
+        path: '/drafts',
+        builder: (context, state) => const DraftsScreen(),
       ),
       GoRoute(
         path: '/search',
