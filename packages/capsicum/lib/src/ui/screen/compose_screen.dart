@@ -2293,6 +2293,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
       );
 
+      // サーバーへ保存できたので、ローカルに自動保存された下書きは破棄する。
+      // これをしないと、投稿成功経路（_clearDraft を呼ぶ）と非対称になり、
+      // 次に素のコンポーズを開いたとき保存済みのはずの本文が再出現する。
+      // fresh-compose セッションのみが対象で、reply/quote/redraft/share は
+      // autosave していないため触らない（投稿経路と同じ条件）。
+      if (_draftAutoSave) {
+        await _clearDraft();
+      }
+
       // 復元元の下書きは新規保存に置き換えるため削除する（best-effort）。
       final restoredId = _restoredDraftId;
       if (restoredId != null) {
