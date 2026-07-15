@@ -564,17 +564,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   icon: const Icon(Icons.search),
                   onPressed: () => context.push('/search'),
                 ),
-                // Hide notification bell when notifications tab is visible.
-                if (account == null ||
-                    !ref.watch(
-                      isTabVisibleProvider((
-                        storageKey: account.key.toStorageKey(),
-                        tab: const NotificationsTab(),
-                      )),
-                    ))
-                  _NotificationBellButton(
-                    hasMultipleAccounts: accountState.accounts.length > 1,
-                  ),
+                // ベルは「すべての通知」への統合導線なので、通知タブの表示有無
+                // に関わらず常時表示する（#831）。通知タブ可視時は導線が重複する
+                // が許容する。
+                _NotificationBellButton(
+                  hasMultipleAccounts: accountState.accounts.length > 1,
+                ),
                 const SizedBox(width: 4),
               ],
             ),
@@ -684,9 +679,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
-    // Non-timeline tabs: render their dedicated views.
-    if (currentTab is NotificationsTab) return const NotificationView();
-    if (currentTab is AnnouncementsTab) return const AnnouncementView();
+    // アカウント別背景画像は、タブとして表示される全タブに一律で回す（#832）。
+    // 通知/お知らせ/チャンネルのビューはいずれも不透明背景を持たない（透過の
+    // Column/list）ので、背景 Container で包めば画像が透ける。空表示の
+    // MessagesTab のみ背景不要で除外する。
+    final account = ref.watch(currentAccountProvider);
+    final storageKey = account?.key.toStorageKey();
+    final bgPath = storageKey != null
+        ? ref.watch(backgroundImageProvider(storageKey))
+        : null;
+    final bgOpacity = storageKey != null
+        ? ref.watch(backgroundOpacityProvider(storageKey))
+        : defaultBackgroundOpacity;
+    Widget withBackground(Widget child) {
+      if (bgPath == null) return child;
+      return Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: FileImage(File(bgPath)),
+            fit: BoxFit.cover,
+            opacity: bgOpacity,
+          ),
+        ),
+        child: child,
+      );
+    }
+
+    // Non-timeline tabs: render their dedicated views（背景も回す）。
+    if (currentTab is NotificationsTab) {
+      return withBackground(const NotificationView());
+    }
+    if (currentTab is AnnouncementsTab) {
+      return withBackground(const AnnouncementView());
+    }
     // MessagesTab はフィードを持たず、タップ時に /chat へ push する遷移
     // トリガー (#439)。アクティブ化されないようタップ側で intercept する
     // 想定だが、保存された状態の食い違い等で到達した場合は防御的に空表示。
@@ -699,21 +724,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 場合は通常タイムライン経路にフォールスルーさせて整合を取る。
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is ChannelSupport) {
-        return ChannelTimelineView(
-          key: ValueKey('channel:${currentTab.id}'),
-          channelId: currentTab.id,
-          channelName: currentTab.name,
+        return withBackground(
+          ChannelTimelineView(
+            key: ValueKey('channel:${currentTab.id}'),
+            channelId: currentTab.id,
+            channelName: currentTab.name,
+          ),
         );
       }
     }
-    final account = ref.watch(currentAccountProvider);
-    final storageKey = account?.key.toStorageKey();
-    final bgPath = storageKey != null
-        ? ref.watch(backgroundImageProvider(storageKey))
-        : null;
-    final bgOpacity = storageKey != null
-        ? ref.watch(backgroundOpacityProvider(storageKey))
-        : defaultBackgroundOpacity;
 
     // 現在の文脈（アカウント＋タブ種別/タグ/リスト）の contextKey。watch している
     // provider の state が別文脈で取得した「前のキャッシュ」を保持していると、
@@ -848,20 +867,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ],
     );
 
-    if (bgPath != null) {
-      body = Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: FileImage(File(bgPath)),
-            fit: BoxFit.cover,
-            opacity: bgOpacity,
-          ),
-        ),
-        child: body,
-      );
-    }
-
-    return body;
+    return withBackground(body);
   }
 
   void _onSwipe(DragEndDetails details) {
@@ -1165,7 +1171,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         HomeNavItem(
           title: 'リスト',
           icon: Icons.list,
-          onSelected: () => act(() => context.push('/lists/manage')),
+          onSelected: () => act(() => _showListChooser(context, ref)),
         ),
       if (adapter is ChannelSupport)
         HomeNavItem(
@@ -2436,6 +2442,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   context.push('/antenna/${antenna.id}', extra: antenna.name);
                 },
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// リストのクイックチューザ（#805）。保存済みリストを 1 つ選んで、その
+  /// タイムライン画面（`/list/:id`）へ飛ぶ。作成/編集/メンバー管理は末尾の
+  /// 「リストを管理」から `/lists/manage` へ温存する。
+  Future<void> _showListChooser(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ListSupport) return;
+
+    final List<PostList> lists;
+    try {
+      lists = await (adapter as ListSupport).getLists();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('リストの取得に失敗しました')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'リスト',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (lists.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('リストはありません'),
+              )
+            else
+              for (final list in lists)
+                ListTile(
+                  leading: const Icon(Icons.list, size: 20),
+                  title: Text(list.title),
+                  dense: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.push('/list/${list.id}', extra: list.title);
+                  },
+                ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.settings, size: 20),
+              title: const Text('リストを管理'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/lists/manage');
+              },
+            ),
           ],
         ),
       ),

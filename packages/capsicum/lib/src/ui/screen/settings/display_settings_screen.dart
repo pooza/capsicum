@@ -83,6 +83,18 @@ class DisplaySettingsScreen extends ConsumerWidget {
                 ref.read(emojiZeroWidthSpaceProvider.notifier).toggle(),
           ),
           SwitchListTile(
+            title: const Text('MFM のアニメーションを再生'),
+            subtitle: const Text(
+              r'$[bounce] や $[spin] などの動く MFM をアニメーション表示します。'
+              'オフにすると静止表示になります（端末の視差効果を減らす設定が'
+              '有効な場合は常に静止）',
+            ),
+            value: ref.watch(mfmAnimationEnabledProvider),
+            onChanged: (value) => ref
+                .read(mfmAnimationEnabledProvider.notifier)
+                .setEnabled(value),
+          ),
+          SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),
             subtitle: const Text('実況中の投稿をタイムラインから隠します'),
             value: hideLivecure,

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_core/capsicum_core.dart' show nyaize;
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
+import 'mfm_animation.dart';
 import 'package:html_unescape/html_unescape.dart';
 
 final _unescape = HtmlUnescape();
@@ -133,6 +135,25 @@ List<String> parseHashtagsForTesting(String input) {
   }
 
   walk(_parseMfm(input));
+  return result;
+}
+
+/// 投稿本文からハッシュタグ名（先頭 `#` を除いたタグ文字列）を出現順・重複除去で
+/// 抽出する。Mastodon(HTML) / Misskey(MFM) 両対応（`isHtml` でパーサを選ぶ）。
+/// 本文コピー導線（#794「全ハッシュタグをコピー」）で使う。
+List<String> extractHashtags(String content, {required bool isHtml}) {
+  final result = <String>[];
+  final seen = <String>{};
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      if (n.type == _NodeType.hashtag && seen.add(n.text)) {
+        result.add(n.text);
+      }
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(isHtml ? _parseHtml(content) : _parseMfm(content));
   return result;
 }
 
@@ -908,6 +929,11 @@ class ContentRenderer {
   final UrlResolver? resolveDisplayUrl;
   final double emojiSize;
   final bool applyNyaize;
+
+  /// MFM のアニメーション構文（`$[bounce]` 等）を再生するか (#259)。false の
+  /// ときは従来どおり子要素を静止表示する。呼び出し側が設定
+  /// （mfmAnimationEnabledProvider）を渡す。
+  final bool animateMfm;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -922,6 +948,7 @@ class ContentRenderer {
     this.resolveDisplayUrl,
     this.emojiSize = 20.0,
     this.applyNyaize = false,
+    this.animateMfm = false,
   });
 
   void dispose() {
@@ -984,10 +1011,17 @@ class ContentRenderer {
         ];
 
       case _NodeType.codeBlock:
+        // 背の高い WidgetSpan の直後に TextSpan('\n') を置くと、その末尾改行が
+        // 行の下側にブロック高ぶんの空白を作る (Flutter の WidgetSpan +
+        // trailing newline 既知挙動)。末尾 \n は外し、ブロック下の余白は
+        // margin で確保する。単独行への隔離は先頭 \n が担う。
+        // なお width: double.infinity は iPad で RenderFlex overflow を起こす
+        // ため使えない (#60・tech-notes 参照)。自然幅のまま組む。
         return [
           TextSpan(text: '\n', style: style),
           WidgetSpan(
             child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.grey.withValues(alpha: 0.15),
@@ -1027,7 +1061,6 @@ class ContentRenderer {
               ),
             ),
           ),
-          TextSpan(text: '\n', style: style),
         ];
 
       case _NodeType.center:
@@ -1239,6 +1272,32 @@ class ContentRenderer {
     return null;
   }
 
+  /// `.h,v` のようなキー無しフラグの有無を返す (#748: flip 等)。
+  static bool _fnFlag(String? args, String flag) {
+    if (args == null) return false;
+    for (final part in args.split(',')) {
+      if (part.trim() == flag) return true;
+    }
+    return false;
+  }
+
+  /// MFM 引数値を double に変換する (#748: rotate/scale/position/border)。
+  static double? _parseNum(String? s) =>
+      s == null ? null : double.tryParse(s.trim());
+
+  /// 2 桁ゼロ埋め (#748: unixtime の日時表記)。
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  /// ノード木を素のテキストに畳む (#748: unixtime のタイムスタンプ取得)。
+  static String _collectText(List<_Node> nodes) {
+    final buf = StringBuffer();
+    for (final n in nodes) {
+      buf.write(n.text);
+      if (n.children.isNotEmpty) buf.write(_collectText(n.children));
+    }
+    return buf.toString();
+  }
+
   /// Try to parse a hex color string (with or without leading #).
   static Color? _parseHexColor(String hex) {
     hex = hex.replaceFirst('#', '');
@@ -1293,6 +1352,120 @@ class ContentRenderer {
           ),
         ];
 
+      case 'flip':
+        // 反転 (#748)。引数なし / `.h` は水平、`.v` は垂直、`.h,v` は両方
+        // （180° 回転相当）。アニメーションではないので静的に対応。
+        final noArgs = node.fnArgs == null || node.fnArgs!.isEmpty;
+        final scaleX = (_fnFlag(node.fnArgs, 'h') || noArgs) ? -1.0 : 1.0;
+        final scaleY = _fnFlag(node.fnArgs, 'v') ? -1.0 : 1.0;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.diagonal3Values(scaleX, scaleY, 1.0),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'rotate':
+        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。
+        final deg = _parseNum(_fnArg(node.fnArgs, 'deg')) ?? 90;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.rotate(
+              angle: deg * math.pi / 180,
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'scale':
+        // 拡大縮小 (#748)。`.x=<倍率>,y=<倍率>`、既定 1。本家に倣い 0〜5 に
+        // クランプ（暴走した巨大表示を防ぐ）。
+        final sx = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 1).clamp(0.0, 5.0);
+        final sy = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 1).clamp(0.0, 5.0);
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.scale(
+              scaleX: sx,
+              scaleY: sy,
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'position':
+        // 平行移動 (#748)。`.x=<em>,y=<em>`。em ≒ フォントサイズとして換算。
+        final fs = style.fontSize ?? 14.0;
+        final px = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 0) * fs;
+        final py = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 0) * fs;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.translate(
+              offset: Offset(px, py),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'border':
+        // 枠線 (#748)。`.width=<n>,style=<solid|...>,color=<hex>,radius=<n>`。
+        // Flutter の BoxBorder は実線のみのため dotted/dashed/double も実線で
+        // 代替する（`noclip` は Flutter 側で既定クリップしないため無視）。
+        final bw = (_parseNum(_fnArg(node.fnArgs, 'width')) ?? 1).toDouble();
+        final radius = (_parseNum(_fnArg(node.fnArgs, 'radius')) ?? 0)
+            .toDouble();
+        final borderColor =
+            _parseHexColor(_fnArg(node.fnArgs, 'color') ?? '') ??
+            style.color ??
+            const Color(0xFF888888);
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                border: Border.all(color: borderColor, width: bw),
+                borderRadius: BorderRadius.circular(radius),
+              ),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'unixtime':
+        // Unix 時刻（秒）を端末ローカルの日時表記に変換 (#748)。子要素テキストが
+        // タイムスタンプ。数値でなければ素通し。
+        final raw = _collectText(node.children).trim();
+        final secs = int.tryParse(raw);
+        // DateTime.fromMillisecondsSinceEpoch は ±8.64e15ms 超で throw する。
+        // 投稿本文由来の巨大値（`$[unixtime 8640000000001]` 等）でタイル描画が
+        // 赤エラー箱に落ちないよう、変換前に範囲を制限する。
+        const maxUnixSeconds = 8640000000000; // 8.64e15ms ÷ 1000
+        if (secs != null && secs.abs() <= maxUnixSeconds) {
+          final dt = DateTime.fromMillisecondsSinceEpoch(secs * 1000).toLocal();
+          final text =
+              '${dt.year}/${_two(dt.month)}/${_two(dt.day)} '
+              '${_two(dt.hour)}:${_two(dt.minute)}:${_two(dt.second)}';
+          return [TextSpan(text: text, style: style)];
+        }
+        return _renderNodes(node.children, style);
+
       case 'x2':
         return _renderNodes(
           node.children,
@@ -1311,10 +1484,73 @@ class ContentRenderer {
           style.copyWith(fontSize: (style.fontSize ?? 14) * 4),
         );
 
+      case 'spin':
+      case 'bounce':
+      case 'jump':
+      case 'shake':
+      case 'twitch':
+      case 'jelly':
+      case 'tada':
+      case 'rainbow':
+        // アニメーション構文 (#259)。設定 OFF・非対応環境では静止表示。
+        return _renderAnimation(node, style);
+
       default:
-        // Unhandled fn — render children as-is
+        // Unhandled fn — render children as-is（sparkle 等の未対応も含む）
         return _renderNodes(node.children, style);
     }
+  }
+
+  /// MFM アニメーション構文を [MfmAnimation] でラップする (#259)。設定が OFF の
+  /// ときは静止表示にフォールバックする。`.speed=` と spin の `.left` を解釈する。
+  List<InlineSpan> _renderAnimation(_Node node, TextStyle style) {
+    final children = _renderNodes(node.children, style);
+    if (!animateMfm) return children;
+    final type = switch (node.fnName) {
+      'spin' => MfmAnimationType.spin,
+      'bounce' => MfmAnimationType.bounce,
+      'jump' => MfmAnimationType.jump,
+      'shake' => MfmAnimationType.shake,
+      'twitch' => MfmAnimationType.twitch,
+      'jelly' => MfmAnimationType.jelly,
+      'tada' => MfmAnimationType.tada,
+      'rainbow' => MfmAnimationType.rainbow,
+      _ => null,
+    };
+    if (type == null) return children;
+    return [
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: MfmAnimation(
+          type: type,
+          speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+          reverse: _fnFlag(node.fnArgs, 'left'),
+          fontSize: style.fontSize ?? 14.0,
+          child: Text.rich(TextSpan(children: children)),
+        ),
+      ),
+    ];
+  }
+
+  /// `1.5s` / `500ms` 形式の MFM speed 引数を Duration に変換する (#259)。
+  static Duration? _parseDuration(String? s) {
+    if (s == null) return null;
+    final v = s.trim();
+    // 0 / 負 / 丸めて 0 になる値は null を返して既定速度に委ねる（controller の
+    // period 0 破綻を parse 段でも防ぐ）。
+    if (v.endsWith('ms')) {
+      final n = double.tryParse(v.substring(0, v.length - 2));
+      if (n == null) return null;
+      final ms = n.round();
+      return ms > 0 ? Duration(milliseconds: ms) : null;
+    }
+    if (v.endsWith('s')) {
+      final n = double.tryParse(v.substring(0, v.length - 1));
+      if (n == null) return null;
+      final ms = (n * 1000).round();
+      return ms > 0 ? Duration(milliseconds: ms) : null;
+    }
+    return null;
   }
 
   // Emoji ranges for Unicode emoji detection.

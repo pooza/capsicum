@@ -8,6 +8,7 @@ import '../../../service/announcement_subscription_service.dart';
 import '../../../service/push_registration_service.dart';
 import '../../../service/push_registration_status.dart';
 import '../../widget/push_registration_status_section.dart';
+import '../../widget/section_header.dart';
 
 /// プッシュ通知の登録状態をアカウント別に一覧表示し、失敗していれば
 /// 再試行できる設定画面（#340）。
@@ -46,6 +47,7 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
               style: const TextStyle(fontSize: 13),
             ),
           ),
+          const SectionHeader('アカウント別の登録状況'),
           ...accounts.map(
             (account) => _AccountStatusTile(
               account: account,

@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/unified_notification_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/relative_time.dart';
 import '../widget/content_parser.dart';
@@ -123,8 +124,9 @@ class _UnifiedNotificationTileState
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: post?.author.isCat ?? false,
     );
     final isHtml = post?.isHtml ?? false;

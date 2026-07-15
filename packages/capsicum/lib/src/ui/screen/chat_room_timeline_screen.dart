@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
@@ -591,8 +592,9 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
           ),
         );
       },
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: message.fromUser.isCat,
     );
     return _contentRenderer!.renderMfm(content);

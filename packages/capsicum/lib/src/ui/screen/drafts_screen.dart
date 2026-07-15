@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../service/sentry_op_failure.dart';
 
 /// サーバー下書き一覧 (#174)。DraftSupport のあるアダプタ（Misskey）でのみ
 /// ドロワーから辿れる。タップで compose に復元、ゴミ箱で削除する。
@@ -106,12 +107,21 @@ class DraftsScreen extends ConsumerWidget {
           context,
         ).showSnackBar(const SnackBar(content: Text('下書きを削除しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('削除に失敗しました')));
       }
+      // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
+      // 上で SnackBar 通知済みなので赤ではない。
+      reportOpFailure(
+        tagKey: 'draft.op',
+        operation: 'delete_server_draft',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
     }
   }
 }

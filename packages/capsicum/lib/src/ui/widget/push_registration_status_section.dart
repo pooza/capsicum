@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+
+import 'section_header.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/push_registration_status_provider.dart';
@@ -65,10 +66,10 @@ import '../../service/push_registration_status.dart';
 
 /// 現アカウントのプッシュ通知登録状態を表示する共有 widget。
 ///
-/// サーバー情報画面・プロフィール画面など複数の画面で同一の判定ロジック・
-/// 文言・遷移先を提供する。設定 → プッシュ通知の per-account tile と挙動を
-/// 揃え、失敗時は再試行・全アカウントの状態確認 (/settings/push) への動線を
-/// 出す。
+/// 現状の使用箇所はサーバー情報画面のみ。設定 → プッシュ通知の per-account
+/// tile と判定ロジック・文言を揃え、失敗時は「再試行」への動線を出す。全
+/// アカウント横断設定 (/settings/push) への動線はサーバー情報のスコープ外
+/// なので置かない（#817）。
 class PushRegistrationStatusSection extends ConsumerWidget {
   /// セクション見出し。`null` のときは見出しを描画しない。デフォルトは
   /// 「プッシュ通知」。サーバー情報画面・プロフィール画面で見出しの揃いを
@@ -127,16 +128,7 @@ class PushRegistrationStatusSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (title != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              title!,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
+        if (title != null) SectionHeader(title!),
         ListTile(
           leading: Icon(statusIcon, color: statusColor),
           title: Text(statusText),
@@ -144,34 +136,24 @@ class PushRegistrationStatusSection extends ConsumerWidget {
               ? Text(snapshot!.errorMessage!)
               : null,
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              if (retryable)
-                SizedBox(
-                  width: _actionButtonWidth,
-                  child: TextButton.icon(
-                    onPressed: () => PushRegistrationService.registerAccount(
-                      account,
-                      eligible: hasPreset,
-                    ),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('再試行'),
-                  ),
+        // 「全アカウント」(/settings/push) への動線はサーバー情報のスコープ外
+        // なので置かない（設定 → プッシュ通知から到達可能）。このサーバーでの
+        // 自分のプッシュ状態の「再試行」だけ残す（#817）。
+        if (retryable)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: SizedBox(
+              width: _actionButtonWidth,
+              child: TextButton.icon(
+                onPressed: () => PushRegistrationService.registerAccount(
+                  account,
+                  eligible: hasPreset,
                 ),
-              SizedBox(
-                width: _actionButtonWidth,
-                child: TextButton.icon(
-                  onPressed: () => context.push('/settings/push'),
-                  icon: const Icon(Icons.tune),
-                  label: const Text('全アカウント'),
-                ),
+                icon: const Icon(Icons.refresh),
+                label: const Text('再試行'),
               ),
-            ],
+            ),
           ),
-        ),
       ],
     );
   }

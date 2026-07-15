@@ -90,6 +90,15 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 投稿に対するアクション（お気に入り・ブースト・ブックマーク等）は、タイムライン上にボタンを露出させず、長押しで表示する BottomSheet メニュー内に格納する。誤タップ防止のため。
 
+### ドロワー項目のナビゲーション様式（#805）
+
+左ドロワーから機能を選んだときの遷移様式は、次の基準で使い分ける（一貫性のため明文化）:
+
+- **ボトムシートのクイックチューザ** = 「自分の保存済みの◯◯（チャンネル / クリップ / アンテナ / Play / プロフィールタグ / リスト等）を 1 つ選んで、そのタイムラインへ飛ぶ」用途。頻繁操作を軽く済ませ、ホーム文脈から素早く飛べるようにする。全画面化すると日常操作が一段重くなるため採らない。
+- **独立画面（`context.push`）** = そこに滞在する / 管理する行き先（通知・ブックマーク・ドライブ・設定・各種管理 UI 等）。
+
+保存済みショートカットの「作成 / 編集 / メンバー管理」などの管理 UI は、クイックチューザの奥（シート内の導線）または対象画面内に温存する。ドロワー直下の一等地はクイックチューザに割り当てる。
+
 ### Mastodon / Misskey 機能マッピング
 
 | 操作 | Mastodon | Misskey | 備考 |
@@ -104,7 +113,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 ### DM / メッセージの方針
 
 - **Mastodon**（#179）: `GET /api/v1/conversations` で DM 専用タイムラインを実装
-- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。なお Misskey メッセージは現状実験的機能の位置付けで、追加のバグ修正・enhancement（#442 系列、#449 のレンダリング要素反映、#440 push tap 動線、グループチャット #438 等）は v1.22.x ホットフィックスではなく v1.25（Misskey メッセージ改善マイルストーン）に集約して消化する方針。利用状況が増えてホットフィックス級の判断が必要になった場合は別途見直す
+- **Misskey**（#248）: DM タイムライン API がない。最近の Misskey では「メッセージ」機能（スレッド形式チャット）が DM の後継と位置づけられており、こちらに対応する。v1.22 で実装完了。追加のバグ修正・enhancement（#442 系列・#449 レンダリング要素反映・#440 push tap 動線・グループチャット #438 等）は v1.25 / v1.28 で消化済み（個別 Issue の対応状況は Milestones が正本）
 
 ### タイムラインの読み込み挙動
 
@@ -232,12 +241,12 @@ capsicum/
 
 ## 運営元
 
-capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。将来の課金（投げ銭サブスク・通知リレーの有償提供）を見据え、商品扱いとする方針。
+capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co.jp>）。課金（投げ銭サブスクは v1.27 で実装済み・外部ユーザー向け通知リレーの有償提供は構想中）を前提に、商品扱いとする方針。
 
 - サイト運営・問い合わせ窓口・特商法表示は法人名義（capsicum-site / Google Workspace アドレス経由）
 - 著作権表記は個人名義のままで問題なし
 - **ストア発行元（Apple / Google / Microsoft Store の Seller / Publisher Display Name）は当面個人（小石達也）で 3 ストア整合**。Apple は登録時の Team Prefix 固定の経緯で個人、Google も個人で運用、Microsoft Store も同方針で 2026-05-09 に個人開発者登録 + アプリ予約完了（identity_name=`9AFBB08E.capsicum`、publisher_display_name=`小石達也`）
-- 法人化（個人 → 有限会社ビーショックへの 3 ストア一括移行 + Apple は App Transfer 経由）は税務・ブランド要請が顕在化した時点で実施。**サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428), v1.27）開始は移行の必須トリガーではない**（個人事業主収入として処理する選択肢があるため）。pooza さんは本名公開を許容しているので特商法対応のプライバシー側面も移行の必須トリガーにならない
+- 法人化（個人 → 有限会社ビーショックへの 3 ストア一括移行 + Apple は App Transfer 経由）は税務・ブランド要請が顕在化した時点で実施。**サポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428), v1.27）開始は移行の必須トリガーではない**（税務処理・プライバシー面の判断根拠は非公開メモリ `project_supporter_subscription_individual_entity` が正本）
 - 「個人開発のアプリ」「個人発行元のストア配布」と「法人運営のサービス」は法的に矛盾しない（開発 / 配布 / 運営は独立した役割）。ブランド一貫性のみ運用課題として残るが、無料アプリの間は実害なし
 
 ### 課金の方向性
@@ -248,7 +257,7 @@ capsicum の運営元は有限会社ビーショック（<https://www.b-shock.co
 - 外部ユーザー向けプッシュ通知リレーの有償提供と同一 SKU で吸収できないか検討
 - ストア審査対策（"What does this app do?" で trivial 扱いを避ける）として複数階層・継続性のあるサブスクで構成
 
-v1.27 マイルストーンに単独配置（大更新のため他項目と並走させない）。商品設計 + 課金経路 + 装飾範囲の検討も同マイルストーン内で扱う。並走する自動化系タスクとして [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）を同マイルストーンに配置。Flathub 対応は 2026-05-29 に断念（提出 PR が AI Slop 判定、#604 / #470 とも close）。Linux 配布は AppImage 単独。
+v1.27 マイルストーンに単独配置し（大更新のため他項目と並走させず）、商品設計 + 課金経路 + 装飾範囲まで同マイルストーン内で実装・出荷した。並走した自動化系タスク [#544](https://github.com/pooza/capsicum/issues/544)（Microsoft Store Web UI 手動 publish ルート再開）も同マイルストーンで対応済み。Flathub 対応は 2026-05-29 に断念（提出 PR が AI Slop 判定、#604 / #470 とも close）。Linux 配布は AppImage 単独。
 
 ## 自前サーバー
 
@@ -285,7 +294,7 @@ v1.27 マイルストーンに単独配置（大更新のため他項目と並�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.46.0**（2026-07-11 タグ、build 151、pubspec 1.46.0+151、リリース PR [#823](https://github.com/pooza/capsicum/pull/823)、merge `c296c15`）。**サーバー検出・鮮度（themed）枠・大更新なし — サーバーの素性/メタデータの取得と再起動なしの鮮度更新が中心**。公開状況（2026-07-12 実測・ASC API 個別確認）: **Android 製品版公開済み** / **iOS App Store 公開済み**（1.46.0 `READY_FOR_SALE`）/ **macOS Mac App Store 公開済み**（1.46.0 `READY_FOR_SALE`）/ **Windows Microsoft Store 公開済み**（pooza 手動 publish）/ **Linux AppImage + Windows MSIX**は [GitHub Release v1.46.0](https://github.com/pooza/capsicum/releases/tag/v1.46.0) で publish 済み（Latest）— **これで全5プラットフォーム公開済み**。v1.46 マイルストーンは close 済み。消化（12 件）: [#792](https://github.com/pooza/capsicum/issues/792) 到達不能ログイン済みアカウントをオフライン表示で保持＋削除導線 / [#818](https://github.com/pooza/capsicum/issues/818) サーバー情報にプレ公開日＋設立日を沿革2行で表示（モロヘイヤ #4434 の founded_at/preopened_at 採用）/ [#774](https://github.com/pooza/capsicum/issues/774) サーバーソフトのバージョン表示を TTL で鮮度更新（既取得の instance/meta から version 抽出・追加リクエストなし）/ [#775](https://github.com/pooza/capsicum/issues/775) モロヘイヤ機能フラグを TTL(1h) で自動再検出 / [#807](https://github.com/pooza/capsicum/issues/807) サーバーメタデータに PieFed フォールバック（`/api/alpha/site`）/ [#811](https://github.com/pooza/capsicum/issues/811) グループ（AP Group アクター）の Announce を TL で区別しプロフィール導線（`post.author.isGroup`・追加 probing なし）/ [#723](https://github.com/pooza/capsicum/issues/723) サーバー種別判定に特徴的エンドポイントのフォールバック（NodeInfo 空振り時 Misskey `/api/meta`→Mastodon `/api/v1/instance`）/ [#677](https://github.com/pooza/capsicum/issues/677) Annict 感想ボタンを `annict_review` capability で feature-gate（mulukhiya #4433 で露出）/ [#810](https://github.com/pooza/capsicum/issues/810) Collections をサーバー版 4.6+ でゲート（`ServerVersionChecker.isAtLeast` 新設）/ [#821](https://github.com/pooza/capsicum/issues/821) 劇中ワードのローカル絞り込みの堅牢性強化 / [#822](https://github.com/pooza/capsicum/issues/822) loopback bind 枯渇に Sentry warning 計装。リリース前レビュー（5観点・大更新なしのため1回目のみ）は 🔴1（redetectMulukhiya の await 後 state.current 無条件上書きレース）をインライン消化・🟡は #825/#826/#827/#828（v1.47）へ起票。接続インジケータ黄色の観測から #825 perf（大 fan-out で main isolate 逼迫）/ #826 close_code の host タグ計装を新規起票。pubspec 1.46.0+151。
+最新リリース: **v1.47.0**（2026-07-13 タグ、build 153、pubspec 1.47.0+153、リリース PR [#829](https://github.com/pooza/capsicum/pull/829)、merge `450da3b`）。**大更新なし — デスクトップ（Windows/Linux）のウィンドウ内メニューバーと日常操作の使い勝手（URL タップのアプリ内遷移・Mastodon お知らせへのリアクション・Misskey サーバーサイド下書き）が中心**。公開状況（2026-07-14 実測・ASC API/lookup 個別確認）: **Android 製品版公開済み**（production track 153 promote 済み）/ **iOS App Store 公開済み**（1.47.0、2026-07-13 審査通過）/ **macOS Mac App Store 公開済み**（1.47.0、2026-07-13 審査通過）/ **Windows Microsoft Store 公開済み**（pooza 手動 publish）/ **Linux AppImage + Windows MSIX**は [GitHub Release v1.47.0](https://github.com/pooza/capsicum/releases/tag/v1.47.0) で publish 済み（Latest）— **これで全5プラットフォーム公開済み**。v1.47 マイルストーンは close 済み。消化（9 件）: [#713](https://github.com/pooza/capsicum/issues/713) デスクトップ（Windows/Linux）のウィンドウ内 MenuBar にドロワー項目モデルを流用 / [#820](https://github.com/pooza/capsicum/issues/820) 投稿・アカウント URL タップを resolve 経由でアプリ内スレッド/プロフィールへ遷移 / [#819](https://github.com/pooza/capsicum/issues/819) Mastodon お知らせへのリアクション / [#174](https://github.com/pooza/capsicum/issues/174) Misskey サーバーサイド下書き保存 / [#824](https://github.com/pooza/capsicum/issues/824) OAuth 登録レート制限で正しい資格情報でもログイン不能になる事象を緩和 / [#827](https://github.com/pooza/capsicum/issues/827) Misskey フォークで鮮度更新後にサーバー版が偽 Mastodon 互換版に化ける修正 / [#825](https://github.com/pooza/capsicum/issues/825) perf（大 fan-out で main isolate 逼迫）/ [#826](https://github.com/pooza/capsicum/issues/826) 切断系ストリームイベントに host タグ計装 / [#828](https://github.com/pooza/capsicum/issues/828) v1.46 レビュー黄/緑の軽量リファクタ。リリース前レビュー（5観点・大更新なしのため1回目のみ）は 🔴0・🟡1（announcement リアクション失敗ロールバックがリスト全体を巻き戻し in-flight 中の並行変更を消す）をインライン消化（surgical rollback 化＋並行回帰テスト追加）・残り🟡🟡🟢は [#837](https://github.com/pooza/capsicum/issues/837)/[#838](https://github.com/pooza/capsicum/issues/838)/[#839](https://github.com/pooza/capsicum/issues/839)（v1.48）へ起票。**build 152 が開発中に Play 内部トラックへ先行アップロード済みで再利用不可だったため 153 に採番**（レビュー修正込みのタグ済みコードを出荷。デスクトップはタグから 152 でビルド済みだがストア別採番のため影響なし）。pubspec 1.47.0+153。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 

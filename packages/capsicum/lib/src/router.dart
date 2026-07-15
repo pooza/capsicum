@@ -56,6 +56,7 @@ import 'ui/screen/annict_review_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/list_management_screen.dart';
+import 'ui/screen/list_timeline_screen.dart';
 import 'ui/screen/list_members_screen.dart';
 import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -319,6 +320,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           final name = state.extra as String?;
           return AntennaNotesScreen(antennaId: id, antennaName: name);
+        },
+      ),
+      GoRoute(
+        path: '/list/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final name = state.extra as String?;
+          return ListTimelineScreen(listId: id, listName: name);
         },
       ),
       GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),

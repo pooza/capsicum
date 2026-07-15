@@ -303,25 +303,38 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<List<Draft>> getDrafts() async {
     final raw = await client.getNoteDrafts();
-    return raw.map((json) {
-      final attachments =
-          (json['files'] as List?)
-              ?.map(
-                (f) => MisskeyDriveFile.fromJson(
-                  f as Map<String, dynamic>,
-                ).toCapsicum(),
-              )
-              .toList() ??
-          const <Attachment>[];
-      return Draft(
-        id: json['id'] as String,
-        content: json['text'] as String?,
-        spoilerText: json['cw'] as String?,
-        scope: misskeyVisibilityRosetta[json['visibility']] ?? PostScope.public,
-        attachments: attachments,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-      );
-    }).toList();
+    final drafts = <Draft>[];
+    for (final json in raw) {
+      try {
+        final attachments =
+            (json['files'] as List?)
+                ?.map(
+                  (f) => MisskeyDriveFile.fromJson(
+                    f as Map<String, dynamic>,
+                  ).toCapsicum(),
+                )
+                .toList() ??
+            const <Attachment>[];
+        drafts.add(
+          Draft(
+            id: json['id'] as String,
+            content: json['text'] as String?,
+            spoilerText: json['cw'] as String?,
+            scope:
+                misskeyVisibilityRosetta[json['visibility']] ??
+                PostScope.public,
+            attachments: attachments,
+            createdAt: DateTime.parse(json['createdAt'] as String),
+          ),
+        );
+      } catch (e) {
+        // 1 件の壊れた draft でリスト全体を error state に落とさず、当該 draft
+        // のみ skip する（#839）。下書きは自作なので稀だが、下書き画面全体が
+        // 使えなくなるのを防ぐ。
+        developer.log('skipping malformed draft: $e', name: 'capsicum');
+      }
+    }
+    return drafts;
   }
 
   @override

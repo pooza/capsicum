@@ -20,11 +20,13 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
+import '../../service/url_preview_cache.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
 import 'emoji_action_sheet.dart';
@@ -66,15 +68,18 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _filterExpanded = false;
   bool _deleted = false;
   List<PreviewCard> _fetchedCards = [];
+  // カード取得対象の URL（本文中で API 由来カードに含まれない分）。順序保持。
+  List<String> _cardUrlsToFetch = const [];
+  // 未キャッシュ URL の取得デバウンス。スクロールで一瞬映っただけの投稿まで
+  // summaly を叩かないよう、少し待ってから取得する (#772)。
+  Timer? _cardFetchDebounce;
   TranslationResult? _translation;
   bool _translating = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialExpanded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
-    }
+    _prepareCardFetch();
     _resolveTcoUrls();
   }
 
@@ -88,8 +93,11 @@ class _PostTileState extends ConsumerState<PostTile> {
       _tagsExpanded = false;
       _filterExpanded = false;
       _fetchedCards = [];
+      _cardUrlsToFetch = const [];
+      _cardFetchDebounce?.cancel();
       _translation = null;
       _translating = false;
+      _prepareCardFetch();
     }
   }
 
@@ -111,26 +119,66 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  Future<void> _maybeFetchCard() async {
+  /// Misskey の本文中 URL からプレビューカードを取得する準備をする (#772)。
+  ///
+  /// Misskey の note にはカードが含まれないため URL ごとに summaly を叩く。
+  /// タイムラインでも表示するが、全投稿で無差別に fetch するとサーバー負荷が
+  /// 大きいので次の 3 段でコストを抑える:
+  ///
+  /// - キャッシュ済み URL は即時反映し fetch しない（[UrlPreviewCache]）
+  /// - 未キャッシュ分はデバウンス後に取得（スクロールで一瞬映った投稿は
+  ///   dispose で timer が消え取得されない）
+  /// - 「プレビューカード非表示」設定のときは取得ごと止める（コスト回避）
+  void _prepareCardFetch() {
     final displayPost = post.reblog ?? post;
     if (displayPost.attachments.isNotEmpty) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MisskeyAdapter) return;
+    // 非表示設定のユーザーは summaly コストごと避けられるようにする (#772)。
+    if (ref.read(previewCardModeProvider) == PreviewCardMode.hide) return;
     final content = displayPost.content ?? '';
+    // `\S+` だと空白なしで続く日本語（`…fooをご覧ください`）まで URL に取り込み、
+    // summaly が壊れた URL で失敗して negative キャッシュされ、本来出るカードが
+    // 出なくなる。空白・引用/括弧・CJK 記号/かな/漢字/全角（U+3000-30FF・
+    // U+4E00-9FFF・U+FF00-FFEF）を境界として除外する (#772)。
     final urls = RegExp(
-      r'https?://\S+',
+      r'''https?://[^\s<>"'()\[\]{}　-ヿ一-鿿＀-￯]+''',
     ).allMatches(content).map((m) => m.group(0)!).toList();
     if (urls.isEmpty) return;
-    // Skip the first URL if the API already returned a card for it.
-    final urlsToFetch = displayPost.card != null ? urls.skip(1) : urls;
+    // API が既にカードを返した先頭 URL は二重取得しない。
+    _cardUrlsToFetch = (displayPost.card != null ? urls.skip(1) : urls)
+        .toList();
+    if (_cardUrlsToFetch.isEmpty) return;
+
+    // キャッシュ済みは初回描画に間に合わせて即時反映（fetch 不要）。
+    _rebuildCardsFromCache();
+    if (_cardUrlsToFetch.every(UrlPreviewCache.instance.has)) return;
+
+    _cardFetchDebounce = Timer(const Duration(milliseconds: 500), _fetchCards);
+  }
+
+  /// 取得対象 URL のうちキャッシュ済みのものを本文の URL 順で [_fetchedCards]
+  /// に組み立てる。取得後の反映と初回のキャッシュヒット反映で共用。
+  void _rebuildCardsFromCache() {
     final cards = <PreviewCard>[];
-    for (final url in urlsToFetch) {
-      final card = await adapter.fetchUrlPreview(url);
+    for (final url in _cardUrlsToFetch) {
+      final card = UrlPreviewCache.instance.cached(url);
       if (card != null) cards.add(card);
     }
-    if (mounted && cards.isNotEmpty) {
-      setState(() => _fetchedCards = cards);
+    _fetchedCards = cards;
+  }
+
+  Future<void> _fetchCards() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MisskeyAdapter) return;
+    for (final url in _cardUrlsToFetch) {
+      if (UrlPreviewCache.instance.has(url)) continue;
+      await UrlPreviewCache.instance.fetch(
+        url,
+        () => adapter.fetchUrlPreview(url),
+      );
     }
+    if (mounted) setState(_rebuildCardsFromCache);
   }
 
   List<Widget> _buildPreviewCards(Post displayPost) {
@@ -255,6 +303,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   @override
   void dispose() {
+    _cardFetchDebounce?.cancel();
     _contentRenderer?.dispose();
     super.dispose();
   }
@@ -324,11 +373,12 @@ class _PostTileState extends ConsumerState<PostTile> {
           ),
         );
       },
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       onMentionTap: (mention) => _navigateToMention(mention),
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)
@@ -783,7 +833,10 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 ),
                                               ),
                                               onPressed: () =>
-                                                  context.push('/hashtag/$tag'),
+                                                  showHashtagActionMenu(
+                                                    context,
+                                                    tag,
+                                                  ),
                                             ),
                                           ),
                                       if (parsed.trailingTags.length > _maxTags)
@@ -1024,6 +1077,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 外側 PostTile の context が deactivate 済みだと Localizations.localeOf が
     // null check で落ちるため、ここで一度だけ解決して閉包に取り込む（#659）。
     final locale = Localizations.localeOf(context);
+    final postHashtags = extractHashtags(
+      targetPost.content ?? '',
+      isHtml: targetPost.isHtml,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -1170,6 +1227,22 @@ class _PostTileState extends ConsumerState<PostTile> {
                     Clipboard.setData(ClipboardData(text: targetPost.url!));
                     messenger.showSnackBar(
                       const SnackBar(content: Text('URL をコピーしました')),
+                    );
+                  },
+                ),
+              if (postHashtags.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.tag),
+                  title: const Text('全ハッシュタグをコピー'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(
+                      ClipboardData(
+                        text: postHashtags.map((t) => '#$t').join(' '),
+                      ),
+                    );
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('ハッシュタグをコピーしました')),
                     );
                   },
                 ),
@@ -2786,7 +2859,9 @@ class _PreviewCardWidget extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null) launchUrlSafely(uri);
+        // プレビューカードのリンクも本文中 URL と同様に、対応する専用アプリが
+        // あればそちらで開く（YouTube 等・モバイルのみ・#755）。
+        if (uri != null) launchInPreferredApp(uri);
       },
       child: Container(
         decoration: BoxDecoration(

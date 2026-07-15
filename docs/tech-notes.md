@@ -10,7 +10,13 @@
 
 ### `WidgetSpan` 内で `width: double.infinity` は使わない
 
-親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。
+親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。iPad の広い画面で `RenderFlex` overflow を起こした実績あり（#60）。
+
+### 背の高い `WidgetSpan` の直後に `TextSpan('\n')` を置かない（ブロック直後の空白）
+
+`content_parser` はコードブロック・引用などブロック要素を `WidgetSpan` として `Text.rich` に埋め込み、前後を `TextSpan('\n')` で挟んで単独行に落としている。このとき **背の高い `WidgetSpan` の直後の `\n` が、行の下側にブロック高ぶんの空白を作る**（Flutter の WidgetSpan + trailing newline 既知挙動）。`alignment`（bottom/middle）・横スクロール・`Column` の `mainAxisSize` はいずれも無関係で、中身ゼロの固定高ボックスでも末尾 `\n` があれば発生する。
+
+対策は **末尾 `\n` を置かず、ブロック下の余白は `Container` の `margin` で確保**する（単独行への隔離は先頭 `\n` が担う）。`width: double.infinity` で全幅化しても解決するが、上記のとおり iPad overflow を起こすため採らない。背の低いブロック（短い引用など）では気づかれにくいだけで同じ構造は同じ症状を持つ。添付画像も同型（#842 / follow-up #843）。
 
 ### `Image.network` には `errorBuilder` を付ける
 
@@ -89,6 +95,22 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 対処: 旧 item を列挙・削除する際は **旧 accessibility を per-call options で明示**する（#643 以前の既定は `KeychainAccessibility.unlocked` = `WhenUnlocked`）。migration の `readAll` / `delete` と write リカバリの delete に旧 options を渡し、空振りしていた migration を全員に再実行させるため flag key も `_v2` 等に上げる。`PushKeyStore.migrateAccessibilityIfNeeded`（#392 / #656）も同型実装。なお debug（macOS は sandbox off）では再現せず、内部ベータ実機 + Sentry breadcrumb でしか追えない。
 
 派生注意: 移行で旧 item が「読めるようになる」と、そこに残っていた **stale な値が再利用される**副作用がある。capsicum では古い `client_creds`（`capsicum://oauth` era 登録）が localhost redirect_uri で `invalid_redirect_uri` を招いた。client_creds に redirect_uri を併記し一致時のみ再利用する形で解消。
+
+## ネイティブプッシュ（APNs / WNS）
+
+### macOS ネイティブ APNs 配線の 3 つの罠（#468）
+
+`FlutterAppDelegate`(FlutterMacOS) 上で APNs コールバックを実装する際、dart analyze も archive/署名も通るのに **実機起動でしか露見しない**罠が 3 つある（正本は [`AppDelegate.swift`](../packages/capsicum/macos/Runner/AppDelegate.swift) と [`Release.entitlements`](../packages/capsicum/macos/Runner/Release.entitlements) のコメント）:
+
+1. **`override` 必須**: `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)` は基底が `@MainActor open func` なので `override` を付ける（ヘッダに見えないので付け忘れやすい）。
+2. **`super` を呼ばない**: しかし `super.application(...)` を呼ぶと基底がセレクタ未実装で `-[NSObject doesNotRecognizeSelector:]` → 起動時 SIGABRT クラッシュ。iOS は forwarding で救われるが macOS は override 側で完結させ super を呼ばない。
+3. **entitlement キーが違う**: macOS は `com.apple.developer.aps-environment`（iOS の `aps-environment` ではない）。iOS 流のキーだと archive/署名は通るが runtime で `NSOSStatusErrorDomain code=13` になりトークン取得に失敗する。
+
+クラッシュが TestFlight/debug いずれのビルドで起きたかは crash report の `procPath` で判別する。
+
+### Windows WNS のバックグラウンド受信は AppContainer で DPAPI 境界を越えられない（#474）
+
+WNS raw push のバックグラウンドタスクは FullTrust 本体とは別プロセスの **AppContainer サンドボックス**で走る。そのため roaming AppData の `flutter_secure_storage.dat`（DPAPI 暗号化）を復号できず、**登録も活性化も成功するのにプッシュ鍵が読めずトーストが出ない**。解法は push 鍵セットだけを平文 JSON 化して `ApplicationData.Current.LocalFolder`（パッケージ ACL 保護）へ同期し、bg task はそこから読む（macOS NSE の App Group 共有と同型。正本は [`local_state_files.h`](../packages/capsicum/windows/runner/local_state_files.h) / [`web_push_key_reader.h`](../packages/capsicum/windows/runner/web_push_key_reader.h)）。付随する汎用 Windows 罠: PowerShell の `[System.IO.File]::ReadAllText` は cwd 相対解決するので**絶対パス必須**、パッケージアプリは `%TEMP%` が `AC\Temp` にリダイレクトされる。
 
 ## NodeInfo / Probing
 

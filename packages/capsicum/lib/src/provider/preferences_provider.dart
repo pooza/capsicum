@@ -21,6 +21,7 @@ const _emojiPalettePrefix = 'emoji_palette_';
 const _emojiReactionPalettePrefix = 'emoji_reaction_palette_';
 const _pinnedHashtagsPrefix = 'pinned_hashtags_';
 const _hideLivecureKey = 'hide_livecure';
+const _mfmAnimationKey = 'mfm_animation_enabled';
 const _themeModeKey = 'theme_mode';
 const _absoluteTimeKey = 'absolute_time';
 const _blurAllImagesKey = 'blur_all_images';
@@ -766,6 +767,36 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 final hideLivecureProvider = NotifierProvider<HideLivecureNotifier, bool>(
   HideLivecureNotifier.new,
 );
+
+/// MFM のアニメーション（`$[bounce]`/`$[spin]`/`$[shake]` 等）を再生するか
+/// (#259)。既定は ON（Misskey に倣う）。動きが煩わしいユーザーは OFF にできる
+/// オプトアウト方式。OS の「視差効果を減らす」(reduce motion) が有効なときは
+/// 描画側でこの設定に関わらず静止表示する。
+final mfmAnimationEnabledProvider =
+    NotifierProvider<MfmAnimationEnabledNotifier, bool>(
+      MfmAnimationEnabledNotifier.new,
+    );
+
+class MfmAnimationEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_mfmAnimationKey);
+    if (saved != null) state = saved;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_mfmAnimationKey, value);
+  }
+}
 
 class HideLivecureNotifier extends Notifier<bool> {
   @override

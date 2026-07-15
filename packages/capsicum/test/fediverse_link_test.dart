@@ -23,6 +23,14 @@ void main() {
       expect(check('https://misskey.example/notes/9abcxyz'), isTrue);
     });
 
+    test('bare な /users/foo（github 等）→ false（statuses を伴わない・#838）', () {
+      expect(check('https://github.com/users/octocat'), isFalse);
+    });
+
+    test('他サイトの /notes/x（短い id）→ false（誤検知回避・#838）', () {
+      expect(check('https://example.com/notes/x'), isFalse);
+    });
+
     test('外部サイトのフォーム → false（resolve せずブラウザ）', () {
       expect(
         check('https://docs.google.com/forms/d/e/abcXYZ/viewform'),

@@ -23,7 +23,7 @@ v1.0 前後の初回審査時に遭遇したリジェクトへの対応記録。
 
 実装が完了し正本が別の場所に移ったため、設計判断の経緯のみが歴史的価値として残るドキュメント。
 
-- [push-relay-plan.md](push-relay-plan.md) — プッシュ通知リレー (capsicum-relay) の初期計画書。Ruby / Linode / Linode Nanode / flauros.b-shock.co.jp 等の選定根拠を含む。v1.18 で実装済、本番は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本。Stage 3 (外部ユーザー向け有償提供) は [#597](https://github.com/pooza/capsicum/issues/597) で継続
+- [push-relay-plan.md](push-relay-plan.md) — プッシュ通知リレー (capsicum-relay) の初期計画書。Ruby / Linode / VPS 等の選定根拠を含む。v1.18 で実装済、本番は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本。Stage 3 (外部ユーザー向け有償提供) は [#597](https://github.com/pooza/capsicum/issues/597) で継続
 - [privacy-policy.md](privacy-policy.md) — capsicum 初期 (v1.0) のプライバシーポリシー草稿。現行は [capsicum.shrieker.net/privacy-policy](https://capsicum.shrieker.net/privacy-policy) ([capsicum-site](https://github.com/pooza/capsicum-site) の `privacy-policy/index.md`) が正本
 - [release-pipeline.md](release-pipeline.md) — リリースパイプライン構想（fastlane + GitHub Actions）。Phase 1〜4（iOS/Android 自動化 → macOS → Linux → Windows）が v1.32 までに全て実現済みで、構想としての役目を終えた。日々の運用手順は [store-release-guide.md](../store-release-guide.md) が正本。タグ命名規則・責務分担・macOS の Mac App Store 一本化方針などの設計経緯の記録として保持
 
@@ -35,3 +35,4 @@ v1.0 前後の初回審査時に遭遇したリジェクトへの対応記録。
 - [spotify-nowplaying-design.md](spotify-nowplaying-design.md) — Spotify Web API ナウプレ（mulukhiya 経由 OAuth + currently-playing）の詳細設計。コードは実装・検証済みだが Spotify のクォータ規約改定で一般開放不可となり**塩漬け**（[#570](https://github.com/pooza/capsicum/issues/570)、本番 `spotify_enabled` OFF）
 - [compose-suggest-design.md](compose-suggest-design.md) — 投稿フォームの劇中ワードサジェスト（mulukhiya `GET /word/suggest`）の設計。v1.35 で実装完了。既存インライン補完資産の上に積む方針・共有ランチャ集約を記録
 - [desktop-notification-design.md](desktop-notification-design.md) — デスクトップ 3 OS 共通の「WebSocket streaming → OS ローカル通知」設計。v1.34 で実装完了（[#569](https://github.com/pooza/capsicum/issues/569) / [#468](https://github.com/pooza/capsicum/issues/468) macOS APNs）。native push との dedup 併存方針を記録
+- [windows-iap-design.md](windows-iap-design.md) — Windows 投げ銭（Microsoft Store IAP、[#599](https://github.com/pooza/capsicum/issues/599)）の設計。v1.43 で実装完了。購入バックエンド抽象化・`Windows.Services.Store` の IAP platform channel・Store 版判定の置き場所などの設計判断を記録。日々の運用は [store-release-guide.md](../store-release-guide.md) が正本

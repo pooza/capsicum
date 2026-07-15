@@ -24,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
@@ -106,23 +107,17 @@ class _OversizeFile {
   });
 }
 
-/// 添付画像プレビュー (#660) から呼び出し元へ返すアクション。
-enum _AttachmentPreviewAction { editDescription, addText }
+/// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
+enum _AttachmentMenuAction { preview, crop, addText, editDescription }
 
-/// 添付画像を確認するためのフルスクリーンプレビュー (#660)。トリミング結果も
-/// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。AppBar
-/// から ALT 編集へ進める（従来サムネタップに割り当てられていた ALT 編集は
-/// プレビュー経由のサブアクションへ整理した）。
+/// 添付画像を原寸で確認するためのフルスクリーンビューア (#660)。トリミング結果も
+/// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。編集操作は
+/// サムネタップの編集メニュー（[_showAttachmentMenu], #769）へ集約したため、この
+/// 画面は閲覧専用。
 class _AttachmentPreviewScreen extends StatelessWidget {
-  const _AttachmentPreviewScreen({
-    required this.image,
-    this.showTextOverlay = false,
-  });
+  const _AttachmentPreviewScreen({required this.image});
 
   final ImageProvider image;
-
-  /// 文字入れ (#576) を提示するか。差し替え可能なローカル画像のみ true。
-  final bool showTextOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -131,25 +126,6 @@ class _AttachmentPreviewScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        actions: [
-          if (showTextOverlay)
-            IconButton(
-              tooltip: '文字を入れる',
-              onPressed: () =>
-                  Navigator.of(context).pop(_AttachmentPreviewAction.addText),
-              icon: const Icon(Icons.title, color: Colors.white),
-            ),
-          TextButton.icon(
-            onPressed: () => Navigator.of(
-              context,
-            ).pop(_AttachmentPreviewAction.editDescription),
-            icon: const Icon(Icons.subtitles_outlined, color: Colors.white),
-            label: const Text(
-              '説明 (ALT)',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
       ),
       body: InteractiveViewer(
         minScale: 1,
@@ -1643,34 +1619,81 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     return FileImage(File(entry.file!.path));
   }
 
-  /// 添付サムネのタップ時の動線 (#660)。画像はフルスクリーンのプレビュー
-  /// （ズーム可・トリミング結果の確認用）を開き、そこから ALT 編集へ進める。
-  /// 画像でないエントリはプレビュー対象外なので従来どおり ALT 編集を直接開く。
-  Future<void> _previewAttachment(int index) async {
+  /// 添付サムネのタップ時に開く編集メニュー (#769)。従来はトリミングがサムネ
+  /// 角アイコン、ALT / 文字入れがフルスクリーンプレビュー経由と入口が分散して
+  /// いた。サムネタップでこの 1 枚のメニューを開き、全編集操作をここから分岐
+  /// させて一貫した動線にまとめる（アクションメニューの設計方針に沿う）。
+  ///
+  /// 「拡大して確認」「トリミング・回転」「文字を入れる」は差し替え可能な
+  /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
+  /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
+  Future<void> _showAttachmentMenu(int index) async {
     final entry = _attachments[index];
-    final provider = _attachmentImageProvider(entry);
-    if (provider == null) {
-      await _editDescription(index);
-      return;
-    }
-    final action = await Navigator.of(context).push<_AttachmentPreviewAction>(
-      MaterialPageRoute(
-        builder: (_) => _AttachmentPreviewScreen(
-          image: provider,
-          showTextOverlay: _isCroppableImage(entry),
+    final croppable = _isCroppableImage(entry);
+    final previewable = _attachmentImageProvider(entry) != null;
+    final action = await showModalBottomSheet<_AttachmentMenuAction>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (previewable)
+              ListTile(
+                leading: const Icon(Icons.zoom_in),
+                title: const Text('拡大して確認'),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _AttachmentMenuAction.preview),
+              ),
+            if (croppable)
+              ListTile(
+                leading: const Icon(Icons.crop_rotate),
+                title: const Text('トリミング・回転'),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _AttachmentMenuAction.crop),
+              ),
+            if (croppable)
+              ListTile(
+                leading: const Icon(Icons.title),
+                title: const Text('文字を入れる'),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _AttachmentMenuAction.addText),
+              ),
+            ListTile(
+              leading: const Icon(Icons.subtitles_outlined),
+              title: const Text('説明 (ALT)'),
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentMenuAction.editDescription,
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _AttachmentMenuAction.preview:
+        await _openAttachmentViewer(index);
+      case _AttachmentMenuAction.crop:
+        await _cropImage(index);
+      case _AttachmentMenuAction.addText:
+        await _addTextOverlay(index);
+      case _AttachmentMenuAction.editDescription:
+        await _editDescription(index);
+    }
+  }
+
+  /// 添付画像を原寸で確認するフルスクリーンビューアを開く (#660 / #769)。編集
+  /// メニューの「拡大して確認」から呼ぶ。閲覧専用（編集操作はメニュー側）。
+  Future<void> _openAttachmentViewer(int index) async {
+    final provider = _attachmentImageProvider(_attachments[index]);
+    if (provider == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => _AttachmentPreviewScreen(image: provider),
         fullscreenDialog: true,
       ),
     );
-    if (!mounted) return;
-    switch (action) {
-      case _AttachmentPreviewAction.editDescription:
-        await _editDescription(index);
-      case _AttachmentPreviewAction.addText:
-        await _addTextOverlay(index);
-      case null:
-        break;
-    }
   }
 
   Future<void> _openEpisodeBrowser() async {
@@ -2075,6 +2098,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             return null;
           },
           emojiSize: emojiSize,
+          animateMfm: ref.read(mfmAnimationEnabledProvider),
         );
         final contentSpan = renderer.renderMfm(text);
 
@@ -2293,6 +2317,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
       );
 
+      // サーバーへ保存できたので、ローカルに自動保存された下書きは破棄する。
+      // これをしないと、投稿成功経路（_clearDraft を呼ぶ）と非対称になり、
+      // 次に素のコンポーズを開いたとき保存済みのはずの本文が再出現する。
+      // fresh-compose セッションのみが対象で、reply/quote/redraft/share は
+      // autosave していないため触らない（投稿経路と同じ条件）。
+      if (_draftAutoSave) {
+        await _clearDraft();
+      }
+
       // 復元元の下書きは新規保存に置き換えるため削除する（best-effort）。
       final restoredId = _restoredDraftId;
       if (restoredId != null) {
@@ -2313,13 +2346,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           context.go('/home');
         }
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
         setState(() => _sending = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('下書きの保存に失敗しました')));
       }
+      // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
+      // 上で SnackBar 通知済みなので赤ではない。
+      reportOpFailure(
+        tagKey: 'draft.op',
+        operation: 'save_server_draft',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
     }
   }
 
@@ -2779,7 +2821,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           behavior: HitTestBehavior.opaque,
                           onTap: _sending
                               ? null
-                              : () => _previewAttachment(index),
+                              : () => _showAttachmentMenu(index),
                           child: Stack(
                             children: [
                               ClipRRect(
@@ -2810,32 +2852,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                                     ),
                                   ),
                                 ),
-                              // Crop button (ローカル静止画のみ)。crop_your_image
-                              // は純 Flutter 実装で全プラットフォーム動作する
-                              // ため、デスクトップ (#577) に加えモバイル
-                              // (iOS / Android) でも導線を出す (#647)。
-                              if (_isCroppableImage(entry))
-                                Positioned(
-                                  top: 4,
-                                  left: 4,
-                                  child: GestureDetector(
-                                    onTap: _sending
-                                        ? null
-                                        : () => _cropImage(index),
-                                    child: Container(
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black54,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      padding: const EdgeInsets.all(4),
-                                      child: const Icon(
-                                        Icons.crop,
-                                        size: 16,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                              // トリミング・回転はサムネタップの編集メニュー
+                              // （_showAttachmentMenu, #769）へ集約したため、
+                              // 角のトリミングアイコンは廃止した。
                               // Remove button
                               Positioned(
                                 top: 4,

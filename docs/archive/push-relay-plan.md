@@ -73,10 +73,10 @@ iOS でプッシュ通知を提供する Fediverse クライアント（Toot!、
 
 | 項目 | 値 |
 |------|-----|
-| ホスト名 | flauros.b-shock.co.jp |
+| ホスト名 | 運用 VPS（接続情報はメモリ `feedback_capsicum_relay_deploy_delegation` が正本） |
 | 公開ドメイン | relay.capsicum.shrieker.net |
 | OS | Ubuntu 24.04 LTS |
-| SSH | `deploy@flauros.b-shock.co.jp` |
+| SSH | 専用 deploy ユーザー（詳細はメモリ参照） |
 | スペック | 1 vCPU / 1GB RAM / 25GB SSD |
 
 ### リレーサーバーの箇条設計
@@ -176,7 +176,7 @@ Stage 1 の動作確認対象は Mastodon のプリセットサーバー。き�
 - [x] OSS リレー実装の評価 → 既存 OSS は不適。Ruby で自前実装
 - [x] リレーサーバーのホスティング先 → Linode Nanode（$5/月）
 - [x] 実装言語 → Ruby（モロヘイヤとの知見共有）
-- [x] VPS 構築 → flauros.b-shock.co.jp（Ubuntu 24.04 LTS）
+- [x] VPS 構築 → 運用 VPS（Ubuntu 24.04 LTS）
 - [x] リレーサーバーのドメイン名 → relay.capsicum.shrieker.net
 
 ## 未決事項

@@ -1,5 +1,7 @@
 # Windows 投げ銭（Microsoft Store IAP）設計（#599）
 
+> **アーカイブ（現役運用では参照しない）**。#599 は v1.43.0（2026-07-02）で出荷完了。正本はコードと [store-release-guide.md](../store-release-guide.md)。以下は設計判断の経緯記録。
+
 ## 位置付け
 
 [#428](https://github.com/pooza/capsicum/issues/428)（投げ銭）の Windows 横展開。iOS / Android（v1.27）→ macOS（[#598](https://github.com/pooza/capsicum/issues/598), v1.36）に続く 4 プラットフォーム目。
