@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
+import '../../widget/section_header.dart';
 
 class AppearanceSettingsScreen extends ConsumerWidget {
   const AppearanceSettingsScreen({super.key});
@@ -47,13 +48,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
       body: ListView(
         children: [
           // Theme mode
+          const SectionHeader('テーマ'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('テーマ', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
                 SegmentedButton<ThemeMode>(
                   segments: [
                     for (final entry in _themeModeLabels.entries)
@@ -71,17 +71,13 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
 
           // Dark surface variant
-          if (isDark)
+          if (isDark) ...[
+            const SectionHeader('ダークモードの色合い'),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ダークモードの色合い',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -115,19 +111,16 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+          ],
 
           // Dark text color
-          if (isDark)
+          if (isDark) ...[
+            const SectionHeader('ダークモードの文字色'),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ダークモードの文字色',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -161,19 +154,16 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+          ],
 
           // Avatar shape (Misskey accounts only)
-          if (showAvatarShape)
+          if (showAvatarShape) ...[
+            const SectionHeader('アカウントアイコンの形状'),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'アカウントアイコンの形状',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
                   SegmentedButton<AvatarShape>(
                     showSelectedIcon: false,
                     segments: [
@@ -193,15 +183,15 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+          ],
 
           // Font scale
+          const SectionHeader('文字サイズ'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('文字サイズ', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
                 Row(
                   children: [
                     const Text('A', style: TextStyle(fontSize: 12)),
@@ -244,16 +234,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
 
           // Emoji size
+          const SectionHeader('カスタム絵文字サイズ'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'カスタム絵文字サイズ',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
                 Row(
                   children: [
                     const Text('🙂', style: TextStyle(fontSize: 12)),
@@ -290,16 +276,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
 
           // Thumbnail scale
+          const SectionHeader('サムネイルサイズ'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'サムネイルサイズ',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
                 Row(
                   children: [
                     const Icon(Icons.photo_size_select_small, size: 16),

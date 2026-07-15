@@ -12,6 +12,7 @@ import '../../service/server_version_checker.dart';
 import '../../url_helper.dart';
 import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
+import '../widget/section_header.dart';
 import '../widget/user_avatar.dart';
 
 class ServerInfoScreen extends ConsumerStatefulWidget {
@@ -69,7 +70,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
     return ListView(
       children: [
         // Basic info
-        _SectionHeader(title: '基本情報'),
+        SectionHeader('基本情報'),
         ListTile(
           leading: instance.iconUrl != null
               ? ClipRRect(
@@ -116,7 +117,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
         if (instance.contactAccount != null ||
             instance.contactEmail != null ||
             instance.contactUrl != null) ...[
-          _SectionHeader(title: '連絡先'),
+          SectionHeader('連絡先'),
           if (instance.contactAccount != null)
             ListTile(
               leading: UserAvatar(
@@ -161,7 +162,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
 
         // Rules
         if (instance.rules.isNotEmpty) ...[
-          _SectionHeader(title: 'ルール'),
+          SectionHeader('ルール'),
           ...instance.rules.asMap().entries.map(
             (entry) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -188,7 +189,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
         // Links
         if (_hasValidUrl(instance.privacyPolicyUrl) ||
             _hasValidUrl(instance.statusUrl)) ...[
-          _SectionHeader(title: 'リンク'),
+          SectionHeader('リンク'),
           if (_hasValidUrl(instance.privacyPolicyUrl))
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
@@ -212,7 +213,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
         ],
 
         // Health checks
-        _SectionHeader(title: 'ヘルスチェック'),
+        SectionHeader('ヘルスチェック'),
         if (state.healthChecks.isEmpty && !state.isCheckingHealth)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -257,7 +258,7 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
           ),
         ],
         // Mulukhiya
-        _SectionHeader(title: 'モロヘイヤ'),
+        SectionHeader('モロヘイヤ'),
         _MulukhiyaSection(),
 
         // Push notification (widget が見出しを内包する)
@@ -451,20 +452,3 @@ Widget _serverDateRow(String label, DateTime date) => Padding(
   child: Text('$label: ${date.year}年${date.month}月${date.day}日'),
 );
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}

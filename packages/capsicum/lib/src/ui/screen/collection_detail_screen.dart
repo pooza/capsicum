@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../widget/emoji_text.dart';
+import '../widget/section_header.dart';
 import '../widget/user_avatar.dart';
 
 /// Mastodon 4.6 Collections（#722 / #742）のコレクション詳細画面。
@@ -192,10 +193,10 @@ class _CollectionDetailScreenState
               ),
             ),
           if (ownerRow != null) ...[
-            _sectionHeader(theme, '作成者'),
+            const SectionHeader('作成者'),
             _memberTile(ownerRow, detail.collection),
           ],
-          _sectionHeader(theme, 'メンバー'),
+          const SectionHeader('メンバー'),
           if (others.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -214,21 +215,6 @@ class _CollectionDetailScreenState
   }
 
   /// リスト内の区切り見出し（作成者 / メンバー）。
-  Widget _sectionHeader(ThemeData theme, String label) {
-    return Container(
-      width: double.infinity,
-      color: theme.colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Text(
-        label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
   Widget _memberTile(
     User user,
     Collection collection, {
