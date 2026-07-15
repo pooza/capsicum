@@ -2851,7 +2851,9 @@ class _PreviewCardWidget extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         final uri = Uri.tryParse(card.url);
-        if (uri != null) launchUrlSafely(uri);
+        // プレビューカードのリンクも本文中 URL と同様に、対応する専用アプリが
+        // あればそちらで開く（YouTube 等・モバイルのみ・#755）。
+        if (uri != null) launchInPreferredApp(uri);
       },
       child: Container(
         decoration: BoxDecoration(
