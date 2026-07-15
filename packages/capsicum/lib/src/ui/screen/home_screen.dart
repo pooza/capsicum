@@ -679,9 +679,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     String? selectedHashtag,
     AsyncValue<dynamic> timeline,
   ) {
-    // Non-timeline tabs: render their dedicated views.
-    if (currentTab is NotificationsTab) return const NotificationView();
-    if (currentTab is AnnouncementsTab) return const AnnouncementView();
+    // アカウント別背景画像は、タブとして表示される全タブに一律で回す（#832）。
+    // 通知/お知らせ/チャンネルのビューはいずれも不透明背景を持たない（透過の
+    // Column/list）ので、背景 Container で包めば画像が透ける。空表示の
+    // MessagesTab のみ背景不要で除外する。
+    final account = ref.watch(currentAccountProvider);
+    final storageKey = account?.key.toStorageKey();
+    final bgPath = storageKey != null
+        ? ref.watch(backgroundImageProvider(storageKey))
+        : null;
+    final bgOpacity = storageKey != null
+        ? ref.watch(backgroundOpacityProvider(storageKey))
+        : defaultBackgroundOpacity;
+    Widget withBackground(Widget child) {
+      if (bgPath == null) return child;
+      return Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: FileImage(File(bgPath)),
+            fit: BoxFit.cover,
+            opacity: bgOpacity,
+          ),
+        ),
+        child: child,
+      );
+    }
+
+    // Non-timeline tabs: render their dedicated views（背景も回す）。
+    if (currentTab is NotificationsTab) {
+      return withBackground(const NotificationView());
+    }
+    if (currentTab is AnnouncementsTab) {
+      return withBackground(const AnnouncementView());
+    }
     // MessagesTab はフィードを持たず、タップ時に /chat へ push する遷移
     // トリガー (#439)。アクティブ化されないようタップ側で intercept する
     // 想定だが、保存された状態の食い違い等で到達した場合は防御的に空表示。
@@ -694,21 +724,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 場合は通常タイムライン経路にフォールスルーさせて整合を取る。
       final adapter = ref.watch(currentAdapterProvider);
       if (adapter is ChannelSupport) {
-        return ChannelTimelineView(
-          key: ValueKey('channel:${currentTab.id}'),
-          channelId: currentTab.id,
-          channelName: currentTab.name,
+        return withBackground(
+          ChannelTimelineView(
+            key: ValueKey('channel:${currentTab.id}'),
+            channelId: currentTab.id,
+            channelName: currentTab.name,
+          ),
         );
       }
     }
-    final account = ref.watch(currentAccountProvider);
-    final storageKey = account?.key.toStorageKey();
-    final bgPath = storageKey != null
-        ? ref.watch(backgroundImageProvider(storageKey))
-        : null;
-    final bgOpacity = storageKey != null
-        ? ref.watch(backgroundOpacityProvider(storageKey))
-        : defaultBackgroundOpacity;
 
     // 現在の文脈（アカウント＋タブ種別/タグ/リスト）の contextKey。watch している
     // provider の state が別文脈で取得した「前のキャッシュ」を保持していると、
@@ -843,20 +867,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ],
     );
 
-    if (bgPath != null) {
-      body = Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: FileImage(File(bgPath)),
-            fit: BoxFit.cover,
-            opacity: bgOpacity,
-          ),
-        ),
-        child: body,
-      );
-    }
-
-    return body;
+    return withBackground(body);
   }
 
   void _onSwipe(DragEndDetails details) {
