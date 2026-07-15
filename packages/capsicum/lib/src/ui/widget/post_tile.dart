@@ -783,7 +783,10 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 ),
                                               ),
                                               onPressed: () =>
-                                                  context.push('/hashtag/$tag'),
+                                                  _showHashtagActionMenu(
+                                                    context,
+                                                    tag,
+                                                  ),
                                             ),
                                           ),
                                       if (parsed.trailingTags.length > _maxTags)
