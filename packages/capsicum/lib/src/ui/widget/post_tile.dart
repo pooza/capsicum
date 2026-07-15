@@ -20,6 +20,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
+import '../../service/url_preview_cache.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
@@ -67,15 +68,18 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _filterExpanded = false;
   bool _deleted = false;
   List<PreviewCard> _fetchedCards = [];
+  // カード取得対象の URL（本文中で API 由来カードに含まれない分）。順序保持。
+  List<String> _cardUrlsToFetch = const [];
+  // 未キャッシュ URL の取得デバウンス。スクロールで一瞬映っただけの投稿まで
+  // summaly を叩かないよう、少し待ってから取得する (#772)。
+  Timer? _cardFetchDebounce;
   TranslationResult? _translation;
   bool _translating = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialExpanded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFetchCard());
-    }
+    _prepareCardFetch();
     _resolveTcoUrls();
   }
 
@@ -89,8 +93,11 @@ class _PostTileState extends ConsumerState<PostTile> {
       _tagsExpanded = false;
       _filterExpanded = false;
       _fetchedCards = [];
+      _cardUrlsToFetch = const [];
+      _cardFetchDebounce?.cancel();
       _translation = null;
       _translating = false;
+      _prepareCardFetch();
     }
   }
 
@@ -112,26 +119,58 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  Future<void> _maybeFetchCard() async {
+  /// Misskey の本文中 URL からプレビューカードを取得する準備をする (#772)。
+  ///
+  /// Misskey の note にはカードが含まれないため URL ごとに summaly を叩く。
+  /// タイムラインでも表示するが、全投稿で無差別に fetch するとサーバー負荷が
+  /// 大きいので次の 3 段でコストを抑える:
+  ///
+  /// - キャッシュ済み URL は即時反映し fetch しない（[UrlPreviewCache]）
+  /// - 未キャッシュ分はデバウンス後に取得（スクロールで一瞬映った投稿は
+  ///   dispose で timer が消え取得されない）
+  /// - 「プレビューカード非表示」設定のときは取得ごと止める（コスト回避）
+  void _prepareCardFetch() {
     final displayPost = post.reblog ?? post;
     if (displayPost.attachments.isNotEmpty) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MisskeyAdapter) return;
+    // 非表示設定のユーザーは summaly コストごと避けられるようにする (#772)。
+    if (ref.read(previewCardModeProvider) == PreviewCardMode.hide) return;
     final content = displayPost.content ?? '';
     final urls = RegExp(
       r'https?://\S+',
     ).allMatches(content).map((m) => m.group(0)!).toList();
     if (urls.isEmpty) return;
-    // Skip the first URL if the API already returned a card for it.
-    final urlsToFetch = displayPost.card != null ? urls.skip(1) : urls;
+    // API が既にカードを返した先頭 URL は二重取得しない。
+    _cardUrlsToFetch = (displayPost.card != null ? urls.skip(1) : urls).toList();
+    if (_cardUrlsToFetch.isEmpty) return;
+
+    // キャッシュ済みは初回描画に間に合わせて即時反映（fetch 不要）。
+    _rebuildCardsFromCache();
+    if (_cardUrlsToFetch.every(UrlPreviewCache.instance.has)) return;
+
+    _cardFetchDebounce = Timer(const Duration(milliseconds: 500), _fetchCards);
+  }
+
+  /// 取得対象 URL のうちキャッシュ済みのものを本文の URL 順で [_fetchedCards]
+  /// に組み立てる。取得後の反映と初回のキャッシュヒット反映で共用。
+  void _rebuildCardsFromCache() {
     final cards = <PreviewCard>[];
-    for (final url in urlsToFetch) {
-      final card = await adapter.fetchUrlPreview(url);
+    for (final url in _cardUrlsToFetch) {
+      final card = UrlPreviewCache.instance.cached(url);
       if (card != null) cards.add(card);
     }
-    if (mounted && cards.isNotEmpty) {
-      setState(() => _fetchedCards = cards);
+    _fetchedCards = cards;
+  }
+
+  Future<void> _fetchCards() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MisskeyAdapter) return;
+    for (final url in _cardUrlsToFetch) {
+      if (UrlPreviewCache.instance.has(url)) continue;
+      await UrlPreviewCache.instance.fetch(url, () => adapter.fetchUrlPreview(url));
     }
+    if (mounted) setState(_rebuildCardsFromCache);
   }
 
   List<Widget> _buildPreviewCards(Post displayPost) {
@@ -256,6 +295,7 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   @override
   void dispose() {
+    _cardFetchDebounce?.cancel();
     _contentRenderer?.dispose();
     super.dispose();
   }
