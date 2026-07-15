@@ -1171,7 +1171,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         HomeNavItem(
           title: 'リスト',
           icon: Icons.list,
-          onSelected: () => act(() => context.push('/lists/manage')),
+          onSelected: () => act(() => _showListChooser(context, ref)),
         ),
       if (adapter is ChannelSupport)
         HomeNavItem(
@@ -2442,6 +2442,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   context.push('/antenna/${antenna.id}', extra: antenna.name);
                 },
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// リストのクイックチューザ（#805）。保存済みリストを 1 つ選んで、その
+  /// タイムライン画面（`/list/:id`）へ飛ぶ。作成/編集/メンバー管理は末尾の
+  /// 「リストを管理」から `/lists/manage` へ温存する。
+  Future<void> _showListChooser(BuildContext context, WidgetRef ref) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ListSupport) return;
+
+    final List<PostList> lists;
+    try {
+      lists = await (adapter as ListSupport).getLists();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('リストの取得に失敗しました')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'リスト',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (lists.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('リストはありません'),
+              )
+            else
+              for (final list in lists)
+                ListTile(
+                  leading: const Icon(Icons.list, size: 20),
+                  title: Text(list.title),
+                  dense: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.push('/list/${list.id}', extra: list.title);
+                  },
+                ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.settings, size: 20),
+              title: const Text('リストを管理'),
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/lists/manage');
+              },
+            ),
           ],
         ),
       ),
