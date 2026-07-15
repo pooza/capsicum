@@ -451,4 +451,3 @@ Widget _serverDateRow(String label, DateTime date) => Padding(
   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
   child: Text('$label: ${date.year}年${date.month}月${date.day}日'),
 );
-
