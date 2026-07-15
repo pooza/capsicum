@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'section_header.dart';
+
 import '../../provider/account_manager_provider.dart';
 import '../../provider/push_registration_status_provider.dart';
 import '../../service/push_registration_service.dart';
@@ -126,16 +128,7 @@ class PushRegistrationStatusSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (title != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              title!,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
+        if (title != null) SectionHeader(title!),
         ListTile(
           leading: Icon(statusIcon, color: statusColor),
           title: Text(statusText),
