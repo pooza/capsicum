@@ -10,8 +10,9 @@ import '../../url_helper.dart';
 ///
 /// fediverse の投稿 / アカウント URL は、アクティブなアカウント（ログイン中
 /// サーバー）の adapter で resolve し、アプリ内のスレッド（`/post`）/ プロフィール
-/// （`/profile`）へ遷移させる。それ以外（外部サイト・resolve 失敗）は従来どおり
-/// ブラウザで開く。
+/// （`/profile`）へ遷移させる。それ以外（外部サイト・resolve 失敗）は
+/// [launchInPreferredApp] に流し、YouTube / Apple Music 等は専用アプリ、それ以外は
+/// ブラウザで開く（#755）。
 ///
 /// resolve は search API に URL を投げるため、無条件には行わない。fediverse の
 /// 投稿 / アカウント URL のパターンに一致するときだけ試行し、Google Form 等の
@@ -57,7 +58,10 @@ Future<void> openFediverseLink(
   }
 
   if (context.mounted) {
-    await launchUrlSafely(uri, mode: browserMode);
+    // fediverse 投稿 / アカウントでない外部 URL は、対応する専用アプリがあれば
+    // そちらで開く（YouTube / Apple Music / Spotify / Amazon 等・モバイルのみ）。
+    // アプリ未インストール時は browserMode でブラウザにフォールバックする (#755)。
+    await launchInPreferredApp(uri, browserMode: browserMode);
   }
 }
 
