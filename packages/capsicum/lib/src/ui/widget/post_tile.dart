@@ -25,6 +25,7 @@ import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
 import 'emoji_action_sheet.dart';
@@ -324,7 +325,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           ),
         );
       },
-      onHashtagTap: (tag) => _showHashtagActionMenu(context, tag),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       onMentionTap: (mention) => _navigateToMention(mention),
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
@@ -783,7 +784,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                                                 ),
                                               ),
                                               onPressed: () =>
-                                                  _showHashtagActionMenu(
+                                                  showHashtagActionMenu(
                                                     context,
                                                     tag,
                                                   ),
@@ -1483,46 +1484,6 @@ class _PostTileState extends ConsumerState<PostTile> {
               'リアクションしました',
             )
           : null,
-    );
-  }
-
-  /// 文中ハッシュタグのタップ時、タグ TL への遷移とタグ文字列コピーを選べる
-  /// ドロワーを出す（#794）。従来はタップ即遷移だった。
-  void _showHashtagActionMenu(BuildContext context, String tag) {
-    final messenger = ScaffoldMessenger.of(context);
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.tag),
-              title: Text('#$tag'),
-              dense: true,
-            ),
-            ListTile(
-              leading: const Icon(Icons.dynamic_feed),
-              title: const Text('タグタイムラインを開く'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                context.push('/hashtag/$tag');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: const Text('ハッシュタグをコピー'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                Clipboard.setData(ClipboardData(text: '#$tag'));
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('ハッシュタグをコピーしました')),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
     );
   }
 

@@ -7,6 +7,7 @@ import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import 'content_parser.dart';
 import 'emoji_picker.dart';
 
@@ -73,6 +74,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) => openFediverseLink(context, ref, url),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return announcement.isHtml

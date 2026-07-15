@@ -15,6 +15,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../widget/server_badge.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
@@ -1591,7 +1592,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       onMentionTap: (mention) => _navigateToMention(mention),
       emojiSize: ref.watch(emojiSizeProvider),
     );
@@ -1619,7 +1620,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       resolveDisplayUrl: _tryResolveAcct,
       onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
     );
     return RichText(text: renderer.renderMfm(stripped));

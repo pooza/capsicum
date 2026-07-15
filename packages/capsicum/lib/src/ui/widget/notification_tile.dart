@@ -14,6 +14,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_action_error.dart';
 import '../util/relative_time.dart';
@@ -93,7 +94,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
       onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       onEmojiTap: post != null
           ? (shortcode, emojiUrl) =>
                 _showEmojiActionMenu(context, post, shortcode, emojiUrl)

@@ -2,12 +2,12 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/fediverse_link.dart';
+import '../util/hashtag_actions.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
@@ -364,7 +364,7 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
           ),
         );
       },
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
       applyNyaize: message.fromUser.isCat,
     );
