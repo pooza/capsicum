@@ -136,6 +136,25 @@ List<String> parseHashtagsForTesting(String input) {
   return result;
 }
 
+/// 投稿本文からハッシュタグ名（先頭 `#` を除いたタグ文字列）を出現順・重複除去で
+/// 抽出する。Mastodon(HTML) / Misskey(MFM) 両対応（`isHtml` でパーサを選ぶ）。
+/// 本文コピー導線（#794「全ハッシュタグをコピー」）で使う。
+List<String> extractHashtags(String content, {required bool isHtml}) {
+  final result = <String>[];
+  final seen = <String>{};
+  void walk(List<_Node> nodes) {
+    for (final n in nodes) {
+      if (n.type == _NodeType.hashtag && seen.add(n.text)) {
+        result.add(n.text);
+      }
+      if (n.children.isNotEmpty) walk(n.children);
+    }
+  }
+
+  walk(isHtml ? _parseHtml(content) : _parseMfm(content));
+  return result;
+}
+
 /// `_parseHtml`（Mastodon HTML 経路）の結果を単体テストするための helper。
 /// link / url / hashtag ノードと、未変換の生 `<a` タグがテキストとして
 /// 露出していないか（Issue #595）を検証できるようにする。

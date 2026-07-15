@@ -324,7 +324,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           ),
         );
       },
-      onHashtagTap: (tag) => context.push('/hashtag/$tag'),
+      onHashtagTap: (tag) => _showHashtagActionMenu(context, tag),
       onMentionTap: (mention) => _navigateToMention(mention),
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
@@ -1024,6 +1024,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 外側 PostTile の context が deactivate 済みだと Localizations.localeOf が
     // null check で落ちるため、ここで一度だけ解決して閉包に取り込む（#659）。
     final locale = Localizations.localeOf(context);
+    final postHashtags = extractHashtags(
+      targetPost.content ?? '',
+      isHtml: targetPost.isHtml,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -1170,6 +1174,22 @@ class _PostTileState extends ConsumerState<PostTile> {
                     Clipboard.setData(ClipboardData(text: targetPost.url!));
                     messenger.showSnackBar(
                       const SnackBar(content: Text('URL をコピーしました')),
+                    );
+                  },
+                ),
+              if (postHashtags.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.tag),
+                  title: const Text('全ハッシュタグをコピー'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(
+                      ClipboardData(
+                        text: postHashtags.map((t) => '#$t').join(' '),
+                      ),
+                    );
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('ハッシュタグをコピーしました')),
                     );
                   },
                 ),
@@ -1460,6 +1480,46 @@ class _PostTileState extends ConsumerState<PostTile> {
               'リアクションしました',
             )
           : null,
+    );
+  }
+
+  /// 文中ハッシュタグのタップ時、タグ TL への遷移とタグ文字列コピーを選べる
+  /// ドロワーを出す（#794）。従来はタップ即遷移だった。
+  void _showHashtagActionMenu(BuildContext context, String tag) {
+    final messenger = ScaffoldMessenger.of(context);
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.tag),
+              title: Text('#$tag'),
+              dense: true,
+            ),
+            ListTile(
+              leading: const Icon(Icons.dynamic_feed),
+              title: const Text('タグタイムラインを開く'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push('/hashtag/$tag');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('ハッシュタグをコピー'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: '#$tag'));
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('ハッシュタグをコピーしました')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
