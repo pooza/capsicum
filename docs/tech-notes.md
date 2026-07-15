@@ -10,7 +10,13 @@
 
 ### `WidgetSpan` 内で `width: double.infinity` は使わない
 
-親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。
+親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。iPad の広い画面で `RenderFlex` overflow を起こした実績あり（#60）。
+
+### 背の高い `WidgetSpan` の直後に `TextSpan('\n')` を置かない（ブロック直後の空白）
+
+`content_parser` はコードブロック・引用などブロック要素を `WidgetSpan` として `Text.rich` に埋め込み、前後を `TextSpan('\n')` で挟んで単独行に落としている。このとき **背の高い `WidgetSpan` の直後の `\n` が、行の下側にブロック高ぶんの空白を作る**（Flutter の WidgetSpan + trailing newline 既知挙動）。`alignment`（bottom/middle）・横スクロール・`Column` の `mainAxisSize` はいずれも無関係で、中身ゼロの固定高ボックスでも末尾 `\n` があれば発生する。
+
+対策は **末尾 `\n` を置かず、ブロック下の余白は `Container` の `margin` で確保**する（単独行への隔離は先頭 `\n` が担う）。`width: double.infinity` で全幅化しても解決するが、上記のとおり iPad overflow を起こすため採らない。背の低いブロック（短い引用など）では気づかれにくいだけで同じ構造は同じ症状を持つ。添付画像も同型（#842 / follow-up #843）。
 
 ### `Image.network` には `errorBuilder` を付ける
 
