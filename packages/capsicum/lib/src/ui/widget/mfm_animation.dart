@@ -55,6 +55,7 @@ class MfmAnimation extends StatefulWidget {
 class _MfmAnimationState extends State<MfmAnimation>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _reduceMotion = false;
 
   Duration get _defaultSpeed => switch (widget.type) {
     MfmAnimationType.spin => const Duration(milliseconds: 1500),
@@ -70,10 +71,29 @@ class _MfmAnimationState extends State<MfmAnimation>
   @override
   void initState() {
     super.initState();
+    // 不正な speed 引数（`$[spin.speed=0s]` 等）で duration が 0 / 負になると
+    // repeat() が period 0 で破綻する（debug は assert、release は NaN 変形）ため、
+    // 正でなければ既定速度にフォールバックする。再生開始は didChangeDependencies。
+    final speed = widget.speed ?? _defaultSpeed;
     _controller = AnimationController(
       vsync: this,
-      duration: widget.speed ?? _defaultSpeed,
-    )..repeat();
+      duration: speed > Duration.zero ? speed : _defaultSpeed,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 「視差効果を減らす」(reduce motion) 時は build で child を返すだけでなく
+    // ticker も止める。回し続けると描画に反映されないまま毎フレーム値を更新して
+    // 電池を浪費する（reduce motion を求めた層に逆行する）。設定の切り替えにも
+    // ここで追従する。
+    _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (_reduceMotion) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override
@@ -85,7 +105,7 @@ class _MfmAnimationState extends State<MfmAnimation>
   @override
   Widget build(BuildContext context) {
     // アクセシビリティの「視差効果を減らす」設定を尊重して静止表示する。
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+    if (_reduceMotion) {
       return widget.child;
     }
     return AnimatedBuilder(

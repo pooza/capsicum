@@ -41,11 +41,19 @@ class UrlPreviewCache {
     if (_cache.containsKey(url)) return Future.value(_cache[url]);
     final existing = _inFlight[url];
     if (existing != null) return existing;
-    final future = fetcher().then((card) {
-      _cache[url] = card;
-      _inFlight.remove(url);
-      return card;
-    });
+    // fetcher は失敗時 null を返す契約だが、将来別 fetcher が throw しても
+    // in-flight エントリが残って以後その URL の取得が恒久的に詰まらないよう、
+    // 成否に関わらず whenComplete で必ず解除する。
+    final future = fetcher()
+        .then<PreviewCard?>((card) {
+          _cache[url] = card;
+          return card;
+        })
+        .catchError((Object _) {
+          _cache[url] = null;
+          return null;
+        })
+        .whenComplete(() => _inFlight.remove(url));
     _inFlight[url] = future;
     return future;
   }

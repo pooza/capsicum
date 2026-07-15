@@ -137,8 +137,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 非表示設定のユーザーは summaly コストごと避けられるようにする (#772)。
     if (ref.read(previewCardModeProvider) == PreviewCardMode.hide) return;
     final content = displayPost.content ?? '';
+    // `\S+` だと空白なしで続く日本語（`…fooをご覧ください`）まで URL に取り込み、
+    // summaly が壊れた URL で失敗して negative キャッシュされ、本来出るカードが
+    // 出なくなる。空白・引用/括弧・CJK 記号/かな/漢字/全角（U+3000-30FF・
+    // U+4E00-9FFF・U+FF00-FFEF）を境界として除外する (#772)。
     final urls = RegExp(
-      r'https?://\S+',
+      r'''https?://[^\s<>"'()\[\]{}　-ヿ一-鿿＀-￯]+''',
     ).allMatches(content).map((m) => m.group(0)!).toList();
     if (urls.isEmpty) return;
     // API が既にカードを返した先頭 URL は二重取得しない。

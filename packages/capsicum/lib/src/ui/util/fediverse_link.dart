@@ -61,7 +61,18 @@ Future<void> openFediverseLink(
     // fediverse 投稿 / アカウントでない外部 URL は、対応する専用アプリがあれば
     // そちらで開く（YouTube / Apple Music / Spotify / Amazon 等・モバイルのみ）。
     // アプリ未インストール時は browserMode でブラウザにフォールバックする (#755)。
-    await launchInPreferredApp(uri, browserMode: browserMode);
+    // 開けるアプリ / ブラウザが無いと launchUrl は false を返すか throw するため、
+    // 握りつぶさず「開けなかった」ことをユーザーに見せる（無反応の dead-tap 回避）。
+    final messenger = ScaffoldMessenger.of(context);
+    var opened = false;
+    try {
+      opened = await launchInPreferredApp(uri, browserMode: browserMode);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(const SnackBar(content: Text('リンクを開けませんでした')));
+    }
   }
 }
 

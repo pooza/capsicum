@@ -1453,7 +1453,11 @@ class ContentRenderer {
         // タイムスタンプ。数値でなければ素通し。
         final raw = _collectText(node.children).trim();
         final secs = int.tryParse(raw);
-        if (secs != null) {
+        // DateTime.fromMillisecondsSinceEpoch は ±8.64e15ms 超で throw する。
+        // 投稿本文由来の巨大値（`$[unixtime 8640000000001]` 等）でタイル描画が
+        // 赤エラー箱に落ちないよう、変換前に範囲を制限する。
+        const maxUnixSeconds = 8640000000000; // 8.64e15ms ÷ 1000
+        if (secs != null && secs.abs() <= maxUnixSeconds) {
           final dt = DateTime.fromMillisecondsSinceEpoch(secs * 1000).toLocal();
           final text =
               '${dt.year}/${_two(dt.month)}/${_two(dt.day)} '
@@ -1532,13 +1536,19 @@ class ContentRenderer {
   static Duration? _parseDuration(String? s) {
     if (s == null) return null;
     final v = s.trim();
+    // 0 / 負 / 丸めて 0 になる値は null を返して既定速度に委ねる（controller の
+    // period 0 破綻を parse 段でも防ぐ）。
     if (v.endsWith('ms')) {
       final n = double.tryParse(v.substring(0, v.length - 2));
-      return n == null ? null : Duration(milliseconds: n.round());
+      if (n == null) return null;
+      final ms = n.round();
+      return ms > 0 ? Duration(milliseconds: ms) : null;
     }
     if (v.endsWith('s')) {
       final n = double.tryParse(v.substring(0, v.length - 1));
-      return n == null ? null : Duration(milliseconds: (n * 1000).round());
+      if (n == null) return null;
+      final ms = (n * 1000).round();
+      return ms > 0 ? Duration(milliseconds: ms) : null;
     }
     return null;
   }
