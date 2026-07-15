@@ -564,17 +564,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   icon: const Icon(Icons.search),
                   onPressed: () => context.push('/search'),
                 ),
-                // Hide notification bell when notifications tab is visible.
-                if (account == null ||
-                    !ref.watch(
-                      isTabVisibleProvider((
-                        storageKey: account.key.toStorageKey(),
-                        tab: const NotificationsTab(),
-                      )),
-                    ))
-                  _NotificationBellButton(
-                    hasMultipleAccounts: accountState.accounts.length > 1,
-                  ),
+                // ベルは「すべての通知」への統合導線なので、通知タブの表示有無
+                // に関わらず常時表示する（#831）。通知タブ可視時は導線が重複する
+                // が許容する。
+                _NotificationBellButton(
+                  hasMultipleAccounts: accountState.accounts.length > 1,
+                ),
                 const SizedBox(width: 4),
               ],
             ),
