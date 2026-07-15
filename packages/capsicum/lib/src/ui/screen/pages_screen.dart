@@ -12,11 +12,13 @@ import '../widget/page_card.dart';
 
 /// Misskey ページのハブ画面 (#186)。
 ///
-/// 「人気」(`pages/featured`, #617) と「いいねしたページ」(`i/page-likes`) の
-/// 2 セクションをセクション見出し付きの単一スクロールで構成する。人気は
-/// 単一ページ取得 (ページネーションなし) のため上部に固定ブロックとして置き、
-/// 無限スクロールするいいね一覧を下に残すことで両者のページネーションが
-/// 競合しないようにしている。将来「自分のページ」追加や TabBar 化の余地は残す。
+/// 「自分のページ」(`users/pages` に self id, #618) と「人気」
+/// (`pages/featured`, #617) と「いいねしたページ」(`i/page-likes`) の
+/// 3 セクションをセクション見出し付きの単一スクロールで構成する。自分のページと
+/// 人気は単一ページ取得 (ページネーションなし) のため上部に固定ブロックとして
+/// 置き、無限スクロールするいいね一覧を下に残すことで両者のページネーションが
+/// 競合しないようにしている。自分のページの全件ページネーションはプロフィール →
+/// ページタブが担う。将来 TabBar 化の余地は残す。
 class PagesScreen extends ConsumerStatefulWidget {
   const PagesScreen({super.key});
 
@@ -40,6 +42,11 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   List<Page> _featuredPages = [];
   bool _loadingFeatured = true;
   static const _featuredLimit = 30;
+  // 自分のページ (#618)。プロフィール → ページタブが全件ページネーションを
+  // 担うため、ハブ側は先頭 limit 件の軽量ブロックに留める (人気と同構造)。
+  List<Page> _myPages = [];
+  bool _loadingMyPages = true;
+  static const _myPagesLimit = 30;
   // _refresh が走った瞬間に in-flight の _loadMoreLiked が古い cursor 由来
   // の結果を空配列にマージしてしまう race を防ぐ generation token (#631)。
   int _loadGeneration = 0;
@@ -50,6 +57,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     _scrollController.addListener(_onScroll);
     _loadLiked();
     _loadFeatured();
+    _loadMyPages();
   }
 
   @override
@@ -177,6 +185,41 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     }
   }
 
+  Future<void> _loadMyPages() async {
+    final adapter = ref.read(currentAdapterProvider);
+    final account = ref.read(currentAccountProvider);
+    if (adapter is! PagesSupport || account == null) {
+      if (mounted) setState(() => _loadingMyPages = false);
+      return;
+    }
+    try {
+      final pages = await (adapter as PagesSupport).getUserPages(
+        account.user.id,
+        query: const TimelineQuery(limit: _myPagesLimit),
+      );
+      if (mounted) {
+        setState(() {
+          _myPages = pages;
+          _loadingMyPages = false;
+        });
+      }
+    } catch (e, st) {
+      reportPagesOpFailure(
+        'load_my_pages',
+        e,
+        st,
+        account: ref.read(currentAccountProvider),
+      );
+      if (!mounted) return;
+      // 自分のページも補助セクション扱い。失敗しても他セクションは出すため
+      // SnackBar は出さず見出しごと畳む (詳細は Sentry で追う)。
+      setState(() {
+        _myPages = [];
+        _loadingMyPages = false;
+      });
+    }
+  }
+
   Future<void> _refresh() async {
     setState(() {
       _loadGeneration++;
@@ -187,8 +230,10 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
       _likedScopeError = false;
       _loadingFeatured = true;
       _featuredPages = [];
+      _loadingMyPages = true;
+      _myPages = [];
     });
-    await Future.wait([_loadLiked(), _loadFeatured()]);
+    await Future.wait([_loadLiked(), _loadFeatured(), _loadMyPages()]);
   }
 
   @override
@@ -203,16 +248,18 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   }
 
   Widget _buildBody() {
-    // 人気・いいねの両方がまだ初回ロード中のときだけ全画面スピナー。どちらかが
-    // 返ったら下のセクション内でそれぞれの状態を出す。
-    if (_loadingLiked && _loadingFeatured) {
+    // 全セクションがまだ初回ロード中のときだけ全画面スピナー。どれかが返ったら
+    // 下のセクション内でそれぞれの状態を出す。
+    if (_loadingLiked && _loadingFeatured && _loadingMyPages) {
       return const Center(child: CircularProgressIndicator());
     }
     final theme = Theme.of(context);
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
-        ..._buildFeaturedSlivers(theme),
+        // 自分のページ (#618) を先頭に。最も個人的なセクションなので上に置く。
+        ..._buildFixedBlockSlivers(theme, '自分のページ', _loadingMyPages, _myPages),
+        ..._buildFixedBlockSlivers(theme, '人気', _loadingFeatured, _featuredPages),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           sliver: SliverToBoxAdapter(
@@ -270,10 +317,17 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     );
   }
 
-  /// 「人気」セクション (#617)。ロード中はスピナー、結果が空なら見出しごと
-  /// 畳む (補助セクションのため場所を取らせない)。
-  List<Widget> _buildFeaturedSlivers(ThemeData theme) {
-    if (_loadingFeatured) {
+  /// 追加読み込みを持たない固定ブロックのセクション (人気 #617 / 自分のページ
+  /// #618)。ロード中はスピナー、結果が空なら見出しごと畳む (補助セクションの
+  /// ため場所を取らせない)。無限スクロールする「いいねしたページ」とは別扱いで、
+  /// ページネーションの競合を避けるため先頭に固定ブロックとして並べる。
+  List<Widget> _buildFixedBlockSlivers(
+    ThemeData theme,
+    String title,
+    bool loading,
+    List<Page> pages,
+  ) {
+    if (loading) {
       return [
         const SliverToBoxAdapter(
           child: Padding(
@@ -283,13 +337,13 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         ),
       ];
     }
-    if (_featuredPages.isEmpty) return const [];
+    if (pages.isEmpty) return const [];
     return [
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         sliver: SliverToBoxAdapter(
           child: Text(
-            '人気',
+            title,
             style: theme.textTheme.titleMedium?.copyWith(
               color: theme.colorScheme.primary,
             ),
@@ -300,8 +354,8 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         sliver: SliverList(
           delegate: SliverChildBuilderDelegate(
-            (context, index) => PageCard(page: _featuredPages[index]),
-            childCount: _featuredPages.length,
+            (context, index) => PageCard(page: pages[index]),
+            childCount: pages.length,
           ),
         ),
       ),
