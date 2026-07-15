@@ -90,8 +90,9 @@ class DisplaySettingsScreen extends ConsumerWidget {
               '有効な場合は常に静止）',
             ),
             value: ref.watch(mfmAnimationEnabledProvider),
-            onChanged: (value) =>
-                ref.read(mfmAnimationEnabledProvider.notifier).setEnabled(value),
+            onChanged: (value) => ref
+                .read(mfmAnimationEnabledProvider.notifier)
+                .setEnabled(value),
           ),
           SwitchListTile(
             title: const Text('#実況 タグの投稿を非表示'),

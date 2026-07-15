@@ -142,7 +142,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     ).allMatches(content).map((m) => m.group(0)!).toList();
     if (urls.isEmpty) return;
     // API が既にカードを返した先頭 URL は二重取得しない。
-    _cardUrlsToFetch = (displayPost.card != null ? urls.skip(1) : urls).toList();
+    _cardUrlsToFetch = (displayPost.card != null ? urls.skip(1) : urls)
+        .toList();
     if (_cardUrlsToFetch.isEmpty) return;
 
     // キャッシュ済みは初回描画に間に合わせて即時反映（fetch 不要）。
@@ -168,7 +169,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter is! MisskeyAdapter) return;
     for (final url in _cardUrlsToFetch) {
       if (UrlPreviewCache.instance.has(url)) continue;
-      await UrlPreviewCache.instance.fetch(url, () => adapter.fetchUrlPreview(url));
+      await UrlPreviewCache.instance.fetch(
+        url,
+        () => adapter.fetchUrlPreview(url),
+      );
     }
     if (mounted) setState(_rebuildCardsFromCache);
   }

@@ -259,7 +259,12 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
       slivers: [
         // 自分のページ (#618) を先頭に。最も個人的なセクションなので上に置く。
         ..._buildFixedBlockSlivers(theme, '自分のページ', _loadingMyPages, _myPages),
-        ..._buildFixedBlockSlivers(theme, '人気', _loadingFeatured, _featuredPages),
+        ..._buildFixedBlockSlivers(
+          theme,
+          '人気',
+          _loadingFeatured,
+          _featuredPages,
+        ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           sliver: SliverToBoxAdapter(

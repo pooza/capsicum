@@ -4,17 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('extractHashtags — 本文からのハッシュタグ抽出 (#794)', () {
     test('MFM 本文から出現順で抽出（# は含めない）', () {
-      expect(
-        extractHashtags('楽しい #capsicum の #delmulin 実況', isHtml: false),
-        ['capsicum', 'delmulin'],
-      );
+      expect(extractHashtags('楽しい #capsicum の #delmulin 実況', isHtml: false), [
+        'capsicum',
+        'delmulin',
+      ]);
     });
 
     test('重複タグは除去し初出順を保つ', () {
-      expect(
-        extractHashtags('#a テスト #b また #a', isHtml: false),
-        ['a', 'b'],
-      );
+      expect(extractHashtags('#a テスト #b また #a', isHtml: false), ['a', 'b']);
     });
 
     test('ハッシュタグが無ければ空', () {

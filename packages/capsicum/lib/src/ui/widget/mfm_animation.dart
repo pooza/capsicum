@@ -9,7 +9,16 @@ import 'package:flutter/material.dart';
 /// （本家 mfm.js 参照実装に倣いつつ Flutter の Transform で表現）。
 /// パーティクルを撒く `sparkle` は変形では表現できないためスコープ外（呼び出し
 /// 側で静止表示にフォールバックする）。
-enum MfmAnimationType { spin, bounce, jump, shake, twitch, jelly, tada, rainbow }
+enum MfmAnimationType {
+  spin,
+  bounce,
+  jump,
+  shake,
+  twitch,
+  jelly,
+  tada,
+  rainbow,
+}
 
 /// MFM のアニメーション構文（`$[bounce ...]` 等）を再生する widget (#259)。
 ///
@@ -108,7 +117,11 @@ class _MfmAnimationState extends State<MfmAnimation>
         return Matrix4.rotationZ(t * tau * dir);
       case MfmAnimationType.jump:
         // 1 周に 1 回、上へ跳ねて戻る。
-        return Matrix4.translationValues(0, -fs * 0.5 * math.sin(t * math.pi), 0);
+        return Matrix4.translationValues(
+          0,
+          -fs * 0.5 * math.sin(t * math.pi),
+          0,
+        );
       case MfmAnimationType.bounce:
         // jump より低く跳ね、着地で軽く潰す。
         final dy = -fs * 0.3 * math.sin(t * math.pi);

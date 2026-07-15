@@ -1454,9 +1454,7 @@ class ContentRenderer {
         final raw = _collectText(node.children).trim();
         final secs = int.tryParse(raw);
         if (secs != null) {
-          final dt = DateTime.fromMillisecondsSinceEpoch(
-            secs * 1000,
-          ).toLocal();
+          final dt = DateTime.fromMillisecondsSinceEpoch(secs * 1000).toLocal();
           final text =
               '${dt.year}/${_two(dt.month)}/${_two(dt.day)} '
               '${_two(dt.hour)}:${_two(dt.minute)}:${_two(dt.second)}';
