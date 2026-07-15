@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_core/capsicum_core.dart' show nyaize;
@@ -1264,6 +1265,32 @@ class ContentRenderer {
     return null;
   }
 
+  /// `.h,v` のようなキー無しフラグの有無を返す (#748: flip 等)。
+  static bool _fnFlag(String? args, String flag) {
+    if (args == null) return false;
+    for (final part in args.split(',')) {
+      if (part.trim() == flag) return true;
+    }
+    return false;
+  }
+
+  /// MFM 引数値を double に変換する (#748: rotate/scale/position/border)。
+  static double? _parseNum(String? s) =>
+      s == null ? null : double.tryParse(s.trim());
+
+  /// 2 桁ゼロ埋め (#748: unixtime の日時表記)。
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  /// ノード木を素のテキストに畳む (#748: unixtime のタイムスタンプ取得)。
+  static String _collectText(List<_Node> nodes) {
+    final buf = StringBuffer();
+    for (final n in nodes) {
+      buf.write(n.text);
+      if (n.children.isNotEmpty) buf.write(_collectText(n.children));
+    }
+    return buf.toString();
+  }
+
   /// Try to parse a hex color string (with or without leading #).
   static Color? _parseHexColor(String hex) {
     hex = hex.replaceFirst('#', '');
@@ -1317,6 +1344,118 @@ class ContentRenderer {
             ),
           ),
         ];
+
+      case 'flip':
+        // 反転 (#748)。引数なし / `.h` は水平、`.v` は垂直、`.h,v` は両方
+        // （180° 回転相当）。アニメーションではないので静的に対応。
+        final noArgs = node.fnArgs == null || node.fnArgs!.isEmpty;
+        final scaleX = (_fnFlag(node.fnArgs, 'h') || noArgs) ? -1.0 : 1.0;
+        final scaleY = _fnFlag(node.fnArgs, 'v') ? -1.0 : 1.0;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.diagonal3Values(scaleX, scaleY, 1.0),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'rotate':
+        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。
+        final deg = _parseNum(_fnArg(node.fnArgs, 'deg')) ?? 90;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.rotate(
+              angle: deg * math.pi / 180,
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'scale':
+        // 拡大縮小 (#748)。`.x=<倍率>,y=<倍率>`、既定 1。本家に倣い 0〜5 に
+        // クランプ（暴走した巨大表示を防ぐ）。
+        final sx = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 1).clamp(0.0, 5.0);
+        final sy = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 1).clamp(0.0, 5.0);
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.scale(
+              scaleX: sx,
+              scaleY: sy,
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'position':
+        // 平行移動 (#748)。`.x=<em>,y=<em>`。em ≒ フォントサイズとして換算。
+        final fs = style.fontSize ?? 14.0;
+        final px = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 0) * fs;
+        final py = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 0) * fs;
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Transform.translate(
+              offset: Offset(px, py),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'border':
+        // 枠線 (#748)。`.width=<n>,style=<solid|...>,color=<hex>,radius=<n>`。
+        // Flutter の BoxBorder は実線のみのため dotted/dashed/double も実線で
+        // 代替する（`noclip` は Flutter 側で既定クリップしないため無視）。
+        final bw = (_parseNum(_fnArg(node.fnArgs, 'width')) ?? 1).toDouble();
+        final radius = (_parseNum(_fnArg(node.fnArgs, 'radius')) ?? 0)
+            .toDouble();
+        final borderColor =
+            _parseHexColor(_fnArg(node.fnArgs, 'color') ?? '') ??
+            style.color ??
+            const Color(0xFF888888);
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                border: Border.all(color: borderColor, width: bw),
+                borderRadius: BorderRadius.circular(radius),
+              ),
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
+            ),
+          ),
+        ];
+
+      case 'unixtime':
+        // Unix 時刻（秒）を端末ローカルの日時表記に変換 (#748)。子要素テキストが
+        // タイムスタンプ。数値でなければ素通し。
+        final raw = _collectText(node.children).trim();
+        final secs = int.tryParse(raw);
+        if (secs != null) {
+          final dt = DateTime.fromMillisecondsSinceEpoch(
+            secs * 1000,
+          ).toLocal();
+          final text =
+              '${dt.year}/${_two(dt.month)}/${_two(dt.day)} '
+              '${_two(dt.hour)}:${_two(dt.minute)}:${_two(dt.second)}';
+          return [TextSpan(text: text, style: style)];
+        }
+        return _renderNodes(node.children, style);
 
       case 'x2':
         return _renderNodes(
