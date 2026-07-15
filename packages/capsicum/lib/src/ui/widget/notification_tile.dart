@@ -100,6 +100,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 _showEmojiActionMenu(context, post, shortcode, emojiUrl)
           : null,
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: post?.author.isCat ?? false,
     );
     final isHtml = post?.isHtml ?? false;

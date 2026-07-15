@@ -1595,6 +1595,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       onMentionTap: (mention) => _navigateToMention(mention),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
     return RichText(text: _bioRenderer!.renderMfm(stripped));
   }
@@ -1622,6 +1623,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       onLinkTap: (url) => openFediverseLink(context, ref, url),
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
     return RichText(text: renderer.renderMfm(stripped));
   }

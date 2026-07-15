@@ -216,6 +216,7 @@ class _TextBlockState extends ConsumerState<_TextBlock> {
           return null;
         },
         emojiSize: emojiSize,
+        animateMfm: ref.watch(mfmAnimationEnabledProvider),
       );
       _baseStyle = baseStyle;
       _emojiSize = emojiSize;

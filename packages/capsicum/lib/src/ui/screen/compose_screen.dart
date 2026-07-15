@@ -2098,6 +2098,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             return null;
           },
           emojiSize: emojiSize,
+          animateMfm: ref.read(mfmAnimationEnabledProvider),
         );
         final contentSpan = renderer.renderMfm(text);
 

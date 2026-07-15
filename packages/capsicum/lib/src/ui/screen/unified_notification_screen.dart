@@ -126,6 +126,7 @@ class _UnifiedNotificationTileState
       onLinkTap: (url) => openFediverseLink(context, ref, url),
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: post?.author.isCat ?? false,
     );
     final isHtml = post?.isHtml ?? false;

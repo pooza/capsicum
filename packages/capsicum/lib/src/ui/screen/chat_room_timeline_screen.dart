@@ -594,6 +594,7 @@ class _RoomMessageBubbleState extends ConsumerState<_RoomMessageBubble> {
       },
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: message.fromUser.isCat,
     );
     return _contentRenderer!.renderMfm(content);

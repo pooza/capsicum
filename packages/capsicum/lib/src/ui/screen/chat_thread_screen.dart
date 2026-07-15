@@ -366,6 +366,7 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
       },
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
       applyNyaize: message.fromUser.isCat,
     );
     return _contentRenderer!.renderMfm(content);

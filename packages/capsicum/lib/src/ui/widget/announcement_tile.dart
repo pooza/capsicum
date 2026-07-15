@@ -76,6 +76,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
       onLinkTap: (url) => openFediverseLink(context, ref, url),
       onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
     return announcement.isHtml
         ? _contentRenderer!.renderHtml(content)

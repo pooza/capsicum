@@ -370,6 +370,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       onEmojiTap: (shortcode, emojiUrl) =>
           _showEmojiActionMenu(context, shortcode, emojiUrl),
       emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
     return isHtml
         ? _contentRenderer!.renderHtml(content)

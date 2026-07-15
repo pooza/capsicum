@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
+import 'mfm_animation.dart';
 import 'package:html_unescape/html_unescape.dart';
 
 final _unescape = HtmlUnescape();
@@ -928,6 +929,11 @@ class ContentRenderer {
   final UrlResolver? resolveDisplayUrl;
   final double emojiSize;
   final bool applyNyaize;
+
+  /// MFM のアニメーション構文（`$[bounce]` 等）を再生するか (#259)。false の
+  /// ときは従来どおり子要素を静止表示する。呼び出し側が設定
+  /// （mfmAnimationEnabledProvider）を渡す。
+  final bool animateMfm;
   final List<GestureRecognizer> _recognizers = [];
 
   ContentRenderer({
@@ -942,6 +948,7 @@ class ContentRenderer {
     this.resolveDisplayUrl,
     this.emojiSize = 20.0,
     this.applyNyaize = false,
+    this.animateMfm = false,
   });
 
   void dispose() {
@@ -1475,10 +1482,67 @@ class ContentRenderer {
           style.copyWith(fontSize: (style.fontSize ?? 14) * 4),
         );
 
+      case 'spin':
+      case 'bounce':
+      case 'jump':
+      case 'shake':
+      case 'twitch':
+      case 'jelly':
+      case 'tada':
+      case 'rainbow':
+        // アニメーション構文 (#259)。設定 OFF・非対応環境では静止表示。
+        return _renderAnimation(node, style);
+
       default:
-        // Unhandled fn — render children as-is
+        // Unhandled fn — render children as-is（sparkle 等の未対応も含む）
         return _renderNodes(node.children, style);
     }
+  }
+
+  /// MFM アニメーション構文を [MfmAnimation] でラップする (#259)。設定が OFF の
+  /// ときは静止表示にフォールバックする。`.speed=` と spin の `.left` を解釈する。
+  List<InlineSpan> _renderAnimation(_Node node, TextStyle style) {
+    final children = _renderNodes(node.children, style);
+    if (!animateMfm) return children;
+    final type = switch (node.fnName) {
+      'spin' => MfmAnimationType.spin,
+      'bounce' => MfmAnimationType.bounce,
+      'jump' => MfmAnimationType.jump,
+      'shake' => MfmAnimationType.shake,
+      'twitch' => MfmAnimationType.twitch,
+      'jelly' => MfmAnimationType.jelly,
+      'tada' => MfmAnimationType.tada,
+      'rainbow' => MfmAnimationType.rainbow,
+      _ => null,
+    };
+    if (type == null) return children;
+    return [
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: MfmAnimation(
+          type: type,
+          speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+          reverse: _fnFlag(node.fnArgs, 'left'),
+          fontSize: style.fontSize ?? 14.0,
+          child: Text.rich(TextSpan(children: children)),
+        ),
+      ),
+    ];
+  }
+
+  /// `1.5s` / `500ms` 形式の MFM speed 引数を Duration に変換する (#259)。
+  static Duration? _parseDuration(String? s) {
+    if (s == null) return null;
+    final v = s.trim();
+    if (v.endsWith('ms')) {
+      final n = double.tryParse(v.substring(0, v.length - 2));
+      return n == null ? null : Duration(milliseconds: n.round());
+    }
+    if (v.endsWith('s')) {
+      final n = double.tryParse(v.substring(0, v.length - 1));
+      return n == null ? null : Duration(milliseconds: (n * 1000).round());
+    }
+    return null;
   }
 
   // Emoji ranges for Unicode emoji detection.
