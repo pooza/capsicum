@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../service/sentry_op_failure.dart';
 import 'account_manager_provider.dart';
 
 /// Announcement list state.
@@ -115,7 +116,7 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
       } catch (_) {
         // reconcile 失敗は致命的でない（楽観値を維持）。
       }
-    } catch (e) {
+    } catch (e, st) {
       // API 失敗: 該当お知らせのみ付け外し前の値へ戻す。リスト全体を original で
       // 上書きすると、in-flight 中に別お知らせへ加わった変更まで巻き戻すため
       // （既読化・他お知らせへのリアクション等）、対象 1 件だけ差し替える。
@@ -126,6 +127,15 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
             .toList();
         state = AsyncData(latest.copyWith(announcements: reverted));
       }
+      // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
+      // 呼び出し側で SnackBar 通知済みなので赤ではない。
+      reportOpFailure(
+        tagKey: 'announcement.op',
+        operation: add ? 'add_reaction' : 'remove_reaction',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
       rethrow;
     }
   }

@@ -24,6 +24,7 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
 import '../util/livecure_snackbar.dart';
@@ -2322,13 +2323,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           context.go('/home');
         }
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
         setState(() => _sending = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('下書きの保存に失敗しました')));
       }
+      // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
+      // 上で SnackBar 通知済みなので赤ではない。
+      reportOpFailure(
+        tagKey: 'draft.op',
+        operation: 'save_server_draft',
+        error: e,
+        stackTrace: st,
+        account: ref.read(currentAccountProvider),
+      );
     }
   }
 
