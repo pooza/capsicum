@@ -984,10 +984,17 @@ class ContentRenderer {
         ];
 
       case _NodeType.codeBlock:
+        // 背の高い WidgetSpan の直後に TextSpan('\n') を置くと、その末尾改行が
+        // 行の下側にブロック高ぶんの空白を作る (Flutter の WidgetSpan +
+        // trailing newline 既知挙動)。末尾 \n は外し、ブロック下の余白は
+        // margin で確保する。単独行への隔離は先頭 \n が担う。
+        // なお width: double.infinity は iPad で RenderFlex overflow を起こす
+        // ため使えない (#60・tech-notes 参照)。自然幅のまま組む。
         return [
           TextSpan(text: '\n', style: style),
           WidgetSpan(
             child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.grey.withValues(alpha: 0.15),
@@ -1027,7 +1034,6 @@ class ContentRenderer {
               ),
             ),
           ),
-          TextSpan(text: '\n', style: style),
         ];
 
       case _NodeType.center:
