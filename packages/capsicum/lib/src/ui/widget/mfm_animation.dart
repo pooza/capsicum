@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 /// サポートする MFM アニメーション種別 (#259)。
 ///
@@ -57,6 +58,15 @@ class _MfmAnimationState extends State<MfmAnimation>
   late final AnimationController _controller;
   bool _reduceMotion = false;
 
+  /// 画面に出ているか (#845)。`cacheExtent` に生きているだけの画面外 span まで
+  /// ticker を回すと、描画されないのに毎フレーム rebuild して電池を食う。
+  /// **初期値は true**: 実表示ぶんが最初の可視性コールバック（既定 500ms
+  /// 間隔）まで固まって見えるのを避ける。画面外ぶんはその間だけ空回りする。
+  bool _visible = true;
+
+  /// [VisibilityDetector] はインスタンスごとに安定した key を要求する。
+  late final Key _visibilityKey = ValueKey(identityHashCode(this));
+
   Duration get _defaultSpeed => switch (widget.type) {
     MfmAnimationType.spin => const Duration(milliseconds: 1500),
     MfmAnimationType.bounce => const Duration(milliseconds: 750),
@@ -89,11 +99,29 @@ class _MfmAnimationState extends State<MfmAnimation>
     // 電池を浪費する（reduce motion を求めた層に逆行する）。設定の切り替えにも
     // ここで追従する。
     _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    if (_reduceMotion) {
+    _syncTicker();
+  }
+
+  /// 「描画に反映される」ときだけ ticker を回す。reduce motion（静止表示）と
+  /// 画面外（#845）はどちらも回しても見えないので止める。
+  void _syncTicker() {
+    final shouldAnimate = !_reduceMotion && _visible;
+    if (shouldAnimate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else if (_controller.isAnimating) {
       _controller.stop();
-    } else if (!_controller.isAnimating) {
-      _controller.repeat();
     }
+  }
+
+  void _onVisibilityChanged(VisibilityInfo info) {
+    // VisibilityDetector のコールバックは dispose 後にも届きうる。
+    if (!mounted) return;
+    final visible = info.visibleFraction > 0;
+    if (visible == _visible) return;
+    _visible = visible;
+    // 再生可否が変わるだけで見た目は変わらないので setState は不要
+    // （AnimatedBuilder が controller を購読している）。
+    _syncTicker();
   }
 
   @override
@@ -105,26 +133,31 @@ class _MfmAnimationState extends State<MfmAnimation>
   @override
   Widget build(BuildContext context) {
     // アクセシビリティの「視差効果を減らす」設定を尊重して静止表示する。
+    // ticker は didChangeDependencies で止めてあり、可視性を見る必要もない。
     if (_reduceMotion) {
       return widget.child;
     }
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = _controller.value; // 0.0 → 1.0
-        return switch (widget.type) {
-          MfmAnimationType.rainbow => ColorFiltered(
-            colorFilter: _hueRotation(t * 2 * math.pi),
-            child: child,
-          ),
-          _ => Transform(
-            alignment: Alignment.center,
-            transform: _transformFor(widget.type, t),
-            child: child,
-          ),
-        };
-      },
-      child: widget.child,
+    return VisibilityDetector(
+      key: _visibilityKey,
+      onVisibilityChanged: _onVisibilityChanged,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value; // 0.0 → 1.0
+          return switch (widget.type) {
+            MfmAnimationType.rainbow => ColorFiltered(
+              colorFilter: _hueRotation(t * 2 * math.pi),
+              child: child,
+            ),
+            _ => Transform(
+              alignment: Alignment.center,
+              transform: _transformFor(widget.type, t),
+              child: child,
+            ),
+          };
+        },
+        child: widget.child,
+      ),
     );
   }
 
