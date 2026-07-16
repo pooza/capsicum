@@ -911,6 +911,11 @@ class MisskeyClient {
   }
 
   /// POST /api/users/pages
+  ///
+  /// **公開ページしか返らない**: サーバー側が `page.visibility = 'public'` を
+  /// 無条件に AND しており、非公開（followers / specified）を含めるパラメータが
+  /// ない。認証ユーザー自身のページを漏れなく取るには [getMyPages] を使う
+  /// (#847)。
   Future<List<Map<String, dynamic>>> getUserPages(
     String userId, {
     String? sinceId,
@@ -921,6 +926,28 @@ class MisskeyClient {
       '/api/users/pages',
       data: createBody({
         'userId': userId,
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/i/pages
+  ///
+  /// 認証ユーザー自身のページ一覧。[getUserPages] と違い visibility で絞られず
+  /// **非公開ページも返る** (#847)。`read:pages` スコープが必要で、これを持たない
+  /// 旧トークンでは permission denied になるため、呼び出し側は [getUserPages] へ
+  /// フォールバックできるようにしておくこと。
+  Future<List<Map<String, dynamic>>> getMyPages({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/i/pages',
+      data: createBody({
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,

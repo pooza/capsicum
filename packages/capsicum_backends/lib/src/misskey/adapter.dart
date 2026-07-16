@@ -147,6 +147,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // これが無いと getLikedPages / likePage が permission denied で失敗する。
     'read:page-likes',
     'write:page-likes',
+    // 自分のページ一覧 (i/pages) に非公開ページを含めるため (#847)。これが無い
+    // 旧トークンでは getMyPages が permission denied になり、呼び出し側が
+    // users/pages（公開のみ）へフォールバックする。
+    'read:pages',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -1324,6 +1328,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   Future<List<Page>> getUserPages(String userId, {TimelineQuery? query}) async {
     final data = await client.getUserPages(
       userId,
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapPage).toList();
+  }
+
+  @override
+  Future<List<Page>> getMyPages({TimelineQuery? query}) async {
+    final data = await client.getMyPages(
       sinceId: query?.sinceId,
       untilId: query?.maxId,
       limit: query?.limit,
