@@ -9,6 +9,7 @@ import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/page_card.dart';
+import '../widget/section_header.dart';
 
 /// Misskey ページのハブ画面 (#186)。
 ///
@@ -253,29 +254,13 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     if (_loadingLiked && _loadingFeatured && _loadingMyPages) {
       return const Center(child: CircularProgressIndicator());
     }
-    final theme = Theme.of(context);
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
         // 自分のページ (#618) を先頭に。最も個人的なセクションなので上に置く。
-        ..._buildFixedBlockSlivers(theme, '自分のページ', _loadingMyPages, _myPages),
-        ..._buildFixedBlockSlivers(
-          theme,
-          '人気',
-          _loadingFeatured,
-          _featuredPages,
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          sliver: SliverToBoxAdapter(
-            child: Text(
-              'いいねしたページ',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-        ),
+        ..._buildFixedBlockSlivers('自分のページ', _loadingMyPages, _myPages),
+        ..._buildFixedBlockSlivers('人気', _loadingFeatured, _featuredPages),
+        const SliverToBoxAdapter(child: SectionHeader('いいねしたページ')),
         if (_loadingLiked)
           const SliverToBoxAdapter(
             child: Padding(
@@ -327,7 +312,6 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   /// ため場所を取らせない)。無限スクロールする「いいねしたページ」とは別扱いで、
   /// ページネーションの競合を避けるため先頭に固定ブロックとして並べる。
   List<Widget> _buildFixedBlockSlivers(
-    ThemeData theme,
     String title,
     bool loading,
     List<Page> pages,
@@ -344,17 +328,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     }
     if (pages.isEmpty) return const [];
     return [
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        sliver: SliverToBoxAdapter(
-          child: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.primary,
-            ),
-          ),
-        ),
-      ),
+      SliverToBoxAdapter(child: SectionHeader(title)),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         sliver: SliverList(
