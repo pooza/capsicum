@@ -1199,11 +1199,18 @@ class ContentRenderer {
       case _NodeType.emoji:
         final emojiUrl = resolveEmoji(node.text);
         if (emojiUrl != null) {
+          // 幅に固定の上限を置かない (#858)。WidgetSpan の子には
+          // RenderParagraph が BoxConstraints(maxWidth: 段落の利用可能幅) を
+          // 渡すため、ConstrainedBox の enforce で幅はタイル/行の幅に頭打ち
+          // になる。縮むのは物理的に幅が足りない文脈 (返信インデント/引用
+          // カード等) だけで済む。
+          //
+          // かつて maxWidth: emojiSize * 3 を置いていたが、3:1 を超える横長
+          // 絵文字が BoxFit.contain で細い帯に潰れていた (ダイスキー実測で
+          // 7.7% が該当・最長 9.85:1 のテキストバナー系)。同じ理由で
+          // emoji_text.dart 側も cap なしに揃えてある。
           final image = ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: emojiSize,
-              maxWidth: emojiSize * 3,
-            ),
+            constraints: BoxConstraints(maxHeight: emojiSize),
             child: Image.network(
               emojiUrl,
               height: emojiSize,

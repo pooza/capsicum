@@ -57,11 +57,10 @@ class EmojiText extends ConsumerWidget {
         spans.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
+            // 幅に固定の上限を置かない (#858)。理由と経緯は content_parser.dart
+            // の同パターン (_NodeType.emoji) を参照。2 箇所で挙動を揃えている。
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: emojiSize,
-                maxWidth: emojiSize * 3,
-              ),
+              constraints: BoxConstraints(maxHeight: emojiSize),
               child: Image.network(
                 url,
                 height: emojiSize,
