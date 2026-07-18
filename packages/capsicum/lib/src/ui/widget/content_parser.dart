@@ -1209,11 +1209,20 @@ class ContentRenderer {
           // 絵文字が BoxFit.contain で細い帯に潰れていた (ダイスキー実測で
           // 7.7% が該当・最長 9.85:1 のテキストバナー系)。同じ理由で
           // emoji_text.dart 側も cap なしに揃えてある。
+          // $[x2]/$[x3]/$[x4]・小さめ表示・見出し等で style.fontSize が基準から
+          // 変わっているとき、カスタム絵文字も同じ倍率で拡縮する (#844)。テキストと
+          // Unicode 絵文字 (_buildTextWithEmoji) は style.fontSize 由来で追従するが、
+          // カスタム絵文字だけ固定 emojiSize で追従せず「$[x2 :emoji:] が効かない」
+          // 状態だった。基準 (baseStyle.fontSize) に対する比を emojiSize に掛ける
+          // （通常時は比 1 で従来どおり 20.0）。
+          final baseFontSize = baseStyle.fontSize ?? 14.0;
+          final scaledEmojiSize =
+              emojiSize * ((style.fontSize ?? baseFontSize) / baseFontSize);
           final image = ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: emojiSize),
+            constraints: BoxConstraints(maxHeight: scaledEmojiSize),
             child: Image.network(
               emojiUrl,
-              height: emojiSize,
+              height: scaledEmojiSize,
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) =>
                   Text(':${node.text}:', style: const TextStyle(fontSize: 14)),
