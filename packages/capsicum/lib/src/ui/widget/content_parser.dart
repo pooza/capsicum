@@ -1235,10 +1235,15 @@ class ContentRenderer {
         return [TextSpan(text: ':${node.text}:', style: style)];
 
       case _NodeType.quote:
+        // codeBlock (#842) と同じく、背の高い WidgetSpan の直後に TextSpan('\n')
+        // を置くと末尾改行がブロック高ぶんの空白を作る (Flutter の WidgetSpan +
+        // trailing newline 既知挙動・tech-notes 参照)。末尾 \n は外し、ブロック下の
+        // 余白は margin で確保する。単独行への隔離は先頭 \n が担う (#843)。
         return [
           TextSpan(text: '\n', style: style),
           WidgetSpan(
             child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.only(left: 8),
               decoration: BoxDecoration(
                 border: Border(
@@ -1258,7 +1263,6 @@ class ContentRenderer {
               ),
             ),
           ),
-          TextSpan(text: '\n', style: style),
         ];
 
       case _NodeType.fn:
