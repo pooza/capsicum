@@ -5,7 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+
+/// モロヘイヤ `ComposeTemplateContract::MAX_BODY_SIZE` の絶対上限 (#4457)。
+/// サーバー投稿上限がこれを超えても、テンプレ本文はこの値で頭打ちになる。
+const _templateBodyHardMax = 5000;
 
 /// 投稿テンプレート一覧 (#767)。モロヘイヤの per-user CRUD API から取得する。
 /// テンプレート機能を提供するサーバー（[MulukhiyaService.composeTemplatesEnabled]）
@@ -93,8 +98,21 @@ class TemplatesManageScreen extends ConsumerWidget {
     await context.push('/compose', extra: {'template': template});
   }
 
+  /// 本文入力の上限。サーバー投稿上限（プリセットで 3000）を使い、モロヘイヤ側
+  /// API の絶対上限 5000 で頭打ちにする。未取得時は 5000 にフォールバック。
+  int _bodyMaxLength(WidgetRef ref) {
+    final serverMax = ref.read(maxPostLengthProvider);
+    if (serverMax == null || serverMax > _templateBodyHardMax) {
+      return _templateBodyHardMax;
+    }
+    return serverMax;
+  }
+
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    final result = await _showEditor(context);
+    final result = await _showEditor(
+      context,
+      maxBodyLength: _bodyMaxLength(ref),
+    );
     if (result == null || !context.mounted) return;
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
@@ -119,7 +137,11 @@ class TemplatesManageScreen extends ConsumerWidget {
     WidgetRef ref,
     ComposeTemplate template,
   ) async {
-    final result = await _showEditor(context, initial: template);
+    final result = await _showEditor(
+      context,
+      initial: template,
+      maxBodyLength: _bodyMaxLength(ref),
+    );
     if (result == null || !context.mounted) return;
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
@@ -210,10 +232,12 @@ class TemplatesManageScreen extends ConsumerWidget {
 Future<({String name, String body, String? cw})?> _showEditor(
   BuildContext context, {
   ComposeTemplate? initial,
+  required int maxBodyLength,
 }) {
   return showDialog<({String name, String body, String? cw})>(
     context: context,
-    builder: (context) => _TemplateEditorDialog(initial: initial),
+    builder: (context) =>
+        _TemplateEditorDialog(initial: initial, maxBodyLength: maxBodyLength),
   );
 }
 
@@ -286,8 +310,9 @@ class _TemplateTile extends StatelessWidget {
 
 class _TemplateEditorDialog extends StatefulWidget {
   final ComposeTemplate? initial;
+  final int maxBodyLength;
 
-  const _TemplateEditorDialog({this.initial});
+  const _TemplateEditorDialog({this.initial, required this.maxBodyLength});
 
   @override
   State<_TemplateEditorDialog> createState() => _TemplateEditorDialogState();
@@ -342,7 +367,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
             ),
             TextField(
               controller: _bodyController,
-              maxLength: 5000,
+              maxLength: widget.maxBodyLength,
               maxLines: 5,
               minLines: 3,
               decoration: const InputDecoration(labelText: '本文（空でも可）'),
