@@ -112,6 +112,16 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 WNS raw push のバックグラウンドタスクは FullTrust 本体とは別プロセスの **AppContainer サンドボックス**で走る。そのため roaming AppData の `flutter_secure_storage.dat`（DPAPI 暗号化）を復号できず、**登録も活性化も成功するのにプッシュ鍵が読めずトーストが出ない**。解法は push 鍵セットだけを平文 JSON 化して `ApplicationData.Current.LocalFolder`（パッケージ ACL 保護）へ同期し、bg task はそこから読む（macOS NSE の App Group 共有と同型。正本は [`local_state_files.h`](../packages/capsicum/windows/runner/local_state_files.h) / [`web_push_key_reader.h`](../packages/capsicum/windows/runner/web_push_key_reader.h)）。付随する汎用 Windows 罠: PowerShell の `[System.IO.File]::ReadAllText` は cwd 相対解決するので**絶対パス必須**、パッケージアプリは `%TEMP%` が `AC\Temp` にリダイレクトされる。
 
+### プッシュ通知の重複は「上流の孤児購読」を先に疑う（#692）
+
+「同じ通知が 2〜4 通届く」報告は、**リレー（capsicum-relay）でも配信基盤（APNs / FCM）でもなく、上流サーバー側に Web Push 購読（`sw_subscription`）が孤児として溜まっているのが原因**であることが多い。#692（2026-06 の実報告）はこれで確定した。
+
+- **溜まり方はサーバー実装で違う**: Mastodon は**アクセストークンごとに別購読**を作るため再ログインのたびに増える。Misskey は**同一 endpoint に複数行**が並ぶ。どちらも「1 イベント → 複数購読 → 複数 push」になる。
+- **relay は純粋な 1:1 フォワーダなので無実**。届いた購読ぶんだけ忠実に送る。relay のログで「複数回送信」が見えても、それは原因ではなく結果。
+- **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②孤児を整理して再現するか見る → ③そのうえで relay を疑う。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。
+
+恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）。**capsicum クライアント側の修正では直らない類**なので、報告を受けてもクライアントの通知処理から調べ始めない。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定

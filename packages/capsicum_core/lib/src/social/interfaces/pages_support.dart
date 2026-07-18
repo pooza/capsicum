@@ -14,8 +14,20 @@ typedef LikedPageEntry = ({String likeId, Page page});
 abstract mixin class PagesSupport {
   /// 指定ユーザーが公開している Page の一覧。
   ///
-  /// Misskey の `POST /api/users/pages` 相当。
+  /// Misskey の `POST /api/users/pages` 相当。**公開ページしか返らない**
+  /// （サーバーが visibility=public で絞る）。自分自身のページを漏れなく
+  /// 取りたい場合は [getMyPages] を使う (#847)。
   Future<List<Page>> getUserPages(String userId, {TimelineQuery? query});
+
+  /// 認証ユーザー自身の Page 一覧。**非公開ページも含む**。
+  ///
+  /// Misskey の `POST /api/i/pages` 相当。[getUserPages] に自分の id を渡す
+  /// 方式では公開ページしか得られないため分けている (#847)。
+  ///
+  /// `read:pages` スコープを要求するため、スコープ追加前に発行された既存
+  /// トークンでは失敗する。呼び出し側はスコープ不足を検出して
+  /// [getUserPages] へフォールバックすること（その場合の結果は公開ページのみ）。
+  Future<List<Page>> getMyPages({TimelineQuery? query});
 
   /// 指定 ID のページを取得する。
   ///

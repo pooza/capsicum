@@ -557,6 +557,10 @@ Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.gi
 
 draft で生成するのは「リリース作業の委託範囲」(自動公開はしない) ルールに従う。
 
+> ⚠️ **タグより先に draft Release を作ると、CI がそれを publish してしまう**（v1.38 で実害）。リリースノートを先に置こうとして `gh release create --draft` 等で Release を先出しすると、CI の `softprops/action-gh-release@v2` は `draft: true` を指定していても「既存 Release を更新する」経路に入り、**draft フラグを落として公開してしまう**。`draft: true` はこの action が Release を**新規作成するときにしか効かない**。[linux-release.yml](../.github/workflows/linux-release.yml) / [windows-release.yml](../.github/workflows/windows-release.yml) の両方が該当。
+>
+> 回避: **Release を先に作らず CI に作らせ、生成された draft へ後からリリースノートを書く**。どうしても先出しした場合は、CI 完走後に draft へ戻し直したかを必ず確認する。自動公開しない委託範囲ルールが、事故で破れる経路はここ。
+
 #### ローカル動作確認
 
 ```sh

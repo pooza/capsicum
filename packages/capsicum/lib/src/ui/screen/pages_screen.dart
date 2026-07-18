@@ -9,6 +9,7 @@ import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/page_card.dart';
+import '../widget/section_header.dart';
 
 /// Misskey ページのハブ画面 (#186)。
 ///
@@ -46,6 +47,10 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   // 担うため、ハブ側は先頭 limit 件の軽量ブロックに留める (人気と同構造)。
   List<Page> _myPages = [];
   bool _loadingMyPages = true;
+
+  /// 旧トークン（`read:pages` なし）で users/pages にフォールバックしたため、
+  /// 公開ページしか出せていない状態 (#847)。見出しでその旨を断る。
+  bool _myPagesPublicOnly = false;
   static const _myPagesLimit = 30;
   // _refresh が走った瞬間に in-flight の _loadMoreLiked が古い cursor 由来
   // の結果を空配列にマージしてしまう race を防ぐ generation token (#631)。
@@ -193,13 +198,28 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
       return;
     }
     try {
-      final pages = await (adapter as PagesSupport).getUserPages(
-        account.user.id,
-        query: const TimelineQuery(limit: _myPagesLimit),
-      );
+      const query = TimelineQuery(limit: _myPagesLimit);
+      final pages = <Page>[];
+      var publicOnly = false;
+      try {
+        // i/pages は非公開ページも返すが read:pages スコープを要求する (#847)。
+        pages.addAll(await (adapter as PagesSupport).getMyPages(query: query));
+      } catch (e) {
+        if (!isOAuthScopeError(e)) rethrow;
+        // スコープ追加前に発行された旧トークン。再ログインを強いるほどの機能では
+        // ないので、公開ページだけ出せる users/pages に落として見出しで断る。
+        publicOnly = true;
+        pages.addAll(
+          await (adapter as PagesSupport).getUserPages(
+            account.user.id,
+            query: query,
+          ),
+        );
+      }
       if (mounted) {
         setState(() {
           _myPages = pages;
+          _myPagesPublicOnly = publicOnly;
           _loadingMyPages = false;
         });
       }
@@ -253,29 +273,19 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     if (_loadingLiked && _loadingFeatured && _loadingMyPages) {
       return const Center(child: CircularProgressIndicator());
     }
-    final theme = Theme.of(context);
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
         // 自分のページ (#618) を先頭に。最も個人的なセクションなので上に置く。
-        ..._buildFixedBlockSlivers(theme, '自分のページ', _loadingMyPages, _myPages),
         ..._buildFixedBlockSlivers(
-          theme,
-          '人気',
-          _loadingFeatured,
-          _featuredPages,
+          // 旧トークンで公開ぶんしか取れていないときは、黙って欠けさせず
+          // 見出しで範囲を断る (#847)。
+          _myPagesPublicOnly ? '自分の公開ページ' : '自分のページ',
+          _loadingMyPages,
+          _myPages,
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          sliver: SliverToBoxAdapter(
-            child: Text(
-              'いいねしたページ',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-        ),
+        ..._buildFixedBlockSlivers('人気', _loadingFeatured, _featuredPages),
+        const SliverToBoxAdapter(child: SectionHeader('いいねしたページ')),
         if (_loadingLiked)
           const SliverToBoxAdapter(
             child: Padding(
@@ -327,7 +337,6 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
   /// ため場所を取らせない)。無限スクロールする「いいねしたページ」とは別扱いで、
   /// ページネーションの競合を避けるため先頭に固定ブロックとして並べる。
   List<Widget> _buildFixedBlockSlivers(
-    ThemeData theme,
     String title,
     bool loading,
     List<Page> pages,
@@ -344,17 +353,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
     }
     if (pages.isEmpty) return const [];
     return [
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        sliver: SliverToBoxAdapter(
-          child: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.primary,
-            ),
-          ),
-        ),
-      ),
+      SliverToBoxAdapter(child: SectionHeader(title)),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         sliver: SliverList(

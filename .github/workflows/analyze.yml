@@ -2,7 +2,10 @@ name: Analyze
 
 on:
   push:
-    branches: [main]
+    # develop も対象にする。main だけだと開発中はノーガードで、format drift
+    # や壊れたテストがリリース PR の瞬間にまとめて跳ね返ってくる（v1.48 で
+    # 6 ファイルぶんの drift が溜まり PR の CI が落ちた実績あり）。
+    branches: [main, develop]
   pull_request:
     branches: [main]
 
@@ -26,3 +29,16 @@ jobs:
         run: dart format --set-exit-if-changed .
       - name: Analyze
         run: dart analyze --fatal-infos
+      # test ディレクトリを持つパッケージだけを回す。melos の test スクリプトは
+      # 内部で `melos exec` を呼ぶため PATH に melos の実体が要り、`dart run
+      # melos` 経由だと command not found になるので使わない（analyze が素の
+      # コマンドなのと同じ方針）。
+      - name: Test
+        run: |
+          for pkg in packages/*/; do
+            if [ -d "${pkg}test" ]; then
+              echo "::group::flutter test ${pkg}"
+              (cd "$pkg" && flutter test)
+              echo "::endgroup::"
+            fi
+          done

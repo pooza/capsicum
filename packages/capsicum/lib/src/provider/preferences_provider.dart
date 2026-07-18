@@ -38,6 +38,7 @@ const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
 const _insertPickerHeightKey = 'insert_picker_height';
 const _recentEmojisKey = 'recent_emojis';
+const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
 const _darkSurfaceVariantKey = 'dark_surface_variant';
 const _tabConfigPrefix = 'tab_config_';
@@ -732,6 +733,47 @@ class RecentEmojisNotifier extends Notifier<List<String>> {
     state = updated.take(_recentEmojisLimit).toList();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_recentEmojisKey, state);
+  }
+}
+
+/// 投稿テンプレートの使用履歴 (#767)。最近使ったテンプレートの id を新しい順に
+/// 保持し、選択シートで「最近使った順」に並べるために使う。本体（名前・本文）は
+/// サーバー（モロヘイヤ）が正で、ここには順序ヒントとして id だけを置く。
+final composeTemplateHistoryProvider =
+    NotifierProvider<ComposeTemplateHistoryNotifier, List<String>>(
+      ComposeTemplateHistoryNotifier.new,
+    );
+
+class ComposeTemplateHistoryNotifier extends Notifier<List<String>> {
+  @override
+  List<String> build() {
+    _load();
+    return const [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_composeTemplateHistoryKey);
+    if (saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  /// テンプレートを使ったら先頭へ。件数上限は設けない（テンプレ自体が
+  /// サーバー側で最大 50 件に制限されるため）。
+  Future<void> touch(String id) async {
+    state = [id, ...state.where((e) => e != id)];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_composeTemplateHistoryKey, state);
+  }
+
+  /// 現存する id 集合に絞り込む（削除済みテンプレの id を履歴から掃除する）。
+  Future<void> retain(Set<String> ids) async {
+    final pruned = state.where(ids.contains).toList();
+    if (pruned.length == state.length) return;
+    state = pruned;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_composeTemplateHistoryKey, state);
   }
 }
 

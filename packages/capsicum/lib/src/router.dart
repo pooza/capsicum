@@ -60,6 +60,7 @@ import 'ui/screen/list_timeline_screen.dart';
 import 'ui/screen/list_members_screen.dart';
 import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
+import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
 
@@ -205,6 +206,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             sharedText: extra?['sharedText'] as String?,
             initialText: extra?['initialText'] as String?,
             restoreDraft: extra?['restoreDraft'] as Draft?,
+            template: extra?['template'] as ComposeTemplate?,
           );
         },
       ),
@@ -215,6 +217,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/drafts',
         builder: (context, state) => const DraftsScreen(),
+      ),
+      GoRoute(
+        path: '/templates/manage',
+        builder: (context, state) => const TemplatesManageScreen(),
       ),
       GoRoute(
         path: '/search',

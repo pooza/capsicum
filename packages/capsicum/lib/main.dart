@@ -54,6 +54,19 @@ const _snackBarTheme = SnackBarThemeData(
   insetPadding: EdgeInsets.fromLTRB(16, 0, 16, 72),
 );
 
+/// Linux で Unicode 絵文字がモノクロ描画される問題への対処 (#861)。
+///
+/// Skia はホストの fontconfig に「この文字を描けるフォント」を素朴に問い合わせる
+/// ため、絵文字のコードポイントを収録した白黒フォント (DejaVu Sans / Symbola /
+/// VL Gothic 等) が Noto Color Emoji より先に手を挙げてしまう。Chromium や
+/// GTK/Pango は絵文字をカラーフォントへ倒す固有の解決を持つため影響を受けず、
+/// Flutter だけが取りこぼす (flutter/flutter#75188)。
+///
+/// カラー絵文字フォントを名指しして順位付けを迂回する。ファミリ名で system
+/// フォントを引くだけなので容量増はなく、当該ファミリを持たない他プラット
+/// フォームでは素通りして OS 側の (既に正常な) 解決がそのまま効く。
+const _fontFamilyFallback = <String>['Noto Color Emoji'];
+
 /// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
 /// Linux AppImage の AppRun ログ (~/.local/share/capsicum/logs/) に
 /// release のスタートアップ / push 経路の内部情報が流入するのを抑える目的。
@@ -1242,11 +1255,13 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
         colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
         useMaterial3: true,
         snackBarTheme: _snackBarTheme,
+        fontFamilyFallback: _fontFamilyFallback,
       ),
       darkTheme: ThemeData(
         colorScheme: darkScheme,
         useMaterial3: true,
         snackBarTheme: _snackBarTheme,
+        fontFamilyFallback: _fontFamilyFallback,
       ),
       themeMode: themeMode,
       builder: (context, child) {

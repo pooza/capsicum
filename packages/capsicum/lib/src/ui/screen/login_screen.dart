@@ -736,7 +736,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // ユーザーに伝わる文言へ昇格させ、cancel/フォールバック経路には流さない
       // （OOB 手貼り等に落ちる前に原因を提示する）。
       if (e is LoopbackPortOccupiedException) {
-        _logLoginStep('oauth_server.bind_exhausted', data: {'port': e.port});
+        // 最後の bind エラーの errno / OS メッセージを取り出す（非 PII・#859）。
+        // EADDRINUSE(errno98) か EACCES 等かで対策が正反対（リトライ窓の延長か
+        // UX 手当てか）になるため、計装で切り分け材料を回収する。
+        final lastError = e.lastError;
+        final osError = lastError is SocketException ? lastError.osError : null;
+        final errno = osError?.errorCode;
+        final osMessage = osError?.message ?? lastError?.toString();
+        _logLoginStep(
+          'oauth_server.bind_exhausted',
+          data: {'port': e.port, 'errno': ?errno, 'os_error': ?osMessage},
+        );
         // #813 で堅牢化した bind リトライが枯渇した実頻度を計測する (#822)。UX は
         // 友好エラーで良好だが、breadcrumb だけでは後続の captured event に
         // 相乗りしない限り送られず、ポート占有でログインがブロックされる頻度が
@@ -755,7 +765,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               scope.setTag('login.host', widget.host);
               scope.setTag('login.backend', widget.backendType.name);
               scope.setTag('oauth.port', e.port.toString());
-              // ポートは固定なので文面ゆらぎで分裂させず 1 グループに集約する。
+              // 最後の bind エラーの errno / OS メッセージ（非 PII・#859）。
+              // EADDRINUSE(98) か EACCES 等かで対策が分かれるため切り分け用に載せる。
+              if (errno != null) scope.setTag('oauth.errno', errno.toString());
+              if (osMessage != null) scope.setTag('oauth.os_error', osMessage);
+              // ポートは固定・errno はタグでの切り分けに留め、文面ゆらぎで分裂
+              // させず 1 グループに集約する（#859: fingerprint は現状どおり）。
               scope.fingerprint = ['oauth_server.bind_exhausted'];
             },
           );

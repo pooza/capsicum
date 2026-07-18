@@ -73,5 +73,6 @@ CLAUDE.md は毎セッション全読されるため、リリースログを肥�
 
 ## 完了後
 
-- MEMORY.md の `project_v1XX_progress`（次マイルストーン）を新規作成 or 更新し、スコープと着手状況を記録する。
+- メモリの `project_v1XX_progress`（**次**マイルストーン）を新規作成 or 更新し、スコープと着手状況を記録する。
+- **出荷完了した版の `project_v1XX_progress` は削除する**。進捗メモリは**稼働中のマイルストーン 1 本だけ**に保つ（2026-07-17 方針化）。出荷済みの内容は GitHub Releases / Milestones（正本）と step 7 で退避した [archive/release-log.md](archive/release-log.md) に既にあり、メモリに残すと 4 重管理になってメモリ索引が肥大する。削除前に、GitHub からは読めない事実（資格情報の満了日・環境の癖・再発する罠）が埋もれていないか確認し、あれば step 7 と同じ要領で docs か `reference_*` メモリへ先に昇格させる。
 - 未割り当てのまま残した Issue は、同期報告で一覧として淡々と列挙する（割り当てを促す文言は不要）。

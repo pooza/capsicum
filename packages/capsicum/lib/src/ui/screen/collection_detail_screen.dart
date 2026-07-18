@@ -397,46 +397,82 @@ class _CollectionDetailScreenState
     final descController = TextEditingController(
       text: collection.description ?? '',
     );
+    final tagController = TextEditingController(text: collection.tagName ?? '');
+    // トグルは現在値から prefill する（model は getCollection で discoverable /
+    // sensitive を保持している）。null 時は作成ダイアログと同じ既定に倒す。
+    var discoverable = collection.discoverable ?? true;
+    var sensitive = collection.sensitive ?? false;
     try {
       final messenger = ScaffoldMessenger.of(context);
       final saved = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('コレクションを編集'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: '名前'),
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('コレクションを編集'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: '名前'),
+                  ),
+                  TextField(
+                    controller: descController,
+                    decoration: const InputDecoration(labelText: '説明'),
+                    maxLines: 3,
+                  ),
+                  TextField(
+                    controller: tagController,
+                    decoration: const InputDecoration(
+                      labelText: 'タグ名（任意）',
+                      hintText: 'コレクションを束ねるハッシュタグ',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('公開'),
+                    subtitle: const Text('一覧や検索に表示する'),
+                    value: discoverable,
+                    onChanged: (v) => setDialogState(() => discoverable = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('センシティブ'),
+                    subtitle: const Text('閲覧注意として扱う'),
+                    value: sensitive,
+                    onChanged: (v) => setDialogState(() => sensitive = v),
+                  ),
+                ],
               ),
-              TextField(
-                controller: descController,
-                decoration: const InputDecoration(labelText: '説明'),
-                maxLines: 3,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('キャンセル'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('保存'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('キャンセル'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('保存'),
-            ),
-          ],
         ),
       );
       if (saved != true) return;
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is! CollectionsSupport) return;
       try {
+        final tag = tagController.text.trim();
         await (adapter as CollectionsSupport).updateCollection(
           widget.collectionId,
           name: nameController.text.trim(),
           description: descController.text.trim(),
+          // 空は null で送らない（作成と同じ。既存タグのクリアは非対応）。
+          tagName: tag.isEmpty ? null : tag,
+          discoverable: discoverable,
+          sensitive: sensitive,
         );
         await _load();
       } catch (e, st) {
@@ -452,6 +488,7 @@ class _CollectionDetailScreenState
     } finally {
       nameController.dispose();
       descController.dispose();
+      tagController.dispose();
     }
   }
 

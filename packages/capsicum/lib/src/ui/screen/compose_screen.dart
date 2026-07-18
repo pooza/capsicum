@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:dio/dio.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -109,6 +110,11 @@ class _OversizeFile {
 
 /// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
 enum _AttachmentMenuAction { preview, crop, addText, editDescription }
+
+/// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
+/// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
+/// 保存 #767）とプレビューを overflow に畳んで actions の飽和を防ぐ。
+enum _ComposeMenuAction { saveDraft, saveTemplate, preview }
 
 /// 添付画像を原寸で確認するためのフルスクリーンビューア (#660)。トリミング結果も
 /// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。編集操作は
@@ -236,6 +242,11 @@ class ComposeScreen extends ConsumerStatefulWidget {
   /// 本文・CW・公開範囲・添付を prefill し、投稿成功時に元下書きを削除する。
   final Draft? restoreDraft;
 
+  /// 投稿テンプレートから書き始める場合の適用テンプレート (#767)。本文・CW を
+  /// prefill する（新規画面なので上書き確認は不要）。テンプレート管理画面から
+  /// 「このテンプレで投稿」する導線で使う。
+  final ComposeTemplate? template;
+
   const ComposeScreen({
     super.key,
     this.redraft,
@@ -246,6 +257,7 @@ class ComposeScreen extends ConsumerStatefulWidget {
     this.sharedText,
     this.initialText,
     this.restoreDraft,
+    this.template,
   });
 
   @override
@@ -469,6 +481,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _controller.selection = TextSelection.collapsed(
         offset: _controller.text.length,
       );
+      final account = ref.read(currentAccountProvider);
+      if (account != null && account.user.defaultScope != null) {
+        _scope = account.user.defaultScope!;
+      }
+    } else if (widget.template != null) {
+      _applyTemplateContent(widget.template!);
       final account = ref.read(currentAccountProvider);
       if (account != null && account.user.defaultScope != null) {
         _scope = account.user.defaultScope!;
@@ -2022,6 +2040,155 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// テンプレート選択シートを開く (#767)。選択で本文・CW を差し替える
+  /// （既存入力があれば上書き確認する）。管理画面への導線も出す。
+  Future<void> _showTemplateSheet() async {
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return _TemplateSheet(
+          mulukhiya: mulukhiya,
+          accessToken: account.userSecret.accessToken,
+          history: ref.read(composeTemplateHistoryProvider),
+          onSelect: (template) async {
+            Navigator.pop(sheetContext);
+            await _applyTemplateFromSheet(template);
+          },
+          onManage: () {
+            Navigator.pop(sheetContext);
+            context.push('/templates/manage');
+          },
+          onLoaded: (templates) {
+            // 取得できた id 集合で使用履歴を掃除する（削除済みを落とす）。
+            ref
+                .read(composeTemplateHistoryProvider.notifier)
+                .retain(templates.map((t) => t.id).toSet());
+          },
+          onLoadError: (e, st) => reportOpFailure(
+            tagKey: 'template.op',
+            operation: 'load_sheet',
+            error: e,
+            stackTrace: st,
+            account: account,
+          ),
+        );
+      },
+    );
+  }
+
+  /// テンプレートの内容を本文・CW へ反映し、使用履歴を更新する。CW は空なら
+  /// 触らない（既存の CW を消さない）。呼び出し側で必要なら setState する。
+  void _applyTemplateContent(ComposeTemplate template) {
+    _controller.text = template.body;
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+    // 本文と同じく CW もテンプレートで完全に置き換える（「上書き」の語意に揃える）。
+    // CW を持たないテンプレートを当てたら、以前の CW は消す。
+    final cw = template.cw;
+    if (cw != null && cw.isNotEmpty) {
+      _cwEnabled = true;
+      _cwController.text = cw;
+    } else {
+      _cwEnabled = false;
+      _cwController.clear();
+    }
+    ref.read(composeTemplateHistoryProvider.notifier).touch(template.id);
+  }
+
+  /// シートからの適用。本文か CW に入力があれば上書き確認してから反映する。
+  Future<void> _applyTemplateFromSheet(ComposeTemplate template) async {
+    final hasContent =
+        _controller.text.trim().isNotEmpty ||
+        _cwController.text.trim().isNotEmpty;
+    if (hasContent) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('テンプレートを適用'),
+          content: Text('現在の入力内容を「${template.name}」で上書きします。よろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('上書き'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    setState(() => _applyTemplateContent(template));
+  }
+
+  /// 現在の本文・CW を新しいテンプレートとして保存する (#767)。AppBar メニュー
+  /// から呼ぶ。名前だけ入力してもらい、本文・CW は現在の入力から取る。
+  Future<void> _saveCurrentAsTemplate() async {
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    final name = await _promptTemplateName();
+    if (name == null || !mounted) return;
+
+    final body = _controller.text;
+    final cw = _cwEnabled && _cwController.text.trim().isNotEmpty
+        ? _cwController.text
+        : null;
+    try {
+      await mulukhiya.createComposeTemplate(
+        accessToken: account.userSecret.accessToken,
+        name: name,
+        body: body,
+        cw: cw,
+      );
+      messenger.showSnackBar(const SnackBar(content: Text('テンプレートを保存しました')));
+    } on DioException catch (e, st) {
+      // 想定内の 4xx（409 上限 / 422 検証）は専用文面で案内し、Sentry には上げない。
+      // 5xx・ネットワークだけ計装する（template.op の fingerprint を実障害に保つ）。
+      final status = e.response?.statusCode;
+      final message = switch (status) {
+        409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
+        422 => '入力内容が不正です（名前・本文の長さを確認してください）',
+        _ => 'テンプレートの保存に失敗しました',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+      if (status != null && status < 500) return;
+      reportOpFailure(
+        tagKey: 'template.op',
+        operation: 'create_from_compose',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+    } catch (e, st) {
+      reportOpFailure(
+        tagKey: 'template.op',
+        operation: 'create_from_compose',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
+      messenger.showSnackBar(const SnackBar(content: Text('テンプレートの保存に失敗しました')));
+    }
+  }
+
+  /// テンプレート名を入力させる。空名は保存を無効化する（サーバー契約で必須）。
+  Future<String?> _promptTemplateName() {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => const _TemplateNameDialog(),
+    );
+  }
+
   Future<void> _restoreDecoration() async {
     final account = ref.read(currentAccountProvider);
     final mulukhiya = account?.mulukhiya;
@@ -2571,19 +2738,61 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // サーバー下書き保存 (#174)。DraftSupport のあるアダプタ（Misskey）
-          // のみ表示。予約投稿（_scheduledAt）とは併用しない（予約は送信で成立）。
-          if (ref.watch(currentAdapterProvider) is DraftSupport &&
-              _scheduledAt == null)
-            IconButton(
-              onPressed: _sending ? null : _saveServerDraft,
-              icon: const Icon(Icons.save_outlined),
-              tooltip: '下書き保存',
-            ),
-          IconButton(
-            onPressed: _sending ? null : _showPreview,
-            icon: const Icon(Icons.preview_outlined),
-            tooltip: 'プレビュー',
+          // 保存系・プレビューは overflow に畳み、AppBar の一等地は主 CTA の送信に
+          // 残す (#767)。サーバー下書き保存 (#174) は DraftSupport のあるアダプタ
+          // （Misskey）でのみ・予約投稿中でないときのみ出す（予約は送信で成立）。
+          Builder(
+            builder: (context) {
+              final canSaveDraft =
+                  ref.watch(currentAdapterProvider) is DraftSupport &&
+                  _scheduledAt == null;
+              final canSaveTemplate =
+                  ref
+                      .watch(currentMulukhiyaProvider)
+                      ?.composeTemplatesEnabled ==
+                  true;
+              return PopupMenuButton<_ComposeMenuAction>(
+                enabled: !_sending,
+                onSelected: (action) {
+                  switch (action) {
+                    case _ComposeMenuAction.saveDraft:
+                      _saveServerDraft();
+                    case _ComposeMenuAction.saveTemplate:
+                      _saveCurrentAsTemplate();
+                    case _ComposeMenuAction.preview:
+                      _showPreview();
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (canSaveDraft)
+                    const PopupMenuItem(
+                      value: _ComposeMenuAction.saveDraft,
+                      child: ListTile(
+                        leading: Icon(Icons.save_outlined),
+                        title: Text('下書き保存'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  if (canSaveTemplate)
+                    const PopupMenuItem(
+                      value: _ComposeMenuAction.saveTemplate,
+                      child: ListTile(
+                        leading: Icon(Icons.bookmark_add_outlined),
+                        title: Text('テンプレートとして保存'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: _ComposeMenuAction.preview,
+                    child: ListTile(
+                      leading: Icon(Icons.preview_outlined),
+                      title: Text('プレビュー'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           IconButton(
             onPressed: _sending ? null : _submit,
@@ -2988,6 +3197,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           tooltip: '実況',
                           visualDensity: VisualDensity.compact,
                         ),
+                      // 投稿テンプレート選択 (#767)。テンプレ機能提供サーバーのみ。
+                      if (ref
+                              .watch(currentMulukhiyaProvider)
+                              ?.composeTemplatesEnabled ==
+                          true)
+                        IconButton(
+                          onPressed: _sending ? null : _showTemplateSheet,
+                          icon: const Icon(Icons.description_outlined),
+                          tooltip: '投稿テンプレート',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
                       // Spotify 連携）がこの端末で使えるときだけ出す。
                       if (ref
@@ -3232,6 +3452,209 @@ class _CollapsiblePreviewState extends State<_CollapsiblePreview> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 「テンプレートとして保存」の名前入力ダイアログ (#767)。controller / FocusNode を
+/// 自前で持ち dispose する。macOS の showDialog + autofocus 競合（#722）を避けるため
+/// autofocus を使わず post-frame でフォーカス要求する。
+class _TemplateNameDialog extends StatefulWidget {
+  const _TemplateNameDialog();
+
+  @override
+  State<_TemplateNameDialog> createState() => _TemplateNameDialogState();
+}
+
+class _TemplateNameDialogState extends State<_TemplateNameDialog> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('テンプレートとして保存'),
+      content: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        maxLength: 100,
+        decoration: const InputDecoration(
+          labelText: 'テンプレート名',
+          hintText: '例: 実況会お知らせ',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _controller,
+          builder: (context, value, _) => TextButton(
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.pop(context, value.text.trim()),
+            child: const Text('保存'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 投稿テンプレート選択シート (#767)。サーバーから一覧を取得し、使用履歴
+/// ([history]) の順（最近使った順）を先頭に並べて提示する。
+class _TemplateSheet extends StatefulWidget {
+  final MulukhiyaService mulukhiya;
+  final String accessToken;
+  final List<String> history;
+  final void Function(ComposeTemplate template) onSelect;
+  final VoidCallback onManage;
+  final void Function(List<ComposeTemplate> templates) onLoaded;
+  final void Function(Object error, StackTrace stackTrace) onLoadError;
+
+  const _TemplateSheet({
+    required this.mulukhiya,
+    required this.accessToken,
+    required this.history,
+    required this.onSelect,
+    required this.onManage,
+    required this.onLoaded,
+    required this.onLoadError,
+  });
+
+  @override
+  State<_TemplateSheet> createState() => _TemplateSheetState();
+}
+
+class _TemplateSheetState extends State<_TemplateSheet> {
+  List<ComposeTemplate>? _templates;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final templates = await widget.mulukhiya.getComposeTemplates(
+        accessToken: widget.accessToken,
+      );
+      if (mounted) {
+        setState(() {
+          _templates = _sortByHistory(templates);
+          _loading = false;
+        });
+        widget.onLoaded(templates);
+      }
+    } catch (e, st) {
+      widget.onLoadError(e, st);
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  /// 使用履歴の順（最近使った順）を先頭に、残りはサーバーの順で続ける。
+  List<ComposeTemplate> _sortByHistory(List<ComposeTemplate> templates) {
+    final byId = {for (final t in templates) t.id: t};
+    final recent = <ComposeTemplate>[];
+    for (final id in widget.history) {
+      final t = byId[id];
+      if (t != null) recent.add(t);
+    }
+    final recentIds = recent.map((e) => e.id).toSet();
+    final rest = templates.where((e) => !recentIds.contains(e.id));
+    return [...recent, ...rest];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              '投稿テンプレート',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('読み込みに失敗しました: $_error'),
+            )
+          else ...[
+            if ((_templates ?? const []).isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final t in _templates!)
+                      ListTile(
+                        leading: const Icon(Icons.description_outlined),
+                        title: Text(t.name),
+                        subtitle: Text(
+                          t.body.trim().isEmpty
+                              ? '(本文なし)'
+                              : t.body.replaceAll('\n', ' '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: t.cw != null
+                            ? const Icon(Icons.warning_amber, size: 18)
+                            : null,
+                        onTap: () => widget.onSelect(t),
+                      ),
+                  ],
+                ),
+              ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('テンプレートを管理'),
+              onTap: widget.onManage,
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
@@ -181,6 +181,40 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     } else {
       context.pop();
     }
+  }
+
+  /// 指定ページへアニメーションで送る。範囲外は無視する。onPageChanged 経由で
+  /// _currentIndex が更新される。
+  void _goToPage(int index) {
+    if (index < 0 || index >= _attachments.length) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 左右キーで前後のメディアへ送る (#848)。デスクトップ / 外付けキーボード向け。
+  /// 単一メディアや修飾キー付きは無視する。リピート（長押し）でも送る。
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (_attachments.length < 2) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _goToPage(_currentIndex - 1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _goToPage(_currentIndex + 1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   /// デスクトップ 3 OS は file_selector の保存ダイアログでローカル保存 (#572
@@ -369,84 +403,88 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
               ),
           ],
         ),
-        body: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: _attachments.length,
-              onPageChanged: (index) => setState(() => _currentIndex = index),
-              itemBuilder: (context, index) {
-                final a = _attachments[index];
-                if (a.type == AttachmentType.video ||
-                    a.type == AttachmentType.gifv) {
-                  return _VideoPage(url: a.url);
-                }
-                if (a.type == AttachmentType.audio) {
-                  return _AudioPage(url: a.url);
-                }
-                final image = Image.network(
-                  a.url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white54,
-                    size: 64,
-                  ),
-                );
-                // デスクトップ (macOS / Windows / Linux) では画像を OS ファイラーへ
-                // drag-out できる (#645 / #776)。画像のみ (動画/音声は player の
-                // 操作と gesture が競合するため対象外)。macOS / Windows は virtual
-                // file、Linux は temp 実ファイル経路（_DragOutImage 内で分岐）。
-                final draggable =
-                    supportsMediaDragOut && _dragOutFileFormat(a) != null
-                    ? _DragOutImage(
-                        attachment: a,
-                        download: _downloadBytes,
-                        onDownloadError: (e, st) => reportOpFailure(
-                          tagKey: 'media.op',
-                          operation: 'drag_out',
-                          error: e,
-                          stackTrace: st,
-                          account: ref.read(currentAccountProvider),
-                        ),
-                        child: image,
-                      )
-                    : image;
-                return InteractiveViewer(
-                  minScale: 1.0,
-                  maxScale: 4.0,
-                  child: Center(child: draggable),
-                );
-              },
-            ),
-            if (attachment.description != null &&
-                attachment.description!.isNotEmpty)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [Colors.black87, Colors.transparent],
+        body: Focus(
+          autofocus: true,
+          onKeyEvent: _handleKey,
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                itemCount: _attachments.length,
+                onPageChanged: (index) => setState(() => _currentIndex = index),
+                itemBuilder: (context, index) {
+                  final a = _attachments[index];
+                  if (a.type == AttachmentType.video ||
+                      a.type == AttachmentType.gifv) {
+                    return _VideoPage(url: a.url);
+                  }
+                  if (a.type == AttachmentType.audio) {
+                    return _AudioPage(url: a.url);
+                  }
+                  final image = Image.network(
+                    a.url,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white54,
+                      size: 64,
+                    ),
+                  );
+                  // デスクトップ (macOS / Windows / Linux) では画像を OS ファイラーへ
+                  // drag-out できる (#645 / #776)。画像のみ (動画/音声は player の
+                  // 操作と gesture が競合するため対象外)。macOS / Windows は virtual
+                  // file、Linux は temp 実ファイル経路（_DragOutImage 内で分岐）。
+                  final draggable =
+                      supportsMediaDragOut && _dragOutFileFormat(a) != null
+                      ? _DragOutImage(
+                          attachment: a,
+                          download: _downloadBytes,
+                          onDownloadError: (e, st) => reportOpFailure(
+                            tagKey: 'media.op',
+                            operation: 'drag_out',
+                            error: e,
+                            stackTrace: st,
+                            account: ref.read(currentAccountProvider),
+                          ),
+                          child: image,
+                        )
+                      : image;
+                  return InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: Center(child: draggable),
+                  );
+                },
+              ),
+              if (attachment.description != null &&
+                  attachment.description!.isNotEmpty)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black87, Colors.transparent],
+                      ),
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      32,
+                      16,
+                      MediaQuery.of(context).padding.bottom + 16,
+                    ),
+                    child: Text(
+                      attachment.description!,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    32,
-                    16,
-                    MediaQuery.of(context).padding.bottom + 16,
-                  ),
-                  child: Text(
-                    attachment.description!,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

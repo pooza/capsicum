@@ -204,7 +204,13 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final result =
         await showDialog<
-          ({String name, String description, bool discoverable})
+          ({
+            String name,
+            String description,
+            String tagName,
+            bool discoverable,
+            bool sensitive,
+          })
         >(
           context: context,
           builder: (context) => const _CreateCollectionDialog(),
@@ -213,16 +219,19 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
     final name = result.name.trim();
     if (name.isEmpty) return;
     final description = result.description.trim();
+    final tagName = result.tagName.trim();
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! CollectionsSupport) return;
     try {
       // sensitive / discoverable はサーバー側で null 不可（既定値なし）のため
-      // 明示送信する。未送信だと 422 で作成が失敗する（#722）。
+      // 明示送信する。未送信だと 422 で作成が失敗する（#722）。tag_name は任意で、
+      // 空なら null（タグに束ねない）で送る（#801）。
       final collection = await (adapter as CollectionsSupport).createCollection(
         name: name,
         description: description.isEmpty ? null : description,
+        tagName: tagName.isEmpty ? null : tagName,
         discoverable: result.discoverable,
-        sensitive: false,
+        sensitive: result.sensitive,
       );
       if (!mounted) return;
       await _load();
@@ -282,8 +291,10 @@ class _CreateCollectionDialog extends StatefulWidget {
 class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
+  final _tagController = TextEditingController();
   final _nameFocus = FocusNode();
   bool _discoverable = true;
+  bool _sensitive = false;
 
   @override
   void initState() {
@@ -299,6 +310,7 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
+    _tagController.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -307,7 +319,9 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
     Navigator.pop(context, (
       name: _nameController.text,
       description: _descController.text,
+      tagName: _tagController.text,
       discoverable: _discoverable,
+      sensitive: _sensitive,
     ));
   }
 
@@ -315,29 +329,46 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('コレクションを作成'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            focusNode: _nameFocus,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: '名前'),
-          ),
-          TextField(
-            controller: _descController,
-            decoration: const InputDecoration(labelText: '説明（任意）'),
-            maxLines: 3,
-          ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('公開'),
-            subtitle: const Text('一覧や検索に表示する'),
-            value: _discoverable,
-            onChanged: (v) => setState(() => _discoverable = v),
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              focusNode: _nameFocus,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: '名前'),
+            ),
+            TextField(
+              controller: _descController,
+              decoration: const InputDecoration(labelText: '説明（任意）'),
+              maxLines: 3,
+            ),
+            TextField(
+              controller: _tagController,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'タグ名（任意）',
+                hintText: 'コレクションを束ねるハッシュタグ',
+              ),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('公開'),
+              subtitle: const Text('一覧や検索に表示する'),
+              value: _discoverable,
+              onChanged: (v) => setState(() => _discoverable = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('センシティブ'),
+              subtitle: const Text('閲覧注意として扱う'),
+              value: _sensitive,
+              onChanged: (v) => setState(() => _sensitive = v),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
