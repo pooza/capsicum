@@ -2068,6 +2068,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                 .read(composeTemplateHistoryProvider.notifier)
                 .retain(templates.map((t) => t.id).toSet());
           },
+          onLoadError: (e, st) => reportOpFailure(
+            tagKey: 'template.op',
+            operation: 'load_sheet',
+            error: e,
+            stackTrace: st,
+            account: account,
+          ),
         );
       },
     );
@@ -2080,10 +2087,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
+    // 本文と同じく CW もテンプレートで完全に置き換える（「上書き」の語意に揃える）。
+    // CW を持たないテンプレートを当てたら、以前の CW は消す。
     final cw = template.cw;
     if (cw != null && cw.isNotEmpty) {
       _cwEnabled = true;
       _cwController.text = cw;
+    } else {
+      _cwEnabled = false;
+      _cwController.clear();
     }
     ref.read(composeTemplateHistoryProvider.notifier).touch(template.id);
   }
@@ -2140,14 +2152,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
       messenger.showSnackBar(const SnackBar(content: Text('テンプレートを保存しました')));
     } on DioException catch (e, st) {
-      // 上限超過 (409) は想定内。専用文面で案内し、それ以外は汎用文＋計装。
+      // 想定内の 4xx（409 上限 / 422 検証）は専用文面で案内し、Sentry には上げない。
+      // 5xx・ネットワークだけ計装する（template.op の fingerprint を実障害に保つ）。
       final status = e.response?.statusCode;
-      if (status == 409) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('テンプレートの上限（50 件）に達しています')),
-        );
-        return;
-      }
+      final message = switch (status) {
+        409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
+        422 => '入力内容が不正です（名前・本文の長さを確認してください）',
+        _ => 'テンプレートの保存に失敗しました',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+      if (status != null && status < 500) return;
       reportOpFailure(
         tagKey: 'template.op',
         operation: 'create_from_compose',
@@ -2155,7 +2169,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         stackTrace: st,
         account: account,
       );
-      messenger.showSnackBar(const SnackBar(content: Text('テンプレートの保存に失敗しました')));
     } catch (e, st) {
       reportOpFailure(
         tagKey: 'template.op',
@@ -2170,36 +2183,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// テンプレート名を入力させる。空名は保存を無効化する（サーバー契約で必須）。
   Future<String?> _promptTemplateName() {
-    final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('テンプレートとして保存'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 100,
-          decoration: const InputDecoration(
-            labelText: 'テンプレート名',
-            hintText: '例: 実況会お知らせ',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) => TextButton(
-              onPressed: value.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(context, value.text.trim()),
-              child: const Text('保存'),
-            ),
-          ),
-        ],
-      ),
+      builder: (context) => const _TemplateNameDialog(),
     );
   }
 
@@ -3471,6 +3457,67 @@ class _CollapsiblePreviewState extends State<_CollapsiblePreview> {
   }
 }
 
+/// 「テンプレートとして保存」の名前入力ダイアログ (#767)。controller / FocusNode を
+/// 自前で持ち dispose する。macOS の showDialog + autofocus 競合（#722）を避けるため
+/// autofocus を使わず post-frame でフォーカス要求する。
+class _TemplateNameDialog extends StatefulWidget {
+  const _TemplateNameDialog();
+
+  @override
+  State<_TemplateNameDialog> createState() => _TemplateNameDialogState();
+}
+
+class _TemplateNameDialogState extends State<_TemplateNameDialog> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('テンプレートとして保存'),
+      content: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        maxLength: 100,
+        decoration: const InputDecoration(
+          labelText: 'テンプレート名',
+          hintText: '例: 実況会お知らせ',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _controller,
+          builder: (context, value, _) => TextButton(
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.pop(context, value.text.trim()),
+            child: const Text('保存'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// 投稿テンプレート選択シート (#767)。サーバーから一覧を取得し、使用履歴
 /// ([history]) の順（最近使った順）を先頭に並べて提示する。
 class _TemplateSheet extends StatefulWidget {
@@ -3480,6 +3527,7 @@ class _TemplateSheet extends StatefulWidget {
   final void Function(ComposeTemplate template) onSelect;
   final VoidCallback onManage;
   final void Function(List<ComposeTemplate> templates) onLoaded;
+  final void Function(Object error, StackTrace stackTrace) onLoadError;
 
   const _TemplateSheet({
     required this.mulukhiya,
@@ -3488,6 +3536,7 @@ class _TemplateSheet extends StatefulWidget {
     required this.onSelect,
     required this.onManage,
     required this.onLoaded,
+    required this.onLoadError,
   });
 
   @override
@@ -3517,7 +3566,8 @@ class _TemplateSheetState extends State<_TemplateSheet> {
         });
         widget.onLoaded(templates);
       }
-    } catch (e) {
+    } catch (e, st) {
+      widget.onLoadError(e, st);
       if (mounted) {
         setState(() {
           _error = e.toString();

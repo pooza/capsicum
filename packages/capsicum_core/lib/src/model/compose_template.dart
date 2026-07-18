@@ -1,3 +1,7 @@
+/// 1 アカウントあたりのテンプレート保存上限 (#767)。モロヘイヤ側
+/// `ComposeTemplateContainer::MAX_COUNT` と対の値で、上限到達時の UI 文面に使う。
+const composeTemplateMaxCount = 50;
+
 /// 投稿テンプレート（定形投稿）1 件 (#767)。保存先はモロヘイヤの per-user
 /// user_config（`/compose/templates`）で、`id` はサーバー採番の UUID。
 ///

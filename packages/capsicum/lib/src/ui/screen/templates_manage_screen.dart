@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
@@ -20,9 +21,22 @@ final composeTemplatesProvider =
           !mulukhiya.composeTemplatesEnabled) {
         return [];
       }
-      return mulukhiya.getComposeTemplates(
-        accessToken: account.userSecret.accessToken,
-      );
+      try {
+        return await mulukhiya.getComposeTemplates(
+          accessToken: account.userSecret.accessToken,
+        );
+      } catch (e, st) {
+        // 一覧取得の恒常的失敗（サーバー 5xx 等）を可視化する。CRUD と観測性を
+        // 揃える（collections.op の load 計装と同様）。UI へは rethrow で表示。
+        reportOpFailure(
+          tagKey: 'template.op',
+          operation: 'load_list',
+          error: e,
+          stackTrace: st,
+          account: account,
+        );
+        rethrow;
+      }
     });
 
 /// 投稿テンプレートの管理画面 (#767)。作成・編集・削除と、テンプレートからの
@@ -117,10 +131,12 @@ class TemplatesManageScreen extends ConsumerWidget {
         body: result.body,
         cw: result.cw,
       );
+      // 画面を離脱していたら ref は破棄済みで invalidate が投げる。ガードする。
+      if (!context.mounted) return;
       ref.invalidate(composeTemplatesProvider);
       messenger.showSnackBar(const SnackBar(content: Text('テンプレートを作成しました')));
     } catch (e, st) {
-      _reportAndNotify(messenger, ref, 'create', e, st);
+      _reportAndNotify(messenger, account, 'create', e, st);
     }
   }
 
@@ -147,10 +163,11 @@ class TemplatesManageScreen extends ConsumerWidget {
         body: result.body,
         cw: result.cw,
       );
+      if (!context.mounted) return;
       ref.invalidate(composeTemplatesProvider);
       messenger.showSnackBar(const SnackBar(content: Text('テンプレートを更新しました')));
     } catch (e, st) {
-      _reportAndNotify(messenger, ref, 'update', e, st);
+      _reportAndNotify(messenger, account, 'update', e, st);
     }
   }
 
@@ -186,35 +203,42 @@ class TemplatesManageScreen extends ConsumerWidget {
         accessToken: account.userSecret.accessToken,
         id: template.id,
       );
+      if (!context.mounted) return;
       ref.invalidate(composeTemplatesProvider);
       messenger.showSnackBar(const SnackBar(content: Text('テンプレートを削除しました')));
     } catch (e, st) {
-      _reportAndNotify(messenger, ref, 'delete', e, st);
+      _reportAndNotify(messenger, account, 'delete', e, st);
     }
   }
 
   /// 失敗を計装しつつ、ユーザーには理由の当たりを付けた SnackBar で通知する。
+  /// 想定内のクライアントエラー（409 上限 / 422 検証 / 404 競合削除）は SnackBar
+  /// で案内するに留め、Sentry には上げない（サーバー側も 4xx は log 止まりで、
+  /// `template.op` の fingerprint を実障害だけに保つため）。account は await 前に
+  /// 捕捉した値を渡す（ここで ref.read すると画面離脱後に StateError を投げる）。
   void _reportAndNotify(
     ScaffoldMessengerState messenger,
-    WidgetRef ref,
+    Account? account,
     String operation,
     Object error,
     StackTrace st,
   ) {
     final status = error is DioException ? error.response?.statusCode : null;
     final message = switch (status) {
-      409 => 'テンプレートの上限（50 件）に達しています',
+      409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
       422 => '入力内容が不正です（名前・本文の長さを確認してください）',
       404 => 'テンプレートが見つかりません（既に削除された可能性があります）',
       _ => '操作に失敗しました',
     };
     messenger.showSnackBar(SnackBar(content: Text(message)));
+    // 想定内の 4xx は計装しない（5xx / ネットワーク / 非 Dio 例外のみ上げる）。
+    if (status != null && status < 500) return;
     reportOpFailure(
       tagKey: 'template.op',
       operation: operation,
       error: error,
       stackTrace: st,
-      account: ref.read(currentAccountProvider),
+      account: account,
     );
   }
 }
@@ -314,6 +338,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _bodyController;
   late final TextEditingController _cwController;
+  final _nameFocus = FocusNode();
 
   @override
   void initState() {
@@ -321,6 +346,11 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     _nameController = TextEditingController(text: widget.initial?.name ?? '');
     _bodyController = TextEditingController(text: widget.initial?.body ?? '');
     _cwController = TextEditingController(text: widget.initial?.cw ?? '');
+    // macOS の showDialog + autofocus は barrier の FocusScope と競合して
+    // キー入力を取りこぼす（#722）。autofocus を使わず post-frame で明示要求する。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
   }
 
   @override
@@ -328,6 +358,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
     _nameController.dispose();
     _bodyController.dispose();
     _cwController.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
@@ -360,7 +391,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
           children: [
             TextField(
               controller: _nameController,
-              autofocus: true,
+              focusNode: _nameFocus,
               maxLength: 100,
               decoration: const InputDecoration(
                 labelText: '名前',
