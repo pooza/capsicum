@@ -343,6 +343,9 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      // 本文が複数行で縦に伸びるため、画面端までの余白を詰めてダイアログを広く
+      // 取る（既定は左右 40 / 上下 24）。
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       title: Text(widget.initial == null ? 'テンプレートを作成' : 'テンプレートを編集'),
       content: SingleChildScrollView(
         child: Column(
