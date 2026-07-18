@@ -8,10 +8,6 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 
-/// モロヘイヤ `ComposeTemplateContract::MAX_BODY_SIZE` の絶対上限 (#4457)。
-/// サーバー投稿上限がこれを超えても、テンプレ本文はこの値で頭打ちになる。
-const _templateBodyHardMax = 5000;
-
 /// 投稿テンプレート一覧 (#767)。モロヘイヤの per-user CRUD API から取得する。
 /// テンプレート機能を提供するサーバー（[MulukhiyaService.composeTemplatesEnabled]）
 /// でのみ中身が入る。
@@ -98,15 +94,11 @@ class TemplatesManageScreen extends ConsumerWidget {
     await context.push('/compose', extra: {'template': template});
   }
 
-  /// 本文入力の上限。サーバー投稿上限（プリセットで 3000）を使い、モロヘイヤ側
-  /// API の絶対上限 5000 で頭打ちにする。未取得時は 5000 にフォールバック。
-  int _bodyMaxLength(WidgetRef ref) {
-    final serverMax = ref.read(maxPostLengthProvider);
-    if (serverMax == null || serverMax > _templateBodyHardMax) {
-      return _templateBodyHardMax;
-    }
-    return serverMax;
-  }
+  /// 本文入力の上限。テンプレ本文はそのまま投稿されるわけではないが、投稿可能
+  /// 文字数を超える意味はないため、投稿フォームと同じ [maxPostLengthProvider] を
+  /// 使う（サーバー値、無ければ Mastodon 500 / Misskey 3000 の adapter 既定）。
+  /// アダプタ不在の稀な null 時のみ上限なしにする。
+  int? _bodyMaxLength(WidgetRef ref) => ref.read(maxPostLengthProvider);
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final result = await _showEditor(
@@ -232,7 +224,7 @@ class TemplatesManageScreen extends ConsumerWidget {
 Future<({String name, String body, String? cw})?> _showEditor(
   BuildContext context, {
   ComposeTemplate? initial,
-  required int maxBodyLength,
+  required int? maxBodyLength,
 }) {
   return showDialog<({String name, String body, String? cw})>(
     context: context,
@@ -310,7 +302,7 @@ class _TemplateTile extends StatelessWidget {
 
 class _TemplateEditorDialog extends StatefulWidget {
   final ComposeTemplate? initial;
-  final int maxBodyLength;
+  final int? maxBodyLength;
 
   const _TemplateEditorDialog({this.initial, required this.maxBodyLength});
 
