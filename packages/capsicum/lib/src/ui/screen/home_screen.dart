@@ -1250,6 +1250,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           icon: Icons.edit_note,
           onSelected: () => act(() => context.push('/drafts')),
         ),
+      // 投稿テンプレート管理 (#767)。テンプレ機能提供サーバーのみ。
+      if (ref.read(currentMulukhiyaProvider)?.composeTemplatesEnabled == true)
+        HomeNavItem(
+          title: '投稿テンプレート',
+          icon: Icons.description_outlined,
+          onSelected: () => act(() => context.push('/templates/manage')),
+        ),
       HomeNavItem(
         title: 'サーバー情報',
         icon: Icons.dns_outlined,

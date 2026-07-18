@@ -446,6 +446,12 @@ class MulukhiyaService {
   /// 有無は運用者しか知り得ないため)。`preopenedAt <= foundedAt` の関係になる。
   final DateTime? preopenedAt;
 
+  /// `features.compose_templates` フラグ (#4457 / capsicum#767)。`true` の
+  /// サーバーは投稿テンプレートの per-user CRUD (`compose/templates`) を提供する。
+  /// 旧モロヘイヤ (フラグ未提供) は false にフォールバックし、テンプレート導線を
+  /// 出さない。存在ベースの静的フラグなので per-user 評価は不要。
+  final bool composeTemplatesEnabled;
+
   final List<String> adminRoleIds;
   final String? infoBotAcct;
 
@@ -482,6 +488,7 @@ class MulukhiyaService {
     this.nowplayingUrlResolverEnabled = false,
     this.spotifyEnabled = false,
     this.spotifyLinked = false,
+    this.composeTemplatesEnabled = false,
     this.foundedAt,
     this.preopenedAt,
     this.adminRoleIds = const [],
@@ -564,6 +571,7 @@ class MulukhiyaService {
         spotifyEnabled: features?['spotify_enabled'] == true,
         // 欠落・未連携時はナウプレ挿入導線を出さない (#570)。連携導線は設定画面側。
         spotifyLinked: features?['spotify_linked'] == true,
+        composeTemplatesEnabled: features?['compose_templates'] == true,
         foundedAt: _parseIsoDate(config['founded_at']),
         preopenedAt: _parseIsoDate(config['preopened_at']),
         adminRoleIds: adminRoleIds,
@@ -1222,6 +1230,74 @@ class MulukhiyaService {
       data: {'id': id, 'tags': tags},
       options: _bearerOptions(accessToken),
     );
+  }
+
+  /// 投稿テンプレート一覧を取得する (#767)。
+  /// GET /mulukhiya/api/compose/templates
+  Future<List<ComposeTemplate>> getComposeTemplates({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get(
+      '$baseUrl/compose/templates',
+      options: _bearerOptions(accessToken),
+    );
+    return _parseTemplates(response.data);
+  }
+
+  /// 投稿テンプレートを新規作成する (#767)。作成後の**全件**を返す。
+  /// POST /mulukhiya/api/compose/templates
+  Future<List<ComposeTemplate>> createComposeTemplate({
+    required String accessToken,
+    required String name,
+    required String body,
+    String? cw,
+  }) async {
+    final response = await _dio.post(
+      '$baseUrl/compose/templates',
+      data: {'name': name, 'body': body, 'cw': ?cw},
+      options: _bearerOptions(accessToken),
+    );
+    return _parseTemplates(response.data);
+  }
+
+  /// 既存テンプレートを更新する (#767)。更新後の**全件**を返す。
+  /// PUT /mulukhiya/api/compose/templates/:id
+  Future<List<ComposeTemplate>> updateComposeTemplate({
+    required String accessToken,
+    required String id,
+    required String name,
+    required String body,
+    String? cw,
+  }) async {
+    final response = await _dio.put(
+      '$baseUrl/compose/templates/$id',
+      data: {'name': name, 'body': body, 'cw': ?cw},
+      options: _bearerOptions(accessToken),
+    );
+    return _parseTemplates(response.data);
+  }
+
+  /// テンプレートを削除する (#767)。削除後の**全件**を返す。
+  /// DELETE /mulukhiya/api/compose/templates/:id
+  Future<List<ComposeTemplate>> deleteComposeTemplate({
+    required String accessToken,
+    required String id,
+  }) async {
+    final response = await _dio.delete(
+      '$baseUrl/compose/templates/$id',
+      options: _bearerOptions(accessToken),
+    );
+    return _parseTemplates(response.data);
+  }
+
+  /// compose/templates 系レスポンスの `templates` 配列を model に変換する。
+  List<ComposeTemplate> _parseTemplates(dynamic data) {
+    final map = data is Map<String, dynamic> ? data : const {};
+    final list = map['templates'] as List? ?? const [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(ComposeTemplate.fromJson)
+        .toList();
   }
 
   /// Fetch emoji palettes from the server (Misskey only).
