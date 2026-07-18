@@ -110,6 +110,11 @@ class _OversizeFile {
 /// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
 enum _AttachmentMenuAction { preview, crop, addText, editDescription }
 
+/// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
+/// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
+/// 保存 #767）とプレビューを overflow に畳んで actions の飽和を防ぐ。
+enum _ComposeMenuAction { saveDraft, preview }
+
 /// 添付画像を原寸で確認するためのフルスクリーンビューア (#660)。トリミング結果も
 /// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。編集操作は
 /// サムネタップの編集メニュー（[_showAttachmentMenu], #769）へ集約したため、この
@@ -2571,19 +2576,45 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         ),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // サーバー下書き保存 (#174)。DraftSupport のあるアダプタ（Misskey）
-          // のみ表示。予約投稿（_scheduledAt）とは併用しない（予約は送信で成立）。
-          if (ref.watch(currentAdapterProvider) is DraftSupport &&
-              _scheduledAt == null)
-            IconButton(
-              onPressed: _sending ? null : _saveServerDraft,
-              icon: const Icon(Icons.save_outlined),
-              tooltip: '下書き保存',
-            ),
-          IconButton(
-            onPressed: _sending ? null : _showPreview,
-            icon: const Icon(Icons.preview_outlined),
-            tooltip: 'プレビュー',
+          // 保存系・プレビューは overflow に畳み、AppBar の一等地は主 CTA の送信に
+          // 残す (#767)。サーバー下書き保存 (#174) は DraftSupport のあるアダプタ
+          // （Misskey）でのみ・予約投稿中でないときのみ出す（予約は送信で成立）。
+          Builder(
+            builder: (context) {
+              final canSaveDraft =
+                  ref.watch(currentAdapterProvider) is DraftSupport &&
+                  _scheduledAt == null;
+              return PopupMenuButton<_ComposeMenuAction>(
+                enabled: !_sending,
+                onSelected: (action) {
+                  switch (action) {
+                    case _ComposeMenuAction.saveDraft:
+                      _saveServerDraft();
+                    case _ComposeMenuAction.preview:
+                      _showPreview();
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (canSaveDraft)
+                    const PopupMenuItem(
+                      value: _ComposeMenuAction.saveDraft,
+                      child: ListTile(
+                        leading: Icon(Icons.save_outlined),
+                        title: Text('下書き保存'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: _ComposeMenuAction.preview,
+                    child: ListTile(
+                      leading: Icon(Icons.preview_outlined),
+                      title: Text('プレビュー'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           IconButton(
             onPressed: _sending ? null : _submit,
