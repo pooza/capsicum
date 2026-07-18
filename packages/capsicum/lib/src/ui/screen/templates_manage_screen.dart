@@ -337,7 +337,7 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               maxLength: 100,
               decoration: const InputDecoration(
                 labelText: '名前',
-                hintText: '例: 実況テンプレ',
+                hintText: '例: 実況会お知らせ',
               ),
             ),
             TextField(

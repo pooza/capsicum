@@ -2181,7 +2181,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           maxLength: 100,
           decoration: const InputDecoration(
             labelText: 'テンプレート名',
-            hintText: '例: 実況テンプレ',
+            hintText: '例: 実況会お知らせ',
           ),
         ),
         actions: [
