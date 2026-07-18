@@ -355,21 +355,30 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               decoration: const InputDecoration(
                 labelText: '名前',
                 hintText: '例: 実況会お知らせ',
+                border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: _bodyController,
               maxLength: widget.maxBodyLength,
-              maxLines: 5,
-              minLines: 3,
-              decoration: const InputDecoration(labelText: '本文（空でも可）'),
+              maxLines: 8,
+              minLines: 4,
+              decoration: const InputDecoration(
+                labelText: '本文（空でも可）',
+                border: OutlineInputBorder(),
+                // 複数行なのでラベルを枠の上端に揃える。
+                alignLabelWithHint: true,
+              ),
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: _cwController,
               maxLength: 200,
               decoration: const InputDecoration(
                 labelText: 'CW（任意）',
                 hintText: '閲覧注意の見出し',
+                border: OutlineInputBorder(),
               ),
             ),
           ],
