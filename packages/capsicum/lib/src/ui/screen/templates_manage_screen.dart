@@ -342,14 +342,21 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // AlertDialog は中身の高さに合わせて縮むため、本文を固定行数にするとダイアログが
+    // 短いまま上下に大きな余白が残る。本文欄を Expanded で残り高さいっぱいに伸ばし、
+    // 内容の高さを利用可能高さ（キーボード分を除く）に合わせて余白を詰める。
+    final media = MediaQuery.of(context);
+    // title / actions / insetPadding / 各欄のカウンタ等の実測ぶんを差し引く概算。
+    final contentHeight = (media.size.height - media.viewInsets.bottom - 260)
+        .clamp(240.0, 640.0);
     return AlertDialog(
-      // 本文が複数行で縦に伸びるため、画面端までの余白を詰めてダイアログを広く
-      // 取る（既定は左右 40 / 上下 24）。
+      // 画面端までの余白を詰めてダイアログを広く取る（既定は左右 40 / 上下 24）。
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       title: Text(widget.initial == null ? 'テンプレートを作成' : 'テンプレートを編集'),
-      content: SingleChildScrollView(
+      content: SizedBox(
+        width: double.maxFinite,
+        height: contentHeight,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _nameController,
@@ -362,16 +369,22 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _bodyController,
-              maxLength: widget.maxBodyLength,
-              maxLines: 8,
-              minLines: 4,
-              decoration: const InputDecoration(
-                labelText: '本文（空でも可）',
-                border: OutlineInputBorder(),
-                // 複数行なのでラベルを枠の上端に揃える。
-                alignLabelWithHint: true,
+            // 本文は残り高さいっぱいに広げる。超過分は欄内でスクロールする。
+            Expanded(
+              child: TextField(
+                controller: _bodyController,
+                maxLength: widget.maxBodyLength,
+                expands: true,
+                maxLines: null,
+                minLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                keyboardType: TextInputType.multiline,
+                decoration: const InputDecoration(
+                  labelText: '本文（空でも可）',
+                  border: OutlineInputBorder(),
+                  // 複数行なのでラベルを枠の上端に揃える。
+                  alignLabelWithHint: true,
+                ),
               ),
             ),
             const SizedBox(height: 8),
