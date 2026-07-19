@@ -72,23 +72,6 @@ class DesktopSettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(launchAtLoginProvider.notifier).setEnabled(value),
             ),
-          // カラー絵文字フォールバック (#861 / #869)。Linux のみ意味がある。
-          // ON (既定) は #861 の対処で Unicode 絵文字をカラー表示するが、その
-          // 副作用で半角数字の幅が崩れる (#869)。数字表示を優先したい場合は
-          // OFF にして #861 以前の挙動に戻す。
-          if (colorEmojiFallbackConfigurable)
-            SwitchListTile(
-              title: const Text('カラー絵文字を使う'),
-              subtitle: const Text(
-                'Unicode 絵文字をカラーで表示します。'
-                'オフにすると一部の絵文字はモノクロになりますが、'
-                '半角数字などの文字幅の崩れを回避できます',
-              ),
-              value: ref.watch(colorEmojiFallbackProvider),
-              onChanged: (value) => ref
-                  .read(colorEmojiFallbackProvider.notifier)
-                  .setEnabled(value),
-            ),
           // 直配チャネル (Linux AppImage / Windows 自己署名 MSIX 直配) のみ
           // 意味がある設定 (#641)。ストア配布ビルドでは
           // [kIsDirectChannelBuild] が false なので、設定エントリ自体を隠す。
