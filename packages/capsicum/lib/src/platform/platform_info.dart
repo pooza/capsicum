@@ -11,6 +11,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
+/// カラー絵文字フォールバック (#861) の ON/OFF トグルを設定に出すか。
+/// この設定が意味を持つのは Linux のみ。#861 は `Noto Color Emoji` を
+/// グローバルな fontFamilyFallback に足す対処で、Linux では同フォントが
+/// ASCII 数字グリフまで横取りして半角数字の幅が崩れる回帰 (#869) を生む。
+/// 他 OS は OS 側の絵文字解決が既に正しく、この対処自体が実質 no-op のため
+/// トグルを出さない。UI 層に `Platform.isX` を直書きしない設計指針 (#650) に
+/// 従い機能名で公開する。
+bool get colorEmojiFallbackConfigurable => !kIsWeb && Platform.isLinux;
+
 /// 常駐モード (#752) の常駐先の OS 別呼称。macOS は「メニューバー」
 /// （NSStatusItem）、Windows / Linux は「トレイ」。設定画面の説明文を OS に
 /// 合わせて出し分けるために機能名で公開する（UI 層に `Platform.isX` を直書き

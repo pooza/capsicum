@@ -65,6 +65,12 @@ const _snackBarTheme = SnackBarThemeData(
 /// カラー絵文字フォントを名指しして順位付けを迂回する。ファミリ名で system
 /// フォントを引くだけなので容量増はなく、当該ファミリを持たない他プラット
 /// フォームでは素通りして OS 側の (既に正常な) 解決がそのまま効く。
+///
+/// ただし Noto Color Emoji はキーキャップ絵文字の土台として ASCII 数字
+/// `0-9` `#` `*` のグリフを持つため、Linux では半角数字までカラーフォントに
+/// 横取りされて幅が崩れる (#869)。Linux ではこの適用を
+/// [colorEmojiFallbackProvider] でトグルできるようにし、OFF でこの const を
+/// 外す (build 内で解決)。他 OS は従来どおり無条件適用。
 const _fontFamilyFallback = <String>['Noto Color Emoji'];
 
 /// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
@@ -1220,6 +1226,14 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     final darkTextVariant = ref.watch(darkTextColorProvider);
     final darkText = darkTextColor(darkTextVariant);
 
+    // カラー絵文字フォールバック (#861) の適用。Linux でトグル OFF のときのみ
+    // 外して #861 以前の挙動 (半角数字の幅が正しい) に戻す (#869)。他 OS は
+    // 従来どおり無条件に適用し、既存挙動を一切変えない。
+    final fontFamilyFallback =
+        colorEmojiFallbackConfigurable && !ref.watch(colorEmojiFallbackProvider)
+        ? null
+        : _fontFamilyFallback;
+
     var darkScheme = ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.dark,
@@ -1255,13 +1269,13 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
         colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
         useMaterial3: true,
         snackBarTheme: _snackBarTheme,
-        fontFamilyFallback: _fontFamilyFallback,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       darkTheme: ThemeData(
         colorScheme: darkScheme,
         useMaterial3: true,
         snackBarTheme: _snackBarTheme,
-        fontFamilyFallback: _fontFamilyFallback,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       themeMode: themeMode,
       builder: (context, child) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../platform/platform_info.dart';
 import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
 
@@ -82,6 +83,22 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(emojiZeroWidthSpaceProvider.notifier).toggle(),
           ),
+          // カラー絵文字フォールバック (#861 / #869)。Linux のみ表示。ON (既定)
+          // は Unicode 絵文字をカラー表示するが、その副作用で半角数字の幅が
+          // 崩れる (#869)。数字表示を優先したい場合は OFF で #861 以前の挙動へ。
+          if (colorEmojiFallbackConfigurable)
+            SwitchListTile(
+              title: const Text('カラー絵文字を使う'),
+              subtitle: const Text(
+                'Unicode 絵文字をカラーで表示します。'
+                'オフにすると一部の絵文字はモノクロになりますが、'
+                '半角数字などの文字幅の崩れを回避できます',
+              ),
+              value: ref.watch(colorEmojiFallbackProvider),
+              onChanged: (value) => ref
+                  .read(colorEmojiFallbackProvider.notifier)
+                  .setEnabled(value),
+            ),
           SwitchListTile(
             title: const Text('MFM のアニメーションを再生'),
             subtitle: const Text(

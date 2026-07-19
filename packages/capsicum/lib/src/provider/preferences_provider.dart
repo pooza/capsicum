@@ -50,6 +50,7 @@ const _launchAtLoginKey = 'launch_at_login';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
+const _colorEmojiFallbackKey = 'color_emoji_fallback';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -932,6 +933,37 @@ class ShowStreamReconnectDetailNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showStreamReconnectDetailKey, value);
+  }
+}
+
+/// Linux でカラー絵文字フォールバック (`Noto Color Emoji` を fontFamilyFallback
+/// に足す #861 の対処) を効かせるか。default ON。
+///
+/// #861 の対処はグローバルに `Noto Color Emoji` を足すため、同フォントが
+/// キーキャップ絵文字 (0️⃣〜9️⃣) の土台として持つ ASCII 数字 `0-9` `#` `*` の
+/// グリフまで横取りし、半角数字が絵文字メトリクス (ほぼ全角幅) で描かれて
+/// 全画面で幅が崩れる回帰 (#869) を生む。OFF にすると #861 以前の挙動
+/// (数字は正しいが一部 Unicode 絵文字はモノクロ) に戻せる。カラー絵文字と
+/// 数字の正しさを両立させる洗練は別途 (#869 参照)。
+///
+/// theme (MaterialApp) に効くため、起動直後の一瞬のちらつきを避けるべく
+/// pre-warm 済み prefs から同期ロードする (`residentModeProvider` 等と同型)。
+final colorEmojiFallbackProvider =
+    NotifierProvider<ColorEmojiFallbackNotifier, bool>(
+      ColorEmojiFallbackNotifier.new,
+    );
+
+class ColorEmojiFallbackNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return sharedPrefsOrThrow.getBool(_colorEmojiFallbackKey) ?? true;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_colorEmojiFallbackKey, value);
   }
 }
 
