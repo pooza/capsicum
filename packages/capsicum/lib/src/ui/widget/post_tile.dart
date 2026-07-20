@@ -350,20 +350,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       },
       resolveUrl: (url) =>
           TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri == null) return;
-        // Misskey Play リンクをアプリ内ブラウザで開く
-        if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'play') {
-          final account = ref.read(accountManagerProvider).current;
-          if (account != null && uri.host == account.key.host) {
-            launchUrlSafely(uri, mode: LaunchMode.inAppBrowserView);
-            return;
-          }
-        }
-        // fediverse 投稿 / アカウント URL はアプリ内へ resolve (#820)。
-        openFediverseLink(context, ref, url);
-      },
+      // fediverse 投稿 / アカウント URL はアプリ内へ resolve し、自ホストの
+      // Misskey Play はネイティブ画面で開く。Play の分岐は openFediverseLink に
+      // 集約済み (#820 / #830)。
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
       onLinkLongPress: (url) {
         Clipboard.setData(ClipboardData(text: url));
         ScaffoldMessenger.of(context).showSnackBar(

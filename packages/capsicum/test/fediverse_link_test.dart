@@ -54,4 +54,39 @@ void main() {
       expect(check('/@alice'), isFalse);
     });
   });
+
+  /// #830 の Play リンク振り分け。自ホストの `/play/<id>` だけネイティブの
+  /// `/play` 画面で開き、他ホストは null（＝ブラウザ等へフォールバック）。
+  group('misskeyPlayIdOnHost (#830)', () {
+    String? play(String url, String? selfHost) =>
+        misskeyPlayIdOnHost(Uri.parse(url), selfHost);
+
+    test('自ホストの /play/<id> → id を返す', () {
+      expect(play('https://misskey.example/play/9play01', 'misskey.example'),
+          '9play01');
+    });
+
+    test('末尾スラッシュがあっても id を返す', () {
+      expect(play('https://misskey.example/play/9play01/', 'misskey.example'),
+          '9play01');
+    });
+
+    test('他ホストの /play/<id> → null（ブラウザへ）', () {
+      expect(play('https://other.example/play/9play01', 'misskey.example'),
+          isNull);
+    });
+
+    test('selfHost が null → null', () {
+      expect(play('https://misskey.example/play/9play01', null), isNull);
+    });
+
+    test('Play でない自ホスト URL → null', () {
+      expect(play('https://misskey.example/notes/9abcxyz', 'misskey.example'),
+          isNull);
+    });
+
+    test('id を伴わない /play → null', () {
+      expect(play('https://misskey.example/play', 'misskey.example'), isNull);
+    });
+  });
 }
