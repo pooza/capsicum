@@ -18,9 +18,9 @@ jobs:
         with:
           channel: stable
           # linux-release.yml / windows-release.yml と同じ版に固定する。
-          # unpinned だと stable の最新 (現在 3.44) を拾い、出荷ツール
-          # チェーン (3.41.9) には無い deprecation / lint で CI が落ちる。
-          flutter-version: 3.41.9
+          # unpinned だと stable の最新を拾い、出荷ツールチェーンには無い
+          # deprecation / lint で CI が落ちる。開発機もこの版に揃えること (#836)。
+          flutter-version: 3.44.6
       - run: flutter pub get
       - name: Generate code
         run: dart run build_runner build --delete-conflicting-outputs

@@ -304,7 +304,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         data: {
           'host': widget.host,
           'backend': widget.backendType.name,
-          if (data != null) ...data,
+          ...?data,
         },
       ),
     );
