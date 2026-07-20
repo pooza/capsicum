@@ -28,10 +28,7 @@ void main() {
       ]);
 
       expect(find.text('動的ブロック'), findsOneWidget);
-      expect(
-        find.text('このブロックは廃止されています。今後は Play を利用してください。'),
-        findsOneWidget,
-      );
+      expect(find.text('このブロックは廃止されています。今後は Play を利用してください。'), findsOneWidget);
       // 「未対応」とは言わない。
       expect(find.textContaining('未対応'), findsNothing);
     });
