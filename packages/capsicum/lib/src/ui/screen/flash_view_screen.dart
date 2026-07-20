@@ -1,14 +1,21 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../service/tco_resolver.dart';
 import '../../util/oauth_scope_error.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
+import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
+import '../util/hashtag_actions.dart';
+import '../widget/content_parser.dart';
+import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
 /// Misskey Flash（UI 表記は **Play**）の詳細画面 (#830)。
@@ -136,6 +143,7 @@ class _FlashBody extends ConsumerStatefulWidget {
 class _FlashBodyState extends ConsumerState<_FlashBody> {
   FlashRuntime? _runtime;
   FlashRuntimeError? _error;
+  ContentRenderer? _summaryRenderer;
   bool _running = false;
 
   late bool _isLiked = widget.flash.isLiked;
@@ -154,7 +162,52 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
   @override
   void dispose() {
     _runtime?.dispose();
+    _summaryRenderer?.dispose();
     super.dispose();
+  }
+
+  Future<void> _navigateToMention(String mention) async {
+    final parts = mention.replaceFirst('@', '').split('@');
+    if (parts.isEmpty) return;
+    final username = parts[0];
+    final host = parts.length > 1 ? parts[1] : null;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final user = await adapter.getUser(username, host);
+      if (user != null && mounted) {
+        context.push('/profile', extra: user);
+      }
+    } on Exception catch (e) {
+      debugPrint('Failed to look up mention $mention: $e');
+    }
+  }
+
+  /// Play の説明文（summary）を投稿本文と同じレンダリングで出す。acct / URL /
+  /// ハッシュタグ / カスタム絵文字を含みうるので、素の [Text] では shortcode や
+  /// 生 URL がそのまま見えてしまう。プロフィールの bio と同型 (#830)。
+  Widget _buildSummary(Flash flash, ThemeData theme) {
+    _summaryRenderer?.dispose();
+    final host = _host;
+    _summaryRenderer = ContentRenderer(
+      baseStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      resolveEmoji: (shortcode) {
+        final url = flash.author.emojis[shortcode];
+        if (url != null) return url;
+        if (host != null) return 'https://$host/emoji/$shortcode.webp';
+        return null;
+      },
+      resolveUrl: (url) =>
+          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+      onMentionTap: (mention) => _navigateToMention(mention),
+      emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    );
+    return Text.rich(_summaryRenderer!.renderMfm(flash.summary!));
   }
 
   Future<void> _start() async {
@@ -272,12 +325,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               ),
               if (flash.summary != null && flash.summary!.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Text(
-                  flash.summary!,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                _buildSummary(flash, theme),
               ],
               const SizedBox(height: 12),
               Row(
@@ -285,9 +333,14 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
                   UserAvatar(user: flash.author, size: 24),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      flash.author.displayName ?? flash.author.username,
+                    child: EmojiText(
+                      flash.author.displayName?.isNotEmpty == true
+                          ? flash.author.displayName!
+                          : flash.author.username,
+                      emojis: flash.author.emojis,
+                      fallbackHost: _host,
                       style: theme.textTheme.bodySmall,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

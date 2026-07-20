@@ -130,6 +130,29 @@ void main() {
       expect(find.text('結果を投稿'), findsOneWidget);
     });
 
+    testWidgets('postFormButton は align によらず常に中央に置く (#830)', (tester) async {
+      // root 直下（Column が stretch）に置くと、Align が無ければボタンは全幅に
+      // 伸びてしまう。Align(center) で「全幅にせず中央」を固定する。
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+      await runtime.run('''
+        Ui:render([
+          Ui:C:postFormButton({ text: "投稿する", primary: true }, "post")
+        ])
+      ''');
+
+      await _pump(tester, runtime);
+
+      final buttonSize = tester.getSize(find.byType(FilledButton));
+      final viewWidth = tester.getSize(find.byType(FlashView)).width;
+      // 全幅に伸びていない（stretch されていない）。
+      expect(buttonSize.width, lessThan(viewWidth));
+      // 中央にある。
+      final buttonCenter = tester.getCenter(find.byType(FilledButton)).dx;
+      final viewCenter = tester.getCenter(find.byType(FlashView)).dx;
+      expect((buttonCenter - viewCenter).abs(), lessThan(1.0));
+    });
+
     testWidgets('循環参照でも無限再帰しない', (tester) async {
       final runtime = _runtime();
       addTearDown(runtime.dispose);

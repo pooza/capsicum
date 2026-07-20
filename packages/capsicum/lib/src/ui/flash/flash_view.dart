@@ -342,19 +342,26 @@ class _PostFormButton extends StatelessWidget {
       context.push('/compose', extra: {'initialText': text ?? ''});
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: component.props['primary'] == true
-          ? FilledButton.icon(
-              onPressed: open,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: label,
-            )
-          : OutlinedButton.icon(
-              onPressed: open,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: label,
-            ),
+    // 投稿導線は Play の主目的の出口なので、囲む container の align によらず
+    // 常に中央に置く（意図的に本家の align 準拠から外している・#830）。root
+    // 直下（Column が stretch）でも container 内（start / center）でも、Align
+    // が幅いっぱいの帯を取ってボタンを中央へ寄せる。
+    return Align(
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: component.props['primary'] == true
+            ? FilledButton.icon(
+                onPressed: open,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: label,
+              )
+            : OutlinedButton.icon(
+                onPressed: open,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: label,
+              ),
+      ),
     );
   }
 }
