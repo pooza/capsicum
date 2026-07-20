@@ -122,6 +122,28 @@ void main() {
       expect(flash.updatedAt, flash.createdAt);
     });
 
+    test('MiAuth スコープに flash-likes 系を含む（いいねが 403 にならない）', () async {
+      // これが欠けると flash/like・flash/unlike が write:flash-likes 不足で 403
+      // になり、Play のいいねが全ユーザーで機能不全になる（リリース前レビューで
+      // 検出・page-likes と同型）。startLogin が組み立てる permission を固定する。
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      final result = await adapter.startLogin(
+        ApplicationInfo(
+          name: 'capsicum',
+          redirectUri: Uri.parse('http://localhost:7099/oauth/callback'),
+        ),
+      );
+
+      expect(result, isA<LoginNeedsOAuth>());
+      final perms = (result as LoginNeedsOAuth)
+          .authorizationUrl
+          .queryParameters['permission']!
+          .split(',');
+      expect(perms, contains('write:flash-likes'));
+      expect(perms, contains('read:flash-likes'));
+      expect(perms, contains('read:flash'));
+    });
+
     test('script 欠落でも一覧表示は成立させる（空文字に倒す）', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
       adapter.client.dio.httpClientAdapter = _RoutingAdapter({

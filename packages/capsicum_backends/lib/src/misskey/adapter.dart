@@ -151,6 +151,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // 旧トークンでは getMyPages が permission denied になり、呼び出し側が
     // users/pages（公開のみ）へフォールバックする。
     'read:pages',
+    // Play（Flash）の like/unlike と自分/いいねした Play 一覧 (#830)。これが無い
+    // と flash/like・flash/unlike が write:flash-likes 不足で 403 になり、いいねが
+    // 全ユーザーで機能不全になる（page-likes と同型）。既存トークンは再ログインで
+    // 新スコープを取得する。
+    'read:flash',
+    'read:flash-likes',
+    'write:flash-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
