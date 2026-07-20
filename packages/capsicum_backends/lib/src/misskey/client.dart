@@ -854,12 +854,77 @@ class MisskeyClient {
   }
 
   /// POST /api/flash/featured
-  Future<List<Map<String, dynamic>>> getFeaturedFlashes() async {
+  ///
+  /// ページングは `offset` + `limit`。Pages 等の sinceId / untilId 方式では
+  /// ないので注意 (#830)。
+  Future<List<Map<String, dynamic>>> getFeaturedFlashes({
+    int? limit,
+    int? offset,
+  }) async {
     final response = await dio.post(
       '/api/flash/featured',
-      data: createBody({}),
+      data: createBody({'limit': ?limit, 'offset': ?offset}),
     );
     return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/show
+  Future<Map<String, dynamic>> getFlashById(String flashId) async {
+    final response = await dio.post(
+      '/api/flash/show',
+      data: createBody({'flashId': flashId}),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/flash/my
+  ///
+  /// 認証ユーザー自身の Flash 一覧（非公開も含む）。`read:flash` スコープが
+  /// 必要で、これを持たない旧トークンでは permission denied になる。
+  Future<List<Map<String, dynamic>>> getMyFlashes({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/flash/my',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/my-likes
+  ///
+  /// `{ id, flash }` の配列を返す。`id` は **ライクエントリ ID** であり
+  /// Flash ID ではない。呼び出し側で `flash` を取り出すこと。
+  Future<List<Map<String, dynamic>>> getMyFlashLikes({
+    String? sinceId,
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/flash/my-likes',
+      data: createBody({
+        'sinceId': ?sinceId,
+        'untilId': ?untilId,
+        'limit': ?limit,
+      }),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/flash/like
+  Future<void> likeFlash(String flashId) async {
+    await dio.post('/api/flash/like', data: createBody({'flashId': flashId}));
+  }
+
+  /// POST /api/flash/unlike
+  Future<void> unlikeFlash(String flashId) async {
+    await dio.post('/api/flash/unlike', data: createBody({'flashId': flashId}));
   }
 
   /// POST /api/gallery/featured
