@@ -2,7 +2,6 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -13,6 +12,7 @@ import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
 import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
+import '../../url_helper.dart';
 import '../util/hashtag_actions.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
@@ -238,9 +238,22 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
     try {
       await runtime.run(widget.flash.script);
-    } on FlashRuntimeError catch (e) {
+    } on FlashRuntimeError catch (e, st) {
+      // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを host
+      // タグでプリセットサーバーに絞って観測し、次に実装すべき機能を判断する
+      // ための現場データになる (#830)。
+      reportFlashOpFailure('run', e, st, account: account);
       if (!mounted) return;
       setState(() => _error = e);
+    } catch (e, st) {
+      // run() が正規化するのは RuntimeError / AiScriptError のみ。StackOverflow
+      // 等の非正規化エラーで画面がブランク（body 無し + 「もう一度実行」だけ）に
+      // ならないよう、ここで総括して文言を出しつつ観測する。
+      reportFlashOpFailure('run', e, st, account: account);
+      if (!mounted) return;
+      setState(
+        () => _error = FlashRuntimeError('この Play の実行でエラーが起きました', ''),
+      );
     } finally {
       if (mounted) setState(() => _running = false);
     }
@@ -427,7 +440,7 @@ class _RunError extends StatelessWidget {
             // 行き止まりにしない。
             if (host != null)
               TextButton.icon(
-                onPressed: () => launchUrl(
+                onPressed: () => launchUrlSafely(
                   Uri.parse('https://$host/play/$flashId'),
                   mode: LaunchMode.externalApplication,
                 ),

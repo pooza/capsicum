@@ -2,12 +2,12 @@ import '../../model/flash.dart';
 import '../../model/timeline_query.dart';
 
 /// like 履歴 1 件分のエントリ。`likeId` はライクエントリ自体の ID で、
-/// `flash` がそのライクが指す Flash 本体。`/api/i/flash-likes` の payload は
+/// `flash` がそのライクが指す Flash 本体。`/api/flash/my-likes` の payload は
 /// `{id, flash}` 構造で、ここでの `id` は **ライクエントリ ID** であり
 /// Flash ID とは別物（Pages の `LikedPageEntry` と同じ構造）。
 typedef LikedFlashEntry = ({String likeId, Flash flash});
 
-/// Misskey の Flash（旧 Play）サポートを宣言する mixin。
+/// Misskey の Flash（UI 表記は Play）サポートを宣言する mixin。
 ///
 /// [#73](https://github.com/pooza/capsicum/issues/73) では featured 一覧を出して
 /// 外部ブラウザへ投げるだけだったため [getFeaturedFlashes] しか無かった。

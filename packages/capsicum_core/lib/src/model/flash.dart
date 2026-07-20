@@ -1,6 +1,6 @@
 import 'user.dart';
 
-/// Misskey の Flash（旧 Play）1 本のドメインモデル。
+/// Misskey の Flash（UI 表記は Play）1 本のドメインモデル。
 ///
 /// [Page] と違い本体は **AiScript のソースコードそのもの** ([script]) で、
 /// 表示するには評価器で実行し `Ui:` 標準ライブラリ由来の描画ツリーを得る
