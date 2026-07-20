@@ -16,7 +16,35 @@ v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対
 - 開発機は Flutter SDK の clone で `git checkout <version>` して揃える
 - 版を上げるときは CI 3 ファイル + `pubspec.lock` を同一コミットで更新し、全端末を追従させる
 
-`git log --oneline -- .github/workflows/analyze.yml` で現在どの版に揃えるべきかを確認できる。
+確認手順（セッション開始時に毎回回す）は [sync-procedure.md](sync-procedure.md) のステップ 2 にある。
+
+### 基準版に追従する（各端末で普段やる方）
+
+```sh
+cd <Flutter SDK の clone>     # 例: /opt/flutter
+git fetch --tags origin
+git checkout <基準版>          # 例: 3.44.6
+flutter --version              # ここで bootstrap が走る
+
+cd <capsicum>
+dart run melos bootstrap
+```
+
+罠:
+
+- **揃える前に出た `pubspec.lock` の差分はコミットしない。** 版が合っていない状態で `pub get` した結果であり、コミットすると [#836](https://github.com/pooza/capsicum/issues/836) の ping-pong が再発する
+- SDK が git clone でない配置（snap / scoop / パッケージマネージャ経由）だと `git checkout` で版を動かせない。その場合は **clone 方式に置き換える**。バージョンを宣言的に固定できることが、この運用の前提
+- `flutter --version` を一度通すまで SDK の bootstrap が走らないため、`dart` コマンドの版も古いままになる
+
+### 基準版を上げる（年に数回・1 端末で代表して）
+
+1. SDK を新版に切り替える（上と同じ手順）
+2. **CI 3 ファイルの `flutter-version` と `pubspec.lock` を同一コミットで更新する**（`analyze.yml` / `linux-release.yml` / `windows-release.yml`。1 つでも漏らすと CI 内で版が割れる）
+3. `flutter analyze` / 全パッケージのテスト / 各 OS のビルドを通す
+4. deprecation の移行を同じコミットに含める
+5. 他の端末は「基準版に追従する」で追いつく
+
+実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
 
 ## Debug ビルドと TestFlight の役割分担
 
