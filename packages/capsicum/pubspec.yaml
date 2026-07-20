@@ -28,7 +28,7 @@ dependencies:
   aiscript:
     git:
       url: https://github.com/pooza/aiscript-dart.git
-      ref: 2cb0e8bdb801bd3447d4cabbf0de180e95cacfad
+      ref: a38d3c7a9c231fec68a21ff9ff81e5ddaebbb731
   flutter_riverpod: ^2.6.1
   go_router: ^14.8.1
   flutter_secure_storage: ^9.2.4

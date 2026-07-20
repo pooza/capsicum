@@ -21,8 +21,8 @@ packages:
     dependency: transitive
     description:
       path: "."
-      ref: "2cb0e8bdb801bd3447d4cabbf0de180e95cacfad"
-      resolved-ref: "2cb0e8bdb801bd3447d4cabbf0de180e95cacfad"
+      ref: a38d3c7a9c231fec68a21ff9ff81e5ddaebbb731
+      resolved-ref: a38d3c7a9c231fec68a21ff9ff81e5ddaebbb731
       url: "https://github.com/pooza/aiscript-dart.git"
     source: git
     version: "0.6.0"
