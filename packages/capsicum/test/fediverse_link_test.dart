@@ -62,18 +62,24 @@ void main() {
         misskeyPlayIdOnHost(Uri.parse(url), selfHost);
 
     test('自ホストの /play/<id> → id を返す', () {
-      expect(play('https://misskey.example/play/9play01', 'misskey.example'),
-          '9play01');
+      expect(
+        play('https://misskey.example/play/9play01', 'misskey.example'),
+        '9play01',
+      );
     });
 
     test('末尾スラッシュがあっても id を返す', () {
-      expect(play('https://misskey.example/play/9play01/', 'misskey.example'),
-          '9play01');
+      expect(
+        play('https://misskey.example/play/9play01/', 'misskey.example'),
+        '9play01',
+      );
     });
 
     test('他ホストの /play/<id> → null（ブラウザへ）', () {
-      expect(play('https://other.example/play/9play01', 'misskey.example'),
-          isNull);
+      expect(
+        play('https://other.example/play/9play01', 'misskey.example'),
+        isNull,
+      );
     });
 
     test('selfHost が null → null', () {
@@ -81,8 +87,10 @@ void main() {
     });
 
     test('Play でない自ホスト URL → null', () {
-      expect(play('https://misskey.example/notes/9abcxyz', 'misskey.example'),
-          isNull);
+      expect(
+        play('https://misskey.example/notes/9abcxyz', 'misskey.example'),
+        isNull,
+      );
     });
 
     test('id を伴わない /play → null', () {

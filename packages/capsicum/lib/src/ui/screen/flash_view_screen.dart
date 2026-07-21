@@ -251,9 +251,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       // ならないよう、ここで総括して文言を出しつつ観測する。
       reportFlashOpFailure('run', e, st, account: account);
       if (!mounted) return;
-      setState(
-        () => _error = FlashRuntimeError('この Play の実行でエラーが起きました', ''),
-      );
+      setState(() => _error = FlashRuntimeError('この Play の実行でエラーが起きました', ''));
     } finally {
       if (mounted) setState(() => _running = false);
     }

@@ -164,7 +164,9 @@ void main() {
             id: 'u1',
             username: 'alice',
             displayName: ':dai_smile: アリス',
-            emojis: {'dai_smile': 'https://misskey.example/emoji/dai_smile.webp'},
+            emojis: {
+              'dai_smile': 'https://misskey.example/emoji/dai_smile.webp',
+            },
           ),
         ),
       );
