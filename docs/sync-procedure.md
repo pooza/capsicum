@@ -17,6 +17,21 @@
 - `gh release list --limit 5` — 最近の GitHub Releases を確認
 - `gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title) \(.state) \(.closed_at // "open")"'` — マイルストーンの open/closed 状態を確認
 - 前回同期時点と比較して新しいリリースがあれば、実装ステータスやリリース計画セクションに反映する
+- **Flutter のバージョンが基準と合っているかを確認する**（[#836](https://github.com/pooza/capsicum/issues/836)）。端末が 3 つ以上あり、ズレたまま `flutter pub get` すると `pubspec.lock` が端末間で ping-pong するため、**着いた端末で最初に気付けるようにする**のが目的。正本は CI の pin:
+
+  ```sh
+  grep -m1 'flutter-version:' .github/workflows/analyze.yml   # 基準（正本）
+  flutter --version | head -1                                  # 手元
+  ```
+
+  Windows（`grep` 不在）:
+
+  ```powershell
+  Select-String -Path .github\workflows\analyze.yml -Pattern 'flutter-version:' | Select-Object -First 1
+  flutter --version | Select-Object -First 1
+  ```
+
+  ズレていたら同期報告に「この端末は X、基準は Y」と明記し、[dev-environment.md](dev-environment.md) の「基準版に追従する」手順で揃えてから作業に入る。**揃える前に出た `pubspec.lock` の差分はコミットしない**
 
 ## 3. Issue・PR の確認
 

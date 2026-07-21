@@ -36,6 +36,7 @@ import 'ui/screen/login_screen.dart';
 import 'ui/screen/pages_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/unified_notification_screen.dart';
+import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
@@ -207,6 +208,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             initialText: extra?['initialText'] as String?,
             restoreDraft: extra?['restoreDraft'] as Draft?,
             template: extra?['template'] as ComposeTemplate?,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/play',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return FlashViewScreen(
+            initialFlash: extra?['flash'] as Flash?,
+            flashId: extra?['flashId'] as String?,
           );
         },
       ),

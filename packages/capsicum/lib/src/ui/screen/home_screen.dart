@@ -2295,9 +2295,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     if (!context.mounted) return;
 
-    final account = ref.read(accountManagerProvider).current;
-    final host = account?.key.host;
-
     await showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
@@ -2324,13 +2321,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     : null,
                 dense: true,
                 onTap: () {
+                  // #830 でネイティブ実行に切り替えた。以前は外部ブラウザで
+                  // /play/<id> を開いていた (#73)。実行できない Play は
+                  // 詳細画面側で「ブラウザで開く」に degrade する。
                   Navigator.pop(context);
-                  if (host != null) {
-                    launchUrlSafely(
-                      Uri.parse('https://$host/play/${flash.id}'),
-                      mode: LaunchMode.inAppBrowserView,
-                    );
-                  }
+                  context.push('/play', extra: {'flash': flash});
                 },
               ),
           ],

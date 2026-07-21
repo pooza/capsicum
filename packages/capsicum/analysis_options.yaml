@@ -9,6 +9,16 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # SwiftPM (Flutter 3.44 でデフォルト有効化・#836) は依存パッケージを
+    # build/macos/SourcePackages/checkouts/ にチェックアウトする。その中に
+    # 他パッケージの Dart ソース (flutterfire のテスト等) が含まれ、
+    # ローカルの flutter analyze が 26,000 件級のエラーを吐いて自前の指摘を
+    # 埋めてしまう。CI はビルド前に analyze するため影響しないが、
+    # 開発機のノイズを断つために除外する。
+    - build/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

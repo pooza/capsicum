@@ -29,6 +29,16 @@ Future<void> openFediverseLink(
   if (uri == null) return;
 
   final adapter = ref.read(currentAdapterProvider);
+
+  // 自ホストの Misskey Play はネイティブ画面で開く (#830)。他ホストは当該
+  // サーバーの adapter が無く getFlashById できないので、判定で弾いて下の
+  // ブラウザ経路にフォールバックさせる。
+  final playId = _selfHostPlayId(uri, adapter);
+  if (playId != null) {
+    context.push('/play', extra: {'flashId': playId});
+    return;
+  }
+
   if (adapter is SearchSupport && looksLikeFediverseUrl(uri)) {
     // resolve の await 中は無反応でブラウザが開くまで dead-tap に見えるため、
     // 軽量な進捗表示を出す（#838）。ナビ / ブラウザに移る前に必ず消す。
@@ -85,6 +95,27 @@ Future<void> openFediverseLink(
 ///   `example.com/notes/x` のような他サイトの誤検知を弾く）
 /// - Mastodon の ActivityPub 形式ステータス: `/users/<name>/statuses/<id>`
 ///   （`users` と `statuses` の両方を要求。bare な `/users/foo`＝github 等は弾く）
+/// URL が「アクティブアカウントと同じホストの Misskey Play」なら、その Play
+/// ID を返す（`https://<host>/play/<id>`）。ネイティブの `/play` 画面は現在の
+/// adapter で `getFlashById` するため、自ホストのときだけネイティブで開ける。
+/// 他ホスト・Play でない URL は null（呼び出し側でブラウザ等にフォールバック）。
+String? _selfHostPlayId(Uri uri, Object? adapter) {
+  if (adapter is! DecentralizedBackendAdapter || adapter is! FlashSupport) {
+    return null;
+  }
+  return misskeyPlayIdOnHost(uri, adapter.host);
+}
+
+/// `https://<host>/play/<id>` で host が [selfHost] と一致するとき Play ID を
+/// 返す。他ホスト・Play でない URL・selfHost が null なら null。ホスト一致を
+/// 要求するのは、ネイティブ画面が現在の adapter で解決するため（#830）。
+String? misskeyPlayIdOnHost(Uri uri, String? selfHost) {
+  if (selfHost == null || uri.host != selfHost) return null;
+  final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (segments.length >= 2 && segments.first == 'play') return segments[1];
+  return null;
+}
+
 bool looksLikeFediverseUrl(Uri uri) {
   if (uri.scheme != 'http' && uri.scheme != 'https') return false;
   if (uri.host.isEmpty) return false;

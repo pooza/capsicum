@@ -8,6 +8,44 @@
 
 v1.24（[CLAUDE.md](CLAUDE.md#デスクトップ対応) のデスクトップ対応 第3段階）以降は Linux / Windows を **補助機**として併用する。Flutter のデスクトップビルドは `flutter build linux` / `flutter build windows` ともクロスコンパイル不可で、配布パイプライン（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424)）と実機検証（[#425](https://github.com/pooza/capsicum/issues/425)）はそれぞれの OS でしか進められないため。補助機は OS 固有作業（Linux/Windows ビルド・配布物生成・実機検証）専用で、リリース判定・ストア公開・各種シークレット管理はメインの macOS に集約する。
 
+## Flutter SDK のバージョン固定
+
+**全開発機・CI で同一の Flutter stable 版を使う**（現在 **3.44.6**）。版が揃っていないと `flutter pub get` のたびに `pubspec.lock` が書き換わり（SDK 同梱の `meta` / `test` / `test_api` / `test_core`）、端末間で ping-pong する（[#836](https://github.com/pooza/capsicum/issues/836)）。
+
+- CI 側の正本は `.github/workflows/` の `flutter-version`（analyze.yml / linux-release.yml / windows-release.yml の 3 箇所。**必ず 3 つ同時に更新する**）
+- 開発機は Flutter SDK の clone で `git checkout <version>` して揃える
+- 版を上げるときは CI 3 ファイル + `pubspec.lock` を同一コミットで更新し、全端末を追従させる
+
+確認手順（セッション開始時に毎回回す）は [sync-procedure.md](sync-procedure.md) のステップ 2 にある。
+
+### 基準版に追従する（各端末で普段やる方）
+
+```sh
+cd <Flutter SDK の clone>     # 例: /opt/flutter
+git fetch --tags origin
+git checkout <基準版>          # 例: 3.44.6
+flutter --version              # ここで bootstrap が走る
+
+cd <capsicum>
+dart run melos bootstrap
+```
+
+罠:
+
+- **揃える前に出た `pubspec.lock` の差分はコミットしない。** 版が合っていない状態で `pub get` した結果であり、コミットすると [#836](https://github.com/pooza/capsicum/issues/836) の ping-pong が再発する
+- SDK が git clone でない配置（snap / scoop / パッケージマネージャ経由）だと `git checkout` で版を動かせない。その場合は **clone 方式に置き換える**。バージョンを宣言的に固定できることが、この運用の前提
+- `flutter --version` を一度通すまで SDK の bootstrap が走らないため、`dart` コマンドの版も古いままになる
+
+### 基準版を上げる（年に数回・1 端末で代表して）
+
+1. SDK を新版に切り替える（上と同じ手順）
+2. **CI 3 ファイルの `flutter-version` と `pubspec.lock` を同一コミットで更新する**（`analyze.yml` / `linux-release.yml` / `windows-release.yml`。1 つでも漏らすと CI 内で版が割れる）
+3. `flutter analyze` / 全パッケージのテスト / 各 OS のビルドを通す
+4. deprecation の移行を同じコミットに含める
+5. 他の端末は「基準版に追従する」で追いつく
+
+実例は #836（3.41.9 → 3.44.6）のコミット 2 本がそのまま雛形になる。**iOS / macOS のビルド構成に影響する変更（3.44 の SwiftPM 移行など）を含む場合は、製品版昇格前に内部ベータで検証すること。**
+
 ## Debug ビルドと TestFlight の役割分担
 
 Debug ビルドは「コードを動かしてみるための環境」であり、本番相当の検証は TestFlight / 内部テストトラックで行う。Debug 環境で本番と同じ機能スイートが揃わなくても、TestFlight 経由で検証できるなら気にしない方針。
@@ -91,7 +129,7 @@ sudo apt install -y \
 - Visual Studio 2022 Build Tools（"Desktop development with C++" workload）
 - MSIX packaging tool（[#423](https://github.com/pooza/capsicum/issues/423) の MSIX 生成用）
 - Microsoft Partner Center アカウント（Microsoft Store 登録用）
-- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内でダウンロード → [packaging/windows/INSTALL.md](../packaging/windows/INSTALL.md) に従って `Import-Certificate` + `Add-AppxPackage`。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる（リリース後のエンドユーザー手順とも完全同一）
+- 内部ベータ検証経路: GitHub Actions の `Windows Release` workflow を develop で `workflow_dispatch` 起動 → artifact (`capsicum.msix` + `capsicum-signing.cer`) を Parallels VM 内で [install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1)（`gh run download` + `Import-Certificate` + `Add-AppxPackage` を管理者昇格つき 1 コマンドに畳んだもの）で導入。タグ駆動の draft Release ([store-release-guide.md §4.6](store-release-guide.md)) と同じ MSIX が出るため、本番判定にも流用できる。**自己署名 MSIX 直配はあくまで内部ベータ / 開発検証用**でエンドユーザーには案内しない（Windows の公式配布は Microsoft Store 単独・[#760](https://github.com/pooza/capsicum/issues/760)）
 - **ローカルソースビルドは ARM Windows（上記 VM）では通らない**ため、ARM 環境での検証は上記 CI artifact の MSIX で行う。ARM で詰まる箇所: `flutter_secure_storage_windows` / `flutter_local_notifications_windows` が ATL ヘッダ（`atlstr.h` / `atlbase.h`、VS Build Tools に「C++ ATL for v143」追加が必要）、`jni` が `jni.h`（JDK 未導入）、`sentry-native`（crashpad）が x64 ターゲットビルド中に ARM64 専用 marmasm targets を踏む。前 2 つは追加導入で解決余地があるが crashpad の ARM/x64 不整合が残るため深追いしない
 - **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
 - MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）

@@ -57,9 +57,15 @@ void _reportPageBlockMediaLoadFailure({
 /// - `image`: 画像 (Page.attachedFiles の fileId 索引から URL を引く)
 /// - `note`: Note 埋め込み (PostTile を埋める)
 ///
-/// 上記以外 (button / textInput / numberInput / switch / counter / radioButton /
-/// canvas / gist / post / textarea / if 等 AiScript 系) は #616 の対象として
-/// 「未対応ブロックです」のグレーアウトプレースホルダで表示する。
+/// 上記以外は 2 通りに分けて表示する (#616):
+///
+/// - **廃止済みの動的ブロック** (button / textInput / numberInput / switch /
+///   counter / radioButton / canvas / post / textarea / if): 本家が既に
+///   「廃止されています。今後は Play を利用してください。」の案内に倒して
+///   おり、エディタからも作成できない。capsicum も同じ案内を出す
+///   ([_kDeprecatedBlockTypes] / [_DeprecatedBlock])
+/// - **それ以外の未知の type**: capsicum が追いついていない可能性があるので
+///   「未対応です」と type 名を出す ([_UnsupportedBlock])
 class PageBlockRenderer extends ConsumerWidget {
   final List<Map<String, dynamic>> blocks;
   final Map<String, Attachment> attachedFiles;
@@ -118,10 +124,36 @@ class _PageBlock extends ConsumerWidget {
       case 'note':
         return _NoteBlock(block: block);
       default:
-        return _UnsupportedBlock(type: type);
+        return _kDeprecatedBlockTypes.contains(type)
+            ? const _DeprecatedBlock()
+            : _UnsupportedBlock(type: type);
     }
   }
 }
+
+/// Misskey 本家が **廃止済み**として扱っている動的ブロックの type 一覧 (#616)。
+///
+/// 本家の `packages/frontend/src/components/page/page.block.vue` はこれらを
+/// すべて「廃止されています」の案内 (`page.dynamic.vue`) にフォールバック
+/// させており、`page-editor/common.ts` が提供するブロックも section / text /
+/// image / note の 4 種のみで **新規作成もできない**。したがって capsicum が
+/// AiScript で描画する意味がなく、本家と同じ案内を出すに留める。
+///
+/// 「未対応 (`_UnsupportedBlock`)」と区別するのが本 issue の目的。前者は
+/// capsicum が追いついていないことを示唆するが、これらは追いついても
+/// 意味がない（本家でも表示されない）ため、案内の意味が違う。
+const _kDeprecatedBlockTypes = {
+  'button',
+  'if',
+  'textarea',
+  'post',
+  'canvas',
+  'numberInput',
+  'textInput',
+  'switch',
+  'radioButton',
+  'counter',
+};
 
 class _SectionBlock extends StatelessWidget {
   final Map<String, dynamic> block;
@@ -471,6 +503,63 @@ class _NoteBlockState extends ConsumerState<_NoteBlock> {
             child: PostTile(post: snapshot.data!),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Misskey 本家で廃止済みの動的ブロック用のプレースホルダ (#616)。
+///
+/// 文言は本家の `page.dynamic.vue`（見出し「動的ブロック」+ 「このブロックは
+/// 廃止されています。今後は Play を利用してください。」）に合わせる。
+/// UI 表記は本家に揃えて **Play**（内部のエンティティ名は Flash）。
+class _DeprecatedBlock extends StatelessWidget {
+  const _DeprecatedBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.casino_outlined,
+              size: 16,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '動的ブロック',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'このブロックは廃止されています。今後は Play を利用してください。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

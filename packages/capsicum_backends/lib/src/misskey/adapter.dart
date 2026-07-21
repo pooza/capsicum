@@ -151,6 +151,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // 旧トークンでは getMyPages が permission denied になり、呼び出し側が
     // users/pages（公開のみ）へフォールバックする。
     'read:pages',
+    // Play（Flash）の like/unlike と自分/いいねした Play 一覧 (#830)。これが無い
+    // と flash/like・flash/unlike が write:flash-likes 不足で 403 になり、いいねが
+    // 全ユーザーで機能不全になる（page-likes と同型）。既存トークンは再ログインで
+    // 新スコープを取得する。
+    'read:flash',
+    'read:flash-likes',
+    'write:flash-likes',
     'read:reactions',
     'write:reactions',
     'write:report-abuse',
@@ -1221,21 +1228,75 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // FlashSupport
 
-  @override
-  Future<List<Flash>> getFeaturedFlashes() async {
-    final data = await client.getFeaturedFlashes();
-    return data
-        .map(
-          (f) => Flash(
-            id: f['id'] as String,
-            title: f['title'] as String? ?? '',
-            summary: f['summary'] as String?,
-            userName:
-                (f['user'] as Map<String, dynamic>?)?['username'] as String?,
-          ),
-        )
-        .toList();
+  Flash _mapFlash(Map<String, dynamic> f) {
+    final user = MisskeyUser.fromJson(f['user'] as Map<String, dynamic>);
+    final createdAt = DateTime.parse(
+      f['createdAt'] as String? ?? '1970-01-01T00:00:00Z',
+    );
+    return Flash(
+      id: f['id'] as String,
+      title: f['title'] as String? ?? '',
+      summary: f['summary'] as String?,
+      // 一覧系でも script は返るが、欠けていても一覧表示は成立させたいので
+      // 空文字に倒す。実行前に呼び出し側が空でないことを確認する (#830)。
+      script: f['script'] as String? ?? '',
+      author: user.toCapsicum(host, adminRoleIds: _adminRoleIds),
+      createdAt: createdAt,
+      updatedAt: f['updatedAt'] == null
+          ? createdAt
+          : DateTime.parse(f['updatedAt'] as String),
+      visibility: f['visibility'] as String? ?? 'public',
+      likedCount: f['likedCount'] as int? ?? 0,
+      isLiked: f['isLiked'] as bool? ?? false,
+    );
   }
+
+  @override
+  Future<List<Flash>> getFeaturedFlashes({TimelineQuery? query}) async {
+    // featured のページングは offset + limit で sinceId / untilId を受けない。
+    final data = await client.getFeaturedFlashes(limit: query?.limit);
+    return data.map(_mapFlash).toList();
+  }
+
+  @override
+  Future<Flash> getFlashById(String flashId) async {
+    return _mapFlash(await client.getFlashById(flashId));
+  }
+
+  @override
+  Future<List<Flash>> getMyFlashes({TimelineQuery? query}) async {
+    final data = await client.getMyFlashes(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return data.map(_mapFlash).toList();
+  }
+
+  @override
+  Future<List<LikedFlashEntry>> getLikedFlashes({TimelineQuery? query}) async {
+    final data = await client.getMyFlashLikes(
+      sinceId: query?.sinceId,
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    // /api/flash/my-likes は {id, flash} の配列を返す。`id` はライクエントリ
+    // 自体の ID で、pagination cursor として渡すべきはこちら。
+    final entries = <LikedFlashEntry>[];
+    for (final e in data) {
+      final likeId = e['id'] as String?;
+      final flashMap = e['flash'] as Map<String, dynamic>?;
+      if (likeId == null || flashMap == null) continue;
+      entries.add((likeId: likeId, flash: _mapFlash(flashMap)));
+    }
+    return entries;
+  }
+
+  @override
+  Future<void> likeFlash(String flashId) => client.likeFlash(flashId);
+
+  @override
+  Future<void> unlikeFlash(String flashId) => client.unlikeFlash(flashId);
 
   // GallerySupport
 

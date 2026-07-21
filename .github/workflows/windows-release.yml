@@ -86,7 +86,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.41.9
+          flutter-version: 3.44.6
 
       - name: Activate melos
         run: dart pub global activate melos
@@ -278,8 +278,11 @@ jobs:
         # タグ駆動の場合のみ Release への添付を行う。draft 状態で生成するので
         # 自動公開はされず、pooza が GitHub UI でレビューしてから publish する。
         # Linux Release (linux-release.yml) と同じ draft 運用。
-        # .cer はエンドユーザーが Trusted People (LocalMachine) に import
-        # するために配布する (Release notes に PowerShell 手順を明記)。
+        # .cer は pooza の Store 手動 publish 用の MSIX 取り出し口 +
+        # 内部ベータ / 開発検証 (install-internal-beta.ps1 が Trusted People
+        # に import する) 用に添付する。エンドユーザー向けの配布経路ではなく、
+        # Release notes に自己署名証明書の import 手順は書かない
+        # (公式配布は Microsoft Store 単独・#760)。
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:

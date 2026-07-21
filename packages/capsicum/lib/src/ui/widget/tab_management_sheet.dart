@@ -153,7 +153,8 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     final filtered = _filteredEntries();
     if (oldIndex >= filtered.length) return;
 
-    if (newIndex > oldIndex) newIndex--;
+    // onReorderItem は削除後の挿入位置として newIndex を渡してくるため、
+    // 旧 onReorder のような -1 補正は不要 (#836)。
     if (newIndex >= filtered.length) newIndex = filtered.length - 1;
 
     final movedEntry = filtered[oldIndex];
@@ -332,7 +333,7 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
                     physics: const NeverScrollableScrollPhysics(),
                     buildDefaultDragHandles: false,
                     itemCount: entries.length,
-                    onReorder: _reorderEntries,
+                    onReorderItem: _reorderEntries,
                     itemBuilder: (context, index) {
                       final entry = entries[index];
                       final tab = entry.tab;
