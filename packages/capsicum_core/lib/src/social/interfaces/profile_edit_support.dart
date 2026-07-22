@@ -50,6 +50,10 @@ abstract mixin class ProfileEditSupport {
   /// [removeAvatar] / [removeHeader] が true のとき該当画像をデフォルトへ戻す
   /// （[supportsProfileImageRemoval] が true のバックエンドのみ有効、#736）。
   /// 画像の差し替え（avatarFilePath 等）と削除は排他で、UI 側で択一にする。
+  ///
+  /// [locked]（承認制）/ [discoverable]（ディレクトリ掲載）は null のとき変更しない
+  /// （#865）。Mastodon は `locked` / `discoverable`、Misskey は `isLocked` /
+  /// `isExplorable` に対応する。
   Future<User> updateProfile({
     String? displayName,
     String? description,
@@ -58,5 +62,7 @@ abstract mixin class ProfileEditSupport {
     List<UserField>? fields,
     bool removeAvatar = false,
     bool removeHeader = false,
+    bool? locked,
+    bool? discoverable,
   });
 }

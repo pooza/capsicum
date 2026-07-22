@@ -1718,6 +1718,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // Mastodon 4.6 スコープ）。supportsProfileImageRemoval は既定 false。
     bool removeAvatar = false,
     bool removeHeader = false,
+    bool? locked,
+    bool? discoverable,
   }) async {
     String? avatarId;
     String? bannerId;
@@ -1741,6 +1743,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       avatarId: avatarId,
       bannerId: bannerId,
       fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
+      isLocked: locked,
+      isExplorable: discoverable,
     );
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }

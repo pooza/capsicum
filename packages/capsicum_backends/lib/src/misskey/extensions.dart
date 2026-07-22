@@ -76,6 +76,8 @@ extension CapsicumMisskeyUserExtension on MisskeyUser {
       createdAt: createdAt,
       defaultScope: misskeyVisibilityRosetta[defaultNoteVisibility],
       canChat: canChat,
+      locked: isLocked,
+      discoverable: isExplorable,
     );
   }
 }

@@ -1298,11 +1298,16 @@ class MisskeyClient {
     String? avatarId,
     String? bannerId,
     List<Map<String, String>>? fields,
+    bool? isLocked,
+    bool? isExplorable,
   }) async {
     final params = <String, dynamic>{
       'avatarId': ?avatarId,
       'bannerId': ?bannerId,
       'fields': ?fields,
+      // null は「変更しない」でキーを送らない (#865)。
+      'isLocked': ?isLocked,
+      'isExplorable': ?isExplorable,
     };
     // Misskey rejects "" but accepts explicit null to clear a field.
     // null parameter = "not changing" (omit key), empty string = "clear" (send null value).

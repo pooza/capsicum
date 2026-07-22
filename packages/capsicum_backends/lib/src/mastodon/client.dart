@@ -981,11 +981,17 @@ class MastodonClient {
     String? avatarPath,
     String? headerPath,
     List<Map<String, String>>? fieldsAttributes,
+    bool? locked,
+    bool? discoverable,
   }) async {
     Future<FormData> buildFormData() async {
       final map = <String, dynamic>{};
       if (displayName != null) map['display_name'] = displayName;
       if (note != null) map['note'] = note;
+      // Rails は 'true' / 'false' 文字列を boolean に coerce する。null は
+      // 「変更しない」でキー自体を送らない (#865)。
+      if (locked != null) map['locked'] = locked.toString();
+      if (discoverable != null) map['discoverable'] = discoverable.toString();
       if (avatarPath != null) {
         map['avatar'] = await MultipartFile.fromFile(avatarPath);
       }

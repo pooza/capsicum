@@ -16,6 +16,13 @@ class MisskeyUser {
   final int? notesCount;
   final bool? isBot;
   final bool? isCat;
+
+  /// 承認制アカウント（Mastodon の `locked` 相当、#865）。プロフィール編集
+  /// トグルの現在値 prefill に使う。未取得では null。
+  final bool? isLocked;
+
+  /// 発見可能・ディレクトリ掲載（Mastodon の `discoverable` 相当、#865）。
+  final bool? isExplorable;
   final List<Map<String, dynamic>>? roles;
   final List<Map<String, dynamic>>? fields;
   final Map<String, String>? emojis;
@@ -43,6 +50,8 @@ class MisskeyUser {
     this.notesCount,
     this.isBot,
     this.isCat,
+    this.isLocked,
+    this.isExplorable,
     this.roles,
     this.fields,
     this.emojis,
