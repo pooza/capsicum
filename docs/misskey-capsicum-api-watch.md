@@ -78,6 +78,10 @@ Mastodon は 4.5→4.6 の **GA タグ**が明快な節目だが、Misskey は:
 
 ## トリアージ履歴
 
+### 2026.6.0 は未トリアージ（2026-07-22 記録・pending）
+
+daisskey が 2026.5.4（`fe064da6`）→ **2026.6.0** に bump 済み。**次回同期で `fe064da6..daisskey` の差分トリアージ（①②③）＋ Flash 互換ハーネスを回す**。v1.50 のユーザー報告（Play スロット描画 #876 / いいね scope #877 / 下書き 400 #879）はこの diff 無しで説明済み（`notes/drafts/create`・`flash/like`・`flash/unlike` は baseline から無変更）だが、2026.6 全体の差分は未確認。
+
 ### Flash 互換 baseline: `@syuilo/aiscript` 1.2.1（2026-07-20 記録）
 
 `tool/flash_compat_check.dart` の初回実行。**6 / 6 pass**（ダイスキー 4 + きゅあすきー 2 の featured 全数）。
