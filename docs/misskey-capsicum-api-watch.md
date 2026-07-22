@@ -78,9 +78,18 @@ Mastodon は 4.5→4.6 の **GA タグ**が明快な節目だが、Misskey は:
 
 ## トリアージ履歴
 
-### 2026.6.0 は未トリアージ（2026-07-22 記録・pending）
+### baseline: `589d4ece`（2026.6.0、2026-07-22 記録）
 
-daisskey が 2026.5.4（`fe064da6`）→ **2026.6.0** に bump 済み。**次回同期で `fe064da6..daisskey` の差分トリアージ（①②③）＋ Flash 互換ハーネスを回す**。v1.50 のユーザー報告（Play スロット描画 #876 / いいね scope #877 / 下書き 400 #879）はこの diff 無しで説明済み（`notes/drafts/create`・`flash/like`・`flash/unlike` は baseline から無変更）だが、2026.6 全体の差分は未確認。
+`fe064da6`（2026.5.4）..`589d4ece`（2026.6.0）の差分トリアージ。**endpoint 3 本追加のみ・entity フィールド変化なし・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 で据え置き**。
+
+- **`admin/queue/pause` / `admin/queue/resume`（新規 endpoint）** — 判定 **none**: サーバー管理者用のジョブキュー操作。capsicum は無関係。
+- **`antennas/remove-note`（新規 endpoint）** — 判定 **⚪ passive**: アンテナのタイムラインから個別ノートを外す additive な操作。capsicum はアンテナ TL を読むのみで、この除去導線は未提供でも degrade 不要（probing で自動的に非提供）。将来のエンハンス候補にとどめ起票なし。
+
+Flash 互換ハーネス（`@syuilo/aiscript` 1.2.1 据え置き）: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2 の featured 全数）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。
+
+v1.50 のユーザー報告（Play スロット描画 #876 / いいね scope #877 / 下書き 400 #879）は、いずれもこの diff とは無関係（`notes/drafts/create`・`flash/like`・`flash/unlike` は baseline から無変更）であることを再確認。
+
+→ actionable なし。**次回は `589d4ece..daisskey` から差分する**。
 
 ### Flash 互換 baseline: `@syuilo/aiscript` 1.2.1（2026-07-20 記録）
 
