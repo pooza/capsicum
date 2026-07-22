@@ -1426,6 +1426,18 @@ class ContentRenderer {
         // クランプ（暴走した巨大表示を防ぐ）。
         final sx = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 1).clamp(0.0, 5.0);
         final sy = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 1).clamp(0.0, 5.0);
+        // 等倍（x==y）は fontSize 倍化で表現する。Transform.scale は塗りだけ拡大して
+        // レイアウトの占有ボックスを変えないため、拡大した中身が予約幅を超えて食み出し
+        // 見切れる (#876 と同型)。fontSize を掛けると占有ボックスも一緒に大きくなり
+        // （カスタム絵文字も scaledEmojiSize が fontSize 比で追従する・$[x2] 系と同じ）、
+        // 折り返し・行高も正しく確保されて食み出さない。非等倍（x≠y）は fontSize では
+        // 表現できないため従来どおり Transform.scale（塗りのみ）で近似する。
+        if (sx == sy) {
+          return _renderNodes(
+            node.children,
+            style.copyWith(fontSize: (style.fontSize ?? 14.0) * sx),
+          );
+        }
         return [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
