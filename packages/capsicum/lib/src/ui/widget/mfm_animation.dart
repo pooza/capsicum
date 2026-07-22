@@ -9,9 +9,8 @@ import 'package:visibility_detector/visibility_detector.dart';
 /// 変形（回転 / 移動 / 拡縮）で近似できるものだけを対象にする。Misskey の CSS
 /// キーフレームを厳密には再現せず、雰囲気を合わせる方針（本家 mfm.js 参照実装に
 /// 倣いつつ Flutter の Transform で表現）。色を巡回させる `rainbow` は変形では
-/// 表現できないため [MfmRainbowText] が別に扱う。パーティクルを撒く `sparkle` は
-/// 変形でも前景色でも表現できないためスコープ外（呼び出し側で静止表示にフォール
-/// バックする）。
+/// 表現できないため [MfmRainbowText] が、パーティクルを撒く `sparkle` は変形でも
+/// 前景色でも表現できないため [MfmSparkle] が別に扱う。
 enum MfmAnimationType { spin, bounce, jump, shake, twitch, jelly, tada }
 
 /// アニメーション再生の共通作法をまとめた mixin。
@@ -403,4 +402,199 @@ ColorFilter _hueRotation(double angle) {
     1,
     0,
   ]);
+}
+
+/// MFM の `$[sparkle ...]` を再生する widget (#259 followup, #863)。
+///
+/// 対象の周囲にキラキラのパーティクル（✨ 相当）を撒くアニメーション。既存の
+/// [MfmAnimation]（変形）や [MfmRainbowText]（前景色）とは表現手段が異なり、
+/// 対象の外側に別要素を描くため、[child] の上に [CustomPaint] のオーバーレイを
+/// 重ねて星形パーティクルを描画する。レイアウトには影響させない（[Stack] の
+/// 非配置子である [child] のサイズに収める）。
+///
+/// reduce motion（「視差効果を減らす」）・画面外（#845）では ticker を止める作法を
+/// [MfmAnimation] と共有する（[_MfmTickerMixin]）。
+class MfmSparkle extends StatefulWidget {
+  const MfmSparkle({
+    super.key,
+    required this.child,
+    required this.fontSize,
+    this.speed,
+  });
+
+  final Widget child;
+
+  /// パーティクルの大きさの基準となるフォントサイズ（px）。
+  final double fontSize;
+
+  /// 1 周の長さ。null なら既定値。
+  final Duration? speed;
+
+  @override
+  State<MfmSparkle> createState() => _MfmSparkleState();
+}
+
+class _MfmSparkleState extends State<MfmSparkle>
+    with SingleTickerProviderStateMixin, _MfmTickerMixin<MfmSparkle> {
+  static const Duration _defaultSpeed = Duration(milliseconds: 1500);
+
+  late final AnimationController _controller;
+  late final List<_SparkleParticle> _particles;
+
+  @override
+  AnimationController get _ticker => _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // 0 / 負の speed は repeat() の period 0 破綻を避けて既定速度へ。
+    final speed = widget.speed ?? _defaultSpeed;
+    _controller = AnimationController(
+      vsync: this,
+      duration: speed > Duration.zero ? speed : _defaultSpeed,
+    );
+    // パーティクルの配置・位相は生成時に一度だけ決める。乱数は Math.random でも
+    // インスタンスごとに散らばればよいので identityHashCode を seed にして
+    // ホットリロードや再 build でちらつかないよう固定する。
+    final rng = math.Random(identityHashCode(this));
+    _particles = [
+      for (var i = 0; i < _sparkleCount; i++)
+        _SparkleParticle(
+          dx: rng.nextDouble(),
+          dy: rng.nextDouble(),
+          phase: rng.nextDouble(),
+          sizeFactor: 0.5 + rng.nextDouble() * 0.5,
+          color: _sparkleColors[rng.nextInt(_sparkleColors.length)],
+        ),
+    ];
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    refreshReduceMotion();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // reduce motion 時はパーティクルを出さず child のみ（sparkle は純粋に動きの
+    // 装飾で、静止したキラキラは意味を持たないため）。
+    if (reduceMotion) {
+      return widget.child;
+    }
+    return VisibilityDetector(
+      key: visibilityKey,
+      onVisibilityChanged: handleVisibilityChanged,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          widget.child,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) => CustomPaint(
+                  painter: _SparklePainter(
+                    t: _controller.value,
+                    particles: _particles,
+                    baseSize: widget.fontSize * 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// sparkle の 1 粒。位置（[dx],[dy] は 0..1 の相対座標）・位相・大きさ係数・色は
+/// 生成時に固定し、時間に応じて明滅（フェード + スケール）だけさせる。
+class _SparkleParticle {
+  const _SparkleParticle({
+    required this.dx,
+    required this.dy,
+    required this.phase,
+    required this.sizeFactor,
+    required this.color,
+  });
+
+  final double dx;
+  final double dy;
+  final double phase;
+  final double sizeFactor;
+  final Color color;
+}
+
+const int _sparkleCount = 9;
+
+/// キラキラの色（白 + 金 + 淡黄）。✨ に寄せた暖色系。
+const List<Color> _sparkleColors = [
+  Color(0xFFFFFFFF),
+  Color(0xFFFFE082),
+  Color(0xFFFFF176),
+  Color(0xFFFFD54F),
+];
+
+/// 各パーティクルを 4 芒星として描き、位相をずらして明滅させる painter。
+class _SparklePainter extends CustomPainter {
+  const _SparklePainter({
+    required this.t,
+    required this.particles,
+    required this.baseSize,
+  });
+
+  final double t;
+  final List<_SparkleParticle> particles;
+
+  /// 星の外接半径の基準（px）。個々の [sizeFactor] とスケールで増減する。
+  final double baseSize;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (final p in particles) {
+      // 位相をずらした 0..1 のライフサイクル。sin で 0→1→0 に明滅させる。
+      final life = (t + p.phase) % 1.0;
+      final env = math.sin(life * math.pi); // 0 → 1 → 0
+      if (env <= 0.01) continue;
+      final center = Offset(p.dx * size.width, p.dy * size.height);
+      final radius = baseSize * p.sizeFactor * (0.4 + 0.6 * env);
+      paint.color = p.color.withValues(alpha: env);
+      _drawStar(canvas, center, radius, paint);
+    }
+  }
+
+  /// 中心 [center]・外接半径 [r] の 4 芒星（8 頂点で外側／内側を交互に）。
+  void _drawStar(Canvas canvas, Offset center, double r, Paint paint) {
+    const innerRatio = 0.34; // 芒のくびれ具合
+    final path = Path();
+    for (var i = 0; i < 8; i++) {
+      final angle = i * math.pi / 4 - math.pi / 2;
+      final rad = i.isEven ? r : r * innerRatio;
+      final point =
+          center + Offset(math.cos(angle) * rad, math.sin(angle) * rad);
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_SparklePainter oldDelegate) =>
+      oldDelegate.t != t ||
+      oldDelegate.baseSize != baseSize ||
+      !identical(oldDelegate.particles, particles);
 }

@@ -1539,11 +1539,12 @@ class ContentRenderer {
       case 'jelly':
       case 'tada':
       case 'rainbow':
-        // アニメーション構文 (#259)。設定 OFF・非対応環境では静止表示。
+      case 'sparkle':
+        // アニメーション構文 (#259, #863, #864)。設定 OFF・非対応環境では静止表示。
         return _renderAnimation(node, style);
 
       default:
-        // Unhandled fn — render children as-is（sparkle 等の未対応も含む）
+        // Unhandled fn — render children as-is。
         return _renderNodes(node.children, style);
     }
   }
@@ -1563,6 +1564,20 @@ class ContentRenderer {
             spans: children,
             baseStyle: style,
             speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+          ),
+        ),
+      ];
+    }
+    // sparkle は対象の周囲にパーティクルを撒く（#863）。変形でも前景色でも表現
+    // できないため child の上にオーバーレイを重ねる専用 widget に渡す。
+    if (node.fnName == 'sparkle') {
+      return [
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: MfmSparkle(
+            fontSize: style.fontSize ?? 14.0,
+            speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+            child: Text.rich(TextSpan(children: children)),
           ),
         ),
       ];
