@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../widget/account_multi_select_sheet.dart';
 
 /// Mastodon 4.6 Collections（#722 / #742）の一覧画面。
 ///
@@ -210,6 +211,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
             String tagName,
             bool discoverable,
             bool sensitive,
+            List<User> members,
           })
         >(
           context: context,
@@ -232,6 +234,9 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         tagName: tagName.isEmpty ? null : tagName,
         discoverable: result.discoverable,
         sensitive: result.sensitive,
+        // 初期メンバーは作成時に一括登録する（createCollection の account_ids、
+        // #866）。所有者はサーバーが自動で入れるため含めない。
+        accountIds: result.members.map((u) => u.id).toList(),
       );
       if (!mounted) return;
       await _load();
@@ -280,21 +285,25 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
 /// but ... already pressed」の例外を毎キー打つたびに投げてキー入力を取りこぼす
 /// （#722）。autofocus を使わず、初回フレーム後に FocusNode で明示フォーカスを
 /// 要求してこのレースを避ける。
-class _CreateCollectionDialog extends StatefulWidget {
+class _CreateCollectionDialog extends ConsumerStatefulWidget {
   const _CreateCollectionDialog();
 
   @override
-  State<_CreateCollectionDialog> createState() =>
+  ConsumerState<_CreateCollectionDialog> createState() =>
       _CreateCollectionDialogState();
 }
 
-class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
+class _CreateCollectionDialogState
+    extends ConsumerState<_CreateCollectionDialog> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   final _tagController = TextEditingController();
   final _nameFocus = FocusNode();
   bool _discoverable = true;
   bool _sensitive = false;
+
+  /// 作成時に一括登録する初期メンバー (#866)。所有者はサーバーが自動で入れる。
+  final List<User> _initialMembers = [];
 
   @override
   void initState() {
@@ -322,7 +331,25 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
       tagName: _tagController.text,
       discoverable: _discoverable,
       sensitive: _sensitive,
+      members: _initialMembers,
     ));
+  }
+
+  Future<void> _pickMembers() async {
+    // 所有者は作成時にサーバーが自動で入れるため、自分は候補から外す (#866)。
+    final selfId = ref.read(currentAccountProvider)?.user.id;
+    final selected = await showAccountMultiSelectSheet(
+      context,
+      initial: _initialMembers,
+      excludeIds: {?selfId},
+    );
+    if (selected != null) {
+      setState(() {
+        _initialMembers
+          ..clear()
+          ..addAll(selected);
+      });
+    }
   }
 
   @override
@@ -366,6 +393,18 @@ class _CreateCollectionDialogState extends State<_CreateCollectionDialog> {
               subtitle: const Text('閲覧注意として扱う'),
               value: _sensitive,
               onChanged: (v) => setState(() => _sensitive = v),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.group_add_outlined),
+              title: const Text('初期メンバー（任意）'),
+              subtitle: Text(
+                _initialMembers.isEmpty
+                    ? 'アカウントを検索して選ぶ'
+                    : '${_initialMembers.length} アカウントを選択中',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickMembers,
             ),
           ],
         ),
