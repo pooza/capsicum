@@ -1394,14 +1394,29 @@ class ContentRenderer {
       case 'rotate':
         // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。
         final deg = _parseNum(_fnArg(node.fnArgs, 'deg')) ?? 90;
+        final rotateChild = Text.rich(
+          TextSpan(children: _renderNodes(node.children, style)),
+        );
+        // 90° の倍数は RotatedBox でレイアウト寸法ごと入れ替える。Transform.rotate は
+        // 塗りだけ回してレイアウトの占有ボックスを変えないため、縦積みを 90° 倒して
+        // 横長リールにするスロット系 Play が予約幅を超えて左に食み出し、左端が見切れる
+        // (#876)。90° 刻みなら RotatedBox が横倒し後の幅（＝子の高さ）を正しく確保する
+        // ので食み出さない。90° の倍数でない角度は RotatedBox では近似できないため、
+        // 従来どおり Transform.rotate（塗りのみ）で近似する。
+        if (deg % 90 == 0) {
+          return [
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: RotatedBox(quarterTurns: deg ~/ 90, child: rotateChild),
+            ),
+          ];
+        }
         return [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Transform.rotate(
               angle: deg * math.pi / 180,
-              child: Text.rich(
-                TextSpan(children: _renderNodes(node.children, style)),
-              ),
+              child: rotateChild,
             ),
           ),
         ];
