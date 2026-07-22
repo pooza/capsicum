@@ -1553,6 +1553,20 @@ class ContentRenderer {
   List<InlineSpan> _renderAnimation(_Node node, TextStyle style) {
     final children = _renderNodes(node.children, style);
     if (!animateMfm) return children;
+    // rainbow は変形でなくテキスト前景の虹グラデ（#864）。span 単位で色を乗せる
+    // ため専用 widget に渡す。
+    if (node.fnName == 'rainbow') {
+      return [
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: MfmRainbowText(
+            spans: children,
+            baseStyle: style,
+            speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+          ),
+        ),
+      ];
+    }
     final type = switch (node.fnName) {
       'spin' => MfmAnimationType.spin,
       'bounce' => MfmAnimationType.bounce,
@@ -1561,7 +1575,6 @@ class ContentRenderer {
       'twitch' => MfmAnimationType.twitch,
       'jelly' => MfmAnimationType.jelly,
       'tada' => MfmAnimationType.tada,
-      'rainbow' => MfmAnimationType.rainbow,
       _ => null,
     };
     if (type == null) return children;
