@@ -1216,8 +1216,12 @@ class ContentRenderer {
           // 状態だった。基準 (baseStyle.fontSize) に対する比を emojiSize に掛ける
           // （通常時は比 1 で従来どおり 20.0）。
           final baseFontSize = baseStyle.fontSize ?? 14.0;
-          final scaledEmojiSize =
-              emojiSize * ((style.fontSize ?? baseFontSize) / baseFontSize);
+          // baseFontSize が 0 だと比が Infinity になる（実テーマでは到達しないが
+          // 防御的に）。非正なら等倍にフォールバック (#867)。
+          final ratio = baseFontSize > 0
+              ? (style.fontSize ?? baseFontSize) / baseFontSize
+              : 1.0;
+          final scaledEmojiSize = emojiSize * ratio;
           final image = ConstrainedBox(
             constraints: BoxConstraints(maxHeight: scaledEmojiSize),
             child: Image.network(

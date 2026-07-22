@@ -8,6 +8,7 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/compose_template_display.dart';
 
 /// 投稿テンプレート一覧 (#767)。モロヘイヤの per-user CRUD API から取得する。
 /// テンプレート機能を提供するサーバー（[MulukhiyaService.composeTemplatesEnabled]）
@@ -83,13 +84,13 @@ class TemplatesManageScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
+        error: (_, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('読み込みに失敗しました\n$error', textAlign: TextAlign.center),
+                const Text('テンプレートの読み込みに失敗しました', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(composeTemplatesProvider),
@@ -224,12 +225,7 @@ class TemplatesManageScreen extends ConsumerWidget {
     StackTrace st,
   ) {
     final status = error is DioException ? error.response?.statusCode : null;
-    final message = switch (status) {
-      409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
-      422 => '入力内容が不正です（名前・本文の長さを確認してください）',
-      404 => 'テンプレートが見つかりません（既に削除された可能性があります）',
-      _ => '操作に失敗しました',
-    };
+    final message = composeTemplateErrorMessage(error, fallback: '操作に失敗しました');
     messenger.showSnackBar(SnackBar(content: Text(message)));
     // 想定内の 4xx は計装しない（5xx / ネットワーク / 非 Dio 例外のみ上げる）。
     if (status != null && status < 500) return;
@@ -272,13 +268,12 @@ class _TemplateTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = template.body.trim();
     return ListTile(
       onTap: onEdit,
       leading: const Icon(Icons.description_outlined),
       title: Text(template.name),
       subtitle: Text(
-        body.isEmpty ? '(本文なし)' : body.replaceAll('\n', ' '),
+        composeTemplateBodyPreview(template),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),

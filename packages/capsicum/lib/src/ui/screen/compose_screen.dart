@@ -33,6 +33,7 @@ import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/annict_link.dart';
+import '../util/compose_template_display.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
 import 'annict_record_screen.dart';
@@ -2155,11 +2156,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 想定内の 4xx（409 上限 / 422 検証）は専用文面で案内し、Sentry には上げない。
       // 5xx・ネットワークだけ計装する（template.op の fingerprint を実障害に保つ）。
       final status = e.response?.statusCode;
-      final message = switch (status) {
-        409 => 'テンプレートの上限（$composeTemplateMaxCount 件）に達しています',
-        422 => '入力内容が不正です（名前・本文の長さを確認してください）',
-        _ => 'テンプレートの保存に失敗しました',
-      };
+      final message = composeTemplateErrorMessage(
+        e,
+        fallback: 'テンプレートの保存に失敗しました',
+      );
       messenger.showSnackBar(SnackBar(content: Text(message)));
       if (status != null && status < 500) return;
       reportOpFailure(
@@ -3570,7 +3570,8 @@ class _TemplateSheetState extends State<_TemplateSheet> {
       widget.onLoadError(e, st);
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          // 生の例外文字列は UI へ出さない (#867)。詳細は onLoadError で計装済み。
+          _error = 'テンプレートの読み込みに失敗しました';
           _loading = false;
         });
       }
@@ -3609,18 +3610,17 @@ class _TemplateSheetState extends State<_TemplateSheet> {
               child: CircularProgressIndicator(),
             )
           else if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('読み込みに失敗しました: $_error'),
-            )
+            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
           else ...[
             if ((_templates ?? const []).isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
+              Padding(
+                padding: const EdgeInsets.all(24),
                 child: Text(
                   'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               )
             else
@@ -3633,9 +3633,7 @@ class _TemplateSheetState extends State<_TemplateSheet> {
                         leading: const Icon(Icons.description_outlined),
                         title: Text(t.name),
                         subtitle: Text(
-                          t.body.trim().isEmpty
-                              ? '(本文なし)'
-                              : t.body.replaceAll('\n', ' '),
+                          composeTemplateBodyPreview(t),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
