@@ -2,6 +2,7 @@ import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/ui/screen/flash_view_screen.dart';
 import 'package:capsicum/src/ui/widget/emoji_text.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +38,9 @@ class _FakeAdapter extends Mock
   int likeCalls = 0;
   int unlikeCalls = 0;
 
+  /// 設定すると [likeFlash] がこれを投げる（非べき等コードの吸収検証・#873）。
+  Object? likeError;
+
   @override
   String get host => 'misskey.example';
 
@@ -56,7 +60,10 @@ class _FakeAdapter extends Mock
   }
 
   @override
-  Future<void> likeFlash(String flashId) async => likeCalls++;
+  Future<void> likeFlash(String flashId) async {
+    likeCalls++;
+    if (likeError != null) throw likeError!;
+  }
 
   @override
   Future<void> unlikeFlash(String flashId) async => unlikeCalls++;
@@ -208,6 +215,34 @@ void main() {
 
       expect(find.text('4'), findsOneWidget);
       expect(adapter.likeCalls, 1);
+    });
+
+    testWidgets('ALREADY_LIKED はいいね成功として吸収し巻き戻さない (#873)', (tester) async {
+      // stale な isLiked=false でタップ → サーバーは既にいいね済み。
+      // 楽観状態（liked）を確定させ、favorite_border に戻さない。
+      final adapter = _FakeAdapter()
+        ..likeError = DioException(
+          requestOptions: RequestOptions(path: '/api/flash/like'),
+          response: Response(
+            requestOptions: RequestOptions(path: '/api/flash/like'),
+            statusCode: 400,
+            data: {
+              'error': {'code': 'ALREADY_LIKED'},
+            },
+          ),
+        );
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('Ui:render([Ui:C:text({ text: "x" }, "t")])'),
+      );
+
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border), findsNothing);
+      expect(find.text('4'), findsOneWidget);
     });
   });
 }

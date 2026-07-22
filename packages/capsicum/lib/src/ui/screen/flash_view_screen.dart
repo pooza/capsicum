@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
@@ -276,26 +277,48 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         await flashes.likeFlash(widget.flash.id);
       }
     } catch (e, st) {
+      final code = misskeyApiErrorCode(e);
+      // 非べき等な結果コードは「成功」として楽観状態を確定させる (#873)。stale な
+      // _isLiked でタップした結果がサーバー真値と一致しただけなので、巻き戻さず・
+      // Sentry にも流さない（失敗ではない）。ALREADY_LIKED=既にいいね済み、
+      // NOT_LIKED=既に未いいね。
+      if (!wasLiked && code == 'ALREADY_LIKED') return;
+      if (wasLiked && code == 'NOT_LIKED') return;
+
+      if (!mounted) return;
+      // ここから先は本当に反映されなかったので楽観状態を巻き戻す。
+      setState(() {
+        _isLiked = wasLiked;
+        _likedCount += wasLiked ? 1 : -1;
+      });
+
+      // 自分の Play へのいいねは仕様上不可 (#873)。専用文言で知らせる。
+      if (code == 'YOUR_FLASH') {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('自分の Play にはいいねできません')));
+        return;
+      }
+
+      // 旧トークン (write:flash-likes 未付与) の 403 は再ログインで直る既知条件。
+      // 失敗ではないので Sentry には流さず、再ログイン導線だけ出す (#877 / #615 同型)。
+      if (isOAuthScopeError(e)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('権限が不足しています。再ログインしてください')));
+        return;
+      }
+
+      // それ以外の想定外失敗のみ観測する。
       reportFlashOpFailure(
         wasLiked ? 'unlike' : 'like',
         e,
         st,
         account: ref.read(currentAccountProvider),
       );
-      if (!mounted) return;
-      setState(() {
-        _isLiked = wasLiked;
-        _likedCount += wasLiked ? 1 : -1;
-      });
-      // 旧トークン (write:flash-likes 未付与) は 403 PERMISSION_DENIED。
-      // 汎用文言ではなく再ログインが要る旨を伝える (#615 と同型)。
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isOAuthScopeError(e) ? '権限が不足しています。再ログインしてください' : 'いいねの更新に失敗しました',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('いいねの更新に失敗しました')));
     } finally {
       if (mounted) setState(() => _toggling = false);
     }
