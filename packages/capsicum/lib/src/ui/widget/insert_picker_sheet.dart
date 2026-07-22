@@ -123,7 +123,10 @@ class _InsertPickerSheetState extends ConsumerState<_InsertPickerSheet> {
       },
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        // 見た目のグリップは 40×4 のまま、当たり判定だけ広げる (#878)。上下 20 +
+        // グリップ 4 = 約 44px で Apple HIG 推奨のタッチ領域を満たす。小画面
+        // iPhone で「上げる」操作が掴みづらいという報告への対応。
+        padding: const EdgeInsets.symmetric(vertical: 20),
         alignment: Alignment.center,
         child: Container(
           width: 40,
