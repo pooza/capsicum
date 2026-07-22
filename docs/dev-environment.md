@@ -134,6 +134,20 @@ sudo apt install -y \
 - **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
 - MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
 
+#### トラブルシュート: RustDesk 経由で capsicum が真っ白
+
+Linux 機から RustDesk で Windows 実機を操作していると、capsicum のウィンドウが真っ白になることがある。**大半は RustDesk（画面キャプチャ）側の現象で capsicum のバグではない**。原因は、Flutter の Windows 版が ANGLE（OpenGL ES → Direct3D 11）で GPU 描画しており、RustDesk の既定キャプチャ（DXGI / Desktop Duplication）が GPU 合成面を拾えず、ウィンドウのクリアカラー（白）だけを取り込むため。描画自体は GPU 上で正しく走っていて、取り込みだけが空になっている。「実機で操作すると直る」のはこのため。
+
+**特定した主因（x64 実機・2026-07-23）**: この端末は AC 電源時に**60 分でディスプレイの電源が切れる**設定だった（`powercfg /q SCHEME_CURRENT SUB_VIDEO VIDEOIDLE` の AC=0xe10。スリープは AC=0=しない）。ディスプレイ電源が落ちると DXGI の出力面が消え、RustDesk が白を取り込む。「実機で操作すると直り、その後しばらく(最長〜60分)は RustDesk でも大丈夫」という時間依存の症状はこれで説明できる。対策として **`powercfg /change monitor-timeout-ac 0`（AC 時はディスプレイ電源オフしない）を適用済み**。逆戻しは `60` を入れる。
+
+- **RustDesk の「ハードウェアコーデック」トグルは無関係**（エンコード＝送信側の設定であり、真っ白の原因であるキャプチャ取り込み経路とは別）。切り分けから外してよい。
+- **判別テスト**（キャプチャ由来か app 由来か）: 白い時にウィンドウを**リサイズ or 最小化→復元**して中身が出れば = キャプチャ由来（app バグではない）。その時刻の **Sentry イベントの有無**でも切り分けられる（あれば app 由来を疑う）。
+- **主因が再発した / 上記で直らない場合の対策候補**:
+  1. **物理ディスプレイをアクティブに保つ**の堅牢版として **HDMI ダミープラグ / 仮想ディスプレイドライバ**（物理モニタ無しでも常時アクティブ出力を維持）。
+  2. その場復帰: 上記リサイズ / RustDesk 再接続 / ホスト再起動。
+  3. **Windows のアクティベーション状態**を確認（未アクティベーションだと DXGI が空を返しうる）。
+- **確実な Flutter 側フラグは存在しない**。`--enable-software-rendering` は Windows release で効く保証がなく、Impeller（`--enable-impeller`）は実験段階でどちらも GPU 描画のためキャプチャ空振りは残りうる。ショップ版は物理 GPU＋アクティブ画面で描画するため**この現象は非該当**（実ユーザーが真っ白になる原因は別で、その場合は Sentry に痕跡が出る）。
+
 ### 持ち込まないもの
 
 - Apple toolchain（Xcode / fastlane / Apple Distribution 証明書 / `AuthKey_*.p8`）
