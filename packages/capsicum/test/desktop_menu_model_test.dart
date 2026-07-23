@@ -120,6 +120,60 @@ void main() {
     });
   });
 
+  group('ネストしたサブメニュー（タブ切替の形）', () {
+    testWidgets('in-window は入れ子サブメニューを展開でき、現在項目に ✓ が付く', (tester) async {
+      final model = [
+        MenuSubmenuEntry(
+          label: '表示',
+          children: [
+            MenuSubmenuEntry(
+              label: 'タブ',
+              children: [
+                MenuActionEntry(label: 'ホーム', checked: true, onSelected: () {}),
+                MenuActionEntry(label: '通知', checked: false, onSelected: () {}),
+              ],
+            ),
+          ],
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: renderInWindowMenuBar(model, const SizedBox.shrink()),
+        ),
+      );
+      await tester.tap(find.text('表示'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('タブ'));
+      await tester.pumpAndSettle();
+      expect(find.text('ホーム'), findsOneWidget);
+      expect(find.text('通知'), findsOneWidget);
+      // 現在タブ（checked:true）は ✓ アイコン。
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+
+    test('mac は入れ子 MenuSubmenuEntry を PlatformMenu として写す', () {
+      final bar =
+          renderMacMenuBar([
+                MenuSubmenuEntry(
+                  label: '表示',
+                  children: [
+                    MenuSubmenuEntry(
+                      label: 'タブ',
+                      children: [
+                        MenuActionEntry(label: 'ホーム', onSelected: () {}),
+                      ],
+                    ),
+                  ],
+                ),
+              ], const SizedBox.shrink())
+              as PlatformMenuBar;
+      final view = bar.menus.single as PlatformMenu;
+      final nested = view.menus.single as PlatformMenu;
+      expect(nested.label, 'タブ');
+      expect(nested.menus.single, isA<PlatformMenuItem>());
+    });
+  });
+
   group('collectInWindowShortcuts', () {
     test('globalShortcut:true の項目だけを Ctrl 修飾で集める', () {
       var searched = false;

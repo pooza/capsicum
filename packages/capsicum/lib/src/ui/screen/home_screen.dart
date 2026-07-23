@@ -1364,6 +1364,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .where((a) => a.key != current?.key)
         .toList();
 
+    // 表示メニューのタブ切替・実況トグル (#841)。タブ列・現在タブ・ラベルは
+    // タブバー (_buildTimelineTabs) と同じ provider / _tabLabel を単一ソースに使う。
+    final adapter = ref.watch(currentAdapterProvider);
+    final isMastodon =
+        adapter != null &&
+        !adapter.capabilities.supportedTimelines.contains(TimelineType.social);
+    final storageKey = current?.key.toStorageKey();
+    final visibleTabs = storageKey != null
+        ? ref.watch(visibleTabsProvider(storageKey))
+        : const <TabType>[];
+    final allLists = ref.watch(listsProvider).valueOrNull ?? const <PostList>[];
+    final currentTab = ref.watch(selectedTabProvider);
+    final hideLivecure = ref.watch(hideLivecureProvider);
+
     // 編集アクションは現在フォーカス中のフィールドへ intent を送る。フォーカスが
     // テキスト以外なら no-op（intent を処理する Action が無い）。
     void editAction(Intent intent) {
@@ -1527,6 +1541,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             shortcut: const MenuShortcut(LogicalKeyboardKey.keyR),
             globalShortcut: true,
             onSelected: _refreshCurrentTimeline,
+          ),
+          const MenuGroupSeparator(),
+          // 表示中のタブへ切り替える。現在タブに ✓（mac はラベル末尾・in-window は
+          // 先頭アイコン）。ラベルはタブバーと同じ [_tabLabel] を単一ソースに使う。
+          if (visibleTabs.isNotEmpty)
+            MenuSubmenuEntry(
+              label: 'タブ',
+              children: [
+                for (final tab in visibleTabs)
+                  MenuActionEntry(
+                    label: _tabLabel(tab, isMastodon, adapter, allLists),
+                    checked: tab is! MessagesTab && tab == currentTab,
+                    onSelected: () {
+                      // MessagesTab はフィードを持たず /chat に push する
+                      // 遷移トリガー (#439)。selectedTab は切り替えない。
+                      if (tab is MessagesTab) {
+                        context.push('/chat');
+                        return;
+                      }
+                      ref.read(selectedTabProvider.notifier).state = tab;
+                      _saveLastTab();
+                    },
+                  ),
+              ],
+            ),
+          // 実況（#実況 タグ投稿）の表示トグル。表示中に ✓。
+          MenuActionEntry(
+            label: '実況を表示',
+            checked: !hideLivecure,
+            onSelected: () => ref.read(hideLivecureProvider.notifier).toggle(),
           ),
           const MenuGroupSeparator(),
           MenuProvidedEntry(
