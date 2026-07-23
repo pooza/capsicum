@@ -198,15 +198,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/compose',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
+          final restoreDraft = extra?['restoreDraft'] as Draft?;
+          // 下書き復元では、埋め込みの reply / renote / channel を compose の
+          // widget パラメータへ流し、リプライ/引用/チャンネル文脈を再構築する
+          // (#833)。compose 側は _effectiveChannelId / _quotedPost / 送信経路が
+          // これらの widget フィールドを既に参照するため本体は無改修。明示 extra
+          // （通常のリプライ/引用起動）があればそちらを優先する。
           return ComposeScreen(
             redraft: extra?['redraft'] as Post?,
-            replyTo: extra?['replyTo'] as Post?,
-            quoteTo: extra?['quoteTo'] as Post?,
-            channelId: extra?['channelId'] as String?,
-            channelName: extra?['channelName'] as String?,
+            replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
+            quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
+            channelId:
+                extra?['channelId'] as String? ?? restoreDraft?.channelId,
+            channelName:
+                extra?['channelName'] as String? ?? restoreDraft?.channelName,
             sharedText: extra?['sharedText'] as String?,
             initialText: extra?['initialText'] as String?,
-            restoreDraft: extra?['restoreDraft'] as Draft?,
+            restoreDraft: restoreDraft,
             template: extra?['template'] as ComposeTemplate?,
           );
         },

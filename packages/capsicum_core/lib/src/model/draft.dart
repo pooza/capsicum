@@ -1,4 +1,5 @@
 import 'attachment.dart';
+import 'post.dart';
 import 'post_scope.dart';
 
 /// サーバーに保存された下書き 1 件 (#174)。予約投稿（[ScheduledPost]）と同じ
@@ -13,6 +14,21 @@ class Draft {
   final List<Attachment> attachments;
   final DateTime createdAt;
 
+  /// リプライ先の投稿 (#833)。Misskey の `notes/drafts/list` が返す `reply`
+  /// 埋め込み（`replyId` に対応する Note）から復元する。追加リクエストなしに
+  /// compose の `replyTo` へ流せるよう、Post として保持する。元投稿が削除済み等
+  /// で埋め込みが無ければ null。
+  final Post? reply;
+
+  /// 引用先の投稿 (#833)。Misskey の `renote` 埋め込み（`renoteId` に対応する
+  /// Note）から復元する。下書きは本文を持つため renote は実質「引用」を意味する。
+  final Post? renote;
+
+  /// チャンネル下書きの復元用 (#833)。`channelId` は常に、`channelName` は
+  /// `channel` 埋め込みがある場合に持つ。compose のチャンネル文脈へ流す。
+  final String? channelId;
+  final String? channelName;
+
   const Draft({
     required this.id,
     this.content,
@@ -20,5 +36,9 @@ class Draft {
     this.scope = PostScope.public,
     this.attachments = const [],
     required this.createdAt,
+    this.reply,
+    this.renote,
+    this.channelId,
+    this.channelName,
   });
 }
