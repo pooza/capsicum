@@ -64,9 +64,13 @@ import 'ui/screen/scheduled_posts_screen.dart';
 import 'ui/screen/templates_manage_screen.dart';
 import 'ui/screen/splash_screen.dart';
 import 'ui/screen/user_list_screen.dart';
+import 'ui/widget/desktop_menu_bar.dart';
 
 /// Navigator key exposed for navigation from notification taps.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// 認証後ルートを包む ShellRoute 用の Navigator key (#834)。
+final shellNavigatorKey = GlobalKey<NavigatorState>();
 
 /// A [ChangeNotifier] that notifies GoRouter when auth state changes.
 class _AuthNotifier extends ChangeNotifier {
@@ -146,368 +150,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return EulaScreen(nextRoute: nextRoute);
         },
       ),
-      GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
-      GoRoute(
-        path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/account',
-        builder: (context, state) => const AccountSettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/appearance',
-        builder: (context, state) => const AppearanceSettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/display',
-        builder: (context, state) => const DisplaySettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/touch',
-        builder: (context, state) => const TouchActionSettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/desktop',
-        builder: (context, state) => const DesktopSettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/push',
-        builder: (context, state) => const PushNotificationSettingsScreen(),
-      ),
-      GoRoute(
-        path: '/settings/supporter',
-        builder: (context, state) => const SupporterScreen(),
-      ),
-      GoRoute(
-        path: '/server-info',
-        builder: (context, state) => const ServerInfoScreen(),
-      ),
-      GoRoute(
-        path: '/lists/manage',
-        builder: (context, state) => const ListManagementScreen(),
-      ),
-      GoRoute(
-        path: '/lists/members',
-        builder: (context, state) {
-          final postList = state.extra! as PostList;
-          return ListMembersScreen(postList: postList);
-        },
-      ),
-      GoRoute(
-        path: '/compose',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final restoreDraft = extra?['restoreDraft'] as Draft?;
-          // 下書き復元では、埋め込みの reply / renote / channel を compose の
-          // widget パラメータへ流し、リプライ/引用/チャンネル文脈を再構築する
-          // (#833)。compose 側は _effectiveChannelId / _quotedPost / 送信経路が
-          // これらの widget フィールドを既に参照するため本体は無改修。明示 extra
-          // （通常のリプライ/引用起動）があればそちらを優先する。
-          return ComposeScreen(
-            redraft: extra?['redraft'] as Post?,
-            replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
-            quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
-            channelId:
-                extra?['channelId'] as String? ?? restoreDraft?.channelId,
-            channelName:
-                extra?['channelName'] as String? ?? restoreDraft?.channelName,
-            sharedText: extra?['sharedText'] as String?,
-            initialText: extra?['initialText'] as String?,
-            restoreDraft: restoreDraft,
-            template: extra?['template'] as ComposeTemplate?,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/play',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          return FlashViewScreen(
-            initialFlash: extra?['flash'] as Flash?,
-            flashId: extra?['flashId'] as String?,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/scheduled',
-        builder: (context, state) => const ScheduledPostsScreen(),
-      ),
-      GoRoute(
-        path: '/drafts',
-        builder: (context, state) => const DraftsScreen(),
-      ),
-      GoRoute(
-        path: '/templates/manage',
-        builder: (context, state) => const TemplatesManageScreen(),
-      ),
-      GoRoute(
-        path: '/search',
-        builder: (context, state) => const SearchScreen(),
-      ),
-      GoRoute(
-        path: '/notifications',
-        builder: (context, state) => const NotificationScreen(),
-      ),
-      GoRoute(
-        path: '/notifications/all',
-        builder: (context, state) => const UnifiedNotificationScreen(),
-      ),
-      GoRoute(
-        path: '/bookmarks',
-        builder: (context, state) => const BookmarkScreen(),
-      ),
-      GoRoute(
-        path: '/achievements',
-        builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
-          return AchievementScreen(
-            userId: extra['userId'] as String,
-            displayName: extra['displayName'] as String?,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/announcements',
-        builder: (context, state) => const AnnouncementScreen(),
-      ),
-      GoRoute(
-        path: '/post',
-        builder: (context, state) {
-          final post = state.extra! as Post;
-          return PostDetailScreen(post: post);
-        },
-      ),
-      GoRoute(
-        path: '/profile',
-        builder: (context, state) {
-          final user = state.extra! as User;
-          return ProfileScreen(user: user);
-        },
-      ),
-      GoRoute(
-        path: '/profile/edit',
-        builder: (context, state) => const ProfileEditScreen(),
-      ),
-      GoRoute(
-        path: '/users',
-        builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
-          return UserListScreen(
-            title: extra['title'] as String,
-            fetcher: extra['fetcher'] as UserListFetcher,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/collections',
-        builder: (context, state) {
-          final extra = state.extra! as Map<String, dynamic>;
-          return CollectionsListScreen(
-            accountId: extra['accountId'] as String,
-            inCollections: extra['inCollections'] as bool? ?? false,
-            ownerView: extra['ownerView'] as bool? ?? false,
-            title: extra['title'] as String,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/collection',
-        builder: (context, state) =>
-            CollectionDetailScreen(collectionId: state.extra! as String),
-      ),
-      GoRoute(
-        path: '/hashtag/:tag',
-        builder: (context, state) {
-          final tag = state.pathParameters['tag']!;
-          return HashtagTimelineScreen(hashtag: tag);
-        },
-      ),
-      GoRoute(
-        path: '/channel/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final name = state.extra as String?;
-          return ChannelTimelineScreen(channelId: id, channelName: name);
-        },
-      ),
-      GoRoute(
-        path: '/clip/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final name = state.extra as String?;
-          return ClipNotesScreen(clipId: id, clipName: name);
-        },
-      ),
-      GoRoute(
-        path: '/antenna/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final name = state.extra as String?;
-          return AntennaNotesScreen(antennaId: id, antennaName: name);
-        },
-      ),
-      GoRoute(
-        path: '/list/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final name = state.extra as String?;
-          return ListTimelineScreen(listId: id, listName: name);
-        },
-      ),
-      GoRoute(path: '/drive', builder: (_, _) => const DriveManagerScreen()),
-      GoRoute(
-        path: '/chat',
-        builder: (context, state) => const ChatThreadListScreen(),
-      ),
-      GoRoute(
-        path: '/chat/new',
-        builder: (context, state) => const ChatNewThreadScreen(),
-      ),
-      GoRoute(
-        path: '/chat/user/:userId',
-        builder: (context, state) {
-          // rebuild 中に extra が失われたり、push 通知タップ等で `extra` 無しで
-          // 飛んでくるケース (CAPSICUM-16 と同型、#443) に備え、強制 unwrap せず
-          // null の場合はメッセージ一覧へ戻す。userId からの User 復元は
-          // #440 の push 通知タップ動線整備で扱う。
-          final user = state.extra as User?;
-          if (user == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/chat');
-            });
-            return const SizedBox.shrink();
-          }
-          return ChatThreadScreen(otherUser: user);
-        },
-      ),
-      GoRoute(
-        path: '/chat/invitations',
-        builder: (context, state) => const ChatInvitationsScreen(),
-      ),
-      GoRoute(
-        // ':roomId' より先に登録しないと "new" が roomId として吸われる。
-        path: '/chat/room/new',
-        builder: (context, state) => const ChatRoomEditScreen(),
-      ),
-      GoRoute(
-        path: '/chat/room/:roomId/edit',
-        builder: (context, state) {
-          final room = state.extra as ChatRoom?;
-          if (room == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/chat');
-            });
-            return const SizedBox.shrink();
-          }
-          return ChatRoomEditScreen(initialRoom: room);
-        },
-      ),
-      GoRoute(
-        path: '/chat/room/:roomId/members',
-        builder: (context, state) {
-          final room = state.extra as ChatRoom?;
-          if (room == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/chat');
-            });
-            return const SizedBox.shrink();
-          }
-          return ChatRoomMembersScreen(room: room);
-        },
-      ),
-      GoRoute(
-        path: '/chat/room/:roomId/invite',
-        builder: (context, state) {
-          final room = state.extra as ChatRoom?;
-          if (room == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/chat');
-            });
-            return const SizedBox.shrink();
-          }
-          return ChatRoomInviteScreen(room: room);
-        },
-      ),
-      GoRoute(
-        path: '/chat/room/:roomId',
-        builder: (context, state) {
-          // /chat/user/:userId と同じく rebuild / push 通知由来で extra が
-          // 失われるケースに備え、null なら一覧へ戻す。roomId からの ChatRoom
-          // 復元 (/chat/rooms/show 直叩き) は Phase E で push 通知タップ動線を
-          // 整える際に扱う (#438)。
-          final room = state.extra as ChatRoom?;
-          if (room == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/chat');
-            });
-            return const SizedBox.shrink();
-          }
-          return ChatRoomTimelineScreen(room: room);
-        },
-      ),
-      GoRoute(
-        path: '/gallery',
-        builder: (context, state) => const GalleryScreen(),
-      ),
-      GoRoute(
-        path: '/gallery/:id',
-        builder: (context, state) {
-          final post = state.extra as GalleryPost;
-          return GalleryDetailScreen(post: post);
-        },
-      ),
-      // Misskey ページのハブ画面 (#186)。drawer から開く。v1 では
-      // 「いいねしたページ」のみ表示するが、将来 WebUI の『人気』『自分のページ』
-      // を同画面に追加する想定で `/pages` 単一ルートに集約する。
-      GoRoute(path: '/pages', builder: (context, state) => const PagesScreen()),
-      // Misskey ページ (#186) by-id 直接遷移。push 通知や future deeplink で
-      // 使う想定。state.extra に Page を渡せばその場で表示し、無ければ
-      // pageId から adapter 経由で fetch する。
-      GoRoute(
-        path: '/page/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final page = state.extra as Page?;
-          return PageViewScreen(
-            initialPage: page,
-            pageId: page == null ? id : null,
-          );
-        },
-      ),
-      // Misskey の正規 URL `https://host/@username/pages/<name>` 形式を
-      // そのまま path として扱うルート。in-app から context.push する経路と、
-      // 将来の OS 経由 deeplink の双方で使う。
-      GoRoute(
-        path: '/@:username/pages/:name',
-        builder: (context, state) {
-          final username = state.pathParameters['username']!;
-          final name = state.pathParameters['name']!;
-          return PageViewScreen(username: username, name: name);
-        },
-      ),
-      GoRoute(
-        path: '/episodes',
-        builder: (context, state) => const EpisodeBrowserScreen(),
-      ),
-      GoRoute(
-        path: '/annict/record',
-        builder: (context, state) {
-          final args = state.extra! as AnnictRecordScreenArgs;
-          return AnnictRecordScreen(args: args);
-        },
-      ),
-      GoRoute(
-        path: '/annict/review',
-        builder: (context, state) {
-          final args = state.extra! as AnnictReviewScreenArgs;
-          return AnnictReviewScreen(args: args);
-        },
-      ),
-      GoRoute(
-        path: '/media-catalog',
-        builder: (context, state) => const MediaCatalogScreen(),
-      ),
+      // メディアビューアは没入フルスクリーン + 独自キーボード操作のため shell の
+      // 外（root navigator 側）に置き、デスクトップメニューバーを出さない (#834)。
       GoRoute(
         path: '/media',
         builder: (context, state) {
@@ -519,6 +163,387 @@ final routerProvider = Provider<GoRouter>((ref) {
             postId: extra['postId'] as String?,
           );
         },
+      ),
+      // 認証後の全ルートを ShellRoute で包み、デスクトップメニューバー
+      // ([DesktopMenuBar]) を常駐させる (#834)。/settings や /compose 等へ push
+      // してもメニューが保持される。/media だけは没入のため上の root 側に残す。
+      ShellRoute(
+        navigatorKey: shellNavigatorKey,
+        builder: (context, state, child) => DesktopMenuBar(child: child),
+        routes: [
+          GoRoute(
+            path: '/home',
+            builder: (context, state) => const HomeScreen(),
+          ),
+          GoRoute(
+            path: '/settings',
+            builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/account',
+            builder: (context, state) => const AccountSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/appearance',
+            builder: (context, state) => const AppearanceSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/display',
+            builder: (context, state) => const DisplaySettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/touch',
+            builder: (context, state) => const TouchActionSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/desktop',
+            builder: (context, state) => const DesktopSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/push',
+            builder: (context, state) => const PushNotificationSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/supporter',
+            builder: (context, state) => const SupporterScreen(),
+          ),
+          GoRoute(
+            path: '/server-info',
+            builder: (context, state) => const ServerInfoScreen(),
+          ),
+          GoRoute(
+            path: '/lists/manage',
+            builder: (context, state) => const ListManagementScreen(),
+          ),
+          GoRoute(
+            path: '/lists/members',
+            builder: (context, state) {
+              final postList = state.extra! as PostList;
+              return ListMembersScreen(postList: postList);
+            },
+          ),
+          GoRoute(
+            path: '/compose',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              final restoreDraft = extra?['restoreDraft'] as Draft?;
+              // 下書き復元では、埋め込みの reply / renote / channel を compose の
+              // widget パラメータへ流し、リプライ/引用/チャンネル文脈を再構築する
+              // (#833)。compose 側は _effectiveChannelId / _quotedPost / 送信経路が
+              // これらの widget フィールドを既に参照するため本体は無改修。明示 extra
+              // （通常のリプライ/引用起動）があればそちらを優先する。
+              return ComposeScreen(
+                redraft: extra?['redraft'] as Post?,
+                replyTo: extra?['replyTo'] as Post? ?? restoreDraft?.reply,
+                quoteTo: extra?['quoteTo'] as Post? ?? restoreDraft?.renote,
+                channelId:
+                    extra?['channelId'] as String? ?? restoreDraft?.channelId,
+                channelName:
+                    extra?['channelName'] as String? ??
+                    restoreDraft?.channelName,
+                sharedText: extra?['sharedText'] as String?,
+                initialText: extra?['initialText'] as String?,
+                restoreDraft: restoreDraft,
+                template: extra?['template'] as ComposeTemplate?,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/play',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              return FlashViewScreen(
+                initialFlash: extra?['flash'] as Flash?,
+                flashId: extra?['flashId'] as String?,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/scheduled',
+            builder: (context, state) => const ScheduledPostsScreen(),
+          ),
+          GoRoute(
+            path: '/drafts',
+            builder: (context, state) => const DraftsScreen(),
+          ),
+          GoRoute(
+            path: '/templates/manage',
+            builder: (context, state) => const TemplatesManageScreen(),
+          ),
+          GoRoute(
+            path: '/search',
+            builder: (context, state) => const SearchScreen(),
+          ),
+          GoRoute(
+            path: '/notifications',
+            builder: (context, state) => const NotificationScreen(),
+          ),
+          GoRoute(
+            path: '/notifications/all',
+            builder: (context, state) => const UnifiedNotificationScreen(),
+          ),
+          GoRoute(
+            path: '/bookmarks',
+            builder: (context, state) => const BookmarkScreen(),
+          ),
+          GoRoute(
+            path: '/achievements',
+            builder: (context, state) {
+              final extra = state.extra! as Map<String, dynamic>;
+              return AchievementScreen(
+                userId: extra['userId'] as String,
+                displayName: extra['displayName'] as String?,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/announcements',
+            builder: (context, state) => const AnnouncementScreen(),
+          ),
+          GoRoute(
+            path: '/post',
+            builder: (context, state) {
+              final post = state.extra! as Post;
+              return PostDetailScreen(post: post);
+            },
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) {
+              final user = state.extra! as User;
+              return ProfileScreen(user: user);
+            },
+          ),
+          GoRoute(
+            path: '/profile/edit',
+            builder: (context, state) => const ProfileEditScreen(),
+          ),
+          GoRoute(
+            path: '/users',
+            builder: (context, state) {
+              final extra = state.extra! as Map<String, dynamic>;
+              return UserListScreen(
+                title: extra['title'] as String,
+                fetcher: extra['fetcher'] as UserListFetcher,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/collections',
+            builder: (context, state) {
+              final extra = state.extra! as Map<String, dynamic>;
+              return CollectionsListScreen(
+                accountId: extra['accountId'] as String,
+                inCollections: extra['inCollections'] as bool? ?? false,
+                ownerView: extra['ownerView'] as bool? ?? false,
+                title: extra['title'] as String,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/collection',
+            builder: (context, state) =>
+                CollectionDetailScreen(collectionId: state.extra! as String),
+          ),
+          GoRoute(
+            path: '/hashtag/:tag',
+            builder: (context, state) {
+              final tag = state.pathParameters['tag']!;
+              return HashtagTimelineScreen(hashtag: tag);
+            },
+          ),
+          GoRoute(
+            path: '/channel/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final name = state.extra as String?;
+              return ChannelTimelineScreen(channelId: id, channelName: name);
+            },
+          ),
+          GoRoute(
+            path: '/clip/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final name = state.extra as String?;
+              return ClipNotesScreen(clipId: id, clipName: name);
+            },
+          ),
+          GoRoute(
+            path: '/antenna/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final name = state.extra as String?;
+              return AntennaNotesScreen(antennaId: id, antennaName: name);
+            },
+          ),
+          GoRoute(
+            path: '/list/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final name = state.extra as String?;
+              return ListTimelineScreen(listId: id, listName: name);
+            },
+          ),
+          GoRoute(
+            path: '/drive',
+            builder: (_, _) => const DriveManagerScreen(),
+          ),
+          GoRoute(
+            path: '/chat',
+            builder: (context, state) => const ChatThreadListScreen(),
+          ),
+          GoRoute(
+            path: '/chat/new',
+            builder: (context, state) => const ChatNewThreadScreen(),
+          ),
+          GoRoute(
+            path: '/chat/user/:userId',
+            builder: (context, state) {
+              // rebuild 中に extra が失われたり、push 通知タップ等で `extra` 無しで
+              // 飛んでくるケース (CAPSICUM-16 と同型、#443) に備え、強制 unwrap せず
+              // null の場合はメッセージ一覧へ戻す。userId からの User 復元は
+              // #440 の push 通知タップ動線整備で扱う。
+              final user = state.extra as User?;
+              if (user == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/chat');
+                });
+                return const SizedBox.shrink();
+              }
+              return ChatThreadScreen(otherUser: user);
+            },
+          ),
+          GoRoute(
+            path: '/chat/invitations',
+            builder: (context, state) => const ChatInvitationsScreen(),
+          ),
+          GoRoute(
+            // ':roomId' より先に登録しないと "new" が roomId として吸われる。
+            path: '/chat/room/new',
+            builder: (context, state) => const ChatRoomEditScreen(),
+          ),
+          GoRoute(
+            path: '/chat/room/:roomId/edit',
+            builder: (context, state) {
+              final room = state.extra as ChatRoom?;
+              if (room == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/chat');
+                });
+                return const SizedBox.shrink();
+              }
+              return ChatRoomEditScreen(initialRoom: room);
+            },
+          ),
+          GoRoute(
+            path: '/chat/room/:roomId/members',
+            builder: (context, state) {
+              final room = state.extra as ChatRoom?;
+              if (room == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/chat');
+                });
+                return const SizedBox.shrink();
+              }
+              return ChatRoomMembersScreen(room: room);
+            },
+          ),
+          GoRoute(
+            path: '/chat/room/:roomId/invite',
+            builder: (context, state) {
+              final room = state.extra as ChatRoom?;
+              if (room == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/chat');
+                });
+                return const SizedBox.shrink();
+              }
+              return ChatRoomInviteScreen(room: room);
+            },
+          ),
+          GoRoute(
+            path: '/chat/room/:roomId',
+            builder: (context, state) {
+              // /chat/user/:userId と同じく rebuild / push 通知由来で extra が
+              // 失われるケースに備え、null なら一覧へ戻す。roomId からの ChatRoom
+              // 復元 (/chat/rooms/show 直叩き) は Phase E で push 通知タップ動線を
+              // 整える際に扱う (#438)。
+              final room = state.extra as ChatRoom?;
+              if (room == null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) context.go('/chat');
+                });
+                return const SizedBox.shrink();
+              }
+              return ChatRoomTimelineScreen(room: room);
+            },
+          ),
+          GoRoute(
+            path: '/gallery',
+            builder: (context, state) => const GalleryScreen(),
+          ),
+          GoRoute(
+            path: '/gallery/:id',
+            builder: (context, state) {
+              final post = state.extra as GalleryPost;
+              return GalleryDetailScreen(post: post);
+            },
+          ),
+          // Misskey ページのハブ画面 (#186)。drawer から開く。v1 では
+          // 「いいねしたページ」のみ表示するが、将来 WebUI の『人気』『自分のページ』
+          // を同画面に追加する想定で `/pages` 単一ルートに集約する。
+          GoRoute(
+            path: '/pages',
+            builder: (context, state) => const PagesScreen(),
+          ),
+          // Misskey ページ (#186) by-id 直接遷移。push 通知や future deeplink で
+          // 使う想定。state.extra に Page を渡せばその場で表示し、無ければ
+          // pageId から adapter 経由で fetch する。
+          GoRoute(
+            path: '/page/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final page = state.extra as Page?;
+              return PageViewScreen(
+                initialPage: page,
+                pageId: page == null ? id : null,
+              );
+            },
+          ),
+          // Misskey の正規 URL `https://host/@username/pages/<name>` 形式を
+          // そのまま path として扱うルート。in-app から context.push する経路と、
+          // 将来の OS 経由 deeplink の双方で使う。
+          GoRoute(
+            path: '/@:username/pages/:name',
+            builder: (context, state) {
+              final username = state.pathParameters['username']!;
+              final name = state.pathParameters['name']!;
+              return PageViewScreen(username: username, name: name);
+            },
+          ),
+          GoRoute(
+            path: '/episodes',
+            builder: (context, state) => const EpisodeBrowserScreen(),
+          ),
+          GoRoute(
+            path: '/annict/record',
+            builder: (context, state) {
+              final args = state.extra! as AnnictRecordScreenArgs;
+              return AnnictRecordScreen(args: args);
+            },
+          ),
+          GoRoute(
+            path: '/annict/review',
+            builder: (context, state) {
+              final args = state.extra! as AnnictReviewScreenArgs;
+              return AnnictReviewScreen(args: args);
+            },
+          ),
+          GoRoute(
+            path: '/media-catalog',
+            builder: (context, state) => const MediaCatalogScreen(),
+          ),
+        ],
       ),
     ],
   );
