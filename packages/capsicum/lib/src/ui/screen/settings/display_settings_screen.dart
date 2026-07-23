@@ -83,16 +83,17 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(emojiZeroWidthSpaceProvider.notifier).toggle(),
           ),
-          // カラー絵文字フォールバック (#861 / #869)。Linux のみ表示。ON (既定)
-          // は Unicode 絵文字をカラー表示するが、その副作用で半角数字の幅が
-          // 崩れる (#869)。数字表示を優先したい場合は OFF で #861 以前の挙動へ。
+          // カラー絵文字フォールバック (#861 / #869 / #871)。Linux のみ表示。
+          // ON (既定) は Unicode 絵文字をカラー表示し、横取りされる半角数字等は
+          // 極小フォントで幅を守る (#871)。ごく一部の環境で数字幅がなお崩れる
+          // 場合の保険として、OFF で #861 以前 (数字は正しいがモノクロ) へ戻せる。
           if (colorEmojiFallbackConfigurable)
             SwitchListTile(
               title: const Text('カラー絵文字を使う'),
               subtitle: const Text(
                 'Unicode 絵文字をカラーで表示します。'
-                'オフにすると一部の絵文字はモノクロになりますが、'
-                '半角数字などの文字幅の崩れを回避できます',
+                'まれに半角数字などの文字幅が崩れる環境では、'
+                'オフにすると幅が正しくなります（絵文字はモノクロになります）',
               ),
               value: ref.watch(colorEmojiFallbackProvider),
               onChanged: (value) => ref

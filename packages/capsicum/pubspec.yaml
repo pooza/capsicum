@@ -146,6 +146,17 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+  fonts:
+    # Linux で `Noto Color Emoji` をカラー絵文字 fallback に足すと、同フォントが
+    # キーキャップ絵文字の土台として持つ ASCII 数字 `0-9` `#` `*`・空白まで
+    # 横取りされて幅が崩れる (#869)。これらのグリフだけを DejaVu Sans から
+    # subset した極小フォント (~16KB) を fallback の前段に置き、数字等を先に
+    # claim させて絵文字は `Noto Color Emoji` に倒す (#871・main.dart 参照)。
+    # DejaVu Sans の permissive license は改変フォントに "DejaVu" 名を禁じるため
+    # 改名済み。ライセンスは assets/fonts/LICENSE-CapsicumLatinFallback.txt。
+    - family: Capsicum Latin Fallback
+      fonts:
+        - asset: assets/fonts/CapsicumLatinFallback.ttf
 
 # Windows MSIX パッケージング設定 (#423)。
 #
