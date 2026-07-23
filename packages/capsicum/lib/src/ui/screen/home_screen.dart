@@ -1345,24 +1345,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 },
               ),
               const Divider(),
-              // 投げ銭（サポート）導線をドロワー直下へ格上げする (#853)。以前は
-              // 「設定」内にあったが投げ銭は設定ではないため、目立つ位置へ出す。
-              // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
-              // プラットフォームのみ）。
-              if (ref.watch(supporterEntryVisibleProvider))
-                ListTile(
-                  leading: Image.asset(
-                    AppConstants.supporterIconAsset,
-                    width: 24,
-                    height: 24,
-                  ),
-                  title: const Text('capsicum をサポート'),
-                  subtitle: const Text('投げ銭で開発と通知リレーを応援'),
-                  onTap: () {
-                    dismiss();
-                    context.push('/settings/supporter');
-                  },
-                ),
               // ナビゲーション項目は _buildNavItems を単一ソースに生成する
               // (#712)。drawer と macOS グローバルメニューで同じ feature-gate /
               // 動的リストを共有し、メニューとの乖離を防ぐ。
@@ -1386,6 +1368,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   confirmLogout(context, ref, current);
                 },
               ),
+              // 投げ銭（サポート）導線 (#853)。以前は「設定」内にあったが投げ銭は
+              // 設定ではないためドロワー下部（「capsicum について」の上）へ出す。
+              // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
+              // プラットフォームのみ）。
+              if (ref.watch(supporterEntryVisibleProvider))
+                ListTile(
+                  leading: Image.asset(
+                    AppConstants.supporterIconAsset,
+                    width: 24,
+                    height: 24,
+                  ),
+                  title: const Text('capsicum をサポート'),
+                  subtitle: const Text('投げ銭で開発と通知リレーを応援'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/settings/supporter');
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('capsicum について'),
