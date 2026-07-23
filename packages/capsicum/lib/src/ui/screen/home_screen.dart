@@ -895,6 +895,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _saveLastTab();
   }
 
+  /// メニュー / ⌘R から現在のタイムラインを再取得する (#841)。pull-to-refresh の
+  /// [RefreshIndicator] と同じく、表示中のタブに応じてハッシュタグ / リスト / 本線
+  /// タイムラインの provider を refresh する。更新中は現データを残す
+  /// （[_pullRefreshing]）ので、ローディングのちらつきを出さない。
+  Future<void> _refreshCurrentTimeline() async {
+    final selectedHashtag = ref.read(selectedHashtagProvider);
+    final selectedList = ref.read(selectedListProvider);
+    _markerRestored = false;
+    if (mounted) setState(() => _pullRefreshing = true);
+    try {
+      final Future<TimelineState> refreshed;
+      if (selectedHashtag != null) {
+        refreshed = ref.refresh(
+          hashtagTimelineProvider(selectedHashtag).future,
+        );
+      } else if (selectedList != null) {
+        refreshed = ref.refresh(listTimelineProvider(selectedList.id).future);
+      } else {
+        refreshed = ref.refresh(timelineProvider.future);
+      }
+      await refreshed;
+    } finally {
+      if (mounted) setState(() => _pullRefreshing = false);
+    }
+  }
+
   /// Persist the currently selected tab to SharedPreferences.
   void _saveLastTab() {
     final account = ref.read(currentAccountProvider);
@@ -1365,6 +1391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             label: '設定',
             icon: Icons.settings,
             shortcut: const MenuShortcut(LogicalKeyboardKey.comma),
+            globalShortcut: true,
             onSelected: () => context.push('/settings'),
           ),
           const MenuGroupSeparator(),
@@ -1437,12 +1464,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       MenuSubmenuEntry(
         label: '移動',
         children: [
+          // 新規投稿は頻用アクションなので先頭に置き、⌘N/Ctrl+N を割り当てる。
+          MenuActionEntry(
+            label: '新規投稿',
+            icon: Icons.edit_outlined,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyN),
+            globalShortcut: true,
+            onSelected: () => context.push('/compose'),
+          ),
+          const MenuGroupSeparator(),
           for (final item in navItems.where((i) => i.title != '設定'))
             MenuActionEntry(
               label: item.title,
               icon: item.icon,
               badge: item.badge,
               shortcut: item.shortcut,
+              // shortcut を持つナビ項目（検索 ⌘F 等）は in-window でも発火させる。
+              globalShortcut: item.shortcut != null,
               onSelected: item.onSelected,
             ),
         ],
@@ -1483,6 +1521,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       MenuSubmenuEntry(
         label: '表示',
         children: [
+          MenuActionEntry(
+            label: 'タイムラインを更新',
+            icon: Icons.refresh,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyR),
+            globalShortcut: true,
+            onSelected: _refreshCurrentTimeline,
+          ),
+          const MenuGroupSeparator(),
           MenuProvidedEntry(
             macType: PlatformProvidedMenuItemType.toggleFullScreen,
             inWindowLabel: '全画面表示を切り替え',

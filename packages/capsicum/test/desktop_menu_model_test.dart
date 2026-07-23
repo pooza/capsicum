@@ -120,6 +120,67 @@ void main() {
     });
   });
 
+  group('collectInWindowShortcuts', () {
+    test('globalShortcut:true の項目だけを Ctrl 修飾で集める', () {
+      var searched = false;
+      final model = [
+        MenuSubmenuEntry(
+          label: '移動',
+          children: [
+            MenuActionEntry(
+              label: '検索',
+              shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
+              globalShortcut: true,
+              onSelected: () => searched = true,
+            ),
+            // globalShortcut:false（編集系相当）は集めない＝二重発火を避ける。
+            MenuActionEntry(
+              label: 'コピー',
+              shortcut: const MenuShortcut(LogicalKeyboardKey.keyC),
+              onSelected: () {},
+            ),
+            // shortcut 無しは対象外。
+            MenuActionEntry(label: '通知', onSelected: () {}),
+          ],
+        ),
+      ];
+
+      final bindings = collectInWindowShortcuts(model);
+      expect(bindings, hasLength(1));
+      final activator = bindings.keys.single as SingleActivator;
+      expect(activator.trigger, LogicalKeyboardKey.keyF);
+      expect(activator.control, isTrue);
+      expect(activator.meta, isFalse);
+      // 束ねた callback が元の onSelected を呼ぶ。
+      bindings.values.single();
+      expect(searched, isTrue);
+    });
+
+    testWidgets('in-window レンダラは globalShortcut があると CallbackShortcuts で包む', (
+      tester,
+    ) async {
+      final model = [
+        MenuSubmenuEntry(
+          label: '移動',
+          children: [
+            MenuActionEntry(
+              label: '検索',
+              shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
+              globalShortcut: true,
+              onSelected: () {},
+            ),
+          ],
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: renderInWindowMenuBar(model, const SizedBox.shrink()),
+        ),
+      );
+      expect(find.byType(CallbackShortcuts), findsOneWidget);
+    });
+  });
+
   group('renderMacMenuBar', () {
     // device なしで native メニュー経路の構造を検証する（macOS は run 確認が
     // しづらいため、モデル→PlatformMenu の変換をここで固める）。

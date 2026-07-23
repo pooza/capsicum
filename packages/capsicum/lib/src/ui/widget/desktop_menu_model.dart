@@ -40,6 +40,7 @@ class MenuActionEntry extends MenuEntry {
     this.onSelected,
     this.badge = 0,
     this.checked,
+    this.globalShortcut = false,
   });
 
   final String label;
@@ -60,6 +61,40 @@ class MenuActionEntry extends MenuEntry {
   /// [PlatformMenuItem] にチェック API が無いためラベル末尾に `✓` を埋め込み、
   /// in-window は先頭アイコンで表す (#841/#835)。
   final bool? checked;
+
+  /// true のとき、in-window（Windows/Linux）でこの [shortcut] をアプリ級の
+  /// [CallbackShortcuts] に登録し、メニューを開かずキー操作だけで発火させる
+  /// (#841)。macOS は native メニューが [shortcut] を自前で発火するため無関係。
+  /// 編集（コピー/貼り付け等）は [DefaultTextEditingShortcuts] が担うので false の
+  /// まま（表示専用）にし、二重登録・二重発火を避ける。
+  final bool globalShortcut;
+}
+
+/// in-window（Windows/Linux）でアプリ級に登録するショートカット束を [model] から
+/// 集める (#841)。`globalShortcut: true` の項目のみを Ctrl 修飾で解決する。macOS は
+/// native メニューが発火するため呼ばない。
+Map<ShortcutActivator, VoidCallback> collectInWindowShortcuts(
+  List<MenuEntry> model,
+) {
+  final bindings = <ShortcutActivator, VoidCallback>{};
+  void walk(MenuEntry e) {
+    switch (e) {
+      case MenuActionEntry():
+        final shortcut = e.shortcut;
+        final onSelected = e.onSelected;
+        if (e.globalShortcut && shortcut != null && onSelected != null) {
+          bindings[shortcut.resolve(useMeta: false)] = onSelected;
+        }
+      case MenuSubmenuEntry():
+        e.children.forEach(walk);
+      case MenuProvidedEntry():
+      case MenuGroupSeparator():
+        break;
+    }
+  }
+
+  model.forEach(walk);
+  return bindings;
 }
 
 /// サブメニュー（メニューの見出し）。
@@ -180,7 +215,12 @@ Widget renderInWindowMenuBar(List<MenuSubmenuEntry> model, Widget child) {
     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
   );
 
-  return Column(
+  // Windows/Linux の Material メニューは shortcut を表示するだけで発火しない
+  // ため、`globalShortcut` 項目をアプリ級 [CallbackShortcuts] に登録して、メニュー
+  // を開かずキー操作で発火させる (#841)。編集系は DefaultTextEditingShortcuts が
+  // 担うので登録しない（二重発火回避）。
+  final bindings = collectInWindowShortcuts(model);
+  final bar = Column(
     // メニューバーはウィンドウ幅いっぱいに伸ばし、項目は左寄せにする (#713)。
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -201,6 +241,8 @@ Widget renderInWindowMenuBar(List<MenuSubmenuEntry> model, Widget child) {
       Expanded(child: child),
     ],
   );
+  if (bindings.isEmpty) return bar;
+  return CallbackShortcuts(bindings: bindings, child: bar);
 }
 
 List<Widget> _inWindowItems(
