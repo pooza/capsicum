@@ -106,6 +106,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // pull-to-refresh 実行中だけ true。文脈切替（アカウント/タブ切替）の reload と
   // 区別し、リフレッシュ中は現データを残す（リスト消失を防ぐ）ため (#758)。
   bool _pullRefreshing = false;
+  // メニュー / Ctrl+R からの更新を pull-to-refresh と同じ経路に流し、スピナーの弧を
+  // 見せるための RefreshIndicator ハンドル (#841)。
+  final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
@@ -788,6 +791,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 _restoreMarker(tlState.posts);
               }
               return RefreshIndicator(
+                key: _refreshIndicatorKey,
                 onRefresh: () async {
                   _markerRestored = false;
                   // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
@@ -902,6 +906,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// タイムラインの provider を refresh する。更新中は現データを残す
   /// （[_pullRefreshing]）ので、ローディングのちらつきを出さない。
   Future<void> _refreshCurrentTimeline() async {
+    // メニュー / Ctrl+R からの更新は、pull-to-refresh と同じ [RefreshIndicator] を
+    // 明示的に回してスピナーの弧を見せる（onRefresh がハッシュタグ / リスト / 本線の
+    // 分岐と _pullRefreshing を一手に担うので分岐の二重化も避ける）(#841)。
+    final indicator = _refreshIndicatorKey.currentState;
+    if (indicator != null) {
+      await indicator.show();
+      return;
+    }
+    // TL がまだ build されていない（ローディング / エラーで RefreshIndicator が
+    // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
     _markerRestored = false;

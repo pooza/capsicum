@@ -233,6 +233,41 @@ void main() {
       );
       expect(find.byType(CallbackShortcuts), findsOneWidget);
     });
+
+    testWidgets('メニューを開かず本文にフォーカスを当てなくても Ctrl+F で発火する', (
+      tester,
+    ) async {
+      // CallbackShortcuts は配下にフォーカスがある時だけキーを拾うため、autofocus な
+      // Focus で既定フォーカスを保持する回帰テスト (#841)。フォーカスを一切張らず、
+      // メニューも開かずにキーを送り、それでも onSelected が発火することを確かめる。
+      var searched = false;
+      final model = [
+        MenuSubmenuEntry(
+          label: '移動',
+          children: [
+            MenuActionEntry(
+              label: '検索',
+              shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
+              globalShortcut: true,
+              onSelected: () => searched = true,
+            ),
+          ],
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: renderInWindowMenuBar(model, const SizedBox.shrink()),
+        ),
+      );
+      await tester.pump(); // autofocus を適用させる
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(searched, isTrue);
+    });
   });
 
   group('renderMacMenuBar', () {

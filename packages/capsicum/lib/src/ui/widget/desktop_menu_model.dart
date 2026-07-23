@@ -242,7 +242,15 @@ Widget renderInWindowMenuBar(List<MenuSubmenuEntry> model, Widget child) {
     ],
   );
   if (bindings.isEmpty) return bar;
-  return CallbackShortcuts(bindings: bindings, child: bar);
+  // [CallbackShortcuts] は「配下にフォーカスがあるとき」だけキーを拾う (Flutter 本体
+  // 仕様)。ホームでタイムラインを眺めているだけの状態は本文のどこにもフォーカスが
+  // 無く、キーイベントがこのノードより上位のフォーカススコープへ流れて bindings が
+  // 参照されない。autofocus な [Focus] で既定フォーカスを本サブツリー内に保持し、
+  // 起動直後からショートカットを発火可能にする (#841)。
+  return CallbackShortcuts(
+    bindings: bindings,
+    child: Focus(autofocus: true, child: bar),
+  );
 }
 
 List<Widget> _inWindowItems(
