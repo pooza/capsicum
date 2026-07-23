@@ -1562,6 +1562,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       }
                       ref.read(selectedTabProvider.notifier).state = tab;
                       _saveLastTab();
+                      // 設定・投稿など push した画面からタブを選んだ場合も、
+                      // 切り替えたタブのタイムラインを見せるためホームへ戻す
+                      // (#841)。既にホームなら実質 no-op。
+                      context.go('/home');
                     },
                   ),
               ],
