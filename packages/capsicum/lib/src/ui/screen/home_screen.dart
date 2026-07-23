@@ -21,6 +21,8 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../provider/supporter_purchase_provider.dart';
+import '../../constants.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
@@ -1408,6 +1410,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             globalShortcut: true,
             onSelected: () => context.push('/settings'),
           ),
+          // 投げ銭（サポート）への導線 (#853)。IAP 提供プラットフォームのみ。
+          // デスクトップでの露出を上げる狙い。
+          if (ref.watch(supporterEntryVisibleProvider))
+            MenuActionEntry(
+              label: 'capsicum をサポート…',
+              icon: Icons.volunteer_activism_outlined,
+              onSelected: () => context.push('/settings/supporter'),
+            ),
           const MenuGroupSeparator(),
           const MenuProvidedEntry(
             macType: PlatformProvidedMenuItemType.servicesSubmenu,
@@ -1879,6 +1889,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 },
               ),
               const Divider(),
+              // 投げ銭（サポート）導線をドロワー直下へ格上げする (#853)。以前は
+              // 「設定」内にあったが投げ銭は設定ではないため、目立つ位置へ出す。
+              // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
+              // プラットフォームのみ）。
+              if (ref.watch(supporterEntryVisibleProvider))
+                ListTile(
+                  leading: Image.asset(
+                    AppConstants.supporterIconAsset,
+                    width: 24,
+                    height: 24,
+                  ),
+                  title: const Text('capsicum をサポート'),
+                  subtitle: const Text('投げ銭で開発と通知リレーを応援'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/settings/supporter');
+                  },
+                ),
               // ナビゲーション項目は _buildNavItems を単一ソースに生成する
               // (#712)。drawer と macOS グローバルメニューで同じ feature-gate /
               // 動的リストを共有し、メニューとの乖離を防ぐ。
