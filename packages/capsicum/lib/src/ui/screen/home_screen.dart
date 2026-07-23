@@ -29,6 +29,7 @@ import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
 import '../../service/update_checker.dart';
+import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -65,9 +66,10 @@ class HomeNavItem {
   /// 0 なら非表示。お知らせの未読件数バッジ等に使う。
   final int badge;
 
-  /// macOS グローバルメニュー (#712) に割り当てるショートカット。null なら無し。
-  /// ドロワーの `ListTile` では使わない（モバイルにメニューショートカットは無い）。
-  final MenuSerializableShortcut? shortcut;
+  /// デスクトップメニュー (#712/#841) に割り当てるショートカット。null なら無し。
+  /// 主修飾キー（mac=Cmd / win-linux=Ctrl）は [MenuShortcut] が吸収する。ドロワーの
+  /// `ListTile` では使わない（モバイルにメニューショートカットは無い）。
+  final MenuShortcut? shortcut;
 
   /// 項目選択時のアクション。ドロワー経由ではドロワーを閉じてから、メニュー
   /// 経由ではそのまま呼ばれる（呼び分けは生成側の `onActivate` で吸収）。
@@ -625,25 +627,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
     );
 
-    // macOS はグローバルメニューバー (#712)、Windows / Linux は OS メニューが
-    // 無いのでウィンドウ内 MenuBar (#713) をミラーする。いずれも同じ
-    // [_buildNavItems] を単一ソースにする。
+    // メニュー骨格は単一モデル (#841) を正本にし、macOS はグローバルメニューバー
+    // (#712)、Windows / Linux は OS メニューが無いのでウィンドウ内 MenuBar (#713)
+    // へ薄いレンダラで変換する。項目定義の二重管理をここで解消する。
     if (Platform.isMacOS) {
-      return _buildMacMenuBar(
-        context,
+      return renderMacMenuBar(
+        _buildDesktopMenuModel(
+          context,
+          account,
+          accountState,
+          unreadAnnouncements,
+        ),
         scaffold,
-        account,
-        accountState,
-        unreadAnnouncements,
       );
     }
     if (Platform.isWindows || Platform.isLinux) {
-      return _buildInWindowMenuBar(
-        context,
+      return renderInWindowMenuBar(
+        _buildDesktopMenuModel(
+          context,
+          account,
+          accountState,
+          unreadAnnouncements,
+        ),
         scaffold,
-        account,
-        accountState,
-        unreadAnnouncements,
       );
     }
     return scaffold;
@@ -1141,7 +1147,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       HomeNavItem(
         title: '検索',
         icon: Icons.search,
-        shortcut: const SingleActivator(LogicalKeyboardKey.keyF, meta: true),
+        shortcut: const MenuShortcut(LogicalKeyboardKey.keyF),
         onSelected: () => act(() => context.push('/search')),
       ),
       HomeNavItem(
@@ -1299,19 +1305,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  /// macOS グローバルメニュー (#712)。ドロワーと同じ [_buildNavItems] を単一
-  /// ソースに「移動」「アカウント」メニューを構成し、標準の App / 編集 / 表示 /
-  /// ウインドウを再構築する。
-  ///
-  /// 注意: [PlatformMenuBar] は macOS の native NSMenu（既定の MainMenu.xib）を
-  /// 丸ごと置き換えるため、About / 終了 / Services 等は [PlatformProvidedMenuItem]
-  /// で、Edit（コピー/ペースト等）は provided 型が無いので現在フォーカス中の
-  /// `EditableText` へ text-editing intent を dispatch して再現する。キーボード
-  /// ショートカット自体は Flutter 側で従来どおり機能するが、メニュー項目として
-  /// 温存するために明示的に並べる（issue の「標準 Edit / Window / Help は温存」）。
-  Widget _buildMacMenuBar(
+  /// デスクトップメニューの単一モデル (#841)。macOS の native メニュー
+  /// ([renderMacMenuBar]) と Windows/Linux の in-window メニュー
+  /// ([renderInWindowMenuBar]) の両方をこの 1 箇所の定義から生成し、項目の二重
+  /// 管理を解消する。ドロワーと同じ [_buildNavItems] を「移動」の単一ソースにする。
+  /// 「設定」は先頭 capsicum メニューにあるため「移動」からは除外する（従来
+  /// in-window だけで行っていた除外をモデルへ一本化し、macOS の二重表示も解消）。
+  /// 編集項目は OS 提供型が無いので、現在フォーカス中の EditableText へ text-editing
+  /// intent を dispatch して再現する。
+  List<MenuSubmenuEntry> _buildDesktopMenuModel(
     BuildContext context,
-    Widget child,
     Account? current,
     AccountManagerState accountState,
     int unreadAnnouncements,
@@ -1342,469 +1345,179 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
     }
 
-    return PlatformMenuBar(
-      menus: [
-        // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。
-        PlatformMenu(
-          label: 'capsicum',
-          menus: [
-            PlatformMenuItem(
-              label: 'capsicum について',
-              onSelected: () => showAboutCapsicum(context),
-            ),
-            PlatformMenuItem(
-              label: '設定…',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.comma,
-                meta: true,
-              ),
-              onSelected: () => context.push('/settings'),
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.servicesSubmenu,
-                ),
-              ],
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.hide,
-                ),
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.hideOtherApplications,
-                ),
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.showAllApplications,
-                ),
-              ],
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.quit,
-                ),
-              ],
-            ),
-          ],
+    return [
+      MenuSubmenuEntry(
+        // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。in-window は
+        // ブランドの唐辛子アイコンを見出しに付ける。
+        label: 'capsicum',
+        leadingIcon: Image.asset(
+          'assets/images/capsicum_icon.webp',
+          width: 18,
+          height: 18,
         ),
-        PlatformMenu(
-          label: '編集',
-          menus: [
-            PlatformMenuItem(
-              label: '取り消す',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const UndoTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'やり直す',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                meta: true,
-                shift: true,
-              ),
-              onSelected: () => editAction(
-                const RedoTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'カット',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyX,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const CopySelectionTextIntent.cut(
-                  SelectionChangedCause.keyboard,
-                ),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'コピー',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyC,
-                meta: true,
-              ),
-              onSelected: () => editAction(CopySelectionTextIntent.copy),
-            ),
-            PlatformMenuItem(
-              label: 'ペースト',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyV,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const PasteTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'すべて選択',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyA,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const SelectAllTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-          ],
-        ),
-        // ドロワーと同じナビゲーション項目（単一ソース）。
-        PlatformMenu(
-          label: '移動',
-          menus: [
-            for (final item in navItems)
-              PlatformMenuItem(
-                label: item.title,
-                shortcut: item.shortcut,
-                onSelected: item.onSelected,
-              ),
-          ],
-        ),
-        if (accountState.accounts.isNotEmpty)
-          PlatformMenu(
-            label: 'アカウント',
-            menus: [
-              if (current != null)
-                PlatformMenuItemGroup(
-                  members: [
-                    PlatformMenuItem(
-                      label: 'プロフィール',
-                      onSelected: () =>
-                          context.push('/profile', extra: current.user),
-                    ),
-                  ],
-                ),
-              if (otherAccounts.isNotEmpty)
-                PlatformMenuItemGroup(
-                  members: [
-                    for (final a in otherAccounts)
-                      PlatformMenuItem(
-                        label: '@${a.user.username}@${a.key.host}',
-                        onSelected: () => ref
-                            .read(accountManagerProvider.notifier)
-                            .switchAccount(a),
-                      ),
-                  ],
-                ),
-              PlatformMenuItemGroup(
-                members: [
-                  PlatformMenuItem(
-                    label: 'アカウントを追加',
-                    onSelected: () => context.push('/server'),
-                  ),
-                  if (current != null)
-                    PlatformMenuItem(
-                      label: 'ログアウト',
-                      onSelected: () => _confirmLogout(context, current),
-                    ),
-                ],
-              ),
-            ],
+        children: [
+          MenuActionEntry(
+            label: 'capsicum について',
+            icon: Icons.info_outline,
+            onSelected: () => showAboutCapsicum(context),
           ),
-        const PlatformMenu(
-          label: '表示',
-          menus: [
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.toggleFullScreen,
+          MenuActionEntry(
+            label: '設定',
+            icon: Icons.settings,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.comma),
+            onSelected: () => context.push('/settings'),
+          ),
+          const MenuGroupSeparator(),
+          const MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.servicesSubmenu,
+          ),
+          const MenuGroupSeparator(),
+          const MenuProvidedEntry(macType: PlatformProvidedMenuItemType.hide),
+          const MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.hideOtherApplications,
+          ),
+          const MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.showAllApplications,
+          ),
+          const MenuGroupSeparator(),
+          const MenuProvidedEntry(macType: PlatformProvidedMenuItemType.quit),
+        ],
+      ),
+      MenuSubmenuEntry(
+        label: '編集',
+        children: [
+          MenuActionEntry(
+            label: '取り消す',
+            icon: Icons.undo,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyZ),
+            onSelected: () => editAction(
+              const UndoTextIntent(SelectionChangedCause.keyboard),
             ),
-          ],
-        ),
-        const PlatformMenu(
-          label: 'ウインドウ',
-          menus: [
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.minimizeWindow,
+          ),
+          MenuActionEntry(
+            label: 'やり直す',
+            icon: Icons.redo,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyZ, shift: true),
+            onSelected: () => editAction(
+              const RedoTextIntent(SelectionChangedCause.keyboard),
             ),
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.zoomWindow,
+          ),
+          MenuActionEntry(
+            label: 'カット',
+            icon: Icons.content_cut,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyX),
+            onSelected: () => editAction(
+              const CopySelectionTextIntent.cut(SelectionChangedCause.keyboard),
             ),
-          ],
-        ),
-      ],
-      child: child,
-    );
-  }
-
-  /// Windows / Linux のウィンドウ内メニューバー (#713)。OS のトップメニューが
-  /// 無いため、タイトルバー下に Material の [MenuBar] を自前で配置する。macOS の
-  /// [_buildMacMenuBar] と同じ [_buildNavItems] を単一ソースに「移動」「アカウント」
-  /// を構成する。OS 提供項目（About/終了/Services 等）や Edit は macOS の NSMenu
-  /// 固有なので持たず、アプリ内で意味のある「capsicum について」「設定」だけを
-  /// 先頭メニューに置く。ショートカット表示は修飾キーがプラットフォームで異なる
-  /// ため出さない（機能自体は各所の Shortcuts が担う）。
-  Widget _buildInWindowMenuBar(
-    BuildContext context,
-    Widget child,
-    Account? current,
-    AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
-    final announcementsShownAsTab =
-        current != null &&
-        ref.watch(
-          isTabVisibleProvider((
-            storageKey: current.key.toStorageKey(),
-            tab: const AnnouncementsTab(),
-          )),
-        );
-    final navItems = _buildNavItems(
-      context,
-      current,
-      accountState,
-      unreadAnnouncements,
-      announcementsShownAsTab,
-    );
-    final otherAccounts = accountState.accounts
-        .where((a) => a.key != current?.key)
-        .toList();
-
-    // 編集アクションは現在フォーカス中のフィールドへ intent を送る（macOS の
-    // [_buildMacMenuBar] と同じ挙動）。フォーカスがテキスト以外なら no-op。
-    void editAction(Intent intent) {
-      final focusCtx = FocusManager.instance.primaryFocus?.context;
-      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
-    }
-
-    // メニュー表示の詰め (#713): 縦長の圧迫感を抑えるため、ドロップダウンに
-    // 最小幅を与えて横方向にゆとりを持たせ、各項目に左右マージンと左アイコンを
-    // 付けて左端を揃える。全 MenuItemButton で共有する。
-    final submenuStyle = MenuStyle(
-      minimumSize: const WidgetStatePropertyAll(Size(248, 0)),
-      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 6)),
-    );
-    final itemStyle = MenuItemButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-    );
-    Icon menuIcon(IconData data) => Icon(data, size: 18);
-
-    return Column(
-      // メニューバーはウィンドウ幅いっぱいに伸ばし、項目は左寄せにする（デスクトップ
-      // の一般的なメニューバー体裁）(#713)。Column 既定の中央揃えだと content 幅の
-      // バーが中央に浮いて見える。
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        MenuBar(
+          ),
+          MenuActionEntry(
+            label: 'コピー',
+            icon: Icons.content_copy,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyC),
+            onSelected: () => editAction(CopySelectionTextIntent.copy),
+          ),
+          MenuActionEntry(
+            label: 'ペースト',
+            icon: Icons.content_paste,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyV),
+            onSelected: () => editAction(
+              const PasteTextIntent(SelectionChangedCause.keyboard),
+            ),
+          ),
+          MenuActionEntry(
+            label: 'すべて選択',
+            icon: Icons.select_all,
+            shortcut: const MenuShortcut(LogicalKeyboardKey.keyA),
+            onSelected: () => editAction(
+              const SelectAllTextIntent(SelectionChangedCause.keyboard),
+            ),
+          ),
+        ],
+      ),
+      MenuSubmenuEntry(
+        label: '移動',
+        children: [
+          for (final item in navItems.where((i) => i.title != '設定'))
+            MenuActionEntry(
+              label: item.title,
+              icon: item.icon,
+              badge: item.badge,
+              shortcut: item.shortcut,
+              onSelected: item.onSelected,
+            ),
+        ],
+      ),
+      if (accountState.accounts.isNotEmpty)
+        MenuSubmenuEntry(
+          label: 'アカウント',
           children: [
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              // 先頭メニューはブランドの唐辛子アイコン＋アプリ名（#713）。
-              leadingIcon: Image.asset(
-                'assets/images/capsicum_icon.webp',
-                width: 18,
-                height: 18,
+            if (current != null)
+              MenuActionEntry(
+                label: 'プロフィール',
+                icon: Icons.person_outline,
+                onSelected: () => context.push('/profile', extra: current.user),
               ),
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.info_outline),
-                  onPressed: () => showAboutCapsicum(context),
-                  child: const Text('capsicum について'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.settings),
-                  onPressed: () => context.push('/settings'),
-                  child: const Text('設定'),
-                ),
-              ],
-              child: const Text('capsicum'),
-            ),
-            // 編集メニュー: macOS と同じテキスト intent を流用（Win/Linux では
-            // 修飾キー表記が異なるためショートカット表示は出さない。機能自体は
-            // 各テキストフィールドの標準ショートカットが担う）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                // shortcut は表示専用（Material MenuBar は shortcut を登録せず
-                // 発火もしない）。実際の発火は Flutter の
-                // DefaultTextEditingShortcuts が Win/Linux 共通で担うため、
-                // ここに出すラベルと実挙動は一致する（#713・二重発火なし）。
-                // ナビ/ウィンドウ系は配線が無く発火しないのでラベルを出さない。
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.undo),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyZ,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const UndoTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('取り消す'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.redo),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyZ,
-                    control: true,
-                    shift: true,
-                  ),
-                  onPressed: () => editAction(
-                    const RedoTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('やり直す'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_cut),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyX,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const CopySelectionTextIntent.cut(
-                      SelectionChangedCause.keyboard,
-                    ),
-                  ),
-                  child: const Text('カット'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_copy),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyC,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(CopySelectionTextIntent.copy),
-                  child: const Text('コピー'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_paste),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyV,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const PasteTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('ペースト'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.select_all),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyA,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const SelectAllTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('すべて選択'),
-                ),
-              ],
-              child: const Text('編集'),
-            ),
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                // 「設定」は先頭の capsicum メニューにあるため、移動メニューでは
-                // 重複を避けて除外する（#713 整理）。ドロワー側は従来どおり表示。
-                for (final item in navItems.where((i) => i.title != '設定'))
-                  MenuItemButton(
-                    style: itemStyle,
-                    leadingIcon: menuIcon(item.icon),
-                    onPressed: item.onSelected,
-                    child: Text(
-                      item.badge > 0
-                          ? '${item.title}（${item.badge}）'
-                          : item.title,
-                    ),
-                  ),
-              ],
-              child: const Text('移動'),
-            ),
-            if (accountState.accounts.isNotEmpty)
-              SubmenuButton(
-                menuStyle: submenuStyle,
-                menuChildren: [
-                  if (current != null)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.person_outline),
-                      onPressed: () =>
-                          context.push('/profile', extra: current.user),
-                      child: const Text('プロフィール'),
-                    ),
-                  for (final a in otherAccounts)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.switch_account),
-                      onPressed: () => ref
-                          .read(accountManagerProvider.notifier)
-                          .switchAccount(a),
-                      child: Text('@${a.user.username}@${a.key.host}'),
-                    ),
-                  MenuItemButton(
-                    style: itemStyle,
-                    leadingIcon: menuIcon(Icons.person_add_alt),
-                    onPressed: () => context.push('/server'),
-                    child: const Text('アカウントを追加'),
-                  ),
-                  if (current != null)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.logout),
-                      onPressed: () => _confirmLogout(context, current),
-                      child: const Text('ログアウト'),
-                    ),
-                ],
-                child: const Text('アカウント'),
+            if (current != null && otherAccounts.isNotEmpty)
+              const MenuGroupSeparator(),
+            for (final a in otherAccounts)
+              MenuActionEntry(
+                label: '@${a.user.username}@${a.key.host}',
+                icon: Icons.switch_account,
+                onSelected: () =>
+                    ref.read(accountManagerProvider.notifier).switchAccount(a),
               ),
-            // 表示メニュー: 全画面表示の切り替え（macOS の toggleFullScreen 相当）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.fullscreen),
-                  onPressed: () async {
-                    final full = await windowManager.isFullScreen();
-                    await windowManager.setFullScreen(!full);
-                  },
-                  child: const Text('全画面表示を切り替え'),
-                ),
-              ],
-              child: const Text('表示'),
+            const MenuGroupSeparator(),
+            MenuActionEntry(
+              label: 'アカウントを追加',
+              icon: Icons.person_add_alt,
+              onSelected: () => context.push('/server'),
             ),
-            // ウインドウメニュー: 最小化 / 最大化（macOS の minimize / zoom 相当）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.minimize),
-                  onPressed: () => windowManager.minimize(),
-                  child: const Text('最小化'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.crop_square),
-                  onPressed: () async {
-                    if (await windowManager.isMaximized()) {
-                      await windowManager.unmaximize();
-                    } else {
-                      await windowManager.maximize();
-                    }
-                  },
-                  child: const Text('最大化'),
-                ),
-              ],
-              child: const Text('ウインドウ'),
-            ),
+            if (current != null)
+              MenuActionEntry(
+                label: 'ログアウト',
+                icon: Icons.logout,
+                onSelected: () => _confirmLogout(context, current),
+              ),
           ],
         ),
-        Expanded(child: child),
-      ],
-    );
+      MenuSubmenuEntry(
+        label: '表示',
+        children: [
+          MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.toggleFullScreen,
+            inWindowLabel: '全画面表示を切り替え',
+            inWindowIcon: Icons.fullscreen,
+            inWindowAction: () async {
+              final full = await windowManager.isFullScreen();
+              await windowManager.setFullScreen(!full);
+            },
+          ),
+        ],
+      ),
+      MenuSubmenuEntry(
+        label: 'ウインドウ',
+        children: [
+          MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.minimizeWindow,
+            inWindowLabel: '最小化',
+            inWindowIcon: Icons.minimize,
+            inWindowAction: () => windowManager.minimize(),
+          ),
+          MenuProvidedEntry(
+            macType: PlatformProvidedMenuItemType.zoomWindow,
+            inWindowLabel: '最大化',
+            inWindowIcon: Icons.crop_square,
+            inWindowAction: () async {
+              if (await windowManager.isMaximized()) {
+                await windowManager.unmaximize();
+              } else {
+                await windowManager.maximize();
+              }
+            },
+          ),
+        ],
+      ),
+    ];
   }
 
   Widget _buildDrawer(
