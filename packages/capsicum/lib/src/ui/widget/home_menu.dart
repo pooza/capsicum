@@ -479,8 +479,14 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
             MenuActionEntry(
               label: '@${a.user.username}@${a.key.host}',
               icon: Icons.switch_account,
-              onSelected: () =>
-                  ref.read(accountManagerProvider.notifier).switchAccount(a),
+              onSelected: () {
+                ref.read(accountManagerProvider.notifier).switchAccount(a);
+                // 常駐メニュー (#834) は /compose 等の状態を持つ画面上でも切替
+                // できる。旧アカウントの本文・reply/renote/draft ID が残ったまま
+                // 新アカウントの adapter で投稿/下書き削除される事故を防ぐため、
+                // 切替時はアカウントスコープの clean な /home へ戻す（#880 Codex P1）。
+                context.go('/home');
+              },
             ),
           const MenuGroupSeparator(),
           MenuActionEntry(
