@@ -37,9 +37,7 @@ void main() {
     expect(find.byType(Transform), findsWidgets);
   });
 
-  testWidgets('縦積みを 90° 倒してもレイアウト占有ボックスは入れ替えない（paint-only）', (
-    tester,
-  ) async {
+  testWidgets('縦積みを 90° 倒してもレイアウト占有ボックスは入れ替えない（paint-only）', (tester) async {
     // paint-only なので占有ボックスは子（縦積み 3 行）の縦長のまま。
     // RotatedBox 時代のように幅と高さは入れ替わらない。横間隔・見切れは
     // レイアウトではなく position.y の描画ずらし + 非 clip で扱う。

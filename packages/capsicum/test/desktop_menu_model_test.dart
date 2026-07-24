@@ -234,9 +234,7 @@ void main() {
       expect(find.byType(CallbackShortcuts), findsOneWidget);
     });
 
-    testWidgets('メニューを開かず本文にフォーカスを当てなくても Ctrl+F で発火する', (
-      tester,
-    ) async {
+    testWidgets('メニューを開かず本文にフォーカスを当てなくても Ctrl+F で発火する', (tester) async {
       // CallbackShortcuts は配下にフォーカスがある時だけキーを拾うため、autofocus な
       // Focus で既定フォーカスを保持する回帰テスト (#841)。フォーカスを一切張らず、
       // メニューも開かずにキーを送り、それでも onSelected が発火することを確かめる。
