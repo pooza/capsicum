@@ -56,6 +56,9 @@ class _AccountMultiSelectSheetState
   bool _searching = false;
   String? _error;
   bool _focusRequested = false;
+  // 検索リクエストの世代。遅い応答が後発の速い応答を上書きするのを防ぐため、
+  // 発行時の世代を握っておき、応答時に最新でなければ捨てる。
+  int _searchSeq = 0;
 
   @override
   void dispose() {
@@ -67,6 +70,7 @@ class _AccountMultiSelectSheetState
   Future<void> _search(String query) async {
     final q = query.trim();
     if (q.isEmpty) return;
+    final seq = ++_searchSeq;
     setState(() {
       _searching = true;
       _error = null;
@@ -81,7 +85,7 @@ class _AccountMultiSelectSheetState
     }
     try {
       final users = await (adapter as SearchSupport).searchUsers(q);
-      if (!mounted) return;
+      if (!mounted || seq != _searchSeq) return;
       setState(() {
         _results = users;
         _searching = false;
@@ -94,7 +98,7 @@ class _AccountMultiSelectSheetState
         stackTrace: st,
         account: ref.read(currentAccountProvider),
       );
-      if (!mounted) return;
+      if (!mounted || seq != _searchSeq) return;
       setState(() {
         _searching = false;
         _error = '検索に失敗しました。';
@@ -208,7 +212,10 @@ class _AccountMultiSelectSheetState
                       overflow: TextOverflow.ellipsis,
                     ),
                     trailing: excluded
-                        ? const Icon(Icons.check, color: Colors.grey)
+                        ? Icon(
+                            Icons.check,
+                            color: Theme.of(context).disabledColor,
+                          )
                         : Checkbox(
                             value: selected,
                             onChanged: (_) => _toggle(user),

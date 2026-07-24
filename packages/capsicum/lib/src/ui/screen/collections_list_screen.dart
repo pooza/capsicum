@@ -343,6 +343,7 @@ class _CreateCollectionDialogState
       initial: _initialMembers,
       excludeIds: {?selfId},
     );
+    if (!mounted) return;
     if (selected != null) {
       setState(() {
         _initialMembers
