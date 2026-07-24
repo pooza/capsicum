@@ -237,9 +237,12 @@ v1.18 のレビューでは、この 5 観点でセキュリティ単独では�
 `analyze.yml`（CI の `dart format` / `dart analyze`）は `main` への push / PR でのみ起動し、**`develop` への push では走らない**。そのため `develop` 上では format / analyze の drift が CI 未検出のまま蓄積しうる。リリース PR（`develop` → `main`）を作る前に、リポジトリルートで一度全体をチェックしてリリース PR の CI 不合格を未然に防ぐこと:
 
 ```bash
-dart format --output=none --set-exit-if-changed .
+# format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
+git ls-files '*.dart' | xargs dart format --output=none --set-exit-if-changed
 dart analyze --fatal-infos
 ```
+
+> ⚠️ **`dart format .`（カレント全体）は使わない**。SwiftPM 併存移行（#836）以降、`build/` 配下に他パッケージの SwiftPM checkout（`.dart` を含む）が展開されるため、`.` で流すとバージョン管理外のファイルまで整形対象に拾い、drift 判定が誤爆する。`git ls-files '*.dart' | xargs dart format` でトラッキング対象のみに絞る（v1.51 で誤爆・commit `3e2783ad`）。
 
 v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart format` 未追従のまま `develop` に積まれており、リリース直前のレビューで検出して整形した（commit `e377c5f`）。
 
