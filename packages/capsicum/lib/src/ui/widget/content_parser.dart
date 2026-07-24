@@ -1396,31 +1396,26 @@ class ContentRenderer {
         ];
 
       case 'rotate':
-        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。
+        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。本家 Misskey
+        // (MkMfm.ts) と同じ paint-only の Transform.rotate で表現する。
+        //
+        // 一時期 90° 刻みを RotatedBox でレイアウト寸法ごと入れ替えて左見切れを
+        // 防いだ (#876) が、スロット系 Play は「絵文字を縦積み → 外側 90° で横倒し
+        // → 横間隔は $[position.y]（paint-only の平行移動）で作る」本家前提の合成で、
+        // レイアウトを予約すると予約列と position.y のずらしが二重に効いて絵文字
+        // 同士が重なる（予約と paint-only は両立しない）。本家に倣い paint-only に
+        // 戻す。見切れは占有ボックスを広げるのではなく clip を掛けない方針で扱う
+        // （content_parser 経路に明示 ClipRect は無く、中央寄せ配置なら食み出しも
+        // 表示される）。
         final deg = _parseNum(_fnArg(node.fnArgs, 'deg')) ?? 90;
-        final rotateChild = Text.rich(
-          TextSpan(children: _renderNodes(node.children, style)),
-        );
-        // 90° の倍数は RotatedBox でレイアウト寸法ごと入れ替える。Transform.rotate は
-        // 塗りだけ回してレイアウトの占有ボックスを変えないため、縦積みを 90° 倒して
-        // 横長リールにするスロット系 Play が予約幅を超えて左に食み出し、左端が見切れる
-        // (#876)。90° 刻みなら RotatedBox が横倒し後の幅（＝子の高さ）を正しく確保する
-        // ので食み出さない。90° の倍数でない角度は RotatedBox では近似できないため、
-        // 従来どおり Transform.rotate（塗りのみ）で近似する。
-        if (deg % 90 == 0) {
-          return [
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: RotatedBox(quarterTurns: deg ~/ 90, child: rotateChild),
-            ),
-          ];
-        }
         return [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Transform.rotate(
               angle: deg * math.pi / 180,
-              child: rotateChild,
+              child: Text.rich(
+                TextSpan(children: _renderNodes(node.children, style)),
+              ),
             ),
           ),
         ];

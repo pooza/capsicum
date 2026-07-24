@@ -2,12 +2,13 @@ import 'package:capsicum/src/ui/widget/content_parser.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// #876: `$[rotate]` の 90° 刻みは `RotatedBox` でレイアウト寸法ごと入れ替える。
+/// #876: `$[rotate]` は本家 Misskey (MkMfm.ts) と同じ paint-only の
+/// `Transform.rotate` で表現する（レイアウト予約はしない）。
 ///
-/// Transform.rotate は塗りだけ回してレイアウトの占有ボックスを変えないため、
-/// 縦積みを 90° 倒して横長リールにするスロット系 Play が予約幅を超えて左に
-/// 食み出し、左端が見切れていた。90° 刻みなら RotatedBox で横倒し後の幅を確保
-/// できるので食み出さない。90° の倍数でない角度は近似できないため Transform.rotate。
+/// 一時期 90° 刻みを `RotatedBox` でレイアウト予約して左見切れを防いだが、
+/// スロット系 Play は横間隔を `$[position.y]`（paint-only 平行移動）だけで作る
+/// 本家前提の合成のため、予約すると予約列と position.y が二重に効いて絵文字が
+/// 重なる。予約と paint-only は両立しないので本家に倣い paint-only に統一した。
 void main() {
   ContentRenderer buildRenderer() => ContentRenderer(
     baseStyle: const TextStyle(fontSize: 14),
@@ -22,40 +23,38 @@ void main() {
     );
   }
 
-  testWidgets(r'$[rotate ...]（既定 90°）は RotatedBox で quarterTurns=1', (
+  testWidgets(r'$[rotate ...]（既定 90°）は Transform.rotate（RotatedBox を使わない）', (
     tester,
   ) async {
     await pumpMfm(tester, r'$[rotate ABC]');
-    final boxes = tester.widgetList<RotatedBox>(find.byType(RotatedBox));
-    expect(boxes, isNotEmpty);
-    expect(boxes.any((b) => b.quarterTurns == 1), isTrue);
+    expect(find.byType(RotatedBox), findsNothing);
+    expect(find.byType(Transform), findsWidgets);
   });
 
-  testWidgets(r'$[rotate.deg=-90 ...] は RotatedBox で quarterTurns=-1', (
+  testWidgets(r'$[rotate.deg=-90 ...] も Transform.rotate', (tester) async {
+    await pumpMfm(tester, r'$[rotate.deg=-90 ABC]');
+    expect(find.byType(RotatedBox), findsNothing);
+    expect(find.byType(Transform), findsWidgets);
+  });
+
+  testWidgets('縦積みを 90° 倒してもレイアウト占有ボックスは入れ替えない（paint-only）', (
     tester,
   ) async {
-    await pumpMfm(tester, r'$[rotate.deg=-90 ABC]');
-    final boxes = tester.widgetList<RotatedBox>(find.byType(RotatedBox));
-    expect(boxes.any((b) => b.quarterTurns == -1), isTrue);
-  });
-
-  testWidgets('90° 倒すとレイアウト幅と高さが入れ替わる（食み出さない）', (tester) async {
-    // 縦長の子（改行で 3 行）を 90° 倒すと、レイアウト上は横長になる。
-    // Transform.rotate 時代は占有ボックスが縦長のままで、横倒しの塗りが
-    // 予約幅を超えて食み出していた。RotatedBox 化で幅 > 高さになることを確認する。
+    // paint-only なので占有ボックスは子（縦積み 3 行）の縦長のまま。
+    // RotatedBox 時代のように幅と高さは入れ替わらない。横間隔・見切れは
+    // レイアウトではなく position.y の描画ずらし + 非 clip で扱う。
     await pumpMfm(tester, '\$[rotate A\nB\nC]');
-    final size = tester.getSize(find.byType(RotatedBox).first);
+    final size = tester.getSize(find.byType(Transform).first);
     expect(
-      size.width,
-      greaterThan(size.height),
-      reason: '90° 倒した縦積みはレイアウト上も横長になるべき',
+      size.height,
+      greaterThan(size.width),
+      reason: 'paint-only は占有ボックスを回さないため縦積みは縦長のまま',
     );
   });
 
-  testWidgets('90° の倍数でない角度は Transform.rotate に退避（RotatedBox を使わない）', (
-    tester,
-  ) async {
+  testWidgets('90° の倍数でない角度も Transform.rotate（従来どおり）', (tester) async {
     await pumpMfm(tester, r'$[rotate.deg=45 ABC]');
     expect(find.byType(RotatedBox), findsNothing);
+    expect(find.byType(Transform), findsWidgets);
   });
 }
