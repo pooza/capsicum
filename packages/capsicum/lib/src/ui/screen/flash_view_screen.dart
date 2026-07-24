@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/tco_resolver.dart';
+import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
@@ -144,6 +145,12 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
   FlashRuntime? _runtime;
   FlashRuntimeError? _error;
   ContentRenderer? _summaryRenderer;
+  // summary の ContentRenderer は入力（絵文字サイズ・MFM アニメ・テーマ輝度）が
+  // 変わったときだけ作り直す（#628 の _Mfm invariant）。いいねトグルの setState で
+  // 毎 build 作り直すと gesture recognizer を無駄に dispose/再生成する (#874)。
+  double? _summaryEmojiSize;
+  bool? _summaryAnimateMfm;
+  Brightness? _summaryBrightness;
   bool _running = false;
 
   late bool _isLiked = widget.flash.isLiked;
@@ -187,32 +194,58 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
   /// ハッシュタグ / カスタム絵文字を含みうるので、素の [Text] では shortcode や
   /// 生 URL がそのまま見えてしまう。プロフィールの bio と同型 (#830)。
   Widget _buildSummary(Flash flash, ThemeData theme) {
-    _summaryRenderer?.dispose();
-    final host = _host;
-    _summaryRenderer = ContentRenderer(
-      baseStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      resolveEmoji: (shortcode) {
-        final url = flash.author.emojis[shortcode];
-        if (url != null) return url;
-        if (host != null) return 'https://$host/emoji/$shortcode.webp';
-        return null;
-      },
-      resolveUrl: (url) =>
-          TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
-      onLinkTap: (url) => openFediverseLink(context, ref, url),
-      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
-      onMentionTap: (mention) => _navigateToMention(mention),
-      emojiSize: ref.watch(emojiSizeProvider),
-      animateMfm: ref.watch(mfmAnimationEnabledProvider),
-    );
+    final emojiSize = ref.watch(emojiSizeProvider);
+    final animateMfm = ref.watch(mfmAnimationEnabledProvider);
+    final brightness = theme.brightness;
+    // 入力が変わったときだけ作り直す（#628 の _Mfm invariant）。summary は
+    // widget.flash 固定なので、実質 emojiSize/animateMfm/テーマ変更時のみ。
+    if (_summaryRenderer == null ||
+        _summaryEmojiSize != emojiSize ||
+        _summaryAnimateMfm != animateMfm ||
+        _summaryBrightness != brightness) {
+      _summaryRenderer?.dispose();
+      final host = _host;
+      _summaryRenderer = ContentRenderer(
+        baseStyle: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        resolveEmoji: (shortcode) {
+          final url = flash.author.emojis[shortcode];
+          if (url != null) return url;
+          if (host != null) return 'https://$host/emoji/$shortcode.webp';
+          return null;
+        },
+        resolveUrl: (url) =>
+            TcoResolver.isTcoUrl(url) ? TcoResolver.getCached(url) : null,
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
+        onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+        onMentionTap: (mention) => _navigateToMention(mention),
+        emojiSize: emojiSize,
+        animateMfm: animateMfm,
+      );
+      _summaryEmojiSize = emojiSize;
+      _summaryAnimateMfm = animateMfm;
+      _summaryBrightness = brightness;
+    }
     return Text.rich(_summaryRenderer!.renderMfm(flash.summary!));
   }
 
   Future<void> _start() async {
+    if (_running) return;
     final host = _host;
-    if (host == null || _running) return;
+    if (host == null) {
+      // アカウント切替等で現在の adapter が Misskey でなくなった。無言 return だと
+      // 「もう一度実行」「再試行」が反応しない dead-tap になるため理由を出す。
+      // ブラウザ導線は Play の origin（author.host）へ別途フォールバックする (#874)。
+      if (!mounted) return;
+      setState(() {
+        _error = FlashRuntimeError(
+          'この Play を実行できません',
+          'Misskey アカウントに切り替えてからお試しください。',
+        );
+      });
+      return;
+    }
 
     final account = ref.read(currentAccountProvider);
     final emojis = ref.read(customEmojisProvider).valueOrNull ?? const [];
@@ -226,8 +259,16 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       userName: account?.user.displayName ?? account?.user.username,
       userUsername: account?.user.username,
     );
-    runtime.onCallbackError = (error, stackTrace) =>
-        reportFlashOpFailure('callback', error, stackTrace, account: account);
+    runtime.onCallbackError = (error, stackTrace) {
+      reportFlashOpFailure('callback', error, stackTrace, account: account);
+      // ボタンの onClick 失敗は Sentry に出るがユーザーには無反応で dead-tap と
+      // 区別がつかない。軽い SnackBar で「押したが失敗した」ことを伝える (#874)。
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ボタンの処理でエラーが起きました')));
+      }
+    };
 
     setState(() {
       _running = true;
@@ -276,26 +317,48 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         await flashes.likeFlash(widget.flash.id);
       }
     } catch (e, st) {
+      final code = misskeyApiErrorCode(e);
+      // 非べき等な結果コードは「成功」として楽観状態を確定させる (#873)。stale な
+      // _isLiked でタップした結果がサーバー真値と一致しただけなので、巻き戻さず・
+      // Sentry にも流さない（失敗ではない）。ALREADY_LIKED=既にいいね済み、
+      // NOT_LIKED=既に未いいね。
+      if (!wasLiked && code == 'ALREADY_LIKED') return;
+      if (wasLiked && code == 'NOT_LIKED') return;
+
+      if (!mounted) return;
+      // ここから先は本当に反映されなかったので楽観状態を巻き戻す。
+      setState(() {
+        _isLiked = wasLiked;
+        _likedCount += wasLiked ? 1 : -1;
+      });
+
+      // 自分の Play へのいいねは仕様上不可 (#873)。専用文言で知らせる。
+      if (code == 'YOUR_FLASH') {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('自分の Play にはいいねできません')));
+        return;
+      }
+
+      // 旧トークン (write:flash-likes 未付与) の 403 は再ログインで直る既知条件。
+      // 失敗ではないので Sentry には流さず、再ログイン導線だけ出す (#877 / #615 同型)。
+      if (isOAuthScopeError(e)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('権限が不足しています。再ログインしてください')));
+        return;
+      }
+
+      // それ以外の想定外失敗のみ観測する。
       reportFlashOpFailure(
         wasLiked ? 'unlike' : 'like',
         e,
         st,
         account: ref.read(currentAccountProvider),
       );
-      if (!mounted) return;
-      setState(() {
-        _isLiked = wasLiked;
-        _likedCount += wasLiked ? 1 : -1;
-      });
-      // 旧トークン (write:flash-likes 未付与) は 403 PERMISSION_DENIED。
-      // 汎用文言ではなく再ログインが要る旨を伝える (#615 と同型)。
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isOAuthScopeError(e) ? '権限が不足しています。再ログインしてください' : 'いいねの更新に失敗しました',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('いいねの更新に失敗しました')));
     } finally {
       if (mounted) setState(() => _toggling = false);
     }
@@ -376,7 +439,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
             (true, _, _) => const Center(child: CircularProgressIndicator()),
             (_, final FlashRuntimeError error, _) => _RunError(
               error: error,
-              host: _host,
+              // Play の origin は author.host。アカウント切替で current adapter が
+              // 別ホスト/非 Misskey でも、ブラウザ導線が行き止まらないよう
+              // author.host を優先する (#874)。
+              host: flash.author.host ?? _host,
               flashId: flash.id,
               onRetry: _start,
             ),

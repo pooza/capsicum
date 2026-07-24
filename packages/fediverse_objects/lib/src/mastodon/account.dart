@@ -29,6 +29,14 @@ class MastodonAccount {
   final bool? showFeatured;
   final bool? hideCollections;
 
+  /// 承認制アカウント（フォローを手動承認にする、標準 Mastodon の `locked`、
+  /// #865）。プロフィール編集トグルの現在値 prefill に使う。未取得では null。
+  final bool? locked;
+
+  /// ディレクトリ掲載・発見可能（`discoverable`、#865）。プロフィールディレクトリ
+  /// やおすすめに載せてよいか。未対応・未取得では null。
+  final bool? discoverable;
+
   /// Mastodon 4.6 の feature_approval（コレクション掲載の承認ポリシー、#742）。
   /// `{ automatic: [...], manual: [...], current_user: ... }`。未対応では null。
   final Map<String, dynamic>? featureApproval;
@@ -64,6 +72,8 @@ class MastodonAccount {
     this.showMediaReplies,
     this.showFeatured,
     this.hideCollections,
+    this.locked,
+    this.discoverable,
     this.featureApproval,
     required this.followersCount,
     required this.followingCount,

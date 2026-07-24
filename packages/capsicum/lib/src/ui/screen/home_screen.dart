@@ -4,12 +4,10 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:window_manager/window_manager.dart';
 import '../../../main.dart' show appLaunchStopwatch;
 import '../../model/account.dart';
 import '../../model/offline_account.dart';
@@ -21,14 +19,16 @@ import '../../provider/list_provider.dart';
 import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../provider/supporter_purchase_provider.dart';
+import '../../constants.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
-import '../util/post_scope_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
 import '../../service/update_checker.dart';
+import '../widget/home_menu.dart';
 import '../widget/emoji_text.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
@@ -54,34 +54,6 @@ final selectedHashtagProvider = Provider<String?>((ref) {
   return tab is HashtagTab ? tab.tag : null;
 });
 
-/// ドロワーと macOS グローバルメニュー (#712) を同一ソースで駆動するための
-/// ナビゲーション項目モデル。feature-gate と動的リストを 1 箇所で評価し、
-/// `Drawer` の `ListTile` と `PlatformMenuBar` の項目を両方ここから生成することで、
-/// メニューを別実装してドロワーと乖離するのを防ぐ（issue の「設計の肝」）。
-class HomeNavItem {
-  final String title;
-  final IconData icon;
-
-  /// 0 なら非表示。お知らせの未読件数バッジ等に使う。
-  final int badge;
-
-  /// macOS グローバルメニュー (#712) に割り当てるショートカット。null なら無し。
-  /// ドロワーの `ListTile` では使わない（モバイルにメニューショートカットは無い）。
-  final MenuSerializableShortcut? shortcut;
-
-  /// 項目選択時のアクション。ドロワー経由ではドロワーを閉じてから、メニュー
-  /// 経由ではそのまま呼ばれる（呼び分けは生成側の `onActivate` で吸収）。
-  final VoidCallback onSelected;
-
-  const HomeNavItem({
-    required this.title,
-    required this.icon,
-    this.badge = 0,
-    this.shortcut,
-    required this.onSelected,
-  });
-}
-
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -102,16 +74,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // pull-to-refresh 実行中だけ true。文脈切替（アカウント/タブ切替）の reload と
   // 区別し、リフレッシュ中は現データを残す（リスト消失を防ぐ）ため (#758)。
   bool _pullRefreshing = false;
+  // メニュー / Ctrl+R からの更新を pull-to-refresh と同じ経路に流し、スピナーの弧を
+  // 見せるための RefreshIndicator ハンドル (#841)。
+  final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onPositionsChanged);
     WidgetsBinding.instance.addObserver(this);
+    // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
+    // 現在表示中のタイムラインをリフレッシュできるよう、自身の
+    // [_refreshCurrentTimeline] を provider に登録する。dispose で解除する。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(desktopTimelineRefreshProvider.notifier).state =
+            _refreshCurrentTimeline;
+      }
+    });
   }
 
   @override
   void dispose() {
+    // 登録済みが自分自身のときだけ解除する（別 HomeScreen が既に上書きして
+    // いたら触らない）。
+    final refreshNotifier = ref.read(desktopTimelineRefreshProvider.notifier);
+    if (refreshNotifier.state == _refreshCurrentTimeline) {
+      refreshNotifier.state = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
     _throttleTimer?.cancel();
@@ -625,27 +615,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
     );
 
-    // macOS はグローバルメニューバー (#712)、Windows / Linux は OS メニューが
-    // 無いのでウィンドウ内 MenuBar (#713) をミラーする。いずれも同じ
-    // [_buildNavItems] を単一ソースにする。
-    if (Platform.isMacOS) {
-      return _buildMacMenuBar(
-        context,
-        scaffold,
-        account,
-        accountState,
-        unreadAnnouncements,
-      );
-    }
-    if (Platform.isWindows || Platform.isLinux) {
-      return _buildInWindowMenuBar(
-        context,
-        scaffold,
-        account,
-        accountState,
-        unreadAnnouncements,
-      );
-    }
+    // デスクトップメニューバーは認証後ルート全体を包む ShellRoute の
+    // [DesktopMenuBar] が常駐で付ける (#834)。ここでは scaffold をそのまま返す。
     return scaffold;
   }
 
@@ -780,6 +751,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 _restoreMarker(tlState.posts);
               }
               return RefreshIndicator(
+                key: _refreshIndicatorKey,
                 onRefresh: () async {
                   _markerRestored = false;
                   // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
@@ -886,16 +858,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (next < 0 || next >= visible.length) return;
 
     ref.read(selectedTabProvider.notifier).state = visible[next];
-    _saveLastTab();
+    saveLastTab(ref);
   }
 
-  /// Persist the currently selected tab to SharedPreferences.
-  void _saveLastTab() {
-    final account = ref.read(currentAccountProvider);
-    if (account == null) return;
-    final storageKey = account.key.toStorageKey();
-    final tab = ref.read(selectedTabProvider);
-    ref.read(lastTabProvider(storageKey).notifier).save(tab.toKey());
+  /// メニュー / ⌘R から現在のタイムラインを再取得する (#841)。pull-to-refresh の
+  /// [RefreshIndicator] と同じく、表示中のタブに応じてハッシュタグ / リスト / 本線
+  /// タイムラインの provider を refresh する。更新中は現データを残す
+  /// （[_pullRefreshing]）ので、ローディングのちらつきを出さない。
+  Future<void> _refreshCurrentTimeline() async {
+    // メニュー / Ctrl+R からの更新は、pull-to-refresh と同じ [RefreshIndicator] を
+    // 明示的に回してスピナーの弧を見せる（onRefresh がハッシュタグ / リスト / 本線の
+    // 分岐と _pullRefreshing を一手に担うので分岐の二重化も避ける）(#841)。
+    final indicator = _refreshIndicatorKey.currentState;
+    if (indicator != null) {
+      await indicator.show();
+      return;
+    }
+    // TL がまだ build されていない（ローディング / エラーで RefreshIndicator が
+    // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
+    final selectedHashtag = ref.read(selectedHashtagProvider);
+    final selectedList = ref.read(selectedListProvider);
+    _markerRestored = false;
+    if (mounted) setState(() => _pullRefreshing = true);
+    try {
+      final Future<TimelineState> refreshed;
+      if (selectedHashtag != null) {
+        refreshed = ref.refresh(
+          hashtagTimelineProvider(selectedHashtag).future,
+        );
+      } else if (selectedList != null) {
+        refreshed = ref.refresh(listTimelineProvider(selectedList.id).future);
+      } else {
+        refreshed = ref.refresh(timelineProvider.future);
+      }
+      await refreshed;
+    } finally {
+      if (mounted) setState(() => _pullRefreshing = false);
+    }
   }
 
   void _applyLastTab(String saved) {
@@ -968,16 +967,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return 'タイムラインの読み込みに失敗しました';
   }
 
-  static const _timelineLabels = {
-    TimelineType.home: 'ホーム',
-    TimelineType.local: 'ローカル',
-    TimelineType.social: 'ソーシャル',
-    TimelineType.federated: 'グローバル',
-  };
-
-  /// Mastodon uses "連合" instead of "グローバル".
-  static const _mastodonLabelOverrides = {TimelineType.federated: '連合'};
-
   Widget _buildTimelineTabs(BuildContext context) {
     final adapter = ref.watch(currentAdapterProvider);
     final isMastodon =
@@ -1005,7 +994,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: Row(
         children: [
           ...visible.map((tab) {
-            final label = _tabLabel(tab, isMastodon, adapter, allLists);
+            final label = tabLabel(ref, tab, isMastodon, adapter, allLists);
             // MessagesTab はフィードを持たず /chat に push する遷移トリガー
             // (#439)。タップでも selectedTabProvider を切り替えない (= 戻った
             // ときに元のタブが活きている)。
@@ -1016,7 +1005,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 return;
               }
               ref.read(selectedTabProvider.notifier).state = tab;
-              _saveLastTab();
+              saveLastTab(ref);
             });
           }),
           // Tab management button.
@@ -1036,33 +1025,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: tabsScroll,
           )
         : tabsScroll;
-  }
-
-  String _tabLabel(
-    TabType tab,
-    bool isMastodon,
-    DecentralizedBackendAdapter? adapter,
-    List<PostList> allLists,
-  ) {
-    return switch (tab) {
-      TimelineTab(:final type) => () {
-        if (type == TimelineType.local) {
-          return ref.watch(localTimelineNameProvider);
-        }
-        return (isMastodon ? _mastodonLabelOverrides[type] : null) ??
-            _timelineLabels[type] ??
-            (type == TimelineType.directMessages
-                ? postScopeLabel(PostScope.direct, adapter)
-                : type.name);
-      }(),
-      ListTab(:final id, :final name) =>
-        name ?? allLists.where((l) => l.id == id).firstOrNull?.title ?? id,
-      HashtagTab(:final tag) => hashtagSpecLabel(tag),
-      ChannelTab(:final id, :final name) => name ?? id,
-      NotificationsTab() => '通知',
-      AnnouncementsTab() => 'お知らせ',
-      MessagesTab() => 'メッセージ',
-    };
   }
 
   void _showTabManagement(BuildContext context) {
@@ -1117,696 +1079,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// ドロワー / メニュー共通のナビゲーション項目を 1 箇所で構築する (#712)。
-  /// feature-gate（adapter の各 Support）とモロヘイヤ有無をここで評価する。
-  /// [announcementsShownAsTab] はお知らせがタブとして可視のときに true で、
-  /// その場合ドロワー / メニューからは「お知らせ」項目を出さない（重複回避）。
-  /// [onActivate] はドロワー経由のとき `dismiss`（ドロワーを閉じる）を渡す。
-  List<HomeNavItem> _buildNavItems(
-    BuildContext context,
-    Account? current,
-    AccountManagerState accountState,
-    int unreadAnnouncements,
-    bool announcementsShownAsTab, {
-    VoidCallback? onActivate,
-  }) {
-    final adapter = ref.read(currentAdapterProvider);
-    final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
-    void act(VoidCallback action) {
-      onActivate?.call();
-      action();
-    }
-
-    return [
-      HomeNavItem(
-        title: '検索',
-        icon: Icons.search,
-        shortcut: const SingleActivator(LogicalKeyboardKey.keyF, meta: true),
-        onSelected: () => act(() => context.push('/search')),
-      ),
-      HomeNavItem(
-        title: '通知',
-        icon: Icons.notifications_outlined,
-        onSelected: () => act(() => context.push('/notifications')),
-      ),
-      if (accountState.accounts.length > 1)
-        HomeNavItem(
-          title: 'すべての通知',
-          icon: Icons.notifications_active_outlined,
-          onSelected: () => act(() => context.push('/notifications/all')),
-        ),
-      HomeNavItem(
-        title: adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク',
-        icon: Icons.bookmark_outline,
-        onSelected: () => act(() => context.push('/bookmarks')),
-      ),
-      if (!announcementsShownAsTab)
-        HomeNavItem(
-          title: 'お知らせ',
-          icon: Icons.campaign_outlined,
-          badge: unreadAnnouncements,
-          onSelected: () => act(() => context.push('/announcements')),
-        ),
-      if (adapter is ListSupport)
-        HomeNavItem(
-          title: 'リスト',
-          icon: Icons.list,
-          onSelected: () => act(() => _showListChooser(context, ref)),
-        ),
-      if (adapter is ChannelSupport)
-        HomeNavItem(
-          title: 'チャンネル',
-          icon: Icons.forum,
-          onSelected: () => act(() => _showChannelList(context, ref)),
-        ),
-      if (adapter is ChatSupport && (adapter as ChatSupport).canReadChat)
-        HomeNavItem(
-          title: 'メッセージ',
-          icon: Icons.chat_bubble_outline,
-          onSelected: () => act(() => context.push('/chat')),
-        ),
-      if (adapter is DriveSupport)
-        HomeNavItem(
-          title: 'ドライブ',
-          icon: Icons.cloud_outlined,
-          onSelected: () => act(() => context.push('/drive')),
-        ),
-      if (adapter is ClipSupport)
-        HomeNavItem(
-          title: 'クリップ',
-          icon: Icons.content_paste,
-          onSelected: () => act(() => _showClipList(context, ref)),
-        ),
-      if (adapter is AntennaSupport)
-        HomeNavItem(
-          title: 'アンテナ',
-          icon: Icons.settings_input_antenna,
-          onSelected: () => act(() => _showAntennaList(context, ref)),
-        ),
-      if (adapter is FlashSupport)
-        HomeNavItem(
-          title: 'Play',
-          icon: Icons.play_circle_outline,
-          onSelected: () => act(() => _showFlashList(context, ref)),
-        ),
-      if (adapter is GallerySupport)
-        HomeNavItem(
-          title: 'ギャラリー',
-          icon: Icons.photo_library_outlined,
-          onSelected: () => act(() => context.push('/gallery')),
-        ),
-      if (adapter is PagesSupport)
-        HomeNavItem(
-          title: 'ページ',
-          icon: Icons.article_outlined,
-          onSelected: () => act(() => context.push('/pages')),
-        ),
-      if (hasMulukhiya) ...[
-        HomeNavItem(
-          title: 'プロフィールタグ',
-          icon: Icons.tag,
-          onSelected: () => act(() => _showFavoriteTags(context, ref)),
-        ),
-        HomeNavItem(
-          title: 'リンク',
-          icon: Icons.link,
-          onSelected: () => act(() => _showServerLinks(context, ref)),
-        ),
-        HomeNavItem(
-          title: 'メディアカタログ',
-          icon: Icons.photo_library_outlined,
-          onSelected: () => act(() => context.push('/media-catalog')),
-        ),
-      ],
-      if (adapter is ScheduleSupport)
-        HomeNavItem(
-          title: '予約投稿',
-          icon: Icons.schedule,
-          onSelected: () => act(() => context.push('/scheduled')),
-        ),
-      if (adapter is DraftSupport)
-        HomeNavItem(
-          title: '下書き',
-          icon: Icons.edit_note,
-          onSelected: () => act(() => context.push('/drafts')),
-        ),
-      // 投稿テンプレート管理 (#767)。テンプレ機能提供サーバーのみ。
-      if (ref.read(currentMulukhiyaProvider)?.composeTemplatesEnabled == true)
-        HomeNavItem(
-          title: '投稿テンプレート',
-          icon: Icons.description_outlined,
-          onSelected: () => act(() => context.push('/templates/manage')),
-        ),
-      HomeNavItem(
-        title: 'サーバー情報',
-        icon: Icons.dns_outlined,
-        onSelected: () => act(() => context.push('/server-info')),
-      ),
-      HomeNavItem(
-        title: '設定',
-        icon: Icons.settings,
-        onSelected: () => act(() => context.push('/settings')),
-      ),
-    ];
-  }
-
-  /// ログアウト確認ダイアログ。ドロワーと macOS メニュー (#712) の両方から
-  /// 呼ぶため切り出す。
-  Future<void> _confirmLogout(BuildContext context, Account current) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('ログアウト'),
-        content: Text(
-          '@${current.user.username}@${current.key.host} '
-          'からログアウトしますか？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('ログアウト'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await ref.read(accountManagerProvider.notifier).logout(current);
-    }
-  }
-
-  /// macOS グローバルメニュー (#712)。ドロワーと同じ [_buildNavItems] を単一
-  /// ソースに「移動」「アカウント」メニューを構成し、標準の App / 編集 / 表示 /
-  /// ウインドウを再構築する。
-  ///
-  /// 注意: [PlatformMenuBar] は macOS の native NSMenu（既定の MainMenu.xib）を
-  /// 丸ごと置き換えるため、About / 終了 / Services 等は [PlatformProvidedMenuItem]
-  /// で、Edit（コピー/ペースト等）は provided 型が無いので現在フォーカス中の
-  /// `EditableText` へ text-editing intent を dispatch して再現する。キーボード
-  /// ショートカット自体は Flutter 側で従来どおり機能するが、メニュー項目として
-  /// 温存するために明示的に並べる（issue の「標準 Edit / Window / Help は温存」）。
-  Widget _buildMacMenuBar(
-    BuildContext context,
-    Widget child,
-    Account? current,
-    AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
-    final announcementsShownAsTab =
-        current != null &&
-        ref.watch(
-          isTabVisibleProvider((
-            storageKey: current.key.toStorageKey(),
-            tab: const AnnouncementsTab(),
-          )),
-        );
-    final navItems = _buildNavItems(
-      context,
-      current,
-      accountState,
-      unreadAnnouncements,
-      announcementsShownAsTab,
-    );
-    final otherAccounts = accountState.accounts
-        .where((a) => a.key != current?.key)
-        .toList();
-
-    // 編集アクションは現在フォーカス中のフィールドへ intent を送る。フォーカスが
-    // テキスト以外なら no-op（intent を処理する Action が無い）。
-    void editAction(Intent intent) {
-      final focusCtx = FocusManager.instance.primaryFocus?.context;
-      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
-    }
-
-    return PlatformMenuBar(
-      menus: [
-        // 先頭メニューは macOS ではアプリ名（capsicum）で表示される。
-        PlatformMenu(
-          label: 'capsicum',
-          menus: [
-            PlatformMenuItem(
-              label: 'capsicum について',
-              onSelected: () => showAboutCapsicum(context),
-            ),
-            PlatformMenuItem(
-              label: '設定…',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.comma,
-                meta: true,
-              ),
-              onSelected: () => context.push('/settings'),
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.servicesSubmenu,
-                ),
-              ],
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.hide,
-                ),
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.hideOtherApplications,
-                ),
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.showAllApplications,
-                ),
-              ],
-            ),
-            const PlatformMenuItemGroup(
-              members: [
-                PlatformProvidedMenuItem(
-                  type: PlatformProvidedMenuItemType.quit,
-                ),
-              ],
-            ),
-          ],
-        ),
-        PlatformMenu(
-          label: '編集',
-          menus: [
-            PlatformMenuItem(
-              label: '取り消す',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const UndoTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'やり直す',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                meta: true,
-                shift: true,
-              ),
-              onSelected: () => editAction(
-                const RedoTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'カット',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyX,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const CopySelectionTextIntent.cut(
-                  SelectionChangedCause.keyboard,
-                ),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'コピー',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyC,
-                meta: true,
-              ),
-              onSelected: () => editAction(CopySelectionTextIntent.copy),
-            ),
-            PlatformMenuItem(
-              label: 'ペースト',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyV,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const PasteTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-            PlatformMenuItem(
-              label: 'すべて選択',
-              shortcut: const SingleActivator(
-                LogicalKeyboardKey.keyA,
-                meta: true,
-              ),
-              onSelected: () => editAction(
-                const SelectAllTextIntent(SelectionChangedCause.keyboard),
-              ),
-            ),
-          ],
-        ),
-        // ドロワーと同じナビゲーション項目（単一ソース）。
-        PlatformMenu(
-          label: '移動',
-          menus: [
-            for (final item in navItems)
-              PlatformMenuItem(
-                label: item.title,
-                shortcut: item.shortcut,
-                onSelected: item.onSelected,
-              ),
-          ],
-        ),
-        if (accountState.accounts.isNotEmpty)
-          PlatformMenu(
-            label: 'アカウント',
-            menus: [
-              if (current != null)
-                PlatformMenuItemGroup(
-                  members: [
-                    PlatformMenuItem(
-                      label: 'プロフィール',
-                      onSelected: () =>
-                          context.push('/profile', extra: current.user),
-                    ),
-                  ],
-                ),
-              if (otherAccounts.isNotEmpty)
-                PlatformMenuItemGroup(
-                  members: [
-                    for (final a in otherAccounts)
-                      PlatformMenuItem(
-                        label: '@${a.user.username}@${a.key.host}',
-                        onSelected: () => ref
-                            .read(accountManagerProvider.notifier)
-                            .switchAccount(a),
-                      ),
-                  ],
-                ),
-              PlatformMenuItemGroup(
-                members: [
-                  PlatformMenuItem(
-                    label: 'アカウントを追加',
-                    onSelected: () => context.push('/server'),
-                  ),
-                  if (current != null)
-                    PlatformMenuItem(
-                      label: 'ログアウト',
-                      onSelected: () => _confirmLogout(context, current),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        const PlatformMenu(
-          label: '表示',
-          menus: [
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.toggleFullScreen,
-            ),
-          ],
-        ),
-        const PlatformMenu(
-          label: 'ウインドウ',
-          menus: [
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.minimizeWindow,
-            ),
-            PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.zoomWindow,
-            ),
-          ],
-        ),
-      ],
-      child: child,
-    );
-  }
-
-  /// Windows / Linux のウィンドウ内メニューバー (#713)。OS のトップメニューが
-  /// 無いため、タイトルバー下に Material の [MenuBar] を自前で配置する。macOS の
-  /// [_buildMacMenuBar] と同じ [_buildNavItems] を単一ソースに「移動」「アカウント」
-  /// を構成する。OS 提供項目（About/終了/Services 等）や Edit は macOS の NSMenu
-  /// 固有なので持たず、アプリ内で意味のある「capsicum について」「設定」だけを
-  /// 先頭メニューに置く。ショートカット表示は修飾キーがプラットフォームで異なる
-  /// ため出さない（機能自体は各所の Shortcuts が担う）。
-  Widget _buildInWindowMenuBar(
-    BuildContext context,
-    Widget child,
-    Account? current,
-    AccountManagerState accountState,
-    int unreadAnnouncements,
-  ) {
-    final announcementsShownAsTab =
-        current != null &&
-        ref.watch(
-          isTabVisibleProvider((
-            storageKey: current.key.toStorageKey(),
-            tab: const AnnouncementsTab(),
-          )),
-        );
-    final navItems = _buildNavItems(
-      context,
-      current,
-      accountState,
-      unreadAnnouncements,
-      announcementsShownAsTab,
-    );
-    final otherAccounts = accountState.accounts
-        .where((a) => a.key != current?.key)
-        .toList();
-
-    // 編集アクションは現在フォーカス中のフィールドへ intent を送る（macOS の
-    // [_buildMacMenuBar] と同じ挙動）。フォーカスがテキスト以外なら no-op。
-    void editAction(Intent intent) {
-      final focusCtx = FocusManager.instance.primaryFocus?.context;
-      if (focusCtx != null) Actions.maybeInvoke(focusCtx, intent);
-    }
-
-    // メニュー表示の詰め (#713): 縦長の圧迫感を抑えるため、ドロップダウンに
-    // 最小幅を与えて横方向にゆとりを持たせ、各項目に左右マージンと左アイコンを
-    // 付けて左端を揃える。全 MenuItemButton で共有する。
-    final submenuStyle = MenuStyle(
-      minimumSize: const WidgetStatePropertyAll(Size(248, 0)),
-      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 6)),
-    );
-    final itemStyle = MenuItemButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-    );
-    Icon menuIcon(IconData data) => Icon(data, size: 18);
-
-    return Column(
-      // メニューバーはウィンドウ幅いっぱいに伸ばし、項目は左寄せにする（デスクトップ
-      // の一般的なメニューバー体裁）(#713)。Column 既定の中央揃えだと content 幅の
-      // バーが中央に浮いて見える。
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        MenuBar(
-          children: [
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              // 先頭メニューはブランドの唐辛子アイコン＋アプリ名（#713）。
-              leadingIcon: Image.asset(
-                'assets/images/capsicum_icon.webp',
-                width: 18,
-                height: 18,
-              ),
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.info_outline),
-                  onPressed: () => showAboutCapsicum(context),
-                  child: const Text('capsicum について'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.settings),
-                  onPressed: () => context.push('/settings'),
-                  child: const Text('設定'),
-                ),
-              ],
-              child: const Text('capsicum'),
-            ),
-            // 編集メニュー: macOS と同じテキスト intent を流用（Win/Linux では
-            // 修飾キー表記が異なるためショートカット表示は出さない。機能自体は
-            // 各テキストフィールドの標準ショートカットが担う）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                // shortcut は表示専用（Material MenuBar は shortcut を登録せず
-                // 発火もしない）。実際の発火は Flutter の
-                // DefaultTextEditingShortcuts が Win/Linux 共通で担うため、
-                // ここに出すラベルと実挙動は一致する（#713・二重発火なし）。
-                // ナビ/ウィンドウ系は配線が無く発火しないのでラベルを出さない。
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.undo),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyZ,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const UndoTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('取り消す'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.redo),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyZ,
-                    control: true,
-                    shift: true,
-                  ),
-                  onPressed: () => editAction(
-                    const RedoTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('やり直す'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_cut),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyX,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const CopySelectionTextIntent.cut(
-                      SelectionChangedCause.keyboard,
-                    ),
-                  ),
-                  child: const Text('カット'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_copy),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyC,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(CopySelectionTextIntent.copy),
-                  child: const Text('コピー'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.content_paste),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyV,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const PasteTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('ペースト'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.select_all),
-                  shortcut: const SingleActivator(
-                    LogicalKeyboardKey.keyA,
-                    control: true,
-                  ),
-                  onPressed: () => editAction(
-                    const SelectAllTextIntent(SelectionChangedCause.keyboard),
-                  ),
-                  child: const Text('すべて選択'),
-                ),
-              ],
-              child: const Text('編集'),
-            ),
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                // 「設定」は先頭の capsicum メニューにあるため、移動メニューでは
-                // 重複を避けて除外する（#713 整理）。ドロワー側は従来どおり表示。
-                for (final item in navItems.where((i) => i.title != '設定'))
-                  MenuItemButton(
-                    style: itemStyle,
-                    leadingIcon: menuIcon(item.icon),
-                    onPressed: item.onSelected,
-                    child: Text(
-                      item.badge > 0
-                          ? '${item.title}（${item.badge}）'
-                          : item.title,
-                    ),
-                  ),
-              ],
-              child: const Text('移動'),
-            ),
-            if (accountState.accounts.isNotEmpty)
-              SubmenuButton(
-                menuStyle: submenuStyle,
-                menuChildren: [
-                  if (current != null)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.person_outline),
-                      onPressed: () =>
-                          context.push('/profile', extra: current.user),
-                      child: const Text('プロフィール'),
-                    ),
-                  for (final a in otherAccounts)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.switch_account),
-                      onPressed: () => ref
-                          .read(accountManagerProvider.notifier)
-                          .switchAccount(a),
-                      child: Text('@${a.user.username}@${a.key.host}'),
-                    ),
-                  MenuItemButton(
-                    style: itemStyle,
-                    leadingIcon: menuIcon(Icons.person_add_alt),
-                    onPressed: () => context.push('/server'),
-                    child: const Text('アカウントを追加'),
-                  ),
-                  if (current != null)
-                    MenuItemButton(
-                      style: itemStyle,
-                      leadingIcon: menuIcon(Icons.logout),
-                      onPressed: () => _confirmLogout(context, current),
-                      child: const Text('ログアウト'),
-                    ),
-                ],
-                child: const Text('アカウント'),
-              ),
-            // 表示メニュー: 全画面表示の切り替え（macOS の toggleFullScreen 相当）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.fullscreen),
-                  onPressed: () async {
-                    final full = await windowManager.isFullScreen();
-                    await windowManager.setFullScreen(!full);
-                  },
-                  child: const Text('全画面表示を切り替え'),
-                ),
-              ],
-              child: const Text('表示'),
-            ),
-            // ウインドウメニュー: 最小化 / 最大化（macOS の minimize / zoom 相当）。
-            SubmenuButton(
-              menuStyle: submenuStyle,
-              menuChildren: [
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.minimize),
-                  onPressed: () => windowManager.minimize(),
-                  child: const Text('最小化'),
-                ),
-                MenuItemButton(
-                  style: itemStyle,
-                  leadingIcon: menuIcon(Icons.crop_square),
-                  onPressed: () async {
-                    if (await windowManager.isMaximized()) {
-                      await windowManager.unmaximize();
-                    } else {
-                      await windowManager.maximize();
-                    }
-                  },
-                  child: const Text('最大化'),
-                ),
-              ],
-              child: const Text('ウインドウ'),
-            ),
-          ],
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
-
   Widget _buildDrawer(
     BuildContext context,
     WidgetRef ref,
@@ -1850,8 +1122,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   tab: const AnnouncementsTab(),
                 )),
               );
-          final navItems = _buildNavItems(
+          final navItems = buildHomeNavItems(
             context,
+            ref,
             current,
             accountState,
             unreadAnnouncements,
@@ -2092,9 +1365,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 onTap: () {
                   dismiss();
                   if (current == null) return;
-                  _confirmLogout(context, current);
+                  confirmLogout(context, ref, current);
                 },
               ),
+              // 投げ銭（サポート）導線 (#853)。以前は「設定」内にあったが投げ銭は
+              // 設定ではないためドロワー下部（「capsicum について」の上）へ出す。
+              // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
+              // プラットフォームのみ）。
+              if (ref.watch(supporterEntryVisibleProvider))
+                ListTile(
+                  leading: Image.asset(
+                    AppConstants.supporterIconAsset,
+                    width: 24,
+                    height: 24,
+                  ),
+                  title: const Text('capsicum をサポート'),
+                  subtitle: const Text('投げ銭で開発と通知リレーを応援'),
+                  onTap: () {
+                    dismiss();
+                    context.push('/settings/supporter');
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('capsicum について'),
@@ -2153,418 +1444,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 )
               : list;
         },
-      ),
-    );
-  }
-
-  Future<void> _showFavoriteTags(BuildContext context, WidgetRef ref) async {
-    final mulukhiya = ref.read(currentMulukhiyaProvider);
-    if (mulukhiya == null) return;
-
-    try {
-      final tags = await mulukhiya.getFavoriteTags();
-      if (tags.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('プロフィールタグはありません')));
-        }
-        return;
-      }
-      if (!context.mounted) return;
-
-      await showModalBottomSheet<void>(
-        context: context,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'プロフィールタグ',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              for (final tag in tags)
-                ListTile(
-                  leading: const Icon(Icons.tag, size: 20),
-                  title: Text('#${tag.name}'),
-                  trailing: Text(
-                    '${tag.count}人',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.push('/hashtag/${tag.name}');
-                  },
-                ),
-            ],
-          ),
-        ),
-      );
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('プロフィールタグの取得に失敗しました')));
-      }
-    }
-  }
-
-  Future<void> _showServerLinks(BuildContext context, WidgetRef ref) async {
-    final mulukhiya = ref.read(currentMulukhiyaProvider);
-    final account = ref.read(currentAccountProvider);
-    if (mulukhiya == null || account == null) return;
-
-    final host = account.key.host;
-    final groups = await mulukhiya.getLinks(host);
-    if (groups.isEmpty) return;
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'リンク',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final group in groups) ...[
-              if (group.title != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 4,
-                  ),
-                  child: Text(
-                    group.title!,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              for (final link in group.links)
-                ListTile(
-                  leading: const Icon(Icons.open_in_new, size: 20),
-                  title: Text(link.body),
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(context);
-                    final url = link.href.startsWith('/')
-                        ? Uri.parse('https://$host${link.href}')
-                        : Uri.parse(link.href);
-                    launchUrlSafely(url);
-                  },
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showFlashList(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! FlashSupport) return;
-
-    final List<Flash> flashes;
-    try {
-      flashes = await (adapter as FlashSupport).getFeaturedFlashes();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Play の取得に失敗しました')));
-      }
-      return;
-    }
-    if (flashes.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Play はありません')));
-      }
-      return;
-    }
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Play',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final flash in flashes)
-              ListTile(
-                leading: const Icon(Icons.play_circle_outline, size: 20),
-                title: Text(flash.title),
-                subtitle: flash.summary != null && flash.summary!.isNotEmpty
-                    ? Text(
-                        flash.summary!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    : null,
-                dense: true,
-                onTap: () {
-                  // #830 でネイティブ実行に切り替えた。以前は外部ブラウザで
-                  // /play/<id> を開いていた (#73)。実行できない Play は
-                  // 詳細画面側で「ブラウザで開く」に degrade する。
-                  Navigator.pop(context);
-                  context.push('/play', extra: {'flash': flash});
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showClipList(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! ClipSupport) return;
-
-    final List<NoteClip> clips;
-    try {
-      clips = await (adapter as ClipSupport).getClips();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('クリップの取得に失敗しました')));
-      }
-      return;
-    }
-    if (clips.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('クリップはありません')));
-      }
-      return;
-    }
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'クリップ',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final clip in clips)
-              ListTile(
-                leading: const Icon(Icons.content_paste, size: 20),
-                title: Text(clip.name),
-                subtitle:
-                    clip.description != null && clip.description!.isNotEmpty
-                    ? Text(
-                        clip.description!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    : null,
-                dense: true,
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/clip/${clip.id}', extra: clip.name);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showAntennaList(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! AntennaSupport) return;
-
-    final List<Antenna> antennas;
-    try {
-      antennas = await (adapter as AntennaSupport).getAntennas();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('アンテナの取得に失敗しました')));
-      }
-      return;
-    }
-    if (antennas.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('アンテナはありません')));
-      }
-      return;
-    }
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'アンテナ',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final antenna in antennas)
-              ListTile(
-                leading: const Icon(Icons.settings_input_antenna, size: 20),
-                title: Text(antenna.name),
-                dense: true,
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/antenna/${antenna.id}', extra: antenna.name);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// リストのクイックチューザ（#805）。保存済みリストを 1 つ選んで、その
-  /// タイムライン画面（`/list/:id`）へ飛ぶ。作成/編集/メンバー管理は末尾の
-  /// 「リストを管理」から `/lists/manage` へ温存する。
-  Future<void> _showListChooser(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! ListSupport) return;
-
-    final List<PostList> lists;
-    try {
-      lists = await (adapter as ListSupport).getLists();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('リストの取得に失敗しました')));
-      }
-      return;
-    }
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'リスト',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            if (lists.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text('リストはありません'),
-              )
-            else
-              for (final list in lists)
-                ListTile(
-                  leading: const Icon(Icons.list, size: 20),
-                  title: Text(list.title),
-                  dense: true,
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.push('/list/${list.id}', extra: list.title);
-                  },
-                ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.settings, size: 20),
-              title: const Text('リストを管理'),
-              dense: true,
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/lists/manage');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showChannelList(BuildContext context, WidgetRef ref) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! ChannelSupport) return;
-
-    final List<Channel> channels;
-    try {
-      channels = await (adapter as ChannelSupport).getFollowedChannels();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('チャンネルの取得に失敗しました。再ログインが必要な場合があります')),
-        );
-      }
-      return;
-    }
-    if (channels.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('フォロー中のチャンネルはありません')));
-      }
-      return;
-    }
-    if (!context.mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'チャンネル',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final ch in channels)
-              ListTile(
-                leading: const Icon(Icons.forum, size: 20),
-                title: Text(ch.name),
-                dense: true,
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/channel/${ch.id}', extra: ch.name);
-                },
-              ),
-          ],
-        ),
       ),
     );
   }

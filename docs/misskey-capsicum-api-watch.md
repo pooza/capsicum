@@ -76,7 +76,42 @@ Mastodon は 4.5→4.6 の **GA タグ**が明快な節目だが、Misskey は:
 
 このため **「前回トリアージした時点の daisskey commit SHA」を本ファイルに記録し、次回は `記録SHA..daisskey` で差分する**。頻度はマイナー（月次）ごとを目安にしつつ、境界はこの SHA で管理する。
 
+### 本番適用の間合い（triage を焦らない根拠）
+
+daisskey（ダイスキー本番のフォーク本体）への**本番適用**は、**Misskey リリースの安定性を用心して、リリースの 2〜3 日後や直近の週末に上げることが多い**（最近は安定しているが慣習として）。**これは準備不足による遅れではなく、あえて本番投入を遅らせる運用判断**である点に注意。**準備（ステージング適用）はむしろ早く回しており、その気なら当日適用も可能**。
+
+そのため beta は本番より先に手元へ来ている。ステージング適用中の beta は **`origin/merge/<version>-beta.N`** ブランチとして fetch できる（例: `origin/merge/2026.7.0-beta.1`）。**API 契約の diff（①②）は本番昇格を待たずにこの ref から前倒しで回せる**（`<記録SHA>..origin/merge/<version>-beta.N`）。前倒しトリアージの狙いは、Mastodon 同様「本番昇格より前に actionable な API 変更を潰しておく」こと。
+
+一方 **Flash 互換ハーネスは preset の本番サーバー（現行 2026.6.0）を叩く**ため、beta の Flash 挙動まではステージングサーバーに到達できない限りカバーしない。ハーネスは daisskey 昇格後に回すのが確実。
+
+判定の既定は保守的に **daisskey（本番）を diff の相手**とし、triage が due になるのは daisskey が動いたとき。前倒しは「やる価値がある版のとき」に beta ref で任意に実施する。
+
+対して **Mastodon（美食丼ほか）はリリース当日〜遅くとも翌日に本番適用**する運用（[project_mastodon_46_posture] メモリの「pooza は本番をリリース日に必ずデプロイする」に対応）。Mastodon は本番投入そのものが早い／Misskey は準備は早いが本番投入を用心して遅らせる、という**運用スタイルの差**であって、どちらも「本家 GA より前に互換の目星をつけておける」点は共通。
+
 ## トリアージ履歴
+
+### 前倒し: `2026.7.0-beta.1`（ステージング先読み・2026-07-22 記録）
+
+本番昇格を待たず、ステージング適用中の beta を `589d4ece`（本番 2026.6.0）..`origin/merge/2026.7.0-beta.1` で先読み。**先読みなので基準アンカーは `589d4ece` のまま据え置き**（次回の本番 diff の相手は引き続き daisskey）。
+
+- **`admin/unset-mfa`（新規 endpoint）** — 判定 **none**: 管理者がユーザーの MFA を解除する admin API。capsicum は無関係。
+- entity フィールド変化なし・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 据え置き。
+- Flash 互換ハーネスは preset 本番サーバー（2026.6.0）依存のため beta 分は未実施。daisskey が 2026.7 に昇格したら回す。
+
+→ **beta.1 時点で actionable なし**。ただし beta.1 は途中段階のため GA までに追加が入りうる。**daisskey が 2026.7 に昇格したら `589d4ece..daisskey` で再確認**（前倒しは昇格判断を早めるための下見であって、確定 triage の代替ではない）。
+
+### baseline: `589d4ece`（2026.6.0、2026-07-22 記録）
+
+`fe064da6`（2026.5.4）..`589d4ece`（2026.6.0）の差分トリアージ。**endpoint 3 本追加のみ・entity フィールド変化なし・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 で据え置き**。
+
+- **`admin/queue/pause` / `admin/queue/resume`（新規 endpoint）** — 判定 **none**: サーバー管理者用のジョブキュー操作。capsicum は無関係。
+- **`antennas/remove-note`（新規 endpoint）** — 判定 **⚪ passive**: アンテナのタイムラインから個別ノートを外す additive な操作。capsicum はアンテナ TL を読むのみで、この除去導線は未提供でも degrade 不要（probing で自動的に非提供）。将来のエンハンス候補にとどめ起票なし。
+
+Flash 互換ハーネス（`@syuilo/aiscript` 1.2.1 据え置き）: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2 の featured 全数）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。
+
+v1.50 のユーザー報告（Play スロット描画 #876 / いいね scope #877 / 下書き 400 #879）は、いずれもこの diff とは無関係（`notes/drafts/create`・`flash/like`・`flash/unlike` は baseline から無変更）であることを再確認。
+
+→ actionable なし。**次回は `589d4ece..daisskey` から差分する**。
 
 ### Flash 互換 baseline: `@syuilo/aiscript` 1.2.1（2026-07-20 記録）
 

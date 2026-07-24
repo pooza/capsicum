@@ -28,11 +28,22 @@ Duration _defaultBackoff(int attempt) => Duration(milliseconds: 150 * attempt);
 /// するのが目的。呼び出し側は bind 前に自分の旧サーバを閉じておくこと（残存
 /// リスナ自体はここでは面倒を見ない）。
 ///
+/// リトライ窓は既定 6 回・合計約 2.25s（`150ms * attempt` の累積）。#813 当初の
+/// 3 回・約 450ms では吸収しきれない端末があることが計装で判明したため広げた
+/// （#859）。CAPSICUM-3Q の実測では枯渇イベントの errno は 100% が
+/// EADDRINUSE(98) で、同一ユーザーが複数サーバへログインできている＝ポートの
+/// 恒久占有ではなく一過性。dart:io は SO_REUSEADDR を既定で立てるため TIME_WAIT
+/// ではなく、`close(force:true)` の Future 完了後も OS のソケット解放が遅れて
+/// 直後の再 bind が撥ねられる（OnePlus 8 Pro / Android 11 で顕著）自プロセス
+/// 残存が主因とみて、窓を延ばして解放を待つ。特定端末向けの分岐は入れない
+/// （#824 と同じ汎用堅牢化の範囲）。効果は CAPSICUM-3Q の post-release 観測で
+/// 回収する。それでも残るなら「別プロセスの恒久占有」を疑い UX 手当てへ倒す。
+///
 /// [sleep] はテスト用の差し込み口（既定は [Future.delayed]）。バックオフ中に
 /// ポートを解放して「数回目で成功」する経路を検証できる。
 Future<HttpServer> bindLoopbackOAuthServer(
   int port, {
-  int maxAttempts = 3,
+  int maxAttempts = 6,
   Duration Function(int attempt) backoff = _defaultBackoff,
   Future<void> Function(Duration) sleep = Future.delayed,
 }) async {

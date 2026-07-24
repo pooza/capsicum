@@ -34,6 +34,11 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   int? _maxFields;
   bool _loaded = false;
 
+  /// 承認制（locked）/ ディレクトリ掲載（discoverable）のトグル現在値 (#865)。
+  /// 読み込み時に自分の account から prefill する。
+  bool _locked = false;
+  bool _discoverable = false;
+
   /// アバター/ヘッダーの削除導線を出せるバックエンドか（Mastodon 4.6、#736）。
   bool get _canRemoveImages {
     final adapter = ref.read(currentAccountProvider)?.adapter;
@@ -64,6 +69,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       if (adapter is MastodonAdapter) {
         final credentials = await adapter.client.verifyCredentials();
         _displayNameController.text = credentials.displayName;
+        _locked = credentials.locked ?? false;
+        _discoverable = credentials.discoverable ?? false;
         final source = credentials.source;
         _bioController.text = (source?['note'] as String?) ?? '';
         final sourceFields = source?['fields'] as List<dynamic>? ?? [];
@@ -81,6 +88,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         final user = account.user;
         _displayNameController.text = user.displayName ?? '';
         _bioController.text = user.description ?? '';
+        _locked = user.locked ?? false;
+        _discoverable = user.discoverable ?? false;
         for (final f in user.fields) {
           _fields.add(
             _FieldEntry(
@@ -216,6 +225,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         fields: fields,
         removeAvatar: _removeAvatar,
         removeHeader: _removeBanner,
+        locked: _locked,
+        discoverable: _discoverable,
       );
 
       ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
@@ -343,9 +354,36 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   ),
                   const SizedBox(height: 24),
                   _buildFieldsSection(),
+                  const SizedBox(height: 24),
+                  _buildPrivacySection(),
                 ],
               ),
             ),
+    );
+  }
+
+  /// 承認制（locked）/ ディレクトリ掲載（discoverable）のトグル (#865)。
+  /// Mastodon `locked` / `discoverable`・Misskey `isLocked` / `isExplorable`。
+  Widget _buildPrivacySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('プライバシー', style: Theme.of(context).textTheme.titleSmall),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('承認制アカウント'),
+          subtitle: const Text('フォローを手動で承認する'),
+          value: _locked,
+          onChanged: _saving ? null : (v) => setState(() => _locked = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('ディレクトリに掲載する'),
+          subtitle: const Text('プロフィールディレクトリやおすすめに載せてよい'),
+          value: _discoverable,
+          onChanged: _saving ? null : (v) => setState(() => _discoverable = v),
+        ),
+      ],
     );
   }
 

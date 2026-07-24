@@ -73,6 +73,8 @@ extension CapsicumMastodonAccountExtension on MastodonAccount {
       showFeatured: showFeatured,
       hideCollections: hideCollections,
       featureApproval: _parseFeatureApproval(featureApproval),
+      locked: locked,
+      discoverable: discoverable,
     );
   }
 }

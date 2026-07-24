@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../constants.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
-import '../../provider/supporter_purchase_provider.dart';
 import '../../service/push_registration_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -72,22 +70,8 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/push'),
             ),
-          // 投げ銭の購入導線は iOS / Android / macOS、および Store 版 Windows
-          // (#599 §E-2)。push 設定と同じく、対応しない環境では設定エントリを隠す。
-          // Windows は Store 版でのみ購入が成立するため、商品問い合わせが通った
-          // ときだけ出す（判定は supporterEntryVisibleProvider）。
-          if (ref.watch(supporterEntryVisibleProvider))
-            ListTile(
-              leading: Image.asset(
-                AppConstants.supporterIconAsset,
-                width: 30,
-                height: 30,
-              ),
-              title: const Text('capsicum をサポート'),
-              subtitle: const Text('投げ銭で開発と通知リレーを応援'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push('/settings/supporter'),
-            ),
+          // 投げ銭（サポート）導線は「設定」から左ドロワー直下 + デスクトップ
+          // メニューへ格上げした (#853)。投げ銭は設定ではないため設定からは外す。
         ],
       ),
     );

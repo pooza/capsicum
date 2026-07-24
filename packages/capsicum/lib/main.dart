@@ -66,12 +66,23 @@ const _snackBarTheme = SnackBarThemeData(
 /// フォントを引くだけなので容量増はなく、当該ファミリを持たない他プラット
 /// フォームでは素通りして OS 側の (既に正常な) 解決がそのまま効く。
 ///
-/// ただし Noto Color Emoji はキーキャップ絵文字の土台として ASCII 数字
-/// `0-9` `#` `*` のグリフを持つため、Linux では半角数字までカラーフォントに
-/// 横取りされて幅が崩れる (#869)。Linux ではこの適用を
-/// [colorEmojiFallbackProvider] でトグルできるようにし、OFF でこの const を
-/// 外す (build 内で解決)。他 OS は従来どおり無条件適用。
-const _fontFamilyFallback = <String>['Noto Color Emoji'];
+/// ただし Noto Color Emoji はキーキャップ絵文字の土台として ASCII の
+/// `0-9` `#` `*`・空白のグリフを持つため、Linux では fontconfig 解決でこれらまで
+/// カラーフォントに横取りされ、半角数字の幅が崩れる (#869)。
+///
+/// #871 でこれを両立させた: 横取りされる当該コードポイントだけを収めた極小
+/// フォント ([_latinReclaimFamily], assets/fonts/CapsicumLatinFallback.ttf,
+/// ~16KB) を Linux でのみ [_colorEmojiFamily] の前段に置き、数字等を先に
+/// claim させて絵文字だけをカラーフォントへ倒す（build 内で解決・既定 ON）。
+///
+/// ただし横取りの再現・解消はホストの fontconfig 挙動に依存し検証環境では
+/// 再現しないため、案D (極小フォント先置き) が効かない環境向けの保険として
+/// [colorEmojiFallbackProvider] のトグルを残す。OFF でカラー絵文字 fallback
+/// 自体を外し、#861 以前 (数字は正しいが一部 Unicode 絵文字はモノクロ) へ
+/// 戻せる (#869 の逃げ道を #871 後も温存)。他 OS は横取りが起きないため
+/// 常時カラー絵文字のみで no-op。
+const _colorEmojiFamily = 'Noto Color Emoji';
+const _latinReclaimFamily = 'Capsicum Latin Fallback';
 
 /// debug ビルドでのみ debugPrint に流す。release ビルドでは no-op (#512)。
 /// Linux AppImage の AppRun ログ (~/.local/share/capsicum/logs/) に
@@ -1226,13 +1237,19 @@ class _CapsicumAppState extends ConsumerState<CapsicumApp>
     final darkTextVariant = ref.watch(darkTextColorProvider);
     final darkText = darkTextColor(darkTextVariant);
 
-    // カラー絵文字フォールバック (#861) の適用。Linux でトグル OFF のときのみ
-    // 外して #861 以前の挙動 (半角数字の幅が正しい) に戻す (#869)。他 OS は
-    // 従来どおり無条件に適用し、既存挙動を一切変えない。
-    final fontFamilyFallback =
-        colorEmojiFallbackConfigurable && !ref.watch(colorEmojiFallbackProvider)
-        ? null
-        : _fontFamilyFallback;
+    // カラー絵文字フォールバック (#861)。Linux は数字幅を守る極小フォントを
+    // 前段に挟んで数字幅とカラー絵文字を両立させる (#871・既定 ON)。案D が
+    // 効かない環境向けの保険として、トグル OFF で fallback 自体を外し #861
+    // 以前 (数字は正しいがモノクロ) へ戻せる (#869)。他 OS は横取りが起きない
+    // ため常時カラー絵文字のみ。
+    final List<String>? fontFamilyFallback;
+    if (colorEmojiFallbackConfigurable) {
+      fontFamilyFallback = ref.watch(colorEmojiFallbackProvider)
+          ? const [_latinReclaimFamily, _colorEmojiFamily]
+          : null;
+    } else {
+      fontFamilyFallback = const [_colorEmojiFamily];
+    }
 
     var darkScheme = ColorScheme.fromSeed(
       seedColor: seedColor,

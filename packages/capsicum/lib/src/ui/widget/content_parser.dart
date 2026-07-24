@@ -1216,8 +1216,12 @@ class ContentRenderer {
           // 状態だった。基準 (baseStyle.fontSize) に対する比を emojiSize に掛ける
           // （通常時は比 1 で従来どおり 20.0）。
           final baseFontSize = baseStyle.fontSize ?? 14.0;
-          final scaledEmojiSize =
-              emojiSize * ((style.fontSize ?? baseFontSize) / baseFontSize);
+          // baseFontSize が 0 だと比が Infinity になる（実テーマでは到達しないが
+          // 防御的に）。非正なら等倍にフォールバック (#867)。
+          final ratio = baseFontSize > 0
+              ? (style.fontSize ?? baseFontSize) / baseFontSize
+              : 1.0;
+          final scaledEmojiSize = emojiSize * ratio;
           final image = ConstrainedBox(
             constraints: BoxConstraints(maxHeight: scaledEmojiSize),
             child: Image.network(
@@ -1392,7 +1396,17 @@ class ContentRenderer {
         ];
 
       case 'rotate':
-        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。
+        // 回転 (#748)。`.deg=<角度>`、既定 90 度、時計回り。本家 Misskey
+        // (MkMfm.ts) と同じ paint-only の Transform.rotate で表現する。
+        //
+        // 一時期 90° 刻みを RotatedBox でレイアウト寸法ごと入れ替えて左見切れを
+        // 防いだ (#876) が、スロット系 Play は「絵文字を縦積み → 外側 90° で横倒し
+        // → 横間隔は $[position.y]（paint-only の平行移動）で作る」本家前提の合成で、
+        // レイアウトを予約すると予約列と position.y のずらしが二重に効いて絵文字
+        // 同士が重なる（予約と paint-only は両立しない）。本家に倣い paint-only に
+        // 戻す。見切れは占有ボックスを広げるのではなく clip を掛けない方針で扱う
+        // （content_parser 経路に明示 ClipRect は無く、中央寄せ配置なら食み出しも
+        // 表示される）。
         final deg = _parseNum(_fnArg(node.fnArgs, 'deg')) ?? 90;
         return [
           WidgetSpan(
@@ -1411,6 +1425,18 @@ class ContentRenderer {
         // クランプ（暴走した巨大表示を防ぐ）。
         final sx = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 1).clamp(0.0, 5.0);
         final sy = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 1).clamp(0.0, 5.0);
+        // 等倍（x==y）は fontSize 倍化で表現する。Transform.scale は塗りだけ拡大して
+        // レイアウトの占有ボックスを変えないため、拡大した中身が予約幅を超えて食み出し
+        // 見切れる (#876 と同型)。fontSize を掛けると占有ボックスも一緒に大きくなり
+        // （カスタム絵文字も scaledEmojiSize が fontSize 比で追従する・$[x2] 系と同じ）、
+        // 折り返し・行高も正しく確保されて食み出さない。非等倍（x≠y）は fontSize では
+        // 表現できないため従来どおり Transform.scale（塗りのみ）で近似する。
+        if (sx == sy) {
+          return _renderNodes(
+            node.children,
+            style.copyWith(fontSize: (style.fontSize ?? 14.0) * sx),
+          );
+        }
         return [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
@@ -1512,11 +1538,12 @@ class ContentRenderer {
       case 'jelly':
       case 'tada':
       case 'rainbow':
-        // アニメーション構文 (#259)。設定 OFF・非対応環境では静止表示。
+      case 'sparkle':
+        // アニメーション構文 (#259, #863, #864)。設定 OFF・非対応環境では静止表示。
         return _renderAnimation(node, style);
 
       default:
-        // Unhandled fn — render children as-is（sparkle 等の未対応も含む）
+        // Unhandled fn — render children as-is。
         return _renderNodes(node.children, style);
     }
   }
@@ -1526,6 +1553,34 @@ class ContentRenderer {
   List<InlineSpan> _renderAnimation(_Node node, TextStyle style) {
     final children = _renderNodes(node.children, style);
     if (!animateMfm) return children;
+    // rainbow は変形でなくテキスト前景の虹グラデ（#864）。span 単位で色を乗せる
+    // ため専用 widget に渡す。
+    if (node.fnName == 'rainbow') {
+      return [
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: MfmRainbowText(
+            spans: children,
+            baseStyle: style,
+            speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+          ),
+        ),
+      ];
+    }
+    // sparkle は対象の周囲にパーティクルを撒く（#863）。変形でも前景色でも表現
+    // できないため child の上にオーバーレイを重ねる専用 widget に渡す。
+    if (node.fnName == 'sparkle') {
+      return [
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: MfmSparkle(
+            fontSize: style.fontSize ?? 14.0,
+            speed: _parseDuration(_fnArg(node.fnArgs, 'speed')),
+            child: Text.rich(TextSpan(children: children)),
+          ),
+        ),
+      ];
+    }
     final type = switch (node.fnName) {
       'spin' => MfmAnimationType.spin,
       'bounce' => MfmAnimationType.bounce,
@@ -1534,7 +1589,6 @@ class ContentRenderer {
       'twitch' => MfmAnimationType.twitch,
       'jelly' => MfmAnimationType.jelly,
       'tada' => MfmAnimationType.tada,
-      'rainbow' => MfmAnimationType.rainbow,
       _ => null,
     };
     if (type == null) return children;

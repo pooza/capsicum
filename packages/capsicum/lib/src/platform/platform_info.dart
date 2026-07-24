@@ -11,13 +11,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
-/// カラー絵文字フォールバック (#861) の ON/OFF トグルを設定に出すか。
-/// この設定が意味を持つのは Linux のみ。#861 は `Noto Color Emoji` を
-/// グローバルな fontFamilyFallback に足す対処で、Linux では同フォントが
-/// ASCII 数字グリフまで横取りして半角数字の幅が崩れる回帰 (#869) を生む。
-/// 他 OS は OS 側の絵文字解決が既に正しく、この対処自体が実質 no-op のため
-/// トグルを出さない。UI 層に `Platform.isX` を直書きしない設計指針 (#650) に
-/// 従い機能名で公開する。
+/// カラー絵文字 fallback (#861) が意味を持ち、その調整トグルを設定に出す
+/// プラットフォームか。Linux のみ true。Linux では `Noto Color Emoji` を
+/// fontFamilyFallback に足すと同フォントが ASCII 数字 `0-9` `#` `*`・空白まで
+/// 横取りして半角数字の幅が崩れる (#869)。#871 では当該コードポイントだけを
+/// 収めた極小フォント (Capsicum Latin Fallback) を前段に置いて両立させたが、
+/// 横取りはホストの fontconfig 挙動依存で環境差があるため、効かない環境向けの
+/// 保険トグル ([colorEmojiFallbackProvider]) をこのフラグで Linux 限定表示する。
+/// 他 OS は OS 側の絵文字解決が既に正しく実質 no-op のためトグルを出さない。
+/// UI 層に `Platform.isX` を直書きしない設計指針 (#650) に従い機能名で公開する。
 bool get colorEmojiFallbackConfigurable => !kIsWeb && Platform.isLinux;
 
 /// 常駐モード (#752) の常駐先の OS 別呼称。macOS は「メニューバー」

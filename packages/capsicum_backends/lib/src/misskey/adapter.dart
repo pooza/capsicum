@@ -326,6 +326,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
                 )
                 .toList() ??
             const <Attachment>[];
+        // リプライ/引用の文脈は `notes/drafts/list` の埋め込み（reply / renote、
+        // pack detail:true）から復元する。追加リクエスト不要 (#833)。元投稿が
+        // 削除済み等で埋め込みが無ければ null（本文だけ復元）。
+        final replyJson = json['reply'] as Map<String, dynamic>?;
+        final renoteJson = json['renote'] as Map<String, dynamic>?;
+        final reply = replyJson != null
+            ? MisskeyNote.fromJson(
+                replyJson,
+              ).toCapsicum(host, adminRoleIds: _adminRoleIds)
+            : null;
+        final renote = renoteJson != null
+            ? MisskeyNote.fromJson(
+                renoteJson,
+              ).toCapsicum(host, adminRoleIds: _adminRoleIds)
+            : null;
+        final channelJson = json['channel'] as Map<String, dynamic>?;
         drafts.add(
           Draft(
             id: json['id'] as String,
@@ -336,6 +352,10 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
                 PostScope.public,
             attachments: attachments,
             createdAt: DateTime.parse(json['createdAt'] as String),
+            reply: reply,
+            renote: renote,
+            channelId: json['channelId'] as String?,
+            channelName: channelJson?['name'] as String?,
           ),
         );
       } catch (e) {
@@ -1718,6 +1738,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     // Mastodon 4.6 スコープ）。supportsProfileImageRemoval は既定 false。
     bool removeAvatar = false,
     bool removeHeader = false,
+    bool? locked,
+    bool? discoverable,
   }) async {
     String? avatarId;
     String? bannerId;
@@ -1741,6 +1763,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       avatarId: avatarId,
       bannerId: bannerId,
       fields: mappedFields?.isNotEmpty == true ? mappedFields : null,
+      isLocked: locked,
+      isExplorable: discoverable,
     );
     return user.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }

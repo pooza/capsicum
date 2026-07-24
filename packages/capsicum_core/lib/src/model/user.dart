@@ -90,6 +90,15 @@ class User {
   /// （Mastodon 4.6 の feature_approval、#742）。未対応サーバーでは null。
   final FeatureApproval? featureApproval;
 
+  /// 承認制アカウント（フォローを手動承認）。Mastodon `locked` / Misskey
+  /// `isLocked`（#865）。プロフィール編集トグルの現在値 prefill に使う。
+  /// 未取得・未対応では null。
+  final bool? locked;
+
+  /// ディレクトリ掲載・発見可能。Mastodon `discoverable` / Misskey
+  /// `isExplorable`（#865）。未取得・未対応では null。
+  final bool? discoverable;
+
   const User({
     required this.id,
     required this.username,
@@ -119,6 +128,8 @@ class User {
     this.showFeatured,
     this.hideCollections,
     this.featureApproval,
+    this.locked,
+    this.discoverable,
   });
 
   User copyWithIsCat(bool isCat) => User(
@@ -150,5 +161,7 @@ class User {
     showFeatured: showFeatured,
     hideCollections: hideCollections,
     featureApproval: featureApproval,
+    locked: locked,
+    discoverable: discoverable,
   );
 }

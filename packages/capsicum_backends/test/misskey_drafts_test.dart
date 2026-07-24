@@ -84,6 +84,79 @@ void main() {
       expect(d.createdAt.toUtc(), DateTime.utc(2026, 7, 13, 1, 2, 3));
     });
 
+    test('getDrafts: reply / renote / channel の文脈を埋め込みから復元する (#833)', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _CapturingAdapter({
+        'notes/drafts/list': (
+          200,
+          [
+            {
+              'id': 'd2',
+              'createdAt': '2026-07-13T01:02:03.000Z',
+              'text': '本文',
+              'visibility': 'public',
+              'replyId': 'r1',
+              'reply': {
+                'id': 'r1',
+                'createdAt': '2026-07-12T00:00:00.000Z',
+                'userId': 'u1',
+                'user': {'id': 'u1', 'username': 'alice'},
+                'text': 'リプライ先',
+                'visibility': 'public',
+                'renoteCount': 0,
+                'repliesCount': 0,
+              },
+              'renoteId': 'q1',
+              'renote': {
+                'id': 'q1',
+                'createdAt': '2026-07-11T00:00:00.000Z',
+                'userId': 'u2',
+                'user': {'id': 'u2', 'username': 'bob'},
+                'text': '引用先',
+                'visibility': 'public',
+                'renoteCount': 0,
+                'repliesCount': 0,
+              },
+              'channelId': 'c1',
+              'channel': {'id': 'c1', 'name': 'ゲーム'},
+            },
+          ],
+        ),
+      });
+
+      final d = (await adapter.getDrafts()).single;
+      // 追加リクエストなしに埋め込みから Post を組み立てている。
+      expect(d.reply?.id, 'r1');
+      expect(d.reply?.content, contains('リプライ先'));
+      expect(d.renote?.id, 'q1');
+      expect(d.renote?.content, contains('引用先'));
+      expect(d.channelId, 'c1');
+      expect(d.channelName, 'ゲーム');
+    });
+
+    test('getDrafts: 埋め込みが無ければ文脈は null（本文だけ復元）(#833)', () async {
+      final adapter = await MisskeyAdapter.create('misskey.example');
+      adapter.client.dio.httpClientAdapter = _CapturingAdapter({
+        'notes/drafts/list': (
+          200,
+          [
+            {
+              'id': 'd3',
+              'createdAt': '2026-07-13T01:02:03.000Z',
+              'text': '素の下書き',
+              'visibility': 'public',
+            },
+          ],
+        ),
+      });
+
+      final d = (await adapter.getDrafts()).single;
+      expect(d.reply, isNull);
+      expect(d.renote, isNull);
+      expect(d.channelId, isNull);
+      expect(d.channelName, isNull);
+    });
+
     test('getDrafts: list は scheduled:false で引く（予約投稿を除外）', () async {
       final adapter = await MisskeyAdapter.create('misskey.example');
       final capture = _CapturingAdapter({'notes/drafts/list': (200, [])});

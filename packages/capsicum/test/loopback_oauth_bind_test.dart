@@ -63,6 +63,23 @@ void main() {
       expect(server.port, port);
     });
 
+    test('既定のリトライ窓は 6 回（sleep 5 回）に広げてある (#859)', () async {
+      // #813 当初の 3 回では解放遅れを吸収しきれない端末があったため、既定を
+      // 6 回へ拡張した。占有され続けるポートで既定の試行回数を実測する。
+      final occupier = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => occupier.close());
+      final port = occupier.port;
+
+      var sleeps = 0;
+      await expectLater(
+        // maxAttempts を明示せず既定に委ねる。
+        bindLoopbackOAuthServer(port, sleep: (_) async => sleeps++),
+        throwsA(isA<LoopbackPortOccupiedException>()),
+      );
+      // 6 回試行 = 試行間の sleep は 5 回。
+      expect(sleeps, 5);
+    });
+
     test('maxAttempts=1 は sleep せず即失敗', () async {
       final occupier = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() => occupier.close());

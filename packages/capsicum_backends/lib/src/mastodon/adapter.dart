@@ -1317,6 +1317,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     List<UserField>? fields,
     bool removeAvatar = false,
     bool removeHeader = false,
+    bool? locked,
+    bool? discoverable,
   }) async {
     var account = await client.updateCredentials(
       displayName: displayName,
@@ -1326,6 +1328,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       fieldsAttributes: fields
           ?.map((f) => {'name': f.name, 'value': f.value})
           .toList(),
+      locked: locked,
+      discoverable: discoverable,
     );
     // 画像削除は update_credentials では表現できないため 4.6 の destroy
     // エンドポイントで行い、最新の account を返す（#736）。差し替えとは排他。
