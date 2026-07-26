@@ -1507,6 +1507,11 @@ enum PostTouchAction {
   /// リアクション (Misskey の ReactionSupport)。
   reaction,
 
+  /// ブックマーク（Mastodon）/ お気に入り（Misskey の BookmarkSupport）。
+  /// Misskey の「お気に入り」は Mastodon のブックマーク相当で、Mastodon の
+  /// お気に入り（FavoriteSupport）とは別機能 (#855)。
+  bookmark,
+
   /// ブースト / リノート。
   boost,
 

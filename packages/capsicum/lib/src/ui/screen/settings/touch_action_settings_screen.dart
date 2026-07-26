@@ -51,6 +51,7 @@ class TouchActionSettingsScreen extends ConsumerWidget {
       PostTouchAction.reply => 'リプライ',
       PostTouchAction.favorite => 'お気に入り',
       PostTouchAction.reaction => 'リアクション',
+      PostTouchAction.bookmark => 'ブックマーク',
       PostTouchAction.boost => 'ブースト / リノート',
       PostTouchAction.quote => '引用',
     };
@@ -60,6 +61,7 @@ class TouchActionSettingsScreen extends ConsumerWidget {
     return switch (action) {
       PostTouchAction.favorite => 'Mastodon でのみ表示されます',
       PostTouchAction.reaction => 'Misskey でのみ表示されます',
+      PostTouchAction.bookmark => 'Misskey では「お気に入り」として表示されます',
       PostTouchAction.boost => 'タップ後に公開範囲を選べます',
       _ => null,
     };

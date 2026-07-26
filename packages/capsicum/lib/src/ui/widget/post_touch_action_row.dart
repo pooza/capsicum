@@ -104,6 +104,31 @@ class PostTouchActionRow extends ConsumerWidget {
         _showEmojiPicker(context, ref);
       });
     }
+    if (enabled.contains(PostTouchAction.bookmark) &&
+        adapter is BookmarkSupport) {
+      // Misskey の「お気に入り」は Mastodon のブックマーク相当（Mastodon の
+      // お気に入り=FavoriteSupport とは別機能）(#855)。状態に応じてトグルする。
+      final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+      if (targetPost.bookmarked) {
+        add(Icons.bookmark, '$bookmarkLabelを解除', () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as BookmarkSupport).unbookmarkPost(targetPost.id),
+            '$bookmarkLabelを解除しました',
+          );
+        });
+      } else {
+        add(Icons.bookmark_outline, bookmarkLabel, () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as BookmarkSupport).bookmarkPost(targetPost.id),
+            '$bookmarkLabelに追加しました',
+          );
+        });
+      }
+    }
     if (enabled.contains(PostTouchAction.boost)) {
       final boostLabel = ref.read(reblogLabelProvider);
       final currentUser = ref.read(currentAccountProvider)?.user;
