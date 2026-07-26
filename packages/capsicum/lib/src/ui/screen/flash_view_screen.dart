@@ -364,6 +364,13 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     }
   }
 
+  /// 絵文字取得のみをやり直す。解決して AsyncData になれば build 側の開始
+  /// ゲートが _start を発火する (#882)。
+  void _retryEmojis() {
+    setState(() => _started = false);
+    ref.invalidate(customEmojisProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final flash = widget.flash;
@@ -376,7 +383,12 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     // AsyncLoading なので発火せず、解決後も再評価されないため **スクリプトが
     // 永久に実行されない**。watch して解決後の rebuild を拾うこと。
     final emojis = ref.watch(customEmojisProvider);
-    if (!_started && !emojis.isLoading) {
+    // 開始は AsyncData のみに絞る。AsyncError も isLoading==false のため、旧
+    // `!emojis.isLoading` 判定だと `/api/emojis` 失敗時に開始してしまい、
+    // CUSTOM_EMOJIS 依存の Play が空集合で別結果を「成功したように」計算する
+    // (#882)。読み込み失敗は下の switch で再試行導線を出す。
+    final emojisLoadFailed = emojis is AsyncError;
+    if (!_started && emojis is AsyncData) {
       _started = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _start();
@@ -447,10 +459,29 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               onRetry: _start,
             ),
             (_, _, final FlashRuntime r) => FlashView(runtime: r),
+            // 絵文字取得に失敗したまま実行すると別結果になるため、開始せず
+            // 再試行導線を出す (#882)。再試行は絵文字取得のみやり直す。
+            _ when emojisLoadFailed => _RunError(
+              error: FlashRuntimeError(
+                'カスタム絵文字を読み込めませんでした',
+                'この Play は絵文字を使うため、読み込めないまま実行すると結果が'
+                    '変わります。再試行してください。',
+              ),
+              host: flash.author.host ?? _host,
+              flashId: flash.id,
+              onRetry: _retryEmojis,
+            ),
+            // 絵文字ロード中（開始前）はスピナー。ここで「もう一度実行」を
+            // 出すと空集合実行を誘発しうるため下のボタンは runtime 確定後のみ。
+            _ when emojis.isLoading => const Center(
+              child: CircularProgressIndicator(),
+            ),
             _ => const SizedBox.shrink(),
           },
         ),
-        if (_error == null && !_running)
+        // 「もう一度実行」は一度実行が確定した後だけ出す（runtime 非 null）。
+        // 開始前・絵文字ロード中/失敗時に出すと空集合実行を誘発する (#882)。
+        if (runtime != null && _error == null && !_running)
           Center(
             child: TextButton.icon(
               onPressed: _start,
