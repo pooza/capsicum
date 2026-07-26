@@ -4,13 +4,17 @@ import 'as_ui.dart';
 
 /// Flash スクリプトの実行時エラー。UI にそのまま出せる日本語の要約を持つ。
 class FlashRuntimeError implements Exception {
-  FlashRuntimeError(this.summary, this.detail);
+  FlashRuntimeError(this.summary, this.detail, {this.unimplementedKey});
 
   /// ユーザーに見せる 1 行要約。
   final String summary;
 
   /// 原因の詳細（評価器のメッセージ等）。
   final String detail;
+
+  /// capsicum のバインディング層が未実装だった `Ui:C:*` / `Mk:*` キー。
+  /// 機能別に Sentry で絞り込むためのタグ用 (#875)。未実装以外では null。
+  final String? unimplementedKey;
 
   @override
   String toString() => '$summary: $detail';
@@ -110,7 +114,11 @@ class FlashRuntime {
       if (key.startsWith('Ui:') || key.startsWith('Mk:')) {
         // capsicum のバインディング層が未実装。スクリプトの不具合ではない
         // ので、そう分かる文言にする。
-        return FlashRuntimeError('この Play が使う機能に capsicum が未対応です', '未実装: $key');
+        return FlashRuntimeError(
+          'この Play が使う機能に capsicum が未対応です',
+          '未実装: $key',
+          unimplementedKey: key,
+        );
       }
     }
     return FlashRuntimeError('この Play の実行でエラーが起きました', e.toString());

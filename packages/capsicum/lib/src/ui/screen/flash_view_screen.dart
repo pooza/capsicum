@@ -280,10 +280,18 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     try {
       await runtime.run(widget.flash.script);
     } on FlashRuntimeError catch (e, st) {
-      // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを host
-      // タグでプリセットサーバーに絞って観測し、次に実装すべき機能を判断する
-      // ための現場データになる (#830)。
-      reportFlashOpFailure('run', e, st, account: account);
+      // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを
+      // `flash.unimplemented` タグに載せ、issue は集約したまま機能別に件数
+      // 比較・絞り込みできるようにする (#830 / #875)。
+      reportFlashOpFailure(
+        'run',
+        e,
+        st,
+        account: account,
+        tags: e.unimplementedKey != null
+            ? {'flash.unimplemented': e.unimplementedKey!}
+            : null,
+      );
       if (!mounted) return;
       setState(() => _error = e);
     } catch (e, st) {
