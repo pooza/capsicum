@@ -174,6 +174,7 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
           for (final r in announcement.reactions)
             _AnnouncementReactionChip(
               reaction: r,
+              emojiSize: ref.watch(emojiSizeProvider),
               onTap: () => _toggle(r.name, add: !r.me),
             ),
           _AddReactionButton(onTap: () => _openReactionPicker(context)),
@@ -239,10 +240,14 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
 /// を画像表示し、無ければ素のテキスト（Unicode 絵文字 / 未 reconcile の shortcode）。
 class _AnnouncementReactionChip extends StatelessWidget {
   final AnnouncementReaction reaction;
+
+  /// カスタム絵文字サイズ設定を流用する (#852 / #819)。
+  final double emojiSize;
   final VoidCallback onTap;
 
   const _AnnouncementReactionChip({
     required this.reaction,
+    required this.emojiSize,
     required this.onTap,
   });
 
@@ -269,12 +274,12 @@ class _AnnouncementReactionChip extends StatelessWidget {
             if (reaction.url != null)
               Image.network(
                 reaction.url!,
-                height: 18,
+                height: emojiSize,
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) => Text(reaction.name),
               )
             else
-              Text(reaction.name, style: const TextStyle(fontSize: 16)),
+              Text(reaction.name, style: TextStyle(fontSize: emojiSize * 0.8)),
             const SizedBox(width: 4),
             Text(
               '${reaction.count}',

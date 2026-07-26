@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/preferences_provider.dart';
 import 'emoji_picker.dart';
 
 /// chat メッセージの reaction を表示するバー (#612)。DM・ルーム双方の
@@ -11,7 +12,7 @@ import 'emoji_picker.dart';
 /// [ChatMessage.reactions] は `{reaction, user}` の個別配列なので、reaction
 /// 文字列ごとに集計してチップを並べる。自分が付けた reaction はハイライトし、
 /// タップで [onToggle] を呼んで付け外しする。
-class ChatReactionBar extends StatelessWidget {
+class ChatReactionBar extends ConsumerWidget {
   final ChatMessage message;
 
   /// 自分の userId。自分の reaction 判定 (ハイライト) に使う。
@@ -39,7 +40,7 @@ class ChatReactionBar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (message.reactions.isEmpty) return const SizedBox.shrink();
 
     // reaction 文字列ごとに件数と「自分が付けたか」を集計する。挿入順を保つため
@@ -50,6 +51,9 @@ class ChatReactionBar extends StatelessWidget {
       counts[r.reaction] = (counts[r.reaction] ?? 0) + 1;
       if (myUserId != null && r.user.id == myUserId) mine.add(r.reaction);
     }
+
+    // reaction チップの絵文字にもカスタム絵文字サイズ設定を反映する (#852)。
+    final emojiSize = ref.watch(emojiSizeProvider);
 
     return Wrap(
       spacing: 4,
@@ -62,6 +66,7 @@ class ChatReactionBar extends StatelessWidget {
               isMine: mine.contains(e.key),
               host: host,
               emojis: message.emojis,
+              emojiSize: emojiSize,
               onTap: interactive ? () => onToggle(e.key) : null,
             ),
           )
@@ -76,6 +81,7 @@ class _ReactionChip extends StatelessWidget {
   final bool isMine;
   final String? host;
   final Map<String, String> emojis;
+  final double emojiSize;
   // null なら表示のみ (タップ無効)。自分のメッセージで使う (#612)。
   final VoidCallback? onTap;
 
@@ -85,6 +91,7 @@ class _ReactionChip extends StatelessWidget {
     required this.isMine,
     required this.host,
     required this.emojis,
+    required this.emojiSize,
     required this.onTap,
   });
 
@@ -133,13 +140,13 @@ class _ReactionChip extends StatelessWidget {
       if (url != null) {
         return Image.network(
           url,
-          height: 18,
+          height: emojiSize,
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => Text(reaction),
         );
       }
     }
-    return Text(reaction, style: const TextStyle(fontSize: 16));
+    return Text(reaction, style: TextStyle(fontSize: emojiSize));
   }
 }
 

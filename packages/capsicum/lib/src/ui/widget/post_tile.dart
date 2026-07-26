@@ -2238,6 +2238,8 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // リアクションチップの絵文字にもカスタム絵文字サイズ設定を反映する (#852)。
+    final emojiSize = ref.watch(emojiSizeProvider);
     return MouseRegion(
       onEnter: (_) => _onEnter(),
       onExit: (_) => _onExit(),
@@ -2257,17 +2259,18 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxHeight: 18,
-                    maxWidth: 54,
+                  // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
+                  constraints: BoxConstraints(
+                    maxHeight: emojiSize,
+                    maxWidth: emojiSize * 3,
                   ),
                   child: Image.network(
                     widget.emojiUrl!,
-                    height: 18,
+                    height: emojiSize,
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => Text(
                       widget.reactionKey,
-                      style: const TextStyle(fontSize: 14),
+                      style: TextStyle(fontSize: emojiSize * 0.7),
                     ),
                   ),
                 ),
@@ -2277,11 +2280,11 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
                 padding: const EdgeInsets.only(right: 4),
                 child: Image.network(
                   _twemojiUrl(widget.reactionKey),
-                  width: 18,
-                  height: 18,
+                  width: emojiSize,
+                  height: emojiSize,
                   errorBuilder: (_, _, _) => Text(
                     widget.reactionKey,
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(fontSize: emojiSize * 0.7),
                   ),
                 ),
               ),
