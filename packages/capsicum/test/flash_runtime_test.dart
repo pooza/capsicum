@@ -130,6 +130,27 @@ void main() {
       );
     });
 
+    test('require() はモジュール解決できない（FileModuleResolver 非注入の固定 #872）', () async {
+      // capsicum は Interpreter に FileModuleResolver を渡さず、既定の
+      // DummyModuleResolver に委ねることで、サーバー由来スクリプトからの
+      // ファイル/モジュール読み込みを構造的に塞いでいる。サンドボックス健全性は
+      // この「moduleResolver を注入しない」1 点に依存するため、誤って注入する
+      // 回帰をここで検知する。
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+
+      await expectLater(
+        runtime.run('require("./secret")'),
+        throwsA(
+          isA<FlashRuntimeError>().having(
+            (e) => e.detail,
+            'detail',
+            contains('module'),
+          ),
+        ),
+      );
+    });
+
     test('構文エラーは読み込み失敗として扱う', () async {
       final runtime = _runtime();
       addTearDown(runtime.dispose);
