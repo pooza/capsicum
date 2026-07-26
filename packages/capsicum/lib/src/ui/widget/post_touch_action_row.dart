@@ -262,9 +262,18 @@ class PostTouchActionRow extends ConsumerWidget {
   void _showEmojiPicker(BuildContext context, WidgetRef ref) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
-    if (adapter is! ReactionSupport) return;
+    if (account == null || adapter is! ReactionSupport) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    // シート builder / onSelected は遅延実行される。実行時点で
+    // currentAccountProvider が入れ替わっていても安全なよう、ここで確定した
+    // 非 null 値をローカルへ退避し、closure 内で `!` / `as` を再評価しない
+    // （CAPSICUM-32 #739: closure 実行時の Null check operator クラッシュ対策）。
+    final backend = adapter as BackendAdapter;
+    final reaction = adapter as ReactionSupport;
+    final host = account.key.host;
+    final mulukhiya = account.mulukhiya;
+    final accessToken = account.userSecret.accessToken;
 
     showModalBottomSheet(
       context: context,
@@ -272,18 +281,18 @@ class PostTouchActionRow extends ConsumerWidget {
       builder: (_) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.5,
         child: EmojiPicker(
-          adapter: adapter as BackendAdapter,
-          host: account!.key.host,
-          mulukhiya: account.mulukhiya,
-          accessToken: account.userSecret.accessToken,
+          adapter: backend,
+          host: host,
+          mulukhiya: mulukhiya,
+          accessToken: accessToken,
           forReaction: true,
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
               ref,
               messenger,
-              adapter as BackendAdapter,
-              () => (adapter as ReactionSupport).addReaction(
+              backend,
+              () => reaction.addReaction(
                 targetPost.id,
                 emoji,
               ),
