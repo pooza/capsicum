@@ -292,10 +292,7 @@ class PostTouchActionRow extends ConsumerWidget {
               ref,
               messenger,
               backend,
-              () => reaction.addReaction(
-                targetPost.id,
-                emoji,
-              ),
+              () => reaction.addReaction(targetPost.id, emoji),
               'リアクションしました',
             );
           },
