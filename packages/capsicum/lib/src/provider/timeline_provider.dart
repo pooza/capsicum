@@ -438,9 +438,14 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
     }
 
-    // Start streaming if supported.
+    // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
+    // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
     if (adapter is StreamSupport) {
-      _startStreaming(adapter as StreamSupport, type);
+      if (ref.watch(streamingEnabledProvider)) {
+        _startStreaming(adapter as StreamSupport, type);
+      } else {
+        _streamConnectionState = StreamConnectionState.disabled;
+      }
     }
 
     ref.onDispose(() {

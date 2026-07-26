@@ -1542,6 +1542,9 @@ class _StreamStatusIndicatorState
         Theme.of(context).colorScheme.error,
         '接続が不安定 — 再試行中',
       ),
+      // ユーザーが設定でライブ更新を OFF にしている (#854)。エラーではないので
+      // 灰色で「オフ」と正直に出す。pull-to-refresh / タブ再選択で更新できる。
+      StreamConnectionState.disabled => (Colors.grey, 'ライブ更新オフ'),
     };
     // 速い再接続でも見えるよう、flash 中は live でも切断色を見せる (#782)。
     final color = (_flashing && conn == StreamConnectionState.live)

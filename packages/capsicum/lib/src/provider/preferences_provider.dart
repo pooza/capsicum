@@ -50,6 +50,7 @@ const _launchAtLoginKey = 'launch_at_login';
 const _postTouchActionsKey = 'post_touch_actions';
 const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
+const _streamingEnabledKey = 'streaming_enabled';
 const _colorEmojiFallbackKey = 'color_emoji_fallback';
 
 /// Display mode for OGP preview cards.
@@ -933,6 +934,39 @@ class ShowStreamReconnectDetailNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showStreamReconnectDetailKey, value);
+  }
+}
+
+/// タイムラインのライブ更新 (streaming) を行うか (#854)。default ON。モバイルで
+/// ライブ更新が不要（バッテリ消費を抑えたい）ユーザー向けに明示的な OFF を用意
+/// する。OFF にすると WebSocket streaming を張らず、更新は pull-to-refresh /
+/// タブ再選択の REST 取得のみになる。接続インジケータは
+/// [StreamConnectionState.disabled] を表示する。
+final streamingEnabledProvider =
+    NotifierProvider<StreamingEnabledNotifier, bool>(
+      StreamingEnabledNotifier.new,
+    );
+
+class StreamingEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_streamingEnabledKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_streamingEnabledKey, value);
   }
 }
 

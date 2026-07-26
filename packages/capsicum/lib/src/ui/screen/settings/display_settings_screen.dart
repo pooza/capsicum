@@ -129,6 +129,17 @@ class DisplaySettingsScreen extends ConsumerWidget {
                 ref.read(restoreReadPositionProvider.notifier).toggle(),
           ),
           SwitchListTile(
+            title: const Text('ライブ更新（ストリーミング）'),
+            subtitle: const Text(
+              'オンにするとタイムラインに新着投稿がリアルタイムで流れます。'
+              'オフにするとストリーミング接続を張らず、更新は引っぱって更新／'
+              'タブ再選択のときだけになります（バッテリ消費を抑えられます）',
+            ),
+            value: ref.watch(streamingEnabledProvider),
+            onChanged: (value) =>
+                ref.read(streamingEnabledProvider.notifier).setEnabled(value),
+          ),
+          SwitchListTile(
             title: const Text('接続の再接続回数を表示'),
             subtitle: const Text(
               'ライブ更新インジケータに再接続回数と直近の切断時刻を表示します。'
