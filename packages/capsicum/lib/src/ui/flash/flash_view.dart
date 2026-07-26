@@ -53,7 +53,12 @@ class _FlashViewState extends State<FlashView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final id in widget.runtime.rootChildren)
-          _AsUiNode(runtime: widget.runtime, id: id, seen: const {}),
+          _AsUiNode(
+            runtime: widget.runtime,
+            id: id,
+            seen: const {},
+            textAlign: TextAlign.start,
+          ),
       ],
     );
   }
@@ -64,11 +69,20 @@ class _AsUiNode extends ConsumerWidget {
     required this.runtime,
     required this.id,
     required this.seen,
+    required this.textAlign,
   });
 
   final FlashRuntime runtime;
   final String id;
   final Set<String> seen;
+
+  /// 祖先 container の `align` から継いだテキスト行の揃え (#876)。本家 Misskey は
+  /// container の align を CSS `text-align` にして子孫へ継承させ、MFM の**各行**を
+  /// 揃える。capsicum も同じく align を [TextAlign] として下へ流し、mfm / text の
+  /// 各行に適用する。これがないと block 単位（CrossAxisAlignment）でしか中央寄せ
+  /// されず、幅の違う行（例: スロットの横倒しリール行と結果テキスト行）が行内で
+  /// 左寄せのまま残り、paint-only の rotate リールが左へ食み出して見切れる。
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -83,11 +97,16 @@ class _AsUiNode extends ConsumerWidget {
           runtime: runtime,
           component: component,
           seen: nextSeen,
+          textAlign: textAlign,
         );
       case 'text':
-        return _Text(component: component);
+        return _Text(component: component, textAlign: textAlign);
       case 'mfm':
-        return _Mfm(runtime: runtime, component: component);
+        return _Mfm(
+          runtime: runtime,
+          component: component,
+          textAlign: textAlign,
+        );
       case 'button':
         return _Button(runtime: runtime, component: component);
       case 'buttons':
@@ -109,6 +128,16 @@ CrossAxisAlignment _crossAxisAlignment(Object? align) => switch (align) {
   _ => CrossAxisAlignment.start,
 };
 
+/// container の `align` をテキスト行の [TextAlign] へ写す (#876)。align を明示
+/// しない container は、本家の CSS `text-align` 継承に倣って祖先から継いだ
+/// [inherited] をそのまま流す。
+TextAlign _textAlign(Object? align, TextAlign inherited) => switch (align) {
+  'center' => TextAlign.center,
+  'right' => TextAlign.end,
+  'left' => TextAlign.start,
+  _ => inherited,
+};
+
 Color? _parseColor(Object? value) {
   if (value is! String) return null;
   final hex = value.startsWith('#') ? value.substring(1) : value;
@@ -128,15 +157,18 @@ class _Container extends StatelessWidget {
     required this.runtime,
     required this.component,
     required this.seen,
+    required this.textAlign,
   });
 
   final FlashRuntime runtime;
   final AsUiComponent component;
   final Set<String> seen;
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
     final props = component.props;
+    final childTextAlign = _textAlign(props['align'], textAlign);
     final padding = (props['padding'] as num?)?.toDouble();
     final borderWidth = (props['borderWidth'] as num?)?.toDouble();
     final borderColor = _parseColor(props['borderColor']);
@@ -161,7 +193,12 @@ class _Container extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final child in component.children)
-            _AsUiNode(runtime: runtime, id: child, seen: seen),
+            _AsUiNode(
+              runtime: runtime,
+              id: child,
+              seen: seen,
+              textAlign: childTextAlign,
+            ),
         ],
       ),
     );
@@ -169,9 +206,10 @@ class _Container extends StatelessWidget {
 }
 
 class _Text extends StatelessWidget {
-  const _Text({required this.component});
+  const _Text({required this.component, required this.textAlign});
 
   final AsUiComponent component;
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +221,7 @@ class _Text extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
         text,
+        textAlign: textAlign,
         style: theme.textTheme.bodyMedium?.copyWith(
           fontSize: size,
           fontWeight: component.props['bold'] == true ? FontWeight.bold : null,
@@ -199,10 +238,15 @@ class _Text extends StatelessWidget {
 /// 出している。アニメーション MFM の ticker を持つため、[_TextBlockState] と
 /// 同じく生成入力が変わったときだけ作り直して dispose する (#628 と同型)。
 class _Mfm extends ConsumerStatefulWidget {
-  const _Mfm({required this.runtime, required this.component});
+  const _Mfm({
+    required this.runtime,
+    required this.component,
+    required this.textAlign,
+  });
 
   final FlashRuntime runtime;
   final AsUiComponent component;
+  final TextAlign textAlign;
 
   @override
   ConsumerState<_Mfm> createState() => _MfmState();
@@ -257,7 +301,10 @@ class _MfmState extends ConsumerState<_Mfm> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text.rich(_renderer!.renderMfm(text)),
+      // container の align を各行へ効かせる (#876)。幅の異なる行（スロットの
+      // 横倒しリール行と結果テキスト行など）を行内で揃え、paint-only の rotate
+      // リールが左へ食み出して見切れるのを防ぐ。
+      child: Text.rich(_renderer!.renderMfm(text), textAlign: widget.textAlign),
     );
   }
 }
