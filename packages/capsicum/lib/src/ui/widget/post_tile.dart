@@ -447,11 +447,22 @@ class _PostTileState extends ConsumerState<PostTile> {
                         // と区別し、グループアイコン＋プロフィール導線を出す (#811)。
                         child: post.author.isGroup
                             ? _buildGroupReblogHeader(context, post)
-                            : EmojiText(
-                                '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
-                                emojis: post.author.emojis,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                fallbackHost: post.emojiHost,
+                            // 「X がブースト」のヘッダーから、拡散したアカウント
+                            // 本人（= post.author）のプロフィールへ飛べるようにする
+                            // (#850)。グループヘッダー (#811) と同じく、タイル本体の
+                            // onTap（/post 遷移）より内側の GestureDetector を優先。
+                            : GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => context.push(
+                                  '/profile',
+                                  extra: post.author,
+                                ),
+                                child: EmojiText(
+                                  '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
+                                  emojis: post.author.emojis,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  fallbackHost: post.emojiHost,
+                                ),
                               ),
                       ),
                     // 末尾アイコン列 (bot / group / role / scope / localOnly /
