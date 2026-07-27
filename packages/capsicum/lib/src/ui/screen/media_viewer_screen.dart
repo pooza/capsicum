@@ -84,6 +84,16 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   late List<Attachment> _attachments;
   bool _modified = false;
 
+  /// 現在ページの画像がピンチズーム中か (#848 item1)。ズーム中は PageView の
+  /// スワイプを止めて（`NeverScrollableScrollPhysics`）pan とページ送りが競合
+  /// しないようにする。ズーム倍率 1 に戻れば false になり、横スワイプで全域
+  /// ページ送りに戻る。ページ送り時は下の onPageChanged で false にリセットする。
+  bool _zoomed = false;
+
+  void _setZoomed(bool zoomed) {
+    if (_zoomed != zoomed) setState(() => _zoomed = zoomed);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -410,8 +420,16 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
             children: [
               PageView.builder(
                 controller: _pageController,
+                // ズーム中はページ送りを止め、pan（画像の移動）だけを効かせる
+                // (#848 item1)。ズーム倍率 1 では通常スクロールに戻す。
+                physics: _zoomed ? const NeverScrollableScrollPhysics() : null,
                 itemCount: _attachments.length,
-                onPageChanged: (index) => setState(() => _currentIndex = index),
+                onPageChanged: (index) => setState(() {
+                  _currentIndex = index;
+                  // 新しいページは倍率 1 から始まるため、ズーム状態をリセット
+                  // してスワイプを再開できるようにする。
+                  _zoomed = false;
+                }),
                 itemBuilder: (context, index) {
                   final a = _attachments[index];
                   if (a.type == AttachmentType.video ||
@@ -449,10 +467,9 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                           child: image,
                         )
                       : image;
-                  return InteractiveViewer(
-                    minScale: 1.0,
-                    maxScale: 4.0,
-                    child: Center(child: draggable),
+                  return _ZoomableImagePage(
+                    onZoomChanged: _setZoomed,
+                    child: draggable,
                   );
                 },
               ),
@@ -487,6 +504,61 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// PageView 内で pinch ズームできる画像 1 枚 (#848 item1)。
+///
+/// ズーム倍率 1 のときは [InteractiveViewer] の pan を無効化し、横ドラッグを
+/// 親の [PageView] に流す。これにより画像の上だけでなく **黒帯部分を含む
+/// ビューア全域**でページ送りができる（従来は InteractiveViewer が倍率 1 でも
+/// 横ドラッグを掴んでしまい、「画像の上でしか反応しない／ドラッグだと渋い」
+/// 感触の一因になっていた）。ズーム中のみ pan を有効化し、併せて
+/// [onZoomChanged] で親にズーム状態を通知して PageView のスワイプを止める。
+class _ZoomableImagePage extends StatefulWidget {
+  final Widget child;
+  final ValueChanged<bool> onZoomChanged;
+
+  const _ZoomableImagePage({required this.child, required this.onZoomChanged});
+
+  @override
+  State<_ZoomableImagePage> createState() => _ZoomableImagePageState();
+}
+
+class _ZoomableImagePageState extends State<_ZoomableImagePage> {
+  final TransformationController _controller = TransformationController();
+  bool _zoomed = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 現在の変換行列からズーム中か判定し、変化があれば pan の有効/無効
+  /// （再ビルド）と親への通知に反映する。1.01 は倍率 1 の浮動小数ノイズを
+  /// ズーム扱いしないための閾値。
+  void _syncZoom() {
+    final zoomed = _controller.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed != _zoomed) {
+      setState(() => _zoomed = zoomed);
+      widget.onZoomChanged(zoomed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InteractiveViewer(
+      transformationController: _controller,
+      minScale: 1.0,
+      maxScale: 4.0,
+      // 倍率 1 では pan を無効化して横ドラッグを PageView に委ねる。ピンチ
+      // (scale) は常に有効なので、この状態からでもズーム開始できる。
+      panEnabled: _zoomed,
+      onInteractionUpdate: (_) => _syncZoom(),
+      onInteractionEnd: (_) => _syncZoom(),
+      child: Center(child: widget.child),
     );
   }
 }
