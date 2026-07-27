@@ -21,10 +21,25 @@ class UnifiedNotificationState {
   final List<UnifiedNotification> items;
   final List<Account> failedAccounts;
 
+  /// まだ取得中のアカウント (#862 A/B)。逐次描画中に「@user@host を待っています」
+  /// を表示するために保持する。全件 settle すると空になる。
+  final List<Account> pendingAccounts;
+
+  /// 対象アカウント総数（取得状況「M 件中 N 件」の分母）。
+  final int totalAccounts;
+
   const UnifiedNotificationState({
     this.items = const [],
     this.failedAccounts = const [],
+    this.pendingAccounts = const [],
+    this.totalAccounts = 0,
   });
+
+  /// 全アカウントの取得が完了したか（成功・失敗を問わず settle 済み）。
+  bool get isComplete => pendingAccounts.isEmpty;
+
+  /// settle 済みのアカウント数（成功 + 失敗）。
+  int get settledCount => totalAccounts - pendingAccounts.length;
 }
 
 /// Fetches the first page of notifications from every logged-in account in
@@ -43,29 +58,55 @@ class UnifiedNotificationNotifier
         .toList();
     if (supported.isEmpty) return const UnifiedNotificationState();
 
-    final results = await Future.wait(
-      supported.map(_fetchFor),
-      eagerError: false,
-    );
+    // 逐次描画 (#862 A)。従来は Future.wait のバリアで全件 settle まで 1 件も
+    // 描画されず、遅いサーバー 1 台に全体が人質に取られていた。ここでは各
+    // アカウントを並列に投げつつ、返ってきた順に state を差し替える。build()
+    // 自体は「全件 pending・items 空」の初期状態で即座に完了させ、画面を
+    // スピナー固定にしない。取得状況（settled / pending / failed）は state に
+    // 載せて画面上部に表示する (#862 B)。
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
 
     final items = <UnifiedNotification>[];
     final failed = <Account>[];
-    for (final result in results) {
-      if (result.error != null) {
-        failed.add(result.account);
-        continue;
-      }
-      for (final n in result.notifications) {
-        items.add(
-          UnifiedNotification(account: result.account, notification: n),
-        );
-      }
-    }
-    items.sort(
-      (a, b) => b.notification.createdAt.compareTo(a.notification.createdAt),
-    );
+    final pending = List<Account>.of(supported);
 
-    return UnifiedNotificationState(items: items, failedAccounts: failed);
+    for (final account in supported) {
+      // fire-and-forget: 各 fetch の完了ごとに state を更新する。build() の
+      // 戻り値（初期 state）が確定した後の tick で走るため、順次差し込まれる。
+      _fetchFor(account).then((result) {
+        if (disposed) return;
+        pending.remove(result.account);
+        if (result.error != null) {
+          failed.add(result.account);
+        } else {
+          for (final n in result.notifications) {
+            items.add(
+              UnifiedNotification(account: result.account, notification: n),
+            );
+          }
+          // 追加のたびに全体を時系列（新しい順）に整列し直す。
+          items.sort(
+            (a, b) =>
+                b.notification.createdAt.compareTo(a.notification.createdAt),
+          );
+        }
+        // 共有リストはミューテートし続けるため、state には都度コピーを載せる。
+        state = AsyncData(
+          UnifiedNotificationState(
+            items: List.of(items),
+            failedAccounts: List.of(failed),
+            pendingAccounts: List.of(pending),
+            totalAccounts: supported.length,
+          ),
+        );
+      });
+    }
+
+    return UnifiedNotificationState(
+      pendingAccounts: List.of(supported),
+      totalAccounts: supported.length,
+    );
   }
 
   Future<_FetchResult> _fetchFor(Account account) async {
