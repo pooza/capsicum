@@ -197,6 +197,7 @@ capsicum/
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
     architecture.md       # アーキテクチャ設計
+    annict-integration.md # Annict 連携機能の説明（モロヘイヤ前提・作品/エピソード検索〜感想投稿）
     tech-notes.md         # 実装の落とし穴・API 固有の注意点
     dev-environment.md    # 開発マシン・検証端末・Sentry 環境
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
