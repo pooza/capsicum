@@ -46,6 +46,16 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(hideInstanceTickerProvider.notifier).toggle(),
           ),
+          SwitchListTile(
+            title: const Text('ポインタを合わせて「誰がやったか」を表示'),
+            subtitle: const Text(
+              'リアクション・ブースト・お気に入りのチップにマウスポインタを合わせると、'
+              '誰がそれをしたかをアバターで表示します（ポインタ環境のみ・タッチ端末では影響しません）',
+            ),
+            value: ref.watch(userHoverPopupProvider),
+            onChanged: (v) =>
+                ref.read(userHoverPopupProvider.notifier).setEnabled(v),
+          ),
           ListTile(
             title: const Text('プレビューカード（OGP）'),
             subtitle: Text(_previewCardModeLabel(previewCardMode)),

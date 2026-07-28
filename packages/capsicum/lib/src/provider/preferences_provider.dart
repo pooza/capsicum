@@ -52,6 +52,7 @@ const _nowPlayingUrlProviderKey = 'nowplaying_url_provider';
 const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
 const _streamingEnabledKey = 'streaming_enabled';
 const _colorEmojiFallbackKey = 'color_emoji_fallback';
+const _userHoverPopupKey = 'user_hover_popup';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -967,6 +968,37 @@ class StreamingEnabledNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_streamingEnabledKey, value);
+  }
+}
+
+/// 投稿のリアクション・ブースト・お気に入り等のチップにポインタを合わせた
+/// ときに「誰がやったか」のアバターをホバー表示するか (#575 / #856)。default ON。
+/// ポインタ環境（デスクトップ / iPad + マウス等）でのみ発火するため、タッチ専用
+/// 端末では ON でも影響しない。鬱陶しい人が切れるようにトグルを用意する。
+final userHoverPopupProvider = NotifierProvider<UserHoverPopupNotifier, bool>(
+  UserHoverPopupNotifier.new,
+);
+
+class UserHoverPopupNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    _load();
+    return true;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_userHoverPopupKey);
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    if (state == value) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_userHoverPopupKey, value);
   }
 }
 
