@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../service/sentry_play_result.dart';
 import '../../service/tco_resolver.dart';
+import '../flash/flash_result_digest.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
 import '../flash/flash_runtime.dart';
@@ -296,6 +298,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
     try {
       await runtime.run(widget.flash.script);
+      // #898: 成功した実行の「出目」を追跡記録する（前向き実験・記憶非依存）。
+      // 絵文字追加の前後で「対象集合と交差する Play だけ出目が変わる」を予測と
+      // 突き合わせるための材料。記録の失敗で Play を巻き込まないよう握りつぶす。
+      _reportResult(runtime, host);
     } on FlashRuntimeError catch (e, st) {
       // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを
       // `flash.unimplemented` タグに載せ、issue は集約したまま機能別に件数
@@ -320,6 +326,21 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       setState(() => _error = FlashRuntimeError('この Play の実行でエラーが起きました', ''));
     } finally {
       if (mounted) setState(() => _running = false);
+    }
+  }
+
+  /// 成功した実行の出目とインベントリ版を Sentry へ記録する (#898)。
+  /// 追跡が本来の Play 動作を壊さないよう、指紋計算まで含め例外は握りつぶす。
+  void _reportResult(FlashRuntime runtime, String host) {
+    try {
+      reportPlayResult(
+        flashId: runtime.flashId,
+        host: host,
+        inventory: playEmojiInventoryDigest(runtime.customEmojis),
+        resultDigest: playResultDigest(runtime.rootChildren, runtime.component),
+      );
+    } catch (_) {
+      // 追跡記録は best-effort。
     }
   }
 
