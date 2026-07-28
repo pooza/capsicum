@@ -50,9 +50,9 @@ v1.23〜v1.36 の各リリースは [GitHub Releases](https://github.com/pooza/c
 
 - **v1.36.1**（2026-06-12）#700 push 復号失敗ログの scrub 漏れ / #701 連続ログイン時サポーター同期 race のホットフィックス
 - **v1.36.0**（2026-06-12）Misskey chat / Pages 続編（[#612](https://github.com/pooza/capsicum/issues/612)・[#613](https://github.com/pooza/capsicum/issues/613) リアクション・添付、[#615](https://github.com/pooza/capsicum/issues/615)・[#617](https://github.com/pooza/capsicum/issues/617) Pages like）+ 投げ銭 macOS 横展開（[#598](https://github.com/pooza/capsicum/issues/598)）+ サポーター状態のサーバー側保持（[#596](https://github.com/pooza/capsicum/issues/596)）。大更新なし
-- **v1.35.0**（2026-06-09）投稿フォームの劇中ワードサジェスト（[#614](https://github.com/pooza/capsicum/issues/614)、mulukhiya `GET /word/suggest`）。大更新単独。設計は [archive/compose-suggest-design.md](archive/compose-suggest-design.md)
-- **v1.34.0**（2026-06-07）デスクトップ通知本配線（[#569](https://github.com/pooza/capsicum/issues/569) WebSocket → OS ローカル通知 / [#468](https://github.com/pooza/capsicum/issues/468) macOS APNs）。大更新単独。設計は [archive/desktop-notification-design.md](archive/desktop-notification-design.md)
-- **v1.33.0**（2026-06-06）desktop ネイティブ NowPlaying（[#466](https://github.com/pooza/capsicum/issues/466) NowPlayingProvider 抽象 + Linux MPRIS / [#484](https://github.com/pooza/capsicum/issues/484) Windows SMTC）。大更新単独。設計は [archive/nowplaying-design.md](archive/nowplaying-design.md)
+- **v1.35.0**（2026-06-09）投稿フォームの劇中ワードサジェスト（[#614](https://github.com/pooza/capsicum/issues/614)、mulukhiya `GET /word/suggest`）。大更新単独。設計は [archive/compose-suggest-design.md](compose-suggest-design.md)
+- **v1.34.0**（2026-06-07）デスクトップ通知本配線（[#569](https://github.com/pooza/capsicum/issues/569) WebSocket → OS ローカル通知 / [#468](https://github.com/pooza/capsicum/issues/468) macOS APNs）。大更新単独。設計は [archive/desktop-notification-design.md](desktop-notification-design.md)
+- **v1.33.0**（2026-06-06）desktop ネイティブ NowPlaying（[#466](https://github.com/pooza/capsicum/issues/466) NowPlayingProvider 抽象 + Linux MPRIS / [#484](https://github.com/pooza/capsicum/issues/484) Windows SMTC）。大更新単独。設計は [archive/nowplaying-design.md](nowplaying-design.md)
 - **v1.32.0**（2026-06-04）desktop / packaging 系リファクタ集約（15 件）。大更新なし
 - **v1.30.0**（2026-05-31）動画再生エンジンの media_kit 移行（[#492](https://github.com/pooza/capsicum/issues/492)、Linux / Windows でも動画・音声再生可能に）。大更新単独
 - **v1.29.0**（2026-05-28）お知らせ通知 C 案（[#477](https://github.com/pooza/capsicum/issues/477)）を capsicum-relay 経由で本配線。大更新単独

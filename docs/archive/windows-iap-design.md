@@ -17,7 +17,7 @@ Windows は事情が違う:
 
 ## 現状コードの結合点
 
-[`supporter_purchase_provider.dart`](../packages/capsicum/lib/src/provider/supporter_purchase_provider.dart) の `SupporterPurchaseNotifier` が `InAppPurchase.instance` を**直接**参照している:
+[`supporter_purchase_provider.dart`](../../packages/capsicum/lib/src/provider/supporter_purchase_provider.dart) の `SupporterPurchaseNotifier` が `InAppPurchase.instance` を**直接**参照している:
 
 - `build()` で `purchaseStream.listen` を張る
 - `loadProducts()` で `isAvailable()` + `queryProductDetails()`
@@ -125,7 +125,7 @@ final supporterPurchaseBackendProvider = Provider<SupporterPurchaseBackend>(
 
 ## 設計判断 2: WinRT メソッドチャネルの API 形
 
-チャネル名 `capsicum/store_billing`（SMTC の `capsicum/now_playing` と同じ命名）。ネイティブ実装は `windows/runner/store_billing.{h,cpp}`、登録は [`flutter_window.cpp`](../packages/capsicum/windows/runner/flutter_window.cpp)（SMTC と同じ箇所）。
+チャネル名 `capsicum/store_billing`（SMTC の `capsicum/now_playing` と同じ命名）。ネイティブ実装は `windows/runner/store_billing.{h,cpp}`、登録は [`flutter_window.cpp`](../../packages/capsicum/windows/runner/flutter_window.cpp)（SMTC と同じ箇所）。
 
 | method | 引数 | 戻り | WinRT |
 |--------|------|------|-------|
@@ -138,7 +138,7 @@ final supporterPurchaseBackendProvider = Provider<SupporterPurchaseBackend>(
 
 実装上の肝（#484 SMTC で得た知見の再利用 + 追加分）:
 
-- **スレッド**: メソッドチャネルのハンドラは UI（STA）スレッド。WinRT の `.get()` を STA でブロックすると停止しうるため、SMTC と同様 **MTA 専用スレッド**で実行しタイムアウト付き `future` で待つ（[`smtc_now_playing.cpp`](../packages/capsicum/windows/runner/smtc_now_playing.cpp) の `GetCurrentNowPlaying` パターンを踏襲）
+- **スレッド**: メソッドチャネルのハンドラは UI（STA）スレッド。WinRT の `.get()` を STA でブロックすると停止しうるため、SMTC と同様 **MTA 専用スレッド**で実行しタイムアウト付き `future` で待つ（[`smtc_now_playing.cpp`](../../packages/capsicum/windows/runner/smtc_now_playing.cpp) の `GetCurrentNowPlaying` パターンを踏襲）
 - **HWND 受け渡し（Win32 固有・新規）**: `StoreContext::GetDefault()` を Win32 デスクトップで使うには `IInitializeWithWindow::Initialize(hwnd)` で**所有ウィンドウを渡す**手順が要る（購入ダイアログの親にするため）。HWND は runner が持っている（`GetHandle()` / `FlutterWindow` 経由）。`store_billing` 初期化時に HWND を注入する
 - **商品 ID マッピング**: Windows のアドオンは `StoreId`（不透明 ID）と `InAppOfferToken`（Partner Center で設定する開発者向け文字列）を持つ。`supporter.tip.small/medium/big` を **各アドオンの InAppOfferToken に設定**し、Dart 側 ID と 1:1 対応させる。`purchase` は `InAppOfferToken → StoreId` 解決を挟む
 - **価格**: `StoreProduct.Price().FormattedPrice()` を返す。コードに金額を持たない既存方針を維持
@@ -147,10 +147,10 @@ final supporterPurchaseBackendProvider = Provider<SupporterPurchaseBackend>(
 
 判定は **2 層**にする:
 
-1. **静的ゲート** `supporterPurchaseSupported`（[supporter_purchase_provider.dart:29](../packages/capsicum/lib/src/provider/supporter_purchase_provider.dart)）に `|| Platform.isWindows` を追加。「このプラットフォームは原理的に対応しうる」までを表す
+1. **静的ゲート** `supporterPurchaseSupported`（[supporter_purchase_provider.dart:29](../../packages/capsicum/lib/src/provider/supporter_purchase_provider.dart)）に `|| Platform.isWindows` を追加。「このプラットフォームは原理的に対応しうる」までを表す
 2. **実行時の配布経路判定**は `WindowsStoreBackend.checkAvailability()` 内で `isStoreInstalled` を見て決める。自己署名直配版なら `PurchaseAvailability.unsupportedDistribution` を返す
 
-UI（[supporter_screen.dart](../packages/capsicum/lib/src/ui/screen/settings/supporter_screen.dart) `_buildPurchaseSection`）は `PurchaseAvailability` で文言を出し分ける:
+UI（[supporter_screen.dart](../../packages/capsicum/lib/src/ui/screen/settings/supporter_screen.dart) `_buildPurchaseSection`）は `PurchaseAvailability` で文言を出し分ける:
 
 - `available` … 商品リスト
 - `unavailable` … 既存の「ただいま投げ銭をご利用いただけません…」
@@ -170,7 +170,7 @@ Dart 側 `supporterTipProductIds` は 4 プラットフォーム共通の論理 
 
 ## 検証経路の制約
 
-- **ARM64 Windows ではローカル x64 ビルドが通らない**（ATL / jni / crashpad の x64-on-ARM64）。検証は CI `windows-release.yml` の `capsicum-msix` artifact を `gh run download` → 導入する既存経路（#484 / [reference_windows_local_verification](../packages/capsicum) 参照）
+- **ARM64 Windows ではローカル x64 ビルドが通らない**（ATL / jni / crashpad の x64-on-ARM64）。検証は CI `windows-release.yml` の `capsicum-msix` artifact を `gh run download` → 導入する既存経路（#484 / [reference_windows_local_verification](../../packages/capsicum) 参照）
 - **IAP は Store 紐付けインストールでしか動かない**。`Add-AppxPackage` での直導入は SignatureKind=Developer になり `unsupportedDistribution` 扱い。実購入フロー検証は **Partner Center の sandbox（Store 経由の内部テスト / Package flights）** が要る。TestFlight / Play 内部テストに相当する軽い経路が無いのが Windows の難点で、毎イテレーションが Store 提出に縛られる
 - ストア提出前に `isStoreInstalled=false`（直配版）で `unsupportedDistribution` UI が正しく出ることだけは MSIX artifact でローカル確認できる
 

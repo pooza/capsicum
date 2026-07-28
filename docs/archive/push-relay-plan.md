@@ -190,5 +190,5 @@ Stage 1 の動作確認対象は Mastodon のプリセットサーバー。き�
 
 - [#52](https://github.com/pooza/capsicum/issues/52) — プッシュ通知リレー（本体 Issue）
 - [#293](https://github.com/pooza/capsicum/issues/293) — iOS 通知の観測性強化（観測結果: 発火 0回）
-- [CLAUDE.md プッシュ通知セクション](CLAUDE.md#プッシュ通知)
+- [CLAUDE.md プッシュ通知セクション](../CLAUDE.md#プッシュ通知)
 - [release-pipeline.md](release-pipeline.md)
