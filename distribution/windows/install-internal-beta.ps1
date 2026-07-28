@@ -27,11 +27,11 @@
 
 .EXAMPLE
   # develop の最新成功ビルドを取得してインストール
-  powershell -ExecutionPolicy Bypass -File packaging/windows/install-internal-beta.ps1
+  powershell -ExecutionPolicy Bypass -File distribution/windows/install-internal-beta.ps1
 
 .EXAMPLE
   # 特定の run を指定 (artifact 保持は 14 日)
-  powershell -ExecutionPolicy Bypass -File packaging/windows/install-internal-beta.ps1 -Run 28830297101
+  powershell -ExecutionPolicy Bypass -File distribution/windows/install-internal-beta.ps1 -Run 28830297101
 #>
 [CmdletBinding()]
 param(

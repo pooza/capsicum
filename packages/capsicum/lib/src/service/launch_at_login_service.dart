@@ -20,7 +20,7 @@ import '../util/exception_scrub.dart';
 /// チャネルで仕組みが分かれ（AppImage は resolvedExecutable が一時マウント先
 /// になるため $APPIMAGE 実体パスが必要・Flatpak は Background ポータルが必要で
 /// 生 .desktop は無効）、得られる体験は手動登録と等価。XDG autostart での手動
-/// 手順を packaging/linux/INSTALL.md に記載し、そちらに委ねる（#757）。
+/// 手順を distribution/linux/INSTALL.md に記載し、そちらに委ねる（#757）。
 class LaunchAtLoginService {
   static bool _setup = false;
 

@@ -567,14 +567,14 @@ draft で生成するのは「リリース作業の委託範囲」(自動公開�
 #### ローカル動作確認
 
 ```sh
-bash packaging/linux/appimage/build.sh
+bash distribution/linux/appimage/build.sh
 ```
 
-ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [packaging/linux/appimage/README.md](../packaging/linux/appimage/README.md) §動作確認を参照。
+ビルド + 起動の詳細・配布物（GitHub Releases から DL した AppImage）の検証手順は [distribution/linux/appimage/README.md](../distribution/linux/appimage/README.md) §動作確認を参照。
 
 #### GitHub Release のリリースノート（Linux セクションテンプレート）
 
-Linux は**ストア展開が無く、この AppImage インストールコマンドが最優先の導線**になるため、リリースノートには**必ず**この Linux セクションを入れる（v1.38 でこのセクションごと抜けた経緯あり）。手順本体は [packaging/linux/INSTALL.md](../packaging/linux/INSTALL.md) を single source of truth とし、ワンライナーは**サイト配信の install.sh**（バージョン非依存・常に最新 Release を取得）を案内する。
+Linux は**ストア展開が無く、この AppImage インストールコマンドが最優先の導線**になるため、リリースノートには**必ず**この Linux セクションを入れる（v1.38 でこのセクションごと抜けた経緯あり）。手順本体は [distribution/linux/INSTALL.md](../distribution/linux/INSTALL.md) を single source of truth とし、ワンライナーは**サイト配信の install.sh**（バージョン非依存・常に最新 Release を取得）を案内する。
 
 ````markdown
 ## Linux (AppImage)
@@ -588,14 +588,14 @@ curl -fsSL https://capsicum.shrieker.net/install.sh | bash
 `curl` が無ければ `wget -qO- https://capsicum.shrieker.net/install.sh | bash`。手動配置・FUSE2 fallback・アンインストールは [インストール手順](https://capsicum.shrieker.net/desktop/) を参照してください。
 ````
 
-> **install.sh / uninstall.sh の site 同期チェック（毎リリース）**: `packaging/linux/install.sh` または `uninstall.sh` を変更したリリースでは、capsicum-site (`~/repos/capsicum-site`) の同名ファイルへ機能を反映して push する（`capsicum.shrieker.net/install.sh` は正本のミラー。URL を `raw.githubusercontent`→`capsicum.shrieker.net` に差し替えた本番変種なので byte 一致ではなく #707 等の機能変更を移植する形）。ワンライナーはバージョン非依存なので、スクリプト未変更のリリースでは同期不要。同期済みかは `curl -fsSL https://capsicum.shrieker.net/install.sh | grep -c '<変更の目印>'` で確認できる。
+> **install.sh / uninstall.sh の site 同期チェック（毎リリース）**: `distribution/linux/install.sh` または `uninstall.sh` を変更したリリースでは、capsicum-site (`~/repos/capsicum-site`) の同名ファイルへ機能を反映して push する（`capsicum.shrieker.net/install.sh` は正本のミラー。URL を `raw.githubusercontent`→`capsicum.shrieker.net` に差し替えた本番変種なので byte 一致ではなく #707 等の機能変更を移植する形）。ワンライナーはバージョン非依存なので、スクリプト未変更のリリースでは同期不要。同期済みかは `curl -fsSL https://capsicum.shrieker.net/install.sh | grep -c '<変更の目印>'` で確認できる。
 
 ### 4.6 Windows 配布（v1.25〜）
 
 Windows は fastlane を使わず GitHub Actions の windows-latest runner ジョブ ([.github/workflows/windows-release.yml](../.github/workflows/windows-release.yml)) でビルドする。**公式配布は Microsoft Store 単独**（[#760](https://github.com/pooza/capsicum/issues/760)、2026-07-02〜）:
 
 - **Microsoft Store 経由** ([#544](https://github.com/pooza/capsicum/issues/544)、2026-05-20 初回審査通過): Partner Center Web UI からの **手動 publish** ルートで Store 公開。**Windows 唯一の公式配布ルート**（[apps.microsoft.com/detail/9np2gr7m2w6p](https://apps.microsoft.com/detail/9np2gr7m2w6p)）
-- **自己署名 MSIX（draft Release 添付）は非公式・非サポート・案内しない**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止、2026-07-05 に案内自体を全面停止、2026-07-19 にエンドユーザー向け `INSTALL.md` を削除）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは **pooza が Store 手動 publish 用に `.msix` を取り出す口**であって、エンドユーザー向けの配布経路ではない。**リリースノート・README・公式サイトのいずれでも import 手順を案内しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）。内部ベータ / 開発検証用の import 手順は [install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1) に閉じる。Windows の配布は Microsoft Store 単独に一本化する
+- **自己署名 MSIX（draft Release 添付）は非公式・非サポート・案内しない**（[#423](https://github.com/pooza/capsicum/issues/423) の直配は #760 で表向き廃止、2026-07-05 に案内自体を全面停止、2026-07-19 にエンドユーザー向け `INSTALL.md` を削除）: CI は従来どおり `.msix` + `.cer` を draft Release に添付し**続ける**が、これは **pooza が Store 手動 publish 用に `.msix` を取り出す口**であって、エンドユーザー向けの配布経路ではない。**リリースノート・README・公式サイトのいずれでも import 手順を案内しない**（#599 の Store IAP が Store-install 版でしか動かず、直配版だと投げ銭できない非対称を避けるため）。内部ベータ / 開発検証用の import 手順は [install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1) に閉じる。Windows の配布は Microsoft Store 単独に一本化する
 
 msstore CLI 経由の自動 publish は個人開発者アカウントから Entra ID テナント関連付け UI に到達できず引き続き保留。毎リリースの Store publish は **Partner Center Web UI から手動** が前提。
 
@@ -609,13 +609,13 @@ OV コード署名証明書 ([#534](https://github.com/pooza/capsicum/issues/534
 
 **A. CI artifact sideload（軽量・既定）** — ほとんどの release ビルド検証はこれで足りる。
 
-CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の PR でも走り、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
+CI（`windows-release.yml`）は tag 駆動に加え `packages/capsicum/windows/**` / `pubspec.yaml` 変更の PR でも走り、署名済み `capsicum.msix` + `.cer` を `capsicum-msix` artifact として出す（保持 14 日）。これを取得して信頼ストア import + `Add-AppxPackage` するまでを [install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1) が 1 コマンドに畳んでいる（cert import と install に管理者権限が要るため自動昇格する）:
 
 ```powershell
 # develop の最新成功ビルドを取得してインストール（run 自動選択）
-pwsh packaging/windows/install-internal-beta.ps1
+pwsh distribution/windows/install-internal-beta.ps1
 # 特定の run を指定（artifact 保持は 14 日）
-pwsh packaging/windows/install-internal-beta.ps1 -Run <run-id>
+pwsh distribution/windows/install-internal-beta.ps1 -Run <run-id>
 ```
 
 - **カバー範囲**: push 通知 / OAuth / ストリーミング / メディア再生 / UI / SMTC など **投げ銭以外のほぼ全機能**。OS 連携系（[#382](https://github.com/pooza/capsicum/issues/382) / [#559](https://github.com/pooza/capsicum/issues/559) のような native 連携）もこの経路で先行検証できる。
@@ -697,7 +697,7 @@ PFX は 5 年有効。**期限切れ・流出疑い・鍵管理ホスト退役�
 
 1. 上記「自己署名証明書の投入手順」を再実行し、新しい PFX を生成 → Repository Secrets を上書き
 2. 次の通常リリース (または hotfix) で新 cert 署名 MSIX を draft Release に出す
-3. 内部ベータ / 開発検証環境では、証明書ローテーション後の初回起動前に新 `.cer` を `TrustedPeople` に再 import する（[install-internal-beta.ps1](../packaging/windows/install-internal-beta.ps1) が import まで畳んでいる）。旧 `.cer` は `Cert:\LocalMachine\TrustedPeople` から該当エントリを削除する。**エンドユーザー向けのリリースノートには自己署名証明書の再 import 手順を書かない**（公式配布は Microsoft Store 単独で証明書 import は発生しない）
+3. 内部ベータ / 開発検証環境では、証明書ローテーション後の初回起動前に新 `.cer` を `TrustedPeople` に再 import する（[install-internal-beta.ps1](../distribution/windows/install-internal-beta.ps1) が import まで畳んでいる）。旧 `.cer` は `Cert:\LocalMachine\TrustedPeople` から該当エントリを削除する。**エンドユーザー向けのリリースノートには自己署名証明書の再 import 手順を書かない**（公式配布は Microsoft Store 単独で証明書 import は発生しない）
 
 流出が確定した場合の追加対応:
 

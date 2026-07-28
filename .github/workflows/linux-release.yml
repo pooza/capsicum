@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [develop, main]
     paths:
-      - 'packaging/linux/**'
+      - 'distribution/linux/**'
       - 'packages/capsicum/linux/**'
       - 'packages/capsicum/pubspec.yaml'
       - '.github/workflows/linux-release.yml'
@@ -71,7 +71,7 @@ jobs:
         # 各ツールを上流の固定 tag / commit から DL する (#515)。rolling な
         # continuous / master を pin していた構成は、上流が再ビルドするたびに
         # 全リリースがブロックされる構造だった。pin の追従は四半期 chase
-        # routine で実施し、上記の固定参照と packaging/linux/appimage/
+        # routine で実施し、上記の固定参照と distribution/linux/appimage/
         # tooling.sha256 をペアで更新する。
         run: |
           mkdir -p ~/.local/bin
@@ -82,7 +82,7 @@ jobs:
             https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/3b67a1d1c1b0c8268f57f2bce40fe2d33d409cea/linuxdeploy-plugin-gtk.sh
           curl -fL -o appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          sha256sum -c "$GITHUB_WORKSPACE/packaging/linux/appimage/tooling.sha256"
+          sha256sum -c "$GITHUB_WORKSPACE/distribution/linux/appimage/tooling.sha256"
           chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
@@ -112,7 +112,7 @@ jobs:
             echo "SENTRY_DSN=${SENTRY_DSN:-}"
             echo "RELAY_SECRET=${RELAY_SECRET:-}"
           } > "$HOME/.config/capsicum/secrets.env"
-          bash packaging/linux/appimage/build.sh
+          bash distribution/linux/appimage/build.sh
 
       - name: Upload AppImage as workflow artifact
         uses: actions/upload-artifact@v4
@@ -147,7 +147,7 @@ jobs:
           sudo apt-get install -y appstream desktop-file-utils
 
       - name: Validate AppStream metainfo
-        run: appstreamcli validate --no-net packaging/linux/shared/net.shrieker.capsicum.metainfo.xml
+        run: appstreamcli validate --no-net distribution/linux/shared/net.shrieker.capsicum.metainfo.xml
 
       - name: Validate desktop entry
-        run: desktop-file-validate packaging/linux/shared/net.shrieker.capsicum.desktop
+        run: desktop-file-validate distribution/linux/shared/net.shrieker.capsicum.desktop

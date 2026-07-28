@@ -53,7 +53,7 @@ CI ([.github/workflows/linux-release.yml](../../../.github/workflows/linux-relea
 ```sh
 cd ~/.local/bin
 sha256sum linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool > \
-  /path/to/capsicum/packaging/linux/appimage/tooling.sha256
+  /path/to/capsicum/distribution/linux/appimage/tooling.sha256
 ```
 
 更新前に release notes / commit log を確認して、上流の変更内容を把握すること。
@@ -68,7 +68,7 @@ sha256sum linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool > \
 ## ビルド
 
 ```sh
-bash packaging/linux/appimage/build.sh
+bash distribution/linux/appimage/build.sh
 ```
 
 成果物: `build/linux/dist/capsicum-<version>-x86_64.AppImage`

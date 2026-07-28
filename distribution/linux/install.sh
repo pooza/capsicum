@@ -29,7 +29,7 @@ LATEST_API="https://api.github.com/repos/$REPO/releases/latest"
 # `curl … | bash` のワンライナー配信時、uninstall.sh は手元に無いので
 # 同じ raw URL を案内する。capsicum-site (shrieker.net) で短縮配信する
 # のはリリース後 (#640)。
-RAW_BASE="https://raw.githubusercontent.com/$REPO/main/packaging/linux"
+RAW_BASE="https://raw.githubusercontent.com/$REPO/main/distribution/linux"
 
 usage() {
   cat <<EOF

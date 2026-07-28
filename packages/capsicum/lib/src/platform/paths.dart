@@ -5,7 +5,7 @@
 /// `%LOCALAPPDATA%\Packages\<PFN>\LocalCache\...` をそれぞれ解決する）。
 /// AppImage の AppRun（bash）側は
 /// `${XDG_DATA_HOME:-$HOME/.local/share}/capsicum/logs` を独自に解決して
-/// おり（[packaging/linux/appimage/build.sh]）、両者が同じ
+/// おり（[distribution/linux/appimage/build.sh]）、両者が同じ
 /// `~/.local/share/capsicum/` 階層に着地する前提に依存する。パス解決の
 /// 知識が散らないよう Dart 側はここを唯一の参照点にする（#522）。
 library;

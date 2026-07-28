@@ -5,7 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../constants.dart';
 
 /// 自動更新の無い直配ビルドの判定 (#641)。実運用では Linux AppImage の
-/// ビルド (packaging/linux/appimage/build.sh) でのみ
+/// ビルド (distribution/linux/appimage/build.sh) でのみ
 /// `--dart-define=DIRECT_CHANNEL=true` を渡す。
 ///
 /// ストア配布 (iOS / Android / Mac App Store / Microsoft Store) は OS が
