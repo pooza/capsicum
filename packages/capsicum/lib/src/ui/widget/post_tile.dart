@@ -2589,7 +2589,13 @@ class _ReactionUsersTooltip extends StatelessWidget {
                           ? user.displayName!
                           : user.username,
                       emojis: user.emojis,
-                      fallbackHost: fallbackHost,
+                      // Misskey の /notes/reactions・/notes/renotes は reactor の
+                      // emojis を空で返すため、名前の :emoji: は fallbackHost で
+                      // 解決する。ローカル reactor は現在ホストで解決できるが、
+                      // リモート reactor の名前絵文字は現在ホストの /emoji/name.webp
+                      // に無く 404 → shortcode がそのまま出ていた (#856)。reactor
+                      // 自身の host で解決する（ローカルは現在ホスト＝従来どおり）。
+                      fallbackHost: user.host ?? fallbackHost,
                       style: theme.textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
