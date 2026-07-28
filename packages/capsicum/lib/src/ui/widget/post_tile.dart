@@ -2254,57 +2254,155 @@ class _ReactionChipState extends ConsumerState<_ReactionChip> {
     return MouseRegion(
       onEnter: (_) => _onEnter(),
       onExit: (_) => _onExit(),
-      child: ActionChip(
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        side: widget.isMyReaction
-            ? BorderSide(color: theme.colorScheme.primary)
-            : null,
-        backgroundColor: widget.isMyReaction
-            ? theme.colorScheme.primaryContainer
-            : null,
-        label: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.emojiUrl != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: ConstrainedBox(
-                  // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
-                  constraints: BoxConstraints(
-                    maxHeight: emojiSize,
-                    maxWidth: emojiSize * 3,
+      // 長押し（タッチ）/ 右クリック（デスクトップ）でドロップダウンメニュー
+      // を出す (#851)。タップ（onPressed）のトグル操作は従来どおり変更しない。
+      child: GestureDetector(
+        onLongPress: () => _showChipMenu(context),
+        onSecondaryTap: () => _showChipMenu(context),
+        child: ActionChip(
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          side: widget.isMyReaction
+              ? BorderSide(color: theme.colorScheme.primary)
+              : null,
+          backgroundColor: widget.isMyReaction
+              ? theme.colorScheme.primaryContainer
+              : null,
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.emojiUrl != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: ConstrainedBox(
+                    // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
+                    constraints: BoxConstraints(
+                      maxHeight: emojiSize,
+                      maxWidth: emojiSize * 3,
+                    ),
+                    child: Image.network(
+                      widget.emojiUrl!,
+                      height: emojiSize,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => Text(
+                        widget.reactionKey,
+                        style: TextStyle(fontSize: emojiSize * 0.7),
+                      ),
+                    ),
                   ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
                   child: Image.network(
-                    widget.emojiUrl!,
+                    _twemojiUrl(widget.reactionKey),
+                    width: emojiSize,
                     height: emojiSize,
-                    fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => Text(
                       widget.reactionKey,
                       style: TextStyle(fontSize: emojiSize * 0.7),
                     ),
                   ),
                 ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Image.network(
-                  _twemojiUrl(widget.reactionKey),
-                  width: emojiSize,
-                  height: emojiSize,
-                  errorBuilder: (_, _, _) => Text(
-                    widget.reactionKey,
-                    style: TextStyle(fontSize: emojiSize * 0.7),
-                  ),
-                ),
-              ),
-            Text('${widget.count}', style: theme.textTheme.labelSmall),
-          ],
+              Text('${widget.count}', style: theme.textTheme.labelSmall),
+            ],
+          ),
+          onPressed: () => widget.onToggle(widget.reactionKey),
         ),
-        onPressed: () => widget.onToggle(widget.reactionKey),
       ),
     );
+  }
+
+  /// 長押し / 右クリックで出すリアクションチップのメニュー (#851)。
+  /// リアクションの付与・解除、ショートコードのコピー、リアクションした人の
+  /// 一覧（Misskey のみ）を含む。タップのトグルはこのメニューと独立。
+  Future<void> _showChipMenu(BuildContext context) async {
+    final adapter = ref.read(currentAdapterProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final copyText = _copyText;
+    final canReact = adapter is ReactionSupport;
+    // 「リアクションした人」を取得できるのは Misskey のみ（getReactedBy）。
+    final reactorsAdapter = adapter is MisskeyAdapter ? adapter : null;
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canReact)
+              ListTile(
+                leading: Icon(
+                  widget.isMyReaction
+                      ? Icons.remove_circle_outline
+                      : Icons.add_reaction_outlined,
+                ),
+                title: Text(
+                  widget.isMyReaction ? 'リアクションを取り消す' : 'このリアクションを付ける',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  widget.onToggle(widget.reactionKey);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('ショートコードをコピー'),
+              subtitle: Text(copyText),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: copyText));
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('ショートコードをコピーしました'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (reactorsAdapter != null)
+              ListTile(
+                leading: const Icon(Icons.people_outline),
+                title: const Text('リアクションした人'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showReactedBy(context, reactorsAdapter);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// リアクションチップの「リアクションした人」一覧を [UserListScreen]（/users）
+  /// で開く。この絵文字に限定するため getReactedBy に type を渡す。
+  void _showReactedBy(BuildContext context, MisskeyAdapter adapter) {
+    context.push(
+      '/users',
+      extra: {
+        'title': 'リアクション',
+        'fetcher': (String? cursor) => adapter.getReactedBy(
+          widget.post.id,
+          type: widget.reactionKey,
+          query: TimelineQuery(maxId: cursor, limit: 20),
+        ),
+      },
+    );
+  }
+
+  /// コピー用ショートコード文字列。カスタム絵文字はローカル（`@.`）なら
+  /// `:name:`、リモートは `:name@host:`。Unicode 絵文字はその文字自体。
+  String get _copyText {
+    final k = widget.reactionKey;
+    if (!(k.startsWith(':') && k.endsWith(':'))) return k;
+    final inner = k.substring(1, k.length - 1);
+    final at = inner.indexOf('@');
+    if (at < 0) return ':$inner:';
+    final name = inner.substring(0, at);
+    final host = inner.substring(at + 1);
+    if (host == '.' || host.isEmpty) return ':$name:';
+    return ':$name@$host:';
   }
 
   /// Build Twemoji CDN URL from a Unicode emoji string.
