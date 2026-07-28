@@ -76,6 +76,30 @@ class FlashRuntime {
 
   AsUiComponent? component(String id) => _components[id];
 
+  /// スクリプト先頭の `/// @<version>` 注釈から宣言 AiScript 言語バージョンを
+  /// 取り出す。宣言が無ければ null。
+  static String? scriptLangVersion(String script) =>
+      Parser.getLangVersion(script);
+
+  /// この Play を capsicum の評価器で実行すると本家と結果がズレうるか (#881)。
+  ///
+  /// 本家 Misskey は宣言バージョン 1.0.0 未満（および宣言なし）を legacy 実行系に
+  /// 回しており、capsicum の評価器（pooza/aiscript-dart フォーク・0.16 相当）は
+  /// その legacy 相当。1.0.0 以上を宣言する Play は 1.x で演算子の優先順位が
+  /// 変わっている等の理由で **パースエラーにならず結果だけ変わる**（silent）
+  /// おそれがあるため、評価せずブラウザ導線へ degrade する。
+  ///
+  /// 解釈できない宣言（想定外の書式）は従来どおり legacy 側に倒して実行する
+  /// （正当な Play を誤ってブロックしないため。踏むのは silent 差異の可能性の
+  /// ある新しめの Play に限る）。
+  static bool isScriptLangUnsupported(String script) {
+    final version = scriptLangVersion(script);
+    if (version == null) return false;
+    final major = int.tryParse(version.split('.').first);
+    if (major == null) return false;
+    return major >= 1;
+  }
+
   /// スクリプトをパースして実行する。
   ///
   /// 失敗は [FlashRuntimeError] に正規化する。分類は

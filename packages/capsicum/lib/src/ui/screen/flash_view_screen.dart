@@ -232,6 +232,23 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
   Future<void> _start() async {
     if (_running) return;
+
+    // 新しい AiScript（1.0.0 以上を宣言する Play）は capsicum の評価器
+    // （0.16 相当）で実行すると本家と結果がズレうるため、評価せずブラウザ導線へ
+    // degrade する (#881)。仕様どおりの degrade であって失敗ではないので Sentry
+    // には流さない。文言は _RunError がそのまま「ブラウザで開く」を出す。
+    if (FlashRuntime.isScriptLangUnsupported(widget.flash.script)) {
+      if (!mounted) return;
+      setState(() {
+        _error = FlashRuntimeError(
+          'この Play は新しい AiScript で書かれています',
+          'capsicum の評価器では結果が本家と変わる可能性があるため実行しません。'
+              'ブラウザで開いてお楽しみください。',
+        );
+      });
+      return;
+    }
+
     final host = _host;
     if (host == null) {
       // アカウント切替等で現在の adapter が Misskey でなくなった。無言 return だと
