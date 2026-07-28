@@ -254,6 +254,9 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     if (FlashRuntime.isScriptLangUnsupported(widget.flash.script) &&
         !_forceRun) {
       if (!mounted) return;
+      // degrade を踏んだ頻度と、誤ブロック（正当な Play の過剰発火）を測る計装
+      // （リリース前レビュー黄）。失敗ではないので info の captureMessage。
+      reportPlayDegrade(flashId: widget.flash.id, host: _host);
       setState(() {
         _error = FlashRuntimeError(
           'この Play は新しい AiScript で書かれています',
@@ -313,6 +316,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
     try {
       await runtime.run(widget.flash.script);
+      // 中断（画面を閉じて dispose→interpreter.abort）されたランは aiscript が
+      // 例外を投げず正常終了扱いになる。unmount 済みなら部分的な出目を「成功」と
+      // して #898 実験に記録しないよう、ここで打ち切る（リリース前レビュー黄）。
+      if (!mounted) return;
       // #898: 成功した実行の「出目」を追跡記録する（前向き実験・記憶非依存）。
       // 絵文字追加の前後で「対象集合と交差する Play だけ出目が変わる」を予測と
       // 突き合わせるための材料。記録の失敗で Play を巻き込まないよう握りつぶす。
@@ -353,6 +360,9 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         host: host,
         inventory: playEmojiInventoryDigest(runtime.customEmojis),
         resultDigest: playResultDigest(runtime.rootChildren, runtime.component),
+        // force-run（互換性無視の実行）は評価器レジームが通常と異なるため
+        // タグで分離する（#881 / #898 の突合汚染防止）。
+        forced: _forceRun,
       );
     } catch (_) {
       // 追跡記録は best-effort。

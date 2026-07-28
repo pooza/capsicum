@@ -23,6 +23,7 @@ void reportPlayResult({
   required String host,
   required PlayEmojiInventoryDigest inventory,
   required String resultDigest,
+  bool forced = false,
 }) {
   try {
     Sentry.captureMessage(
@@ -34,6 +35,10 @@ void reportPlayResult({
         scope.setTag('emoji.count', inventory.count.toString());
         scope.setTag('emoji.hash', inventory.hash);
         scope.setTag('result.hash', resultDigest);
+        // 「このまま実行する」(#881) は 0.16 評価器で 1.x スクリプトを走らせた
+        // 結果で、評価器レジームが通常と異なる。#898 の突合で通常出目と混ざらない
+        // よう分離する（fingerprint は据え置き・タグで切り分け）。
+        scope.setTag('play.forced', forced.toString());
         // カテゴリ別件数は事後の突き合わせ材料。タグにすると基数が爆発するので
         // context に構造化して載せる。
         scope.setContexts('play.emoji_categories', inventory.categoryCounts);
@@ -42,5 +47,27 @@ void reportPlayResult({
     );
   } catch (_) {
     // 追跡記録の失敗で Play を巻き込まない。
+  }
+}
+
+/// #881 の degrade（新しい AiScript 宣言ゆえ評価せずブラウザ導線へ倒した）を
+/// 観測する。失敗ではないので captureException ではなく info の captureMessage。
+///
+/// 「どの Play で・どれだけ degrade を踏むか」と、`isScriptLangUnsupported` の
+/// 過剰発火（正当な Play の誤ブロック）を Sentry 上で測るための計装
+/// （リリース前レビュー黄）。fingerprint 固定で 1 issue に集約し flash.id で絞る。
+void reportPlayDegrade({required String flashId, String? host}) {
+  try {
+    Sentry.captureMessage(
+      'play.degrade',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('flash.id', flashId);
+        scope.setTag('host', host ?? '-');
+        scope.fingerprint = ['play.degrade'];
+      },
+    );
+  } catch (_) {
+    // 計装の失敗で degrade 表示を止めない。
   }
 }

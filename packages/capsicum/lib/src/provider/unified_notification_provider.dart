@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
+import '../service/sentry_op_failure.dart';
 import '../util/conversion_skip_report.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
@@ -122,7 +123,18 @@ class UnifiedNotificationNotifier
         response.notifications,
       );
       return _FetchResult(account: account, notifications: notifications);
-    } catch (e) {
+    } catch (e, st) {
+      // 失敗は上部バナーでユーザーには見えるが、サーバー側で「どの host が・
+      // どんな例外で・どの頻度で」落ちているかの可視性が無かった（#862 でこの
+      // 経路を書き換え済み・リリース前レビュー黄）。プリセット host 優先運用に
+      // 乗せて観測する。
+      reportOpFailure(
+        tagKey: 'notification.unified',
+        operation: 'fetch',
+        error: e,
+        stackTrace: st,
+        account: account,
+      );
       return _FetchResult(account: account, notifications: const [], error: e);
     }
   }

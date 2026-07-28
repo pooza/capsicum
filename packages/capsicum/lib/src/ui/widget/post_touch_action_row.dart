@@ -349,8 +349,24 @@ class PostTouchActionRow extends ConsumerWidget {
       onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // ブックマーク/ブースト/お気に入り等の失敗も、同ファイルの
+      // _runReactionAction と揃えて観測する（#855 追加で穴が広がったのを塞ぐ・
+      // リリース前レビュー黄）。文言も汎用固定から describePostActionError へ。
+      debugPrint('_runAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'touch_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 }
