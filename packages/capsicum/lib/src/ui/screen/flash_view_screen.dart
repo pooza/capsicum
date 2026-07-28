@@ -232,20 +232,35 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     return Text.rich(_summaryRenderer!.renderMfm(flash.summary!));
   }
 
+  /// 互換性を承知で degrade を無視し、従来どおりネイティブ実行する (#881)。
+  /// 一度立てたら「もう一度実行」でも維持する。
+  bool _forceRun = false;
+
+  /// degrade 画面の「このまま実行する」から呼ぶ。以降のこの Play の実行は
+  /// 言語バージョンゲートを飛ばす。
+  void _forceRunStart() {
+    _forceRun = true;
+    _start();
+  }
+
   Future<void> _start() async {
     if (_running) return;
 
     // 新しい AiScript（1.0.0 以上を宣言する Play）は capsicum の評価器
-    // （0.16 相当）で実行すると本家と結果がズレうるため、評価せずブラウザ導線へ
-    // degrade する (#881)。仕様どおりの degrade であって失敗ではないので Sentry
-    // には流さない。文言は _RunError がそのまま「ブラウザで開く」を出す。
-    if (FlashRuntime.isScriptLangUnsupported(widget.flash.script)) {
+    // （0.16 相当）で実行すると本家と結果がズレうるため、既定では評価せず
+    // ブラウザ導線へ degrade する (#881)。ただし従来はネイティブ実行できていた
+    // ため、実行できなくなるのは体験の後退。degrade 画面から「このまま実行する」
+    // を選べば _forceRun が立ち、互換性を承知で従来どおり評価する。
+    if (FlashRuntime.isScriptLangUnsupported(widget.flash.script) &&
+        !_forceRun) {
       if (!mounted) return;
       setState(() {
         _error = FlashRuntimeError(
           'この Play は新しい AiScript で書かれています',
-          'capsicum の評価器では結果が本家と変わる可能性があるため実行しません。'
-              'ブラウザで開いてお楽しみください。',
+          'capsicum の評価器では結果が本家と変わる可能性があります。'
+              'ブラウザで開くと本家どおりに楽しめます。'
+              'このまま実行することもできます（結果が変わる場合があります）。',
+          langUnsupported: true,
         );
       });
       return;
@@ -503,6 +518,9 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               host: flash.author.host ?? _host,
               flashId: flash.id,
               onRetry: _start,
+              // 新しい AiScript ゆえの degrade のときだけ「このまま実行する」を
+              // 出す (#881)。通常の実行エラーには出さない。
+              onForceRun: error.langUnsupported ? _forceRunStart : null,
             ),
             (_, _, final FlashRuntime r) => FlashView(runtime: r),
             // 絵文字取得に失敗したまま実行すると別結果になるため、開始せず
@@ -546,12 +564,17 @@ class _RunError extends StatelessWidget {
     required this.host,
     required this.flashId,
     required this.onRetry,
+    this.onForceRun,
   });
 
   final FlashRuntimeError error;
   final String? host;
   final String flashId;
   final VoidCallback onRetry;
+
+  /// 新しい AiScript 宣言ゆえの degrade でだけ渡される「このまま実行する」導線
+  /// (#881)。null のときはボタンを出さない。
+  final VoidCallback? onForceRun;
 
   @override
   Widget build(BuildContext context) {
@@ -576,7 +599,10 @@ class _RunError extends StatelessWidget {
           spacing: 8,
           alignment: WrapAlignment.center,
           children: [
-            TextButton(onPressed: onRetry, child: const Text('再試行')),
+            // degrade（新しい AiScript）では「再試行」は再度 degrade するだけで
+            // 意味がないので出さない。通常のエラーでだけ出す。
+            if (onForceRun == null)
+              TextButton(onPressed: onRetry, child: const Text('再試行')),
             // capsicum が実行できない Play でも、本家の web UI なら動く。
             // 行き止まりにしない。
             if (host != null)
@@ -587,6 +613,15 @@ class _RunError extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.open_in_new, size: 18),
                 label: const Text('ブラウザで開く'),
+              ),
+            // 新しい AiScript ゆえの degrade でだけ、互換性を承知で従来どおり
+            // ネイティブ実行する逃げ道を出す (#881)。ブロックで体験を後退させ
+            // ないため。
+            if (onForceRun != null)
+              TextButton.icon(
+                onPressed: onForceRun,
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: const Text('このまま実行する'),
               ),
           ],
         ),

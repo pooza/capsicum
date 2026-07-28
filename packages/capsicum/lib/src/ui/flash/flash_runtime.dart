@@ -4,7 +4,12 @@ import 'as_ui.dart';
 
 /// Flash スクリプトの実行時エラー。UI にそのまま出せる日本語の要約を持つ。
 class FlashRuntimeError implements Exception {
-  FlashRuntimeError(this.summary, this.detail, {this.unimplementedKey});
+  FlashRuntimeError(
+    this.summary,
+    this.detail, {
+    this.unimplementedKey,
+    this.langUnsupported = false,
+  });
 
   /// ユーザーに見せる 1 行要約。
   final String summary;
@@ -15,6 +20,11 @@ class FlashRuntimeError implements Exception {
   /// capsicum のバインディング層が未実装だった `Ui:C:*` / `Mk:*` キー。
   /// 機能別に Sentry で絞り込むためのタグ用 (#875)。未実装以外では null。
   final String? unimplementedKey;
+
+  /// 新しい AiScript 宣言（1.0.0+）ゆえに評価せず degrade した「失敗ではない」
+  /// エラーか (#881)。true のときは UI が「このまま実行する」導線を出せる
+  /// （互換性を承知で従来どおりネイティブ実行させるための逃げ道）。
+  final bool langUnsupported;
 
   @override
   String toString() => '$summary: $detail';
