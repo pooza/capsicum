@@ -153,6 +153,71 @@ void main() {
       expect((buttonCenter - viewCenter).abs(), lessThan(1.0));
     });
 
+    // mfm の Text.rich を拾う（button ラベル / text は data 付き Text、mfm だけ
+    // textSpan 付き）。
+    TextAlign? mfmTextAlign(WidgetTester tester) {
+      final finder = find.byWidgetPredicate(
+        (w) => w is Text && w.textSpan != null,
+      );
+      if (finder.evaluate().isEmpty) return null;
+      return tester.widget<Text>(finder.first).textAlign;
+    }
+
+    testWidgets('align 未指定の container は mfm を左寄せのままにする (#876)', (tester) async {
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+      await runtime.run('''
+        Ui:render([
+          Ui:C:container({ children: [Ui:C:mfm({ text: "リール" }, "m")] }, "box")
+        ])
+      ''');
+
+      await _pump(tester, runtime);
+
+      expect(mfmTextAlign(tester), TextAlign.start);
+    });
+
+    testWidgets('align:center の container は mfm の各行を中央寄せする (#876)', (
+      tester,
+    ) async {
+      // スロット系 Play は中央 container の中で、横倒しリール行と結果テキスト行
+      // という幅の異なる行を並べる。行内で中央寄せしないと、paint-only の rotate
+      // リールが結果行に対して左へずれて食み出す。
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+      await runtime.run('''
+        Ui:render([
+          Ui:C:container({
+            align: "center"
+            children: [Ui:C:mfm({ text: "リール" }, "m")]
+          }, "box")
+        ])
+      ''');
+
+      await _pump(tester, runtime);
+
+      expect(mfmTextAlign(tester), TextAlign.center);
+    });
+
+    testWidgets('align は入れ子 container の子 mfm へも継承する (#876)', (tester) async {
+      // 本家 Misskey の text-align は子孫へ継承する。align 未指定の入れ子でも
+      // 祖先の center を引き継ぐ。
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+      await runtime.run('''
+        let inner = Ui:C:container({
+          children: [Ui:C:mfm({ text: "リール" }, "m")]
+        }, "inner")
+        Ui:render([
+          Ui:C:container({ align: "center", children: [inner] }, "outer")
+        ])
+      ''');
+
+      await _pump(tester, runtime);
+
+      expect(mfmTextAlign(tester), TextAlign.center);
+    });
+
     testWidgets('循環参照でも無限再帰しない', (tester) async {
       final runtime = _runtime();
       addTearDown(runtime.dispose);

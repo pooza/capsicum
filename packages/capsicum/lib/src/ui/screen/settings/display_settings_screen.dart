@@ -46,6 +46,16 @@ class DisplaySettingsScreen extends ConsumerWidget {
             onChanged: (_) =>
                 ref.read(hideInstanceTickerProvider.notifier).toggle(),
           ),
+          SwitchListTile(
+            title: const Text('ポインタを合わせて「誰がやったか」を表示'),
+            subtitle: const Text(
+              'リアクション・ブースト・お気に入りのチップにマウスポインタを合わせると、'
+              '誰がそれをしたかをアバターで表示します（ポインタ環境のみ・タッチ端末では影響しません）',
+            ),
+            value: ref.watch(userHoverPopupProvider),
+            onChanged: (v) =>
+                ref.read(userHoverPopupProvider.notifier).setEnabled(v),
+          ),
           ListTile(
             title: const Text('プレビューカード（OGP）'),
             subtitle: Text(_previewCardModeLabel(previewCardMode)),
@@ -127,6 +137,17 @@ class DisplaySettingsScreen extends ConsumerWidget {
             value: ref.watch(restoreReadPositionProvider),
             onChanged: (_) =>
                 ref.read(restoreReadPositionProvider.notifier).toggle(),
+          ),
+          SwitchListTile(
+            title: const Text('ライブ更新（ストリーミング）'),
+            subtitle: const Text(
+              'オンにするとタイムラインに新着投稿がリアルタイムで流れます。'
+              'オフにするとストリーミング接続を張らず、更新は引っぱって更新／'
+              'タブ再選択のときだけになります（バッテリ消費を抑えられます）',
+            ),
+            value: ref.watch(streamingEnabledProvider),
+            onChanged: (value) =>
+                ref.read(streamingEnabledProvider.notifier).setEnabled(value),
           ),
           SwitchListTile(
             title: const Text('接続の再接続回数を表示'),

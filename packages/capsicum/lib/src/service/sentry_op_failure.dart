@@ -15,12 +15,15 @@ import '../util/exception_scrub.dart';
 /// [tagKey] は経路の系統 (`chat.op` / `drive.op` / `pages.op` /
 /// `chat.load_more` 等) を、[operation] は個別の操作名 (`send_message` /
 /// `load_liked` 等) を指す。fingerprint は両方 + 例外型で組む。
+/// [tags] は fingerprint に含めない補助タグ（例: Play の未実装キー `Ui:C:switch`）。
+/// issue は集約したまま、Sentry UI 上でタグ別に件数比較・絞り込みできる (#875)。
 void reportOpFailure({
   required String tagKey,
   required String operation,
   required Object error,
   required StackTrace stackTrace,
   Account? account,
+  Map<String, String>? tags,
 }) {
   try {
     Sentry.captureException(
@@ -30,6 +33,11 @@ void reportOpFailure({
         scope.setTag(tagKey, operation);
         scope.setTag('host', account?.key.host ?? '-');
         scope.setTag('backend', account?.key.type.name ?? '-');
+        if (tags != null) {
+          for (final entry in tags.entries) {
+            scope.setTag(entry.key, entry.value);
+          }
+        }
         scope.fingerprint = [tagKey, operation, error.runtimeType.toString()];
       },
     );

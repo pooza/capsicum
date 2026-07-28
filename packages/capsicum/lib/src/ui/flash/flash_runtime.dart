@@ -4,13 +4,27 @@ import 'as_ui.dart';
 
 /// Flash スクリプトの実行時エラー。UI にそのまま出せる日本語の要約を持つ。
 class FlashRuntimeError implements Exception {
-  FlashRuntimeError(this.summary, this.detail);
+  FlashRuntimeError(
+    this.summary,
+    this.detail, {
+    this.unimplementedKey,
+    this.langUnsupported = false,
+  });
 
   /// ユーザーに見せる 1 行要約。
   final String summary;
 
   /// 原因の詳細（評価器のメッセージ等）。
   final String detail;
+
+  /// capsicum のバインディング層が未実装だった `Ui:C:*` / `Mk:*` キー。
+  /// 機能別に Sentry で絞り込むためのタグ用 (#875)。未実装以外では null。
+  final String? unimplementedKey;
+
+  /// 新しい AiScript 宣言（1.0.0+）ゆえに評価せず degrade した「失敗ではない」
+  /// エラーか (#881)。true のときは UI が「このまま実行する」導線を出せる
+  /// （互換性を承知で従来どおりネイティブ実行させるための逃げ道）。
+  final bool langUnsupported;
 
   @override
   String toString() => '$summary: $detail';
@@ -72,6 +86,30 @@ class FlashRuntime {
 
   AsUiComponent? component(String id) => _components[id];
 
+  /// スクリプト先頭の `/// @<version>` 注釈から宣言 AiScript 言語バージョンを
+  /// 取り出す。宣言が無ければ null。
+  static String? scriptLangVersion(String script) =>
+      Parser.getLangVersion(script);
+
+  /// この Play を capsicum の評価器で実行すると本家と結果がズレうるか (#881)。
+  ///
+  /// 本家 Misskey は宣言バージョン 1.0.0 未満（および宣言なし）を legacy 実行系に
+  /// 回しており、capsicum の評価器（pooza/aiscript-dart フォーク・0.16 相当）は
+  /// その legacy 相当。1.0.0 以上を宣言する Play は 1.x で演算子の優先順位が
+  /// 変わっている等の理由で **パースエラーにならず結果だけ変わる**（silent）
+  /// おそれがあるため、評価せずブラウザ導線へ degrade する。
+  ///
+  /// 解釈できない宣言（想定外の書式）は従来どおり legacy 側に倒して実行する
+  /// （正当な Play を誤ってブロックしないため。踏むのは silent 差異の可能性の
+  /// ある新しめの Play に限る）。
+  static bool isScriptLangUnsupported(String script) {
+    final version = scriptLangVersion(script);
+    if (version == null) return false;
+    final major = int.tryParse(version.split('.').first);
+    if (major == null) return false;
+    return major >= 1;
+  }
+
   /// スクリプトをパースして実行する。
   ///
   /// 失敗は [FlashRuntimeError] に正規化する。分類は
@@ -110,7 +148,11 @@ class FlashRuntime {
       if (key.startsWith('Ui:') || key.startsWith('Mk:')) {
         // capsicum のバインディング層が未実装。スクリプトの不具合ではない
         // ので、そう分かる文言にする。
-        return FlashRuntimeError('この Play が使う機能に capsicum が未対応です', '未実装: $key');
+        return FlashRuntimeError(
+          'この Play が使う機能に capsicum が未対応です',
+          '未実装: $key',
+          unimplementedKey: key,
+        );
       }
     }
     return FlashRuntimeError('この Play の実行でエラーが起きました', e.toString());

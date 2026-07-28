@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../service/sentry_play_result.dart';
 import '../../service/tco_resolver.dart';
+import '../flash/flash_result_digest.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
 import '../flash/flash_runtime.dart';
@@ -230,8 +232,43 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     return Text.rich(_summaryRenderer!.renderMfm(flash.summary!));
   }
 
+  /// 互換性を承知で degrade を無視し、従来どおりネイティブ実行する (#881)。
+  /// 一度立てたら「もう一度実行」でも維持する。
+  bool _forceRun = false;
+
+  /// degrade 画面の「このまま実行する」から呼ぶ。以降のこの Play の実行は
+  /// 言語バージョンゲートを飛ばす。
+  void _forceRunStart() {
+    _forceRun = true;
+    _start();
+  }
+
   Future<void> _start() async {
     if (_running) return;
+
+    // 新しい AiScript（1.0.0 以上を宣言する Play）は capsicum の評価器
+    // （0.16 相当）で実行すると本家と結果がズレうるため、既定では評価せず
+    // ブラウザ導線へ degrade する (#881)。ただし従来はネイティブ実行できていた
+    // ため、実行できなくなるのは体験の後退。degrade 画面から「このまま実行する」
+    // を選べば _forceRun が立ち、互換性を承知で従来どおり評価する。
+    if (FlashRuntime.isScriptLangUnsupported(widget.flash.script) &&
+        !_forceRun) {
+      if (!mounted) return;
+      // degrade を踏んだ頻度と、誤ブロック（正当な Play の過剰発火）を測る計装
+      // （リリース前レビュー黄）。失敗ではないので info の captureMessage。
+      reportPlayDegrade(flashId: widget.flash.id, host: _host);
+      setState(() {
+        _error = FlashRuntimeError(
+          'この Play は新しい AiScript で書かれています',
+          'capsicum の評価器では結果が本家と変わる可能性があります。'
+              'ブラウザで開くと本家どおりに楽しめます。'
+              'このまま実行することもできます（結果が変わる場合があります）。',
+          langUnsupported: true,
+        );
+      });
+      return;
+    }
+
     final host = _host;
     if (host == null) {
       // アカウント切替等で現在の adapter が Misskey でなくなった。無言 return だと
@@ -279,11 +316,27 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
     try {
       await runtime.run(widget.flash.script);
+      // 中断（画面を閉じて dispose→interpreter.abort）されたランは aiscript が
+      // 例外を投げず正常終了扱いになる。unmount 済みなら部分的な出目を「成功」と
+      // して #898 実験に記録しないよう、ここで打ち切る（リリース前レビュー黄）。
+      if (!mounted) return;
+      // #898: 成功した実行の「出目」を追跡記録する（前向き実験・記憶非依存）。
+      // 絵文字追加の前後で「対象集合と交差する Play だけ出目が変わる」を予測と
+      // 突き合わせるための材料。記録の失敗で Play を巻き込まないよう握りつぶす。
+      _reportResult(runtime, host);
     } on FlashRuntimeError catch (e, st) {
-      // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを host
-      // タグでプリセットサーバーに絞って観測し、次に実装すべき機能を判断する
-      // ための現場データになる (#830)。
-      reportFlashOpFailure('run', e, st, account: account);
+      // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを
+      // `flash.unimplemented` タグに載せ、issue は集約したまま機能別に件数
+      // 比較・絞り込みできるようにする (#830 / #875)。
+      reportFlashOpFailure(
+        'run',
+        e,
+        st,
+        account: account,
+        tags: e.unimplementedKey != null
+            ? {'flash.unimplemented': e.unimplementedKey!}
+            : null,
+      );
       if (!mounted) return;
       setState(() => _error = e);
     } catch (e, st) {
@@ -295,6 +348,24 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       setState(() => _error = FlashRuntimeError('この Play の実行でエラーが起きました', ''));
     } finally {
       if (mounted) setState(() => _running = false);
+    }
+  }
+
+  /// 成功した実行の出目とインベントリ版を Sentry へ記録する (#898)。
+  /// 追跡が本来の Play 動作を壊さないよう、指紋計算まで含め例外は握りつぶす。
+  void _reportResult(FlashRuntime runtime, String host) {
+    try {
+      reportPlayResult(
+        flashId: runtime.flashId,
+        host: host,
+        inventory: playEmojiInventoryDigest(runtime.customEmojis),
+        resultDigest: playResultDigest(runtime.rootChildren, runtime.component),
+        // force-run（互換性無視の実行）は評価器レジームが通常と異なるため
+        // タグで分離する（#881 / #898 の突合汚染防止）。
+        forced: _forceRun,
+      );
+    } catch (_) {
+      // 追跡記録は best-effort。
     }
   }
 
@@ -364,6 +435,13 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     }
   }
 
+  /// 絵文字取得のみをやり直す。解決して AsyncData になれば build 側の開始
+  /// ゲートが _start を発火する (#882)。
+  void _retryEmojis() {
+    setState(() => _started = false);
+    ref.invalidate(customEmojisProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final flash = widget.flash;
@@ -376,7 +454,12 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     // AsyncLoading なので発火せず、解決後も再評価されないため **スクリプトが
     // 永久に実行されない**。watch して解決後の rebuild を拾うこと。
     final emojis = ref.watch(customEmojisProvider);
-    if (!_started && !emojis.isLoading) {
+    // 開始は AsyncData のみに絞る。AsyncError も isLoading==false のため、旧
+    // `!emojis.isLoading` 判定だと `/api/emojis` 失敗時に開始してしまい、
+    // CUSTOM_EMOJIS 依存の Play が空集合で別結果を「成功したように」計算する
+    // (#882)。読み込み失敗は下の switch で再試行導線を出す。
+    final emojisLoadFailed = emojis is AsyncError;
+    if (!_started && emojis is AsyncData) {
       _started = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _start();
@@ -445,12 +528,34 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               host: flash.author.host ?? _host,
               flashId: flash.id,
               onRetry: _start,
+              // 新しい AiScript ゆえの degrade のときだけ「このまま実行する」を
+              // 出す (#881)。通常の実行エラーには出さない。
+              onForceRun: error.langUnsupported ? _forceRunStart : null,
             ),
             (_, _, final FlashRuntime r) => FlashView(runtime: r),
+            // 絵文字取得に失敗したまま実行すると別結果になるため、開始せず
+            // 再試行導線を出す (#882)。再試行は絵文字取得のみやり直す。
+            _ when emojisLoadFailed => _RunError(
+              error: FlashRuntimeError(
+                'カスタム絵文字を読み込めませんでした',
+                'この Play は絵文字を使うため、読み込めないまま実行すると結果が'
+                    '変わります。再試行してください。',
+              ),
+              host: flash.author.host ?? _host,
+              flashId: flash.id,
+              onRetry: _retryEmojis,
+            ),
+            // 絵文字ロード中（開始前）はスピナー。ここで「もう一度実行」を
+            // 出すと空集合実行を誘発しうるため下のボタンは runtime 確定後のみ。
+            _ when emojis.isLoading => const Center(
+              child: CircularProgressIndicator(),
+            ),
             _ => const SizedBox.shrink(),
           },
         ),
-        if (_error == null && !_running)
+        // 「もう一度実行」は一度実行が確定した後だけ出す（runtime 非 null）。
+        // 開始前・絵文字ロード中/失敗時に出すと空集合実行を誘発する (#882)。
+        if (runtime != null && _error == null && !_running)
           Center(
             child: TextButton.icon(
               onPressed: _start,
@@ -469,12 +574,17 @@ class _RunError extends StatelessWidget {
     required this.host,
     required this.flashId,
     required this.onRetry,
+    this.onForceRun,
   });
 
   final FlashRuntimeError error;
   final String? host;
   final String flashId;
   final VoidCallback onRetry;
+
+  /// 新しい AiScript 宣言ゆえの degrade でだけ渡される「このまま実行する」導線
+  /// (#881)。null のときはボタンを出さない。
+  final VoidCallback? onForceRun;
 
   @override
   Widget build(BuildContext context) {
@@ -499,7 +609,10 @@ class _RunError extends StatelessWidget {
           spacing: 8,
           alignment: WrapAlignment.center,
           children: [
-            TextButton(onPressed: onRetry, child: const Text('再試行')),
+            // degrade（新しい AiScript）では「再試行」は再度 degrade するだけで
+            // 意味がないので出さない。通常のエラーでだけ出す。
+            if (onForceRun == null)
+              TextButton(onPressed: onRetry, child: const Text('再試行')),
             // capsicum が実行できない Play でも、本家の web UI なら動く。
             // 行き止まりにしない。
             if (host != null)
@@ -510,6 +623,15 @@ class _RunError extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.open_in_new, size: 18),
                 label: const Text('ブラウザで開く'),
+              ),
+            // 新しい AiScript ゆえの degrade でだけ、互換性を承知で従来どおり
+            // ネイティブ実行する逃げ道を出す (#881)。ブロックで体験を後退させ
+            // ないため。
+            if (onForceRun != null)
+              TextButton.icon(
+                onPressed: onForceRun,
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: const Text('このまま実行する'),
               ),
           ],
         ),

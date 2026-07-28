@@ -34,25 +34,35 @@ class UnifiedNotificationScreen extends ConsumerWidget {
       ),
       body: state.when(
         data: (data) {
-          if (data.items.isEmpty && data.failedAccounts.isEmpty) {
-            return const Center(child: Text('通知はありません'));
+          // 取得状況バナー（#862 B）を常に最上部に置き、逐次描画（#862 A）で
+          // 差し込まれる通知リストをその下に並べる。バナーは pending / failed が
+          // 無くなれば自動的に畳まれる。
+          final banner = _UnifiedStatusBanner(state: data);
+          final Widget listArea;
+          if (data.isComplete &&
+              data.items.isEmpty &&
+              data.failedAccounts.isEmpty) {
+            listArea = const Center(child: Text('通知はありません'));
+          } else {
+            listArea = ListView.separated(
+              // 件数が少ない / 空でも pull-to-refresh できるようにする。
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: data.items.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) => _UnifiedNotificationTile(
+                item: data.items[index],
+                reblogLabel: reblogLabel,
+                postLabel: postLabel,
+              ),
+            );
           }
           return RefreshIndicator(
             onRefresh: () => ref.refresh(unifiedNotificationProvider.future),
-            child: ListView.separated(
-              itemCount:
-                  data.items.length + (data.failedAccounts.isEmpty ? 0 : 1),
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                if (index < data.items.length) {
-                  return _UnifiedNotificationTile(
-                    item: data.items[index],
-                    reblogLabel: reblogLabel,
-                    postLabel: postLabel,
-                  );
-                }
-                return _FailedAccountsFooter(accounts: data.failedAccounts);
-              },
+            child: Column(
+              children: [
+                banner,
+                Expanded(child: listArea),
+              ],
             ),
           );
         },
@@ -354,25 +364,80 @@ class _UnifiedNotificationTileState
   }
 }
 
-class _FailedAccountsFooter extends StatelessWidget {
-  final List<Account> accounts;
+/// 「すべての通知」の取得状況バナー (#862 B)。リスト最上部に置き、逐次描画
+/// （#862 A）で「まだ来ていないサーバー」「取得に失敗したサーバー」を可視化する。
+/// 従来は失敗表示がリスト最下部の footer にあり、最大 100 件スクロールしないと
+/// 見えなかった。pending も failed も無ければ何も描画しない（畳まれる）。
+class _UnifiedStatusBanner extends StatelessWidget {
+  final UnifiedNotificationState state;
 
-  const _FailedAccountsFooter({required this.accounts});
+  const _UnifiedStatusBanner({required this.state});
+
+  static String _acct(Account a) => '@${a.user.username}@${a.key.host}';
 
   @override
   Widget build(BuildContext context) {
-    if (accounts.isEmpty) return const SizedBox.shrink();
+    final hasPending = state.pendingAccounts.isNotEmpty;
+    final hasFailed = state.failedAccounts.isNotEmpty;
+    if (!hasPending && !hasFailed) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
-    final names = accounts
-        .map((a) => '@${a.user.username}@${a.key.host}')
-        .join(', ');
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Text(
-        '以下のアカウントは取得に失敗しました: $names',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.error,
+    final rows = <Widget>[];
+
+    if (hasPending) {
+      final names = state.pendingAccounts.map(_acct).join(', ');
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${state.totalAccounts} 件中 ${state.settledCount} 件を取得しました'
+                ' · $names を待っています',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
         ),
+      );
+    }
+
+    if (hasFailed) {
+      if (hasPending) rows.add(const SizedBox(height: 6));
+      final names = state.failedAccounts.map(_acct).join(', ');
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$names は取得に失敗しました',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
       ),
     );
   }

@@ -12,6 +12,7 @@ void reportFlashOpFailure(
   Object error,
   StackTrace st, {
   Account? account,
+  Map<String, String>? tags,
 }) {
   reportOpFailure(
     tagKey: 'flash.op',
@@ -19,5 +20,6 @@ void reportFlashOpFailure(
     error: error,
     stackTrace: st,
     account: account,
+    tags: tags,
   );
 }

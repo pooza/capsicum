@@ -447,11 +447,22 @@ class _PostTileState extends ConsumerState<PostTile> {
                         // と区別し、グループアイコン＋プロフィール導線を出す (#811)。
                         child: post.author.isGroup
                             ? _buildGroupReblogHeader(context, post)
-                            : EmojiText(
-                                '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
-                                emojis: post.author.emojis,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                fallbackHost: post.emojiHost,
+                            // 「X がブースト」のヘッダーから、拡散したアカウント
+                            // 本人（= post.author）のプロフィールへ飛べるようにする
+                            // (#850)。グループヘッダー (#811) と同じく、タイル本体の
+                            // onTap（/post 遷移）より内側の GestureDetector を優先。
+                            : GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => context.push(
+                                  '/profile',
+                                  extra: post.author,
+                                ),
+                                child: EmojiText(
+                                  '${post.author.displayName ?? post.author.username} が${ref.watch(reblogLabelProvider)}',
+                                  emojis: post.author.emojis,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  fallbackHost: post.emojiHost,
+                                ),
                               ),
                       ),
                     // 末尾アイコン列 (bot / group / role / scope / localOnly /
@@ -919,6 +930,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 count: displayPost.reblogCount,
                                 onTap: () =>
                                     _showRebloggedBy(context, displayPost),
+                                hoverPost: displayPost,
+                                hoverKind: _CountHoverKind.reblog,
                               ),
                               const SizedBox(width: 8),
                             ],
@@ -937,6 +950,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 count: displayPost.favouriteCount,
                                 onTap: () =>
                                     _showFavouritedBy(context, displayPost),
+                                hoverPost: displayPost,
+                                hoverKind: _CountHoverKind.favourite,
                               ),
                             ],
                           ],
@@ -1974,18 +1989,80 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 }
 
-class _CountChip extends StatelessWidget {
+/// カウントチップのホバープレビュー対象の種別 (#856)。API で「誰がやったか」を
+/// 取得できるものだけ。返信・引用は該当 API が無いので対象外（hover 無し）。
+enum _CountHoverKind { reblog, favourite }
+
+class _CountChip extends ConsumerStatefulWidget {
   final IconData icon;
   final String label;
   final int count;
   final VoidCallback? onTap;
+
+  /// ホバーで「誰がやったか」プレビューを出す場合の対象投稿と種別 (#856)。
+  /// null のチップ（返信・引用など）はホバーしない。
+  final Post? hoverPost;
+  final _CountHoverKind? hoverKind;
 
   const _CountChip({
     required this.icon,
     required this.label,
     required this.count,
     this.onTap,
+    this.hoverPost,
+    this.hoverKind,
   });
+
+  @override
+  ConsumerState<_CountChip> createState() => _CountChipState();
+}
+
+class _CountChipState extends ConsumerState<_CountChip>
+    with _HoverUsersOverlay {
+  @override
+  void dispose() {
+    disposeHover();
+    super.dispose();
+  }
+
+  @override
+  Future<List<User>>? hoverFetch() {
+    final post = widget.hoverPost;
+    final kind = widget.hoverKind;
+    if (post == null || kind == null) return null;
+    final adapter = ref.read(currentAdapterProvider);
+    const q = TimelineQuery(limit: _HoverUsersOverlay.hoverMaxAvatars + 1);
+    switch (kind) {
+      case _CountHoverKind.reblog:
+        if (adapter is MastodonAdapter) {
+          return adapter.getRebloggedBy(post.id, query: q).then((r) => r.users);
+        }
+        if (adapter is MisskeyAdapter) {
+          return adapter.getRenotedBy(post.id, query: q).then((r) => r.users);
+        }
+        return null;
+      case _CountHoverKind.favourite:
+        if (adapter is MastodonAdapter) {
+          return adapter
+              .getFavouritedBy(post.id, query: q)
+              .then((r) => r.users);
+        }
+        if (adapter is MisskeyAdapter) {
+          return adapter.getReactedBy(post.id, query: q).then((r) => r.users);
+        }
+        return null;
+    }
+  }
+
+  @override
+  String get hoverCacheKey =>
+      '${widget.hoverPost?.id} __${widget.hoverKind?.name}';
+
+  @override
+  int get hoverTotalCount => widget.count;
+
+  @override
+  String? get hoverFallbackHost => widget.hoverPost?.author.host;
 
   @override
   Widget build(BuildContext context) {
@@ -1994,24 +2071,30 @@ class _CountChip extends StatelessWidget {
     final child = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: color),
+        Icon(widget.icon, size: 14, color: color),
         const SizedBox(width: 3),
-        Text('$label $count', style: style),
+        Text('${widget.label} ${widget.count}', style: style),
       ],
     );
-    if (onTap != null) {
-      return InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-          child: child,
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-      child: child,
+    final Widget result = widget.onTap != null
+        ? InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: widget.onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+              child: child,
+            ),
+          )
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            child: child,
+          );
+    // ホバーで「誰がやったか」プレビュー (#856)。対象種別のあるチップのみ。
+    if (widget.hoverKind == null) return result;
+    return MouseRegion(
+      onEnter: (_) => hoverEnter(),
+      onExit: (_) => hoverExit(),
+      child: result,
     );
   }
 }
@@ -2026,6 +2109,137 @@ class _ReactionUsersCache {
   static void put(String key, List<User> users) {
     if (_cache.length > 200) _cache.clear();
     _cache[key] = users;
+  }
+}
+
+/// リアクション / ブースト / お気に入り等のチップにポインタを合わせたとき、
+/// 「誰がやったか」のアバターをオーバーレイ表示する共通機構 (#575 / #856)。
+///
+/// ホスト State は [hoverFetch]（未対応なら null を返す）/ [hoverCacheKey] /
+/// [hoverTotalCount] / [hoverFallbackHost] を実装し、build の [MouseRegion] で
+/// [hoverEnter] / [hoverExit] を、dispose で [disposeHover] を呼ぶ。表示可否は
+/// [userHoverPopupProvider] トグルで制御し、キャッシュは [_ReactionUsersCache]
+/// を共有する。ポインタ環境でのみ発火するためプラットフォーム分岐は不要。
+mixin _HoverUsersOverlay<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+  static const _hoverDelay = Duration(milliseconds: 350);
+  static const hoverMaxAvatars = 10;
+
+  Timer? _hoverTimer;
+  OverlayEntry? _overlay;
+  bool _loading = false;
+  bool _failed = false;
+  bool _fetching = false;
+  List<User>? _users;
+
+  /// 「誰がやったか」を取得する。未対応 adapter 等では null を返してホバーを
+  /// 無効化する。delay 経過後に一度だけ呼ばれる。
+  Future<List<User>>? hoverFetch();
+  String get hoverCacheKey;
+  int get hoverTotalCount;
+  String? get hoverFallbackHost;
+
+  void hoverEnter() {
+    if (!ref.read(userHoverPopupProvider)) return;
+    _hoverTimer?.cancel();
+    _hoverTimer = Timer(_hoverDelay, _showHoverOverlay);
+  }
+
+  void hoverExit() {
+    _hoverTimer?.cancel();
+    _removeHoverOverlay();
+  }
+
+  void disposeHover() {
+    _hoverTimer?.cancel();
+    _removeHoverOverlay();
+  }
+
+  Future<void> _showHoverOverlay() async {
+    if (!mounted) return;
+    final cached = _ReactionUsersCache.get(hoverCacheKey);
+    if (cached != null) {
+      _users = cached;
+      _failed = false;
+      _loading = false;
+      _insertHoverOverlay();
+      return;
+    }
+    // 未キャッシュ: fetcher が無ければ（非対応 adapter 等）何も出さない。
+    final future = hoverFetch();
+    if (future == null) return;
+    _loading = true;
+    _failed = false;
+    _insertHoverOverlay();
+    if (_fetching) return;
+    _fetching = true;
+    try {
+      final users = await future;
+      _ReactionUsersCache.put(hoverCacheKey, users);
+      if (!mounted) return;
+      _users = users;
+      _loading = false;
+    } catch (_) {
+      if (!mounted) return;
+      _failed = true;
+      _loading = false;
+    } finally {
+      _fetching = false;
+    }
+    // オーバーレイがまだ表示中なら内容を更新。
+    _overlay?.markNeedsBuild();
+  }
+
+  void _insertHoverOverlay() {
+    if (_overlay != null) {
+      _overlay!.markNeedsBuild();
+      return;
+    }
+    final overlayState = Overlay.maybeOf(context);
+    if (overlayState == null) return;
+    _overlay = OverlayEntry(builder: _buildHoverOverlay);
+    overlayState.insert(_overlay!);
+  }
+
+  void _removeHoverOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  Widget _buildHoverOverlay(BuildContext overlayContext) {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlayBox == null || !box.attached) {
+      return const SizedBox.shrink();
+    }
+    final chipOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final chipSize = box.size;
+    final overlaySize = overlayBox.size;
+    const overlayWidth = 220.0;
+    const margin = 8.0;
+    var left = chipOffset.dx;
+    if (left + overlayWidth + margin > overlaySize.width) {
+      left = overlaySize.width - overlayWidth - margin;
+    }
+    if (left < margin) left = margin;
+    // チップの上に出す。上端に余裕がなければ下に出す。
+    final showAbove = chipOffset.dy > 160;
+    return Positioned(
+      left: left,
+      top: showAbove ? null : chipOffset.dy + chipSize.height + 4,
+      bottom: showAbove ? overlaySize.height - chipOffset.dy + 4 : null,
+      width: overlayWidth,
+      child: IgnorePointer(
+        child: _ReactionUsersTooltip(
+          loading: _loading,
+          failed: _failed,
+          users: _users ?? const [],
+          totalCount: hoverTotalCount,
+          maxAvatars: hoverMaxAvatars,
+          fallbackHost: hoverFallbackHost,
+        ),
+      ),
+    );
   }
 }
 
@@ -2112,185 +2326,198 @@ class _ReactionChip extends ConsumerStatefulWidget {
   ConsumerState<_ReactionChip> createState() => _ReactionChipState();
 }
 
-class _ReactionChipState extends ConsumerState<_ReactionChip> {
-  static const _hoverDelay = Duration(milliseconds: 350);
-  static const _maxAvatars = 10;
-
-  Timer? _hoverTimer;
-  OverlayEntry? _overlay;
-  bool _loading = false;
-  bool _failed = false;
-  bool _fetching = false;
-  List<User>? _users;
-
-  String get _cacheKey => '${widget.post.id} ${widget.reactionKey}';
-
+class _ReactionChipState extends ConsumerState<_ReactionChip>
+    with _HoverUsersOverlay {
   @override
   void dispose() {
-    _hoverTimer?.cancel();
-    _removeOverlay();
+    disposeHover();
     super.dispose();
   }
 
-  void _onEnter() {
+  // #575: 「誰がこのリアクションをしたか」のホバー表示。取得できるのは
+  // Misskey のみ（getReactedBy を絵文字 type で絞る）。
+  @override
+  Future<List<User>>? hoverFetch() {
     final adapter = ref.read(currentAdapterProvider);
-    // 「誰がリアクションしたか」を取得できるのは Misskey のみ。
-    if (adapter is! MisskeyAdapter) return;
-    _hoverTimer?.cancel();
-    _hoverTimer = Timer(_hoverDelay, () => _showOverlay(adapter));
-  }
-
-  void _onExit() {
-    _hoverTimer?.cancel();
-    _removeOverlay();
-  }
-
-  Future<void> _showOverlay(MisskeyAdapter adapter) async {
-    if (!mounted) return;
-    final cached = _ReactionUsersCache.get(_cacheKey);
-    if (cached != null) {
-      _users = cached;
-      _failed = false;
-      _loading = false;
-    } else {
-      _loading = true;
-      _failed = false;
-    }
-    _insertOverlay();
-
-    if (cached == null && !_fetching) {
-      _fetching = true;
-      try {
-        final result = await adapter.getReactedBy(
+    if (adapter is! MisskeyAdapter) return null;
+    return adapter
+        .getReactedBy(
           widget.post.id,
           type: widget.reactionKey,
-          query: const TimelineQuery(limit: _maxAvatars + 1),
-        );
-        _ReactionUsersCache.put(_cacheKey, result.users);
-        if (!mounted) return;
-        _users = result.users;
-        _loading = false;
-      } catch (_) {
-        if (!mounted) return;
-        _failed = true;
-        _loading = false;
-      } finally {
-        _fetching = false;
-      }
-      // オーバーレイがまだ表示中なら内容を更新。
-      _overlay?.markNeedsBuild();
-    }
+          query: const TimelineQuery(
+            limit: _HoverUsersOverlay.hoverMaxAvatars + 1,
+          ),
+        )
+        .then((r) => r.users);
   }
 
-  void _insertOverlay() {
-    if (_overlay != null) {
-      _overlay!.markNeedsBuild();
-      return;
-    }
-    final overlayState = Overlay.maybeOf(context);
-    if (overlayState == null) return;
-    _overlay = OverlayEntry(builder: _buildOverlay);
-    overlayState.insert(_overlay!);
-  }
+  @override
+  String get hoverCacheKey => '${widget.post.id} ${widget.reactionKey}';
 
-  void _removeOverlay() {
-    _overlay?.remove();
-    _overlay = null;
-  }
+  @override
+  int get hoverTotalCount => widget.count;
 
-  Widget _buildOverlay(BuildContext overlayContext) {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlayBox =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlayBox == null || !box.attached) {
-      return const SizedBox.shrink();
-    }
-    final chipOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
-    final chipSize = box.size;
-    final overlaySize = overlayBox.size;
-    const overlayWidth = 220.0;
-    const margin = 8.0;
-    var left = chipOffset.dx;
-    if (left + overlayWidth + margin > overlaySize.width) {
-      left = overlaySize.width - overlayWidth - margin;
-    }
-    if (left < margin) left = margin;
-    // チップの上に出す。上端に余裕がなければ下に出す。
-    final showAbove = chipOffset.dy > 160;
-    return Positioned(
-      left: left,
-      top: showAbove ? null : chipOffset.dy + chipSize.height + 4,
-      bottom: showAbove ? overlaySize.height - chipOffset.dy + 4 : null,
-      width: overlayWidth,
-      child: IgnorePointer(
-        child: _ReactionUsersTooltip(
-          loading: _loading,
-          failed: _failed,
-          users: _users ?? const [],
-          totalCount: widget.count,
-          maxAvatars: _maxAvatars,
-          fallbackHost: widget.post.emojiHost ?? widget.post.author.host,
-        ),
-      ),
-    );
-  }
+  @override
+  String? get hoverFallbackHost =>
+      widget.post.emojiHost ?? widget.post.author.host;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // リアクションチップの絵文字にもカスタム絵文字サイズ設定を反映する (#852)。
+    final emojiSize = ref.watch(emojiSizeProvider);
     return MouseRegion(
-      onEnter: (_) => _onEnter(),
-      onExit: (_) => _onExit(),
-      child: ActionChip(
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        side: widget.isMyReaction
-            ? BorderSide(color: theme.colorScheme.primary)
-            : null,
-        backgroundColor: widget.isMyReaction
-            ? theme.colorScheme.primaryContainer
-            : null,
-        label: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.emojiUrl != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxHeight: 18,
-                    maxWidth: 54,
+      onEnter: (_) => hoverEnter(),
+      onExit: (_) => hoverExit(),
+      // 長押し（タッチ）/ 右クリック（デスクトップ）でドロップダウンメニュー
+      // を出す (#851)。タップ（onPressed）のトグル操作は従来どおり変更しない。
+      child: GestureDetector(
+        onLongPress: () => _showChipMenu(context),
+        onSecondaryTap: () => _showChipMenu(context),
+        child: ActionChip(
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          side: widget.isMyReaction
+              ? BorderSide(color: theme.colorScheme.primary)
+              : null,
+          backgroundColor: widget.isMyReaction
+              ? theme.colorScheme.primaryContainer
+              : null,
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.emojiUrl != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: ConstrainedBox(
+                    // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
+                    constraints: BoxConstraints(
+                      maxHeight: emojiSize,
+                      maxWidth: emojiSize * 3,
+                    ),
+                    child: Image.network(
+                      widget.emojiUrl!,
+                      height: emojiSize,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => Text(
+                        widget.reactionKey,
+                        style: TextStyle(fontSize: emojiSize * 0.7),
+                      ),
+                    ),
                   ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
                   child: Image.network(
-                    widget.emojiUrl!,
-                    height: 18,
-                    fit: BoxFit.contain,
+                    _twemojiUrl(widget.reactionKey),
+                    width: emojiSize,
+                    height: emojiSize,
                     errorBuilder: (_, _, _) => Text(
                       widget.reactionKey,
-                      style: const TextStyle(fontSize: 14),
+                      style: TextStyle(fontSize: emojiSize * 0.7),
                     ),
                   ),
                 ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Image.network(
-                  _twemojiUrl(widget.reactionKey),
-                  width: 18,
-                  height: 18,
-                  errorBuilder: (_, _, _) => Text(
-                    widget.reactionKey,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-              ),
-            Text('${widget.count}', style: theme.textTheme.labelSmall),
-          ],
+              Text('${widget.count}', style: theme.textTheme.labelSmall),
+            ],
+          ),
+          onPressed: () => widget.onToggle(widget.reactionKey),
         ),
-        onPressed: () => widget.onToggle(widget.reactionKey),
       ),
     );
+  }
+
+  /// 長押し / 右クリックで出すリアクションチップのメニュー (#851)。
+  /// リアクションの付与・解除、ショートコードのコピー、リアクションした人の
+  /// 一覧（Misskey のみ）を含む。タップのトグルはこのメニューと独立。
+  Future<void> _showChipMenu(BuildContext context) async {
+    final adapter = ref.read(currentAdapterProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final copyText = _copyText;
+    final canReact = adapter is ReactionSupport;
+    // 「リアクションした人」を取得できるのは Misskey のみ（getReactedBy）。
+    final reactorsAdapter = adapter is MisskeyAdapter ? adapter : null;
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canReact)
+              ListTile(
+                leading: Icon(
+                  widget.isMyReaction
+                      ? Icons.remove_circle_outline
+                      : Icons.add_reaction_outlined,
+                ),
+                title: Text(
+                  widget.isMyReaction ? 'リアクションを取り消す' : 'このリアクションを付ける',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  widget.onToggle(widget.reactionKey);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('ショートコードをコピー'),
+              subtitle: Text(copyText),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: copyText));
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('ショートコードをコピーしました'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (reactorsAdapter != null)
+              ListTile(
+                leading: const Icon(Icons.people_outline),
+                title: const Text('リアクションした人'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showReactedBy(context, reactorsAdapter);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// リアクションチップの「リアクションした人」一覧を [UserListScreen]（/users）
+  /// で開く。この絵文字に限定するため getReactedBy に type を渡す。
+  void _showReactedBy(BuildContext context, MisskeyAdapter adapter) {
+    context.push(
+      '/users',
+      extra: {
+        'title': 'リアクション',
+        'fetcher': (String? cursor) => adapter.getReactedBy(
+          widget.post.id,
+          type: widget.reactionKey,
+          query: TimelineQuery(maxId: cursor, limit: 20),
+        ),
+      },
+    );
+  }
+
+  /// コピー用ショートコード文字列。カスタム絵文字はローカル（`@.`）なら
+  /// `:name:`、リモートは `:name@host:`。Unicode 絵文字はその文字自体。
+  String get _copyText {
+    final k = widget.reactionKey;
+    if (!(k.startsWith(':') && k.endsWith(':'))) return k;
+    final inner = k.substring(1, k.length - 1);
+    final at = inner.indexOf('@');
+    if (at < 0) return ':$inner:';
+    final name = inner.substring(0, at);
+    final host = inner.substring(at + 1);
+    if (host == '.' || host.isEmpty) return ':$name:';
+    return ':$name@$host:';
   }
 
   /// Build Twemoji CDN URL from a Unicode emoji string.
@@ -2362,7 +2589,13 @@ class _ReactionUsersTooltip extends StatelessWidget {
                           ? user.displayName!
                           : user.username,
                       emojis: user.emojis,
-                      fallbackHost: fallbackHost,
+                      // Misskey の /notes/reactions・/notes/renotes は reactor の
+                      // emojis を空で返すため、名前の :emoji: は fallbackHost で
+                      // 解決する。ローカル reactor は現在ホストで解決できるが、
+                      // リモート reactor の名前絵文字は現在ホストの /emoji/name.webp
+                      // に無く 404 → shortcode がそのまま出ていた (#856)。reactor
+                      // 自身の host で解決する（ローカルは現在ホスト＝従来どおり）。
+                      fallbackHost: user.host ?? fallbackHost,
                       style: theme.textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

@@ -13,4 +13,8 @@ enum StreamConnectionState {
 
   /// 再接続上限に到達して諦めた状態。pull-to-refresh / タブ再選択で復帰する。
   exhausted,
+
+  /// ユーザーが設定でライブ更新を無効化している状態 (#854)。streaming を張らず、
+  /// 更新は pull-to-refresh / タブ再選択の REST 取得のみ。エラーではない。
+  disabled,
 }

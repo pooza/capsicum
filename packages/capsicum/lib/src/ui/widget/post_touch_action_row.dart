@@ -104,6 +104,31 @@ class PostTouchActionRow extends ConsumerWidget {
         _showEmojiPicker(context, ref);
       });
     }
+    if (enabled.contains(PostTouchAction.bookmark) &&
+        adapter is BookmarkSupport) {
+      // Misskey の「お気に入り」は Mastodon のブックマーク相当（Mastodon の
+      // お気に入り=FavoriteSupport とは別機能）(#855)。状態に応じてトグルする。
+      final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+      if (targetPost.bookmarked) {
+        add(Icons.bookmark, '$bookmarkLabelを解除', () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as BookmarkSupport).unbookmarkPost(targetPost.id),
+            '$bookmarkLabelを解除しました',
+          );
+        });
+      } else {
+        add(Icons.bookmark_outline, bookmarkLabel, () {
+          _runAction(
+            ref,
+            messenger,
+            () => (adapter as BookmarkSupport).bookmarkPost(targetPost.id),
+            '$bookmarkLabelに追加しました',
+          );
+        });
+      }
+    }
     if (enabled.contains(PostTouchAction.boost)) {
       final boostLabel = ref.read(reblogLabelProvider);
       final currentUser = ref.read(currentAccountProvider)?.user;
@@ -237,9 +262,18 @@ class PostTouchActionRow extends ConsumerWidget {
   void _showEmojiPicker(BuildContext context, WidgetRef ref) {
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
-    if (adapter is! ReactionSupport) return;
+    if (account == null || adapter is! ReactionSupport) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    // シート builder / onSelected は遅延実行される。実行時点で
+    // currentAccountProvider が入れ替わっていても安全なよう、ここで確定した
+    // 非 null 値をローカルへ退避し、closure 内で `!` / `as` を再評価しない
+    // （CAPSICUM-32 #739: closure 実行時の Null check operator クラッシュ対策）。
+    final backend = adapter as BackendAdapter;
+    final reaction = adapter as ReactionSupport;
+    final host = account.key.host;
+    final mulukhiya = account.mulukhiya;
+    final accessToken = account.userSecret.accessToken;
 
     showModalBottomSheet(
       context: context,
@@ -247,21 +281,18 @@ class PostTouchActionRow extends ConsumerWidget {
       builder: (_) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.5,
         child: EmojiPicker(
-          adapter: adapter as BackendAdapter,
-          host: account!.key.host,
-          mulukhiya: account.mulukhiya,
-          accessToken: account.userSecret.accessToken,
+          adapter: backend,
+          host: host,
+          mulukhiya: mulukhiya,
+          accessToken: accessToken,
           forReaction: true,
           onSelected: (emoji) {
             Navigator.pop(context);
             _runReactionAction(
               ref,
               messenger,
-              adapter as BackendAdapter,
-              () => (adapter as ReactionSupport).addReaction(
-                targetPost.id,
-                emoji,
-              ),
+              backend,
+              () => reaction.addReaction(targetPost.id, emoji),
               'リアクションしました',
             );
           },
@@ -318,8 +349,24 @@ class PostTouchActionRow extends ConsumerWidget {
       onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // ブックマーク/ブースト/お気に入り等の失敗も、同ファイルの
+      // _runReactionAction と揃えて観測する（#855 追加で穴が広がったのを塞ぐ・
+      // リリース前レビュー黄）。文言も汎用固定から describePostActionError へ。
+      debugPrint('_runAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'touch_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 }

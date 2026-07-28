@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.51.0+161
+version: 1.52.0+164
 
 environment:
   sdk: ^3.11.0
@@ -82,7 +82,9 @@ dependencies:
   # Billing を統一 API で扱う。購入導線は iOS / Android のみ（macOS は後日、
   # Linux / Windows はストア IAP 不在）。商品タイプ・保持先は
   # SupporterStatus 抽象層の内側に隠し、UI からは直接触らせない。
-  in_app_purchase: ^3.2.0
+  # Google Play Billing Library 8.0.0 必須化 (2026-08-31, #889) に対応するため
+  # ^3.3.0 へ。これが in_app_purchase_android ^0.5.0 (Billing 8.0.0 同梱) を要求する。
+  in_app_purchase: ^3.3.0
   desktop_drop: ^0.7.1
   # メディアビューアから OS ファイラーへの drag-out (#645)。desktop_drop は
   # 受け取り側 (drag-in) 専用なので、ドラッグ元 (drag-source) はこちらで実装する。

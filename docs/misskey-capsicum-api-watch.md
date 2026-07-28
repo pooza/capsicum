@@ -63,6 +63,8 @@ capsicum の評価器は **AiScript 0.16 世代**で、本家現行の 1.2.x よ
 - 1.x で追加された構文（`while` / `do-while`、`match` の `case` / `default`、`num#to_hex` 等）を使う Flash は**パース失敗として顕在化する**（こちらは silent ではない）
 - 逆方向は安全。0.16 は 1.0 で禁止された「配列の空白区切り」等を許容するため、旧構文の Flash も動く
 
+**silent 差異への gate（#881, v1.52）**: 上記「優先順位変化で silent に別結果」を踏まないよう、Play 実行前に**宣言 AiScript バージョンを見て gate する**。スクリプト先頭の `/// @<version>` 注釈（`Parser.getLangVersion`）が **1.0.0 以上**なら、本家の legacy/modern 振り分け（本家は 1.0.0 未満・宣言なしを legacy 実行系に回す）に倣って capsicum は評価せず「ブラウザで開く」へ degrade する（`FlashRuntime.isScriptLangUnsupported` → `flash_view_screen.dart` の `_start`）。宣言なし・0.x・解釈不能な書式は従来どおり 0.16 相当で実行する（正当な旧 Play を誤ってブロックしない）。degrade は仕様どおりの分岐であり失敗ではないので Sentry には流さない。featured 6/6 は現状 1.0.0 未満のため実際には踏まない見込み。
+
 ### トリアージ履歴への記録
 
 各回のトリアージで、daisskey SHA に加えて **確認時点の `@syuilo/aiscript` バージョン**と**ハーネスの結果**を記録する（`harness-verified-versions.yaml` の作法にならい、専用の cron は持たずセッション同期に組み込む）。
