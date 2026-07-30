@@ -23,6 +23,7 @@ import '../../provider/supporter_purchase_provider.dart';
 import '../../constants.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
+import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
@@ -62,9 +63,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, KeyboardListNavigation {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
+  // ↑ ↓ キーで辿る対象 (#849)。表示中のタイムラインが持つ投稿そのもので、
+  // build のたびに描画内容と同じものへ差し替える。
+  List<Post> _keyboardPosts = const [];
   bool _markerRestored = false;
   bool _lastTabRestored = false;
   String? _lastTabRestoredForAccount;
@@ -116,6 +120,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (lifecycleState == AppLifecycleState.resumed) {
       ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
     }
+  }
+
+  @override
+  ItemScrollController get keyboardListScrollController =>
+      _itemScrollController;
+
+  @override
+  ItemPositionsListener get keyboardListPositionsListener =>
+      _itemPositionsListener;
+
+  @override
+  int get keyboardListItemCount => _keyboardPosts.length;
+
+  @override
+  void onKeyboardListActivate(int index) {
+    if (index >= _keyboardPosts.length) return;
+    context.push('/post', extra: _keyboardPosts[index]);
   }
 
   void _onPositionsChanged() {
@@ -441,6 +462,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
     });
 
+    // タブを移るとリストの中身が別物になるので、キーボード選択 (#849) は解除する。
+    // ref.listen は build 中に呼ばれうるので、setState は次フレームへ逃がす。
+    ref.listen(selectedTabProvider, (previous, next) {
+      if (previous == next) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) resetKeyboardSelection();
+      });
+    });
+
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
     // 「タイムライン本体 (約 600px) + ドロワー 304px」が成り立つ最小ラインを
     // 採用。タブレット横向き (iPad 1024 / Galaxy Tab 1280) や 13" デスクトップ
@@ -739,100 +769,110 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ? const AsyncValue<TimelineState>.loading()
         : timeline;
 
+    // ↑ ↓ キーのハンドラはタイムライン領域だけを包む。下端の [SimplePostBar] を
+    // 内側に入れると、入力欄にフォーカスがあるときの ↑ ↓（カーソル移動 / IME の
+    // 候補選択）まで奪ってしまう (#849)。
     Widget body = Column(
       children: [
         Expanded(
-          child: effectiveTimeline.when(
-            data: (tlState) {
-              // Restore marker position on first load (home timeline only).
-              if (selectedList == null &&
-                  selectedType == TimelineType.home &&
-                  tlState.posts.isNotEmpty) {
-                _restoreMarker(tlState.posts);
-              }
-              return RefreshIndicator(
-                key: _refreshIndicatorKey,
-                onRefresh: () async {
-                  _markerRestored = false;
-                  // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
-                  // データを残す。完了で必ず戻す。
-                  setState(() => _pullRefreshing = true);
-                  try {
-                    final Future<TimelineState> refreshed;
-                    if (selectedHashtag != null) {
-                      refreshed = ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
-                      );
-                    } else if (selectedList != null) {
-                      refreshed = ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    } else {
-                      refreshed = ref.refresh(timelineProvider.future);
+          child: wrapKeyboardListNavigation(
+            child: effectiveTimeline.when(
+              data: (tlState) {
+                // ↑ ↓ キーの対象を、いま描画しているものと同じリストに揃える (#849)。
+                _keyboardPosts = tlState.posts;
+                // Restore marker position on first load (home timeline only).
+                if (selectedList == null &&
+                    selectedType == TimelineType.home &&
+                    tlState.posts.isNotEmpty) {
+                  _restoreMarker(tlState.posts);
+                }
+                return RefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  onRefresh: () async {
+                    _markerRestored = false;
+                    // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
+                    // データを残す。完了で必ず戻す。
+                    setState(() => _pullRefreshing = true);
+                    try {
+                      final Future<TimelineState> refreshed;
+                      if (selectedHashtag != null) {
+                        refreshed = ref.refresh(
+                          hashtagTimelineProvider(selectedHashtag).future,
+                        );
+                      } else if (selectedList != null) {
+                        refreshed = ref.refresh(
+                          listTimelineProvider(selectedList.id).future,
+                        );
+                      } else {
+                        refreshed = ref.refresh(timelineProvider.future);
+                      }
+                      await refreshed;
+                    } finally {
+                      if (mounted) {
+                        setState(() => _pullRefreshing = false);
+                      }
                     }
-                    await refreshed;
-                  } finally {
-                    if (mounted) {
-                      setState(() => _pullRefreshing = false);
-                    }
-                  }
-                },
-                child: ScrollablePositionedList.separated(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  itemCount:
-                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= tlState.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return PostTile(post: tlState.posts[index]);
                   },
-                ),
-              );
-            },
-            loading: () {
-              if (_showScrollTop) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _showScrollTop = false);
-                });
-              }
-              return const Center(child: CircularProgressIndicator());
-            },
-            error: (error, stack) {
-              final message = _timelineErrorMessage(error);
-              final canRetry = !_isForbiddenError(error);
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(message, textAlign: TextAlign.center),
-                      if (canRetry) ...[
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (selectedList != null) {
-                              ref.invalidate(
-                                listTimelineProvider(selectedList.id),
-                              );
-                            } else {
-                              ref.invalidate(timelineProvider);
-                            }
-                          },
-                          child: const Text('再試行'),
-                        ),
-                      ],
-                    ],
+                  child: ScrollablePositionedList.separated(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    itemCount:
+                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      if (index >= tlState.posts.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return PostTile(
+                        post: tlState.posts[index],
+                        selected: keyboardSelectedIndex == index,
+                      );
+                    },
                   ),
-                ),
-              );
-            },
+                );
+              },
+              loading: () {
+                if (_showScrollTop) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _showScrollTop = false);
+                  });
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+              error: (error, stack) {
+                final message = _timelineErrorMessage(error);
+                final canRetry = !_isForbiddenError(error);
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(message, textAlign: TextAlign.center),
+                        if (canRetry) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              if (selectedList != null) {
+                                ref.invalidate(
+                                  listTimelineProvider(selectedList.id),
+                                );
+                              } else {
+                                ref.invalidate(timelineProvider);
+                              }
+                            },
+                            child: const Text('再試行'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ),
         const SimplePostBar(),

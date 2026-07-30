@@ -42,6 +42,10 @@ class PostTile extends ConsumerStatefulWidget {
   final bool tappable;
   final bool initialExpanded;
   final bool selectable;
+
+  /// キーボードナビゲーション (#849) で選択中の投稿。ハイライトを出すだけで、
+  /// タップ操作の対象や状態には影響しない。
+  final bool selected;
   final VoidCallback? onActionCompleted;
   final ValueChanged<Post>? onPostUpdated;
 
@@ -51,6 +55,7 @@ class PostTile extends ConsumerStatefulWidget {
     this.tappable = true,
     this.initialExpanded = false,
     this.selectable = false,
+    this.selected = false,
     this.onActionCompleted,
     this.onPostUpdated,
   });
@@ -417,12 +422,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
 
     final isDirect = displayPost.scope == PostScope.direct;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      color: isDirect
-          ? Theme.of(
-              context,
-            ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+      // キーボード選択中はスレッドの対象ハイライト / DM の色づけより濃く塗り、
+      // どちらと重なっても「いまカーソルがある行」が判別できるようにする (#849)。
+      color: widget.selected
+          ? colorScheme.primaryContainer.withValues(alpha: 0.7)
+          : isDirect
+          ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: InkWell(
         onTap: widget.tappable

@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/keyboard_list_navigation.dart';
 import '../widget/post_tile.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
@@ -19,10 +21,40 @@ class PostDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
-class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
+class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
+    with KeyboardListNavigation {
   final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
+  // ↑ ↓ キーで辿る対象 (#849)。描画中のスレッドと同じリストに揃える。
+  List<Post> _thread = const [];
 
   Post get post => widget.post;
+
+  @override
+  ItemScrollController get keyboardListScrollController =>
+      _itemScrollController;
+
+  @override
+  ItemPositionsListener get keyboardListPositionsListener =>
+      _itemPositionsListener;
+
+  @override
+  int get keyboardListItemCount => _thread.length;
+
+  /// 未選択から ↑ ↓ を押したときは、開いた時点でアンカーしている対象リプライ
+  /// (#711) から辿り始める。
+  @override
+  int get keyboardListInitialIndex =>
+      _thread.isEmpty ? 0 : _targetIndex(_thread);
+
+  @override
+  void onKeyboardListActivate(int index) {
+    if (index >= _thread.length) return;
+    final selected = _thread[index];
+    // 対象リプライ自身（いま開いているスレッドの主役）は開き直さない。
+    if (selected.id == post.id) return;
+    context.push('/post', extra: selected);
+  }
 
   /// スレッド内で対象リプライ（タップした投稿）が並ぶ index。見つからない
   /// 場合は最後尾を返す（#711 のフォールバック）。
@@ -96,32 +128,39 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         : defaultBackgroundOpacity;
 
     Widget body = threadFuture.when(
-      data: (thread) => ScrollablePositionedList.separated(
-        itemScrollController: _itemScrollController,
-        // 開いた時点で対象リプライの位置へアンカーする (#711)。見つからない
-        // ときは最後尾（フォールバック）。root(0) のときはそのまま先頭表示。
-        initialScrollIndex: thread.isEmpty ? 0 : _targetIndex(thread),
-        itemCount: thread.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final p = thread[index];
-          final isTarget = p.id == post.id;
-          return Container(
-            color: isTarget
-                ? Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer.withValues(alpha: 0.3)
-                : null,
-            child: PostTile(
-              post: p,
-              tappable: !isTarget,
-              initialExpanded: isTarget,
-              selectable: true,
-              onActionCompleted: () => ref.invalidate(_threadProvider(post.id)),
-            ),
-          );
-        },
-      ),
+      data: (thread) {
+        // ↑ ↓ キーの対象を、いま描画しているものと同じリストに揃える (#849)。
+        _thread = thread;
+        return ScrollablePositionedList.separated(
+          itemScrollController: _itemScrollController,
+          itemPositionsListener: _itemPositionsListener,
+          // 開いた時点で対象リプライの位置へアンカーする (#711)。見つからない
+          // ときは最後尾（フォールバック）。root(0) のときはそのまま先頭表示。
+          initialScrollIndex: thread.isEmpty ? 0 : _targetIndex(thread),
+          itemCount: thread.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final p = thread[index];
+            final isTarget = p.id == post.id;
+            return Container(
+              color: isTarget
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                  : null,
+              child: PostTile(
+                post: p,
+                tappable: !isTarget,
+                initialExpanded: isTarget,
+                selectable: true,
+                selected: keyboardSelectedIndex == index,
+                onActionCompleted: () =>
+                    ref.invalidate(_threadProvider(post.id)),
+              ),
+            );
+          },
+        );
+      },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => Center(
         child: Padding(
@@ -140,6 +179,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ),
       ),
     );
+
+    // スレッドには入力欄が無いので、本体をそのまま包んで ↑ ↓ を受ける (#849)。
+    body = wrapKeyboardListNavigation(child: body);
 
     if (bgPath != null) {
       body = Container(
