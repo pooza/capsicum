@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import 'desktop_menu_model.dart';
 import 'home_menu.dart';
+import 'screen_menu.dart';
 
 /// 認証後の全ルートを包み、デスクトップメニューバー（macOS はネイティブ・
 /// Windows/Linux はウィンドウ内 MenuBar）を常駐させる shell ウィジェット (#834)。
@@ -29,12 +30,17 @@ class DesktopMenuBar extends ConsumerWidget {
     final account = ref.watch(currentAccountProvider);
     final accountState = ref.watch(accountManagerProvider);
     final unreadAnnouncements = ref.watch(unreadAnnouncementCountProvider);
-    final model = buildDesktopMenuModel(
-      context,
-      ref,
-      account,
-      accountState,
-      unreadAnnouncements,
+    // 表示中の画面が宣言したメニュー (#835) を固定メニューへ差し込む。宣言が
+    // 無ければ従来どおりの固定メニューになる。
+    final model = withScreenMenu(
+      buildDesktopMenuModel(
+        context,
+        ref,
+        account,
+        accountState,
+        unreadAnnouncements,
+      ),
+      ref.watch(activeScreenMenuProvider),
     );
     if (Platform.isMacOS) return renderMacMenuBar(model, child);
     return renderInWindowMenuBar(model, child); // Windows / Linux
