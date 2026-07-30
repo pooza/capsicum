@@ -24,10 +24,18 @@ class TimelineResponse {
   /// Posts that failed conversion from the server's raw format.
   final List<SkippedPost> skippedPosts;
 
+  /// 起動時キャッシュ (#890) 用に、サーバー応答の生 JSON を [posts] と **同じ並び・
+  /// 同じ件数**で持つ。変換に失敗した要素は両方から落ちるので 1:1 に保たれる。
+  ///
+  /// キャッシュを持たない経路（DM 等）では空。呼び出し側は空なら保存を諦めるだけで
+  /// よく、生 JSON の有無で挙動が変わってはいけない。
+  final List<Map<String, dynamic>> rawJson;
+
   const TimelineResponse({
     required this.posts,
     required this.rawCount,
     this.rawLastId,
     this.skippedPosts = const [],
+    this.rawJson = const [],
   });
 }

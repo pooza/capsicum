@@ -6,6 +6,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../main.dart' show appLaunchStopwatch;
 import '../model/account_key.dart';
+import '../service/timeline_cache.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
@@ -150,6 +151,11 @@ class TimelineState {
   /// として出し、フラップの新しさを判断できるようにする。build() でクリアされる。
   final DateTime? lastDisconnectedAt;
 
+  /// ディスクキャッシュから先出しした状態 (#890)。サーバーに問い合わせる前の
+  /// 「前回の続き」なので、既読位置復元 (#715) のような**一度きりの位置決め**は
+  /// この状態では走らせない（直後に届く REST の結果で並びが変わるため）。
+  final bool fromCache;
+
   const TimelineState({
     this.posts = const [],
     this.isLoadingMore = false,
@@ -162,6 +168,7 @@ class TimelineState {
     this.contextKey,
     this.reconnectCount = 0,
     this.lastDisconnectedAt,
+    this.fromCache = false,
   });
 
   /// [loadMoreError] は引数省略時に現状を保持する。明示的に `null` を渡した
@@ -179,6 +186,7 @@ class TimelineState {
     String? contextKey,
     int? reconnectCount,
     DateTime? lastDisconnectedAt,
+    bool? fromCache,
   }) => TimelineState(
     posts: posts ?? this.posts,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
@@ -194,6 +202,7 @@ class TimelineState {
     contextKey: contextKey ?? this.contextKey,
     reconnectCount: reconnectCount ?? this.reconnectCount,
     lastDisconnectedAt: lastDisconnectedAt ?? this.lastDisconnectedAt,
+    fromCache: fromCache ?? this.fromCache,
   );
 }
 
@@ -378,6 +387,29 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
 
+  /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
+  /// 破棄後に state を触らないようにするための番兵。build() のたびに false へ
+  /// 戻す（`ref.onDispose` は破棄だけでなく **再計算のたび**にも呼ばれるため、
+  /// 立てっぱなしにすると以降の publish が全部止まる）。
+  bool _disposed = false;
+
+  /// build() の世代 (#890)。キャッシュ先出しの裏で走る取得が、その後の再計算で
+  /// 置き換わった state を古い結果で上書きしないようにする。
+  int _buildGeneration = 0;
+
+  /// 起動時キャッシュの先出しは 1 プロセス 1 回だけ (#890)。セッション中のタブ /
+  /// アカウント切替で古い一覧が一瞬出るのを防ぐ。AutoDispose で Notifier は
+  /// 作り直されるため static に持つ（[_homeFirstPaintReported] と同じ理由）。
+  static bool _startupCacheServed = false;
+
+  /// テストから「起動直後」の状態に戻すためのフック。プロセス 1 回の制約
+  /// （[_startupCacheServed] / [_homeFirstPaintReported]）を解除する。
+  @visibleForTesting
+  static void resetStartupStateForTesting() {
+    _startupCacheServed = false;
+    _homeFirstPaintReported = false;
+  }
+
   /// 既知の最新投稿 id（先頭）。streaming 再接続時のギャップ補完 (#781) で
   /// `since_id` の起点に使う。state.valueOrNull を直接読むと build / 接続コール
   /// バックのレースで null を踏みうるため、prepend のたびにここへ更新して保持する。
@@ -404,6 +436,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // into the new one via flushPending().
     _pendingPosts.clear();
     _isNearTop = true;
+    _disposed = false;
+    final generation = ++_buildGeneration;
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
     _catchUpInProgress = false;
@@ -423,12 +457,89 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 遅延化候補・since-launch は #716 復元並列化の効果を含む全体前段。1 回だけ。
     final measureHomePaint =
         type == TimelineType.home && !_homeFirstPaintReported;
+    final hideLivecure = ref.watch(hideLivecureProvider);
+
+    ref.onDispose(() {
+      _disposed = true;
+      _streamSubscription?.cancel();
+      if (adapter is StreamSupport) {
+        (adapter as StreamSupport).disposeStream();
+      }
+    });
+
+    // ライブ更新トグルの購読は build() 側で張る（rebuild のたびに Riverpod が
+    // 前回ぶんを破棄してくれる）。初回接続は取得完了後 ([_loadInitial]) に行う。
+    if (adapter is StreamSupport) {
+      final streamAdapter = adapter as StreamSupport;
+      if (!ref.read(streamingEnabledProvider)) {
+        _streamConnectionState = StreamConnectionState.disabled;
+      }
+      ref.listen(streamingEnabledProvider, (_, enabled) {
+        if (enabled) {
+          _setStreamConnectionState(StreamConnectionState.connecting);
+          _startStreaming(streamAdapter, type);
+        } else {
+          _stopStreaming(streamAdapter);
+        }
+      });
+    }
+
+    // 起動直後の 1 回だけ、前回のホーム TL をディスクから先出しする (#890)。
+    // 描画をサーバー応答から切り離し、REST は裏で追いついて置き換える。
+    final cached = await _loadStartupCache(
+      adapter: adapter,
+      type: type,
+      contextKey: contextKey,
+      hideLivecure: hideLivecure,
+      measureHomePaint: measureHomePaint,
+    );
+    if (cached != null) {
+      unawaited(
+        _loadInitial(
+          adapter: adapter,
+          type: type,
+          contextKey: contextKey,
+          hideLivecure: hideLivecure,
+          // 初回描画はキャッシュ側で計測済み。二重に report しない。
+          measureHomePaint: false,
+          publishToState: true,
+          generation: generation,
+        ),
+      );
+      return cached;
+    }
+
+    return _loadInitial(
+      adapter: adapter,
+      type: type,
+      contextKey: contextKey,
+      hideLivecure: hideLivecure,
+      measureHomePaint: measureHomePaint,
+      publishToState: false,
+      generation: generation,
+    );
+  }
+
+  /// 初回スナップショットの取得本体。build() から直接 await されるか（キャッシュ
+  /// 無し）、キャッシュ先出し後にバックグラウンドで走って state を差し替える
+  /// （[publishToState]、#890）。ref.watch はここでは使わない（build 外でも走る
+  /// ため）。必要な設定値は build() 側で watch して渡す。
+  Future<TimelineState> _loadInitial({
+    required DecentralizedBackendAdapter adapter,
+    required TimelineType type,
+    required String? contextKey,
+    required bool hideLivecure,
+    required bool measureHomePaint,
+    required bool publishToState,
+    required int generation,
+  }) async {
     final fetchSw = measureHomePaint ? (Stopwatch()..start()) : null;
 
     // Initial REST fetch — retry pages until visible posts are found or the
     // timeline is exhausted (same logic as loadMore).
-    final hideLivecure = ref.watch(hideLivecureProvider);
     final allVisible = <Post>[];
+    // 次回起動の先出し用に、可視投稿と 1:1 の生 JSON を控える (#890)。
+    final allRaw = <Map<String, dynamic>>[];
     String? maxId;
     bool hasMore = true;
     var fetches = 0;
@@ -454,11 +565,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       hasMore = response.rawCount > 0;
       maxId = response.posts.last.id;
 
-      final visible = response.posts
-          .where((p) => p.filterAction != FilterAction.hide)
-          .where((p) => !hideLivecure || !_hasLivecureTag(p))
-          .toList();
-      allVisible.addAll(visible);
+      // 生 JSON はサーバー応答と 1:1 なので、可視判定と同じループで拾って
+      // 並びを保つ (#890)。rawJson を持たない経路では空のままで、その場合は
+      // 単にキャッシュを書かない。
+      for (var i = 0; i < response.posts.length; i++) {
+        final post = response.posts[i];
+        if (post.filterAction == FilterAction.hide) continue;
+        if (hideLivecure && _hasLivecureTag(post)) continue;
+        allVisible.add(post);
+        if (i < response.rawJson.length) allRaw.add(response.rawJson[i]);
+      }
 
       if (allVisible.isNotEmpty || !hasMore) break;
     }
@@ -471,33 +587,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
     // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
-    if (adapter is StreamSupport) {
-      final streamAdapter = adapter as StreamSupport;
-      // 初期判定は read で行う。ここで watch すると、トグル切替が build() 全体
-      // （REST 再フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を
-      // 誘発し、可視のスクロールジャンプを起こす (#904)。切替は下の listen で
-      // 接続の張り/解除だけを扱う。
-      if (ref.read(streamingEnabledProvider)) {
-        _startStreaming(streamAdapter, type);
-      } else {
-        _streamConnectionState = StreamConnectionState.disabled;
-      }
-      ref.listen(streamingEnabledProvider, (_, enabled) {
-        if (enabled) {
-          _setStreamConnectionState(StreamConnectionState.connecting);
-          _startStreaming(streamAdapter, type);
-        } else {
-          _stopStreaming(streamAdapter);
-        }
-      });
+    // 初期判定は read で行う。watch すると、トグル切替が build() 全体（REST 再
+    // フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を誘発し、可視の
+    // スクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
+    if (adapter is StreamSupport && ref.read(streamingEnabledProvider)) {
+      _startStreaming(adapter as StreamSupport, type);
     }
-
-    ref.onDispose(() {
-      _streamSubscription?.cancel();
-      if (adapter is StreamSupport) {
-        (adapter as StreamSupport).disposeStream();
-      }
-    });
 
     fetchSw?.stop();
 
@@ -532,13 +627,93 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       ),
     );
 
-    return TimelineState(
+    // 次の起動で先出しできるよう、ホーム TL の初回ページを控える (#890)。
+    // 書き込み失敗は握り潰される（キャッシュは無くても動く）。
+    if (type == TimelineType.home && contextKey != null && allRaw.isNotEmpty) {
+      unawaited(TimelineCache.save(contextKey, allRaw, now: DateTime.now()));
+    }
+
+    final fresh = TimelineState(
       posts: allVisible,
       hasMore: hasMore,
       pageCapHit: pageCapHit,
       contextKey: contextKey,
       // 現在値を反映（stream 接続が即 live になっても取りこぼさない, #714）。
       streamConnectionState: _streamConnectionState,
+    );
+
+    // キャッシュ先出しの裏で走った場合は、自分で state を差し替える。文脈が
+    // 変わっている（アカウント/タブ切替で build() がやり直された）なら捨てる。
+    if (publishToState) {
+      // 破棄済み / 再計算で世代が進んだ / 文脈が変わった、のいずれでも捨てる。
+      if (_disposed) return fresh;
+      if (generation != _buildGeneration) return fresh;
+      if (state.valueOrNull?.contextKey != contextKey) return fresh;
+      state = AsyncData(fresh);
+    }
+    return fresh;
+  }
+
+  /// 起動直後の 1 回だけ、前回のホーム TL をディスクから読んで先出しする (#890)。
+  ///
+  /// 使えない条件（ホーム以外・2 回目以降・アダプタ非対応・期限切れ・文脈違い・
+  /// 復号できる投稿が 0 件）では null を返し、呼び出し側は従来どおり REST の
+  /// 完了を待つ。
+  Future<TimelineState?> _loadStartupCache({
+    required DecentralizedBackendAdapter adapter,
+    required TimelineType type,
+    required String? contextKey,
+    required bool hideLivecure,
+    required bool measureHomePaint,
+  }) async {
+    if (type != TimelineType.home) return null;
+    if (contextKey == null) return null;
+    if (_startupCacheServed) return null;
+    if (adapter is! TimelineCacheSupport) return null;
+    _startupCacheServed = true;
+
+    final sw = Stopwatch()..start();
+    final raw = await TimelineCache.load(contextKey, now: DateTime.now());
+    if (raw == null || raw.isEmpty) return null;
+
+    final List<Post> posts;
+    try {
+      posts = (adapter as TimelineCacheSupport)
+          .decodeCachedPosts(raw)
+          // 保存時と設定が変わっていることがあるので、フィルタは読み出し側でも
+          // かけ直す（直後に届く REST の結果でどのみち正される）。
+          .where((p) => p.filterAction != FilterAction.hide)
+          .where((p) => !hideLivecure || !_hasLivecureTag(p))
+          .toList();
+    } catch (e) {
+      debugPrint('capsicum: timeline cache decode failed: $e');
+      return null;
+    }
+    if (posts.isEmpty) return null;
+    sw.stop();
+
+    // ギャップ補完 (#781) の起点はキャッシュの先頭にはしない。裏で走る REST が
+    // 直後に _newestKnownId を正しく張り直すため、ここでは触らない。
+
+    if (measureHomePaint) {
+      _homeFirstPaintReported = true;
+      _reportHomeFirstPaint(
+        sinceLaunchMs: appLaunchStopwatch.elapsedMilliseconds,
+        fetchMs: 0,
+        enrichMs: 0,
+        posts: posts.length,
+        fetches: 0,
+        restoreReadPosition: ref.read(restoreReadPositionProvider),
+        fromCache: true,
+        cacheReadMs: sw.elapsedMilliseconds,
+      );
+    }
+
+    return TimelineState(
+      posts: posts,
+      contextKey: contextKey,
+      streamConnectionState: _streamConnectionState,
+      fromCache: true,
     );
   }
 
@@ -610,6 +785,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     required int posts,
     required int fetches,
     required bool restoreReadPosition,
+    bool fromCache = false,
+    int cacheReadMs = 0,
   }) {
     // since_launch_ms は初回描画（未 enrich の即返し）時点で確定させた値。
     // item3 適用後は enrich がクリティカルパスから外れたため、この値には
@@ -618,7 +795,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       'capsicum: startup: home timeline first paint in '
       '${sinceLaunchMs}ms since launch '
       '(fetch=${fetchMs}ms deferred_enrich=${enrichMs}ms posts=$posts '
-      'fetches=$fetches restoreReadPosition=$restoreReadPosition)',
+      'fetches=$fetches restoreReadPosition=$restoreReadPosition '
+      'fromCache=$fromCache cacheRead=${cacheReadMs}ms)',
     );
     // 起動計測 (#716): transaction duration = since_launch_ms（起動→初回描画）。
     // fetch_ms（サーバー）/ enrich_ms（描画後に遅延した isCat 補完）は measurement、
@@ -626,8 +804,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     recordStartupPhase(
       'app.startup.home_timeline',
       durationMs: sinceLaunchMs,
-      measurementsMs: {'fetch_ms': fetchMs, 'enrich_ms': enrichMs},
-      tags: {'restore_read_position': '$restoreReadPosition'},
+      measurementsMs: {
+        'fetch_ms': fetchMs,
+        'enrich_ms': enrichMs,
+        // 先出し時のディスク読み出し。サーバー応答と桁が違うことを確認するため
+        // 別枠で持つ (#890)。
+        if (fromCache) 'cache_read_ms': cacheReadMs,
+      },
+      tags: {
+        'restore_read_position': '$restoreReadPosition',
+        // 起動時キャッシュから描いたか (#890)。before/after はこのタグで分ける。
+        'from_cache': '$fromCache',
+      },
       data: {'posts': posts, 'fetches': fetches},
     );
   }

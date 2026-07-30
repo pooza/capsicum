@@ -826,8 +826,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // ↑ ↓ キーの対象を、いま描画しているものと同じリストに揃える (#849)。
                 _keyboardPosts = tlState.posts;
                 // Restore marker position on first load (home timeline only).
+                // 起動時キャッシュの先出し (#890) では位置決めをしない。直後に
+                // 届く REST の結果で並びが変わり、一度きりの復元が無駄打ちに
+                // なるため、サーバーから来た一覧を待つ。
                 if (selectedList == null &&
                     selectedType == TimelineType.home &&
+                    !tlState.fromCache &&
                     tlState.posts.isNotEmpty) {
                   _restoreMarker(tlState.posts);
                 }

@@ -15,18 +15,31 @@ import 'streaming.dart';
 
 /// Convert a list of items, skipping any that throw during conversion.
 /// Returns the converted results, original item count, raw last ID, and
-/// details of any items that failed conversion.
-({List<T> results, int rawCount, String? rawLastId, List<SkippedPost> skipped})
+/// details of any items that failed conversion. [toRaw] を渡すと、変換に成功した
+/// 要素の生 JSON を results と同じ並びで受け取れる（起動時キャッシュ用 / #890）。
+({
+  List<T> results,
+  List<Map<String, dynamic>> raws,
+  int rawCount,
+  String? rawLastId,
+  List<SkippedPost> skipped,
+})
 _safeConvert<S, T>(
   List<S> items,
   T Function(S) convert,
-  String Function(S) getId,
-) {
+  String Function(S) getId, {
+  Map<String, dynamic> Function(S)? toRaw,
+}) {
   final results = <T>[];
+  final raws = <Map<String, dynamic>>[];
   final skipped = <SkippedPost>[];
   for (final item in items) {
     try {
+      // 起動時キャッシュ用の生 JSON は変換の前に作る (#890)。変換が落ちた要素は
+      // results にも raws にも入らないので、両者の 1:1 が崩れない。
+      final raw = toRaw?.call(item);
       results.add(convert(item));
+      if (raw != null) raws.add(raw);
     } catch (e) {
       developer.log('skipping item during conversion: $e', name: 'capsicum');
       try {
@@ -36,6 +49,7 @@ _safeConvert<S, T>(
   }
   return (
     results: results,
+    raws: raws,
     rawCount: items.length,
     rawLastId: items.isNotEmpty ? getId(items.last) : null,
     skipped: skipped,
@@ -97,6 +111,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         TranslationSupport,
         DriveSupport,
         PagesSupport,
+        TimelineCacheSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
   MisskeyNotificationStreaming? _notificationStreaming;
@@ -410,6 +425,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       notes,
       (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
       (n) => n.id,
+      toRaw: (n) => n.toJson(),
     );
     final posts = converted.results.map(_applyWordFilter).toList();
     return TimelineResponse(
@@ -417,7 +433,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       rawCount: converted.rawCount,
       rawLastId: converted.rawLastId,
       skippedPosts: converted.skipped,
+      rawJson: converted.raws,
     );
+  }
+
+  @override
+  List<Post> decodeCachedPosts(List<Map<String, dynamic>> raw) {
+    // 壊れた要素は捨てる。キャッシュは先出しの表示でしかなく、直後に REST の
+    // 結果で置き換わるため、1 件でも読めれば得になる (#890)。ワードフィルタは
+    // 取得時と同じく通す（設定が変わっていれば直後の REST 結果で正される）。
+    return _safeConvert(
+      raw,
+      (json) => MisskeyNote.fromJson(
+        json,
+      ).toCapsicum(host, adminRoleIds: _adminRoleIds),
+      (json) => '${json['id']}',
+    ).results.map(_applyWordFilter).toList();
   }
 
   Post _applyWordFilter(Post post) {
