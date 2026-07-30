@@ -441,11 +441,24 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
     // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
     if (adapter is StreamSupport) {
-      if (ref.watch(streamingEnabledProvider)) {
-        _startStreaming(adapter as StreamSupport, type);
+      final streamAdapter = adapter as StreamSupport;
+      // 初期判定は read で行う。ここで watch すると、トグル切替が build() 全体
+      // （REST 再フェッチ・スクロール位置リセット・_pendingPosts.clear 等）を
+      // 誘発し、可視のスクロールジャンプを起こす (#904)。切替は下の listen で
+      // 接続の張り/解除だけを扱う。
+      if (ref.read(streamingEnabledProvider)) {
+        _startStreaming(streamAdapter, type);
       } else {
         _streamConnectionState = StreamConnectionState.disabled;
       }
+      ref.listen(streamingEnabledProvider, (_, enabled) {
+        if (enabled) {
+          _setStreamConnectionState(StreamConnectionState.connecting);
+          _startStreaming(streamAdapter, type);
+        } else {
+          _stopStreaming(streamAdapter);
+        }
+      });
     }
 
     ref.onDispose(() {
@@ -601,6 +614,25 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   // connect/parse/listen とは独立に持つ。
   DateTime? _lastDisconnectCapture;
   static const _captureThrottle = Duration(seconds: 60);
+
+  /// 接続ライフサイクルを notifier フィールドと（データがあれば）state に
+  /// 反映する。build() 中に onConnectionState が取りこぼさないための常時記録と
+  /// 同じ理由で、まずフィールドへ、次に state があれば更新する。
+  void _setStreamConnectionState(StreamConnectionState connState) {
+    _streamConnectionState = connState;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(current.copyWith(streamConnectionState: connState));
+  }
+
+  /// ライブ更新トグルを OFF にしたときの接続解除 (#904)。build() を再走させず
+  /// WebSocket の購読だけを止め、インジケータを disabled にする。
+  void _stopStreaming(StreamSupport adapter) {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    adapter.disposeStream();
+    _setStreamConnectionState(StreamConnectionState.disabled);
+  }
 
   void _startStreaming(StreamSupport adapter, TimelineType type) {
     _streamSubscription?.cancel();
