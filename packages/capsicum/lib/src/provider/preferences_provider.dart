@@ -53,6 +53,7 @@ const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
 const _streamingEnabledKey = 'streaming_enabled';
 const _colorEmojiFallbackKey = 'color_emoji_fallback';
 const _userHoverPopupKey = 'user_hover_popup';
+const _composeFontFamilyKey = 'compose_font_family';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -777,6 +778,46 @@ class ComposeTemplateHistoryNotifier extends Notifier<List<String>> {
     state = pruned;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_composeTemplateHistoryKey, state);
+  }
+}
+
+/// 投稿フォーム（本文）に使うフォントファミリ名 (#892)。空文字 = システム既定
+/// （＝トグルを兼ねる）。デスクトップ（Linux / macOS / Windows）で、ユーザー環境
+/// にインストール済みの等幅フォント（HackGen 等）を名前で指定するための設定。
+///
+/// Flutter にインストール済みフォントを列挙する標準 API がないため、ここは
+/// ファミリ名の自由入力を保持するだけで、実在チェックはしない。未インストール /
+/// 誤入力時は OS のフォント解決（fontconfig / CoreText / DirectWrite）が黙って
+/// システム既定にフォールバックする（クラッシュしない）。UI 側でライブプレビュー
+/// を出し、効いたか一目で分かるようにする。
+final composeFontFamilyProvider =
+    NotifierProvider<ComposeFontFamilyNotifier, String>(
+      ComposeFontFamilyNotifier.new,
+    );
+
+class ComposeFontFamilyNotifier extends Notifier<String> {
+  @override
+  String build() {
+    _load();
+    return '';
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_composeFontFamilyKey);
+    if (saved != null) state = saved;
+  }
+
+  Future<void> setFontFamily(String value) async {
+    final trimmed = value.trim();
+    if (state == trimmed) return;
+    state = trimmed;
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_composeFontFamilyKey);
+    } else {
+      await prefs.setString(_composeFontFamilyKey, trimmed);
+    }
   }
 }
 

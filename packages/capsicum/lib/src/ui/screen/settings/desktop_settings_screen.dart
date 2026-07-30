@@ -27,6 +27,10 @@ class DesktopSettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          // 投稿本文のフォント指定 (#892)。端末インストール済みの等幅フォントを
+          // ファミリ名で指定する。デスクトップ (Linux/macOS/Windows) のみ意味が
+          // ある（iOS/Android は任意フォントを通常インストール不可で no-op）。
+          if (isDesktop) const _ComposeFontSetting(),
           // マウスドラッグでのスクロールはデスクトップ専用 (#574)。トラック
           // パッド 2 本指スワイプとの両立が崩れるケースがあるためオプトイン。
           if (isDesktop)
@@ -86,6 +90,97 @@ class DesktopSettingsScreen extends ConsumerWidget {
                   .read(updateCheckEnabledProvider.notifier)
                   .setEnabled(value),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 投稿本文のフォント指定 (#892)。ファミリ名の自由入力欄＋ライブプレビュー行。
+///
+/// ドロップダウンにしないのは、Flutter にインストール済みフォントを列挙する
+/// 標準 API がなく、ピッカーは OS ごとのネイティブ実装が必要で重すぎるため。
+/// 対象は正確なファミリ名（例: `HackGen Console`）を打てる技術志向ユーザー。
+/// 空欄＝既定フォントで、トグルを兼ねる。未インストール・誤入力は OS の
+/// フォント解決が黙って既定へフォールバックするため、効いたか一目で分かる
+/// よう全角／半角混じりのプレビュー行を添える。
+class _ComposeFontSetting extends ConsumerStatefulWidget {
+  const _ComposeFontSetting();
+
+  @override
+  ConsumerState<_ComposeFontSetting> createState() =>
+      _ComposeFontSettingState();
+}
+
+class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: ref.read(composeFontFamilyProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fontFamily = ref.watch(composeFontFamilyProvider);
+    final previewStyle = TextStyle(
+      fontSize: 15,
+      fontFamily: fontFamily.isEmpty ? null : fontFamily,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('投稿本文のフォント', style: TextStyle(fontSize: 16)),
+          const SizedBox(height: 4),
+          Text(
+            '投稿画面の本文入力に使う等幅フォントを、端末にインストール済みの'
+            'ファミリ名で指定します（例: HackGen Console）。空欄で既定に戻ります。'
+            '全角が半角のちょうど 2 倍幅になるデュアルワイド等幅フォントで最も'
+            '効果があります',
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              hintText: 'フォントファミリ名（空欄＝既定）',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (value) => ref
+                .read(composeFontFamilyProvider.notifier)
+                .setFontFamily(value),
+          ),
+          const SizedBox(height: 8),
+          // ライブプレビュー。デュアルワイド等幅なら全角 5 字と半角 10 字が同じ
+          // 幅で揃う。silent フォールバックのため、効いたか一目で分かるように。
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.5),
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text('あいうえお｜ABC\nABCDEFGHIJ｜012', style: previewStyle),
+          ),
         ],
       ),
     );

@@ -2711,6 +2711,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   @override
   Widget build(BuildContext context) {
     final maxLength = ref.watch(maxPostLengthProvider);
+    // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
+    // フォント解決が黙って既定へフォールバックする。
+    final composeFontFamily = ref.watch(composeFontFamilyProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -2870,6 +2873,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           textAlignVertical: TextAlignVertical.top,
                           autofocus: true,
                           enabled: !_sending,
+                          // #892: デスクトップで等幅フォント名が設定されていれば
+                          // 本文入力に適用（空なら null = 既定フォント）。
+                          style: composeFontFamily.isEmpty
+                              ? null
+                              : TextStyle(fontFamily: composeFontFamily),
                           decoration: const InputDecoration(
                             hintText: '今なにしてる？',
                             border: InputBorder.none,
