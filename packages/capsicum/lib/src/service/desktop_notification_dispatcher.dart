@@ -11,6 +11,7 @@ import '../model/account_key.dart';
 import '../platform/notification_subsystem/notification_subsystem.dart';
 import '../platform/platform_info.dart';
 import '../provider/account_manager_provider.dart';
+import '../provider/announcement_provider.dart';
 import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
@@ -104,7 +105,10 @@ class DesktopNotificationDispatcher {
             onReconnectExhausted: _onStreamReconnectExhausted,
           )
           .listen(
-            (n) => _emit(account, n),
+            (n) {
+              _refreshAnnouncementsIfNeeded(account, n);
+              _emit(account, n);
+            },
             // ストリーム側の error は streaming 内 reconnect で吸収済み。
             // ここに届くのは controller close 等なので握りつぶす。
             onError: (_, _) {},
@@ -118,6 +122,18 @@ class DesktopNotificationDispatcher {
         '(account=${key.toStorageKey()})',
       );
     }
+  }
+
+  /// お知らせイベントを受けたら、アプリ内のお知らせ一覧も取り直す (#888)。
+  ///
+  /// デスクトップは前面に居続けるためライフサイクル復帰の機会が無く、これが
+  /// 「アカウントを切り替えないと新しいお知らせが出ない」問題の主経路になる。
+  /// 一覧は表示中アカウントのものなので、アクティブ垢のイベントだけ反映する
+  /// （他アカウント宛ては OS 通知だけ出て一覧は触らない）。
+  void _refreshAnnouncementsIfNeeded(Account account, Notification n) {
+    if (n.type != NotificationType.announcement) return;
+    if (_ref.read(currentAccountProvider)?.key != account.key) return;
+    unawaited(_ref.read(announcementProvider.notifier).refresh());
   }
 
   Future<void> _emit(Account account, Notification n) async {

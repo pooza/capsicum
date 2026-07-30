@@ -122,6 +122,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
       ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
+      // 背面に居た間に増えたお知らせを取り直す (#888)。以前はアカウントを切り
+      // 替えるまで反映されなかった。常駐タイマーは持たず、復帰・画面を開いた
+      // とき・streaming 受信の 3 つの機会で取り直す方針。
+      unawaited(ref.read(announcementProvider.notifier).refresh());
     }
   }
 

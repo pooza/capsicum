@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,11 +38,27 @@ class AnnouncementScreen extends ConsumerWidget {
 }
 
 /// Reusable body widget for embedding as a home-screen tab.
-class AnnouncementView extends ConsumerWidget {
+class AnnouncementView extends ConsumerStatefulWidget {
   const AnnouncementView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AnnouncementView> createState() => _AnnouncementViewState();
+}
+
+class _AnnouncementViewState extends ConsumerState<AnnouncementView> {
+  @override
+  void initState() {
+    super.initState();
+    // お知らせを開いた時点で取り直す (#888)。一覧は provider が生きている限り
+    // 初回取得のまま据え置かれるため、開くたびに新着を拾えるようにする。
+    // ローディングには落とさないので、表示中の一覧が消えることはない。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(ref.read(announcementProvider.notifier).refresh());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final announcements = ref.watch(announcementProvider);
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
     final infoBotAcct = mulukhiya?.infoBotAcct;

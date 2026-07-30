@@ -16,8 +16,15 @@ class AnnouncementState {
 
 /// Notifier that manages announcement fetching and dismissal.
 class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
+  /// 破棄済みか (#888)。[refresh] は画面の外（ライフサイクル / streaming）から
+  /// 呼ばれるため、await 中に破棄されていたら state を触らない。`ref.onDispose`
+  /// は再計算のたびにも走るので、build() の先頭で false へ戻す。
+  bool _disposed = false;
+
   @override
   Future<AnnouncementState> build() async {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! AnnouncementSupport) {
       return const AnnouncementState();
@@ -27,6 +34,32 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
         .getAnnouncements();
 
     return AnnouncementState(announcements: announcements);
+  }
+
+  /// お知らせを取り直して差し替える (#888)。
+  ///
+  /// `invalidate` と違ってローディングに落とさないので、表示中の一覧が一瞬
+  /// 消えることがない。新しいお知らせが**アカウントを切り替えるまで反映され
+  /// ない**問題に対して、ポーリング（常駐タイマー）を持たずに次の 3 つの機会で
+  /// 取り直すために使う:
+  ///
+  /// - フォアグラウンド復帰（モバイルで背面に回っていた間の新着）
+  /// - お知らせ画面 / タブを開いたとき
+  /// - streaming の announcement イベント受信（デスクトップは前面に居続ける
+  ///   ので復帰の機会が無く、これが主経路になる）
+  ///
+  /// 失敗は握り潰す（お知らせは補助的な情報で、失敗時は現状維持でよい）。
+  Future<void> refresh() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! AnnouncementSupport) return;
+    try {
+      final announcements = await (adapter as AnnouncementSupport)
+          .getAnnouncements();
+      if (_disposed) return;
+      state = AsyncData(AnnouncementState(announcements: announcements));
+    } catch (_) {
+      // 取得失敗。次の機会に取り直す。
+    }
   }
 
   /// Mark an announcement as read.
