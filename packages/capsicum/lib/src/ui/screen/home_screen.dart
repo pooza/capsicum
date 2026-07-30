@@ -70,6 +70,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // build のたびに描画内容と同じものへ差し替える。
   List<Post> _keyboardPosts = const [];
   bool _markerRestored = false;
+  // 既読位置復元 (#715) 用のマーカー取得を、初回 TL 取得と並行に走らせるための
+  // ハンドル (#890)。null なら未着手。失敗は null に潰して復元側では扱わない。
+  Future<MarkerSet?>? _markerFetch;
   bool _lastTabRestored = false;
   String? _lastTabRestoredForAccount;
   String? _pendingListRestore;
@@ -206,6 +209,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
+  /// 既読位置復元 (#715) 用のマーカー取得を、初回 TL 取得と**並行**に開始する
+  /// (#890 item1)。
+  ///
+  /// 以前は first paint の後に初めて `getMarkers` を投げていたため、その往復
+  /// （p50 138ms / p75 226ms）の間だけ最新の先頭が見え、そこから旧位置へ飛ぶ
+  /// 一往復が体感に乗っていた。TL の REST 取得（p50 475ms / p75 639ms）と重ねて
+  /// おけば、描画時点では解決済みであることが多く、待ち時間もちらつきも消える。
+  ///
+  /// ホーム TL を表示するときだけ呼ぶ（復元対象がホームのマーカーのみのため、
+  /// 別タブ起動でサーバーへ無駄な 1 往復を出さない）。何度呼んでも 1 回だけ走る。
+  void _prefetchHomeMarker() {
+    if (_markerFetch != null || _markerRestored) return;
+    if (!ref.read(restoreReadPositionProvider)) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MarkerSupport) return;
+    // 失敗は復元をあきらめるだけ（未処理の非同期エラーにしない）。
+    _markerFetch = (adapter as MarkerSupport).getMarkers().then<MarkerSet?>(
+      (markers) => markers,
+      onError: (Object _) => null,
+    );
+  }
+
   Future<void> _restoreMarker(List<Post> posts) async {
     if (_markerRestored) return;
     _markerRestored = true;
@@ -217,18 +242,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (adapter == null || adapter is! MarkerSupport) return;
 
     // #716 計測: 既読位置復元は first paint の後に走る別系統コスト
-    // (getMarkers 往復＋古い位置への jumpTo)。所要・命中可否を残し、
+    // (getMarkers の待ち＋古い位置への jumpTo)。所要・命中可否を残し、
     // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
-    // 「未読位置読み込みあり」の体感への寄与を切り分ける。
+    // 「未読位置読み込みあり」の体感への寄与を切り分ける。#890 の先行取得後は
+    // marker_ms が「往復」ではなく「先行取得の待ち時間」になる（先行できて
+    // いれば 0 に近づく）ので、prefetched タグで before/after を分けて見る。
+    final prefetched = _markerFetch != null;
     final markerSw = Stopwatch()..start();
     var found = false;
     var jumped = false;
     try {
-      final markers = await (adapter as MarkerSupport).getMarkers();
+      _prefetchHomeMarker();
+      final markers = await _markerFetch;
       markerSw.stop();
-      if (markers.home == null) return;
+      if (markers?.home == null) return;
 
-      final markerId = markers.home!.lastReadId;
+      final markerId = markers!.home!.lastReadId;
       final index = posts.indexWhere((p) => p.id == markerId);
       found = index >= 0;
       if (index > 0 && mounted && _itemScrollController.isAttached) {
@@ -243,30 +272,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         markerMs: markerSw.elapsedMilliseconds,
         found: found,
         jumped: jumped,
+        prefetched: prefetched,
       );
     }
   }
 
   /// 既読位置復元 (#715) の所要を起動計測に残す (#716)。first paint 後に走る
-  /// ため startup.home_timeline には含まれない別系統コスト。getMarkers の往復
+  /// ため startup.home_timeline には含まれない別系統コスト。マーカー取得の待ち
   /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
-  /// (found)・実際に jump したか (jumped) を持ち、未読位置読み込みの体感寄与を
-  /// 切り分ける。
+  /// (found)・実際に jump したか (jumped)・TL 取得と並行に先行取得できていたか
+  /// (prefetched, #890) を持ち、未読位置読み込みの体感寄与を切り分ける。
   void _reportMarkerRestore({
     required int markerMs,
     required bool found,
     required bool jumped,
+    required bool prefetched,
   }) {
     final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
     debugPrint(
       'capsicum: startup: marker restore (getMarkers) in ${markerMs}ms '
-      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped)',
+      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped '
+      'prefetched=$prefetched)',
     );
     recordStartupPhase(
       'app.startup.marker_restore',
       durationMs: markerMs,
       measurementsMs: {'since_launch_ms': sinceLaunchMs},
-      tags: {'found': '$found', 'jumped': '$jumped'},
+      tags: {
+        'found': '$found',
+        'jumped': '$jumped',
+        'prefetched': '$prefetched',
+      },
     );
   }
 
@@ -768,6 +804,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final effectiveTimeline = showingStale
         ? const AsyncValue<TimelineState>.loading()
         : timeline;
+
+    // 既読位置のマーカー取得を、TL の REST 取得と並行に走らせる (#890)。ここは
+    // TL がまだローディング中でも通るので、描画を待たずに往復を始められる。
+    // 復元対象と同じ条件（ホーム TL・リスト/タグでない）でだけ投げる。
+    if (selectedList == null &&
+        selectedHashtag == null &&
+        selectedType == TimelineType.home) {
+      _prefetchHomeMarker();
+    }
 
     // ↑ ↓ キーのハンドラはタイムライン領域だけを包む。下端の [SimplePostBar] を
     // 内側に入れると、入力欄にフォーカスがあるときの ↑ ↓（カーソル移動 / IME の
