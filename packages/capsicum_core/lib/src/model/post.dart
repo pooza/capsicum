@@ -98,6 +98,7 @@ class Post {
     bool? reblogged,
     int? reblogCount,
     List<Attachment>? attachments,
+    bool? bookmarked,
   }) => Post(
     id: id,
     postedAt: postedAt,
@@ -112,7 +113,7 @@ class Post {
     quoteCount: quoteCount,
     favourited: favourited,
     reblogged: reblogged ?? this.reblogged,
-    bookmarked: bookmarked,
+    bookmarked: bookmarked ?? this.bookmarked,
     sensitive: sensitive,
     reactions: reactions,
     myReaction: myReaction,

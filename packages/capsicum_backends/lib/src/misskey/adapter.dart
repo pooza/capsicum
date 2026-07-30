@@ -751,8 +751,22 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // (mulukhiya #4380)。本判定は vanilla Misskey 直結時のみ効く。
       if (!_isAlreadyFavorited(e)) rethrow;
     }
+    return _noteWithFavoriteState(id);
+  }
+
+  /// Misskey の note はお気に入り状態を持たないため、`toCapsicum` だけでは
+  /// `bookmarked` が常に false になり、タッチ操作行のトグルが「解除」に到達
+  /// できない (#902)。notes/state を照会して `bookmarked` を補完する。照会に
+  /// 失敗しても操作自体は成功しているので、fallback は素の変換に留める。
+  Future<Post> _noteWithFavoriteState(String id) async {
     final note = await client.getNote(id);
-    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    final post = note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    try {
+      final favorited = await client.isNoteFavorited(id);
+      return post.copyWith(bookmarked: favorited);
+    } on DioException {
+      return post;
+    }
   }
 
   bool _isAlreadyFavorited(DioException e) {
@@ -770,8 +784,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> unbookmarkPost(String id) async {
     await client.unfavoriteNote(id);
-    final note = await client.getNote(id);
-    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+    return _noteWithFavoriteState(id);
   }
 
   @override

@@ -645,6 +645,21 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/notes/state
+  ///
+  /// note のお気に入り/ウォッチ/ミュートスレッド状態を返す。Misskey の note
+  /// オブジェクト自体はお気に入り状態を持たないため、`bookmarked` 相当を補完
+  /// するにはこのエンドポイントを照会する (#902)。
+  Future<bool> isNoteFavorited(String noteId) async {
+    final response = await dio.post(
+      '/api/notes/state',
+      data: createBody({'noteId': noteId}),
+    );
+    final data = response.data;
+    if (data is Map) return data['isFavorited'] == true;
+    return false;
+  }
+
   /// POST /api/notes/favorites/create
   Future<void> favoriteNote(String noteId) async {
     await dio.post(
