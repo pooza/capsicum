@@ -77,15 +77,48 @@ class SupporterScreen extends ConsumerWidget {
 
   List<Widget> _buildPurchaseSection(BuildContext context, WidgetRef ref) {
     if (!supporterPurchaseHasBackend) {
-      // 課金 backend が無い OS（Linux）。Windows は backend があるため、購入可否は
-      // 下の isAvailable / products で出し分ける（非 Store 版はそこで案内）。
-      return const [
-        Padding(
-          padding: EdgeInsets.all(16),
+      // 課金 backend が無い OS（Linux）は Web の支援先へ案内する (#893)。
+      // ストア版（App Store / Google Play / Microsoft Store）では出さない
+      // ＝各ストアがアプリ内から外部決済・寄付へ誘導することを制限しており、
+      // IAP と並べるとリジェクト要因になりうるため。Windows は backend が
+      // あるので、購入可否は下の isAvailable / products で出し分ける。
+      return [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Text(
-            'このプラットフォームではアプリ内での投げ銭に対応していません。'
-            'モバイル / デスクトップの対応版からご利用ください。',
+            'このプラットフォームにはアプリ内の投げ銭がないため、'
+            'Web のサービスからご支援いただけます。',
             style: TextStyle(fontSize: 13),
+          ),
+        ),
+        ListTile(
+          leading: Image.asset(
+            AppConstants.supporterIconAsset,
+            width: 30,
+            height: 30,
+          ),
+          title: const Text('Patreon'),
+          subtitle: const Text('ブラウザで開きます'),
+          trailing: const Icon(Icons.open_in_new, size: 18),
+          onTap: () => launchUrlSafely(AppConstants.patreonUrl),
+        ),
+        ListTile(
+          leading: Image.asset(
+            AppConstants.supporterIconAsset,
+            width: 30,
+            height: 30,
+          ),
+          title: const Text('Liberapay'),
+          subtitle: const Text('ブラウザで開きます'),
+          trailing: const Icon(Icons.open_in_new, size: 18),
+          onTap: () => launchUrlSafely(AppConstants.liberapayUrl),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Text(
+            'Web でのご支援はアプリのアカウントと結び付かないため、'
+            'サポーターバッジは付きません。応援としてありがたく受け取ります。',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ),
       ];

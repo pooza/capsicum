@@ -32,8 +32,8 @@ Future<void> showAboutCapsicum(BuildContext context) async {
       const SizedBox(height: 8),
       _AboutLink(url: AppConstants.contactUrl, label: 'お問い合わせ'),
       // 投げ銭（サポート）導線 (#853)。外部 URL ではなく /settings/supporter への
-      // 内部遷移で、IAP 提供プラットフォーム限定（ドロワーと同じ
-      // [supporterEntryVisibleProvider]）。非対応 OS では出さない。
+      // 内部遷移で、表示条件はドロワーと同じ [supporterEntryVisibleProvider]
+      // （IAP 提供プラットフォーム＋ Web 支援を案内する Linux / #893）。
       Consumer(
         builder: (context, ref, _) {
           if (!ref.watch(supporterEntryVisibleProvider)) {

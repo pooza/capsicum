@@ -71,6 +71,17 @@ class AppConstants {
     'https://capsicum.shrieker.net/tokushoho',
   );
 
+  /// Web での支援先 (#893)。ストア IAP が存在しない Linux 版で使う。
+  ///
+  /// **ストア版（App Store / Google Play / Microsoft Store）では出さない。**
+  /// 各ストアがアプリ内から外部決済・寄付へ誘導することを制限しており、IAP と
+  /// 並べるとリジェクト要因になりうるため。出し分けは
+  /// `supporterPurchaseHasBackend`（＝課金 backend の有無）で行う。
+  static final patreonUrl = Uri.parse(
+    'https://www.patreon.com/c/u93719112/about',
+  );
+  static final liberapayUrl = Uri.parse('https://liberapay.com/pooza/');
+
   /// サポーター（投げ銭）UI のアイコン (#428)。ハートではなく capsicum の
   /// とうがらしを使う。設定エントリ・投げ銭画面・サポーターバッジで共用する。
   static const supporterIconAsset = 'assets/images/capsicum_icon.webp';

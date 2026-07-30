@@ -337,5 +337,8 @@ final supporterEntryVisibleProvider = Provider<bool>((ref) {
   if (Platform.isWindows) {
     return ref.watch(supporterPurchaseProvider.select((s) => s.isAvailable));
   }
+  // 課金 backend が無い OS（Linux）は Web の支援先を案内するので、入口自体は
+  // 出す (#893)。ストア版に Web リンクを出さない判断は投げ銭画面側で行う。
+  if (Platform.isLinux) return true;
   return false;
 });

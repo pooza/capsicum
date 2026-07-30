@@ -1460,7 +1460,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               // 投げ銭（サポート）導線 (#853)。以前は「設定」内にあったが投げ銭は
               // 設定ではないためドロワー下部（「capsicum について」の上）へ出す。
               // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
-              // プラットフォームのみ）。
+              // プラットフォーム＋ Web 支援を案内する Linux / #893）。
               if (ref.watch(supporterEntryVisibleProvider))
                 ListTile(
                   leading: Image.asset(
