@@ -10,6 +10,7 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/shortcode_warning_controller.dart';
+import '../util/visible_timeline.dart';
 import 'insert_picker_sheet.dart';
 
 class SimplePostBar extends ConsumerStatefulWidget {
@@ -131,8 +132,9 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
         _controller.clear();
         if (widget.channelId == null && posted != null) {
           // #717: 自分の投稿を TL 先頭へ楽観的に挿入する（REST 全再取得に
-          // 依存させず、サーバー伝播レースでも必ず即座に出す）。
-          ref.read(timelineProvider.notifier).insertOwnPost(posted);
+          // 依存させず、サーバー伝播レースでも必ず即座に出す）。ハッシュタグ
+          // タブを見ているときはそちらにも入れる (#887)。
+          readVisibleTimelines(ref).insertOwnPost(posted);
         } else {
           ref.invalidate(timelineProvider);
         }

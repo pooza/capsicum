@@ -10,9 +10,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
+import '../util/visible_timeline.dart';
 import 'emoji_picker.dart';
 
 /// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
@@ -237,7 +237,7 @@ class PostTouchActionRow extends ConsumerWidget {
     // notifier は await の前（= ボタン押下時、確実に mounted）に取得する。
     // この widget は ConsumerWidget で、await 中にタイルがスクロールアウト等で
     // dispose されると await 後の `ref.read` が StateError を投げうるため。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await adapter.unrepeatPost(isOwnRenote ? outerPost : targetPost);
       if (isOwnRenote) {
@@ -309,7 +309,7 @@ class PostTouchActionRow extends ConsumerWidget {
     String successMessage,
   ) async {
     // notifier は await の前に取得する（_unrepeat と同じ理由）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await action();
       // 投稿を取り直してタイムラインへ反映する。
@@ -342,7 +342,7 @@ class PostTouchActionRow extends ConsumerWidget {
     String successMessage,
   ) async {
     // notifier は await の前に取得する（_unrepeat と同じ理由）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       final updated = await action();
       timeline.updatePost(updated);

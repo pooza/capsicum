@@ -24,11 +24,11 @@ import '../../service/url_preview_cache.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
+import '../util/visible_timeline.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
 import 'post_touch_action_row.dart';
@@ -303,7 +303,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     List<Attachment> updatedAttachments,
   ) {
     final updatedPost = displayPost.copyWith(attachments: updatedAttachments);
-    ref.read(timelineProvider.notifier).updatePost(updatedPost);
+    readVisibleTimelines(ref).updatePost(updatedPost);
   }
 
   @override
@@ -1049,7 +1049,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   ) async {
     // await 中にタイルが dispose されると ref.read が StateError を投げうる。
     // notifier を await 前に退避し以降はローカル参照する (#665)。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await adapter.unrepeatPost(isOwnRenote ? post : targetPost);
       if (isOwnRenote) {
@@ -1406,7 +1406,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = ref.read(timelineProvider.notifier);
+              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1496,7 +1496,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = ref.read(timelineProvider.notifier);
+              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1597,7 +1597,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage,
   ) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await action();
       // Refetch the post and update the timeline.
@@ -1629,7 +1629,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage,
   ) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       final updated = await action();
       timeline.updatePost(updated);
@@ -1704,15 +1704,15 @@ class _PostTileState extends ConsumerState<PostTile> {
               final mulukhiya = account?.mulukhiya;
               if (account == null || mulukhiya == null) return;
               final messenger = ScaffoldMessenger.of(context);
+              // 非同期の完了後に ref を触らないよう、変更ハンドルは先に取る (#665)。
+              final timeline = readVisibleTimelines(ref);
               mulukhiya
                   .deleteNowPlaying(
                     accessToken: account.userSecret.accessToken,
                     id: targetPost.id,
                   )
                   .then((_) {
-                    ref
-                        .read(timelineProvider.notifier)
-                        .removePost(targetPost.id);
+                    timeline.removePost(targetPost.id);
                     if (mounted) setState(() => _deleted = true);
                     if (context.mounted) _popIfInThread(context);
                     messenger.showSnackBar(
@@ -1753,7 +1753,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         adapter: ref.read(currentAdapterProvider)!,
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
-          final timeline = ref.read(timelineProvider.notifier);
+          final timeline = readVisibleTimelines(ref);
           try {
             await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,

@@ -21,8 +21,24 @@ String hashtagSpecLabel(String spec) => '#${spec.replaceAll('+', ' + #')}';
 /// The family key is a hashtag spec: "tag" or "tag+and1+and2" where "+"
 /// separates AND-matched tags (Mastodon `all[]` parameter).
 class HashtagTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
+    with TimelineListMutations<String> {
   static const _pageSize = 20;
+
+  /// 自分の投稿をこのハッシュタグ TL の先頭へ楽観的に挿入する (#887)。
+  ///
+  /// ホーム TL の [TimelineNotifier.insertOwnPost] (#717) と同じ狙い。呼び出し側
+  /// （[readVisibleTimelines]）が「投稿がこの TL のタグを実際に持っているか」を
+  /// 判定済みで、ここでは重複と実況フィルタだけを見る。ハッシュタグ TL は
+  /// streaming を張っていないため、これが無いと再取得まで自分の投稿が出ない。
+  void insertOwnPost(Post post) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (post.filterAction == FilterAction.hide) return;
+    if (ref.read(hideLivecureProvider) && hasLivecureTag(post)) return;
+    if (current.posts.any((p) => p.id == post.id)) return;
+    state = AsyncData(current.copyWith(posts: [post, ...current.posts]));
+  }
 
   @override
   Future<TimelineState> build(String arg) async {

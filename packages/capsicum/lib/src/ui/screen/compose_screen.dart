@@ -32,6 +32,7 @@ import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
+import '../util/visible_timeline.dart';
 import '../util/annict_link.dart';
 import '../util/compose_template_display.dart';
 import '../widget/emoji_text.dart';
@@ -2650,10 +2651,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             ref.invalidate(timelineProvider);
             ref.invalidate(channelTimelineProvider(channelId));
           } else if (posted != null) {
-            // #717: 自分の投稿を home TL 先頭へ楽観的に挿入する。invalidate の
+            // #717: 自分の投稿を TL 先頭へ楽観的に挿入する。invalidate の
             // REST 全再取得に依存しないため、サーバー伝播レースやストリーミング
-            // 状態に関係なく自分の投稿が必ず即座に出る。
-            ref.read(timelineProvider.notifier).insertOwnPost(posted);
+            // 状態に関係なく自分の投稿が必ず即座に出る。ハッシュタグタブを見て
+            // いるときは、そのタグを持つ投稿ならそちらにも入れる (#887)。
+            readVisibleTimelines(ref).insertOwnPost(posted);
           } else {
             // 戻り値が無い稀ケースは従来どおり再取得に倒す。
             ref.invalidate(timelineProvider);

@@ -335,6 +335,37 @@ Future<TimelineState> fetchUntilVisible({
   );
 }
 
+/// ハッシュタグ / リスト / チャンネルの各 TL に、ホーム TL と同じ「表示中の
+/// リストを手元で直す」操作を持たせる (#887)。
+///
+/// 削除・再投稿・リアクション等の結果は [TimelineNotifier] にしか反映されて
+/// おらず、ハッシュタグタブやリストタブを見ているときは画面が変わらないまま
+/// だった（タブを切り替えると再取得が走って初めて反映される）。表示中の TL が
+/// どれであっても同じ操作を適用できるよう、共通の変更手段をここに置く。
+mixin TimelineListMutations<Arg>
+    on AutoDisposeFamilyAsyncNotifier<TimelineState, Arg> {
+  /// 削除された投稿を一覧から取り除く。
+  void removePost(String id) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = current.posts.where((p) => p.id != id).toList();
+    if (posts.length == current.posts.length) return;
+    state = AsyncData(current.copyWith(posts: posts));
+  }
+
+  /// 内容が変わった投稿を差し替える（ブースト取り消し等）。
+  void updatePost(Post updated) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = current.posts.map((p) {
+      if (p.id == updated.id) return updated;
+      if (p.reblog?.id == updated.id) return p.copyWith(reblog: updated);
+      return p;
+    }).toList();
+    state = AsyncData(current.copyWith(posts: posts));
+  }
+}
+
 /// Notifier that manages paginated timeline fetching with optional streaming.
 class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static const _pageSize = 20;
