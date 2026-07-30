@@ -1661,15 +1661,11 @@ class ContentRenderer {
         );
       }
       final emoji = match.group(0)!;
-      final codepoints = emoji.runes
-          .where((r) => r != 0xFE0F && r != 0xFE0E)
-          .map((r) => r.toRadixString(16))
-          .join('-');
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Image.network(
-            '${AppConstants.twemojiBaseUrl}/$codepoints.png',
+            AppConstants.twemojiUrl(emoji),
             width: emojiSize,
             height: emojiSize,
             errorBuilder: (_, _, _) => Text(emoji, style: style),

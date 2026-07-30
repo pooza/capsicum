@@ -2410,7 +2410,7 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Image.network(
-                    _twemojiUrl(widget.reactionKey),
+                    AppConstants.twemojiUrl(widget.reactionKey),
                     width: emojiSize,
                     height: emojiSize,
                     errorBuilder: (_, _, _) => Text(
@@ -2518,15 +2518,6 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
     final host = inner.substring(at + 1);
     if (host == '.' || host.isEmpty) return ':$name:';
     return ':$name@$host:';
-  }
-
-  /// Build Twemoji CDN URL from a Unicode emoji string.
-  static String _twemojiUrl(String emoji) {
-    final codepoints = emoji.runes
-        .where((r) => r != 0xFE0F) // strip variation selectors
-        .map((r) => r.toRadixString(16))
-        .join('-');
-    return '${AppConstants.twemojiBaseUrl}/$codepoints.png';
   }
 }
 
