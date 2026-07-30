@@ -972,10 +972,37 @@ class ContentRenderer {
 
   List<InlineSpan> _renderNodes(List<_Node> nodes, TextStyle style) {
     final spans = <InlineSpan>[];
-    for (final node in nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
       spans.addAll(_renderNode(node, style));
+      // 引用 / コードブロックは末尾 \n を持たない (#842: 背の高い WidgetSpan
+      // 直後の \n がブロック高ぶんの空白を作るのを避けるため)。そのため後続
+      // ノードがあると、その内容がブロック直後の行の右側にインライン表示
+      // されてしまう (#897)。後続があり、かつその先頭がまだ改行で始まって
+      // いないときだけ区切りの \n を 1 つ補って次行へ落とす。ソースに空行が
+      // あるケース（後続テキストが \n 始まり）は従来どおり正常なので二重に
+      // しない。末尾（後続なし）では入れない = #842 の空白を再発させない。
+      if (_isBlockNode(node) &&
+          i < nodes.length - 1 &&
+          !_startsWithNewline(nodes[i + 1])) {
+        spans.add(TextSpan(text: '\n', style: style));
+      }
     }
     return spans;
+  }
+
+  /// 末尾 \n を外して単独行に落とす「ブロック要素」判定 (#842 / #897)。先頭に
+  /// `TextSpan('\n')` + 背の高い `WidgetSpan` を出すノードがこれに該当する。
+  bool _isBlockNode(_Node node) =>
+      node.type == _NodeType.quote || node.type == _NodeType.codeBlock;
+
+  /// 後続ノードが自前で改行から始まるか。ブロックは先頭 \n を持ち (#843)、
+  /// テキストはソースの空行が先頭 \n として残る。これらの前では区切りの \n を
+  /// 補わない（二重改行を避ける）。
+  bool _startsWithNewline(_Node node) {
+    if (_isBlockNode(node)) return true;
+    if (node.type == _NodeType.text) return node.text.startsWith('\n');
+    return false;
   }
 
   List<InlineSpan> _renderNode(_Node node, TextStyle style) {
