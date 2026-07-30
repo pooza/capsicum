@@ -550,6 +550,15 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<Post> repeatPostToChannel(
+    String postId, {
+    required String channelId,
+  }) async {
+    final note = await client.renote(postId, channelId: channelId);
+    return note.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
   Future<void> unrepeatPost(Post post) => client.deleteNote(post.id);
 
   @override

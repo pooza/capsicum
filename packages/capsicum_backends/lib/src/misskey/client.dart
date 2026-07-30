@@ -719,10 +719,21 @@ class MisskeyClient {
   }
 
   /// POST /api/notes/create (renote)
-  Future<MisskeyNote> renote(String noteId, {String? visibility}) async {
+  ///
+  /// [channelId] を渡すとそのチャンネル内へのリノートになる (#895)。チャンネル
+  /// 投稿の公開範囲はチャンネルが決めるため、[visibility] とは併用しない。
+  Future<MisskeyNote> renote(
+    String noteId, {
+    String? visibility,
+    String? channelId,
+  }) async {
     final response = await dio.post(
       '/api/notes/create',
-      data: createBody({'renoteId': noteId, 'visibility': ?visibility}),
+      data: createBody({
+        'renoteId': noteId,
+        'visibility': ?visibility,
+        'channelId': ?channelId,
+      }),
     );
     return MisskeyNote.fromJson(
       (response.data as Map<String, dynamic>)['createdNote']

@@ -31,6 +31,7 @@ import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
+import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
@@ -1182,6 +1183,35 @@ class _PostTileState extends ConsumerState<PostTile> {
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
+                    );
+                  },
+                ),
+              // チャンネル内へのリノート (#895)。通常のリノートはチャンネル外に
+              // 出るため、チャンネルへ流したいときはこちらを選ぶ。滅多に使わない
+              // 操作なので、既定（＝上の項目）はチャンネル指定なしのまま。
+              if (adapter is ChannelSupport &&
+                  (targetPost.scope == PostScope.public ||
+                      targetPost.scope == PostScope.unlisted))
+                ListTile(
+                  leading: const Icon(Icons.forum),
+                  title: Text('チャンネルに$boostLabel'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    final channel = await pickFollowedChannel(
+                      context,
+                      ref,
+                      title: 'チャンネルに$boostLabel',
+                    );
+                    // ピッカーを開いている間にタイルが捨てられていることがある
+                    // （_runAction 内の ref.read が落ちる / #665 と同型）。
+                    if (channel == null || !mounted) return;
+                    _runVoidAction(
+                      messenger,
+                      () => (adapter as ChannelSupport).repeatPostToChannel(
+                        targetPost.id,
+                        channelId: channel.id,
+                      ),
+                      '「${channel.name}」に$boostLabelしました',
                     );
                   },
                 ),
