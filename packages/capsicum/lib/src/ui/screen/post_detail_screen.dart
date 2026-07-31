@@ -41,6 +41,21 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
   @override
   int get keyboardListItemCount => _thread.length;
 
+  /// ↑ ↓ キーの対象を空にする (#849 followup)。
+  ///
+  /// 対象リストは `data:` ブランチでしか代入していないので、投稿アクションで
+  /// スレッドを invalidate した後の再取得が失敗すると、**前のスレッドが対象として
+  /// 残り続ける**。キーハンドラを張る [Focus] はその間も生きているため、↑ ↓ と
+  /// Enter で画面に出ていない投稿を開けてしまう（ホーム側と同型 / home_screen の
+  /// 同名メソッド参照）。
+  void _clearKeyboardTargets() {
+    _thread = const [];
+    if (keyboardSelectedIndex == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) resetKeyboardSelection();
+    });
+  }
+
   /// 未選択から ↑ ↓ を押したときは、開いた時点でアンカーしている対象リプライ
   /// (#711) から辿り始める。
   @override
@@ -161,23 +176,29 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(_threadProvider(post.id)),
-                child: const Text('再試行'),
-              ),
-            ],
+      loading: () {
+        _clearKeyboardTargets();
+        return const Center(child: CircularProgressIndicator());
+      },
+      error: (error, stack) {
+        _clearKeyboardTargets();
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(_threadProvider(post.id)),
+                  child: const Text('再試行'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     // スレッドには入力欄が無いので、本体をそのまま包んで ↑ ↓ を受ける (#849)。

@@ -21,9 +21,13 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
   /// は再計算のたびにも走るので、build() の先頭で false へ戻す。
   bool _disposed = false;
 
+  /// [refresh] の世代。並行した取り直しのうち、最後に投げたものだけを反映する。
+  int _refreshGeneration = 0;
+
   @override
   Future<AnnouncementState> build() async {
     _disposed = false;
+    _refreshGeneration = 0;
     ref.onDispose(() => _disposed = true);
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! AnnouncementSupport) {
@@ -52,10 +56,16 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
   Future<void> refresh() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! AnnouncementSupport) return;
+    // 「画面を開いた」「フォアグラウンド復帰」「streaming 受信」は同時に起きうる
+    // ので、refresh は並行しうる。**後から投げたものが先に返り、先に投げた古い
+    // 応答が後着すると、新しい一覧が古い一覧へ巻き戻る**。最後に投げたものだけが
+    // 反映されるよう世代で弾く。
+    final generation = ++_refreshGeneration;
     try {
       final announcements = await (adapter as AnnouncementSupport)
           .getAnnouncements();
       if (_disposed) return;
+      if (generation != _refreshGeneration) return;
       // 往復の間にアカウントが切り替わっていたら捨てる。`_disposed` は build() の
       // 先頭で false へ戻るので、「破棄 → 再 build → 旧 refresh が完了」の順に
       // なるとガードを素通りし、**切替後のアカウントの一覧が切替前の内容で

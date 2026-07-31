@@ -791,21 +791,28 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       // (mulukhiya #4380)。本判定は vanilla Misskey 直結時のみ効く。
       if (!_isAlreadyFavorited(e)) rethrow;
     }
-    return _noteWithFavoriteState(id);
+    return _noteWithFavoriteState(id, fallback: true);
   }
 
   /// Misskey の note はお気に入り状態を持たないため、`toCapsicum` だけでは
   /// `bookmarked` が常に false になり、タッチ操作行のトグルが「解除」に到達
-  /// できない (#902)。notes/state を照会して `bookmarked` を補完する。照会に
-  /// 失敗しても操作自体は成功しているので、fallback は素の変換に留める。
-  Future<Post> _noteWithFavoriteState(String id) async {
+  /// できない (#902)。notes/state を照会して `bookmarked` を補完する。
+  ///
+  /// 照会に失敗したときは [fallback]（＝いま完了した操作の結果）を使う。素の変換に
+  /// 落とすと `bookmarked` が常に false になり、**お気に入り登録が成功しているのに
+  /// タッチ操作行が「登録」のまま**になって、この issue で直したはずの双方向トグルが
+  /// notes/state の一時的な失敗で崩れる。
+  Future<Post> _noteWithFavoriteState(
+    String id, {
+    required bool fallback,
+  }) async {
     final note = await client.getNote(id);
     final post = note.toCapsicum(host, adminRoleIds: _adminRoleIds);
     try {
       final favorited = await client.isNoteFavorited(id);
       return post.copyWith(bookmarked: favorited);
     } on DioException {
-      return post;
+      return post.copyWith(bookmarked: fallback);
     }
   }
 
@@ -824,7 +831,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<Post> unbookmarkPost(String id) async {
     await client.unfavoriteNote(id);
-    return _noteWithFavoriteState(id);
+    return _noteWithFavoriteState(id, fallback: false);
   }
 
   @override

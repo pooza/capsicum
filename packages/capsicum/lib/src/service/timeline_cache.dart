@@ -42,14 +42,38 @@ class TimelineCache {
     return File('$dir/$_fileName');
   }
 
+  /// 書き込み系の直列化キュー。
+  ///
+  /// 保存は `unawaited` で投げるので、ログアウトの [clear] と競合する。世代チェックは
+  /// 「stale になった後に**保存を始めない**」ことしか保証できず、**既に始まっている
+  /// 書き込み**は止められない。clear が先に終わってから遅れて write が完了すると、
+  /// **ログアウトしたアカウントの生タイムラインがディスクに復活する**。save と clear を
+  /// 同じキューに並べて順序を確定させる。
+  static Future<void> _writeQueue = Future<void>.value();
+
+  static Future<void> _serialize(Future<void> Function() op) {
+    // 直前の失敗で鎖が切れないよう、成否にかかわらず次へ繋ぐ。
+    final next = _writeQueue.then((_) => op(), onError: (_) => op());
+    _writeQueue = next.catchError((_) {});
+    return next;
+  }
+
   /// [contextKey] の TL の生 JSON を保存する。失敗しても呼び出し側は続行する
   /// （キャッシュは無くても動く）。
   static Future<void> save(
     String contextKey,
     List<Map<String, dynamic>> raw, {
     required DateTime now,
-  }) async {
-    if (raw.isEmpty) return;
+  }) {
+    if (raw.isEmpty) return Future<void>.value();
+    return _serialize(() => _save(contextKey, raw, now));
+  }
+
+  static Future<void> _save(
+    String contextKey,
+    List<Map<String, dynamic>> raw,
+    DateTime now,
+  ) async {
     try {
       final file = await _file();
       await file.writeAsString(
@@ -111,7 +135,12 @@ class TimelineCache {
 
   /// キャッシュを消す。ログアウト等、残しておくと別アカウントに見えかねない
   /// 場面で呼ぶ。
-  static Future<void> clear() async {
+  ///
+  /// **await すれば、先に始まっていた保存の完了後に消えることが保証される**
+  /// （[_writeQueue] の説明を参照）。ログアウトはこれを await している。
+  static Future<void> clear() => _serialize(_clear);
+
+  static Future<void> _clear() async {
     try {
       final file = await _file();
       if (await file.exists()) await file.delete();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -106,5 +107,27 @@ void main() {
 
   test('キャッシュが無い状態の読み出しは null', () async {
     expect(await TimelineCache.load('acct|tl:home', now: now), isNull);
+  });
+
+  /// v1.53 リリース PR の Codex 指摘。
+  ///
+  /// 保存は `unawaited` で投げるので、ログアウトの [TimelineCache.clear] と競合する。
+  /// 直列化しないと、clear が終わった後に遅れて write が完了し、**ログアウトした
+  /// アカウントの生タイムラインがディスクに復活する**。
+  test('保存中にログアウトしても、await した clear の後にファイルが復活しない', () async {
+    // 保存を await せずに投げた直後に消す（ログアウトのタイミング）。
+    unawaited(TimelineCache.save('acct|tl:home', raw(20), now: now));
+    await TimelineCache.clear();
+
+    expect(
+      await TimelineCache.load('acct|tl:home', now: now),
+      isNull,
+      reason: 'clear を await した時点で、先に始まった保存も片付いている',
+    );
+    expect(
+      File('${dir.path}/home_timeline_cache.json').existsSync(),
+      isFalse,
+      reason: 'ログアウトしたアカウントの投稿を端末に残さない',
+    );
   });
 }
