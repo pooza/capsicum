@@ -132,6 +132,16 @@ class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting> {
   @override
   Widget build(BuildContext context) {
     final fontFamily = ref.watch(composeFontFamilyProvider);
+    // provider は初回 build で '' を返し、保存値を非同期に読んでから差し替える。
+    // その読み込み前にこの画面を開くと、controller が '' で初期化されたまま
+    // 更新されず、**保存済みのフォントが効いているのに入力欄だけ空**になる。
+    // 読み込み結果が届いたら空欄のときだけ追いつかせる（入力中の値は壊さない）。
+    if (_controller.text.isEmpty && fontFamily.isNotEmpty) {
+      _controller.value = TextEditingValue(
+        text: fontFamily,
+        selection: TextSelection.collapsed(offset: fontFamily.length),
+      );
+    }
     final previewStyle = TextStyle(
       fontSize: 15,
       fontFamily: fontFamily.isEmpty ? null : fontFamily,

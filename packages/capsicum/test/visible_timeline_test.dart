@@ -23,6 +23,9 @@ class _FakeAdapter extends Mock
   _FakeAdapter(this.posts);
 
   @override
+  AdapterCapabilities get capabilities => _FakeCapabilities();
+
+  @override
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
     TimelineQuery? query,
@@ -32,6 +35,19 @@ class _FakeAdapter extends Mock
   @override
   Future<List<Post>> getListTimeline(String id, {TimelineQuery? query}) async =>
       query?.maxId == null ? posts : const [];
+
+  @override
+  Future<TimelineResponse> getTimeline(
+    TimelineType type, {
+    TimelineQuery? query,
+  }) async => query?.maxId == null
+      ? TimelineResponse(posts: posts, rawCount: posts.length)
+      : const TimelineResponse(posts: [], rawCount: 0);
+}
+
+class _FakeCapabilities extends Mock implements AdapterCapabilities {
+  @override
+  Set<TimelineType> get supportedTimelines => {TimelineType.home};
 }
 
 Post _post(String id, {String content = 'hello', bool isHtml = false}) => Post(
@@ -149,6 +165,36 @@ void main() {
         postMatchesHashtagSpec(_post('1', content: 'ただの本文'), 'capsicum'),
         isFalse,
       );
+    });
+  });
+
+  /// v1.53 のリリース PR で Codex が拾った指摘への対処。
+  ///
+  /// 本線 TL は autoDispose で、HomeScreen が watch するのは「ハッシュタグでも
+  /// リストでもない」ときだけ。ハッシュタグ / リストタブ表示中に無条件で
+  /// `ref.read(timelineProvider.notifier)` すると、**誰も購読していない provider を
+  /// 新しく起こして** REST を叩き、結果は使われずに捨てられる。投稿アクションの
+  /// たびにこれが走る。
+  group('本線 TL を触ってよいかの判定 (#887 followup)', () {
+    test('本線タブ（ホーム等）では触ってよい', () {
+      expect(
+        mainTimelineIsVisible(const TimelineTab(TimelineType.home)),
+        isTrue,
+      );
+      expect(
+        mainTimelineIsVisible(const TimelineTab(TimelineType.local)),
+        isTrue,
+      );
+    });
+
+    test('ハッシュタグ / リストタブでは触らない（購読されていない）', () {
+      expect(mainTimelineIsVisible(const HashtagTab('capsicum')), isFalse);
+      expect(mainTimelineIsVisible(const ListTab(id: 'l1')), isFalse);
+    });
+
+    test('チャンネル / 通知タブでは触ってよい（本線の watch は続いている）', () {
+      expect(mainTimelineIsVisible(const ChannelTab(id: 'ch1')), isTrue);
+      expect(mainTimelineIsVisible(const NotificationsTab()), isTrue);
     });
   });
 }
