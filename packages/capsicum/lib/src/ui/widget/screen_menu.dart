@@ -74,7 +74,12 @@ final activeScreenMenuProvider = Provider<ScreenMenuContribution?>(
 
 /// 画面が自分のメニューを宣言するための widget (#835)。画面本体を包んで使う。
 ///
-/// マウント中だけ宣言が有効になり、pop / 画面差し替えで自動的に取り下げられる。
+/// **最前面に居る間だけ**宣言が有効になり、pop / 画面差し替え / 別画面を上に push
+/// したときに自動的に取り下げられる。マウントの有無だけで判定しないのは、go_router
+/// の push では下の画面がマウントされたまま残るため。ホームの簡易投稿バーのように
+/// スタックの底で宣言する widget があると、設定画面を開いている間もその宣言が居座り
+/// 「見えていない画面の操作」がメニューに出てしまう。
+///
 /// デスクトップ以外でも安全（メニューバー自体が描かれないので何も起きない）。
 class ScreenMenu extends ConsumerStatefulWidget {
   const ScreenMenu({
@@ -102,12 +107,32 @@ class _ScreenMenuState extends ConsumerState<ScreenMenu> {
   /// ので、この参照はアプリの生存中ずっと有効。
   late final ScreenMenuRegistry _registry;
 
+  /// 自分が乗っているルート。上に別画面が push されたかを [ModalRoute.isCurrent] で
+  /// 見るために保持する。Navigator の外（テスト等）では null になり、その場合は
+  /// 常に最前面とみなす。
+  ModalRoute<dynamic>? _route;
+
   @override
   void initState() {
     super.initState();
     _registry = ref.read(screenMenuRegistryProvider.notifier);
-    _publish();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (!identical(route, _route)) {
+      _route?.secondaryAnimation?.removeStatusListener(_onCoveredChanged);
+      _route = route;
+      // secondaryAnimation は「自分の上で起きている遷移」を表す。push が始まれば
+      // forward、pop で戻ってくれば reverse が流れるので、これを合図に出し直す。
+      _route?.secondaryAnimation?.addStatusListener(_onCoveredChanged);
+    }
+    _sync();
+  }
+
+  void _onCoveredChanged(AnimationStatus _) => _sync();
 
   @override
   void didUpdateWidget(ScreenMenu oldWidget) {
@@ -120,26 +145,32 @@ class _ScreenMenuState extends ConsumerState<ScreenMenu> {
         sameMenuEntries(widget.entries, oldWidget.entries)) {
       return;
     }
-    _publish();
+    _sync();
   }
 
-  /// provider の更新は build 中に行えないため、フレーム後に回す。
-  void _publish() {
+  /// 最前面なら登録、そうでなければ取り下げる。provider の更新はウィジェットの
+  /// ライフサイクル中（build / didChangeDependencies 等）に行えないため、いずれも
+  /// フレーム後に回す。
+  void _sync() {
     final contribution = ScreenMenuContribution(
       label: widget.label,
       entries: widget.entries,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _registry.register(_token, contribution);
+      if (_route?.isCurrent ?? true) {
+        _registry.register(_token, contribution);
+      } else {
+        _registry.unregister(_token);
+      }
     });
   }
 
   @override
   void dispose() {
-    // provider の変更はウィジェットのライフサイクル中に行えない（Riverpod が
-    // assert する）。取り下げも登録と同じくフレーム後に回す。1 フレームだけ
-    // 前の画面のメニューが残るが、メニューバーの見た目としては問題ない。
+    _route?.secondaryAnimation?.removeStatusListener(_onCoveredChanged);
+    // 取り下げも登録と同じくフレーム後に回す。1 フレームだけ前の画面のメニューが
+    // 残るが、メニューバーの見た目としては問題ない。
     final registry = _registry;
     final token = _token;
     WidgetsBinding.instance.addPostFrameCallback((_) {

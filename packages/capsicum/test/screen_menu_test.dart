@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum/src/ui/widget/desktop_menu_model.dart';
 import 'package:capsicum/src/ui/widget/screen_menu.dart';
 import 'package:flutter/material.dart';
@@ -162,6 +164,51 @@ void main() {
       await tester.pumpWidget(app(true));
       await tester.pumpAndSettle();
       expect(updates, 2, reason: 'チェック状態が変わったら反映する');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
+
+    /// go_router の push では下の画面がマウントされたまま残る。ホームの簡易投稿バー
+    /// のようにスタックの底で宣言する widget があると、マウントの有無だけで判定して
+    /// いると設定画面を開いている間も投稿メニューが居座る (#835)。
+    testWidgets('上に別画面が push されている間は宣言が引っ込み、pop で戻る', (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: ScreenMenu(
+              label: '投稿',
+              entries: [MenuActionEntry(label: '送信', onSelected: () {})],
+              child: const SizedBox(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(container.read(activeScreenMenuProvider)?.label, '投稿');
+
+      // 宣言を持たない画面（設定等）を上に積む。
+      unawaited(
+        navigatorKey.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const SizedBox()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(activeScreenMenuProvider),
+        isNull,
+        reason: '見えていない画面の操作をメニューに残さない',
+      );
+
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(container.read(activeScreenMenuProvider)?.label, '投稿');
 
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
