@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/visible_timeline.dart';
@@ -92,7 +93,14 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     _controller.setUnknownShortcodes(unknown);
   }
 
-  Future<void> _submit() async {
+  /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
+  /// await した後にしか立たないため、その窓で二連打が二重投稿になりえた。簡易バーは
+  /// TextField の Enter 送信もあるぶん踏みやすい。
+  final _submitGuard = ReentrancyGuard();
+
+  Future<void> _submit() => _submitGuard.run(_submitInternal);
+
+  Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 

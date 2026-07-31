@@ -28,6 +28,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
+import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
@@ -2456,6 +2457,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
   /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
   /// モバイルでは修飾キーが無いため発火しない。
+  ///
+  /// 二連打の弾きは [_submit] の [ReentrancyGuard] が担う (#908)。ここの
+  /// `_sending` 判定は、送信中に無駄な呼び出しを立ち上げないための前段。
   void _submitFromKeyboard() {
     if (_sending) return;
     _submit();
@@ -2556,7 +2560,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  Future<void> _submit() async {
+  /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
+  /// await した後にしか立たないため、その窓で二連打が二重投稿になりえた。
+  final _submitGuard = ReentrancyGuard();
+
+  Future<void> _submit() => _submitGuard.run(_submitInternal);
+
+  Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
 
@@ -2741,11 +2751,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 到達できる。**出し分けの条件はツールバー側と同一**にし、使えない操作を
   /// メニューにだけ見せることはしない。
   ///
-  /// 送信にショートカット表示を付けていないのは、macOS の native メニューが
-  /// key equivalent を自前で発火するため、compose 内の `CallbackShortcuts`（#708 の
-  /// Cmd/Ctrl+Enter）と二重に走る余地があるため。[_submit] は `_sending` を await の
-  /// 後に立てるので、二重に走れば二重投稿になる。送信キーは従来経路に任せ、
-  /// メニューには項目だけ置く。
+  /// 送信にショートカット表示を付けていない。macOS の native メニューは key
+  /// equivalent を自前で発火するため、compose 内の `CallbackShortcuts`（#708 の
+  /// Cmd/Ctrl+Enter）と二重に走る余地があり、当初はそれが二重投稿になりえた。
+  /// #908 の再入ガードで二重投稿そのものは塞がったので**表示を足すことは可能**だが、
+  /// 実機で二重発火の有無を確かめてからにしたい。項目の調整は #912 で拾う。
   List<MenuEntry> _buildComposeMenuEntries() {
     final adapter = ref.watch(currentAdapterProvider);
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
