@@ -48,6 +48,19 @@ class VisibleTimelineMutator {
     _channel?.removePost(id);
   }
 
+  /// ブロック / ミュートした相手の投稿を、表示中の TL から取り除く。
+  ///
+  /// ブロックは安全のための操作なので、「実行したのに画面から消えない」状態を
+  /// 残さない。本線 TL は streaming で後追い補正されるが、ハッシュタグ / リスト /
+  /// チャンネルの各 TL は張っていないため、ここで消さないとタブを切り替えるまで
+  /// 相手の投稿が見えたままになる。
+  void removePostsByUser(String userId) {
+    _main?.removePostsByUser(userId);
+    _hashtag?.removePostsByUser(userId);
+    _list?.removePostsByUser(userId);
+    _channel?.removePostsByUser(userId);
+  }
+
   /// 内容が変わった投稿を、表示中の TL で差し替える。
   void updatePost(Post updated) {
     _main?.updatePost(updated);

@@ -373,6 +373,23 @@ mixin TimelineListMutations<Arg>
     }).toList();
     state = AsyncData(current.copyWith(posts: posts));
   }
+
+  /// ブロック / ミュートした相手の投稿を一覧から取り除く。
+  ///
+  /// 本線 TL 側 ([TimelineNotifier.removePostsByUser]) と同じ判定。ブースト元の
+  /// 投稿者も見るのは、ブロックした相手をブーストした第三者の投稿が残ると、
+  /// 「ブロックしたのに本文が見え続ける」状態になるため。
+  void removePostsByUser(String userId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final posts = current.posts.where((p) {
+      if (p.author.id == userId) return false;
+      if (p.reblog?.author.id == userId) return false;
+      return true;
+    }).toList();
+    if (posts.length == current.posts.length) return;
+    state = AsyncData(current.copyWith(posts: posts));
+  }
 }
 
 /// Notifier that manages paginated timeline fetching with optional streaming.

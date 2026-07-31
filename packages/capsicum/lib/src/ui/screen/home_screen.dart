@@ -834,10 +834,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // (_StreamStatusIndicator) と同じ [_timelineIsStale] を共有して drift を防ぐ
     // (#764)。ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト
     // 消失を防ぐ・RefreshIndicator が自前のスピナーを出す）。
-    final showingStale =
-        (timeline.isLoading ||
-            _timelineIsStale(timeline, expectedContextKey)) &&
-        !_pullRefreshing;
+    final showingStale = shouldCollapseToLoading(
+      timeline: timeline,
+      expectedContextKey: expectedContextKey,
+      pullRefreshing: _pullRefreshing,
+    );
     final effectiveTimeline = showingStale
         ? const AsyncValue<TimelineState>.loading()
         : timeline;
@@ -866,7 +867,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // 起動時キャッシュの先出し (#890) では位置決めをしない。直後に
                 // 届く REST の結果で並びが変わり、一度きりの復元が無駄打ちに
                 // なるため、サーバーから来た一覧を待つ。
+                // `selectedHashtag == null` を省いてはいけない。
+                // [selectedTimelineTypeProvider] は「TL タブでなければ home」を
+                // 返すので (timeline_provider.dart)、**ハッシュタグタブでも
+                // `selectedType == home` が成立する**。省くとタグ TL の一覧に
+                // 対してホームのマーカーを探しに行き、一度きりの復元を無駄打ち
+                // したうえで、後からホームタブへ移っても復元されなくなる。
+                // 保存 (:222)・先行取得 (:848) と 3 点で条件を揃える。
                 if (selectedList == null &&
+                    selectedHashtag == null &&
                     selectedType == TimelineType.home &&
                     !tlState.fromCache &&
                     tlState.posts.isNotEmpty) {
@@ -1596,6 +1605,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 bool _timelineIsStale(AsyncValue<dynamic> async, String? expectedContextKey) =>
     expectedContextKey != null &&
     async.valueOrNull?.contextKey != expectedContextKey;
+
+/// 表示中の TL をローディング（スピナー）へ落とすか。判定理由は [_HomeScreenState.build]
+/// の呼び出し箇所のコメントを参照。
+///
+/// **決着済みのエラーは決して隠さない**。[_timelineIsStale] は「値が期待 contextKey と
+/// 一致しない」で stale と判定するが、初回取得が失敗した [AsyncError] は前値を持たない
+/// ため `valueOrNull` が null になり、**必ず stale 側へ倒れる**。そのまま潰すと
+/// エラー文も再試行ボタンも出ないまま**スピナーが回り続ける**（ログイン済みでオフライン
+/// 起動したときに踏む。#890 のキャッシュ先出し経路は前値が残るので stale にならず、
+/// キャッシュの有無で挙動が割れていた）。
+///
+/// リフレッシュ中の [AsyncLoading]（前回のエラーを引き継いだ状態）は `isLoading` が
+/// true なので、ここでは素通りしてスピナーになる。
+@visibleForTesting
+bool shouldCollapseToLoading({
+  required AsyncValue<dynamic> timeline,
+  required String? expectedContextKey,
+  required bool pullRefreshing,
+}) {
+  // pull-to-refresh は現データを残す（RefreshIndicator が自前のスピナーを出す）。
+  if (pullRefreshing) return false;
+  if (timeline.hasError && !timeline.isLoading) return false;
+  return timeline.isLoading || _timelineIsStale(timeline, expectedContextKey);
+}
 
 class _StreamStatusIndicator extends ConsumerStatefulWidget {
   const _StreamStatusIndicator();

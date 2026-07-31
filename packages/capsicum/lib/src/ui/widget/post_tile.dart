@@ -1666,8 +1666,27 @@ class _PostTileState extends ConsumerState<PostTile> {
       widget.onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // 同じお気に入り / ブースト / ブックマーク / ピン留めでも、アクションシート
+      // 経由（ここ）とタッチ操作行経由（post_touch_action_row._runAction）で失敗の
+      // 見え方が割れていた。あちらは describePostActionError で 403 を「権限が
+      // ありません」と説明し Sentry にも上げるのに、こちらは汎用文言のうえ無記録で、
+      // phase タグの件数を見ても母数が分からない状態だった。3 つの _runAction を
+      // 揃える（リリース前レビュー 2 巡目）。
+      debugPrint('_runAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1680,11 +1699,20 @@ class _PostTileState extends ConsumerState<PostTile> {
       await action();
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('_runVoidAction failed: $e');
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
+      // 文言は元から describePostActionError だが観測が無く、post_action の
+      // 母数から漏れていた（チャンネルへのリノート等がここを通る）。
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
       messenger.showSnackBar(
         SnackBar(content: Text(describePostActionError(e))),
       );
@@ -2202,13 +2230,26 @@ mixin _HoverUsersOverlay<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       _insertHoverOverlay();
       return;
     }
+    // 飛行中の再ホバー: ローディング表示だけ出し直して、**2 本目は発射しない**。
+    // [hoverFetch] は呼んだ時点でリクエストが出るので、この判定を後ろに置くと
+    // 離脱→再ホバーのたびに誰も await しない future が生まれる。ハンドラが付いて
+    // いないため、回線断や 5xx で落ちると unhandled async error としてゾーンへ
+    // 抜け、Sentry の crash-free rate を汚す。[hoverExit] は飛行中の取得を止め
+    // ないので、この経路は普通のマウス操作で踏める。
+    // ここで挿し直したオーバーレイは、先行の取得が終わったときの
+    // `_overlay?.markNeedsBuild()` で中身が入る。
+    if (_fetching) {
+      _loading = true;
+      _failed = false;
+      _insertHoverOverlay();
+      return;
+    }
     // 未キャッシュ: fetcher が無ければ（非対応 adapter 等）何も出さない。
     final future = hoverFetch();
     if (future == null) return;
     _loading = true;
     _failed = false;
     _insertHoverOverlay();
-    if (_fetching) return;
     _fetching = true;
     try {
       final users = await future;

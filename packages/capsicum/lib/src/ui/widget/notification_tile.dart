@@ -11,12 +11,12 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_action_error.dart';
+import '../util/visible_timeline.dart';
 import '../util/relative_time.dart';
 import '../util/post_scope_display.dart';
 import 'content_parser.dart';
@@ -343,14 +343,32 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<Post> Function() action,
     String successMessage,
   ) async {
-    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
+    // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
+    // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
+    // 誰も購読していない本線 TL を起こしたうえ、目の前の一覧には反映されない (#887)。
+    final timelines = readVisibleTimelines(ref);
     try {
       final updated = await action();
-      timeline.updatePost(updated);
+      timelines.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // 同ファイルの _runReactionAction と揃える。汎用文言＋無記録のままだと、
+      // 通知画面から実行した投稿アクションの失敗だけが観測から抜け落ちる。
+      debugPrint('_runAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -435,12 +453,15 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<void> Function() action,
     String successMessage,
   ) async {
-    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
+    // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
+    // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
+    // 誰も購読していない本線 TL を起こしたうえ、目の前の一覧には反映されない (#887)。
+    final timelines = readVisibleTimelines(ref);
     try {
       await action();
       final updated = await adapter.getPostById(postId);
-      timeline.updatePost(updated);
+      timelines.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       debugPrint('_runReactionAction failed: $e');
