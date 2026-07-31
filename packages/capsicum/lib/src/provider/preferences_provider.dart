@@ -796,8 +796,17 @@ final composeFontFamilyProvider =
     );
 
 class ComposeFontFamilyNotifier extends Notifier<String> {
+  /// 保存値の読み込みが終わる前にユーザーが編集したか (#892 followup)。
+  ///
+  /// [build] は `''` を返してから [_load] が非同期に保存値を入れる。その往復の
+  /// 最中に設定画面で打つと、`setFontFamily` が入れた値を後から `_load` が
+  /// **保存済みの古い値で上書きする**（打った内容が黙って戻る）。逆に、既定へ
+  /// 戻すつもりで欄を空にしたときも、古い値が復活する。
+  bool _userEdited = false;
+
   @override
   String build() {
+    _userEdited = false;
     _load();
     return '';
   }
@@ -805,11 +814,17 @@ class ComposeFontFamilyNotifier extends Notifier<String> {
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_composeFontFamilyKey);
+    // 往復の間にユーザーが編集していたら、その入力を保存値で上書きしない。
+    if (_userEdited) return;
     if (saved != null) state = saved;
   }
 
   Future<void> setFontFamily(String value) async {
     final trimmed = value.trim();
+    // 「同じ値なので何もしない」より **前**に立てる。既定へ戻すつもりで空にした
+    // とき（state が既に空＝初期値のまま）ここで早期 return すると、フラグが
+    // 立たないまま _load が古い値を復活させてしまう。
+    _userEdited = true;
     if (state == trimmed) return;
     state = trimmed;
     final prefs = await SharedPreferences.getInstance();

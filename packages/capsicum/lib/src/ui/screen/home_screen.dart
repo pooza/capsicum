@@ -140,6 +140,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   int get keyboardListItemCount => _keyboardPosts.length;
 
+  /// ↑ ↓ キーの対象を空にする (#849 followup)。
+  ///
+  /// 対象リストは `data:` ブランチでしか代入していないので、タブ / アカウント切替で
+  /// ローディングに落ちた間やエラーになった後も**前の一覧が残る**。キーハンドラを
+  /// 張る [Focus] はその間も生きているため、↑ ↓ と Enter で**画面に出ていない
+  /// 前のタブの投稿を開けてしまう**（エラー時は再試行するまでその状態が続く）。
+  ///
+  /// 選択の解除は build 中に setState できないのでフレーム後に回す。
+  void _clearKeyboardTargets() {
+    _keyboardPosts = const [];
+    if (keyboardSelectedIndex == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) resetKeyboardSelection();
+    });
+  }
+
   @override
   void onKeyboardListActivate(int index) {
     if (index >= _keyboardPosts.length) return;
@@ -905,6 +921,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 );
               },
               loading: () {
+                _clearKeyboardTargets();
                 if (_showScrollTop) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) setState(() => _showScrollTop = false);
@@ -913,6 +930,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 return const Center(child: CircularProgressIndicator());
               },
               error: (error, stack) {
+                _clearKeyboardTargets();
                 final message = _timelineErrorMessage(error);
                 final canRetry = !_isForbiddenError(error);
                 return Center(
