@@ -357,11 +357,16 @@ class PostTouchActionRow extends ConsumerWidget {
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
+      // phase は**操作の種類**を表す軸で、導線は名乗らない（`reaction_add` が
+      // post_tile / notification_tile / ここの 3 ファイルで同じ値なのと同じ）。
+      // v1.53 までは導線名の `touch_action` を出していたため、同じお気に入り /
+      // ブーストの失敗が導線ごとに別系列へ散り、**どちらで絞っても母数にならない**
+      // 状態だった。3 つの _runAction すべてを post_action に揃える。
       unawaited(
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'touch_action'),
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
         ),
       );
       messenger.showSnackBar(

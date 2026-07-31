@@ -1329,7 +1329,25 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     final current = state.valueOrNull;
     if (current == null) return;
     final posts = current.posts.where((p) => p.id != id).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    state = AsyncData(
+      current.copyWith(
+        posts: posts,
+        pendingCount: _dropPending((p) => p.id == id),
+      ),
+    );
+  }
+
+  /// 未表示バッファ [_pendingPosts] から条件に合う投稿を落とし、新しい
+  /// `pendingCount` を返す。
+  ///
+  /// TL 上部から離れている間、streaming の新着は表示中の一覧ではなく
+  /// [_pendingPosts] に溜まる（「新着 N 件」で開くまで出さない、#296）。
+  /// 一覧からだけ消してここを掃除しないと、**削除済み投稿やブロックした相手の
+  /// 投稿が「新着 N 件」を開いた瞬間に現れる**。ブロックは安全のための操作なので
+  /// 「見えているどの TL からも消える」保証 (#887) を穴のない形にする。
+  int _dropPending(bool Function(Post) matches) {
+    _pendingPosts.removeWhere(matches);
+    return _pendingPosts.length;
   }
 
   /// 自分の投稿を即座に**現在アクティブな TL** の先頭へ楽観的挿入する (#717)。
@@ -1372,12 +1390,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.where((p) {
-      if (p.author.id == userId) return false;
-      if (p.reblog?.author.id == userId) return false;
-      return true;
-    }).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    bool byUser(Post p) =>
+        p.author.id == userId || p.reblog?.author.id == userId;
+    final posts = current.posts.where((p) => !byUser(p)).toList();
+    state = AsyncData(
+      current.copyWith(posts: posts, pendingCount: _dropPending(byUser)),
+    );
   }
 
   /// Load next page of posts (older posts).

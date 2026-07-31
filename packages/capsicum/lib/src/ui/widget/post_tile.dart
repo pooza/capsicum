@@ -1067,8 +1067,24 @@ class _PostTileState extends ConsumerState<PostTile> {
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // 4 つ目の投稿アクション経路。他の 3 つ（各 _runAction）を揃えたときに
+      // ここだけ取り残すと、`phase: post_action` の母数から「取り消し」が丸ごと
+      // 欠け、失敗文言も汎用のままになる。
+      debugPrint('_unrepeat failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 

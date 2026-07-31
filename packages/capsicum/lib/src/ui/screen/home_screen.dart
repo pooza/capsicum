@@ -873,7 +873,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // `selectedType == home` が成立する**。省くとタグ TL の一覧に
                 // 対してホームのマーカーを探しに行き、一度きりの復元を無駄打ち
                 // したうえで、後からホームタブへ移っても復元されなくなる。
-                // 保存 (:222)・先行取得 (:848) と 3 点で条件を揃える。
+                // 保存 ([_onPositionsChanged])・先行取得 ([_prefetchHomeMarker]
+                // の呼び出し) と 3 点で条件を揃える。
                 if (selectedList == null &&
                     selectedHashtag == null &&
                     selectedType == TimelineType.home &&
@@ -952,8 +953,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         if (canRetry) ...[
                           const SizedBox(height: 16),
                           ElevatedButton(
+                            // ハッシュタグ / リスト / 本線の 3 分岐。表示中の TL を
+                            // invalidate しないと**押しても何も起きないボタン**に
+                            // なる。タグタブでは本線 TL が購読されていないので、
+                            // `timelineProvider` の invalidate は事実上 no-op で、
+                            // 復帰手段がタブ切替か Ctrl+R しか残らない（モバイルに
+                            // は気づける導線が無い）。分岐は loadMore /
+                            // pull-to-refresh / [_refreshCurrentTimeline] と同型。
                             onPressed: () {
-                              if (selectedList != null) {
+                              if (selectedHashtag != null) {
+                                ref.invalidate(
+                                  hashtagTimelineProvider(selectedHashtag),
+                                );
+                              } else if (selectedList != null) {
                                 ref.invalidate(
                                   listTimelineProvider(selectedList.id),
                                 );

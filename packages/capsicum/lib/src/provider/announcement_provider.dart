@@ -22,12 +22,15 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
   bool _disposed = false;
 
   /// [refresh] の世代。並行した取り直しのうち、最後に投げたものだけを反映する。
+  ///
+  /// **build() でリセットしてはいけない**。`_disposed` と違って巻き戻す必要が無く、
+  /// 戻すと世代番号が再利用される。「refresh A(gen 1) が飛行中に build が再走し、
+  /// 続く refresh B も gen 1 → A が後着」で、**古い一覧が新しい一覧に勝つ**。
   int _refreshGeneration = 0;
 
   @override
   Future<AnnouncementState> build() async {
     _disposed = false;
-    _refreshGeneration = 0;
     ref.onDispose(() => _disposed = true);
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! AnnouncementSupport) {
