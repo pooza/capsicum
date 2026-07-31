@@ -720,8 +720,17 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     required bool hideLivecure,
     required int generation,
   }) async {
+    // 「キャッシュを描いてから実物に置き換わるまで」を測る (#890)。
+    //
+    // この経路が定常状態になると `app.startup.home_timeline` は from_cache=true
+    // ばかりになり、**サーバー応答時間 (fetch_ms) を持つコホートが「キャッシュを
+    // 使えなかった起動」（初回・24h 超・文脈違い）だけに縮む**。定常状態を代表
+    // しない層しか残らないので、REST が遅くなっても起動計測は速くなったように
+    // しか見えない。置き換えまでの所要をここで別 transaction として残し、
+    // #890 の効果と REST の実勢を切り分けられるようにする。
+    final swapSw = Stopwatch()..start();
     try {
-      await _loadInitial(
+      final fresh = await _loadInitial(
         adapter: adapter,
         type: type,
         contextKey: contextKey,
@@ -730,6 +739,17 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         measureHomePaint: false,
         publishToState: true,
         generation: generation,
+      );
+      swapSw.stop();
+      // 途中で捨てられた回（破棄 / 世代進み / 文脈変更）は所要の意味が変わるので
+      // 記録しない。_isStale と同じ判定を使う。
+      if (_isStale(generation, contextKey, publishToState: true)) return;
+      // transaction の duration そのものが所要（取得 + enrich + 差し替え）。
+      // 別 measurement には積まない（同じ値の二重持ちになる）。
+      recordStartupPhase(
+        'app.startup.home_timeline_swap',
+        durationMs: swapSw.elapsedMilliseconds,
+        data: {'posts': fresh.posts.length},
       );
     } catch (e, st) {
       // 破棄済み / 世代が進んだ / 文脈が変わった場合は、もう自分の結果に用は無い。
