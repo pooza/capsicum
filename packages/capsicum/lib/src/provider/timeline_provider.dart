@@ -495,14 +495,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     );
     if (cached != null) {
       unawaited(
-        _loadInitial(
+        _loadInitialInBackground(
           adapter: adapter,
           type: type,
           contextKey: contextKey,
           hideLivecure: hideLivecure,
-          // 初回描画はキャッシュ側で計測済み。二重に report しない。
-          measureHomePaint: false,
-          publishToState: true,
           generation: generation,
         ),
       );
@@ -585,6 +582,21 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       _recordPageCapHit(site: 'build', visibleCollected: 0, hasMore: true);
     }
 
+    // ここから先は副作用（streaming 接続・キャッシュ保存・enrich）に入る。以前は
+    // 破棄／世代のチェックが最後の state 差し替え直前にしか無く、キャッシュ先出しの
+    // 裏で走っている間にアカウント切替・ログアウトが起きると、**捨てるはずの世代が
+    // WebSocket を張り直したり、ログアウト直後にキャッシュを書き戻したり**していた。
+    // 副作用の手前でも同じ条件で降りる。
+    if (_isStale(generation, contextKey, publishToState: publishToState)) {
+      return TimelineState(
+        posts: allVisible,
+        hasMore: hasMore,
+        pageCapHit: pageCapHit,
+        contextKey: contextKey,
+        streamConnectionState: _streamConnectionState,
+      );
+    }
+
     // Start streaming if supported and enabled. ユーザーがライブ更新を OFF に
     // している場合 (#854) は WebSocket を張らず、インジケータを disabled にする。
     // 初期判定は read で行う。watch すると、トグル切替が build() 全体（REST 再
@@ -644,14 +656,75 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     // キャッシュ先出しの裏で走った場合は、自分で state を差し替える。文脈が
     // 変わっている（アカウント/タブ切替で build() がやり直された）なら捨てる。
-    if (publishToState) {
-      // 破棄済み / 再計算で世代が進んだ / 文脈が変わった、のいずれでも捨てる。
-      if (_disposed) return fresh;
-      if (generation != _buildGeneration) return fresh;
-      if (state.valueOrNull?.contextKey != contextKey) return fresh;
+    if (publishToState &&
+        !_isStale(generation, contextKey, publishToState: true)) {
       state = AsyncData(fresh);
     }
     return fresh;
+  }
+
+  /// この取得の結果が既に用済みか。破棄済み・再計算で世代が進んだ・表示中の文脈が
+  /// 変わった、のいずれか (#890)。
+  ///
+  /// [publishToState] が false のとき（`build()` の返り値として await されている
+  /// 途中）は state がまだ `AsyncLoading` なので、表示中の contextKey とは比べない。
+  /// 比べると初回取得が常に stale 判定になる。
+  bool _isStale(
+    int generation,
+    String? contextKey, {
+    required bool publishToState,
+  }) {
+    if (_disposed) return true;
+    if (generation != _buildGeneration) return true;
+    if (publishToState && state.valueOrNull?.contextKey != contextKey) {
+      return true;
+    }
+    return false;
+  }
+
+  /// キャッシュ先出しの裏で走る初回取得 (#890)。**失敗を握り潰さないための層**。
+  ///
+  /// [_loadInitial] は `build()` の返り値として await されるときだけ Riverpod が
+  /// 例外を [AsyncError] に変換してくれる。キャッシュ先出し経路では `unawaited` で
+  /// 走らせるため、そのままだと取得に失敗しても
+  ///
+  /// - 画面には**最大 24 時間前のキャッシュが「生きた TL」として出続ける**
+  ///   （エラー表示も再試行導線も出ない）
+  /// - `_startStreaming` は取得の後にあるため**ライブ更新も張られない**
+  /// - 例外は未処理の非同期エラーとしてゾーンへ落ち、Sentry に unhandled で載る
+  ///
+  /// という三重の劣化が起きる。**キャッシュがある方がエラー処理が弱くなる**のは
+  /// 筋が通らないので、ここで捕まえてキャッシュ無し経路と同じ [AsyncError] に
+  /// 揃える（再試行はホーム画面の error ブランチが出す）。
+  Future<void> _loadInitialInBackground({
+    required DecentralizedBackendAdapter adapter,
+    required TimelineType type,
+    required String? contextKey,
+    required bool hideLivecure,
+    required int generation,
+  }) async {
+    try {
+      await _loadInitial(
+        adapter: adapter,
+        type: type,
+        contextKey: contextKey,
+        hideLivecure: hideLivecure,
+        // 初回描画はキャッシュ側で計測済み。二重に report しない。
+        measureHomePaint: false,
+        publishToState: true,
+        generation: generation,
+      );
+    } catch (e, st) {
+      // 破棄済み / 世代が進んだ / 文脈が変わった場合は、もう自分の結果に用は無い。
+      if (_disposed) return;
+      if (generation != _buildGeneration) return;
+      if (state.valueOrNull?.contextKey != contextKey) return;
+      // 例外文字列にはホストや生データ断片が載りうるため詰め替えてから送る
+      // (#586 / #743)。unhandled ではなく「意図して捕捉した失敗」として残す。
+      final scrubbed = scrubException(e);
+      unawaited(Sentry.captureException(scrubbed, stackTrace: st));
+      state = AsyncError(scrubbed, st);
+    }
   }
 
   /// 起動直後の 1 回だけ、前回のホーム TL をディスクから読んで先出しする (#890)。
@@ -686,7 +759,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           .where((p) => !hideLivecure || !_hasLivecureTag(p))
           .toList();
     } catch (e) {
-      debugPrint('capsicum: timeline cache decode failed: $e');
+      // 例外をそのまま出さない理由は timeline_cache.dart の save 側コメント参照
+      // （release では debugPrint が Sentry breadcrumb になる）。
+      debugPrint(
+        'capsicum: timeline cache decode failed: ${scrubException(e)}',
+      );
       return null;
     }
     if (posts.isEmpty) return null;
@@ -805,8 +882,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       'app.startup.home_timeline',
       durationMs: sinceLaunchMs,
       measurementsMs: {
-        'fetch_ms': fetchMs,
-        'enrich_ms': enrichMs,
+        // キャッシュ先出しの回はサーバーを待っていないので、fetch / enrich は
+        // 「0ms」ではなく**欠測**にする。0 を混ぜると fetch_ms の平均・p95 が
+        // 実測していない値で薄まり、from_cache で絞らない限り読めなくなる (#890)。
+        if (!fromCache) 'fetch_ms': fetchMs,
+        if (!fromCache) 'enrich_ms': enrichMs,
         // 先出し時のディスク読み出し。サーバー応答と桁が違うことを確認するため
         // 別枠で持つ (#890)。
         if (fromCache) 'cache_read_ms': cacheReadMs,

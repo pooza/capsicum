@@ -56,6 +56,11 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
       final announcements = await (adapter as AnnouncementSupport)
           .getAnnouncements();
       if (_disposed) return;
+      // 往復の間にアカウントが切り替わっていたら捨てる。`_disposed` は build() の
+      // 先頭で false へ戻るので、「破棄 → 再 build → 旧 refresh が完了」の順に
+      // なるとガードを素通りし、**切替後のアカウントの一覧が切替前の内容で
+      // 上書きされる**（遅いサーバーで実際に起きる）。
+      if (!identical(ref.read(currentAdapterProvider), adapter)) return;
       state = AsyncData(AnnouncementState(announcements: announcements));
     } catch (_) {
       // 取得失敗。次の機会に取り直す。

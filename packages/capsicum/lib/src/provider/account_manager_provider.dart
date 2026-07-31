@@ -822,6 +822,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> removeOfflineAccount(AccountKey key) async {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
+    // 明示ログアウト相当なので、TL キャッシュ (#890) も [logout] と同じく捨てる。
+    // contextKey が一致しなければ使われない作りだが、消したアカウントの投稿を
+    // 端末に残す理由が無い点は logout と変わらない。
+    await TimelineCache.clear();
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }

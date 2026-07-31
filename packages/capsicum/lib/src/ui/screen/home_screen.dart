@@ -222,9 +222,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// おけば、描画時点では解決済みであることが多く、待ち時間もちらつきも消える。
   ///
   /// ホーム TL を表示するときだけ呼ぶ（復元対象がホームのマーカーのみのため、
-  /// 別タブ起動でサーバーへ無駄な 1 往復を出さない）。何度呼んでも 1 回だけ走る。
+  /// 別タブ起動でサーバーへ無駄な 1 往復を出さない）。取得が飛行中／完了済みなら
+  /// 何もしないので、何度呼んでも往復は 1 回。
+  ///
+  /// ガードに `_markerRestored` を含めてはいけない。[_restoreMarker] は自分の冒頭で
+  /// `_markerRestored` を立ててからフォールバックとしてここを呼ぶので、含めると
+  /// **その呼び出しが必ず no-op になる**。リフレッシュで [_rearmMarkerRestore] が
+  /// `_markerFetch` を落とした後、取り直しが起きなくなる。
   void _prefetchHomeMarker() {
-    if (_markerFetch != null || _markerRestored) return;
+    if (_markerFetch != null) return;
     if (!ref.read(restoreReadPositionProvider)) return;
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! MarkerSupport) return;
@@ -233,6 +239,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       (markers) => markers,
       onError: (Object _) => null,
     );
+  }
+
+  /// 既読位置復元をもう一度走らせられる状態に戻す（リフレッシュ時）。
+  ///
+  /// `_markerFetch` も併せて落とすこと。**先行取得した Future は完了済みのまま
+  /// 残る**ので、これを落とさないとリフレッシュ後の `await _markerFetch` が
+  /// 「アプリ起動時点のマーカー」を返し、その間に前進したサーバー側の既読位置を
+  /// 見に行かない（#890 で入り込んだ挙動変化）。
+  void _rearmMarkerRestore() {
+    _markerRestored = false;
+    _markerFetch = null;
   }
 
   Future<void> _restoreMarker(List<Post> posts) async {
@@ -842,7 +859,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 return RefreshIndicator(
                   key: _refreshIndicatorKey,
                   onRefresh: () async {
-                    _markerRestored = false;
+                    _rearmMarkerRestore();
                     // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
                     // データを残す。完了で必ず戻す。
                     setState(() => _pullRefreshing = true);
@@ -971,7 +988,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
-    _markerRestored = false;
+    _rearmMarkerRestore();
     if (mounted) setState(() => _pullRefreshing = true);
     try {
       final Future<TimelineState> refreshed;

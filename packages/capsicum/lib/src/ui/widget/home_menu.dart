@@ -367,8 +367,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           globalShortcut: true,
           onSelected: () => context.push('/settings'),
         ),
-        // 投げ銭（サポート）への導線 (#853)。IAP 提供プラットフォームのみ。
-        // デスクトップでの露出を上げる狙い。
+        // 投げ銭（サポート）への導線 (#853)。IAP 提供プラットフォームに加え、
+        // Web 支援を案内する Linux でも出す (#893)。デスクトップでの露出を上げる狙い。
         if (ref.watch(supporterEntryVisibleProvider))
           MenuActionEntry(
             label: 'capsicum をサポート…',

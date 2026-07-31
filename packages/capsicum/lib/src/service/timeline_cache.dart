@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../util/exception_scrub.dart';
 
 /// 前回のホームタイムラインをディスクに残し、次の起動で即描画するための保存層
 /// (#890)。
@@ -58,7 +61,12 @@ class TimelineCache {
         flush: false,
       );
     } catch (e) {
-      debugPrint('capsicum: timeline cache save failed: $e');
+      // 例外はそのまま出さない。release ビルドでは sentry_flutter の
+      // DebugPrintIntegration が debugPrint を丸ごと breadcrumb 化するため、
+      // FormatException.toString() が抱える source（＝このファイルに入っている
+      // 投稿本文の断片）がそのまま Sentry へ送られる。#586 で用意した
+      // scrubException を必ず通す。
+      debugPrint('capsicum: timeline cache save failed: ${scrubException(e)}');
     }
   }
 
@@ -73,20 +81,32 @@ class TimelineCache {
       if (!await file.exists()) return null;
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! Map) return null;
-      if (decoded['contextKey'] != contextKey) return null;
+      // 使えないと分かった時点で消す。保持期限や文脈が外れたキャッシュは以後
+      // 二度と使われないのに、放っておくと投稿本文がディスクに残り続ける
+      // （次の save で上書きされるまで、起動しなければ無期限）。
+      if (decoded['contextKey'] != contextKey) return _discard();
       final savedAt = DateTime.tryParse('${decoded['savedAt']}');
-      if (savedAt == null) return null;
-      if (now.toUtc().difference(savedAt.toUtc()) > maxAge) return null;
+      if (savedAt == null) return _discard();
+      if (now.toUtc().difference(savedAt.toUtc()) > maxAge) return _discard();
       final posts = decoded['posts'];
-      if (posts is! List) return null;
+      if (posts is! List) return _discard();
       return [
         for (final e in posts)
           if (e is Map<String, dynamic>) e,
       ];
     } catch (e) {
-      debugPrint('capsicum: timeline cache load failed: $e');
+      // 壊れたファイルの jsonDecode 失敗がここに来る。scrub の理由は save 側の
+      // コメントを参照（この経路が実際にいちばん踏まれる）。
+      debugPrint('capsicum: timeline cache load failed: ${scrubException(e)}');
       return null;
     }
+  }
+
+  /// 使えないキャッシュを捨てて null を返す（[load] の各棄却枝から使う）。
+  /// 削除は best-effort で、失敗しても読み出しの結果（使わない）は変わらない。
+  static Null _discard() {
+    unawaited(clear());
+    return null;
   }
 
   /// キャッシュを消す。ログアウト等、残しておくと別アカウントに見えかねない
@@ -96,7 +116,7 @@ class TimelineCache {
       final file = await _file();
       if (await file.exists()) await file.delete();
     } catch (e) {
-      debugPrint('capsicum: timeline cache clear failed: $e');
+      debugPrint('capsicum: timeline cache clear failed: ${scrubException(e)}');
     }
   }
 }

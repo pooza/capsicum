@@ -21,13 +21,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 残り続ける / そもそも先出しされない、のどちらかになる。
 class _FakeAdapter extends Mock
     implements DecentralizedBackendAdapter, TimelineCacheSupport {
-  _FakeAdapter({required this.fresh, this.fetchGate});
+  _FakeAdapter({required this.fresh, this.fetchGate, this.failFetch = false});
 
   /// getTimeline が返す「サーバー側の」投稿。
   final List<Post> fresh;
 
   /// 非 null のとき、getTimeline はこの gate が完了するまで待つ。
   final Future<void>? fetchGate;
+
+  /// true のとき getTimeline は投げる（オフライン起動・5xx 相当）。
+  final bool failFetch;
 
   int fetchCount = 0;
 
@@ -41,6 +44,7 @@ class _FakeAdapter extends Mock
   }) async {
     fetchCount++;
     if (fetchGate != null) await fetchGate;
+    if (failFetch) throw Exception('network down');
     if (query?.maxId != null) {
       return const TimelineResponse(posts: [], rawCount: 0);
     }
@@ -146,6 +150,38 @@ void main() {
     final after = container.read(timelineProvider).value!;
     expect(after.fromCache, isFalse);
     expect(after.posts.map((p) => p.id), ['new1']);
+  });
+
+  /// リリース前レビュー (v1.53) で 5 観点中 4 つから独立に挙がった 🔴。
+  ///
+  /// 先出しの裏で走る取得は `unawaited` なので、失敗しても build() の返り値には
+  /// ならず AsyncError に変換されない。放置すると「最大 24 時間前のキャッシュが
+  /// 生きた TL に見えたまま、エラー表示も再試行導線も streaming も無い」状態で
+  /// 固まり、例外だけが未処理として Sentry に載る。
+  test('先出しの裏で取得が失敗したら、黙って古い一覧を出し続けずエラーにする', () async {
+    await TimelineCache.save(contextKeyFor(), [
+      {'id': 'cached1', 'content': '前回の投稿'},
+    ], now: DateTime.now());
+
+    final adapter = _FakeAdapter(fresh: const [], failFetch: true);
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    // 先出し自体は従来どおり成功する。
+    final first = await container.read(timelineProvider.future);
+    expect(first.fromCache, isTrue);
+    expect(first.posts.map((p) => p.id), ['cached1']);
+
+    // 裏の取得が失敗したら、キャッシュ無し経路と同じくエラーへ倒す
+    // （ホーム画面の error ブランチが再試行を出す）。
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      container.read(timelineProvider).hasError,
+      isTrue,
+      reason: '古いキャッシュを「生きた TL」として出し続けない',
+    );
   });
 
   test('キャッシュが無ければ従来どおり REST の結果を返す', () async {
