@@ -123,5 +123,48 @@ void main() {
       await tester.pumpAndSettle();
       expect(container.read(activeScreenMenuProvider), isNull);
     });
+
+    /// 投稿画面のように 1 文字打つたびに再ビルドされる画面が採用するため、
+    /// 「中身が同じ再ビルド」でメニューバーを作り直さないことを固める (#835)。
+    testWidgets('中身が同じ再ビルドでは宣言を作り直さない', (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      var updates = 0;
+      container.listen(activeScreenMenuProvider, (_, _) => updates++);
+
+      // 画面側と同じく、ビルドのたびに新しいリストを組み直す。
+      void onSave() {}
+      Widget app(bool checked) => UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: ScreenMenu(
+            label: 'メディア',
+            entries: [
+              MenuActionEntry(
+                label: '保存',
+                checked: checked,
+                onSelected: onSave,
+              ),
+            ],
+            child: const SizedBox(),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(app(false));
+      await tester.pumpAndSettle();
+      expect(updates, 1, reason: '初回の登録');
+
+      await tester.pumpWidget(app(false));
+      await tester.pumpAndSettle();
+      expect(updates, 1, reason: '中身が同じなら登録し直さない');
+
+      await tester.pumpWidget(app(true));
+      await tester.pumpAndSettle();
+      expect(updates, 2, reason: 'チェック状態が変わったら反映する');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
   });
 }

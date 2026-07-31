@@ -27,6 +27,15 @@ class ScreenMenuContribution {
   final String label;
 
   final List<MenuEntry> entries;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScreenMenuContribution &&
+      other.label == label &&
+      sameMenuEntries(other.entries, entries);
+
+  @override
+  int get hashCode => Object.hash(label, Object.hashAll(entries));
 }
 
 /// 画面メニュー貢献のスタック。token は宣言元 [ScreenMenu] の同一性。
@@ -103,11 +112,12 @@ class _ScreenMenuState extends ConsumerState<ScreenMenu> {
   @override
   void didUpdateWidget(ScreenMenu oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 中身が変わっていないなら触らない（毎フレームの再登録で メニューバーを
-    // 無駄に rebuild させない）。項目リストは画面側で作り直されるため、
-    // 同一性で軽く判定する。
+    // 中身が変わっていないなら触らない。項目リストは画面側でビルドのたびに
+    // 組み直されるので、同一性ではなく **値等価**（[MenuEntry] の `==`）で比べる。
+    // 投稿画面のように 1 文字打つたびに再ビルドされる画面では、ここで弾かないと
+    // 打鍵のたびにメニューバー全体が作り直される (#835)。
     if (widget.label == oldWidget.label &&
-        identical(widget.entries, oldWidget.entries)) {
+        sameMenuEntries(widget.entries, oldWidget.entries)) {
       return;
     }
     _publish();

@@ -24,9 +24,26 @@ class MenuShortcut {
   /// [useMeta] が true なら Cmd（macOS）、false なら Ctrl（Windows/Linux）で解決する。
   SingleActivator resolve({required bool useMeta}) =>
       SingleActivator(key, meta: useMeta, control: !useMeta, shift: shift);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MenuShortcut && other.key == key && other.shift == shift;
+
+  @override
+  int get hashCode => Object.hash(key, shift);
 }
 
 /// メニューツリーの 1 ノード。
+///
+/// 各ノードは**値等価**を持つ (#835)。画面メニューの貢献（[ScreenMenu]）は画面が
+/// 再ビルドされるたびに新しいリストとして組み直されるため、同一性で比較すると
+/// 本文を 1 文字打つたびにメニューバー全体が再構築されてしまう。中身が同じなら
+/// 等しいと判定できるようにして、状態が実際に変わったときだけ作り直す。
+///
+/// 等価判定は `onSelected` も含む。**コールバックはメソッドのテアオフで渡すこと**
+/// （`onSelected: _pickMedia`）。同じレシーバの同じメソッドのテアオフ同士は Dart の
+/// 仕様で等しくなるが、その場で作った無名関数（`() => setState(...)`）はビルドの
+/// たびに別物になり、等価判定が常に false に落ちる。
 sealed class MenuEntry {
   const MenuEntry();
 }
@@ -68,6 +85,28 @@ class MenuActionEntry extends MenuEntry {
   /// 編集（コピー/貼り付け等）は [DefaultTextEditingShortcuts] が担うので false の
   /// まま（表示専用）にし、二重登録・二重発火を避ける。
   final bool globalShortcut;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MenuActionEntry &&
+      other.label == label &&
+      other.icon == icon &&
+      other.shortcut == shortcut &&
+      other.onSelected == onSelected &&
+      other.badge == badge &&
+      other.checked == checked &&
+      other.globalShortcut == globalShortcut;
+
+  @override
+  int get hashCode => Object.hash(
+    label,
+    icon,
+    shortcut,
+    onSelected,
+    badge,
+    checked,
+    globalShortcut,
+  );
 }
 
 /// in-window（Windows/Linux）でアプリ級に登録するショートカット束を [model] から
@@ -111,12 +150,38 @@ class MenuSubmenuEntry extends MenuEntry {
   final Widget? leadingIcon;
 
   final List<MenuEntry> children;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MenuSubmenuEntry &&
+      other.label == label &&
+      other.leadingIcon == leadingIcon &&
+      sameMenuEntries(other.children, children);
+
+  @override
+  int get hashCode => Object.hash(label, leadingIcon, Object.hashAll(children));
+}
+
+/// メニュー項目リストの値等価 (#835)。要素の `==`（[MenuEntry] の値等価）で比べる。
+bool sameMenuEntries(List<MenuEntry> a, List<MenuEntry> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// グループ境界（区切り線）。macOS は [PlatformMenuItemGroup] の分割に、in-window
 /// は現状セパレータを描かないため無視する（従来挙動維持）。
 class MenuGroupSeparator extends MenuEntry {
   const MenuGroupSeparator();
+
+  @override
+  bool operator ==(Object other) => other is MenuGroupSeparator;
+
+  @override
+  int get hashCode => (MenuGroupSeparator).hashCode;
 }
 
 /// OS 提供項目。macOS は [PlatformProvidedMenuItem]（About/終了/Services/全画面/
@@ -135,6 +200,18 @@ class MenuProvidedEntry extends MenuEntry {
   final String? inWindowLabel;
   final IconData? inWindowIcon;
   final Future<void> Function()? inWindowAction;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MenuProvidedEntry &&
+      other.macType == macType &&
+      other.inWindowLabel == inWindowLabel &&
+      other.inWindowIcon == inWindowIcon &&
+      other.inWindowAction == inWindowAction;
+
+  @override
+  int get hashCode =>
+      Object.hash(macType, inWindowLabel, inWindowIcon, inWindowAction);
 }
 
 /// ラベルに badge / checked を反映した最終表示文字列を組む。checked の `✓` は
