@@ -23,6 +23,7 @@ import '../../provider/supporter_purchase_provider.dart';
 import '../../constants.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
+import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
@@ -62,10 +63,16 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, KeyboardListNavigation {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
+  // ↑ ↓ キーで辿る対象 (#849)。表示中のタイムラインが持つ投稿そのもので、
+  // build のたびに描画内容と同じものへ差し替える。
+  List<Post> _keyboardPosts = const [];
   bool _markerRestored = false;
+  // 既読位置復元 (#715) 用のマーカー取得を、初回 TL 取得と並行に走らせるための
+  // ハンドル (#890)。null なら未着手。失敗は null に潰して復元側では扱わない。
+  Future<MarkerSet?>? _markerFetch;
   bool _lastTabRestored = false;
   String? _lastTabRestoredForAccount;
   String? _pendingListRestore;
@@ -115,7 +122,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
       ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
+      // 背面に居た間に増えたお知らせを取り直す (#888)。以前はアカウントを切り
+      // 替えるまで反映されなかった。常駐タイマーは持たず、復帰・画面を開いた
+      // とき・streaming 受信の 3 つの機会で取り直す方針。
+      unawaited(ref.read(announcementProvider.notifier).refresh());
     }
+  }
+
+  @override
+  ItemScrollController get keyboardListScrollController =>
+      _itemScrollController;
+
+  @override
+  ItemPositionsListener get keyboardListPositionsListener =>
+      _itemPositionsListener;
+
+  @override
+  int get keyboardListItemCount => _keyboardPosts.length;
+
+  /// ↑ ↓ キーの対象を空にする (#849 followup)。
+  ///
+  /// 対象リストは `data:` ブランチでしか代入していないので、タブ / アカウント切替で
+  /// ローディングに落ちた間やエラーになった後も**前の一覧が残る**。キーハンドラを
+  /// 張る [Focus] はその間も生きているため、↑ ↓ と Enter で**画面に出ていない
+  /// 前のタブの投稿を開けてしまう**（エラー時は再試行するまでその状態が続く）。
+  ///
+  /// 選択の解除は build 中に setState できないのでフレーム後に回す。
+  void _clearKeyboardTargets() {
+    _keyboardPosts = const [];
+    if (keyboardSelectedIndex == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) resetKeyboardSelection();
+    });
+  }
+
+  @override
+  void onKeyboardListActivate(int index) {
+    if (index >= _keyboardPosts.length) return;
+    context.push('/post', extra: _keyboardPosts[index]);
   }
 
   void _onPositionsChanged() {
@@ -185,6 +229,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
+  /// 既読位置復元 (#715) 用のマーカー取得を、初回 TL 取得と**並行**に開始する
+  /// (#890 item1)。
+  ///
+  /// 以前は first paint の後に初めて `getMarkers` を投げていたため、その往復
+  /// （p50 138ms / p75 226ms）の間だけ最新の先頭が見え、そこから旧位置へ飛ぶ
+  /// 一往復が体感に乗っていた。TL の REST 取得（p50 475ms / p75 639ms）と重ねて
+  /// おけば、描画時点では解決済みであることが多く、待ち時間もちらつきも消える。
+  ///
+  /// ホーム TL を表示するときだけ呼ぶ（復元対象がホームのマーカーのみのため、
+  /// 別タブ起動でサーバーへ無駄な 1 往復を出さない）。取得が飛行中／完了済みなら
+  /// 何もしないので、何度呼んでも往復は 1 回。
+  ///
+  /// ガードに `_markerRestored` を含めてはいけない。[_restoreMarker] は自分の冒頭で
+  /// `_markerRestored` を立ててからフォールバックとしてここを呼ぶので、含めると
+  /// **その呼び出しが必ず no-op になる**。リフレッシュで [_rearmMarkerRestore] が
+  /// `_markerFetch` を落とした後、取り直しが起きなくなる。
+  void _prefetchHomeMarker() {
+    if (_markerFetch != null) return;
+    if (!ref.read(restoreReadPositionProvider)) return;
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! MarkerSupport) return;
+    // 失敗は復元をあきらめるだけ（未処理の非同期エラーにしない）。
+    _markerFetch = (adapter as MarkerSupport).getMarkers().then<MarkerSet?>(
+      (markers) => markers,
+      onError: (Object _) => null,
+    );
+  }
+
+  /// 既読位置復元をもう一度走らせられる状態に戻す（リフレッシュ時）。
+  ///
+  /// `_markerFetch` も併せて落とすこと。**先行取得した Future は完了済みのまま
+  /// 残る**ので、これを落とさないとリフレッシュ後の `await _markerFetch` が
+  /// 「アプリ起動時点のマーカー」を返し、その間に前進したサーバー側の既読位置を
+  /// 見に行かない（#890 で入り込んだ挙動変化）。
+  void _rearmMarkerRestore() {
+    _markerRestored = false;
+    _markerFetch = null;
+  }
+
   Future<void> _restoreMarker(List<Post> posts) async {
     if (_markerRestored) return;
     _markerRestored = true;
@@ -196,18 +279,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (adapter == null || adapter is! MarkerSupport) return;
 
     // #716 計測: 既読位置復元は first paint の後に走る別系統コスト
-    // (getMarkers 往復＋古い位置への jumpTo)。所要・命中可否を残し、
+    // (getMarkers の待ち＋古い位置への jumpTo)。所要・命中可否を残し、
     // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
-    // 「未読位置読み込みあり」の体感への寄与を切り分ける。
+    // 「未読位置読み込みあり」の体感への寄与を切り分ける。#890 の先行取得後は
+    // marker_ms が「往復」ではなく「先行取得の待ち時間」になる（先行できて
+    // いれば 0 に近づく）ので、prefetched タグで before/after を分けて見る。
+    final prefetched = _markerFetch != null;
     final markerSw = Stopwatch()..start();
     var found = false;
     var jumped = false;
     try {
-      final markers = await (adapter as MarkerSupport).getMarkers();
+      _prefetchHomeMarker();
+      final markers = await _markerFetch;
       markerSw.stop();
-      if (markers.home == null) return;
+      if (markers?.home == null) return;
 
-      final markerId = markers.home!.lastReadId;
+      final markerId = markers!.home!.lastReadId;
       final index = posts.indexWhere((p) => p.id == markerId);
       found = index >= 0;
       if (index > 0 && mounted && _itemScrollController.isAttached) {
@@ -222,30 +309,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         markerMs: markerSw.elapsedMilliseconds,
         found: found,
         jumped: jumped,
+        prefetched: prefetched,
       );
     }
   }
 
   /// 既読位置復元 (#715) の所要を起動計測に残す (#716)。first paint 後に走る
-  /// ため startup.home_timeline には含まれない別系統コスト。getMarkers の往復
+  /// ため startup.home_timeline には含まれない別系統コスト。マーカー取得の待ち
   /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
-  /// (found)・実際に jump したか (jumped) を持ち、未読位置読み込みの体感寄与を
-  /// 切り分ける。
+  /// (found)・実際に jump したか (jumped)・TL 取得と並行に先行取得できていたか
+  /// (prefetched, #890) を持ち、未読位置読み込みの体感寄与を切り分ける。
   void _reportMarkerRestore({
     required int markerMs,
     required bool found,
     required bool jumped,
+    required bool prefetched,
   }) {
     final sinceLaunchMs = appLaunchStopwatch.elapsedMilliseconds;
     debugPrint(
       'capsicum: startup: marker restore (getMarkers) in ${markerMs}ms '
-      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped)',
+      '(since_launch=${sinceLaunchMs}ms found=$found jumped=$jumped '
+      'prefetched=$prefetched)',
     );
     recordStartupPhase(
       'app.startup.marker_restore',
       durationMs: markerMs,
       measurementsMs: {'since_launch_ms': sinceLaunchMs},
-      tags: {'found': '$found', 'jumped': '$jumped'},
+      tags: {
+        'found': '$found',
+        'jumped': '$jumped',
+        'prefetched': '$prefetched',
+      },
     );
   }
 
@@ -439,6 +533,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         ),
       );
+    });
+
+    // タブを移るとリストの中身が別物になるので、キーボード選択 (#849) は解除する。
+    // ref.listen は build 中に呼ばれうるので、setState は次フレームへ逃がす。
+    ref.listen(selectedTabProvider, (previous, next) {
+      if (previous == next) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) resetKeyboardSelection();
+      });
     });
 
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
@@ -731,108 +834,154 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // (_StreamStatusIndicator) と同じ [_timelineIsStale] を共有して drift を防ぐ
     // (#764)。ただし pull-to-refresh（_pullRefreshing）は現データを残す（リスト
     // 消失を防ぐ・RefreshIndicator が自前のスピナーを出す）。
-    final showingStale =
-        (timeline.isLoading ||
-            _timelineIsStale(timeline, expectedContextKey)) &&
-        !_pullRefreshing;
+    final showingStale = shouldCollapseToLoading(
+      timeline: timeline,
+      expectedContextKey: expectedContextKey,
+      pullRefreshing: _pullRefreshing,
+    );
     final effectiveTimeline = showingStale
         ? const AsyncValue<TimelineState>.loading()
         : timeline;
 
+    // 既読位置のマーカー取得を、TL の REST 取得と並行に走らせる (#890)。ここは
+    // TL がまだローディング中でも通るので、描画を待たずに往復を始められる。
+    // 復元対象と同じ条件（ホーム TL・リスト/タグでない）でだけ投げる。
+    if (selectedList == null &&
+        selectedHashtag == null &&
+        selectedType == TimelineType.home) {
+      _prefetchHomeMarker();
+    }
+
+    // ↑ ↓ キーのハンドラはタイムライン領域だけを包む。下端の [SimplePostBar] を
+    // 内側に入れると、入力欄にフォーカスがあるときの ↑ ↓（カーソル移動 / IME の
+    // 候補選択）まで奪ってしまう (#849)。
     Widget body = Column(
       children: [
         Expanded(
-          child: effectiveTimeline.when(
-            data: (tlState) {
-              // Restore marker position on first load (home timeline only).
-              if (selectedList == null &&
-                  selectedType == TimelineType.home &&
-                  tlState.posts.isNotEmpty) {
-                _restoreMarker(tlState.posts);
-              }
-              return RefreshIndicator(
-                key: _refreshIndicatorKey,
-                onRefresh: () async {
-                  _markerRestored = false;
-                  // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
-                  // データを残す。完了で必ず戻す。
-                  setState(() => _pullRefreshing = true);
-                  try {
-                    final Future<TimelineState> refreshed;
-                    if (selectedHashtag != null) {
-                      refreshed = ref.refresh(
-                        hashtagTimelineProvider(selectedHashtag).future,
-                      );
-                    } else if (selectedList != null) {
-                      refreshed = ref.refresh(
-                        listTimelineProvider(selectedList.id).future,
-                      );
-                    } else {
-                      refreshed = ref.refresh(timelineProvider.future);
+          child: wrapKeyboardListNavigation(
+            child: effectiveTimeline.when(
+              data: (tlState) {
+                // ↑ ↓ キーの対象を、いま描画しているものと同じリストに揃える (#849)。
+                _keyboardPosts = tlState.posts;
+                // Restore marker position on first load (home timeline only).
+                // 起動時キャッシュの先出し (#890) では位置決めをしない。直後に
+                // 届く REST の結果で並びが変わり、一度きりの復元が無駄打ちに
+                // なるため、サーバーから来た一覧を待つ。
+                // `selectedHashtag == null` を省いてはいけない。
+                // [selectedTimelineTypeProvider] は「TL タブでなければ home」を
+                // 返すので (timeline_provider.dart)、**ハッシュタグタブでも
+                // `selectedType == home` が成立する**。省くとタグ TL の一覧に
+                // 対してホームのマーカーを探しに行き、一度きりの復元を無駄打ち
+                // したうえで、後からホームタブへ移っても復元されなくなる。
+                // 保存 ([_onPositionsChanged])・先行取得 ([_prefetchHomeMarker]
+                // の呼び出し) と 3 点で条件を揃える。
+                if (selectedList == null &&
+                    selectedHashtag == null &&
+                    selectedType == TimelineType.home &&
+                    !tlState.fromCache &&
+                    tlState.posts.isNotEmpty) {
+                  _restoreMarker(tlState.posts);
+                }
+                return RefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  onRefresh: () async {
+                    _rearmMarkerRestore();
+                    // リフレッシュ中は上の isLoading 判定でローディングへ落とさず現
+                    // データを残す。完了で必ず戻す。
+                    setState(() => _pullRefreshing = true);
+                    try {
+                      final Future<TimelineState> refreshed;
+                      if (selectedHashtag != null) {
+                        refreshed = ref.refresh(
+                          hashtagTimelineProvider(selectedHashtag).future,
+                        );
+                      } else if (selectedList != null) {
+                        refreshed = ref.refresh(
+                          listTimelineProvider(selectedList.id).future,
+                        );
+                      } else {
+                        refreshed = ref.refresh(timelineProvider.future);
+                      }
+                      await refreshed;
+                    } finally {
+                      if (mounted) {
+                        setState(() => _pullRefreshing = false);
+                      }
                     }
-                    await refreshed;
-                  } finally {
-                    if (mounted) {
-                      setState(() => _pullRefreshing = false);
-                    }
-                  }
-                },
-                child: ScrollablePositionedList.separated(
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  itemCount:
-                      tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= tlState.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return PostTile(post: tlState.posts[index]);
                   },
-                ),
-              );
-            },
-            loading: () {
-              if (_showScrollTop) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _showScrollTop = false);
-                });
-              }
-              return const Center(child: CircularProgressIndicator());
-            },
-            error: (error, stack) {
-              final message = _timelineErrorMessage(error);
-              final canRetry = !_isForbiddenError(error);
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(message, textAlign: TextAlign.center),
-                      if (canRetry) ...[
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (selectedList != null) {
-                              ref.invalidate(
-                                listTimelineProvider(selectedList.id),
-                              );
-                            } else {
-                              ref.invalidate(timelineProvider);
-                            }
-                          },
-                          child: const Text('再試行'),
-                        ),
-                      ],
-                    ],
+                  child: ScrollablePositionedList.separated(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    itemCount:
+                        tlState.posts.length + (tlState.isLoadingMore ? 1 : 0),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      if (index >= tlState.posts.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return PostTile(
+                        post: tlState.posts[index],
+                        selected: keyboardSelectedIndex == index,
+                      );
+                    },
                   ),
-                ),
-              );
-            },
+                );
+              },
+              loading: () {
+                _clearKeyboardTargets();
+                if (_showScrollTop) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _showScrollTop = false);
+                  });
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+              error: (error, stack) {
+                _clearKeyboardTargets();
+                final message = _timelineErrorMessage(error);
+                final canRetry = !_isForbiddenError(error);
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(message, textAlign: TextAlign.center),
+                        if (canRetry) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            // ハッシュタグ / リスト / 本線の 3 分岐。表示中の TL を
+                            // invalidate しないと**押しても何も起きないボタン**に
+                            // なる。タグタブでは本線 TL が購読されていないので、
+                            // `timelineProvider` の invalidate は事実上 no-op で、
+                            // 復帰手段がタブ切替か Ctrl+R しか残らない（モバイルに
+                            // は気づける導線が無い）。分岐は loadMore /
+                            // pull-to-refresh / [_refreshCurrentTimeline] と同型。
+                            onPressed: () {
+                              if (selectedHashtag != null) {
+                                ref.invalidate(
+                                  hashtagTimelineProvider(selectedHashtag),
+                                );
+                              } else if (selectedList != null) {
+                                ref.invalidate(
+                                  listTimelineProvider(selectedList.id),
+                                );
+                              } else {
+                                ref.invalidate(timelineProvider);
+                              }
+                            },
+                            child: const Text('再試行'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ),
         const SimplePostBar(),
@@ -878,7 +1027,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 未マウント）ときは currentState が null。スピナーは出せないが更新は行う。
     final selectedHashtag = ref.read(selectedHashtagProvider);
     final selectedList = ref.read(selectedListProvider);
-    _markerRestored = false;
+    _rearmMarkerRestore();
     if (mounted) setState(() => _pullRefreshing = true);
     try {
       final Future<TimelineState> refreshed;
@@ -1371,7 +1520,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               // 投げ銭（サポート）導線 (#853)。以前は「設定」内にあったが投げ銭は
               // 設定ではないためドロワー下部（「capsicum について」の上）へ出す。
               // 表示条件は設定内と同じ [supporterEntryVisibleProvider]（IAP 提供
-              // プラットフォームのみ）。
+              // プラットフォーム＋ Web 支援を案内する Linux / #893）。
               if (ref.watch(supporterEntryVisibleProvider))
                 ListTile(
                   leading: Image.asset(
@@ -1468,6 +1617,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 bool _timelineIsStale(AsyncValue<dynamic> async, String? expectedContextKey) =>
     expectedContextKey != null &&
     async.valueOrNull?.contextKey != expectedContextKey;
+
+/// 表示中の TL をローディング（スピナー）へ落とすか。判定理由は [_HomeScreenState.build]
+/// の呼び出し箇所のコメントを参照。
+///
+/// **決着済みのエラーは決して隠さない**。[_timelineIsStale] は「値が期待 contextKey と
+/// 一致しない」で stale と判定するが、初回取得が失敗した [AsyncError] は前値を持たない
+/// ため `valueOrNull` が null になり、**必ず stale 側へ倒れる**。そのまま潰すと
+/// エラー文も再試行ボタンも出ないまま**スピナーが回り続ける**。
+///
+/// 踏むのは「アカウントの復元は通ったが、タイムライン取得だけ失敗した」ときで、
+/// 具体的にはサーバーの部分障害・タイムラインエンドポイントの 5xx / 429、または
+/// 復元とタイムライン取得の間に回線が切れた場合。**完全なオフライン起動では踏まない**
+/// （`restoreSessions` の `getMyself` が落ちて `current` が null になり、router が
+/// `/server` へ飛ばすのでタイムライン画面まで到達しない。v1.53 の実機確認で確定）。
+///
+/// なお #890 のキャッシュ先出し経路は前値が残るので stale にならず、キャッシュの
+/// 有無で挙動が割れていた。
+///
+/// リフレッシュ中の [AsyncLoading]（前回のエラーを引き継いだ状態）は `isLoading` が
+/// true なので、ここでは素通りしてスピナーになる。
+@visibleForTesting
+bool shouldCollapseToLoading({
+  required AsyncValue<dynamic> timeline,
+  required String? expectedContextKey,
+  required bool pullRefreshing,
+}) {
+  // pull-to-refresh は現データを残す（RefreshIndicator が自前のスピナーを出す）。
+  if (pullRefreshing) return false;
+  if (timeline.hasError && !timeline.isLoading) return false;
+  return timeline.isLoading || _timelineIsStale(timeline, expectedContextKey);
+}
 
 class _StreamStatusIndicator extends ConsumerStatefulWidget {
   const _StreamStatusIndicator();

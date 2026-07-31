@@ -78,4 +78,5 @@ export 'src/social/interfaces/report_support.dart';
 export 'src/social/interfaces/schedule_support.dart';
 export 'src/social/interfaces/search_support.dart';
 export 'src/social/interfaces/stream_support.dart';
+export 'src/social/interfaces/timeline_cache_support.dart';
 export 'src/social/interfaces/translation_support.dart';

@@ -11,7 +11,6 @@ import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_status_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
@@ -24,6 +23,7 @@ import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
 import '../util/relative_time.dart';
+import '../util/visible_timeline.dart';
 
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
 /// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの
@@ -1244,6 +1244,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ),
       PopupMenuButton<String>(
         onSelected: (value) async {
+          // 表示中の TL のハンドルを await の前に取る (#887)。ハッシュタグ / リスト
+          // タブから開いたときは本線 TL が購読されておらず、`timelineProvider` を
+          // 直に read すると誰も見ていない provider を起こしたうえに、目の前の
+          // 一覧からは相手の投稿が消えない。
+          final timelines = readVisibleTimelines(ref);
           switch (value) {
             case 'copy_url':
               _copyUrl(context);
@@ -1259,16 +1264,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 () => adapter.muteUser(widget.user.id),
               );
               if (ok) {
-                ref
-                    .read(timelineProvider.notifier)
-                    .removePostsByUser(widget.user.id);
+                timelines.removePostsByUser(widget.user.id);
               }
             case 'mute_duration':
               final ok = await _showMuteDurationPicker(adapter);
               if (ok) {
-                ref
-                    .read(timelineProvider.notifier)
-                    .removePostsByUser(widget.user.id);
+                timelines.removePostsByUser(widget.user.id);
               }
             case 'unmute':
               _performAction(() => adapter.unmuteUser(widget.user.id));
@@ -1505,11 +1506,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ),
     );
     if (confirmed == true && mounted) {
+      // 表示中の TL のハンドルを await の前に取る (#887)。理由はメニューの
+      // `onSelected` 側のコメントを参照。
+      final timelines = readVisibleTimelines(ref);
       final success = await _performAction(
         () => adapter.blockUser(widget.user.id),
       );
       if (!success || !mounted) return;
-      ref.read(timelineProvider.notifier).removePostsByUser(widget.user.id);
+      timelines.removePostsByUser(widget.user.id);
       await _showReportToDeveloperDialog();
     }
   }

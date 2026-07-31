@@ -1,7 +1,8 @@
 /// 起動計測 transaction（operation `app.start`）のサンプリングレート（#743）。
 ///
-/// 起動ごとに `app.startup.*` が 3 本（restore / home_timeline / marker_restore）
-/// 発生するため、本番ユーザー数 × 起動回数 × 3 で transaction volume が膨らむ。
+/// 起動ごとに `app.startup.*` が最大 4 本（restore / home_timeline /
+/// marker_restore / home_timeline_swap）発生するため、本番ユーザー数 ×
+/// 起動回数 × 4 で transaction volume が膨らむ。
 /// 平均 / p95 の集計に必要な母数は残しつつ大半を間引く。母数が見えてきたら
 /// 調整する（`startup_trace.dart` の `recordStartupPhase` 参照）。
 const startupTracesSampleRate = 0.2;

@@ -62,6 +62,15 @@ Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >
 
 対処は `IOWebSocketChannel.connect(uri, pingInterval: ...)`。dart:io が `pingInterval` ごとに WS ping を送り、同間隔内に pong が無ければ自動で close → `onDone` 発火 → 既存の再接続ロジックが動く。検知時間 ≒ `pingInterval`。本家 Misskey WebUI が「頻繁に再接続している」のはこの検知が効いて素早く復帰しているからで、頻度の高さは弱点ではない。capsicum は timeline=30s / notification・chat=60s で設定（Mastodon/Misskey 両プロトコル共通の欠落だったため両方に入れた）。`pingInterval` は dart:io 由来で web では使えないが、capsicum は web を出荷対象にしていないため `IOWebSocketChannel` 直叩きで問題ない。md.korako.me（Mastodon）と きゅあすきー（Misskey）の両方で「再接続できない」が同時報告されたのが発見の端緒（karasu_sue 報告）。
 
+### Riverpod の `ref.onDispose` は「破棄」だけでなく「再計算のたび」にも走る（#890）
+
+`build()` 内で `ref.onDispose(() => _disposed = true)` のような破棄フラグを立てると、**依存 provider の変化による再計算でも発火する**ため、フラグが一度立ったきり戻らない。build 後も動き続ける非同期処理（キャッシュ先出しの裏で走る初回取得など）がそのフラグを見ていると、以降のすべての `state` 更新が黙って捨てられる。
+
+対処は 2 つ併用する:
+
+- `build()` の先頭でフラグを `false` に戻す（Notifier のインスタンスは再計算をまたいで生き残るため、リセットしないと戻らない）
+- 「古い build の非同期処理が新しい state を上書きしない」ことは、フラグではなく **世代カウンタ**（`final generation = ++_buildGeneration;` を build 冒頭で採り、書き戻し時に `generation != _buildGeneration` なら捨てる）で担保する
+
 ## デスクトップ（drag & drop / ネイティブ連携）
 
 ### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く

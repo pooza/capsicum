@@ -46,6 +46,18 @@ git diff $OLD..$NEW -- config/routes/api.rb
 - **passive（additive・自動追従/degrade 済み）**: notification `fallback` ＋未知 type → 既に `NotificationType.other` へ degrade（[#721](https://github.com/pooza/capsicum/issues/721) で確認）。status `contexts_controller` 新設・preview_card `missing_attribution`。
 - **none（server / web / admin / 連合内部・capsicum 無関係）**: instance `wrapstodon`（年間まとめ）/ `/api/v1/donation_campaigns` / account `email_subscriptions` ＋ `/api/v1/accounts/:id/email_subscriptions` / `/api/v1/instance/terms_of_service` / annual_report・report・ip_block 系 / ActivityPub の feature・featured 連合 serializer 群。
 
+## パッチ追従ログ（4.6.x）
+
+minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日にデプロイ済み＝**その時点で capsicum は既にその patch と通信している**）。patch でも API 応答や streaming 挙動が動くことがあるため、上と同じ diff 手順で client 影響だけ機械抽出し、結果を 1 行残す（重複確認の防止）。
+
+### v4.6.3 → v4.6.4（2026-07-28 本番適用済み・2026-07-30 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。bugfix / security patch。内訳:
+
+- **サーバー側修正で capsicum が恩恵を受けるだけ**: 期限なし投票で投票できなかった不具合（[upstream #39949](https://github.com/mastodon/mastodon/pull/39949)）/「メディアを警告付きで隠す」フィルタの適用漏れ（#39946）。いずれも判定はサーバー側で、capsicum は送る／読むだけ。
+- **capsicum の経路でない / 無関係**: Web Push 削除の CSRF 緩和（#39918）は `/api/web/...`（Web UI 用）で `/api/v1/push/subscription` とは別。`verify_credentials` の `follow_requests_count` から suspended 除外（#39858）はフィールド形状不変。引用投稿**編集**まわりの一連の修正（#39837 等）は capsicum が「投稿の更新（Mastodon）」を実装しない方針のため無関係。絵文字検索 / ハッシュタグ autosuggest は Web UI。ActivityPub / Account::Merging は連合内部。
+- **フォーク streaming 変更（むしろ有益）**: プリセット鯖のローカル TL（= デフォルトタグ TL）で、ライブ更新にも `public:local → hashtag` リマップを追加（従来リモートのデフォルトタグ投稿が live のローカル firehose から漏れていたのを解消）。**ストリーム名ラベルは `public:local` のままでクライアントプロトコル不変**のため capsicum は変更不要。デルムリン丼・キュアスタ！で有効（美食丼＝デフォルトタグ無しは無効）。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
@@ -135,7 +138,17 @@ Future<void> _boostWithAccount(
     await adapter.repeatPost(results.posts.first.id);
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(SnackBar(content: Text('$nameで$labelしました')));
-  } catch (e) {
+  } catch (e, st) {
+    // 別アカウントからのブーストも投稿アクションなので post_action で数える。
+    // ここは元投稿 URL の解決（search）を挟む分だけ失敗要因が多く、記録が無いと
+    // 「別垢ブーストが通らない」という報告の裏取りができない。
+    unawaited(
+      Sentry.captureException(
+        e,
+        stackTrace: st,
+        withScope: (scope) => scope.setTag('phase', 'post_action'),
+      ),
+    );
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
   }

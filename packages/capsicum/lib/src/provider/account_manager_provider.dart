@@ -18,6 +18,7 @@ import '../service/background_notification_service.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
+import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
@@ -186,6 +187,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
+    // 起動時に先出しする TL のキャッシュ (#890) は、ログアウトしたアカウントの
+    // 投稿を残さないよう捨てる。contextKey が一致しなければ使われない作りだが、
+    // 端末上に残す理由も無い。
+    await TimelineCache.clear();
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -817,6 +822,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> removeOfflineAccount(AccountKey key) async {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
+    // 明示ログアウト相当なので、TL キャッシュ (#890) も [logout] と同じく捨てる。
+    // contextKey が一致しなければ使われない作りだが、消したアカウントの投稿を
+    // 端末に残す理由が無い点は logout と変わらない。
+    await TimelineCache.clear();
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }

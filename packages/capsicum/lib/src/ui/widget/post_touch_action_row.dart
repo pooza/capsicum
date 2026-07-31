@@ -10,9 +10,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
+import '../util/visible_timeline.dart';
 import 'emoji_picker.dart';
 
 /// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
@@ -237,7 +237,7 @@ class PostTouchActionRow extends ConsumerWidget {
     // notifier は await の前（= ボタン押下時、確実に mounted）に取得する。
     // この widget は ConsumerWidget で、await 中にタイルがスクロールアウト等で
     // dispose されると await 後の `ref.read` が StateError を投げうるため。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await adapter.unrepeatPost(isOwnRenote ? outerPost : targetPost);
       if (isOwnRenote) {
@@ -254,8 +254,25 @@ class PostTouchActionRow extends ConsumerWidget {
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // **双子が post_tile._unrepeat にある**（同名・同構造）。タッチ操作行は
+      // モバイルでのブースト取り消しの主導線なので、ここが汎用文言 + 無記録の
+      // ままだと `phase: post_action` の母数から取り消しが導線ごと欠ける。
+      // 次に触るときは対で見ること（規約は describePostActionError の doc）。
+      debugPrint('_unrepeat failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -309,7 +326,7 @@ class PostTouchActionRow extends ConsumerWidget {
     String successMessage,
   ) async {
     // notifier は await の前に取得する（_unrepeat と同じ理由）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await action();
       // 投稿を取り直してタイムラインへ反映する。
@@ -342,7 +359,7 @@ class PostTouchActionRow extends ConsumerWidget {
     String successMessage,
   ) async {
     // notifier は await の前に取得する（_unrepeat と同じ理由）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       final updated = await action();
       timeline.updatePost(updated);
@@ -357,11 +374,17 @@ class PostTouchActionRow extends ConsumerWidget {
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
+      // phase は**操作の種類**を表す軸で、導線は名乗らない（`reaction_add` が
+      // post_tile / notification_tile / ここの 3 ファイルで同じ値なのと同じ）。
+      // v1.53 までは導線名の `touch_action` を出していたため、同じお気に入り /
+      // ブーストの失敗が導線ごとに別系列へ散り、**どちらで絞っても母数にならない**
+      // 状態だった。3 ファイルの _runAction を post_action に揃える
+      // （対象範囲と規約は describePostActionError の doc）。
       unawaited(
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'touch_action'),
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
         ),
       );
       messenger.showSnackBar(

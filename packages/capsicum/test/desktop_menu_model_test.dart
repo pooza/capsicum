@@ -344,4 +344,68 @@ void main() {
       expect(shortcut.trigger, LogicalKeyboardKey.keyF);
     });
   });
+
+  /// 画面メニュー (#835) は画面のビルドのたびに項目リストを組み直すため、
+  /// 「中身が同じなら等しい」が成立しないとメニューバーが無駄に作り直される。
+  group('MenuEntry の値等価', () {
+    test('同じ内容なら等しい（コールバックはテアオフで同一）', () {
+      void onSelected() {}
+      final a = MenuActionEntry(label: '保存', onSelected: onSelected);
+      final b = MenuActionEntry(label: '保存', onSelected: onSelected);
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('チェック状態が変われば等しくない（トグルがメニューに反映される）', () {
+      void onSelected() {}
+      final off = MenuActionEntry(
+        label: '閲覧注意',
+        checked: false,
+        onSelected: onSelected,
+      );
+      final on = MenuActionEntry(
+        label: '閲覧注意',
+        checked: true,
+        onSelected: onSelected,
+      );
+      expect(off, isNot(equals(on)));
+    });
+
+    test('無効化（onSelected が null）は別物として扱う', () {
+      void onSelected() {}
+      final enabled = MenuActionEntry(label: '送信', onSelected: onSelected);
+      const disabled = MenuActionEntry(label: '送信');
+      expect(enabled, isNot(equals(disabled)));
+    });
+
+    test('その場で作った無名関数は等しくならない（テアオフで渡すべき理由）', () {
+      final a = MenuActionEntry(label: '保存', onSelected: () {});
+      final b = MenuActionEntry(label: '保存', onSelected: () {});
+      expect(a, isNot(equals(b)));
+    });
+
+    test('サブメニューは子まで再帰的に比べる', () {
+      void onSelected() {}
+      MenuSubmenuEntry submenu(String childLabel) => MenuSubmenuEntry(
+        label: '公開範囲',
+        children: [MenuActionEntry(label: childLabel, onSelected: onSelected)],
+      );
+      expect(submenu('公開'), equals(submenu('公開')));
+      expect(submenu('公開'), isNot(equals(submenu('フォロワー'))));
+    });
+
+    test('sameMenuEntries は長さと各要素で判定する', () {
+      void onSelected() {}
+      final a = [
+        MenuActionEntry(label: '保存', onSelected: onSelected),
+        const MenuGroupSeparator(),
+      ];
+      final b = [
+        MenuActionEntry(label: '保存', onSelected: onSelected),
+        const MenuGroupSeparator(),
+      ];
+      expect(sameMenuEntries(a, b), isTrue);
+      expect(sameMenuEntries(a, [a.first]), isFalse);
+    });
+  });
 }

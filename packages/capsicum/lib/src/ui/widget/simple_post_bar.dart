@@ -8,9 +8,13 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/shortcode_warning_controller.dart';
+import '../util/visible_timeline.dart';
+import 'desktop_menu_model.dart';
 import 'insert_picker_sheet.dart';
+import 'screen_menu.dart';
 
 class SimplePostBar extends ConsumerStatefulWidget {
   /// Channel ID to post into (Misskey channels).
@@ -89,7 +93,14 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     _controller.setUnknownShortcodes(unknown);
   }
 
-  Future<void> _submit() async {
+  /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
+  /// await した後にしか立たないため、その窓で二連打が二重投稿になりえた。簡易バーは
+  /// TextField の Enter 送信もあるぶん踏みやすい。
+  final _submitGuard = ReentrancyGuard();
+
+  Future<void> _submit() => _submitGuard.run(_submitInternal);
+
+  Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
@@ -131,8 +142,9 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
         _controller.clear();
         if (widget.channelId == null && posted != null) {
           // #717: 自分の投稿を TL 先頭へ楽観的に挿入する（REST 全再取得に
-          // 依存させず、サーバー伝播レースでも必ず即座に出す）。
-          ref.read(timelineProvider.notifier).insertOwnPost(posted);
+          // 依存させず、サーバー伝播レースでも必ず即座に出す）。ハッシュタグ
+          // タブを見ているときはそちらにも入れる (#887)。
+          readVisibleTimelines(ref).insertOwnPost(posted);
         } else {
           ref.invalidate(timelineProvider);
         }
@@ -191,6 +203,85 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     ref.read(recentEmojisProvider.notifier).add(entry);
   }
 
+  void _togglePalette() => setState(() => _paletteOpen = !_paletteOpen);
+
+  /// フルピッカー導線 (#614)。絵文字 (カスタム / Unicode) と、モロヘイヤ導入
+  /// サーバーでは劇中ワードタブを開く。上の履歴ストリップは高速挿入経路として
+  /// 残し、こちらは全機能経路として二段構えにする。
+  ///
+  /// ツールバーとデスクトップメニュー (#835) の両方から呼ぶため名前付きにして
+  /// ある（無名関数だとメニュー項目の値等価が成立せず、再ビルドのたびに
+  /// メニューバーが作り直される）。
+  Future<void> _openInsertPicker() async {
+    // ピッカーは onSelected → Navigator.pop の順で閉じるため、_insertText 内で
+    // requestFocus しても直後の pop に奪われる。シートが閉じきる await 後に戻す。
+    // 挿入位置のカーソルは _insertText がセット済み (#614)。
+    var inserted = false;
+    await showInsertPickerSheet(
+      context: context,
+      ref: ref,
+      onSelected: (value) {
+        inserted = true;
+        _insertText(value);
+      },
+      closeOnSelect: true,
+    );
+    // 選択せず閉じた場合はキーボードを再度開かない。
+    if (!inserted || !mounted) return;
+    // _insertText がセットした挿入直後の collapsed キャレット位置を、再フォーカスで
+    // 打ち消される前に退避しておく。
+    final caret = _controller.selection.baseOffset;
+    _focusNode.requestFocus();
+    // desktop では requestFocus による再フォーカス時にテキスト全体が選択状態へ
+    // 戻る Flutter 挙動があり、挿入直後のキャレットが選択に化ける (#709)。
+    // 再フォーカス確定後の次フレームで collapsed キャレットを再適用して打ち消す。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final len = _controller.text.length;
+      final off = (caret >= 0 && caret <= len) ? caret : len;
+      _controller.selection = TextSelection.collapsed(offset: off);
+    });
+  }
+
+  /// 簡易投稿バーがデスクトップメニューバーに出す項目 (#835)。
+  ///
+  /// 投稿画面のメニューの**サブセット**にあたる。簡易バーはアイコン 3〜5 個まで
+  /// 切り詰めた導線なので、そこに無い操作（公開範囲・添付・予約投稿等）は出さない。
+  /// 出す条件もツールバー側と同一にする。「キーボードをしまう」はソフトキーボード
+  /// が出ているときだけの項目で、メニューバーのあるデスクトップには原理的に
+  /// 出ないため除く。
+  List<MenuEntry> _buildScreenMenuEntries({
+    required String postLabel,
+    required bool hasRecents,
+  }) {
+    final busy = _sending;
+    return [
+      MenuActionEntry(
+        label: postLabel,
+        icon: Icons.send,
+        onSelected: busy ? null : _submit,
+      ),
+      const MenuGroupSeparator(),
+      MenuActionEntry(
+        label: '絵文字・劇中ワード…',
+        icon: Icons.add_reaction_outlined,
+        onSelected: busy ? null : _openInsertPicker,
+      ),
+      if (hasRecents)
+        MenuActionEntry(
+          label: '絵文字履歴',
+          checked: _paletteOpen,
+          onSelected: busy ? null : _togglePalette,
+        ),
+      const MenuGroupSeparator(),
+      MenuActionEntry(
+        label: '詳細な$postLabel画面…',
+        icon: Icons.open_in_new,
+        onSelected: busy ? null : _openCompose,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     // customEmojis ロード完了 / アカウント切替で再評価する (#609)。テキスト
@@ -215,7 +306,7 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
     }).toList();
     final hasRecents = visibleRecents.isNotEmpty;
 
-    return Container(
+    final bar = Container(
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -293,57 +384,12 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
                       size: 20,
                     ),
                     tooltip: _paletteOpen ? '履歴を閉じる' : '絵文字履歴',
-                    onPressed: _sending
-                        ? null
-                        : () => setState(() => _paletteOpen = !_paletteOpen),
+                    onPressed: _sending ? null : _togglePalette,
                   ),
-                // フルピッカー導線 (#614)。絵文字 (カスタム / Unicode) と、モロヘイヤ
-                // 導入サーバーでは劇中ワードタブを開く。上の履歴ストリップは高速挿入
-                // 経路として残し、こちらは全機能経路として二段構えにする。
                 IconButton(
                   icon: const Icon(Icons.add_reaction_outlined, size: 20),
                   tooltip: '絵文字・劇中ワード',
-                  onPressed: _sending
-                      ? null
-                      : () async {
-                          // ピッカーは onSelected → Navigator.pop の順で閉じる
-                          // ため、_insertText 内で requestFocus しても直後の
-                          // pop に奪われる。シートが閉じきる await 後に戻す。
-                          // 挿入位置のカーソルは _insertText がセット済み (#614)。
-                          var inserted = false;
-                          await showInsertPickerSheet(
-                            context: context,
-                            ref: ref,
-                            onSelected: (value) {
-                              inserted = true;
-                              _insertText(value);
-                            },
-                            closeOnSelect: true,
-                          );
-                          // 選択せず閉じた場合はキーボードを再度開かない。
-                          if (inserted && mounted) {
-                            // _insertText がセットした挿入直後の collapsed
-                            // キャレット位置を、再フォーカスで打ち消される前に
-                            // 退避しておく。
-                            final caret = _controller.selection.baseOffset;
-                            _focusNode.requestFocus();
-                            // desktop では requestFocus による再フォーカス時に
-                            // テキスト全体が選択状態へ戻る Flutter 挙動があり、
-                            // 挿入直後のキャレットが選択に化ける (#709)。
-                            // 再フォーカス確定後の次フレームで collapsed
-                            // キャレットを再適用して打ち消す。
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              final len = _controller.text.length;
-                              final off = (caret >= 0 && caret <= len)
-                                  ? caret
-                                  : len;
-                              _controller.selection = TextSelection.collapsed(
-                                offset: off,
-                              );
-                            });
-                          }
-                        },
+                  onPressed: _sending ? null : _openInsertPicker,
                 ),
                 IconButton(
                   icon: const Icon(Icons.open_in_new, size: 20),
@@ -366,6 +412,18 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
           ),
         ],
       ),
+    );
+
+    // 表示中はデスクトップメニューバーにも同じ操作を出す (#835)。簡易バーは
+    // ホーム / ハッシュタグ TL / チャンネル TL に置かれるが、宣言が有効なのは
+    // 最前面の 1 つだけ（[ScreenMenu] がルートの前後関係で出し分ける）。
+    return ScreenMenu(
+      label: postLabel,
+      entries: _buildScreenMenuEntries(
+        postLabel: postLabel,
+        hasRecents: hasRecents,
+      ),
+      child: bar,
     );
   }
 

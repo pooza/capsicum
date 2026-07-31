@@ -71,6 +71,17 @@ class AppConstants {
     'https://capsicum.shrieker.net/tokushoho',
   );
 
+  /// Web での支援先 (#893)。ストア IAP が存在しない Linux 版で使う。
+  ///
+  /// **ストア版（App Store / Google Play / Microsoft Store）では出さない。**
+  /// 各ストアがアプリ内から外部決済・寄付へ誘導することを制限しており、IAP と
+  /// 並べるとリジェクト要因になりうるため。出し分けは
+  /// `supporterPurchaseHasBackend`（＝課金 backend の有無）で行う。
+  static final patreonUrl = Uri.parse(
+    'https://www.patreon.com/c/u93719112/about',
+  );
+  static final liberapayUrl = Uri.parse('https://liberapay.com/pooza/');
+
   /// サポーター（投げ銭）UI のアイコン (#428)。ハートではなく capsicum の
   /// とうがらしを使う。設定エントリ・投げ銭画面・サポーターバッジで共用する。
   static const supporterIconAsset = 'assets/images/capsicum_icon.webp';
@@ -82,6 +93,20 @@ class AppConstants {
   // Twemoji CDN
   static const twemojiBaseUrl =
       'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72';
+
+  /// Unicode 絵文字文字列から Twemoji CDN の PNG URL を構築する（#903）。
+  ///
+  /// variation selector は presentation 指定であってグリフを変えないため、
+  /// text presentation（U+FE0E）・emoji presentation（U+FE0F）の両方を
+  /// codepoint 列から除去する。片方だけ除去すると `.../XXXX-fe0e.png` の
+  /// ような存在しないファイル名になり 404 → 生グリフへ fallback してしまう。
+  static String twemojiUrl(String emoji) {
+    final codepoints = emoji.runes
+        .where((r) => r != 0xFE0F && r != 0xFE0E) // strip variation selectors
+        .map((r) => r.toRadixString(16))
+        .join('-');
+    return '$twemojiBaseUrl/$codepoints.png';
+  }
 }
 
 /// Windows MSIX 配布で使う識別子（#423 / #554）。

@@ -110,7 +110,7 @@ jobs:
         shell: pwsh
         # Sentry / capsicum-relay 連携キーは GitHub Secrets から渡し、
         # 未設定なら省略 (起動可能、Sentry 送信無効・push 通知無効)。
-        # Linux 側 (packaging/linux/appimage/build.sh) と同じ運用。
+        # Linux 側 (distribution/linux/appimage/build.sh) と同じ運用。
         run: |
           # 新版検知 (#641) は Windows では渡さない。Store 版と自己署名 MSIX
           # 直配が同じ build 出力を共有していて (Package MSIX step は
@@ -118,7 +118,7 @@ jobs:
           # 同じ capsicum.msix を使う) 実行時に区別できないため、DIRECT_CHANNEL
           # を立てると多数派の Store ユーザーにも「更新あり」が出てしまう。
           # 自動更新の無い直配が唯一の配布経路なのは Linux AppImage だけなので、
-          # 更新検知は Linux 限定とする (packaging/linux/appimage/build.sh)。
+          # 更新検知は Linux 限定とする (distribution/linux/appimage/build.sh)。
           $defines = @('--dart-define=SENTRY_ENV=production')
           if ($env:SENTRY_DSN)   { $defines += "--dart-define=SENTRY_DSN=$env:SENTRY_DSN" }
           if ($env:RELAY_SECRET) { $defines += "--dart-define=RELAY_SECRET=$env:RELAY_SECRET" }
@@ -248,7 +248,7 @@ jobs:
         run: |
           $manifest = Join-Path $env:GITHUB_WORKSPACE `
             "packages/capsicum/build/windows/x64/runner/Release/AppxManifest.xml"
-          & "$env:GITHUB_WORKSPACE/packaging/windows/patch_appxmanifest_pushtask.ps1" `
+          & "$env:GITHUB_WORKSPACE/distribution/windows/patch_appxmanifest_pushtask.ps1" `
             -ManifestPath $manifest
 
       - name: Pack MSIX (self-signed)

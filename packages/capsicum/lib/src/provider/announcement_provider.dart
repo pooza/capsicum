@@ -16,8 +16,22 @@ class AnnouncementState {
 
 /// Notifier that manages announcement fetching and dismissal.
 class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
+  /// 破棄済みか (#888)。[refresh] は画面の外（ライフサイクル / streaming）から
+  /// 呼ばれるため、await 中に破棄されていたら state を触らない。`ref.onDispose`
+  /// は再計算のたびにも走るので、build() の先頭で false へ戻す。
+  bool _disposed = false;
+
+  /// [refresh] の世代。並行した取り直しのうち、最後に投げたものだけを反映する。
+  ///
+  /// **build() でリセットしてはいけない**。`_disposed` と違って巻き戻す必要が無く、
+  /// 戻すと世代番号が再利用される。「refresh A(gen 1) が飛行中に build が再走し、
+  /// 続く refresh B も gen 1 → A が後着」で、**古い一覧が新しい一覧に勝つ**。
+  int _refreshGeneration = 0;
+
   @override
   Future<AnnouncementState> build() async {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
     final adapter = ref.watch(currentAdapterProvider);
     if (adapter == null || adapter is! AnnouncementSupport) {
       return const AnnouncementState();
@@ -27,6 +41,43 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
         .getAnnouncements();
 
     return AnnouncementState(announcements: announcements);
+  }
+
+  /// お知らせを取り直して差し替える (#888)。
+  ///
+  /// `invalidate` と違ってローディングに落とさないので、表示中の一覧が一瞬
+  /// 消えることがない。新しいお知らせが**アカウントを切り替えるまで反映され
+  /// ない**問題に対して、ポーリング（常駐タイマー）を持たずに次の 3 つの機会で
+  /// 取り直すために使う:
+  ///
+  /// - フォアグラウンド復帰（モバイルで背面に回っていた間の新着）
+  /// - お知らせ画面 / タブを開いたとき
+  /// - streaming の announcement イベント受信（デスクトップは前面に居続ける
+  ///   ので復帰の機会が無く、これが主経路になる）
+  ///
+  /// 失敗は握り潰す（お知らせは補助的な情報で、失敗時は現状維持でよい）。
+  Future<void> refresh() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! AnnouncementSupport) return;
+    // 「画面を開いた」「フォアグラウンド復帰」「streaming 受信」は同時に起きうる
+    // ので、refresh は並行しうる。**後から投げたものが先に返り、先に投げた古い
+    // 応答が後着すると、新しい一覧が古い一覧へ巻き戻る**。最後に投げたものだけが
+    // 反映されるよう世代で弾く。
+    final generation = ++_refreshGeneration;
+    try {
+      final announcements = await (adapter as AnnouncementSupport)
+          .getAnnouncements();
+      if (_disposed) return;
+      if (generation != _refreshGeneration) return;
+      // 往復の間にアカウントが切り替わっていたら捨てる。`_disposed` は build() の
+      // 先頭で false へ戻るので、「破棄 → 再 build → 旧 refresh が完了」の順に
+      // なるとガードを素通りし、**切替後のアカウントの一覧が切替前の内容で
+      // 上書きされる**（遅いサーバーで実際に起きる）。
+      if (!identical(ref.read(currentAdapterProvider), adapter)) return;
+      state = AsyncData(AnnouncementState(announcements: announcements));
+    } catch (_) {
+      // 取得失敗。次の機会に取り直す。
+    }
   }
 
   /// Mark an announcement as read.

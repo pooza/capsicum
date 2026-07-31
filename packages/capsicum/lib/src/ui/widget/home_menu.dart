@@ -367,8 +367,8 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
           globalShortcut: true,
           onSelected: () => context.push('/settings'),
         ),
-        // 投げ銭（サポート）への導線 (#853)。IAP 提供プラットフォームのみ。
-        // デスクトップでの露出を上げる狙い。
+        // 投げ銭（サポート）への導線 (#853)。IAP 提供プラットフォームに加え、
+        // Web 支援を案内する Linux でも出す (#893)。デスクトップでの露出を上げる狙い。
         if (ref.watch(supporterEntryVisibleProvider))
           MenuActionEntry(
             label: 'capsicum をサポート…',
@@ -930,8 +930,23 @@ Future<void> showListChooser(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
+  final channel = await pickFollowedChannel(context, ref);
+  if (channel == null || !context.mounted) return;
+  context.push('/channel/${channel.id}', extra: channel.name);
+}
+
+/// フォロー中のチャンネルを 1 つ選ばせる (#805 のクイックチューザ様式)。
+///
+/// ドロワーからのチャンネル移動 ([showChannelList]) と、投稿をチャンネルへ
+/// リノートする導線 (#895) で共用する。取得失敗・0 件は SnackBar で伝えて
+/// null を返す。
+Future<Channel?> pickFollowedChannel(
+  BuildContext context,
+  WidgetRef ref, {
+  String title = 'チャンネル',
+}) async {
   final adapter = ref.read(currentAdapterProvider);
-  if (adapter is! ChannelSupport) return;
+  if (adapter is! ChannelSupport) return null;
 
   final List<Channel> channels;
   try {
@@ -942,7 +957,7 @@ Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
         const SnackBar(content: Text('チャンネルの取得に失敗しました。再ログインが必要な場合があります')),
       );
     }
-    return;
+    return null;
   }
   if (channels.isEmpty) {
     if (context.mounted) {
@@ -950,32 +965,26 @@ Future<void> showChannelList(BuildContext context, WidgetRef ref) async {
         context,
       ).showSnackBar(const SnackBar(content: Text('フォロー中のチャンネルはありません')));
     }
-    return;
+    return null;
   }
-  if (!context.mounted) return;
+  if (!context.mounted) return null;
 
-  await showModalBottomSheet<void>(
+  return showModalBottomSheet<Channel>(
     context: context,
-    builder: (context) => SafeArea(
+    builder: (sheetContext) => SafeArea(
       child: ListView(
         shrinkWrap: true,
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              'チャンネル',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
           ),
           for (final ch in channels)
             ListTile(
               leading: const Icon(Icons.forum, size: 20),
               title: Text(ch.name),
               dense: true,
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/channel/${ch.id}', extra: ch.name);
-              },
+              onTap: () => Navigator.pop(sheetContext, ch),
             ),
         ],
       ),

@@ -11,7 +11,7 @@
 #   - linuxdeploy-plugin-gtk.sh (https://github.com/linuxdeploy/linuxdeploy-plugin-gtk)
 #   - appimagetool (https://github.com/AppImage/appimagetool)
 #
-# 使い方: bash packaging/linux/appimage/build.sh
+# 使い方: bash distribution/linux/appimage/build.sh
 
 set -euo pipefail
 

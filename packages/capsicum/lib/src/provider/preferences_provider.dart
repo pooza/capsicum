@@ -53,6 +53,7 @@ const _showStreamReconnectDetailKey = 'show_stream_reconnect_detail';
 const _streamingEnabledKey = 'streaming_enabled';
 const _colorEmojiFallbackKey = 'color_emoji_fallback';
 const _userHoverPopupKey = 'user_hover_popup';
+const _composeFontFamilyKey = 'compose_font_family';
 
 /// Display mode for OGP preview cards.
 enum PreviewCardMode {
@@ -777,6 +778,61 @@ class ComposeTemplateHistoryNotifier extends Notifier<List<String>> {
     state = pruned;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_composeTemplateHistoryKey, state);
+  }
+}
+
+/// 投稿フォーム（本文）に使うフォントファミリ名 (#892)。空文字 = システム既定
+/// （＝トグルを兼ねる）。デスクトップ（Linux / macOS / Windows）で、ユーザー環境
+/// にインストール済みの等幅フォント（HackGen 等）を名前で指定するための設定。
+///
+/// Flutter にインストール済みフォントを列挙する標準 API がないため、ここは
+/// ファミリ名の自由入力を保持するだけで、実在チェックはしない。未インストール /
+/// 誤入力時は OS のフォント解決（fontconfig / CoreText / DirectWrite）が黙って
+/// システム既定にフォールバックする（クラッシュしない）。UI 側でライブプレビュー
+/// を出し、効いたか一目で分かるようにする。
+final composeFontFamilyProvider =
+    NotifierProvider<ComposeFontFamilyNotifier, String>(
+      ComposeFontFamilyNotifier.new,
+    );
+
+class ComposeFontFamilyNotifier extends Notifier<String> {
+  /// 保存値の読み込みが終わる前にユーザーが編集したか (#892 followup)。
+  ///
+  /// [build] は `''` を返してから [_load] が非同期に保存値を入れる。その往復の
+  /// 最中に設定画面で打つと、`setFontFamily` が入れた値を後から `_load` が
+  /// **保存済みの古い値で上書きする**（打った内容が黙って戻る）。逆に、既定へ
+  /// 戻すつもりで欄を空にしたときも、古い値が復活する。
+  bool _userEdited = false;
+
+  @override
+  String build() {
+    _userEdited = false;
+    _load();
+    return '';
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_composeFontFamilyKey);
+    // 往復の間にユーザーが編集していたら、その入力を保存値で上書きしない。
+    if (_userEdited) return;
+    if (saved != null) state = saved;
+  }
+
+  Future<void> setFontFamily(String value) async {
+    final trimmed = value.trim();
+    // 「同じ値なので何もしない」より **前**に立てる。既定へ戻すつもりで空にした
+    // とき（state が既に空＝初期値のまま）ここで早期 return すると、フラグが
+    // 立たないまま _load が古い値を復活させてしまう。
+    _userEdited = true;
+    if (state == trimmed) return;
+    state = trimmed;
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_composeFontFamilyKey);
+    } else {
+      await prefs.setString(_composeFontFamilyKey, trimmed);
+    }
   }
 }
 

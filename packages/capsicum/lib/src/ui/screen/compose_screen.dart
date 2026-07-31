@@ -28,14 +28,18 @@ import '../../provider/timeline_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
+import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
+import '../util/visible_timeline.dart';
 import '../util/annict_link.dart';
 import '../util/compose_template_display.dart';
+import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
+import '../widget/screen_menu.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
@@ -2429,9 +2433,33 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     setState(() => _scheduledAt = scheduled);
   }
 
+  // ツールバーの ON/OFF 系はいずれも名前付きメソッドにしてある (#835)。ツールバーと
+  // デスクトップメニューの両方から同じ操作を呼ぶための共通化だが、それ以上に
+  // **メニュー項目の値等価が成立する**ことが要点。[MenuActionEntry] は onSelected も
+  // 含めて等価判定するので、その場で作った無名関数を渡すとビルドのたびに別物になり、
+  // 本文を 1 文字打つたびにメニューバーが作り直される。
+  void _toggleCw() => setState(() => _cwEnabled = !_cwEnabled);
+
+  void _togglePoll() => setState(() => _pollEnabled = !_pollEnabled);
+
+  void _toggleSensitive() =>
+      setState(() => _sensitiveEnabled = !_sensitiveEnabled);
+
+  void _toggleLocalOnly() => setState(() => _localOnly = !_localOnly);
+
+  /// 公開範囲を選ぶメニュー項目のコールバック。**ビルドのたびに作り直さない**よう
+  /// フィールドで一度だけ組む（上の値等価の話と同じ理由）(#835)。
+  late final Map<PostScope, VoidCallback> _scopeSetters = {
+    for (final scope in PostScope.values)
+      scope: () => setState(() => _scope = scope),
+  };
+
   /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
   /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
   /// モバイルでは修飾キーが無いため発火しない。
+  ///
+  /// 二連打の弾きは [_submit] の [ReentrancyGuard] が担う (#908)。ここの
+  /// `_sending` 判定は、送信中に無駄な呼び出しを立ち上げないための前段。
   void _submitFromKeyboard() {
     if (_sending) return;
     _submit();
@@ -2532,7 +2560,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
-  Future<void> _submit() async {
+  /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
+  /// await した後にしか立たないため、その窓で二連打が二重投稿になりえた。
+  final _submitGuard = ReentrancyGuard();
+
+  Future<void> _submit() => _submitGuard.run(_submitInternal);
+
+  Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
 
@@ -2650,10 +2684,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             ref.invalidate(timelineProvider);
             ref.invalidate(channelTimelineProvider(channelId));
           } else if (posted != null) {
-            // #717: 自分の投稿を home TL 先頭へ楽観的に挿入する。invalidate の
+            // #717: 自分の投稿を TL 先頭へ楽観的に挿入する。invalidate の
             // REST 全再取得に依存しないため、サーバー伝播レースやストリーミング
-            // 状態に関係なく自分の投稿が必ず即座に出る。
-            ref.read(timelineProvider.notifier).insertOwnPost(posted);
+            // 状態に関係なく自分の投稿が必ず即座に出る。ハッシュタグタブを見て
+            // いるときは、そのタグを持つ投稿ならそちらにも入れる (#887)。
+            readVisibleTimelines(ref).insertOwnPost(posted);
           } else {
             // 戻り値が無い稀ケースは従来どおり再取得に倒す。
             ref.invalidate(timelineProvider);
@@ -2708,11 +2743,142 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 投稿画面がデスクトップメニューバーに出す項目 (#835)。
+  ///
+  /// ツールバーのアイコン列は幅が足りないと横スクロールに逃げる。pooza の常用は
+  /// 動画と横並びの狭幅（900px 未満）なので、この画面では操作がスクロールの奥に
+  /// 隠れるのが常態。メニューバーに同じ操作を並べれば、狭幅でも全操作へ一覧で
+  /// 到達できる。**出し分けの条件はツールバー側と同一**にし、使えない操作を
+  /// メニューにだけ見せることはしない。
+  ///
+  /// 送信にショートカット表示を付けていない。macOS の native メニューは key
+  /// equivalent を自前で発火するため、compose 内の `CallbackShortcuts`（#708 の
+  /// Cmd/Ctrl+Enter）と二重に走る余地があり、当初はそれが二重投稿になりえた。
+  /// #908 の再入ガードで二重投稿そのものは塞がったので**表示を足すことは可能**だが、
+  /// 実機で二重発火の有無を確かめてからにしたい。項目の調整は #912 で拾う。
+  List<MenuEntry> _buildComposeMenuEntries() {
+    final adapter = ref.watch(currentAdapterProvider);
+    final mulukhiya = ref.watch(currentMulukhiyaProvider);
+    final busy = _sending;
+    return [
+      MenuActionEntry(
+        label: ref.watch(postLabelProvider),
+        icon: Icons.send,
+        onSelected: busy ? null : _submitFromKeyboard,
+      ),
+      const MenuGroupSeparator(),
+      if (adapter is DraftSupport && _scheduledAt == null)
+        MenuActionEntry(
+          label: '下書き保存',
+          icon: Icons.save_outlined,
+          onSelected: busy ? null : _saveServerDraft,
+        ),
+      if (mulukhiya?.composeTemplatesEnabled == true)
+        MenuActionEntry(
+          label: 'テンプレートとして保存',
+          icon: Icons.bookmark_add_outlined,
+          onSelected: busy ? null : _saveCurrentAsTemplate,
+        ),
+      MenuActionEntry(
+        label: 'プレビュー',
+        icon: Icons.preview_outlined,
+        onSelected: busy ? null : _showPreview,
+      ),
+      const MenuGroupSeparator(),
+      MenuActionEntry(
+        label: 'メディアを添付…',
+        icon: Icons.photo,
+        onSelected: busy ? null : _pickMedia,
+      ),
+      if (adapter is DriveSupport)
+        MenuActionEntry(
+          label: 'ドライブ…',
+          icon: Icons.cloud_outlined,
+          onSelected: busy ? null : _pickDriveFiles,
+        ),
+      MenuActionEntry(
+        label: '絵文字…',
+        icon: Icons.emoji_emotions_outlined,
+        onSelected: busy ? null : _showEmojiPicker,
+      ),
+      if (adapter is ReactionSupport)
+        MenuActionEntry(
+          label: 'MFM 装飾…',
+          icon: Icons.palette_outlined,
+          onSelected: busy ? null : _showMfmPicker,
+        ),
+      if (ref.watch(nowPlayingResolverProvider).hasAvailableSource)
+        MenuActionEntry(
+          label: 'ナウプレを挿入',
+          icon: Icons.music_note,
+          onSelected: (busy || _insertingNowPlaying) ? null : _insertNowPlaying,
+        ),
+      const MenuGroupSeparator(),
+      MenuActionEntry(
+        label: '閲覧注意',
+        checked: _cwEnabled,
+        onSelected: busy ? null : _toggleCw,
+      ),
+      if (_attachments.isNotEmpty)
+        MenuActionEntry(
+          label: '閲覧注意メディア',
+          checked: _effectiveSensitive,
+          onSelected: busy ? null : _toggleSensitive,
+        ),
+      if (adapter is PollSupport)
+        MenuActionEntry(
+          label: 'アンケート',
+          checked: _pollEnabled,
+          onSelected: busy ? null : _togglePoll,
+        ),
+      if (adapter is ReactionSupport)
+        MenuActionEntry(
+          label: 'ローカルのみ',
+          checked: _localOnly,
+          onSelected: busy ? null : _toggleLocalOnly,
+        ),
+      const MenuGroupSeparator(),
+      MenuSubmenuEntry(
+        label: '公開範囲',
+        children: [
+          for (final scope in PostScope.values)
+            MenuActionEntry(
+              label: postScopeLabel(scope, adapter),
+              checked: _scope == scope,
+              onSelected: busy ? null : _scopeSetters[scope],
+            ),
+        ],
+      ),
+      const MenuGroupSeparator(),
+      if (mulukhiya != null)
+        MenuActionEntry(
+          label: '実況…',
+          icon: Icons.live_tv,
+          onSelected: busy ? null : _showTagsetSheet,
+        ),
+      if (mulukhiya?.composeTemplatesEnabled == true)
+        MenuActionEntry(
+          label: '投稿テンプレート…',
+          icon: Icons.description_outlined,
+          onSelected: busy ? null : _showTemplateSheet,
+        ),
+      if (adapter is ScheduleSupport)
+        MenuActionEntry(
+          label: '予約投稿…',
+          checked: _scheduledAt != null,
+          onSelected: busy ? null : _pickScheduleDate,
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final maxLength = ref.watch(maxPostLengthProvider);
+    // 本文入力に使うフォント (#892)。空 = 既定。誤入力・未インストールは OS の
+    // フォント解決が黙って既定へフォールバックする。
+    final composeFontFamily = ref.watch(composeFontFamilyProvider);
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         // Share intent (URL push from macOS Music.app 等) で起動した場合
         // GoRouter の go() で stack が置換されており automatic back button が
@@ -2870,6 +3036,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           textAlignVertical: TextAlignVertical.top,
                           autofocus: true,
                           enabled: !_sending,
+                          // #892: デスクトップで等幅フォント名が設定されていれば
+                          // 本文入力に適用（空なら null = 既定フォント）。
+                          style: composeFontFamily.isEmpty
+                              ? null
+                              : TextStyle(fontFamily: composeFontFamily),
                           decoration: const InputDecoration(
                             hintText: '今なにしてる？',
                             border: InputBorder.none,
@@ -3144,9 +3315,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           visualDensity: VisualDensity.compact,
                         ),
                       IconButton(
-                        onPressed: _sending
-                            ? null
-                            : () => setState(() => _cwEnabled = !_cwEnabled),
+                        onPressed: _sending ? null : _toggleCw,
                         icon: Icon(
                           Icons.warning_amber,
                           color: _cwEnabled
@@ -3158,11 +3327,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                       if (ref.watch(currentAdapterProvider) is PollSupport)
                         IconButton(
-                          onPressed: _sending
-                              ? null
-                              : () => setState(
-                                  () => _pollEnabled = !_pollEnabled,
-                                ),
+                          onPressed: _sending ? null : _togglePoll,
                           icon: Icon(
                             Icons.poll_outlined,
                             color: _pollEnabled
@@ -3174,11 +3339,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                         ),
                       if (_attachments.isNotEmpty)
                         IconButton(
-                          onPressed: _sending
-                              ? null
-                              : () => setState(
-                                  () => _sensitiveEnabled = !_sensitiveEnabled,
-                                ),
+                          onPressed: _sending ? null : _toggleSensitive,
                           icon: Icon(
                             _effectiveSensitive
                                 ? Icons.visibility_off
@@ -3253,9 +3414,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                         onChanged: _sending
                             ? null
                             : (value) {
-                                if (value != null) {
-                                  setState(() => _scope = value);
-                                }
+                                if (value != null) _scopeSetters[value]!();
                               },
                         items: _scopeItems(ref),
                       ),
@@ -3267,7 +3426,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             selected: _localOnly,
                             onSelected: _sending
                                 ? null
-                                : (v) => setState(() => _localOnly = v),
+                                : (_) => _toggleLocalOnly(),
                             visualDensity: VisualDensity.compact,
                           ),
                         ),
@@ -3368,6 +3527,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           ),
         ),
       ),
+    );
+
+    // 表示中はデスクトップメニューバーに投稿操作を出す (#835)。デスクトップ以外は
+    // メニューバー自体が描かれないので、包んでも何も起きない。
+    return ScreenMenu(
+      label: ref.watch(postLabelProvider),
+      entries: _buildComposeMenuEntries(),
+      child: scaffold,
     );
   }
 }

@@ -7,7 +7,8 @@ import 'timeline_provider.dart';
 
 /// Notifier that manages paginated channel timeline fetching.
 class ChannelTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
+    with TimelineListMutations<String> {
   static const _pageSize = 20;
 
   @override

@@ -24,13 +24,14 @@ import '../../service/url_preview_cache.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import '../../provider/server_config_provider.dart';
-import '../../provider/timeline_provider.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
+import '../util/visible_timeline.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_picker.dart';
+import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
@@ -42,6 +43,10 @@ class PostTile extends ConsumerStatefulWidget {
   final bool tappable;
   final bool initialExpanded;
   final bool selectable;
+
+  /// キーボードナビゲーション (#849) で選択中の投稿。ハイライトを出すだけで、
+  /// タップ操作の対象や状態には影響しない。
+  final bool selected;
   final VoidCallback? onActionCompleted;
   final ValueChanged<Post>? onPostUpdated;
 
@@ -51,6 +56,7 @@ class PostTile extends ConsumerStatefulWidget {
     this.tappable = true,
     this.initialExpanded = false,
     this.selectable = false,
+    this.selected = false,
     this.onActionCompleted,
     this.onPostUpdated,
   });
@@ -298,7 +304,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     List<Attachment> updatedAttachments,
   ) {
     final updatedPost = displayPost.copyWith(attachments: updatedAttachments);
-    ref.read(timelineProvider.notifier).updatePost(updatedPost);
+    readVisibleTimelines(ref).updatePost(updatedPost);
   }
 
   @override
@@ -417,12 +423,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
 
     final isDirect = displayPost.scope == PostScope.direct;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      color: isDirect
-          ? Theme.of(
-              context,
-            ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+      // キーボード選択中はスレッドの対象ハイライト / DM の色づけより濃く塗り、
+      // どちらと重なっても「いまカーソルがある行」が判別できるようにする (#849)。
+      color: widget.selected
+          ? colorScheme.primaryContainer.withValues(alpha: 0.7)
+          : isDirect
+          ? colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: InkWell(
         onTap: widget.tappable
@@ -1041,7 +1050,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   ) async {
     // await 中にタイルが dispose されると ref.read が StateError を投げうる。
     // notifier を await 前に退避し以降はローカル参照する (#665)。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await adapter.unrepeatPost(isOwnRenote ? post : targetPost);
       if (isOwnRenote) {
@@ -1058,8 +1067,25 @@ class _PostTileState extends ConsumerState<PostTile> {
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // **双子が post_touch_action_row._unrepeat にある**（同名・同構造）。
+      // 片方だけ直すと `phase: post_action` の母数から「取り消し」が導線ごと
+      // 欠け、失敗文言も導線で変わる。実際にリリース前レビュー 3 巡目でここだけ
+      // 直し、4 巡目で向こうの取りこぼしを指摘された。次に触るときは対で見ること。
+      debugPrint('_unrepeat failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1174,6 +1200,35 @@ class _PostTileState extends ConsumerState<PostTile> {
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
+                    );
+                  },
+                ),
+              // チャンネル内へのリノート (#895)。通常のリノートはチャンネル外に
+              // 出るため、チャンネルへ流したいときはこちらを選ぶ。滅多に使わない
+              // 操作なので、既定（＝上の項目）はチャンネル指定なしのまま。
+              if (adapter is ChannelSupport &&
+                  (targetPost.scope == PostScope.public ||
+                      targetPost.scope == PostScope.unlisted))
+                ListTile(
+                  leading: const Icon(Icons.forum),
+                  title: Text('チャンネルに$boostLabel'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    final channel = await pickFollowedChannel(
+                      context,
+                      ref,
+                      title: 'チャンネルに$boostLabel',
+                    );
+                    // ピッカーを開いている間にタイルが捨てられていることがある
+                    // （_runAction 内の ref.read が落ちる / #665 と同型）。
+                    if (channel == null || !mounted) return;
+                    _runVoidAction(
+                      messenger,
+                      () => (adapter as ChannelSupport).repeatPostToChannel(
+                        targetPost.id,
+                        channelId: channel.id,
+                      ),
+                      '「${channel.name}」に$boostLabelしました',
                     );
                   },
                 ),
@@ -1398,7 +1453,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = ref.read(timelineProvider.notifier);
+              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1488,7 +1543,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = ref.read(timelineProvider.notifier);
+              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1589,7 +1644,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage,
   ) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       await action();
       // Refetch the post and update the timeline.
@@ -1621,15 +1676,36 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage,
   ) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = ref.read(timelineProvider.notifier);
+    final timeline = readVisibleTimelines(ref);
     try {
       final updated = await action();
       timeline.updatePost(updated);
       widget.onPostUpdated?.call(updated);
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // 同じお気に入り / ブースト / ブックマーク / ピン留めでも、アクションシート
+      // 経由（ここ）とタッチ操作行経由（post_touch_action_row._runAction）で失敗の
+      // 見え方が割れていた。あちらは describePostActionError で 403 を「権限が
+      // ありません」と説明し Sentry にも上げるのに、こちらは汎用文言のうえ無記録で、
+      // phase タグの件数を見ても母数が分からない状態だった。3 ファイルの
+      // _runAction を揃える（リリース前レビュー 2 巡目）。**投稿アクションの
+      // catch はここだけではない**ので、規約は describePostActionError の doc を
+      // 見ること（全数を数え上げるコメントは繰り返し古くなった）。
+      debugPrint('_runAction failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 
@@ -1642,11 +1718,20 @@ class _PostTileState extends ConsumerState<PostTile> {
       await action();
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('_runVoidAction failed: $e');
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
+      // 文言は元から describePostActionError だが観測が無く、post_action の
+      // 母数から漏れていた（チャンネルへのリノート等がここを通る）。
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
       messenger.showSnackBar(
         SnackBar(content: Text(describePostActionError(e))),
       );
@@ -1696,22 +1781,30 @@ class _PostTileState extends ConsumerState<PostTile> {
               final mulukhiya = account?.mulukhiya;
               if (account == null || mulukhiya == null) return;
               final messenger = ScaffoldMessenger.of(context);
+              // 非同期の完了後に ref を触らないよう、変更ハンドルは先に取る (#665)。
+              final timeline = readVisibleTimelines(ref);
               mulukhiya
                   .deleteNowPlaying(
                     accessToken: account.userSecret.accessToken,
                     id: targetPost.id,
                   )
                   .then((_) {
-                    ref
-                        .read(timelineProvider.notifier)
-                        .removePost(targetPost.id);
+                    timeline.removePost(targetPost.id);
                     if (mounted) setState(() => _deleted = true);
                     if (context.mounted) _popIfInThread(context);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
                     );
                   })
-                  .catchError((e) {
+                  .catchError((Object e, StackTrace st) {
+                    unawaited(
+                      Sentry.captureException(
+                        e,
+                        stackTrace: st,
+                        withScope: (scope) =>
+                            scope.setTag('phase', 'post_action'),
+                      ),
+                    );
                     messenger.showSnackBar(
                       SnackBar(content: Text(describePostActionError(e))),
                     );
@@ -1745,7 +1838,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         adapter: ref.read(currentAdapterProvider)!,
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
-          final timeline = ref.read(timelineProvider.notifier);
+          final timeline = readVisibleTimelines(ref);
           try {
             await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,
@@ -1756,7 +1849,14 @@ class _PostTileState extends ConsumerState<PostTile> {
             if (mounted) setState(() => _deleted = true);
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
-          } catch (e) {
+          } catch (e, st) {
+            unawaited(
+              Sentry.captureException(
+                e,
+                stackTrace: st,
+                withScope: (scope) => scope.setTag('phase', 'post_action'),
+              ),
+            );
             messenger.showSnackBar(
               SnackBar(content: Text(describePostActionError(e))),
             );
@@ -2164,13 +2264,26 @@ mixin _HoverUsersOverlay<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       _insertHoverOverlay();
       return;
     }
+    // 飛行中の再ホバー: ローディング表示だけ出し直して、**2 本目は発射しない**。
+    // [hoverFetch] は呼んだ時点でリクエストが出るので、この判定を後ろに置くと
+    // 離脱→再ホバーのたびに誰も await しない future が生まれる。ハンドラが付いて
+    // いないため、回線断や 5xx で落ちると unhandled async error としてゾーンへ
+    // 抜け、Sentry の crash-free rate を汚す。[hoverExit] は飛行中の取得を止め
+    // ないので、この経路は普通のマウス操作で踏める。
+    // ここで挿し直したオーバーレイは、先行の取得が終わったときの
+    // `_overlay?.markNeedsBuild()` で中身が入る。
+    if (_fetching) {
+      _loading = true;
+      _failed = false;
+      _insertHoverOverlay();
+      return;
+    }
     // 未キャッシュ: fetcher が無ければ（非対応 adapter 等）何も出さない。
     final future = hoverFetch();
     if (future == null) return;
     _loading = true;
     _failed = false;
     _insertHoverOverlay();
-    if (_fetching) return;
     _fetching = true;
     try {
       final users = await future;
@@ -2410,7 +2523,7 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Image.network(
-                    _twemojiUrl(widget.reactionKey),
+                    AppConstants.twemojiUrl(widget.reactionKey),
                     width: emojiSize,
                     height: emojiSize,
                     errorBuilder: (_, _, _) => Text(
@@ -2518,15 +2631,6 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
     final host = inner.substring(at + 1);
     if (host == '.' || host.isEmpty) return ':$name:';
     return ':$name@$host:';
-  }
-
-  /// Build Twemoji CDN URL from a Unicode emoji string.
-  static String _twemojiUrl(String emoji) {
-    final codepoints = emoji.runes
-        .where((r) => r != 0xFE0F) // strip variation selectors
-        .map((r) => r.toRadixString(16))
-        .join('-');
-    return '${AppConstants.twemojiBaseUrl}/$codepoints.png';
   }
 }
 

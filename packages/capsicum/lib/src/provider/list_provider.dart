@@ -14,7 +14,8 @@ final listsProvider = FutureProvider.autoDispose<List<PostList>>((ref) async {
 
 /// Notifier that manages paginated list timeline fetching.
 class ListTimelineNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String> {
+    extends AutoDisposeFamilyAsyncNotifier<TimelineState, String>
+    with TimelineListMutations<String> {
   static const _pageSize = 20;
 
   @override
