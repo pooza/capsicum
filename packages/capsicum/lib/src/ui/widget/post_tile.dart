@@ -1068,9 +1068,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
     } catch (e, st) {
-      // 4 つ目の投稿アクション経路。他の 3 つ（各 _runAction）を揃えたときに
-      // ここだけ取り残すと、`phase: post_action` の母数から「取り消し」が丸ごと
-      // 欠け、失敗文言も汎用のままになる。
+      // **双子が post_touch_action_row._unrepeat にある**（同名・同構造）。
+      // 片方だけ直すと `phase: post_action` の母数から「取り消し」が導線ごと
+      // 欠け、失敗文言も導線で変わる。実際にリリース前レビュー 3 巡目でここだけ
+      // 直し、4 巡目で向こうの取りこぼしを指摘された。次に触るときは対で見ること。
       debugPrint('_unrepeat failed: $e');
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
@@ -1687,8 +1688,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       // 経由（ここ）とタッチ操作行経由（post_touch_action_row._runAction）で失敗の
       // 見え方が割れていた。あちらは describePostActionError で 403 を「権限が
       // ありません」と説明し Sentry にも上げるのに、こちらは汎用文言のうえ無記録で、
-      // phase タグの件数を見ても母数が分からない状態だった。3 つの _runAction を
-      // 揃える（リリース前レビュー 2 巡目）。
+      // phase タグの件数を見ても母数が分からない状態だった。3 ファイルの
+      // _runAction を揃える（リリース前レビュー 2 巡目）。**投稿アクションの
+      // catch はここだけではない**ので、規約は describePostActionError の doc を
+      // 見ること（全数を数え上げるコメントは繰り返し古くなった）。
       debugPrint('_runAction failed: $e');
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
@@ -1793,7 +1796,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                       const SnackBar(content: Text('NowPlaying を削除しました')),
                     );
                   })
-                  .catchError((e) {
+                  .catchError((Object e, StackTrace st) {
+                    unawaited(
+                      Sentry.captureException(
+                        e,
+                        stackTrace: st,
+                        withScope: (scope) =>
+                            scope.setTag('phase', 'post_action'),
+                      ),
+                    );
                     messenger.showSnackBar(
                       SnackBar(content: Text(describePostActionError(e))),
                     );
@@ -1838,7 +1849,14 @@ class _PostTileState extends ConsumerState<PostTile> {
             if (mounted) setState(() => _deleted = true);
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
-          } catch (e) {
+          } catch (e, st) {
+            unawaited(
+              Sentry.captureException(
+                e,
+                stackTrace: st,
+                withScope: (scope) => scope.setTag('phase', 'post_action'),
+              ),
+            );
             messenger.showSnackBar(
               SnackBar(content: Text(describePostActionError(e))),
             );

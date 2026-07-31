@@ -255,10 +255,10 @@ class PostTouchActionRow extends ConsumerWidget {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
     } catch (e, st) {
-      // 投稿アクションの失敗を握る 9 経路のうち、最後に残っていた 1 つ。
-      // タッチ操作行はモバイルでのブースト取り消しの主導線なので、ここが
-      // 汎用文言 + 無記録のままだと `phase: post_action` の母数から取り消しが
-      // 丸ごと欠ける。post_tile 側の同名メソッドと対で揃える。
+      // **双子が post_tile._unrepeat にある**（同名・同構造）。タッチ操作行は
+      // モバイルでのブースト取り消しの主導線なので、ここが汎用文言 + 無記録の
+      // ままだと `phase: post_action` の母数から取り消しが導線ごと欠ける。
+      // 次に触るときは対で見ること（規約は describePostActionError の doc）。
       debugPrint('_unrepeat failed: $e');
       if (e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
@@ -378,7 +378,8 @@ class PostTouchActionRow extends ConsumerWidget {
       // post_tile / notification_tile / ここの 3 ファイルで同じ値なのと同じ）。
       // v1.53 までは導線名の `touch_action` を出していたため、同じお気に入り /
       // ブーストの失敗が導線ごとに別系列へ散り、**どちらで絞っても母数にならない**
-      // 状態だった。3 つの _runAction すべてを post_action に揃える。
+      // 状態だった。3 ファイルの _runAction を post_action に揃える
+      // （対象範囲と規約は describePostActionError の doc）。
       unawaited(
         Sentry.captureException(
           e,

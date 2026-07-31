@@ -763,7 +763,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // 数えられない。なおこの捕捉は**キャッシュ先出し経路にしか無い**（キャッシュ
       // 無しの起動は build() が投げたものを Riverpod が AsyncError にするだけで
       // Sentry へは出ない）ので、この tag の件数は「キャッシュがあった起動の失敗」
-      // に偏る。母数として読むときは from_cache=true の起動数と突き合わせること。
+      // に偏る。
+      //
+      // 失敗率を出すときは **サンプリングレートの違いに注意**。error event は
+      // `options.sampleRate` 未設定で 1.0、分母にしたい
+      // `app.startup.home_timeline` (from_cache=true) は `app.start` なので
+      // [startupTracesSampleRate] = 0.2。素で割ると実勢の 5 倍に出る。
+      // transaction 件数を 5 倍してから割ること。
       unawaited(
         Sentry.captureException(
           scrubbed,
