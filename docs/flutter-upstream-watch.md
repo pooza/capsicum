@@ -24,6 +24,8 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
    - `flutter/flutter` の場合: `gh -R flutter/flutter issue view <番号>` でステータス・直近コメントを確認
    - 他リポジトリ（`LinusU/flutter_web_auth_2` 等）も同様に `gh -R <owner/repo> issue view <番号>`
    - 関連 PR があれば `gh -R <owner/repo> pr view <番号>` で merge 状況を確認
+   - **上流が CLOSED の項目は「行き止まり」と扱わず、`stateReason` を必ず見る**。`DUPLICATE` なら close コメントに書かれた集約先まで辿り、そこで修正 PR の有無を確認する。`--json state,stateReason,comments` を付けると 1 回で判る。2026-08 の chase で #390 の本命（[flutter#125975](https://github.com/flutter/flutter/issues/125975)）はこの経路で見つかった — 追跡先の [#180809](https://github.com/flutter/flutter/issues/180809) は 2026-01 に duplicate close されており、半年間「CLOSED のまま・変化なし」と記録し続けていた
+   - 修正 PR が merge 済みだった場合、**stable への取り込みは pinned SDK のソースを直接読んで確認する**のが最も確実（`$(dirname $(dirname $(readlink -f $(which flutter))))/packages/flutter/...` を grep する）。リリースノートより早く白黒が付く
 2. 上流参照が「未調査」の項目は、capsicum 側 Issue の概要キーワードで `gh -R <owner/repo> issue list --search "..."` を実行し、有力候補（最大 3 件）を本 doc に追記する
 3. 進展があった項目は capsicum 側 Issue にコメントを残す（上流の状態 + 次のアクション提案）
 4. 本 doc の「最終確認日」と「状態」を更新する
