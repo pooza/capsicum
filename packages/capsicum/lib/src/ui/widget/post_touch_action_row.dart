@@ -254,8 +254,25 @@ class PostTouchActionRow extends ConsumerWidget {
       }
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
+    } catch (e, st) {
+      // 投稿アクションの失敗を握る 9 経路のうち、最後に残っていた 1 つ。
+      // タッチ操作行はモバイルでのブースト取り消しの主導線なので、ここが
+      // 汎用文言 + 無記録のままだと `phase: post_action` の母数から取り消しが
+      // 丸ごと欠ける。post_tile 側の同名メソッドと対で揃える。
+      debugPrint('_unrepeat failed: $e');
+      if (e is DioException) {
+        debugPrint('Response body: ${e.response?.data}');
+      }
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'post_action'),
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text(describePostActionError(e))),
+      );
     }
   }
 

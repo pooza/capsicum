@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/timeline_cache.dart';
 import '../widget/content_parser.dart';
 
 /// 投稿の削除・再投稿・差し替えを「いま画面に出ている TL」へ反映するための
@@ -54,11 +57,18 @@ class VisibleTimelineMutator {
   /// 残さない。本線 TL は streaming で後追い補正されるが、ハッシュタグ / リスト /
   /// チャンネルの各 TL は張っていないため、ここで消さないとタブを切り替えるまで
   /// 相手の投稿が見えたままになる。
+  ///
+  /// 起動時キャッシュ (#890) も一緒に捨てる。ディスクに残っているのはブロック前の
+  /// スナップショットなので、**ブロック直後にアプリを終了して 24 時間以内に
+  /// 起動し直すと、REST が返るまでの数百 ms 相手の投稿が先出しされる**。
+  /// メモリ上の一覧と未表示バッファだけ掃除しても保証に穴が残る。捨てても次の
+  /// TL 取得で書き直されるだけなので、起動体感への影響は次回起動 1 回に留まる。
   void removePostsByUser(String userId) {
     _main?.removePostsByUser(userId);
     _hashtag?.removePostsByUser(userId);
     _list?.removePostsByUser(userId);
     _channel?.removePostsByUser(userId);
+    unawaited(TimelineCache.clear());
   }
 
   /// 内容が変わった投稿を、表示中の TL で差し替える。
