@@ -759,7 +759,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       // 例外文字列にはホストや生データ断片が載りうるため詰め替えてから送る
       // (#586 / #743)。unhandled ではなく「意図して捕捉した失敗」として残す。
       final scrubbed = scrubException(e);
-      unawaited(Sentry.captureException(scrubbed, stackTrace: st));
+      // タグ無しだと汎用の DioException に紛れて、ホーム TL の初回取得失敗として
+      // 数えられない。なおこの捕捉は**キャッシュ先出し経路にしか無い**（キャッシュ
+      // 無しの起動は build() が投げたものを Riverpod が AsyncError にするだけで
+      // Sentry へは出ない）ので、この tag の件数は「キャッシュがあった起動の失敗」
+      // に偏る。母数として読むときは from_cache=true の起動数と突き合わせること。
+      unawaited(
+        Sentry.captureException(
+          scrubbed,
+          stackTrace: st,
+          withScope: (scope) => scope.setTag('phase', 'startup_timeline'),
+        ),
+      );
       state = AsyncError(scrubbed, st);
     }
   }
