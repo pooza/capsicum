@@ -84,13 +84,35 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 そのため beta は本番より先に手元へ来ている。ステージング適用中の beta は **`origin/merge/<version>-beta.N`** ブランチとして fetch できる（例: `origin/merge/2026.7.0-beta.1`）。**API 契約の diff（①②）は本番昇格を待たずにこの ref から前倒しで回せる**（`<記録SHA>..origin/merge/<version>-beta.N`）。前倒しトリアージの狙いは、Mastodon 同様「本番昇格より前に actionable な API 変更を潰しておく」こと。
 
-一方 **Flash 互換ハーネスは preset の本番サーバー（現行 2026.6.0）を叩く**ため、beta の Flash 挙動まではステージングサーバーに到達できない限りカバーしない。ハーネスは daisskey 昇格後に回すのが確実。
+一方 **Flash 互換ハーネスは preset の本番サーバーを叩く**ため、beta の Flash 挙動まではカバーしない。ハーネスは daisskey 昇格後に回すのが確実。
+
+**ステージング（dev27 = `st2.misskey.delmulin.com`）に Play を置いてもハーネスの前倒しにはならない**（2026-08-01 確認）。理由は 2 段階ある。
+
+1. **現状は検体ゼロ。** API 自体には到達でき `api/meta` はステージング側の新バージョンを返すが、連合隔離でコンテンツを持たないため `api/flash/featured` が 0 件になる。しかも featured の条件は `likedCount > 0` かつ `visibility = public`（`FlashService.featured`）なので、Play を複製するだけでは載らず**いいねを 1 つ以上つける**必要がある。
+2. **仮に複製しても結果が変わらない。** ハーネスが検証しているのは **Play スクリプトそのもの**であって、サーバーのバージョンではない。取得した AiScript をローカルの `FlashRuntime` で実行するだけで、サーバー側の実行系は一切関与しない。ステージングに本番と同じ Play を置けば、**本番で回したのと同じ結果が出るだけ**である。
+
+したがってステージングで前倒しできるのは **API 契約の diff（①②）まで**。Play 側でバージョン先取りの意味が出るのは「サーバーの AiScript が上がった結果、新構文の Play が**新規に書かれた**とき」であり、それは複製では再現できない。**③ で `@syuilo/aiscript` の据え置きを確認できていれば、ハーネスは本番昇格の前後どちらで回しても同じ**と考えてよい。
+
+ただしステージングに検体を固定する運用には別の価値がある — 本番の featured は**いいね数の変動で入れ替わりうる**ため、[既知の限界](#既知の限界過信しないこと)に書いたとおり pre-1.0 構文の検体が静かに消えることがある。これを防ぎたい場合は、ステージングではなく**ハーネス側に flash ID の直接指定経路を足す**方が確実（`flash/show` は `requireCredential: false` なので未認証で引ける）。
+
+ノード名とホスト名の対応は infra-note（`~/repos/chubo2/docs/infra-note.md`）が正本。Play の動作保証範囲はプリセットの Misskey 2 サーバー（ダイスキー / きゅあすきー）。
 
 判定の既定は保守的に **daisskey（本番）を diff の相手**とし、triage が due になるのは daisskey が動いたとき。前倒しは「やる価値がある版のとき」に beta ref で任意に実施する。
 
 対して **Mastodon（美食丼ほか）はリリース当日〜遅くとも翌日に本番適用**する運用（[project_mastodon_46_posture] メモリの「pooza は本番をリリース日に必ずデプロイする」に対応）。Mastodon は本番投入そのものが早い／Misskey は準備は早いが本番投入を用心して遅らせる、という**運用スタイルの差**であって、どちらも「本家 GA より前に互換の目星をつけておける」点は共通。
 
 ## トリアージ履歴
+
+### baseline: `9d6b7d05de`（2026.7.0、2026-08-01 記録）
+
+`589d4ece`（2026.6.0）..`daisskey`（2026.7.0+0）の差分トリアージ。**beta.1 の先読み時点から追加はなく、GA の内容は先読みと同一**だった。
+
+- **`admin/unset-mfa`（新規 endpoint）** — 判定 **none**: 管理者がユーザーの MFA を解除する admin API。capsicum は無関係。beta.1 で先読み済み。
+- entity の変化は `AdminUnsetMfaRequest` の型 export 1 行のみ（上記 endpoint に付随）・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 で据え置き。
+
+Flash 互換ハーネス: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。**ただし実行時点のプリセット本番は 2026.6.0**（daisskey 本番適用は 2026-08-03 週の予定）。`@syuilo/aiscript` が据え置きで **Flash の言語世代が動く圧力がない**ため、昇格後の再実施は不要と判断する。
+
+→ actionable なし。**API 契約側は 2026.7.0 の本番適用をそのまま通してよい**。次回は `9d6b7d05de..daisskey` から差分する。
 
 ### 前倒し: `2026.7.0-beta.1`（ステージング先読み・2026-07-22 記録）
 
