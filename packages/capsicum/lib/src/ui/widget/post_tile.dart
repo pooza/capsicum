@@ -2281,18 +2281,33 @@ mixin _HoverUsersOverlay<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // 未キャッシュ: fetcher が無ければ（非対応 adapter 等）何も出さない。
     final future = hoverFetch();
     if (future == null) return;
+    // await をまたぐ間に、この State が別の投稿へ再利用されうる。PostTile は
+    // リストで key を持たないため、ライブ更新で TL の先頭に投稿が入ると
+    // [_CountChipState] が別の投稿を描画する。[hoverCacheKey] は現在の投稿から
+    // 都度組み立てられるので、await 明けに読み直すと **投稿 A の結果が投稿 B の
+    // キーで static キャッシュに入る**。[_ReactionUsersCache] は 200 件残るため、
+    // 以後 B をホバーするたびに A のブースト者が出続ける (#920)。
+    final requestedKey = hoverCacheKey;
     _loading = true;
     _failed = false;
     _insertHoverOverlay();
     _fetching = true;
     try {
       final users = await future;
-      _ReactionUsersCache.put(hoverCacheKey, users);
+      _ReactionUsersCache.put(requestedKey, users);
       if (!mounted) return;
+      if (hoverCacheKey != requestedKey) {
+        _discardStaleHover();
+        return;
+      }
       _users = users;
       _loading = false;
     } catch (_) {
       if (!mounted) return;
+      if (hoverCacheKey != requestedKey) {
+        _discardStaleHover();
+        return;
+      }
       _failed = true;
       _loading = false;
     } finally {
@@ -2300,6 +2315,17 @@ mixin _HoverUsersOverlay<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     }
     // オーバーレイがまだ表示中なら内容を更新。
     _overlay?.markNeedsBuild();
+  }
+
+  /// await 明けに別の投稿の State になっていたときの後始末。取得結果は元の
+  /// キーでキャッシュ済みなので捨ててよい。ローディング表示のまま放置すると
+  /// スピナーが回りっぱなしになるので、オーバーレイごと畳む（ポインタが載った
+  /// ままなら、いったん外して入れ直せば現在の投稿として取り直される）。
+  void _discardStaleHover() {
+    _loading = false;
+    _failed = false;
+    _users = null;
+    _removeHoverOverlay();
   }
 
   void _insertHoverOverlay() {
