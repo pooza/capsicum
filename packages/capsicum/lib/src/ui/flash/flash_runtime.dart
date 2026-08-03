@@ -91,6 +91,14 @@ class FlashRuntime {
   static String? scriptLangVersion(String script) =>
       Parser.getLangVersion(script);
 
+  /// capsicum に入っている評価器の AiScript バージョン（フォークの `Core:v`）。
+  ///
+  /// degrade の文言で「このアプリの版」として提示する (#934)。予測（「動かない
+  /// 可能性があります」）ではなく数値を出すための材料。フォークの `stdlib` は
+  /// public export されていないため定数で持ち、実際の `Core:v` との一致は
+  /// `test/flash_runtime_test.dart` で担保する。
+  static const engineLangVersion = '0.16.0';
+
   /// この Play を capsicum の評価器で実行すると本家と結果がズレうるか (#881)。
   ///
   /// 本家 Misskey は宣言バージョン 1.0.0 未満（および宣言なし）を legacy 実行系に

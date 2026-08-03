@@ -257,12 +257,20 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       // degrade を踏んだ頻度と、誤ブロック（正当な Play の過剰発火）を測る計装
       // （リリース前レビュー黄）。失敗ではないので info の captureMessage。
       reportPlayDegrade(flashId: widget.flash.id, host: _host);
+      // 予測ではなく事実（両方のバージョンと、1.0 で何が変わったか）を出す
+      // (#934)。「正しく動作しない可能性があります」はほぼ常に真で反証できず、
+      // 無関係な症状（Web との出目差 #896 など）まで吸収して調査を止めるため。
+      final declared = FlashRuntime.scriptLangVersion(widget.flash.script);
       setState(() {
         _error = FlashRuntimeError(
-          'この Play は新しい AiScript で書かれています',
-          'capsicum の評価器では結果が本家と変わる可能性があります。'
-              'ブラウザで開くと本家どおりに楽しめます。'
-              'このまま実行することもできます（結果が変わる場合があります）。',
+          declared == null
+              ? 'この Play は新しい AiScript 向けです'
+              : 'この Play は AiScript $declared 以降向けです',
+          'このアプリの AiScript は ${FlashRuntime.engineLangVersion} です'
+              '${declared == null ? '' : '（$declared は作者の申告値）'}。'
+              'AiScript 1.0 で演算子の優先順位などが変わったため、'
+              'エラーにならないまま結果だけ変わることがあります。'
+              'ブラウザで開けば本家の実行系で動きます。',
           langUnsupported: true,
         );
       });

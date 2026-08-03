@@ -1,4 +1,5 @@
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/ui/flash/flash_runtime.dart';
 import 'package:capsicum/src/ui/screen/flash_view_screen.dart';
 import 'package:capsicum/src/ui/widget/emoji_text.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -137,6 +138,35 @@ void main() {
       // 行き止まりにしない。
       expect(find.text('ブラウザで開く'), findsOneWidget);
       expect(find.text('再試行'), findsOneWidget);
+    });
+
+    testWidgets('新しい AiScript 宣言の degrade は両方のバージョンを事実として出す (#934)', (
+      tester,
+    ) async {
+      // 「正しく動作しない可能性があります」のような反証不可能な文言に戻さない。
+      // 予測ではなく数値（申告値と搭載版）と、1.0 で何が変わったかを出す。
+      final adapter = _FakeAdapter();
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('''
+          /// @1.0.0
+          Ui:render([Ui:C:text({ text: "新しい版" }, "t")])
+        '''),
+      );
+
+      expect(find.textContaining('1.0.0 以降向け'), findsOneWidget);
+      expect(
+        find.textContaining(FlashRuntime.engineLangVersion),
+        findsOneWidget,
+      );
+      // degrade は失敗ではないので、評価せず逃がしたことが分かる導線を出す。
+      expect(find.text('ブラウザで開く'), findsOneWidget);
+      expect(find.text('このまま実行する'), findsOneWidget);
+      // 再度 degrade するだけの「再試行」は出さない。
+      expect(find.text('再試行'), findsNothing);
+      // 評価していないので描画ツリーは出ない。
+      expect(find.text('新しい版'), findsNothing);
     });
 
     testWidgets('script が空の一覧エントリは show で取り直す', (tester) async {
