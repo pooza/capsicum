@@ -15,6 +15,11 @@
 
 - 直近マイルストーンを close 済みにする（残 Issue 0 が前提）。
 - 主役 Issue が close 済みで、リリースノート / リリースログに反映されていることを確認。
+- **[capsicum-relay](https://github.com/pooza/capsicum-relay) の同名マイルストーンも残 0 であることを確認する**（下記「関連リポジトリの同名マイルストーン」）。
+
+  ```sh
+  gh issue list --repo pooza/capsicum-relay --milestone vX.YY --state open
+  ```
 
 ### 2. マイルストーンなし Issue のトリアージ・割り当て
 
@@ -41,6 +46,28 @@
   ```
   gh api -X PATCH repos/pooza/capsicum/milestones/{number} -f description="..."
   ```
+
+### 3-2. 関連リポジトリの同名マイルストーン（capsicum-relay）
+
+capsicum-relay は独自のリリースサイクル（tag / GitHub Release）を持たないため、**マイルストーンが無いと着手の理由が発生せず、先回り・構造改善系の Issue が永久に滞留する**。実際、close 済みは全て即日〜2 日（壊れたら直す系）で、残っているのは全部が未着手の構造改善だった（2026-08-03 に 7 件を確認）。
+
+これを防ぐため、**capsicum のマイルストーンと同名の枠を relay 側にも作り、その回に消化する分を入れる**。「いつやるか」＝マイルストーン、「何の系統か」＝ラベル（`観測` / `配信` / `基盤`）で分ける。
+
+- 次マイルストーンのスコープを決めるとき、**relay の未割り当て Issue も同時に見る**。
+
+  ```sh
+  gh issue list --repo pooza/capsicum-relay --state open --json number,title,milestone,labels
+  ```
+
+- 消化する分があれば relay 側に同名マイルストーンを作って割り当てる。**capsicum 側の description にも 1 行書く**（どちらから見ても対応が分かるように）。
+
+  ```sh
+  gh api -X POST repos/pooza/capsicum-relay/milestones -f title="vX.YY" -f description="..."
+  ```
+
+- **その回に relay を触らないなら枠を作らない。**空枠を量産しない（0 件の枠は「やらない」と区別が付かず、v1.20.1 が 3 ヶ月半放置された）。
+- 枠を作らないと決めた回は、capsicum 側マイルストーンの description に「relay: なし」と明記する。**判断したことが読み取れる状態にする**のが目的で、無言の未割り当てにしない。
+- relay 側の作業範囲は commit + flauros デプロイまで（メモリ `feedback_capsicum_relay_deploy_delegation` が正本）。ブランチは原則 main 直（`feedback_capsicum_relay_branching`）。
 
 ### 4. 直近ロードマップの調整
 
