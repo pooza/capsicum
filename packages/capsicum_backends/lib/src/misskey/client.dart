@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:http_parser/http_parser.dart';
 
+import '../network_timeouts.dart';
 import '../rate_limit_interceptor.dart';
 
 /// MiAuth の `/check` がセッションを承認済みとして返さなかった (`ok:false` /
@@ -21,7 +22,17 @@ class MisskeyClient {
   final String host;
   String? _token;
 
-  MisskeyClient(this.host) : dio = Dio(BaseOptions(baseUrl: 'https://$host')) {
+  MisskeyClient(this.host)
+    : dio = Dio(
+        BaseOptions(
+          baseUrl: 'https://$host',
+          // 既定はタイムアウト無しなので、応答しないサーバーで分単位に
+          // ハングする (#900)。値の根拠は network_timeouts.dart。
+          connectTimeout: kAdapterConnectTimeout,
+          receiveTimeout: kAdapterReceiveTimeout,
+          sendTimeout: kAdapterSendTimeout,
+        ),
+      ) {
     dio.interceptors.add(RateLimitInterceptor(dio));
   }
 
@@ -290,6 +301,9 @@ class MisskeyClient {
       data: formData,
       options: Options(
         extra: {RateLimitInterceptor.formDataFactoryKey: buildFormData},
+        // ファイル転送とサーバー側の変換待ちを既定タイムアウトで切らない (#900)。
+        sendTimeout: kAdapterUploadTimeout,
+        receiveTimeout: kAdapterUploadTimeout,
       ),
     );
     return response.data as Map<String, dynamic>;
