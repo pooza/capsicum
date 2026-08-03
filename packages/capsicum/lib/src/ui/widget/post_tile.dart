@@ -30,7 +30,7 @@ import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import 'emoji_action_sheet.dart';
-import 'emoji_picker.dart';
+import 'reaction_picker_sheet.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
@@ -1603,34 +1603,19 @@ class _PostTileState extends ConsumerState<PostTile> {
 
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
+    final backend = adapter as BackendAdapter;
+    final reaction = adapter as ReactionSupport;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      // builder 自身の context を使う。外側の _showEmojiPicker(context) を握ると、
-      // タイルが deactivate / 再描画されて context が外れたとき MediaQuery._of が
-      // null check で fatal になる (Sentry CAPSICUM-2T / #683)。pop も同様に寄せる。
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.5,
-        child: EmojiPicker(
-          adapter: adapter as BackendAdapter,
-          host: account!.key.host,
-          mulukhiya: account.mulukhiya,
-          accessToken: account.userSecret.accessToken,
-          forReaction: true,
-          onSelected: (emoji) {
-            Navigator.pop(sheetContext);
-            _runReactionAction(
-              messenger,
-              adapter as BackendAdapter,
-              targetPost.id,
-              () => (adapter as ReactionSupport).addReaction(
-                targetPost.id,
-                emoji,
-              ),
-              'リアクションしました',
-            );
-          },
+    unawaited(
+      showReactionPickerSheet(
+        context: context,
+        ref: ref,
+        onSelected: (emoji) => _runReactionAction(
+          messenger,
+          backend,
+          targetPost.id,
+          () => reaction.addReaction(targetPost.id, emoji),
+          'リアクションしました',
         ),
       ),
     );

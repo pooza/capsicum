@@ -13,7 +13,7 @@ import '../../provider/server_config_provider.dart';
 import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
 import '../util/visible_timeline.dart';
-import 'emoji_picker.dart';
+import 'reaction_picker_sheet.dart';
 
 /// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
 ///
@@ -282,37 +282,23 @@ class PostTouchActionRow extends ConsumerWidget {
     if (account == null || adapter is! ReactionSupport) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    // シート builder / onSelected は遅延実行される。実行時点で
-    // currentAccountProvider が入れ替わっていても安全なよう、ここで確定した
-    // 非 null 値をローカルへ退避し、closure 内で `!` / `as` を再評価しない
+    // onSelected は遅延実行される。実行時点で currentAccountProvider が
+    // 入れ替わっていても安全なよう、ここで確定した非 null 値をローカルへ退避し、
+    // closure 内で `!` / `as` を再評価しない
     // （CAPSICUM-32 #739: closure 実行時の Null check operator クラッシュ対策）。
     final backend = adapter as BackendAdapter;
     final reaction = adapter as ReactionSupport;
-    final host = account.key.host;
-    final mulukhiya = account.mulukhiya;
-    final accessToken = account.userSecret.accessToken;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: EmojiPicker(
-          adapter: backend,
-          host: host,
-          mulukhiya: mulukhiya,
-          accessToken: accessToken,
-          forReaction: true,
-          onSelected: (emoji) {
-            Navigator.pop(context);
-            _runReactionAction(
-              ref,
-              messenger,
-              backend,
-              () => reaction.addReaction(targetPost.id, emoji),
-              'リアクションしました',
-            );
-          },
+    unawaited(
+      showReactionPickerSheet(
+        context: context,
+        ref: ref,
+        onSelected: (emoji) => _runReactionAction(
+          ref,
+          messenger,
+          backend,
+          () => reaction.addReaction(targetPost.id, emoji),
+          'リアクションしました',
         ),
       ),
     );

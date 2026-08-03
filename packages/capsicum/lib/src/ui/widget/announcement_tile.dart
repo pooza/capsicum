@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +11,7 @@ import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import 'content_parser.dart';
-import 'emoji_picker.dart';
+import 'reaction_picker_sheet.dart';
 
 class AnnouncementTile extends ConsumerStatefulWidget {
   final Announcement announcement;
@@ -198,40 +200,21 @@ class _AnnouncementTileState extends ConsumerState<AnnouncementTile> {
   }
 
   void _openReactionPicker(BuildContext context) {
-    final account = ref.read(currentAccountProvider);
-    final adapter = account?.adapter;
-    if (account == null || adapter is! AnnouncementReactionSupport) return;
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        final screenHeight = MediaQuery.of(context).size.height;
-        final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-        return Padding(
-          padding: EdgeInsets.only(bottom: keyboardInset),
-          child: SizedBox(
-            height: (screenHeight - keyboardInset) * 0.5,
-            child: EmojiPicker(
-              adapter: adapter as BackendAdapter,
-              host: account.key.host,
-              mulukhiya: account.mulukhiya,
-              accessToken: account.userSecret.accessToken,
-              forReaction: true,
-              onSelected: (emoji) {
-                Navigator.pop(sheetContext);
-                // ピッカーはカスタム絵文字を `:shortcode:`、Unicode は素の文字で
-                // 返す。Mastodon の reaction API はコロン無し shortcode を要求
-                // するため剥がす。
-                final name = emoji.startsWith(':') && emoji.endsWith(':')
-                    ? emoji.substring(1, emoji.length - 1)
-                    : emoji;
-                _toggle(name, add: true);
-              },
-            ),
-          ),
-        );
-      },
+    unawaited(
+      showReactionPickerSheet(
+        context: context,
+        ref: ref,
+        canReact: (adapter) => adapter is AnnouncementReactionSupport,
+        onSelected: (emoji) {
+          // ピッカーはカスタム絵文字を `:shortcode:`、Unicode は素の文字で
+          // 返す。Mastodon の reaction API はコロン無し shortcode を要求
+          // するため剥がす。
+          final name = emoji.startsWith(':') && emoji.endsWith(':')
+              ? emoji.substring(1, emoji.length - 1)
+              : emoji;
+          _toggle(name, add: true);
+        },
+      ),
     );
   }
 }
