@@ -267,10 +267,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               ? 'この Play は新しい AiScript 向けです'
               : 'この Play は AiScript $declared 以降向けです',
           'このアプリの AiScript は ${FlashRuntime.engineLangVersion} です'
-              '${declared == null ? '' : '（$declared は作者の申告値）'}。'
-              'AiScript 1.0 で演算子の優先順位などが変わったため、'
-              'エラーにならないまま結果だけ変わることがあります。'
-              'ブラウザで開けば本家の実行系で動きます。',
+          '${declared == null ? '' : '（$declared は作者の申告値）'}。'
+          'AiScript 1.0 で演算子の優先順位などが変わったため、'
+          'エラーにならないまま結果だけ変わることがあります。'
+          'ブラウザで開けば本家の実行系で動きます。',
           langUnsupported: true,
         );
       });
