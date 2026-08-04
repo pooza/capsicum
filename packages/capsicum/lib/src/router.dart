@@ -90,7 +90,12 @@ final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
   final notifier = _AuthNotifier();
 
   ref.listen(accountManagerProvider, (prev, next) {
-    notifier.isLoggedIn = next.current != null;
+    // オフライン保持中のアカウントも「ログイン済み」に含める (#917)。含めないと、
+    // 完全オフライン起動で全アカウントの probe が失敗したときに `current` が
+    // null のままになり、splash が `/home` へ送った直後に下の redirect が
+    // `/server`（サーバー選択画面）へ引き戻して、ログアウトしたように見える。
+    // `/home` へ通れば HomeScreen が「接続できません／再試行」を出す (#792)。
+    notifier.isLoggedIn = next.hasSession;
   });
 
   return notifier;

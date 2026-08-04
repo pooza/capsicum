@@ -1896,15 +1896,18 @@ class _OfflineHomeScaffold extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                anyRetrying ? 'サーバーに接続中…' : 'サーバーに接続できません',
+                anyRetrying ? '接続中…' : '接続できません',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
+              // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
+              // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
+              // 再構築だったが、到達不能の理由はここでは区別できない）。
               Text(
-                'ログイン中のサーバーが停止しているか、再構築中の可能性があります。'
-                'アカウントは保持しているので、サーバーが復帰すると自動的に'
-                'タイムラインへ戻ります。',
+                '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                '可能性があります。アカウントは保持しているので、接続が回復すると'
+                '自動的にタイムラインへ戻ります。',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),

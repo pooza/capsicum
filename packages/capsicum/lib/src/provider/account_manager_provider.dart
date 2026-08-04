@@ -39,6 +39,17 @@ class AccountManagerState {
     this.offlineAccounts = const [],
   });
 
+  /// 「ログイン済みとみなす」かどうかの単一の判定 (#917)。
+  ///
+  /// [current] が null でも [offlineAccounts] が残っていれば **ログアウトでは
+  /// ない**。到達不能なだけで secret は保持しており、復帰すれば昇格する (#792)。
+  ///
+  /// **この判定を各所に書き散らさないこと。**#792 は splash 側にだけ入れて
+  /// router の redirect に入れ忘れており、splash が `/home` へ送った直後に
+  /// redirect が `/server` へ引き戻していた。オフライン起動でログイン画面が
+  /// 出る (#917) の原因はその二重管理だった。
+  bool get hasSession => current != null || offlineAccounts.isNotEmpty;
+
   /// 未指定と「明示 null」を区別するための番兵。`current` は logout で null に
   /// 落とす経路があるため、`current ?? this.current` だと null 化を表現できない。
   static const _unset = Object();

@@ -117,8 +117,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     final hasAccount = accountState.current != null;
     // ログイン済みか（/home か /server かの分岐用）。到達不能でオフライン保持中の
     // アカウントも「ログイン済み」に含め、サーバー停止 / 再構築中に /server（ログ
-    // イン画面）へ飛ばして「ログアウトされた」ように見せない (#792)。
-    final hasSession = hasAccount || accountState.offlineAccounts.isNotEmpty;
+    // イン画面）へ飛ばして「ログアウトされた」ように見せない (#792)。判定は
+    // router の redirect と共有する (#917)。
+    final hasSession = accountState.hasSession;
 
     // If a share intent is pending and the user is logged in, go to compose.
     final shared = pendingSharedText;
