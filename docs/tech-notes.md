@@ -151,11 +151,16 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 
 「同じ通知が 2〜4 通届く」報告は、**リレー（capsicum-relay）でも配信基盤（APNs / FCM）でもなく、上流サーバー側に Web Push 購読（`sw_subscription`）が孤児として溜まっているのが原因**であることが多い。#692（2026-06 の実報告）はこれで確定した。
 
-- **溜まり方はサーバー実装で違う**: Mastodon は**アクセストークンごとに別購読**を作るため再ログインのたびに増える。Misskey は**同一 endpoint に複数行**が並ぶ。どちらも「1 イベント → 複数購読 → 複数 push」になる。
+- **溜まり方はサーバー実装で違う**。ここが最重要で、**Mastodon と Misskey は非対称**（どちらも pooza フォークのソースで確認済み）:
+  - **Mastodon** は `POST /api/v1/push/subscription` の `create` 冒頭で `destroy_web_push_subscriptions!` を呼ぶ（`app/controllers/api/v1/push/subscriptions_controller.rb`）。**1 アクセストークン = 1 購読**で、endpoint が変わっても置換される。再ログインで**トークンごと**変わったときだけ古いものが残る。
+  - **Misskey** の `sw/register` は `(userId, endpoint)` で探し、無ければ **INSERT する**（`packages/backend/src/server/api/endpoints/sw/register.ts`）。**古い行は消えない**ので、endpoint が変わるたびに購読が 1 本増え続ける。
+  - → **「Misskey だけで重複する」報告はこの非対称そのもの**。Mastodon 側が静かなことは、client が無実である証拠にならない。
 - **relay は純粋な 1:1 フォワーダなので無実**。届いた購読ぶんだけ忠実に送る。relay のログで「複数回送信」が見えても、それは原因ではなく結果。
-- **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②孤児を整理して再現するか見る → ③そのうえで relay を疑う。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。
+- **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②relay の `subscriptions` を `device_type` 別に「行数 / 実アカウント数」で割り、**プラットフォーム間で比を比べる**（突出しているものが endpoint を作り直している）→ ③孤児を整理して再現するか見る。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。
 
-恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）。**capsicum クライアント側の修正では直らない類**なので、報告を受けてもクライアントの通知処理から調べ始めない。
+**⚠ 「client 側の修正では直らない」と決めつけない（2026-08-05 に反例が出た）。**#692 の時点ではそう書いていたが、[#937](https://github.com/pooza/capsicum/issues/937) は **client が孤児を作っている側**だった —— push の endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay の行（`UNIQUE(token, account, server)`、`token` はデバイストークン）が新規作成されたときだけ発行される。**再起動をまたいでデバイストークンが変わると新しい endpoint になるが、起動経路は古い endpoint を unregister しない**（プロセス内のローテーションは `_runTokenRefresh` が正しく掃除するのに、再起動をまたぐ変化はその経路に乗らない）。Windows は WNS の channel URI が変わりやすく、relay 実測で **86 行 / 20 アカウント = 4.3** と他プラットフォーム（iOS 2.05 / Android 1.9 / macOS 1.6）から突出していた。
+
+恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
 
 ## NodeInfo / Probing
 
