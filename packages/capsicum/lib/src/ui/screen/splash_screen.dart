@@ -80,6 +80,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     firebaseReady.then((_) async {
       final latest = container.read(accountManagerProvider).accounts;
       if (latest.isNotEmpty) {
+        // 登録より先に、前回の登録に使ったデバイストークンと突き合わせる
+        // (#937)。再起動をまたいだトークン変化は startTokenRefreshListener の
+        // 観測範囲外（in-memory 値が null から始まるので「変化」にならない）
+        // なので、ここで拾わないと上流に古い購読が孤児として残り続ける。
+        await PushRegistrationService.reconcileDeviceToken(latest);
         await PushRegistrationService.registerAllAccounts(latest);
       }
       PushRegistrationService.startTokenRefreshListener(

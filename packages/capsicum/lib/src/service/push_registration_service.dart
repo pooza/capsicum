@@ -189,6 +189,11 @@ class PushRegistrationService {
       await PushKeyStore.saveRelayId(accountKey, relayId);
       localStateModified = true;
 
+      // 次回起動で「再起動をまたいでトークンが変わったか」を判定するための
+      // 記録 (#937)。デバイス単位の値なのでアカウントごとに同じ値を書くが、
+      // 冪等なので害はない。relay row の作成が済んだ時点で書く。
+      await PushKeyStore.saveDeviceToken(deviceToken);
+
       // ECDH 鍵の生成またはロード（既存鍵があれば再利用）
       final keys = await PushKeyStore.getOrCreate(accountKey);
 
@@ -498,20 +503,80 @@ class PushRegistrationService {
     );
     final accounts = getAccounts();
     if (accounts.isEmpty) return;
-    // 古いリレー登録・SNS サブスクリプション・鍵を掃除してから登録し直す。
-    // relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
-    // unregisterAccount では削除せず、最後に unregisterDevice で 1 回だけ
-    // 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
-    // ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
-    //
-    // お知らせ通知 (#477) は opt-out モデルに移行したので、明示 OFF 履歴の
-    // 無いアカウントは [_registerAccountImpl] 末尾の autoEnableIfDefault で
-    // 自動的に復活する。手動 restore は不要。
+    await _cleanupDeviceRegistration(accounts);
+    await registerAllAccounts(accounts);
+  }
+
+  /// デバイス全体のプッシュ登録を畳む。古いリレー登録・SNS サブスクリプ
+  /// ション・ローカル鍵を掃除する。呼び出し側が続けて登録し直す前提。
+  ///
+  /// relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
+  /// [unregisterAccount] では削除せず、最後に [unregisterDevice] で 1 回だけ
+  /// 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
+  /// ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
+  ///
+  /// お知らせ通知 (#477) は opt-out モデルに移行したので、明示 OFF 履歴の
+  /// 無いアカウントは [_registerAccountImpl] 末尾の autoEnableIfDefault で
+  /// 自動的に復活する。手動 restore は不要。
+  static Future<void> _cleanupDeviceRegistration(List<Account> accounts) async {
     for (final account in accounts) {
       await unregisterAccount(account);
     }
     await unregisterDevice(accounts);
-    await registerAllAccounts(accounts);
+    // 掃除した以上、記録済みトークンは「登録に使われている値」ではなくなる。
+    // 残すと次回起動の突き合わせ ([reconcileDeviceToken]) が誤検知する。
+    await PushKeyStore.deleteDeviceToken();
+  }
+
+  /// 前回の登録に使ったデバイストークンと現在値を突き合わせ、変わっていれば
+  /// 上流の古いサブスクリプションを掃除する (#937)。**登録し直しは行わない**
+  /// ので、呼び出し側は続けて [registerAllAccounts] すること。
+  ///
+  /// [startTokenRefreshListener] が観測できるのは **プロセス内の** ローテー
+  /// ションだけである。起動時は `WnsService._channelUri` などの in-memory 値が
+  /// null から始まるため、前回と違うトークンを受け取っても「変化」として emit
+  /// されず、掃除の走らないまま新しい endpoint で登録される。
+  ///
+  /// endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay
+  /// の行（`UNIQUE(token, account, server)`・`token` はデバイストークン）が新規
+  /// 作成されたときだけ発行される。よってトークンが変わると endpoint も変わり、
+  /// **Misskey は `sw/register` を `(userId, endpoint)` で引いて無ければ INSERT
+  /// する**ため古い購読が孤児として残る（Mastodon は create 冒頭で既存を destroy
+  /// するので残らない）。孤児は失効まで生き続け、同じ通知が複数回届く。
+  static Future<void> reconcileDeviceToken(List<Account> accounts) async {
+    if (!isPushBackendWired || accounts.isEmpty) return;
+    final String? current = _getDeviceToken() ?? await _waitForDeviceToken();
+    if (current == null) return;
+
+    final String? previous;
+    try {
+      previous = await PushKeyStore.getDeviceToken();
+    } catch (e) {
+      // 読めなければ判定できない。掃除せず通常の登録へ進む（誤って掃除して
+      // push を止めるより、重複が残る方が軽い）。
+      debugPrint('capsicum: push.registration: device token read failed: $e');
+      return;
+    }
+    // 未保存（本機能の導入前・初回起動）は変化と判定できない。既存の孤児は
+    // 古いトークンの失効に伴い relay の 410 経路で自然に掃除される。
+    if (previous == null || previous == current) return;
+
+    debugPrint(
+      'capsicum: push.registration: device token changed across restarts, '
+      'cleaning up stale subscriptions',
+    );
+    // どのプラットフォームでどれだけ起きるかが分からないと #932 の効き方も
+    // 評価できないので計測する。トークンそのものは載せない。
+    Sentry.captureMessage(
+      'push.token_changed_across_restart',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('push.platform', Platform.operatingSystem);
+        scope.setTag('push.accounts', accounts.length.toString());
+        scope.fingerprint = ['push.token_changed_across_restart'];
+      },
+    );
+    await _cleanupDeviceRegistration(accounts);
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。
