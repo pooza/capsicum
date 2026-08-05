@@ -10,7 +10,9 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/keyboard_list_navigation.dart';
+import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
+import '../widget/screen_menu.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
@@ -94,12 +96,34 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     if (length > 0) _jumpTo(length - 1);
   }
 
+  void _reload() => ref.invalidate(_threadProvider(post.id));
+
   @override
   Widget build(BuildContext context) {
     final threadFuture = ref.watch(_threadProvider(post.id));
     // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
     final showJump = (threadFuture.asData?.value.length ?? 0) > 1;
 
+    return ScreenMenu(
+      label: 'スレッド',
+      // コールバックは**名前付きメソッドのテアオフ**で渡す (#835)。その場で
+      // 作った無名関数はビルドのたびに別物になり、[MenuActionEntry] の値等価が
+      // 崩れてメニューバー全体が作り直される。
+      entries: buildThreadMenuEntries(
+        showJump: showJump,
+        onJumpToTop: _jumpToTop,
+        onJumpToBottom: _jumpToBottom,
+        onReload: _reload,
+      ),
+      child: _buildScaffold(context, threadFuture, showJump: showJump),
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    AsyncValue<List<Post>> threadFuture, {
+    required bool showJump,
+  }) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('スレッド'),
@@ -220,6 +244,40 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     return body;
   }
 }
+
+/// スレッド画面がデスクトップメニューへ出す項目 (#912 / #835)。
+///
+/// **画面にある操作だけを載せる。** 先頭へ / 末尾へ は 2 つの FAB と同じ条件
+/// ([showJump]) で有効・無効を切り替え、スレッドが 1 件のときは押せないように
+/// する。「使えない操作をメニューにだけ見せない」ため。再読み込みはこれまで
+/// エラー時の「再試行」からしか辿れなかったので、成功時にも使えるよう置く。
+///
+/// リプライ / ブースト / お気に入り等の**投稿単位の操作は載せていない**。実体が
+/// `PostTile` 内のアクションシート（長押し）にあり、外から開く口が無いため。
+/// 開けるようにするのは単独で扱う（#912 のコメント参照）。
+///
+/// コールバックを引数で受けるのは、画面全体を pump せずに項目の出し分けを
+/// 試験できるようにするため。
+@visibleForTesting
+List<MenuEntry> buildThreadMenuEntries({
+  required bool showJump,
+  required VoidCallback onJumpToTop,
+  required VoidCallback onJumpToBottom,
+  required VoidCallback onReload,
+}) => [
+  MenuActionEntry(
+    label: '先頭へ',
+    icon: Icons.keyboard_arrow_up,
+    onSelected: showJump ? onJumpToTop : null,
+  ),
+  MenuActionEntry(
+    label: '末尾へ',
+    icon: Icons.keyboard_arrow_down,
+    onSelected: showJump ? onJumpToBottom : null,
+  ),
+  const MenuGroupSeparator(),
+  MenuActionEntry(label: '再読み込み', icon: Icons.refresh, onSelected: onReload),
+];
 
 final _threadProvider = FutureProvider.autoDispose.family<List<Post>, String>((
   ref,
