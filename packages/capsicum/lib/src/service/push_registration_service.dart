@@ -12,6 +12,7 @@ import '../model/account.dart';
 import '../preset_servers.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
+import 'device_install_id.dart';
 import '../util/exception_scrub.dart';
 import 'fcm_service.dart';
 import 'push_key_store.dart';
@@ -158,12 +159,19 @@ class PushRegistrationService {
           ? 'windows'
           : (Platform.isIOS ? 'ios' : 'android');
 
+      // インストール単位で安定した ID (#932)。relay 側がこれをキーに upsert
+      // することで、トークン更新のたびに subscription 行が増えて古い購読が
+      // 孤児化する構造を止める (capsicum-relay#15)。アカウントごとではなく
+      // デバイスごとの値なので、全アカウントで同じものを送る。
+      final deviceId = await DeviceInstallId.get();
+
       // リレーサーバーに登録
       final sub = await _client.register(
         token: deviceToken,
         deviceType: deviceType,
         account: '${account.key.username}@${account.key.host}',
         server: account.key.host,
+        deviceId: deviceId,
       );
 
       relayId = PushRelayClient.parseRelayId(sub['id']);
