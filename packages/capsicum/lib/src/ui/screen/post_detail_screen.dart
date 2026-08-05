@@ -13,6 +13,7 @@ import '../util/keyboard_list_navigation.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
 import '../widget/screen_menu.dart';
+import '../widget/retry_error_view.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
@@ -206,21 +207,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
       },
       error: (error, stack) {
         _clearKeyboardTargets();
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('スレッドの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(_threadProvider(post.id)),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        return RetryErrorView(
+          message: 'スレッドの読み込みに失敗しました\n$error',
+          isRetrying: threadFuture.isLoading,
+          onRetry: () => ref.invalidate(_threadProvider(post.id)),
         );
       },
     );

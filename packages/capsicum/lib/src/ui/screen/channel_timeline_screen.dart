@@ -5,6 +5,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
+import '../widget/retry_error_view.dart';
 
 /// チャンネルタイムラインの本体（Scaffold/AppBar を持たない）。
 ///
@@ -88,23 +89,11 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
                     ),
                   ),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stack) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => ref.invalidate(
-                        channelTimelineProvider(widget.channelId),
-                      ),
-                      child: const Text('再試行'),
-                    ),
-                  ],
-                ),
-              ),
+            error: (error, stack) => RetryErrorView(
+              message: '読み込みに失敗しました',
+              isRetrying: timeline.isLoading,
+              onRetry: () =>
+                  ref.invalidate(channelTimelineProvider(widget.channelId)),
             ),
           ),
         ),

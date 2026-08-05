@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/op_error.dart';
 import '../widget/user_avatar.dart';
+import '../widget/retry_error_view.dart';
 
 /// 指定ルームのメンバー一覧 (#438)。owner は招待ボタンも表示される。
 /// メンバーをタップすると相手のプロフィール画面へ。
@@ -98,25 +99,11 @@ class ChatRoomMembersScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(
-                  '読み込みに失敗しました\n${summarizeOpError(error)}',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(chatRoomMembersProvider(room.id)),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, _) => RetryErrorView(
+          message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+          selectable: true,
+          isRetrying: members.isLoading,
+          onRetry: () => ref.invalidate(chatRoomMembersProvider(room.id)),
         ),
       ),
     );

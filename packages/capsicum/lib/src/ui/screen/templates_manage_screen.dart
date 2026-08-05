@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../util/compose_template_display.dart';
+import '../widget/retry_error_view.dart';
 
 /// 投稿テンプレート一覧 (#767)。モロヘイヤの per-user CRUD API から取得する。
 /// テンプレート機能を提供するサーバー（[MulukhiyaService.composeTemplatesEnabled]）
@@ -84,21 +85,10 @@ class TemplatesManageScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('テンプレートの読み込みに失敗しました', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(composeTemplatesProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (_, _) => RetryErrorView(
+          message: 'テンプレートの読み込みに失敗しました',
+          isRetrying: templatesAsync.isLoading,
+          onRetry: () => ref.invalidate(composeTemplatesProvider),
         ),
       ),
     );

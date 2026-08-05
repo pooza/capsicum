@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../widget/announcement_tile.dart';
+import '../widget/retry_error_view.dart';
 
 final _infoBotUserProvider = FutureProvider.autoDispose<User?>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
@@ -101,21 +102,10 @@ class _AnnouncementViewState extends ConsumerState<AnnouncementView> {
               ),
             ),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('お知らせの読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(announcementProvider),
-                child: const Text('再試行'),
-              ),
-            ],
-          ),
-        ),
+      error: (error, stack) => RetryErrorView(
+        message: 'お知らせの読み込みに失敗しました\n$error',
+        isRetrying: announcements.isLoading,
+        onRetry: () => ref.invalidate(announcementProvider),
       ),
     );
   }

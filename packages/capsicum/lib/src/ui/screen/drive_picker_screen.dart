@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/drive_provider.dart';
+import '../widget/retry_error_view.dart';
 
 class DrivePickerScreen extends ConsumerStatefulWidget {
   const DrivePickerScreen({super.key});
@@ -147,22 +148,11 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () =>
-                        ref.invalidate(driveContentsProvider(_currentFolderId)),
-                    child: const Text('再試行'),
-                  ),
-                ],
-              ),
-            ),
+          error: (error, stack) => RetryErrorView(
+            message: '読み込みに失敗しました',
+            isRetrying: drive.isLoading,
+            onRetry: () =>
+                ref.invalidate(driveContentsProvider(_currentFolderId)),
           ),
         ),
       ),
