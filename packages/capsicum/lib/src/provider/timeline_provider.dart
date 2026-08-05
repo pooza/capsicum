@@ -512,6 +512,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 置き換わった state を古い結果で上書きしないようにする。
   int _buildGeneration = 0;
 
+  /// いま build() が担当している文脈 (#914 §5)。**build() の入口で、await を
+  /// 挟む前に**確定させる。
+  ///
+  /// 「文脈が変わったか」を `state.valueOrNull?.contextKey` で見ると、state が
+  /// まだ `AsyncLoading`（build() が返る前に裏の取得が完了した場合）のときに
+  /// null と比較して**常に「変わった」と判定され、結果が黙って捨てられる**。
+  /// 現状は REST 往復が挟まるので起きないが、将来メモリキャッシュ層を足すと
+  /// 顕在化する。state が publish 済みかどうかに依存しない値をここに持つ。
+  String? _servingContextKey;
+
   /// 起動時キャッシュの先出しは 1 プロセス 1 回だけ (#890)。セッション中のタブ /
   /// アカウント切替で古い一覧が一瞬出るのを防ぐ。AutoDispose で Notifier は
   /// 作り直されるため static に持つ（[_homeFirstPaintReported] と同じ理由）。
@@ -592,6 +602,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       ref.watch(currentAccountProvider)?.key,
       'tl:${type.name}',
     );
+    // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
+    _servingContextKey = contextKey;
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
@@ -731,7 +743,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 裏で走っている間にアカウント切替・ログアウトが起きると、**捨てるはずの世代が
     // WebSocket を張り直したり、ログアウト直後にキャッシュを書き戻したり**していた。
     // 副作用の手前でも同じ条件で降りる。
-    if (_isStale(generation, contextKey, publishToState: publishToState)) {
+    if (_isStale(generation, contextKey)) {
       return TimelineState(
         posts: allVisible,
         hasMore: hasMore,
@@ -811,8 +823,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     // キャッシュ先出しの裏で走った場合は、自分で state を差し替える。文脈が
     // 変わっている（アカウント/タブ切替で build() がやり直された）なら捨てる。
-    if (publishToState &&
-        !_isStale(generation, contextKey, publishToState: true)) {
+    if (publishToState && !_isStale(generation, contextKey)) {
       state = AsyncData(_mergeWithWindow(fresh));
       _resetSnapshotWindow(awaiting: false);
     }
@@ -846,22 +857,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     return result;
   }
 
-  /// この取得の結果が既に用済みか。破棄済み・再計算で世代が進んだ・表示中の文脈が
-  /// 変わった、のいずれか (#890)。
+  /// この取得の結果が既に用済みか。破棄済み・再計算で世代が進んだ・担当している
+  /// 文脈が変わった、のいずれか (#890)。
   ///
-  /// [publishToState] が false のとき（`build()` の返り値として await されている
-  /// 途中）は state がまだ `AsyncLoading` なので、表示中の contextKey とは比べない。
-  /// 比べると初回取得が常に stale 判定になる。
-  bool _isStale(
-    int generation,
-    String? contextKey, {
-    required bool publishToState,
-  }) {
+  /// 文脈の比較は [_servingContextKey] と行う。以前は `state.valueOrNull` 越しに
+  /// 見ていたため、state がまだ `AsyncLoading` の間は判定できず、`build()` の
+  /// 返り値として await されている途中（`publishToState` が false）だけ比較を
+  /// 飛ばす必要があった。[_servingContextKey] は build() の入口で確定するので
+  /// その場合分けが要らない (#914 §5)。
+  bool _isStale(int generation, String? contextKey) {
     if (_disposed) return true;
     if (generation != _buildGeneration) return true;
-    if (publishToState && state.valueOrNull?.contextKey != contextKey) {
-      return true;
-    }
+    if (_servingContextKey != contextKey) return true;
     return false;
   }
 
@@ -909,7 +916,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       swapSw.stop();
       // 途中で捨てられた回（破棄 / 世代進み / 文脈変更）は所要の意味が変わるので
       // 記録しない。_isStale と同じ判定を使う。
-      if (_isStale(generation, contextKey, publishToState: true)) return;
+      if (_isStale(generation, contextKey)) return;
       // transaction の duration そのものが所要（取得 + enrich + 差し替え）。
       // 別 measurement には積まない（同じ値の二重持ちになる）。
       recordStartupPhase(
@@ -919,9 +926,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       );
     } catch (e, st) {
       // 破棄済み / 世代が進んだ / 文脈が変わった場合は、もう自分の結果に用は無い。
-      if (_disposed) return;
-      if (generation != _buildGeneration) return;
-      if (state.valueOrNull?.contextKey != contextKey) return;
+      // 成功側と同じ判定を使う（以前はここだけ state 越しに文脈を見ていた・#914 §5）。
+      if (_isStale(generation, contextKey)) return;
       // 例外文字列にはホストや生データ断片が載りうるため詰め替えてから送る
       // (#586 / #743)。unhandled ではなく「意図して捕捉した失敗」として残す。
       final scrubbed = scrubException(e);

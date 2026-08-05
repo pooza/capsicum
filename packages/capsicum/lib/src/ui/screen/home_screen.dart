@@ -283,7 +283,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
     // 「未読位置読み込みあり」の体感への寄与を切り分ける。#890 の先行取得後は
     // marker_ms が「往復」ではなく「先行取得の待ち時間」になる（先行できて
-    // いれば 0 に近づく）ので、prefetched タグで before/after を分けて見る。
+    // いれば 0 に近づく）。
+    //
+    // prefetched が分けるのは**起動時とリフレッシュ時**であって、#890 導入の
+    // before/after ではない (#914 §3)。`_rearmMarkerRestore` が `_markerFetch`
+    // を落とす（b2b588b9）ので、リフレッシュ経路では必ず false になる。
+    // **リリースを跨いだ before/after は release で分けること。**
     final prefetched = _markerFetch != null;
     final markerSw = Stopwatch()..start();
     var found = false;
@@ -319,6 +324,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
   /// (found)・実際に jump したか (jumped)・TL 取得と並行に先行取得できていたか
   /// (prefetched, #890) を持ち、未読位置読み込みの体感寄与を切り分ける。
+  ///
+  /// `prefetched` は**起動時 (true) とリフレッシュ時 (false) の別**であって、
+  /// #890 導入の before/after ではない (#914 §3)。
   void _reportMarkerRestore({
     required int markerMs,
     required bool found,

@@ -69,6 +69,21 @@ class _FakeCapabilities extends Mock implements AdapterCapabilities {
   Set<TimelineType> get supportedTimelines => {TimelineType.home};
 }
 
+/// テストから差し替えられる「現在のアカウント」。[currentAccountProvider] は
+/// これを watch する形で override する。
+final _selectedAccount = StateProvider<Account?>((ref) => null);
+
+Account _accountFor(_FakeAdapter adapter, {String username = 'me'}) => Account(
+  key: AccountKey(
+    type: BackendType.mastodon,
+    host: 'example.test',
+    username: username,
+  ),
+  adapter: adapter,
+  user: User(id: username, username: username),
+  userSecret: const UserSecret(accessToken: 'token'),
+);
+
 Post _post(String id, {String content = 'body'}) => Post(
   id: id,
   postedAt: DateTime.utc(2026, 7, 31),
@@ -95,18 +110,15 @@ void main() {
   });
 
   ProviderContainer makeContainer(_FakeAdapter adapter) {
-    final account = Account(
-      key: const AccountKey(
-        type: BackendType.mastodon,
-        host: 'example.test',
-        username: 'me',
-      ),
-      adapter: adapter,
-      user: const User(id: 'u1', username: 'me'),
-      userSecret: const UserSecret(accessToken: 'token'),
-    );
     final container = ProviderContainer(
-      overrides: [currentAccountProvider.overrideWith((ref) => account)],
+      overrides: [
+        // アカウント切替を試験できるよう、値を差し替えられる provider 越しに
+        // 渡す（`updateOverrides` は Provider の値を再評価しない）。
+        _selectedAccount.overrideWith((ref) => _accountFor(adapter)),
+        currentAccountProvider.overrideWith(
+          (ref) => ref.watch(_selectedAccount),
+        ),
+      ],
     );
     // autoDispose なので、購読を張らないと read 直後に捨てられて裏の取得結果を
     // 受け取れない（実アプリでは HomeScreen が watch し続けている状態に相当）。
@@ -226,5 +238,53 @@ void main() {
     container.invalidate(timelineProvider);
     final second = await container.read(timelineProvider.future);
     expect(second.fromCache, isFalse);
+  });
+
+  /// 裏の取得が「もう用済みか」の判定（#890 / #914 §5）。
+  ///
+  /// **これは §5 の退行テストではない。** §5 で直したのは「state がまだ
+  /// `AsyncLoading` の間は文脈を比較できない」という構造の問題で、現状は
+  /// REST 往復が挟まるため世代カウンタ側が先に効き、旧実装でもこのテストは
+  /// 通る（実際に確認済み）。ここで固定するのは**アカウント切替をまたいで
+  /// 古い結果が state を上書きしない**という不変条件そのもので、これまで
+  /// どのテストも押さえていなかった。
+  test('先出しの裏で走る取得は、途中でアカウントが切り替わったら state を上書きしない', () async {
+    await TimelineCache.save(contextKeyFor(), [
+      {'id': 'cached1', 'content': '前回の投稿'},
+    ], now: DateTime.now());
+
+    // 裏の取得は gate を開けるまで返らない。その間にアカウントを切り替える。
+    final gate = Completer<void>();
+    final adapter = _FakeAdapter(
+      fresh: [_post('new1')],
+      fetchGate: gate.future,
+    );
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    final first = await container.read(timelineProvider.future);
+    expect(first.fromCache, isTrue);
+    expect(first.posts.map((p) => p.id), ['cached1']);
+
+    // 別アカウントへ切替 → build() がやり直され、担当する文脈が変わる。
+    final otherAdapter = _FakeAdapter(fresh: [_post('other1')]);
+    container.read(_selectedAccount.notifier).state = _accountFor(
+      otherAdapter,
+      username: 'other',
+    );
+    final switched = await container.read(timelineProvider.future);
+    expect(switched.posts.map((p) => p.id), [
+      'other1',
+    ], reason: '前提: 切替後の一覧が出ている');
+
+    // 古い文脈の取得がここで完了する。もう担当していないので捨てられること。
+    gate.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final after = container.read(timelineProvider).value!;
+    expect(after.posts.map((p) => p.id), [
+      'other1',
+    ], reason: '切替前のアカウントの取得結果が、切替後の一覧を上書きしない');
+    expect(after.contextKey, isNot(equals(contextKeyFor())));
   });
 }
