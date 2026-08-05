@@ -88,6 +88,19 @@ Xcode でワークスペースを一度開いて自動署名させてもよい�
 
 v1.24 以降のデスクトップ向け作業（[#423](https://github.com/pooza/capsicum/issues/423) / [#424](https://github.com/pooza/capsicum/issues/424) / [#425](https://github.com/pooza/capsicum/issues/425)）専用。Apple / Google Play 関連のシークレットや署名鍵は持ち込まない。
 
+### その端末で拾う作業の探し方
+
+**`Windows` / `Linux` ラベルが「その実機でないと進まない」ものの目印。** メインの macOS では踏み込めない（再現確認が起点・修正案の選択が実機の挙動次第）ものだけを付ける。着いたらまずこれを引く:
+
+```sh
+gh issue list --state open --label Windows   # Windows 機で
+gh issue list --state open --label Linux     # Linux 機で
+```
+
+`desktop` ラベルとは別物であることに注意。`desktop` は 3 OS 共通のデスクトップ機能（メニューバー等）で、**macOS でも進められる**。ラベルの貼り替えは、実機で確認して「macOS でも書ける」と分かった時点で外す。
+
+対象が無くなったら、そのマイルストーンの残りをマイルストーン一覧から拾う。
+
 ### 共通
 
 - リポジトリは `~/repos/capsicum` にクローン（全端末共通の配置ルール）
