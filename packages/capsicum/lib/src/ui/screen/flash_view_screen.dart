@@ -571,7 +571,68 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
               label: const Text('もう一度実行'),
             ),
           ),
+        // 乱数を使う Play にだけ、出目についての注記を畳んで置く (#935)。
+        //
+        // **バージョン警告 (#934) が出ている間は出さない。**すぐ下に並べると
+        // 「バージョンのせい」に吸収されてしまい、注記の目的（バージョンとは
+        // 無関係だと伝えること）が達成できない。
+        if (FlashRuntime.usesRandomness(flash.script) &&
+            !(_error?.langUnsupported ?? false))
+          const _RandomnessNote(),
       ],
+    );
+  }
+}
+
+/// 「Web 版と出目が違う」への手掛かりを、バージョン警告とは独立に置く (#935)。
+///
+/// 出目差は **AiScript のバージョンとは無関係**（#896: 乱数の生成方式が
+/// `seedrandom` 互換でない）に起きるが、ユーザーから見るとバージョン警告
+/// (#934) 以外に手掛かりが無く、結果として警告が真因を隠していた。
+///
+/// 書き方の制約 (#935):
+///
+/// - **「不具合ではありません」と断定しない。** 照合先は `@syuilo/aiscript-0-19-0`
+///   (seedrandom) で、互換化すれば一致しうる。#896 が開いている以上、恒久仕様の
+///   ように書くと矛盾する。「現状は異なります」に留める
+/// - **「シード固定で食い違うなら報告してください」と書かない。** 現状はシードを
+///   固定しても食い違うのが既知で、報告を促すと無駄足になる
+class _RandomnessNote extends StatelessWidget {
+  const _RandomnessNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      // 折りたたみの境界線を消して、実行結果と地続きに見せる（注意喚起では
+      // なく補足なので、囲って目立たせない）。
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        leading: Icon(
+          Icons.casino_outlined,
+          size: 20,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        title: Text(
+          '乱数について（AiScript のバージョンとは無関係です）',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        children: [
+          Text(
+            '乱数を使う Play は、実行のたびに結果が変わります。\n'
+            'また、日付などでシードを固定する Play も、現状は Web版と異なる結果に'
+            'なります。乱数の生成方式が異なるためで、バージョンの新旧とは別の話です。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
