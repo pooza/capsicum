@@ -130,4 +130,66 @@ void main() {
       reason: 'ログアウトしたアカウントの投稿を端末に残さない',
     );
   });
+
+  /// #914 §1: 保存先を Application Support からキャッシュ領域へ移した。
+  ///
+  /// 移しただけだと**旧ファイルは二度と読まれないまま残る**（新しい保存先を
+  /// 使うので上書きもされない）。中身は生のホーム TL ＝ フォロワー限定・
+  /// ダイレクトを含む投稿本文なので、置き去りにしてはいけない。
+  group('旧保存先の後片付け (#914 §1)', () {
+    late Directory legacyDir;
+
+    setUp(() {
+      legacyDir = Directory.systemTemp.createTempSync('capsicum_tl_cache_old');
+      TimelineCache.legacyDirectoryOverride = legacyDir.path;
+    });
+
+    tearDown(() {
+      TimelineCache.legacyDirectoryOverride = null;
+      if (legacyDir.existsSync()) legacyDir.deleteSync(recursive: true);
+    });
+
+    File legacyFile() => File('${legacyDir.path}/home_timeline_cache.json');
+
+    test('旧保存先に残ったキャッシュを消す', () async {
+      legacyFile().writeAsStringSync(
+        jsonEncode({
+          'contextKey': 'acct|tl:home',
+          'savedAt': now.toIso8601String(),
+          'posts': raw(3),
+        }),
+      );
+
+      await TimelineCache.clearLegacyLocation();
+
+      expect(legacyFile().existsSync(), isFalse);
+    });
+
+    test('新しい保存先のキャッシュは巻き添えで消えない', () async {
+      await TimelineCache.save('acct|tl:home', raw(2), now: now);
+      legacyFile().writeAsStringSync('{}');
+
+      await TimelineCache.clearLegacyLocation();
+
+      expect(legacyFile().existsSync(), isFalse);
+      expect(
+        await TimelineCache.load('acct|tl:home', now: now),
+        isNotNull,
+        reason: '移行後の先出しが初回だけ効かなくなるのを防ぐ',
+      );
+    });
+
+    test('旧保存先にファイルが無くても失敗しない（2 回目以降の起動）', () async {
+      await TimelineCache.clearLegacyLocation();
+      await TimelineCache.clearLegacyLocation();
+
+      expect(legacyFile().existsSync(), isFalse);
+    });
+
+    test('旧ディレクトリ自体が無くても失敗しない', () async {
+      legacyDir.deleteSync(recursive: true);
+
+      await TimelineCache.clearLegacyLocation();
+    });
+  });
 }

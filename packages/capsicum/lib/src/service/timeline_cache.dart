@@ -32,14 +32,57 @@ class TimelineCache {
 
   static const _fileName = 'home_timeline_cache.json';
 
-  /// テスト用の差し替え先。null なら path_provider の app support ディレクトリ。
+  /// テスト用の差し替え先。null なら path_provider のキャッシュディレクトリ。
   @visibleForTesting
   static String? directoryOverride;
 
+  /// 旧保存先 (Application Support) のテスト用差し替え先 (#914 §1)。
+  @visibleForTesting
+  static String? legacyDirectoryOverride;
+
+  /// 保存先は**キャッシュ領域** (#914 §1)。
+  ///
+  /// 元は `getApplicationSupportDirectory()` に置いていたが、ここに入るのは
+  /// **生のホーム TL** で、Mastodon の `filter_from_home` は visibility による
+  /// 除外をしない（`app/lib/feed_manager.rb`）ため、フォロー相手からの
+  /// フォロワー限定・ダイレクト投稿が載る。つまり **DM 本文がディスクに落ちる**。
+  ///
+  /// Application Support は iOS で**既定でバックアップ対象**なので、投稿本文が
+  /// iCloud バックアップに入っていた。キャッシュ領域はバックアップ対象外で、
+  /// 「消えても再取得すれば済む」という寿命もこの用途と一致する（24 時間 TTL で
+  /// どのみち捨てる）。OS がキャッシュを掃除しても、キャッシュ無しの起動経路に
+  /// 落ちるだけで壊れない。
+  ///
+  /// **Linux の他ユーザーからの可読性はこれでは解決しない**（`0644` /
+  /// `~/.cache/<app>/` も `0755`）。塞ぐなら別途 `chmod 600` が要る。
   static Future<File> _file() async {
     final dir =
-        directoryOverride ?? (await getApplicationSupportDirectory()).path;
+        directoryOverride ?? (await getApplicationCacheDirectory()).path;
     return File('$dir/$_fileName');
+  }
+
+  /// 旧保存先 (Application Support) に残ったキャッシュを消す (#914 §1)。
+  ///
+  /// 保存先を移しただけだと、**旧ファイルは二度と読まれないまま残り続ける**
+  /// （新しい保存先を使うので上書きもされない）。中身が投稿本文である以上、
+  /// 移行時に消しておく必要がある。起動時に一度だけ呼ぶ。
+  ///
+  /// best-effort。失敗しても起動は止めない（次回起動で再試行される）。
+  static Future<void> clearLegacyLocation() async {
+    try {
+      final dir =
+          legacyDirectoryOverride ??
+          (await getApplicationSupportDirectory()).path;
+      final legacy = File('$dir/$_fileName');
+      if (await legacy.exists()) {
+        await legacy.delete();
+        debugPrint('capsicum: timeline cache: removed legacy copy');
+      }
+    } catch (e) {
+      debugPrint(
+        'capsicum: timeline cache legacy cleanup failed: ${scrubException(e)}',
+      );
+    }
   }
 
   /// 書き込み系の直列化キュー。
