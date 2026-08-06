@@ -43,7 +43,7 @@ import '../widget/screen_menu.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
 import 'image_crop_screen.dart';
-import 'image_text_overlay_screen.dart';
+import 'image_overlay_screen.dart';
 import 'settings/account_settings_screen.dart';
 
 /// compose セッションの引用元を解決する純粋部分 (#756)。
@@ -114,7 +114,7 @@ class _OversizeFile {
 }
 
 /// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
-enum _AttachmentMenuAction { preview, crop, addText, editDescription }
+enum _AttachmentMenuAction { preview, crop, addOverlay, editDescription }
 
 /// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
 /// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
@@ -1292,9 +1292,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     });
   }
 
-  /// 添付済みのローカル画像に文字 / Unicode 絵文字を重ねて書き出し、結果で元の
-  /// 添付を差し替える (#576)。説明 (ALT) と閲覧注意フラグは引き継ぐ。
-  Future<void> _addTextOverlay(int index) async {
+  /// 添付済みのローカル画像に文字 / Unicode 絵文字 (#576) とカスタム絵文字の
+  /// スタンプ (#883) を重ねて書き出し、結果で元の添付を差し替える。説明 (ALT)
+  /// と閲覧注意フラグは引き継ぐ。
+  Future<void> _addOverlay(int index) async {
     final entry = _attachments[index];
     final original = entry.file;
     if (original == null) return;
@@ -1315,7 +1316,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     final composited = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
-        builder: (_) => ImageTextOverlayScreen(imageData: bytes),
+        builder: (_) => ImageOverlayScreen(imageData: bytes),
         fullscreenDialog: true,
       ),
     );
@@ -1647,7 +1648,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// いた。サムネタップでこの 1 枚のメニューを開き、全編集操作をここから分岐
   /// させて一貫した動線にまとめる（アクションメニューの設計方針に沿う）。
   ///
-  /// 「拡大して確認」「トリミング・回転」「文字を入れる」は差し替え可能な
+  /// 「拡大して確認」「トリミング・回転」「文字・スタンプを入れる」は差し替え可能な
   /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
   /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
   Future<void> _showAttachmentMenu(int index) async {
@@ -1677,9 +1678,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             if (croppable)
               ListTile(
                 leading: const Icon(Icons.title),
-                title: const Text('文字を入れる'),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _AttachmentMenuAction.addText),
+                title: const Text('文字・スタンプを入れる'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  _AttachmentMenuAction.addOverlay,
+                ),
               ),
             ListTile(
               leading: const Icon(Icons.subtitles_outlined),
@@ -1699,8 +1702,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         await _openAttachmentViewer(index);
       case _AttachmentMenuAction.crop:
         await _cropImage(index);
-      case _AttachmentMenuAction.addText:
-        await _addTextOverlay(index);
+      case _AttachmentMenuAction.addOverlay:
+        await _addOverlay(index);
       case _AttachmentMenuAction.editDescription:
         await _editDescription(index);
     }

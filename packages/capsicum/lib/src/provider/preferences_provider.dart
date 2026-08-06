@@ -38,6 +38,7 @@ const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
 const _insertPickerHeightKey = 'insert_picker_height';
 const _reactionPickerHeightKey = 'reaction_picker_height';
+const _stickerPickerHeightKey = 'sticker_picker_height';
 const _recentEmojisKey = 'recent_emojis';
 const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
@@ -1601,6 +1602,21 @@ final reactionPickerHeightProvider =
 class ReactionPickerHeightNotifier extends PickerSheetHeightNotifier {
   @override
   String get prefsKey => _reactionPickerHeightKey;
+}
+
+/// 添付画像に重ねるスタンプを選ぶピッカーの高さ (#883)。
+///
+/// 挿入 / リアクションと別に覚えるのは、スタンプ選びだけ**画像を見ながら**
+/// 行うため。編集中の画像がシートに隠れない高さに落ち着かせたいので、
+/// 他 2 つとは望ましい高さが違う。
+final stickerPickerHeightProvider =
+    NotifierProvider<StickerPickerHeightNotifier, double>(
+      StickerPickerHeightNotifier.new,
+    );
+
+class StickerPickerHeightNotifier extends PickerSheetHeightNotifier {
+  @override
+  String get prefsKey => _stickerPickerHeightKey;
 }
 
 /// Whether to show absolute timestamps instead of relative ones.

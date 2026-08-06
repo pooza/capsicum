@@ -29,7 +29,24 @@ enum _PickerTab { custom, unicode, word }
 class EmojiPicker extends ConsumerStatefulWidget {
   final BackendAdapter adapter;
   final String host;
-  final ValueChanged<String> onSelected;
+
+  /// 選択された絵文字を文字列（Unicode 絵文字 / `:shortcode:`）で受け取る。
+  /// [onCustomEmojiSelected] だけを使うスタンプモードでは不要。
+  final ValueChanged<String>? onSelected;
+
+  /// カスタム絵文字を [CustomEmoji] のまま受け取る口 (#883)。
+  ///
+  /// スタンプ合成に要るのは shortcode ではなく**画像 URL** なので、文字列を
+  /// 返す [onSelected] では足りない。これを渡すと**カスタムタブだけ**の
+  /// ピッカーになる（Unicode 絵文字は既存の文字レイヤで置けるため、スタンプ
+  /// 側に出す意味がない。劇中ワードも同じ理由で出さない）。
+  ///
+  /// 専用のグリッドを別に作らずここへ相乗りさせているのは、picker に出す絵文字
+  /// の絞り込み（現状は `visible_in_picker`。#944 で「非推奨」カテゴリの除外が
+  /// 乗る）が [_loadCustomEmojis] の 1 箇所に集約されているため。別実装にすると
+  /// 絞り込みの追従漏れがスタンプ側からだけ露出する。
+  final ValueChanged<CustomEmoji>? onCustomEmojiSelected;
+
   final MulukhiyaService? mulukhiya;
   final String? accessToken;
   final bool forReaction;
@@ -38,11 +55,15 @@ class EmojiPicker extends ConsumerStatefulWidget {
     super.key,
     required this.adapter,
     required this.host,
-    required this.onSelected,
+    this.onSelected,
+    this.onCustomEmojiSelected,
     this.mulukhiya,
     this.accessToken,
     this.forReaction = false,
-  });
+  }) : assert(
+         onSelected != null || onCustomEmojiSelected != null,
+         'いずれかの選択コールバックが要る',
+       );
 
   @override
   ConsumerState<EmojiPicker> createState() => _EmojiPickerState();
@@ -79,14 +100,17 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   bool get _hasWordSuggest =>
       !widget.forReaction && (widget.mulukhiya?.wordSuggestEnabled ?? false);
 
+  /// スタンプ選択モード。カスタム絵文字だけを [CustomEmoji] として返す (#883)。
+  bool get _stickerMode => widget.onCustomEmojiSelected != null;
+
   @override
   void initState() {
     super.initState();
     final hasCustom = widget.adapter is CustomEmojiSupport;
     _tabs = [
       if (hasCustom) _PickerTab.custom,
-      _PickerTab.unicode,
-      if (_hasWordSuggest) _PickerTab.word,
+      if (!_stickerMode) _PickerTab.unicode,
+      if (!_stickerMode && _hasWordSuggest) _PickerTab.word,
     ];
     _tabController = TabController(length: _tabs.length, vsync: this)
       ..addListener(_onTabChanged);
@@ -165,6 +189,12 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
   @override
   Widget build(BuildContext context) {
+    // スタンプモードでカスタム絵文字非対応のバックエンドに当たった場合。呼び出し
+    // 側 (showStickerPickerSheet) が弾いているので通常は来ないが、タブ 0 本の
+    // TabBar を組まないための保険。
+    if (_tabs.isEmpty) {
+      return const Center(child: Text('カスタム絵文字がありません'));
+    }
     return Column(
       children: [
         TabBar(
@@ -303,7 +333,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
 
   void _selectEmoji(String emoji) {
     ref.read(recentEmojisProvider.notifier).add(emoji);
-    widget.onSelected(emoji);
+    widget.onSelected?.call(emoji);
   }
 
   Widget _buildRecentSection(List<String> recents) {
@@ -462,7 +492,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           // テキストになるだけなのでサーバー出し分けと独立に常時通して安全。
           title: Text.rich(renderer.renderMfm(word.surface)),
           subtitle: Text(subtitle),
-          onTap: () => widget.onSelected(word.surface),
+          onTap: () => widget.onSelected?.call(word.surface),
         );
       },
     );
@@ -843,9 +873,15 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   Widget _buildCustomEmojiTile(CustomEmoji emoji) {
+    final onCustom = widget.onCustomEmojiSelected;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => _selectEmoji(':${emoji.shortcode}:'),
+      // スタンプモードでは「最近使った」へ記録しない (#883)。あの一覧は「本文へ
+      // 挿入した絵文字」の履歴で、画像に貼っただけのものが混ざると挿入時の候補
+      // が濁る。表示側では引き続き参照する（よく使う絵文字はスタンプでも近い）。
+      onTap: onCustom != null
+          ? () => onCustom(emoji)
+          : () => _selectEmoji(':${emoji.shortcode}:'),
       child: Tooltip(
         message: ':${emoji.shortcode}:',
         child: Padding(
