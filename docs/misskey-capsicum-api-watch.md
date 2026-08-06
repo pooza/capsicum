@@ -118,7 +118,7 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 - **`admin/unset-mfa`（新規 endpoint）** — 判定 **none**: 管理者がユーザーの MFA を解除する admin API。capsicum は無関係。beta.1 で先読み済み。
 - entity の変化は `AdminUnsetMfaRequest` の型 export 1 行のみ（上記 endpoint に付随）・packed json-schema 変化なし・`@syuilo/aiscript` は 1.2.1 で据え置き。
 
-Flash 互換ハーネス: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。**ただし実行時点のプリセット本番は 2026.6.0**（daisskey 本番適用は 2026-08-03 週の予定）。`@syuilo/aiscript` が据え置きで **Flash の言語世代が動く圧力がない**ため、昇格後の再実施は不要と判断する。
+Flash 互換ハーネス: **6 / 6 pass**（ダイスキー 4 + きゅあすきー 2）。描画コンポーネントは container / mfm / postFormButton で baseline から不変。**ただし実行時点のプリセット本番は 2026.6.0**だった。`@syuilo/aiscript` が据え置きで **Flash の言語世代が動く圧力がない**ため、昇格後の再実施は不要と判断する。**ダイスキー本番は 2026-08-07 の同期で `2026.7.0+0` への昇格を確認済み**（判断どおりハーネスは再実施していない）。
 
 → actionable なし。**API 契約側は 2026.7.0 の本番適用をそのまま通してよい**。次回は `9d6b7d05de..daisskey` から差分する。
 
