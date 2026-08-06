@@ -18,8 +18,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// `username@host|notificationId`（NSE が復号 payload から stamp する ID と
 /// 同じ ID 空間。docs/desktop-notification-design.md §5）。
 ///
-/// native push が配線されているのは macOS だけ (#468。Windows WNS #474 は
-/// on-hold) のため、macOS 以外では何もしない。
+/// 本チャネルが配線されているのは macOS (#468) だけで、macOS 以外では何も
+/// しない。Windows の WNS push (#474) も出荷済みだが、そちらは bg task が
+/// 別プロセスで動く都合上この受け渡しに乗せられないため、**両経路のトースト
+/// Tag を同じ導出に揃えて OS 側に畳ませる**方式を採っている (#933。
+/// `notification_tag.dart`)。通知音の重複までは防げないぶん弱い抑止で、
+/// 必要なら本チャネルの Windows 拡張を後から足す。
 class NotificationDedupChannel {
   NotificationDedupChannel({@visibleForTesting MethodChannel? channel})
     : _channel =

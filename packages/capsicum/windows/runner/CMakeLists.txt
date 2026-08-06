@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "smtc_now_playing.cpp"
   "windows_store_iap.cpp"
   "wns_push.cpp"
+  "notification_tag.cpp"
   "notification_type_label.cpp"
   "push_diagnostics.cpp"
   "web_push_decrypt.cpp"
@@ -43,6 +44,9 @@ add_executable(${BINARY_NAME} WIN32
 #      web_push_key_reader.cpp web_push_decrypt.cpp web_push_payload.cpp ^
 #      web_push_text_util.cpp notification_type_label.cpp ^
 #      /link crypt32.lib bcrypt.lib shell32.lib ole32.lib version.lib
+# notification_tag_test は /utf-8 が要る（マルチバイトのテストベクタを Dart 側
+# の utf8.encode と一致させているため）:
+#   cl /EHsc /utf-8 /std:c++17 notification_tag_test.cpp notification_tag.cpp
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
@@ -80,6 +84,7 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_library(capsicum_push_task SHARED
   "push_background_task.cpp"
   "push_background_task.def"
+  "notification_tag.cpp"
   "notification_type_label.cpp"
   "push_diagnostics.cpp"
   "web_push_decrypt.cpp"
