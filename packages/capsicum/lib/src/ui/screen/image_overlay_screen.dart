@@ -302,6 +302,14 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       final codec = await ui.instantiateImageCodec(widget.imageData);
       final frame = await codec.getNextFrame();
       final src = frame.image;
+      // PopScope で塞いでいるが、await 明けに State が生きていることを
+      // 描画前にもう一度確かめる（プログラム的な pop など経路は他にもある）。
+      // ここを抜けた後は破棄済みの `item.image` を掴みうる。
+      if (!mounted) {
+        src.dispose();
+        codec.dispose();
+        return;
+      }
       final w = size.width;
       final h = size.height;
 
@@ -390,6 +398,15 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   Widget build(BuildContext context) {
     final image = _image;
     final size = _imageSize;
+    // 書き出し中は離脱させない。`_render` は codec のデコードを await した後に
+    // `_items` を走査して `item.image` を描画するので、await 中に pop されると
+    // `dispose` が破棄した ui.Image を掴む（release ではネイティブハンドルの
+    // use-after-free）。「完了」ボタンを消すだけでは戻る矢印・Android の戻る・
+    // iOS のスワイプバックが素通りする。
+    return PopScope(canPop: !_rendering, child: _buildScaffold(image, size));
+  }
+
+  Widget _buildScaffold(Uint8List? image, Size? size) {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(

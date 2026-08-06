@@ -177,8 +177,14 @@ class PushRegistrationService {
       relayId = PushRelayClient.parseRelayId(sub['id']);
       final pushToken = sub['push_token'] as String?;
       if (relayId == null || pushToken == null) {
+        // 応答を丸ごと出さない。`sub` には push_token（そのデバイスへ任意の
+        // Web Push を投函できる capability secret）が入り、release では
+        // DebugPrintIntegration が debugPrint を breadcrumb 化する。
+        // main.dart の scrub は `/push/<token>` の URL 形しか消さないため、
+        // `push_token: <値>` という map 表記は素通りしてしまう。
         debugPrint(
-          'capsicum: push.registration: relay response missing fields: $sub',
+          'capsicum: push.registration: relay response missing fields: '
+          'keys=${sub.keys.toList()}',
         );
         _captureContractViolation(
           'relay register response missing id/push_token',
