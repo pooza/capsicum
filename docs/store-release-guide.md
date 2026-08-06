@@ -350,6 +350,17 @@ fastlane beta
 cd ..
 ```
 
+> ⚠️ **`fastlane beta` は「アップロード完了」と「処理待ちの終了」を分けて扱うこと。**
+> `Successfully uploaded the new binary to App Store Connect` が出た時点でバイナリは
+> ASC に渡っており、以降の `Waiting for the build to show up in the build list` は
+> 30 秒間隔のポーリングにすぎない。**同じ行が並ぶだけなので外からは停止と区別がつかず、
+> 誤って止められやすい**（2026-08-07 の macOS build 166 で、背景実行の timeout を 10 分に
+> 設定していたためポーリング中に打ち切られ、続けて手動でも停止された。どちらの時点でも
+> アップロードは完了済みだった）。自動化で回すときは **(a) timeout を処理待ち 5-10 分に
+> 張り付いた値にしない、(b) アップロード成功行が出たら報告していったん離れ、状態確認は
+> §4.4 の ASC API に切り替える**（`upload_to_testflight` に
+> `skip_waiting_for_build_processing` を渡す手もある）。
+
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
 
