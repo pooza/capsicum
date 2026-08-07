@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../widget/retry_error_view.dart';
 
 final _scheduledPostsProvider = FutureProvider.autoDispose<List<ScheduledPost>>(
   (ref) async {
@@ -41,21 +42,10 @@ class ScheduledPostsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(_scheduledPostsProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, _) => RetryErrorView(
+          message: '読み込みに失敗しました\n$error',
+          isRetrying: postsAsync.isLoading,
+          onRetry: () => ref.invalidate(_scheduledPostsProvider),
         ),
       ),
     );

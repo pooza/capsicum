@@ -7,6 +7,7 @@ import '../../provider/hashtag_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../widget/post_tile.dart';
 import '../widget/simple_post_bar.dart';
+import '../widget/retry_error_view.dart';
 
 class HashtagTimelineScreen extends ConsumerStatefulWidget {
   final String hashtag;
@@ -151,23 +152,11 @@ class _HashtagTimelineScreenState extends ConsumerState<HashtagTimelineScreen> {
                       ),
                     ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(
-                          hashtagTimelineProvider(widget.hashtag),
-                        ),
-                        child: const Text('再試行'),
-                      ),
-                    ],
-                  ),
-                ),
+              error: (error, stack) => RetryErrorView(
+                message: '読み込みに失敗しました',
+                isRetrying: timeline.isLoading,
+                onRetry: () =>
+                    ref.invalidate(hashtagTimelineProvider(widget.hashtag)),
               ),
             ),
           ),

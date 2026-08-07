@@ -1,3 +1,4 @@
+import 'package:aiscript/aiscript.dart';
 import 'package:capsicum/src/ui/flash/flash_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -192,6 +193,57 @@ void main() {
       await runtime.invoke(onClick);
 
       expect(runtime.component('label')!.text, 'before');
+    });
+
+    test('engineLangVersion が評価器の Core:v と一致する (#934)', () async {
+      // degrade の文言にこの数値を出す以上、定数がフォークの実体からずれると
+      // 「事実を書く」という前提が崩れる。フォークの ref を上げたときにここで
+      // 落ちるようにしておく。
+      final interpreter = Interpreter({});
+      String? printed;
+      interpreter.printFn = (value) => printed = (value as StrValue).value;
+      await interpreter.exec(Parser().parse('<: Core:v').ast);
+
+      expect(printed, FlashRuntime.engineLangVersion);
+    });
+  });
+
+  group('usesRandomness (#935)', () {
+    test('Math:rnd を使う Play を拾う', () {
+      expect(FlashRuntime.usesRandomness('let n = Math:rnd(0 10)'), isTrue);
+    });
+
+    test('Math:gen_rng を使う Play を拾う', () {
+      expect(
+        FlashRuntime.usesRandomness('let r = Math:gen_rng("seed")'),
+        isTrue,
+      );
+    });
+
+    test('乱数を使わない Play は拾わない', () {
+      expect(
+        FlashRuntime.usesRandomness(
+          'Ui:render([Ui:C:text({ text: "a" }, "t")])',
+        ),
+        isFalse,
+      );
+    });
+
+    test('Math:round は Math:rnd と紛れない', () {
+      expect(FlashRuntime.usesRandomness('let n = Math:round(1.5)'), isFalse);
+    });
+
+    /// 評価器の乱数源はこの 2 つだけ、というのが判定の前提。フォークが乱数を
+    /// 使う組み込みを増やしたらここが落ちるので、判定側も足す。
+    test('評価器の乱数源はこの 2 つだけ（前提の固定）', () {
+      const knownRandomBuiltins = ['Math:rnd', 'Math:gen_rng'];
+      for (final name in knownRandomBuiltins) {
+        expect(
+          FlashRuntime.usesRandomness('x($name)'.replaceAll('\$name', name)),
+          isTrue,
+          reason: '$name を乱数源として数えている',
+        );
+      }
     });
   });
 }

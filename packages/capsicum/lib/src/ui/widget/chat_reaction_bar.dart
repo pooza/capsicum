@@ -1,10 +1,11 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
-import 'emoji_picker.dart';
+import 'reaction_picker_sheet.dart';
 
 /// chat メッセージの reaction を表示するバー (#612)。DM・ルーム双方の
 /// メッセージバブルから共用する。
@@ -150,45 +151,19 @@ class _ReactionChip extends StatelessWidget {
   }
 }
 
-/// reaction 用の絵文字ピッカーをボトムシートで開く (#612)。post の
-/// リアクションピッカー (post_touch_action_row) と同じ構成で、選択された
-/// 絵文字を [onPicked] に渡す。
+/// reaction 用の絵文字ピッカーをボトムシートで開く (#612)。選択された絵文字を
+/// [onPicked] に渡す。
 ///
-/// 高さは「画面 - キーボード」基準にして、IME が残っていてもメッセージが
-/// 隠れすぎないようにする (#689 と同方針)。
+/// 実体は投稿・通知・お知らせと共通の [showReactionPickerSheet] (#907)。
+/// メッセージ画面側の呼び出し名を保つためのラッパで、高さ調整・記憶・
+/// キーボード追従はすべて共通シートが持つ。
 void showChatReactionPicker({
   required BuildContext context,
   required WidgetRef ref,
   required void Function(String reaction) onPicked,
 }) {
-  final account = ref.read(currentAccountProvider);
-  final adapter = account?.adapter;
-  if (adapter is! ReactionSupport) return;
-
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) {
-      final screenHeight = MediaQuery.of(context).size.height;
-      final keyboardInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-      return Padding(
-        padding: EdgeInsets.only(bottom: keyboardInset),
-        child: SizedBox(
-          height: (screenHeight - keyboardInset) * 0.5,
-          child: EmojiPicker(
-            adapter: adapter as BackendAdapter,
-            host: account!.key.host,
-            mulukhiya: account.mulukhiya,
-            accessToken: account.userSecret.accessToken,
-            forReaction: true,
-            onSelected: (emoji) {
-              Navigator.pop(sheetContext);
-              onPicked(emoji);
-            },
-          ),
-        ),
-      );
-    },
+  unawaited(
+    showReactionPickerSheet(context: context, ref: ref, onSelected: onPicked),
   );
 }
 

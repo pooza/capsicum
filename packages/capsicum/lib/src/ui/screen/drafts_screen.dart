@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../widget/retry_error_view.dart';
 
 /// サーバー下書き一覧 (#174)。DraftSupport のあるアダプタ（Misskey）でのみ
 /// ドロワーから辿れる。タップで compose に復元、ゴミ箱で削除する。
@@ -42,21 +43,10 @@ class DraftsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(_draftsProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, _) => RetryErrorView(
+          message: '読み込みに失敗しました\n$error',
+          isRetrying: draftsAsync.isLoading,
+          onRetry: () => ref.invalidate(_draftsProvider),
         ),
       ),
     );

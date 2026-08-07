@@ -220,6 +220,104 @@ int comparePostIdDesc(String a, String b) {
   return b.compareTo(a);
 }
 
+/// キャッシュ先出し中の操作を保ったまま、初回 REST スナップショットを取り込む
+/// (#921)。
+///
+/// 先出しから REST 完了までの窓（実測 p50 475ms / p75 639ms）に行った操作は、
+/// 単純な差し替えだと黙って捨てられる。REST リクエストは操作より前に発行済みで
+/// 結果を含まないため、**窓の操作の方が新しい**。
+///
+/// [fresh] はサーバーの最新ページ（この id 範囲では権威）。[current] は先出し
+/// キャッシュに窓の操作を反映したもの。次の 3 つに切り分けて組み直す:
+///
+/// - **head**: [fresh] の最新より新しく、[fresh] に無い投稿。自分の投稿の楽観挿入
+///   (#717) や、窓の間に streaming で載った新着。前に積む
+/// - **fresh**: サーバーの権威。ただし [updated] の差し替えを当て、[removedIds] /
+///   [blockedUserIds] は落とす
+/// - **tail**: [fresh] の最古より古く、[fresh] に無い投稿。`loadMore()` で足した
+///   2 ページ目以降。後ろに積む
+///
+/// [fresh] の id 範囲内にありながら [fresh] に無い投稿は落とす（サーバーがもう
+/// 返さない＝削除済み / フィルタ済み。この範囲は [fresh] が権威）。
+///
+/// [fresh] が空、または [current] と 1 件も重ならない場合は [fresh] をそのまま
+/// 返す。重なりが無いのは「キャッシュが古すぎて別物」ということなので、繋げると
+/// 断絶したリストになる。
+/// [hasDeeperPages] は `loadMore()` で足した古いページが残ったか。続きがあるかは
+/// その最深ページが知っているので、呼び出し側の `hasMore` の決め方が変わる。
+@visibleForTesting
+({List<Post> posts, bool hasDeeperPages}) mergeInitialSnapshot({
+  required List<Post> current,
+  required List<Post> fresh,
+  Map<String, Post> updated = const {},
+  Set<String> removedIds = const {},
+  Set<String> blockedUserIds = const {},
+}) {
+  if (fresh.isEmpty) return (posts: fresh, hasDeeperPages: false);
+
+  final edited = _applyWindowEdits(fresh, updated, removedIds, blockedUserIds);
+  final freshIds = {for (final p in fresh) p.id};
+  if (current.isEmpty || !current.any((p) => freshIds.contains(p.id))) {
+    return (posts: edited, hasDeeperPages: false);
+  }
+
+  final newestFreshId = fresh.first.id;
+  final oldestFreshId = fresh.last.id;
+  final head = <Post>[];
+  final tail = <Post>[];
+  for (final post in current) {
+    if (freshIds.contains(post.id)) continue;
+    if (comparePostIdDesc(post.id, newestFreshId) < 0) {
+      head.add(post);
+    } else if (comparePostIdDesc(post.id, oldestFreshId) > 0) {
+      tail.add(post);
+    }
+  }
+
+  return (
+    posts: [...head, ...edited, ...tail],
+    hasDeeperPages: tail.isNotEmpty,
+  );
+}
+
+/// 窓の操作を [posts] に当てる (#921)。差し替えは reblog 先も見る
+/// （[TimelineNotifier.updatePost] と同じ判定）。
+List<Post> _applyWindowEdits(
+  List<Post> posts,
+  Map<String, Post> updated,
+  Set<String> removedIds,
+  Set<String> blockedUserIds,
+) {
+  if (updated.isEmpty && removedIds.isEmpty && blockedUserIds.isEmpty) {
+    return posts;
+  }
+  final result = <Post>[];
+  for (final post in posts) {
+    if (removedIds.contains(post.id)) continue;
+    if (blockedUserIds.contains(post.author.id)) continue;
+    final reblogAuthorId = post.reblog?.author.id;
+    if (reblogAuthorId != null && blockedUserIds.contains(reblogAuthorId)) {
+      continue;
+    }
+    final replacement = updated[post.id];
+    if (replacement != null) {
+      result.add(replacement);
+      continue;
+    }
+    final reblogId = post.reblog?.id;
+    if (reblogId != null) {
+      if (removedIds.contains(reblogId)) continue;
+      final reblogReplacement = updated[reblogId];
+      if (reblogReplacement != null) {
+        result.add(post.copyWith(reblog: reblogReplacement));
+        continue;
+      }
+    }
+    result.add(post);
+  }
+  return result;
+}
+
 /// 1 ページぶんの catch-up 取得結果（新しい順の投稿・生サーバー件数・最古 id）。
 typedef CatchUpPage = ({List<Post> posts, int rawCount, String? rawLastId});
 
@@ -414,6 +512,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 置き換わった state を古い結果で上書きしないようにする。
   int _buildGeneration = 0;
 
+  /// いま build() が担当している文脈 (#914 §5)。**build() の入口で、await を
+  /// 挟む前に**確定させる。
+  ///
+  /// 「文脈が変わったか」を `state.valueOrNull?.contextKey` で見ると、state が
+  /// まだ `AsyncLoading`（build() が返る前に裏の取得が完了した場合）のときに
+  /// null と比較して**常に「変わった」と判定され、結果が黙って捨てられる**。
+  /// 現状は REST 往復が挟まるので起きないが、将来メモリキャッシュ層を足すと
+  /// 顕在化する。state が publish 済みかどうかに依存しない値をここに持つ。
+  String? _servingContextKey;
+
   /// 起動時キャッシュの先出しは 1 プロセス 1 回だけ (#890)。セッション中のタブ /
   /// アカウント切替で古い一覧が一瞬出るのを防ぐ。AutoDispose で Notifier は
   /// 作り直されるため static に持つ（[_homeFirstPaintReported] と同じ理由）。
@@ -435,6 +543,31 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// ギャップ補完 (#781) の多重実行ガード。`live` 遷移が連続しても 1 本に絞る。
   bool _catchUpInProgress = false;
 
+  /// キャッシュ先出し中で、裏の初回取得がまだ state を差し替えていない (#921)。
+  /// この窓（実測 p50 475ms / p75 639ms）に行われた操作を記録し、差し替え時に
+  /// 取りこぼさないようにする。窓の外では記録しない（コストも挙動変化も無い）。
+  bool _awaitingInitialSnapshot = false;
+
+  /// 窓の間にユーザー操作で差し替えられた投稿 (#921)。REST スナップショットは
+  /// 操作より前に発行済みで結果を含まないため、**こちらを優先**する。
+  final Map<String, Post> _windowUpdatedPosts = {};
+
+  /// 窓の間に削除された投稿 id (#921)。スナップショットに残っていても戻さない。
+  final Set<String> _windowRemovedIds = {};
+
+  /// 窓の間にブロック / ミュートした相手の userId (#921)。スナップショットから
+  /// 除いて取り込む。「見えているどの TL からも消える」保証 (#887) を、
+  /// 起動直後の窓でも崩さないため。
+  final Set<String> _windowBlockedUserIds = {};
+
+  /// 窓の記録を捨てる。窓を開くとき / 閉じるとき / build() のたびに呼ぶ。
+  void _resetSnapshotWindow({required bool awaiting}) {
+    _awaitingInitialSnapshot = awaiting;
+    _windowUpdatedPosts.clear();
+    _windowRemovedIds.clear();
+    _windowBlockedUserIds.clear();
+  }
+
   /// 切断検知回数・直近切断時刻 (#782)。インジケータへ正直に出すため notifier 側
   /// で数え、state に反映する。build() でリセット。
   int _reconnectCount = 0;
@@ -454,6 +587,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _pendingPosts.clear();
     _isNearTop = true;
     _disposed = false;
+    // 前の文脈の窓の記録を持ち越さない (#921)。
+    _resetSnapshotWindow(awaiting: false);
     final generation = ++_buildGeneration;
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
@@ -467,6 +602,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       ref.watch(currentAccountProvider)?.key,
       'tl:${type.name}',
     );
+    // await を挟む前に確定させる (#914 §5)。以降の stale 判定はこれを見る。
+    _servingContextKey = contextKey;
     if (adapter == null) return TimelineState(contextKey: contextKey);
 
     // #716 計測: ホーム TL の初回描画を fetch (サーバー応答) / enrich (isCat) /
@@ -511,6 +648,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       measureHomePaint: measureHomePaint,
     );
     if (cached != null) {
+      // ここから REST 完了までが「窓」(#921)。この間の操作を記録する。
+      _resetSnapshotWindow(awaiting: true);
       unawaited(
         _loadInitialInBackground(
           adapter: adapter,
@@ -604,7 +743,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 裏で走っている間にアカウント切替・ログアウトが起きると、**捨てるはずの世代が
     // WebSocket を張り直したり、ログアウト直後にキャッシュを書き戻したり**していた。
     // 副作用の手前でも同じ条件で降りる。
-    if (_isStale(generation, contextKey, publishToState: publishToState)) {
+    if (_isStale(generation, contextKey)) {
       return TimelineState(
         posts: allVisible,
         hasMore: hasMore,
@@ -658,7 +797,18 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     // 次の起動で先出しできるよう、ホーム TL の初回ページを控える (#890)。
     // 書き込み失敗は握り潰される（キャッシュは無くても動く）。
-    if (type == TimelineType.home && contextKey != null && allRaw.isNotEmpty) {
+    //
+    // 窓の間に削除 / ブロックがあったときは書かない (#921)。
+    // `removePostsByUser` は `TimelineCache.clear()` を呼ぶが、その後にここの
+    // `save` が書き込みキューへ積まれると**ブロックした相手の投稿がディスクに
+    // 復活する**。allRaw は生 JSON なので投稿者を汎用に判定できず、消して書く
+    // より書かない方が安全（次回の取得で書き直される）。
+    final windowHadRemovals =
+        _windowRemovedIds.isNotEmpty || _windowBlockedUserIds.isNotEmpty;
+    if (type == TimelineType.home &&
+        contextKey != null &&
+        allRaw.isNotEmpty &&
+        !windowHadRemovals) {
       unawaited(TimelineCache.save(contextKey, allRaw, now: DateTime.now()));
     }
 
@@ -673,29 +823,52 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
     // キャッシュ先出しの裏で走った場合は、自分で state を差し替える。文脈が
     // 変わっている（アカウント/タブ切替で build() がやり直された）なら捨てる。
-    if (publishToState &&
-        !_isStale(generation, contextKey, publishToState: true)) {
-      state = AsyncData(fresh);
+    if (publishToState && !_isStale(generation, contextKey)) {
+      state = AsyncData(_mergeWithWindow(fresh));
+      _resetSnapshotWindow(awaiting: false);
     }
     return fresh;
   }
 
-  /// この取得の結果が既に用済みか。破棄済み・再計算で世代が進んだ・表示中の文脈が
-  /// 変わった、のいずれか (#890)。
+  /// 窓 (#921) の操作を保ったまま [fresh] を取り込んだ state を作る。
   ///
-  /// [publishToState] が false のとき（`build()` の返り値として await されている
-  /// 途中）は state がまだ `AsyncLoading` なので、表示中の contextKey とは比べない。
-  /// 比べると初回取得が常に stale 判定になる。
-  bool _isStale(
-    int generation,
-    String? contextKey, {
-    required bool publishToState,
-  }) {
+  /// 窓が開いていない（キャッシュ先出しをしていない）ときは [fresh] のまま。
+  TimelineState _mergeWithWindow(TimelineState fresh) {
+    if (!_awaitingInitialSnapshot) return fresh;
+    final current = state.valueOrNull;
+    if (current == null) return fresh;
+
+    final merged = mergeInitialSnapshot(
+      current: current.posts,
+      fresh: fresh.posts,
+      updated: _windowUpdatedPosts,
+      removedIds: _windowRemovedIds,
+      blockedUserIds: _windowBlockedUserIds,
+    );
+    final result = fresh.copyWith(
+      posts: merged.posts,
+      // `loadMore()` で 2 ページ目以降まで進んでいたなら、続きがあるかは
+      // **その最深ページ**が知っている。fresh は 1 ページ目しか見ていない。
+      hasMore: merged.hasDeeperPages ? current.hasMore : fresh.hasMore,
+    );
+    // 先頭に自分の投稿 / 新着が残った場合、ギャップ補完 (#781) の起点も
+    // そちらへ進めておく（[_loadInitial] は fresh の先頭で上書きしている）。
+    if (merged.posts.isNotEmpty) _newestKnownId = merged.posts.first.id;
+    return result;
+  }
+
+  /// この取得の結果が既に用済みか。破棄済み・再計算で世代が進んだ・担当している
+  /// 文脈が変わった、のいずれか (#890)。
+  ///
+  /// 文脈の比較は [_servingContextKey] と行う。以前は `state.valueOrNull` 越しに
+  /// 見ていたため、state がまだ `AsyncLoading` の間は判定できず、`build()` の
+  /// 返り値として await されている途中（`publishToState` が false）だけ比較を
+  /// 飛ばす必要があった。[_servingContextKey] は build() の入口で確定するので
+  /// その場合分けが要らない (#914 §5)。
+  bool _isStale(int generation, String? contextKey) {
     if (_disposed) return true;
     if (generation != _buildGeneration) return true;
-    if (publishToState && state.valueOrNull?.contextKey != contextKey) {
-      return true;
-    }
+    if (_servingContextKey != contextKey) return true;
     return false;
   }
 
@@ -743,7 +916,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       swapSw.stop();
       // 途中で捨てられた回（破棄 / 世代進み / 文脈変更）は所要の意味が変わるので
       // 記録しない。_isStale と同じ判定を使う。
-      if (_isStale(generation, contextKey, publishToState: true)) return;
+      if (_isStale(generation, contextKey)) return;
       // transaction の duration そのものが所要（取得 + enrich + 差し替え）。
       // 別 measurement には積まない（同じ値の二重持ちになる）。
       recordStartupPhase(
@@ -753,9 +926,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
       );
     } catch (e, st) {
       // 破棄済み / 世代が進んだ / 文脈が変わった場合は、もう自分の結果に用は無い。
-      if (_disposed) return;
-      if (generation != _buildGeneration) return;
-      if (state.valueOrNull?.contextKey != contextKey) return;
+      // 成功側と同じ判定を使う（以前はここだけ state 越しに文脈を見ていた・#914 §5）。
+      if (_isStale(generation, contextKey)) return;
       // 例外文字列にはホストや生データ断片が載りうるため詰め替えてから送る
       // (#586 / #743)。unhandled ではなく「意図して捕捉した失敗」として残す。
       final scrubbed = scrubException(e);
@@ -1330,6 +1502,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   void updatePost(Post updated) {
     final current = state.valueOrNull;
     if (current == null) return;
+    // 起動キャッシュ先出しの窓なら、裏の初回取得で捨てられないよう控える (#921)。
+    if (_awaitingInitialSnapshot) _windowUpdatedPosts[updated.id] = updated;
     final posts = current.posts.map((p) {
       if (p.id == updated.id) return updated;
       // Also check reblog target.
@@ -1345,6 +1519,8 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   void removePost(String id) {
     final current = state.valueOrNull;
     if (current == null) return;
+    // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
+    if (_awaitingInitialSnapshot) _windowRemovedIds.add(id);
     final posts = current.posts.where((p) => p.id != id).toList();
     state = AsyncData(
       current.copyWith(
@@ -1407,6 +1583,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;
     if (current == null) return;
+    // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
+    // ブロックは安全のための操作なので、この窓でも穴を作らない (#887)。
+    if (_awaitingInitialSnapshot) _windowBlockedUserIds.add(userId);
     bool byUser(Post p) =>
         p.author.id == userId || p.reblog?.author.id == userId;
     final posts = current.posts.where((p) => !byUser(p)).toList();

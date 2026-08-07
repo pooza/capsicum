@@ -11,6 +11,7 @@ import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
 import '../widget/notification_tile.dart';
+import '../widget/retry_error_view.dart';
 
 /// Standalone screen with AppBar.
 class NotificationScreen extends ConsumerWidget {
@@ -161,21 +162,10 @@ class _NotificationViewState extends ConsumerState<NotificationView>
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('通知の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(notificationProvider),
-                child: const Text('再試行'),
-              ),
-            ],
-          ),
-        ),
+      error: (error, stack) => RetryErrorView(
+        message: '通知の読み込みに失敗しました\n$error',
+        isRetrying: notifications.isLoading,
+        onRetry: () => ref.invalidate(notificationProvider),
       ),
     );
   }

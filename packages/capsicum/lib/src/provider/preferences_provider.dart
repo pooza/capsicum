@@ -37,6 +37,8 @@ const _thumbnailScaleKey = 'thumbnail_scale';
 const _backgroundImagePathKey = 'background_image_path';
 const _backgroundOpacityKey = 'background_opacity';
 const _insertPickerHeightKey = 'insert_picker_height';
+const _reactionPickerHeightKey = 'reaction_picker_height';
+const _stickerPickerHeightKey = 'sticker_picker_height';
 const _recentEmojisKey = 'recent_emojis';
 const _composeTemplateHistoryKey = 'compose_template_history';
 const _emojiZeroWidthSpaceKey = 'emoji_zero_width_space';
@@ -1544,39 +1546,77 @@ class RestoreReadPositionNotifier extends Notifier<bool> {
   }
 }
 
-/// 挿入ピッカーシートの高さ（利用可能領域に対する比率）。ユーザーが上端の
-/// ハンドルをドラッグして決めた値を記憶し、次回も同じ高さで開く (#690)。
-/// ドラッグ側の clamp と揃えるため公開定数にしている。
-const double kMinInsertPickerHeight = 0.25;
-const double kMaxInsertPickerHeight = 0.9;
-const double kDefaultInsertPickerHeight = 0.5;
+/// ピッカーシートの高さ（利用可能領域に対する比率）。ユーザーが上端のハンドルを
+/// ドラッグして決めた値を記憶し、次回も同じ高さで開く（挿入ピッカー #690 /
+/// リアクションピッカー #907）。ドラッグ側の clamp と揃えるため公開定数にしている。
+const double kMinPickerSheetHeight = 0.25;
+const double kMaxPickerSheetHeight = 0.9;
+const double kDefaultPickerSheetHeight = 0.5;
 
+/// ピッカーシート高さの永続化ノーティファイア共通実装。挿入用とリアクション用で
+/// **記憶する高さは別**にする（挿入は連続入力、リアクションは 1 タップで閉じる、と
+/// 用途が違うため望ましい高さも違う）。差分は保存キーだけなので基底に寄せる。
+abstract class PickerSheetHeightNotifier extends Notifier<double> {
+  /// SharedPreferences の保存キー。
+  String get prefsKey;
+
+  @override
+  double build() {
+    _load();
+    return kDefaultPickerSheetHeight;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(prefsKey);
+    if (saved != null) {
+      state = saved.clamp(kMinPickerSheetHeight, kMaxPickerSheetHeight);
+    }
+  }
+
+  Future<void> set(double value) async {
+    final clamped = value.clamp(kMinPickerSheetHeight, kMaxPickerSheetHeight);
+    state = clamped;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(prefsKey, clamped);
+  }
+}
+
+/// 投稿本文・簡易投稿バーの挿入ピッカーの高さ (#690)。
 final insertPickerHeightProvider =
     NotifierProvider<InsertPickerHeightNotifier, double>(
       InsertPickerHeightNotifier.new,
     );
 
-class InsertPickerHeightNotifier extends Notifier<double> {
+class InsertPickerHeightNotifier extends PickerSheetHeightNotifier {
   @override
-  double build() {
-    _load();
-    return kDefaultInsertPickerHeight;
-  }
+  String get prefsKey => _insertPickerHeightKey;
+}
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_insertPickerHeightKey);
-    if (saved != null) {
-      state = saved.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
-    }
-  }
+/// リアクションの絵文字ピッカーの高さ (#907)。
+final reactionPickerHeightProvider =
+    NotifierProvider<ReactionPickerHeightNotifier, double>(
+      ReactionPickerHeightNotifier.new,
+    );
 
-  Future<void> set(double value) async {
-    final clamped = value.clamp(kMinInsertPickerHeight, kMaxInsertPickerHeight);
-    state = clamped;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_insertPickerHeightKey, clamped);
-  }
+class ReactionPickerHeightNotifier extends PickerSheetHeightNotifier {
+  @override
+  String get prefsKey => _reactionPickerHeightKey;
+}
+
+/// 添付画像に重ねるスタンプを選ぶピッカーの高さ (#883)。
+///
+/// 挿入 / リアクションと別に覚えるのは、スタンプ選びだけ**画像を見ながら**
+/// 行うため。編集中の画像がシートに隠れない高さに落ち着かせたいので、
+/// 他 2 つとは望ましい高さが違う。
+final stickerPickerHeightProvider =
+    NotifierProvider<StickerPickerHeightNotifier, double>(
+      StickerPickerHeightNotifier.new,
+    );
+
+class StickerPickerHeightNotifier extends PickerSheetHeightNotifier {
+  @override
+  String get prefsKey => _stickerPickerHeightKey;
 }
 
 /// Whether to show absolute timestamps instead of relative ones.

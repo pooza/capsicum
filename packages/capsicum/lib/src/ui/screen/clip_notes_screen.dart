@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/clip_provider.dart';
 import '../widget/post_tile.dart';
+import '../widget/retry_error_view.dart';
 
 class ClipNotesScreen extends ConsumerStatefulWidget {
   final String clipId;
@@ -68,22 +69,10 @@ class _ClipNotesScreenState extends ConsumerState<ClipNotesScreen> {
                 ),
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(clipNotesProvider(widget.clipId)),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, stack) => RetryErrorView(
+          message: '読み込みに失敗しました',
+          isRetrying: timeline.isLoading,
+          onRetry: () => ref.invalidate(clipNotesProvider(widget.clipId)),
         ),
       ),
     );

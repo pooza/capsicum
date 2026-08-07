@@ -283,7 +283,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // startup.home_timeline (restore_read_position タグ付き) と突き合わせて
     // 「未読位置読み込みあり」の体感への寄与を切り分ける。#890 の先行取得後は
     // marker_ms が「往復」ではなく「先行取得の待ち時間」になる（先行できて
-    // いれば 0 に近づく）ので、prefetched タグで before/after を分けて見る。
+    // いれば 0 に近づく）。
+    //
+    // prefetched が分けるのは**起動時とリフレッシュ時**であって、#890 導入の
+    // before/after ではない (#914 §3)。`_rearmMarkerRestore` が `_markerFetch`
+    // を落とす（b2b588b9）ので、リフレッシュ経路では必ず false になる。
+    // **リリースを跨いだ before/after は release で分けること。**
     final prefetched = _markerFetch != null;
     final markerSw = Stopwatch()..start();
     var found = false;
@@ -319,6 +324,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// (transaction duration = marker_ms)・マーカーが読み込み済みページ内にあったか
   /// (found)・実際に jump したか (jumped)・TL 取得と並行に先行取得できていたか
   /// (prefetched, #890) を持ち、未読位置読み込みの体感寄与を切り分ける。
+  ///
+  /// `prefetched` は**起動時 (true) とリフレッシュ時 (false) の別**であって、
+  /// #890 導入の before/after ではない (#914 §3)。
   void _reportMarkerRestore({
     required int markerMs,
     required bool found,
@@ -1896,15 +1904,29 @@ class _OfflineHomeScaffold extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                anyRetrying ? 'サーバーに接続中…' : 'サーバーに接続できません',
+                anyRetrying ? '接続中…' : '接続できません',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
+              // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
+              // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
+              // 再構築だったが、到達不能の理由はここでは区別できない）。
+              //
+              // **「接続が回復すると自動的に戻ります」と書かない (#938)。**
+              // 背景再試行の backoff は 2/5/15/30 秒の 4 回・計 52 秒で打ち切る
+              // ため、それを過ぎたら自動では戻らない。機内モードから戻すのは
+              // たいてい 52 秒より後なので、この画面が最も出やすい状況でこそ
+              // 嘘になる。自動再試行を継続する案は #938。
               Text(
-                'ログイン中のサーバーが停止しているか、再構築中の可能性があります。'
-                'アカウントは保持しているので、サーバーが復帰すると自動的に'
-                'タイムラインへ戻ります。',
+                anyRetrying
+                    ? '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                          '可能性があります。アカウントは保持したまま、しばらく'
+                          '自動で再試行します。'
+                    : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                          '可能性があります。アカウントは保持していますが、自動の'
+                          '再試行は終了しました。接続が戻ったら「今すぐ再試行」を'
+                          '押してください。',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),

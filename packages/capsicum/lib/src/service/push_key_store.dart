@@ -168,6 +168,29 @@ class PushKeyStore {
     return _storage.read(key: _key(_Slot.endpoint, accountStorageKey));
   }
 
+  /// 直近の登録に使ったデバイストークン（APNs / FCM のトークン、Windows は
+  /// WNS の Channel URI）を保存する (#937)。
+  ///
+  /// **アカウント単位ではなくデバイス単位の値**なので [_Slot] には入れず固定
+  /// キーで持つ。[delete] は [_Slot] を列挙するため、1 アカウントのログアウト
+  /// で巻き添えに消えることがない。
+  static Future<void> saveDeviceToken(String token) async {
+    await _storage.write(key: _deviceTokenKey, value: token);
+  }
+
+  /// 直近の登録に使ったデバイストークンを取得する。未保存なら null。
+  static Future<String?> getDeviceToken() async {
+    return _storage.read(key: _deviceTokenKey);
+  }
+
+  /// 保存済みデバイストークンを消す。デバイス全体の登録を畳むとき
+  /// （token rotation の掃除など）に、次回起動で誤検知しないよう合わせて呼ぶ。
+  static Future<void> deleteDeviceToken() async {
+    await _storage.delete(key: _deviceTokenKey);
+  }
+
+  static const _deviceTokenKey = '${_prefix}device_token';
+
   /// 指定アカウントの鍵・登録情報をすべて削除する。
   static Future<void> delete(String accountStorageKey) async {
     for (final slot in _Slot.values) {

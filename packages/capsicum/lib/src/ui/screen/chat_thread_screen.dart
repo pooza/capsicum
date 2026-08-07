@@ -17,6 +17,7 @@ import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/user_avatar.dart';
+import '../widget/retry_error_view.dart';
 
 class ChatThreadScreen extends ConsumerStatefulWidget {
   final User otherUser;
@@ -213,25 +214,12 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => isOAuthScopeError(error)
                   ? const OAuthScopeErrorView()
-                  : Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SelectableText(
-                              '読み込みに失敗しました\n${summarizeOpError(error)}',
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () => ref.invalidate(
-                                chatThreadProvider(widget.otherUser.id),
-                              ),
-                              child: const Text('再試行'),
-                            ),
-                          ],
-                        ),
+                  : RetryErrorView(
+                      message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+                      selectable: true,
+                      isRetrying: state.isLoading,
+                      onRetry: () => ref.invalidate(
+                        chatThreadProvider(widget.otherUser.id),
                       ),
                     ),
             ),

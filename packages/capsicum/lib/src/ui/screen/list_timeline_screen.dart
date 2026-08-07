@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/list_provider.dart';
 import '../widget/post_tile.dart';
+import '../widget/retry_error_view.dart';
 
 /// リストのタイムラインを独立画面で表示する（#805）。ドロワーの「リスト」
 /// クイックチューザから選んだリストへ push される。antenna_notes_screen と同型。
@@ -72,22 +73,10 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
                 ),
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('読み込みに失敗しました', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(listTimelineProvider(widget.listId)),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, stack) => RetryErrorView(
+          message: '読み込みに失敗しました',
+          isRetrying: timeline.isLoading,
+          onRetry: () => ref.invalidate(listTimelineProvider(widget.listId)),
         ),
       ),
     );

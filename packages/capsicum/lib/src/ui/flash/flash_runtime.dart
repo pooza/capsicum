@@ -91,6 +91,31 @@ class FlashRuntime {
   static String? scriptLangVersion(String script) =>
       Parser.getLangVersion(script);
 
+  /// capsicum に入っている評価器の AiScript バージョン（フォークの `Core:v`）。
+  ///
+  /// degrade の文言で「このアプリの版」として提示する (#934)。予測（「動かない
+  /// 可能性があります」）ではなく数値を出すための材料。フォークの `stdlib` は
+  /// public export されていないため定数で持ち、実際の `Core:v` との一致は
+  /// `test/flash_runtime_test.dart` で担保する。
+  static const engineLangVersion = '0.16.0';
+
+  /// この Play が乱数を使うか (#935)。
+  ///
+  /// 使うなら「実行のたびに結果が変わる」「シードを固定していても Web 版とは
+  /// 出目が異なる」という注記を出す。関係の無い Play にまで出すと単なる雑音に
+  /// なるので絞る。
+  ///
+  /// 評価器の乱数源は `Math:rnd`（毎回変わる）と `Math:gen_rng`（シード付き）の
+  /// **2 つだけ**で、他に `Random` を引く経路は無い（フォークの `stdlib.dart` を
+  /// 確認済み。`test/flash_runtime_test.dart` で網羅を担保する）。
+  ///
+  /// 判定は**文字列の出現だけ**を見る。実行前に完全なパースを通すのは高くつく
+  /// うえ、ここで欲しいのは「注記を出すかどうか」でしかない。コメントや文字列
+  /// リテラルの中に書かれていても拾ってしまうが、**誤って出す側に倒れるだけ**
+  /// なので害が無い（逆に取りこぼすと、出目の相談をする手掛かりが無くなる）。
+  static bool usesRandomness(String script) =>
+      script.contains('Math:rnd') || script.contains('Math:gen_rng');
+
   /// この Play を capsicum の評価器で実行すると本家と結果がズレうるか (#881)。
   ///
   /// 本家 Misskey は宣言バージョン 1.0.0 未満（および宣言なし）を legacy 実行系に

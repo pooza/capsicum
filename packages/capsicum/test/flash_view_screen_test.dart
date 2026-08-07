@@ -1,4 +1,5 @@
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/ui/flash/flash_runtime.dart';
 import 'package:capsicum/src/ui/screen/flash_view_screen.dart';
 import 'package:capsicum/src/ui/widget/emoji_text.dart';
 import 'package:capsicum_core/capsicum_core.dart';
@@ -137,6 +138,91 @@ void main() {
       // 行き止まりにしない。
       expect(find.text('ブラウザで開く'), findsOneWidget);
       expect(find.text('再試行'), findsOneWidget);
+    });
+
+    testWidgets('新しい AiScript 宣言の degrade は両方のバージョンを事実として出す (#934)', (
+      tester,
+    ) async {
+      // 「正しく動作しない可能性があります」のような反証不可能な文言に戻さない。
+      // 予測ではなく数値（申告値と搭載版）と、1.0 で何が変わったかを出す。
+      final adapter = _FakeAdapter();
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('''
+          /// @1.0.0
+          Ui:render([Ui:C:text({ text: "新しい版" }, "t")])
+        '''),
+      );
+
+      expect(find.textContaining('1.0.0 以降向け'), findsOneWidget);
+      expect(
+        find.textContaining(FlashRuntime.engineLangVersion),
+        findsOneWidget,
+      );
+      // degrade は失敗ではないので、評価せず逃がしたことが分かる導線を出す。
+      expect(find.text('ブラウザで開く'), findsOneWidget);
+      expect(find.text('このまま実行する'), findsOneWidget);
+      // 再度 degrade するだけの「再試行」は出さない。
+      expect(find.text('再試行'), findsNothing);
+      // 評価していないので描画ツリーは出ない。
+      expect(find.text('新しい版'), findsNothing);
+    });
+
+    /// #935: 「Web 版と出目が違う」の手掛かりを、バージョン警告とは独立に置く。
+    ///
+    /// 眼目は **掲出範囲**。バージョン警告 (#934) は degrade を踏んだ Play に
+    /// しか出ないが、出目差はバージョンと無関係に起きるので、警告の出ない
+    /// Play にも手掛かりが要る。一方で乱数と無縁な Play に出すと雑音になる。
+    testWidgets('乱数を使う Play には、警告が無くても注記を畳んで出す (#935)', (tester) async {
+      final adapter = _FakeAdapter();
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('''
+          let n = Math:rnd(0 10)
+          Ui:render([Ui:C:text({ text: `{n}` }, "t")])
+        '''),
+      );
+
+      expect(find.textContaining('乱数について'), findsOneWidget);
+      // 畳んである（本文は開くまで出さない）。
+      expect(find.textContaining('実行のたびに結果が変わります'), findsNothing);
+
+      await tester.tap(find.textContaining('乱数について'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('実行のたびに結果が変わります'), findsOneWidget);
+      expect(find.textContaining('Web版と異なる結果'), findsOneWidget);
+    });
+
+    testWidgets('乱数を使わない Play には出さない (#935)', (tester) async {
+      final adapter = _FakeAdapter();
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('Ui:render([Ui:C:text({ text: "ふつう" }, "t")])'),
+      );
+
+      expect(find.textContaining('乱数について'), findsNothing);
+    });
+
+    /// **同じブロックに並べない**という #935 の制約。並ぶと「バージョンのせい」
+    /// に吸収され、注記の目的（バージョンとは無関係だと伝えること）が壊れる。
+    testWidgets('バージョン警告が出ている間は乱数注記を出さない (#935)', (tester) async {
+      final adapter = _FakeAdapter();
+      await _pump(
+        tester,
+        adapter,
+        initialFlash: _flash('''
+          /// @1.0.0
+          let n = Math:rnd(0 10)
+          Ui:render([Ui:C:text({ text: "新しい版" }, "t")])
+        '''),
+      );
+
+      expect(find.textContaining('1.0.0 以降向け'), findsOneWidget);
+      expect(find.textContaining('乱数について'), findsNothing);
     });
 
     testWidgets('script が空の一覧エントリは show で取り直す', (tester) async {

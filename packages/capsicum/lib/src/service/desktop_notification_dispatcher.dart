@@ -18,6 +18,7 @@ import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
 import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
+import 'notification_tag.dart';
 
 /// デスクトップ 3 OS (macOS / Linux / Windows) で、ログイン中の各アカウントの
 /// WebSocket 通知ストリーミング ([NotificationStreamSupport]) を OS ローカル
@@ -176,7 +177,11 @@ class DesktopNotificationDispatcher {
     );
     try {
       await subsystem.show(
-        id: dedupKey.hashCode & 0x7FFFFFFF,
+        // Windows のトースト Tag は flutter_local_notifications がこの id から
+        // 作るため、WNS 経路 (#474) と同じ導出にして OS 側で畳ませる (#933)。
+        // 導出元は dedupKey (storageKey 由来) ではなく relayKey で、native の
+        // PushDisplay.account が持つ `username@host` と同じ表現であること。
+        id: stableNotificationTag(relayKey),
         title: title,
         body: body,
         payload: jsonEncode({

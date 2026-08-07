@@ -16,6 +16,7 @@
 - `git tag --sort=-creatordate | head -5` — 直近のリリースタグを確認
 - `gh release list --limit 5` — 最近の GitHub Releases を確認
 - `gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title) \(.state) \(.closed_at // "open")"'` — マイルストーンの open/closed 状態を確認
+- **`gh run list --workflow=analyze.yml --branch develop --limit 3` で CI の緑/赤を確認する。**赤なら**その場で直す**。develop は PR を経ずコミットが積まれるため、`dart format` / `dart analyze` の失敗が誰にも気付かれないまま残りうる。2026-08-05 の同期で、#934 のコミット以降 2 日間 format 失敗のまま develop が進んでいたのを発見した
 - 前回同期時点と比較して新しいリリースがあれば、実装ステータスやリリース計画セクションに反映する
 - **Flutter のバージョンが基準と合っているかを確認する**（[#836](https://github.com/pooza/capsicum/issues/836)）。端末が 3 つ以上あり、ズレたまま `flutter pub get` すると `pubspec.lock` が端末間で ping-pong するため、**着いた端末で最初に気付けるようにする**のが目的。正本は CI の pin:
 

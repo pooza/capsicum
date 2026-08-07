@@ -222,6 +222,14 @@ end
 - **黄（余力があれば）**: 単一の edge case、観測性ギャップ
 - **緑（送り）**: 将来の拡張時に顕在化しうる構造改善
 
+> ⚠️ **緑を「マイルストーン未割り当てのまとめ Issue」に積まない**。v1.52 / v1.53 で「切り出す価値が出たら本 issue から切り出す」アンブレラ（[#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915)）を作ったが、**マイルストーンに載らないため誰も着手せず、37 項目が放置されたまま溜まった**（2026-08-02 に解体）。緑も送り先は「次のマイルストーン」であって「未割り当ての箱」ではない。
+>
+> 緑の行き先は次の 3 つのいずれかにし、**どれにも当てはまらないものは起票しない**:
+>
+> 1. **個別 Issue に切り出してマイルストーンを付ける** — 単独で着手判断ができる粒度のもの
+> 2. **既に開いている Issue へ統合する** — 同じファイル・同じ面を触る Issue があるなら、そこにコメントで足す（着手時に併せて片付く）
+> 3. **横断的な小粒をまとめた消化 Issue にして、マイルストーンを付ける** — 1 件ずつは数行で往復コストが見合わないもの。チェックリスト形式にし、**「切り出し待ち」ではなく「この枠で全部やる」Issue として扱う**
+
 #### 差分レビュー（プラットフォーム追加・大更新マイルストーンのみ 2 回目）
 
 新サーフェス導入時（macOS native v1.21・push relay v1.18・Misskey messages v1.22・Linux v1.24 等）は、1 回目で見つけた問題への修正 commit 自体が新しい問題を入れることがあり、平場のマイルストーンより 2 回目を回す価値が高い。以下のルールで実施する:
@@ -341,6 +349,17 @@ cd macos
 fastlane beta
 cd ..
 ```
+
+> ⚠️ **`fastlane beta` は「アップロード完了」と「処理待ちの終了」を分けて扱うこと。**
+> `Successfully uploaded the new binary to App Store Connect` が出た時点でバイナリは
+> ASC に渡っており、以降の `Waiting for the build to show up in the build list` は
+> 30 秒間隔のポーリングにすぎない。**同じ行が並ぶだけなので外からは停止と区別がつかず、
+> 誤って止められやすい**（2026-08-07 の macOS build 166 で、背景実行の timeout を 10 分に
+> 設定していたためポーリング中に打ち切られ、続けて手動でも停止された。どちらの時点でも
+> アップロードは完了済みだった）。自動化で回すときは **(a) timeout を処理待ち 5-10 分に
+> 張り付いた値にしない、(b) アップロード成功行が出たら報告していったん離れ、状態確認は
+> §4.4 の ASC API に切り替える**（`upload_to_testflight` に
+> `skip_waiting_for_build_processing` を渡す手もある）。
 
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。

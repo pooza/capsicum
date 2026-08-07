@@ -18,6 +18,7 @@ import '../../platform/loopback_oauth_bind.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../service/account_storage.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
 import '../widget/content_parser.dart';
@@ -157,9 +158,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool get _isMastodon => widget.backendType == BackendType.mastodon;
 
+  // 認可完了後の保存に使う provider は initState で掴んでおく (#930)。
+  //
+  // `ConsumerState.ref` の getter は `context`（＝ `_element!`）を経由するため、
+  // **State が dispose 済みだと null check で落ちる**。OAuth / MiAuth は外部
+  // ブラウザへ出る往復があり、その間に画面が破棄される（Android がアクティビティ
+  // を再生成する等）と、認可自体は成功しているのに `_finishLogin` の入口で
+  // 落ちてアカウントが保存されない。#426 では `addAccount` の await 後だけを
+  // 守ったため、その手前の `ref.read` 2 箇所が素通しのまま残っていた。
+  //
+  // これらは app 全体の ProviderScope が持つ長寿命オブジェクトで、この画面が
+  // 消えても有効なので、掴んでおけば widget の生死に依存せず保存を完走できる。
+  late final AccountStorage _accountStorage;
+  late final AccountManagerNotifier _accountManager;
+
   @override
   void initState() {
     super.initState();
+    _accountStorage = ref.read(accountStorageProvider);
+    _accountManager = ref.read(accountManagerProvider.notifier);
     _fetchServerInfo();
   }
 
@@ -1164,9 +1181,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     // Persist client credentials at the host level so they survive
     // account deletion (avoids POST /api/v1/apps on re-login).
+    //
+    // ここから `addAccount` までは **widget の生死に依存させない** (#930)。
+    // 認可は既に成功しているので、画面が消えていても保存は完走させる。
+    // `ref` を使わず initState で掴んだ参照を使うのはそのため。
     if (result.clientSecret != null) {
-      final storage = ref.read(accountStorageProvider);
-      await storage.saveHostClientCredentials(
+      await _accountStorage.saveHostClientCredentials(
         widget.host,
         result.clientSecret!.clientId,
         result.clientSecret!.clientSecret,
@@ -1174,7 +1194,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
     }
 
-    await ref.read(accountManagerProvider.notifier).addAccount(account);
+    await _accountManager.addAccount(account);
+    // 以降は UI 操作なので mounted でガードする。
     if (!mounted) return;
 
     // ログイン直後はホームタイムラインを表示する。

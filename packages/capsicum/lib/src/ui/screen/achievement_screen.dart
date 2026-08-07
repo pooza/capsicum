@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/achievement_provider.dart';
+import '../widget/retry_error_view.dart';
 
 class AchievementScreen extends ConsumerWidget {
   final String userId;
@@ -44,21 +45,10 @@ class AchievementScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('実績の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(achievementProvider(userId)),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, stack) => RetryErrorView(
+          message: '実績の読み込みに失敗しました\n$error',
+          isRetrying: achievements.isLoading,
+          onRetry: () => ref.invalidate(achievementProvider(userId)),
         ),
       ),
     );

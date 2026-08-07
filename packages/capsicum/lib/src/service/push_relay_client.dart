@@ -40,11 +40,18 @@ class PushRelayClient {
   /// 自動リトライする (#480)。Splash 起動直後にネットワーク準備が整う前に
   /// 一斉実行されて失敗する Sentry CAPSICUM-10 系列の発生を抑える。
   /// 4xx / 5xx (`badResponse`) はリトライせずそのまま rethrow。
+  ///
+  /// [deviceId] はインストール単位で安定した ID (#932)。relay 側は
+  /// `UNIQUE(account, server, device_id)` へ組み替えて「トークンが更新されたら
+  /// 行を増やさず token を置換する」を実現する (capsicum-relay#15)。relay の
+  /// schema 変更が入るまでは未知フィールドとして無視されるので、client 側が
+  /// 先行して送出してよい。
   Future<Map<String, dynamic>> register({
     required String token,
     required String deviceType,
     required String account,
     required String server,
+    String? deviceId,
   }) {
     return _postWithRetry(
       path: '/register',
@@ -54,6 +61,7 @@ class PushRelayClient {
         'device_type': deviceType,
         'account': account,
         'server': server,
+        'device_id': ?deviceId,
       },
       server: server,
     );

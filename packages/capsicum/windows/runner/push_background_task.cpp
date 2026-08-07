@@ -35,6 +35,7 @@
 #include <string_view>
 
 #include "local_state_files.h"
+#include "notification_tag.h"
 #include "push_diagnostics.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -169,9 +170,15 @@ struct PushBackgroundTask
           const std::string labels = ReadLocalStateLabelsJson();
           if (capsicum::HandleWnsRawPayloadFromKeysetJson(
                   content, keyset, &display, &error, labels)) {
-            // title / body はサーバー生成・ローカライズ済み。tag に SNS 通知 ID。
+            // title / body はサーバー生成・ローカライズ済み。tag は WebSocket
+            // 経路 (#569) と同じ導出に揃える (#933)。bg task が動くのはアプリ
+            // 終了中なので二重にはならないが、起動直後に WebSocket 経路が同じ
+            // 通知を出したときに OS 側で畳めるよう表現を合わせておく。
             capsicum::ShowRawToast(display.title, display.body,
-                                   /*launch_arg=*/"", display.notification_id);
+                                   /*launch_arg=*/"",
+                                   capsicum::NotificationTagFor(
+                                       display.account,
+                                       display.notification_id));
             RecordBgDiagnostic("bgtask.shown", HostFromAccount(display.account));
           } else {
             // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと

@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
+import '../widget/retry_error_view.dart';
 
 /// 自分宛のルーム招待一覧 (#438)。Accept (= join) で参加、Ignore で受信箱から
 /// 取り除く。
@@ -154,24 +155,11 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(
-                  '読み込みに失敗しました\n${summarizeOpError(error)}',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(chatInvitationInboxProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, _) => RetryErrorView(
+          message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+          selectable: true,
+          isRetrying: invitations.isLoading,
+          onRetry: () => ref.invalidate(chatInvitationInboxProvider),
         ),
       ),
     );

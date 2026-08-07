@@ -39,6 +39,7 @@ import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
 import 'src/service/share_intent_service.dart';
+import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
 import 'src/util/sentry_observability.dart';
@@ -146,6 +147,12 @@ Future<void> main() async {
   } catch (e, st) {
     _logDev('AccountStorage migration failed: $e\n$st');
   }
+
+  // 起動キャッシュ (#890) の保存先を Application Support からキャッシュ領域へ
+  // 移した (#914 §1)。旧ファイルは二度と読まれないまま残り、中身が投稿本文
+  // （フォロワー限定・ダイレクトを含む生のホーム TL）なので消しておく。
+  // best-effort・await しない — 起動を 1ms も待たせる必要が無い。
+  unawaited(TimelineCache.clearLegacyLocation());
 
   // Register the APNs MethodChannel handler before runApp() so that
   // tokens arriving during engine initialization are not dropped.

@@ -13,6 +13,7 @@
 #include <string>
 
 #include "local_state_files.h"
+#include "notification_tag.h"
 #include "web_push_key_reader.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -127,11 +128,16 @@ void DisplayRawNotification(const std::string& content) {
           labels)) {
     return;
   }
-  // tag に SNS 通知 ID を使い、#569 WebSocket 経路との将来 dedup / 差し替えに
-  // 備える。タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に
-  // 配線するため、ここでは付けない。
-  capsicum::ShowRawToast(display.title, display.body, /*launch_arg=*/"",
-                         display.notification_id);
+  // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
+  // 安定ハッシュ）にする。アプリ起動中は両経路が同じ通知を出しうるが、Tag が
+  // 一致すれば OS 側が差し替えて 1 通に畳む (#933)。WebSocket 経路は
+  // flutter_local_notifications 経由で、その Windows 実装が Tag を int の id
+  // から作るため、SNS 通知 ID の文字列ではなく整数側へ揃えている。
+  // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
+  // ため、ここでは付けない。
+  capsicum::ShowRawToast(
+      display.title, display.body, /*launch_arg=*/"",
+      capsicum::NotificationTagFor(display.account, display.notification_id));
 }
 
 }  // namespace
