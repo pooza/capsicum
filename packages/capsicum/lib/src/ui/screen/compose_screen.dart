@@ -31,6 +31,7 @@ import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
+import '../util/program_schedule_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
@@ -3896,6 +3897,14 @@ class _TagsetSheetState extends State<_TagsetSheet> {
 
   String _programSublabel(MulukhiyaProgram p) {
     final flags = <String>[];
+    // 放送日時をサブラベルの先頭に置く (#965)。`nextOn` が無い枠は「毎日」に
+    // なるので、ここが空になるのは日時をまったく持たないエントリだけ。
+    final schedule = programScheduleLabel(
+      nextOn: p.nextOn,
+      startTime: p.startTime,
+      now: DateTime.now(),
+    );
+    if (schedule.isNotEmpty) flags.add(schedule);
     if (p.air) flags.add('エア番組');
     if (p.livecure) flags.add('実況');
     if (p.minutes != null) flags.add('${p.minutes}分');

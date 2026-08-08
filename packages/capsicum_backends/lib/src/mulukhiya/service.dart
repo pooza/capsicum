@@ -66,6 +66,16 @@ class MulukhiyaProgram {
   // 識別するために capsicum 側でも読み取る。
   final int? annictWorkId;
   final int? annictEpisodeId;
+  // 放送開始時刻 (`HH:MM`, 24 時間制) と次回放送日 (#965)。モロヘイヤ #4287 /
+  // #4373 で番組表エントリが持つようになった。**`nextOn` が null の枠は「毎日」
+  // 扱い**で、値の欠落ではない (`program.ics` と同じ意味づけ)。
+  //
+  // `/mulukhiya/api/program` は `var/program.yaml` の値をそのまま載せるため、
+  // 手編集や外部データソース由来の不正値がクライアントまで届く (`program.ics`
+  // は fail-closed で落とすが `/program` は落とさない)。パースできない値は
+  // null に倒し、日時を出さずに従来どおり描画する。
+  final String? startTime;
+  final DateTime? nextOn;
 
   const MulukhiyaProgram({
     required this.name,
@@ -79,6 +89,8 @@ class MulukhiyaProgram {
     this.extraTags = const [],
     this.annictWorkId,
     this.annictEpisodeId,
+    this.startTime,
+    this.nextOn,
   });
 }
 
@@ -101,6 +113,42 @@ enum AnnictRatingState {
 DateTime? _parseIsoDate(dynamic value) {
   if (value is! String || value.isEmpty) return null;
   return DateTime.tryParse(value);
+}
+
+final _programDateRe = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
+final _programTimeRe = RegExp(r'^(\d{1,2}):(\d{2})$');
+
+/// 番組表エントリの `next_on`（次回放送日, `YYYY-MM-DD`）をパースする (#965)。
+///
+/// [_parseIsoDate] と違い**書式を厳密に見る**。`DateTime.parse` は月末を超えた
+/// 日をロールオーバーする（`2026-02-31` → `2026-03-03`）ので、素通しすると
+/// 実在しない日付が「それらしい別の日」として表示されてしまう。書き込み API は
+/// contract で弾くが、`var/program.yaml` の手編集と外部データソース由来の値は
+/// ここまで届く。パース後に成分が一致しなければ null に倒す。
+DateTime? parseProgramNextOn(dynamic value) {
+  if (value is! String) return null;
+  final m = _programDateRe.firstMatch(value);
+  if (m == null) return null;
+  final year = int.parse(m.group(1)!);
+  final month = int.parse(m.group(2)!);
+  final day = int.parse(m.group(3)!);
+  final date = DateTime(year, month, day);
+  if (date.year != year || date.month != month || date.day != day) return null;
+  return date;
+}
+
+/// 番組表エントリの `start_time`（放送開始時刻）をパースし `HH:MM` に正規化する
+/// (#965)。モロヘイヤは保存時に 2 桁ゼロ埋めへ正規化する (#4372) が、古い
+/// エントリや手編集では `9:00` のまま残りうるのでクライアント側でも揃える。
+/// 時・分が 24 時間制の範囲外なら null。
+String? parseProgramStartTime(dynamic value) {
+  if (value is! String) return null;
+  final m = _programTimeRe.firstMatch(value);
+  if (m == null) return null;
+  final hour = int.parse(m.group(1)!);
+  final minute = int.parse(m.group(2)!);
+  if (hour > 23 || minute > 59) return null;
+  return '${hour.toString().padLeft(2, '0')}:${m.group(2)}';
 }
 
 /// Extract the first default hashtag (without '#') from the about response.
@@ -602,6 +650,18 @@ class MulukhiyaService {
   }
 
   /// Fetch the program list for tagset selection.
+  ///
+  /// **並び順はサーバーが決めたものをそのまま保つ** (#965 / モロヘイヤ #4540)。
+  /// モロヘイヤ 5.32.0 以降、`/program` は放送順 (`next_on` 昇順 → `start_time`
+  /// 昇順、`next_on` を持たない「毎日」枠は末尾) で返す。エントリのキーは
+  /// SHA256 の先頭 12 桁固定で JS の配列インデックスにならないため、JSON を
+  /// 通しても挿入順が保たれる (Dart では `jsonDecode` が `LinkedHashMap` を返す)。
+  ///
+  /// ⚠ **ここで並べ替えたり `LinkedHashMap` 以外へ詰め替えたりしないこと。**
+  /// 戻り値の `<String, MulukhiyaProgram>{}` リテラルは `LinkedHashMap` で、
+  /// 挿入順のまま UI が描画する。`SplayTreeMap` に変える・`sort` を足す・
+  /// フィルタを別のコレクション経由にする、といった変更で黙って壊れる
+  /// (`mulukhiya_program_order_test.dart` が固定している)。
   Future<Map<String, MulukhiyaProgram>> getProgram() async {
     final response = await _dio.get('$baseUrl/program');
     final data = response.data as Map<String, dynamic>;
@@ -623,6 +683,8 @@ class MulukhiyaService {
             (v['extra_tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
         annictWorkId: v['annict_work_id'] as int?,
         annictEpisodeId: v['annict_episode_id'] as int?,
+        startTime: parseProgramStartTime(v['start_time']),
+        nextOn: parseProgramNextOn(v['next_on']),
       );
     }
     return programs;
