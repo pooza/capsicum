@@ -132,9 +132,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     try {
       final support = widget.adapter as CustomEmojiSupport;
       final emojis = await support.getEmojis();
-      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker UI には
-      // visible_in_picker=true のものだけ並べる (#622)。
-      final pickerEmojis = emojis.where((e) => e.visibleInPicker).toList();
+      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker UI に出す
+      // ものだけへ絞る (#622 visible_in_picker / #944 「非推奨」カテゴリ)。
+      // 判定は CustomEmoji.offeredForInput が正本で、compose の `:` 補完と
+      // 共有している。ここで落とせばカテゴリの見出しごと消える。
+      final pickerEmojis = emojis.where((e) => e.offeredForInput).toList();
       if (mounted) {
         setState(() => _customEmojis = pickerEmojis);
       }
