@@ -169,6 +169,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   //
   // これらは app 全体の ProviderScope が持つ長寿命オブジェクトで、この画面が
   // 消えても有効なので、掴んでおけば widget の生死に依存せず保存を完走できる。
+  //
+  // #930 は `_finishLogin`（保存経路）だけを守ったが、**往復の後に ref を触る形は
+  // 自己回復経路にも 2 箇所あった**（`?error=` の error_retry / cancel の
+  // silent_retry）。どちらも `try` の中なので StateError が catch に握られ、
+  // 「クレデンシャルを消さないまま `_login(isRetry: true)` へ進む」＝#620 / #824 の
+  // 自己回復が黙って無効化される形だった。**この画面で往復後に ref を使わない**
+  // という不変条件にして塞いである (#955)。
   late final AccountStorage _accountStorage;
   late final AccountManagerNotifier _accountManager;
 
@@ -668,8 +675,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               staleCredsErrors.contains(oauthError)) {
             _logLoginStep('login.error_retry.begin');
             try {
-              final storage = ref.read(accountStorageProvider);
-              await storage.deleteHostClientCredentials(widget.host);
+              // 外部ブラウザ往復の**後**なので `ref` は使わない。往復中に State が
+              // 破棄されていると `ref.read` が StateError を投げ、直下の catch に
+              // 握られてクレデンシャル破棄がスキップされる（＝#620 / #824 の自己
+              // 回復が働かない）。initState で掴んだ長寿命の参照を使う (#955)。
+              await _accountStorage.deleteHostClientCredentials(widget.host);
             } catch (clearErr) {
               _logLoginStep(
                 'login.error_retry.clear_failed',
@@ -834,8 +844,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           !authenticateReturned) {
         _logLoginStep('login.silent_retry.begin');
         try {
-          final storage = ref.read(accountStorageProvider);
-          await storage.deleteHostClientCredentials(widget.host);
+          // error_retry と同じ理由で `ref` を使わない (#955)。この経路は
+          // 「ブラウザ往復が cancel として観測された」後なので、Android が
+          // 往復中にアクティビティを再生成していた場合に State が生きていない。
+          await _accountStorage.deleteHostClientCredentials(widget.host);
         } catch (clearErr) {
           _logLoginStep(
             'login.silent_retry.clear_failed',
