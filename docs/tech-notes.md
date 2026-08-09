@@ -71,6 +71,20 @@ Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >
 - `build()` の先頭でフラグを `false` に戻す（Notifier のインスタンスは再計算をまたいで生き残るため、リセットしないと戻らない）
 - 「古い build の非同期処理が新しい state を上書きしない」ことは、フラグではなく **世代カウンタ**（`final generation = ++_buildGeneration;` を build 冒頭で採り、書き戻し時に `generation != _buildGeneration` なら捨てる）で担保する
 
+### 「その端末だけの値」を SharedPreferences に置かない — OS バックアップで別筐体へ複製される（#952）
+
+SharedPreferences は **Android / iOS とも OS のバックアップ対象**で、機種変・復元で**別の物理デバイスへ丸ごと複製される**。Android は Auto Backup が既定 ON で `shared_prefs/` を含み（`android:allowBackup="false"` も `dataExtractionRules` も置いていない場合）、iOS は NSUserDefaults（`Library/Preferences/*.plist`）が iCloud / 暗号化バックアップに入る。アンインストール → 再インストールでも復元されうるので、「アンインストールで消える」も前提にできない。
+
+したがって **「この端末を他の端末と区別する値」を SharedPreferences に置くと、復元した端末と元の端末が同じ値を名乗る**。capsicum ではプッシュ購読の dedup キー（`DeviceInstallId`）がこれを踏み、サーバー側が `UNIQUE(account, server, device_id)` の upsert に切り替わると**どちらか一方の端末に push が届かなくなる**設計欠陥になっていた。
+
+寿命で選ぶなら `flutter_secure_storage`（機密性ではなく**バックアップに乗らない**のが採用理由）:
+
+- **iOS / macOS**: `KeychainAccessibility.first_unlock_this_device`（`…ThisDeviceOnly`）。ThisDeviceOnly の item はバックアップに含まれないため復元先には存在せず、その端末で作り直される。`_this_device` の付かない `first_unlock` / `unlocked` はバックアップに乗るので**この用途では選べない**。
+- **Android**: EncryptedSharedPreferences のマスター鍵が Android Keystore にあり、鍵はバックアップされない。復元先では既存エントリを復号できず read が失敗するので、**その場で作り直す実装にしておく**（例外を握り潰して同じ値を返し続けてはいけない）。
+- **desktop**: Windows は DPAPI（ユーザー + マシン束縛）、Linux は libsecret。プロファイルのコピーでは復号できない。
+
+保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
+
 ## 体感速度の改善（先出し・キャッシュ）
 
 ### 先出しキャッシュは「同じ状態への経路」を 2 本にする — 欠陥はほぼ全部その分岐から出る
