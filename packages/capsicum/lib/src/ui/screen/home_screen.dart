@@ -122,6 +122,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 再起動まで古いままだった。いずれも TTL 内なら no-op。
     if (lifecycleState == AppLifecycleState.resumed) {
       ref.read(accountManagerProvider.notifier).refreshCurrentServerMetadata();
+      // オフライン保持が残っていれば、60 秒の定常間隔を待たずに即座に試す
+      // (#938)。モバイルは背面にいる間タイマーが進まないうえ、オフライン中は
+      // アプリを閉じていることも多いので、この契機がいちばん効く。オフライン
+      // が無ければ no-op。
+      ref
+          .read(accountManagerProvider.notifier)
+          .refreshOfflineRestoresOnResume();
       // 背面に居た間に増えたお知らせを取り直す (#888)。以前はアカウントを切り
       // 替えるまで反映されなかった。常駐タイマーは持たず、復帰・画面を開いた
       // とき・streaming 受信の 3 つの機会で取り直す方針。
@@ -1455,7 +1462,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       style: TextStyle(color: disabledColor),
                     ),
                     subtitle: Text(
-                      offline.retrying ? '接続できません（再試行中…）' : '接続できません',
+                      offline.retrying ? '接続できません（再試行中…）' : '接続できません（自動再試行中）',
                       style: TextStyle(color: disabledColor),
                     ),
                     trailing: Row(
@@ -1913,22 +1920,17 @@ class _OfflineHomeScaffold extends ConsumerWidget {
               // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
               // 再構築だったが、到達不能の理由はここでは区別できない）。
               //
-              // **「接続が回復すると自動的に戻ります」と書かない (#938)。**
-              // 背景再試行の backoff は 2/5/15/30 秒の 4 回・計 52 秒で打ち切る
-              // ため、それを過ぎたら自動では戻らない。機内モードから戻すのは
-              // たいてい 52 秒より後なので、この画面が最も出やすい状況でこそ
-              // 嘘になる。自動再試行を継続する案は #938。
-              Text(
-                anyRetrying
-                    ? '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-                          '可能性があります。アカウントは保持したまま、しばらく'
-                          '自動で再試行します。'
-                    : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-                          '可能性があります。アカウントは保持していますが、自動の'
-                          '再試行は終了しました。接続が戻ったら「今すぐ再試行」を'
-                          '押してください。',
+              // **「自動的に戻ります」と再び書けるようになった (#938)。**
+              // 背景再試行は 2/5/15/30 秒の 4 回・計 52 秒で打ち切っていたため、
+              // 一度はこの文言を外していた（打ち切り後は事実に反するため）。
+              // #938 で打ち切りを外し、この画面が出ている間は 60 秒間隔で回り
+              // 続ける + フォアグラウンド復帰でも即座に試すようにしたので、
+              // 文言と実装が一致した。**再び上限を入れるならここも戻すこと。**
+              const Text(
+                '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                '可能性があります。アカウントは保持したまま自動で再試行を'
+                '続けるので、接続が回復すればタイムラインへ戻ります。',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 24),
               for (final o in offline)
@@ -1940,7 +1942,10 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: Text(o.retrying ? '再試行中…' : '接続できません'),
+                    // #938 で `retrying` は「この瞬間 probe が走っている」に
+                    // 変わった。合間は「接続を待っています」＝自動再試行は
+                    // 続いている（「接続できません」だと終わったように読める）。
+                    subtitle: Text(o.retrying ? '再試行中…' : '接続を待っています'),
                     trailing: IconButton(
                       // 削除操作は delete_outline に統一する (#828)。logout は
                       // 実ログアウト (ドロワー) と紛れるため使わない。

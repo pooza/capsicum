@@ -34,7 +34,11 @@ void main() {
       expect(state.hasSession, isTrue);
     });
 
-    test('backoff を尽くして retrying=false でも true のまま', () {
+    test('retrying=false（再試行の合間）でも true のまま', () {
+      // #938 で `retrying` の意味は「背景 backoff がまだ残っている」から
+      // 「この瞬間 probe が走っている」へ変わった。false は「自動再試行を
+      // 諦めた」ではなく単に周回の合間なので、ここが false に転ぶと
+      // 待っている間だけログイン画面へ飛ばされることになる。
       const state = AccountManagerState(
         offlineAccounts: [OfflineAccount(key: key, retrying: false)],
       );
