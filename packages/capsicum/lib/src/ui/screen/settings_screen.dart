@@ -70,6 +70,16 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/push'),
             ),
+          // 設定のバックアップ (#857)。モバイルはメディア以外のファイルを保存する
+          // 手段が限られるため、当面デスクトップのみ。
+          if (isDesktop)
+            ListTile(
+              leading: const Icon(Icons.settings_backup_restore),
+              title: const Text('設定のバックアップ'),
+              subtitle: const Text('設定を書き出し・読み込みする'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/settings/backup'),
+            ),
           // 投げ銭（サポート）導線は「設定」から左ドロワー直下 + デスクトップ
           // メニューへ格上げした (#853)。投げ銭は設定ではないため設定からは外す。
         ],

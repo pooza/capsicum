@@ -50,6 +50,7 @@ import 'ui/screen/settings/appearance_settings_screen.dart';
 import 'ui/screen/settings/desktop_settings_screen.dart';
 import 'ui/screen/settings/display_settings_screen.dart';
 import 'ui/screen/settings/push_notification_settings_screen.dart';
+import 'ui/screen/settings/settings_backup_screen.dart';
 import 'ui/screen/settings/supporter_screen.dart';
 import 'ui/screen/settings/touch_action_settings_screen.dart';
 import 'ui/screen/annict_record_screen.dart';
@@ -211,6 +212,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/supporter',
             builder: (context, state) => const SupporterScreen(),
+          ),
+          GoRoute(
+            path: '/settings/backup',
+            builder: (context, state) => const SettingsBackupScreen(),
           ),
           GoRoute(
             path: '/server-info',
