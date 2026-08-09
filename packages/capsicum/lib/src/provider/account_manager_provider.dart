@@ -422,7 +422,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     String? token,
   }) async {
     try {
-      final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
+      // ⚠ この Dio は detect 用の使い捨てではなく、**成功したら
+      // MulukhiyaService がそのまま抱えて以降の全 API で使い続ける**。
+      // #900 で既定タイムアウトを入れたのは Mastodon / Misskey の
+      // アダプター用 Dio だけで、こちらは connectTimeout しか無く
+      // receive / send が無制限のまま残っていた (#951)。
+      //
+      // 無制限だと、モロヘイヤ導入サーバーが TCP は受けるのに応答を返さない
+      // 状態になったとき `subscribePushViaProxy` が永久に返らず、
+      // `registerAllAccounts` の `Future.wait` ごと固まる。splash はその
+      // await の直後で `startTokenRefreshListener` を張るので、**そのセッション
+      // 中ずっと token rotation を拾えなくなる**。
+      //
+      // 値はアダプターと揃える。5 秒側（`kNetworkReceive*`）を当てないのは、
+      // 番組表など重い API を正常系ごと切ってしまうため。receiveTimeout が
+      // 「ヘッダー到達までの絶対上限」にも効く点は network_timeouts.dart の
+      // doc が正本。detect() 自身は per-request Options で 5 秒を当てており、
+      // per-request が BaseOptions を上書きするのでその見切りの速さは保たれる。
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: kNetworkConnectTimeout,
+          receiveTimeout: kAdapterReceiveTimeout,
+          sendTimeout: kAdapterSendTimeout,
+        ),
+      );
       final mulukhiya = await MulukhiyaService.detect(dio, host, token: token);
       if (mulukhiya != null) {
         debugPrint(
