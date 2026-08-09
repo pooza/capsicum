@@ -160,6 +160,8 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 
 **⚠ 「client 側の修正では直らない」と決めつけない（2026-08-05 に反例が出た）。**#692 の時点ではそう書いていたが、[#937](https://github.com/pooza/capsicum/issues/937) は **client が孤児を作っている側**だった —— push の endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay の行（`UNIQUE(token, account, server)`、`token` はデバイストークン）が新規作成されたときだけ発行される。**再起動をまたいでデバイストークンが変わると新しい endpoint になるが、起動経路は古い endpoint を unregister しない**（プロセス内のローテーションは `_runTokenRefresh` が正しく掃除するのに、再起動をまたぐ変化はその経路に乗らない）。Windows は WNS の channel URI が変わりやすく、relay 実測で **86 行 / 20 アカウント = 4.3** と他プラットフォーム（iOS 2.05 / Android 1.9 / macOS 1.6）から突出していた。
 
+**⚠ この 4.3 を endpoint churn だけに帰さないこと（[#950](https://github.com/pooza/capsicum/issues/950)）。** 掃除側も効いていなかった —— `_cleanupDeviceRegistration` は「全アカウントを `unregisterAccount` → 最後に `unregisterDevice`」の順で回すが、前段の `PushKeyStore.delete(accountKey)` が **`relayId` スロットごと消す**ため、後段は保存済み id を 1 つも見つけられず `DELETE /register/:id` を**一度も発行していなかった**。孤児が増える一方で、アプリから relay row を消す経路が実質存在しない状態。加えて doc / 実装が `UNIQUE(token)`（**旧**スキーマ）の「1 行消せばデバイス全体が消える」前提のままで、現行の `UNIQUE(token, account, server)` では **N アカウント中 1 行しか消えない**形でもあった。両方 v1.55 で是正済み。
+
 恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
 
 ## NodeInfo / Probing
