@@ -603,7 +603,22 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       (grouped[cat] ??= []).add(emoji);
     }
 
-    final hasPalette = widget.adapter is ReactionSupport;
+    // パレット欄はスタンプモードでは丸ごと畳む (#953-1)。理由は 2 つある。
+    //
+    // 1. **押しても何も起きない導線ができる。** パレットのエントリは
+    //    `emojiByCode` でカスタム絵文字として解決できないとき（Unicode 絵文字 /
+    //    サーバーから消えた shortcode）素のテキストとして描画され、`_selectEmoji`
+    //    ＝ `widget.onSelected` に流れる。スタンプモードは `onCustomEmojiSelected`
+    //    しか渡さないので**無反応でシートも閉じない**。同じ画面のカスタム絵文字
+    //    タイルと「最近使った」は正しく流れるので、挙動が割れて見える
+    // 2. **本文用のパレットをスタンプ選択画面から壊せる。** メニューの
+    //    「サーバーから同期 / テキストから追加 / クリア」が触るのは本文挿入用の
+    //    `emojiPaletteProvider` で、ここから編集させる筋がない
+    //
+    // なお `_selectEmoji` は先に `recentEmojisProvider.add()` を呼ぶため、
+    // この経路だけが `_buildCustomEmojiTile` に書いた「スタンプモードでは
+    // 『最近使った』へ記録しない」という決定を破ってもいた。
+    final hasPalette = !_stickerMode && widget.adapter is ReactionSupport;
 
     // Featured custom emojis (Mastodon 4.6 のカテゴリ代表絵文字、#735)。
     // 各カテゴリの代表を先頭のセクションにまとめて素早く到達できるようにする。
