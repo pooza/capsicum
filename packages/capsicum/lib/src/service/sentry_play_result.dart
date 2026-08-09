@@ -23,6 +23,7 @@ void reportPlayResult({
   required String host,
   required PlayEmojiInventoryDigest inventory,
   required String resultDigest,
+  required String settleBucket,
   bool forced = false,
 }) {
   try {
@@ -35,6 +36,11 @@ void reportPlayResult({
         scope.setTag('emoji.count', inventory.count.toString());
         scope.setTag('emoji.hash', inventory.hash);
         scope.setTag('result.hash', resultDigest);
+        // ツリーが落ち着くまでどれだけ待ったか。アニメーションで出目を出す Play を
+        // 途中経過のまま記録していないことを、突合の側から検算するための材料
+        // （2026-08-10 の突合で判明した計測器の不備の再発検知）。生の ms は基数が
+        // 増えるだけなのでバケットに丸める。
+        scope.setTag('play.settle', settleBucket);
         // 「このまま実行する」(#881) は 0.16 評価器で 1.x スクリプトを走らせた
         // 結果で、評価器レジームが通常と異なる。#898 の突合で通常出目と混ざらない
         // よう分離する（fingerprint は据え置き・タグで切り分け）。
@@ -43,6 +49,33 @@ void reportPlayResult({
         // context に構造化して載せる。
         scope.setContexts('play.emoji_categories', inventory.categoryCounts);
         scope.fingerprint = ['play.result'];
+      },
+    );
+  } catch (_) {
+    // 追跡記録の失敗で Play を巻き込まない。
+  }
+}
+
+/// ツリーが落ち着かないまま上限に達した実行を記録する (#898)。
+///
+/// `Async:interval` で回り続ける Play は「確定した出目」を持たないため、
+/// [reportPlayResult] を送らない（途中経過を指紋化した値が突合データに混ざると、
+/// 2026-08-10 に判明したのと同じ「同日・同インベントリなのに出目が変わる」偽陽性を
+/// 再生産する）。代わりに**そういう Play がどれだけあるか**だけをここで数える。
+void reportPlayUnsettled({
+  required String flashId,
+  required String host,
+  bool forced = false,
+}) {
+  try {
+    Sentry.captureMessage(
+      'play.unsettled',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('flash.id', flashId);
+        scope.setTag('host', host);
+        scope.setTag('play.forced', forced.toString());
+        scope.fingerprint = ['play.unsettled'];
       },
     );
   } catch (_) {
