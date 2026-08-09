@@ -1824,13 +1824,23 @@ class _PostTileState extends ConsumerState<PostTile> {
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
           final timeline = readVisibleTimelines(ref);
+          final adapter = ref.read(currentAdapterProvider);
           try {
-            await mulukhiya.updateStatusTags(
+            final raw = await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,
               id: targetPost.id,
               tags: tags,
             );
             timeline.removePost(targetPost.id);
+            // 再投稿はモロヘイヤがサーバー側で行うので、capsicum は新しい id を
+            // 知らない。レスポンスに完全な投稿が入っているので、それを「削除して
+            // 再編集」と同じ楽観挿入に乗せる。これが無いとライブ更新 OFF や
+            // スクロール中は streaming 待ちになる (#909 / #887 の残り)。
+            if (raw != null && adapter is MulukhiyaRepostSupport) {
+              final reposted = (adapter as MulukhiyaRepostSupport)
+                  .parseRepostedPost(raw);
+              if (reposted != null) timeline.insertOwnPost(reposted);
+            }
             if (mounted) setState(() => _deleted = true);
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));

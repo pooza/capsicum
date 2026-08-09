@@ -112,6 +112,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         DriveSupport,
         PagesSupport,
         TimelineCacheSupport,
+        MulukhiyaRepostSupport,
         ChatSupport {
   MisskeyStreaming? _streaming;
   MisskeyNotificationStreaming? _notificationStreaming;
@@ -255,6 +256,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       (n) => n.toCapsicum(host, pinned: true, adminRoleIds: _adminRoleIds),
       (n) => n.id,
     ).results;
+  }
+
+  /// モロヘイヤの再投稿レスポンスは `POST /api/notes/create` と同じ形で、
+  /// **`createdNote` に包まれる**（mulukhiya#4491）。
+  @override
+  Post? parseRepostedPost(Map<String, dynamic> json) {
+    try {
+      final note = json['createdNote'];
+      if (note is! Map<String, dynamic>) return null;
+      return MisskeyNote.fromJson(
+        note,
+      ).toCapsicum(host, adminRoleIds: _adminRoleIds);
+    } catch (_) {
+      // 版差で形が違っても、サーバー側では再投稿は成功している。素通しして
+      // streaming / リフレッシュに委ねる。
+      return null;
+    }
   }
 
   @override

@@ -108,6 +108,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         ScheduleSupport,
         CollectionsSupport,
         TimelineCacheSupport,
+        MulukhiyaRepostSupport,
         TranslationSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
@@ -257,6 +258,19 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       (s) => s.toCapsicum(host, pinned: true),
       (s) => s.id,
     ).results;
+  }
+
+  /// モロヘイヤの再投稿レスポンスは `POST /api/v1/statuses` と同じ形で、
+  /// **トップレベルがそのまま status**（mulukhiya#4491）。
+  @override
+  Post? parseRepostedPost(Map<String, dynamic> json) {
+    try {
+      return MastodonStatus.fromJson(json).toCapsicum(host);
+    } catch (_) {
+      // 版差で形が違っても、サーバー側では再投稿は成功している。素通しして
+      // streaming / リフレッシュに委ねる。
+      return null;
+    }
   }
 
   @override

@@ -1282,16 +1282,23 @@ class MulukhiyaService {
 
   /// POST /mulukhiya/api/status/tags
   /// Deletes the post and reposts it with the given tags.
-  Future<void> updateStatusTags({
+  ///
+  /// 再投稿された投稿の生 JSON を返す（**SNS 本体の投稿 API のレスポンスそのまま**。
+  /// Mastodon はトップレベルが status、Misskey は `createdNote` 包み）。呼び出し側は
+  /// [MulukhiyaRepostSupport.parseRepostedPost] で [Post] へ変換して TL に挿す (#909)。
+  /// 形が想定外なら null を返す。
+  Future<Map<String, dynamic>?> updateStatusTags({
     required String accessToken,
     required String id,
     required List<String> tags,
   }) async {
-    await _dio.post(
+    final response = await _dio.post(
       '$baseUrl/status/tags',
       data: {'id': id, 'tags': tags},
       options: _bearerOptions(accessToken),
     );
+    final data = response.data;
+    return data is Map<String, dynamic> ? data : null;
   }
 
   /// 投稿テンプレート一覧を取得する (#767)。
