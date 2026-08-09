@@ -689,17 +689,24 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
 /// 「Web 版と出目が違う」への手掛かりを、バージョン警告とは独立に置く (#935)。
 ///
-/// 出目差は **AiScript のバージョンとは無関係**（#896: 乱数の生成方式が
-/// `seedrandom` 互換でない）に起きるが、ユーザーから見るとバージョン警告
-/// (#934) 以外に手掛かりが無く、結果として警告が真因を隠していた。
+/// **2026-08-10 に前提が変わった (#896)。**それまで出目差は AiScript のバージョン
+/// とは無関係に起きていた（生成方式が `seedrandom` 互換でなかった）が、互換化した
+/// 結果、**いま食い違うのは宣言バージョンが 1.0 以上の Play を force-run した
+/// ときだけ**になった。本家 Misskey は宣言で実行系を振り分けており、
+///
+/// - 宣言なし / 1.0 未満 → `@syuilo/aiscript-0-19-0` = **seedrandom** → capsicum と一致
+/// - 1.0 以上 → `@syuilo/aiscript` 1.x = **chacha20**（secure context の既定・
+///   seed を SHA-384 に通して ChaCha20）→ capsicum（0.16 相当の評価器）とは別物
+///
+/// 後者は #881 の gate で本来ブラウザへ倒すが、「このまま実行する」を選べば
+/// 評価される。よって注記は**条件を明示する**（実測: ろぐぼチャレンジ＝宣言なしは
+/// 一致 / ダイ大おみくじ＝`/// @ 1.2.0` は不一致）。
 ///
 /// 書き方の制約 (#935):
 ///
-/// - **「不具合ではありません」と断定しない。** 照合先は `@syuilo/aiscript-0-19-0`
-///   (seedrandom) で、互換化すれば一致しうる。#896 が開いている以上、恒久仕様の
-///   ように書くと矛盾する。「現状は異なります」に留める
-/// - **「シード固定で食い違うなら報告してください」と書かない。** 現状はシードを
-///   固定しても食い違うのが既知で、報告を促すと無駄足になる
+/// - **「不具合ではありません」と断定しない。**
+/// - **「シード固定で食い違うなら報告してください」と書かない。** 1.x 宣言の
+///   Play では食い違うのが既知で、報告を促すと無駄足になる
 class _RandomnessNote extends StatelessWidget {
   const _RandomnessNote();
 
@@ -720,7 +727,7 @@ class _RandomnessNote extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         ),
         title: Text(
-          '乱数について（AiScript のバージョンとは無関係です）',
+          '乱数について',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -728,8 +735,10 @@ class _RandomnessNote extends StatelessWidget {
         children: [
           Text(
             '乱数を使う Play は、実行のたびに結果が変わります。\n'
-            'また、日付などでシードを固定する Play も、現状は Web版と異なる結果に'
-            'なります。乱数の生成方式が異なるためで、バージョンの新旧とは別の話です。',
+            '日付などでシードを固定する Play は、Web 版と同じ結果になります。'
+            'ただし「新しい AiScript で書かれています」と表示された Play を'
+            'そのまま実行した場合は、Web 版と乱数の作り方が変わるため、'
+            '結果が食い違います。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
