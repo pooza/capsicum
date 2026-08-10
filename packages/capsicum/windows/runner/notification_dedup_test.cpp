@@ -58,8 +58,11 @@ int main() {
   CheckTrue(!registry.WasShown("pooza@mstdn.b-shock.org|abc"),
             "別のアカウントは巻き込まない");
 
-  // 空キーは「表示済み」にしない。native 側で account / notification_id を
-  // 取り出せなかったときに、以降の通知が全部 dedup で消えるのを避ける。
+  // 空キーは「表示済み」にしない。ただし**このガードは保険にすぎない**。
+  // 呼び出し側が使う NotificationTagKey は `account + "|" + id` を返すので、
+  // notification_id が空でもキーは空にならず、ここは発火しない。「id が
+  // 取れなければ dedup を通さない」判断は wns_push.cpp の `dedupable` 側に
+  // ある（#945）。ここを理由に呼び出し側のガードを外さないこと。
   registry.Reset();
   registry.MarkShown("");
   CheckTrue(!registry.WasShown(""), "空キーは記録しない");
