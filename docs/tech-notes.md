@@ -8,6 +8,16 @@
 
 `List<dynamic>.firstWhere` に `orElse: () => null` を渡す書き方は型安全でないため、手動 for ループに置換する方が安全。
 
+### 行の State に「隠す」フラグを bool で持たない（キー無しリストの State 再利用）
+
+タイムラインのようなリストで、行ウィジェットの `State` に `bool _deleted` のような**その行を隠すフラグ**を持たせてはいけない。`ListView` / `ScrollablePositionedList` の各行に `key` が無いと、**Flutter は State を「位置」で再利用する**。先頭に要素が挿入されると、それまで A を描いていた State が B を描くようになり、そこへ A 由来の `setState(() => _deleted = true)` が走ると **B が隠れる**。`didUpdateWidget` で id 変化を見てリセットしていても、**フラグを立てるのが id 変化より後**なら復帰の機会が無い。
+
+必ず **`String? _hiddenPostId` のように対象の id で持ち、`_hiddenPostId == widget.post.id` のときだけ隠す**。ブースト経由の操作は対象が内側の投稿になるので `reblog?.id` とも突き合わせる。
+
+#909 で実際に踏んだ。「削除してタグづけ」はモロヘイヤが **Misskey では投稿→削除の順**で行うため、HTTP レスポンスが返る前に streaming が再投稿を先頭へ挿す。その結果、元投稿は `removePost` でデータから消え、再投稿は `_deleted` で描画から消え、**両方いなくなった**。原因が取り込み処理に見えて実は描画側だったため切り分けに時間がかかっている。通常の削除・削除して再編集・NowPlaying 削除でも同じ構造なので、**削除直後に新着が届けば無関係な投稿が消える**。
+
+**根本対処として各行に `ValueKey(post.id)` を付ける場合は、そのリストの `loadMore` が重複排除しているかを先に確認する。** ページ境界やレースで同じ id が二重に入ると `Duplicate keys found` で描画ごと落ちる。capsicum では home / hashtag / list / channel の 4 つとも `[...posts, ...older]` で無防備だったので、キーと同時に dedup を入れた。streaming の先頭挿入が無い画面（ブックマーク / クリップ / アンテナ / 検索 / プロフィール）は本症状が起きないので、`loadMore` を監査するまでキーを付けない。
+
 ### `WidgetSpan` 内で `width: double.infinity` は使わない
 
 親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。iPad の広い画面で `RenderFlex` overflow を起こした実績あり（#60）。
