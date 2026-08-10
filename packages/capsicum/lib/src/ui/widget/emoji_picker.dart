@@ -73,7 +73,13 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   late final List<_PickerTab> _tabs;
+
+  /// サーバーの全件。shortcode → 絵文字の**解決表**として使う（パレットの
+  /// 描画・単語辞書のプレビュー）ので、入力導線から外した絵文字も落とさない。
   List<CustomEmoji>? _customEmojis;
+
+  /// [_customEmojis] のうち、picker のグリッドに並べるもの（`offeredForInput`）。
+  List<CustomEmoji>? _pickerEmojis;
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -132,16 +138,30 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     try {
       final support = widget.adapter as CustomEmojiSupport;
       final emojis = await support.getEmojis();
-      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker UI に出す
-      // ものだけへ絞る (#622 visible_in_picker / #944 「非推奨」カテゴリ)。
-      // 判定は CustomEmoji.offeredForInput が正本で、compose の `:` 補完と
-      // 共有している。ここで落とせばカテゴリの見出しごと消える。
-      final pickerEmojis = emojis.where((e) => e.offeredForInput).toList();
+      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker の**グリッドに
+      // 並べる**ものだけを絞った版を別に持つ (#622 visible_in_picker /
+      // #944 「非推奨」カテゴリ)。判定は CustomEmoji.offeredForInput が正本で、
+      // compose の `:` 補完と共有している。
+      //
+      // ⚠ **絞った方を _customEmojis に入れてはいけない。**こちらは shortcode →
+      // 絵文字の解決表（パレットの描画・単語辞書のプレビュー）も兼ねており、
+      // 痩せさせるとサーバーが旧コードを「非推奨」へ退避した瞬間に、**ユーザーの
+      // 既存パレットに登録済みのその絵文字が画像でなく `:code:` の生テキストで
+      // 描かれる**。非推奨カテゴリはまさに既存パレットに入っている旧コードの
+      // 集合なので、当たる確率が高い。
       if (mounted) {
-        setState(() => _customEmojis = pickerEmojis);
+        setState(() {
+          _customEmojis = emojis;
+          _pickerEmojis = emojis.where((e) => e.offeredForInput).toList();
+        });
       }
     } catch (_) {
-      if (mounted) setState(() => _customEmojis = []);
+      if (mounted) {
+        setState(() {
+          _customEmojis = [];
+          _pickerEmojis = [];
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _loadingCustom = false);
@@ -163,8 +183,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       case _PickerTab.custom:
         // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
         if (!_loadingCustom &&
-            _customEmojis != null &&
-            _customEmojis!.isNotEmpty) {
+            _pickerEmojis != null &&
+            _pickerEmojis!.isNotEmpty) {
           _searchFocusNode.requestFocus();
         }
       case _PickerTab.unicode:
@@ -521,7 +541,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     if (_loadingCustom) {
       return const Center(child: CircularProgressIndicator());
     }
-    final emojis = _customEmojis;
+    // グリッドに並べるのは絞った方。解決表（[_customEmojis]）は
+    // _buildCustomCategories が別途参照する。
+    final emojis = _pickerEmojis;
     if (emojis == null || emojis.isEmpty) {
       return const Center(child: Text('カスタム絵文字がありません'));
     }
@@ -591,8 +613,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
         : ref.watch(emojiPaletteProvider(widget.host));
 
     // Index custom emojis by shortcode for palette lookup.
+    // **引数の `emojis`（グリッド用に絞った版）ではなく全件を引く。** パレットに
+    // 既に入っている絵文字がサーバー側で「非推奨」へ移ると、ここで解決できず
+    // `:code:` の生テキストになってしまう (#944)。
     final emojiByCode = <String, CustomEmoji>{};
-    for (final e in emojis) {
+    for (final e in _customEmojis ?? emojis) {
       emojiByCode[e.shortcode] = e;
     }
 
