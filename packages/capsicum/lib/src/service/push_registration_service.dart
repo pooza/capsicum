@@ -426,8 +426,22 @@ class PushRegistrationService {
   static Future<List<int>> collectRelayIds(List<Account> accounts) async {
     final ids = <int>{};
     for (final a in accounts) {
-      final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
-      if (id != null) ids.add(id);
+      // 1 アカウント読めなかっただけで投げない。ここは起動時の掃除経路の
+      // 先頭にあり、投げると呼び出し元（splash の firebaseReady チェーン）に
+      // catch が無いため **registerAllAccounts ごと飛んでそのセッションが
+      // プッシュ不達**になる。掃除し損ねた行は上流の失効で自然に消えるので、
+      // 「掃除の取りこぼし」より「登録が立たない」方が重い。
+      // reconcileDeviceToken が getDeviceToken の読み取り失敗で採っている
+      // 判断と揃える。
+      try {
+        final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
+        if (id != null) ids.add(id);
+      } catch (e) {
+        debugPrint(
+          'capsicum: push.registration: relay id read failed for '
+          '${a.key.toStorageKey()}: $e',
+        );
+      }
     }
     return ids.toList();
   }
