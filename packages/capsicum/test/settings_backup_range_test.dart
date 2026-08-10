@@ -84,7 +84,9 @@ settings:
   // 素の background_opacity は移行専用キーで、書き込むと per-account 値を
   // まだ持たない**全アカウント**へ染み出す。対象から外したことを固定する。
   test('background_opacity は書き出さず、読み込んでも書かない', () async {
-    SharedPreferences.setMockInitialValues({'background_opacity_a@b.example': 0.4});
+    SharedPreferences.setMockInitialValues({
+      'background_opacity_a@b.example': 0.4,
+    });
     final prefs = await SharedPreferences.getInstance();
 
     expect(
