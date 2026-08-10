@@ -87,10 +87,13 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       final text = await file.readAsString();
       final prefs = await SharedPreferences.getInstance();
       final result = await applySettingsBackupYaml(prefs, text);
+      // ref を触る前に mounted を見る (#955)。読み込み中に画面を離れると
+      // ref.invalidate が StateError を投げ、下の catch が「読み込めません
+      // でした」と出す——**設定は書き込み済みなのに**失敗したように見える。
+      if (!mounted) return;
       // 各 Notifier は build() で prefs を読み直すので、invalidate すれば
       // 画面が新しい設定で組み直される（再起動を求めない）。
       _refreshPreferenceProviders();
-      if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(_importSummary(result))));
     } on SettingsBackupFormatException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
@@ -159,7 +162,10 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
               '次の設定は端末ごとに決めるものなので、書き出しに含まれません。\n'
               '・背景画像\n'
               '・絵文字などのパレットの高さ\n'
-              '・ウィンドウ常駐、ログイン時に起動',
+              '・ウィンドウ常駐、ログイン時に起動\n'
+              '\n'
+              'アカウントごとに決まる設定も含まれません（背景の濃さ、'
+              'テーマ色、タブ構成、絵文字パレット、ピン留めハッシュタグなど）。',
             ),
           ),
         ],

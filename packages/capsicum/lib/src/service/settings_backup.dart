@@ -20,13 +20,29 @@ enum BackupValueType { boolean, number, text, textList }
 
 /// バックアップ対象の設定 1 件。
 class BackupSetting {
-  const BackupSetting(this.key, this.type);
+  const BackupSetting(this.key, this.type, {this.min, this.max});
 
   /// SharedPreferences のキー。YAML 上のキーも同じものを使う（人が読んで
   /// どの設定か分かるようにするため、別名の対応表を持たない）。
   final String key;
 
   final BackupValueType type;
+
+  /// [BackupValueType.number] の許容範囲。**読み込み側の最後の砦**。
+  ///
+  /// 「SharedPreferences に入っている数値は必ず範囲内」という不変条件は、
+  /// これまで setter の clamp **だけ**が守っていた（`FontScaleNotifier._load`
+  /// 等の読み手は保存値を無検査で state に入れる）。そこへ範囲を見ない第 2 の
+  /// 書き手を足すと不変条件が壊れる。バックアップは平文 YAML でキー名も
+  /// そのまま＝**手編集が想定内**なので、`1.4` を `14` と打ち間違えるだけで
+  /// 全テキストが 14 倍になり、設定画面（「既定に戻す」を含む）へ戻れなくなる。
+  /// 値は永続化されるので再起動しても直らず、復旧手段は再インストールしかない。
+  ///
+  /// 値は `preferences_provider.dart` の `min*` / `max*` と一致させること。
+  /// ずれの検出は `test/settings_backup_range_test.dart` が担当する
+  /// （こちらを純粋な service に保つため、provider を import しない）。
+  final double? min;
+  final double? max;
 }
 
 /// 書き出す設定 (#857)。
@@ -40,10 +56,9 @@ const exportableSettings = <BackupSetting>[
   BackupSetting('dark_surface_variant', BackupValueType.text),
   BackupSetting('dark_text_color', BackupValueType.text),
   BackupSetting('avatar_shape', BackupValueType.text),
-  BackupSetting('font_scale', BackupValueType.number),
-  BackupSetting('emoji_scale', BackupValueType.number),
-  BackupSetting('thumbnail_scale', BackupValueType.number),
-  BackupSetting('background_opacity', BackupValueType.number),
+  BackupSetting('font_scale', BackupValueType.number, min: 0.8, max: 1.4),
+  BackupSetting('emoji_scale', BackupValueType.number, min: 16, max: 40),
+  BackupSetting('thumbnail_scale', BackupValueType.number, min: 0.4, max: 1.2),
   BackupSetting('absolute_time', BackupValueType.boolean),
   BackupSetting('blur_all_images', BackupValueType.boolean),
   BackupSetting('hide_instance_ticker', BackupValueType.boolean),
@@ -84,6 +99,21 @@ const deviceLocalKeys = <String>{
   'resident_mode',
   'launch_at_login',
 };
+
+/// **意図的に**書き出さない、アカウントごとの設定 (#857)。
+///
+/// アカウントを含まないバックアップ（冒頭 doc）では復元先が決まらないため、
+/// 端末固有値と同じく対象外にする。[deviceLocalKeys] と分けているのは、外した
+/// 理由が違う（あちらは「他端末に存在しない」、こちらは「どのアカウントへ
+/// 入れるか決められない」）ため。アカウントごと復元する話は #967。
+///
+/// `background_opacity` は実際の保存先が `background_opacity_<アカウント>` で、
+/// 素のキーは旧版から移行するためだけに読まれる（`setOpacity` は二度と書か
+/// ない）。ここへ入れる前は [exportableSettings] にいたが、**書き出しは常に
+/// 空振りし、読み込みは移行キーへ書くので per-account 値をまだ持たない全
+/// アカウントへ染み出す**という壊れ方をしていた。名前が同じでも実体が別キー
+/// なら対象にできない。
+const accountScopedKeys = <String>{'background_opacity'};
 
 /// 読み込み結果。
 class SettingsImportResult {
@@ -198,13 +228,18 @@ Future<SettingsImportResult> applySettingsBackupYaml(
       skipped[key] = 'この端末固有の設定のため取り込みません';
       continue;
     }
+    if (accountScopedKeys.contains(key)) {
+      skipped[key] = 'アカウントごとの設定のため取り込みません';
+      continue;
+    }
     final setting = byKey[key];
     if (setting == null) {
       skipped[key] = '不明な設定です';
       continue;
     }
-    if (!await _writeValue(prefs, setting, value)) {
-      skipped[key] = '値の形式が設定と合いません';
+    final rejected = await _writeValue(prefs, setting, value);
+    if (rejected != null) {
+      skipped[key] = rejected;
       continue;
     }
     applied.add(key);
@@ -220,31 +255,42 @@ Object? _readValue(SharedPreferences prefs, BackupSetting setting) =>
       BackupValueType.textList => prefs.getStringList(setting.key),
     };
 
-/// 型が合えば書き込んで true。合わなければ何もせず false。
-Future<bool> _writeValue(
+/// 書き込めたら null。書き込まなかったときは [SettingsImportResult.skipped] へ
+/// 載せる理由を返す。
+Future<String?> _writeValue(
   SharedPreferences prefs,
   BackupSetting setting,
   Object? value,
 ) async {
+  const typeMismatch = '値の形式が設定と合いません';
   switch (setting.type) {
     case BackupValueType.boolean:
-      if (value is! bool) return false;
+      if (value is! bool) return typeMismatch;
       await prefs.setBool(setting.key, value);
     case BackupValueType.number:
       // YAML の `1` は int になる。整数で書かれた倍率を弾かない。
-      if (value is! num) return false;
-      await prefs.setDouble(setting.key, value.toDouble());
+      if (value is! num) return typeMismatch;
+      final number = value.toDouble();
+      // YAML の `.nan` / `.inf` は double として通る。NaN は大小比較が
+      // どちらも false になり範囲チェックをすり抜けるので、先に落とす。
+      if (!number.isFinite) return typeMismatch;
+      final min = setting.min;
+      final max = setting.max;
+      if ((min != null && number < min) || (max != null && number > max)) {
+        return '設定できる範囲（$min〜$max）を外れています';
+      }
+      await prefs.setDouble(setting.key, number);
     case BackupValueType.text:
-      if (value is! String) return false;
+      if (value is! String) return typeMismatch;
       await prefs.setString(setting.key, value);
     case BackupValueType.textList:
-      if (value is! List) return false;
-      if (value.any((e) => e is! String)) return false;
+      if (value is! List) return typeMismatch;
+      if (value.any((e) => e is! String)) return typeMismatch;
       await prefs.setStringList(setting.key, [
         for (final e in value) e as String,
       ]);
   }
-  return true;
+  return null;
 }
 
 /// YAML の二重引用符スカラーとして書く。

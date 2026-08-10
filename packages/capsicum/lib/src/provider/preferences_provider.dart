@@ -2102,7 +2102,8 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   fontScaleProvider,
   emojiSizeProvider,
   thumbnailScaleProvider,
-  backgroundOpacityProvider,
+  // backgroundOpacityProvider は入れない。アカウントごとの family で、素の
+  // `background_opacity` は移行専用キー（`accountScopedKeys`）。
   absoluteTimeProvider,
   blurAllImagesProvider,
   hideInstanceTickerProvider,

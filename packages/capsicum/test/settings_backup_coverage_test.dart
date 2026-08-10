@@ -34,6 +34,7 @@ void main() {
     final covered = {
       ...exportableSettings.map((s) => s.key),
       ...deviceLocalKeys,
+      ...accountScopedKeys,
     };
     final missing = keys.difference(covered);
 
@@ -42,13 +43,16 @@ void main() {
       isEmpty,
       reason:
           '新しい設定がバックアップの仕分けから漏れている。'
-          'exportableSettings に足すか、端末固有なら deviceLocalKeys に足すこと',
+          'exportableSettings に足すか、端末固有なら deviceLocalKeys、'
+          'アカウントごとなら accountScopedKeys に足すこと',
     );
   });
 
   test('バックアップ対象と意図的な除外は重ならない', () {
     final exported = exportableSettings.map((s) => s.key).toSet();
     expect(exported.intersection(deviceLocalKeys), isEmpty);
+    expect(exported.intersection(accountScopedKeys), isEmpty);
+    expect(deviceLocalKeys.intersection(accountScopedKeys), isEmpty);
   });
 
   test('バックアップ対象のキーに重複が無い', () {
