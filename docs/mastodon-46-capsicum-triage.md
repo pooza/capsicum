@@ -58,7 +58,16 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 - **capsicum の経路でない / 無関係**: Web Push 削除の CSRF 緩和（#39918）は `/api/web/...`（Web UI 用）で `/api/v1/push/subscription` とは別。`verify_credentials` の `follow_requests_count` から suspended 除外（#39858）はフィールド形状不変。引用投稿**編集**まわりの一連の修正（#39837 等）は capsicum が「投稿の更新（Mastodon）」を実装しない方針のため無関係。絵文字検索 / ハッシュタグ autosuggest は Web UI。ActivityPub / Account::Merging は連合内部。
 - **フォーク streaming 変更（むしろ有益）**: プリセット鯖のローカル TL（= デフォルトタグ TL）で、ライブ更新にも `public:local → hashtag` リマップを追加（従来リモートのデフォルトタグ投稿が live のローカル firehose から漏れていたのを解消）。**ストリーム名ラベルは `public:local` のままでクライアントプロトコル不変**のため capsicum は変更不要。デルムリン丼・キュアスタ！で有効（美食丼＝デフォルトタグ無しは無効）。
 
+### v4.6.4 → v4.6.5（本番 3 台適用済み・2026-08-08 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/` / `app/controllers/api/` / `config/routes/api.rb` の差分がいずれも**空**で、クライアントから見える entity・エンドポイント・ルートは 1 つも動いていない。内訳:
+
+- **Web UI 専用**: プロフィール画像クロップの oversized アップロード（[upstream #39958](https://github.com/mastodon/mastodon/pull/39958)）/ 絵文字検索リクエストのキャンセル（#39947）。いずれも `app/javascript/` 配下。
+- **サーバー / 連合内部**: Collection item 読み取り属性の誤り（#40052）・item 上限の強制（#39969）/ 引用埋め込み処理の typo（#40049）/ `Account::Merging` の AccountWarning 欠落（#39982）/ `process_status_update_service` の添付 4 件上限 typo（#39978）。capsicum は送る／読むだけ。
+- **フォークのサーバー設定**: nginx の access ログをマスク付き `combined_masked` へ / `proxy_pass` を `127.0.0.1` 直指定へ / rc.d の pkill パターン限定。加えて **`PUT /api/v1/statuses/:id` の `X-Mulukhiya-Purpose` 分岐を `if` から map へ寄せた**（mulukhiya#4474 の本番反映）。`if` 内の `proxy_pass` が rewrite フェーズを終端せず後段の `return 405` が勝っていた件の修正で、[#121](https://github.com/pooza/capsicum/issues/121)（Mastodon の ALT 編集・v1.57）の on-hold 解除の根拠そのもの。**クライアントプロトコルは不変**。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）
+- [#121](https://github.com/pooza/capsicum/issues/121) Mastodon の ALT 編集（v1.57・4.6.5-bshockdon の nginx 修正で経路が開通）
 - 方針メモは memory `project_mastodon_46_posture`

@@ -68,7 +68,10 @@ class _ListTimelineScreenState extends ConsumerState<ListTimelineScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    return PostTile(post: state.posts[index]);
+                    return PostTile(
+                      key: ValueKey(state.posts[index].id),
+                      post: state.posts[index],
+                    );
                   },
                 ),
               ),

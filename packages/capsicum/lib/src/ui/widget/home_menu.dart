@@ -391,6 +391,18 @@ List<MenuSubmenuEntry> buildDesktopMenuModel(
         const MenuProvidedEntry(macType: PlatformProvidedMenuItemType.quit),
       ],
     ),
+    // ファイル (#857)。今は設定のバックアップだけだが、macOS / Windows の
+    // 慣習ではファイル入出力はここに置く。
+    MenuSubmenuEntry(
+      label: 'ファイル',
+      children: [
+        MenuActionEntry(
+          label: '設定のバックアップ…',
+          icon: Icons.settings_backup_restore,
+          onSelected: () => context.push('/settings/backup'),
+        ),
+      ],
+    ),
     MenuSubmenuEntry(
       label: '編集',
       children: [

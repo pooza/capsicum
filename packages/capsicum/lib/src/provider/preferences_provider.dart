@@ -2084,3 +2084,46 @@ class DarkTextColorNotifier extends Notifier<DarkTextColor> {
     await prefs.setString(_darkTextColorKey, color.name);
   }
 }
+
+/// 設定のバックアップ (#857) で取り込んだ値を画面へ反映するための provider 一覧。
+///
+/// 各 Notifier は `build()` で SharedPreferences を読み直すので、書き戻したあとに
+/// `ref.invalidate` すれば再起動なしで反映される。
+///
+/// **`exportableSettings` と 1:1 で対応させること。**ここに足し忘れると、値は
+/// 書き込まれているのに次の起動まで画面へ出ない。件数の一致は
+/// `test/settings_backup_providers_test.dart` が見張る。
+final backedUpPreferenceProviders = <ProviderOrFamily>[
+  // 表示
+  themeModeProvider,
+  darkSurfaceVariantProvider,
+  darkTextColorProvider,
+  avatarShapeProvider,
+  fontScaleProvider,
+  emojiSizeProvider,
+  thumbnailScaleProvider,
+  // backgroundOpacityProvider は入れない。アカウントごとの family で、素の
+  // `background_opacity` は移行専用キー（`accountScopedKeys`）。
+  absoluteTimeProvider,
+  blurAllImagesProvider,
+  hideInstanceTickerProvider,
+  hideLivecureProvider,
+  mfmAnimationEnabledProvider,
+  emojiZeroWidthSpaceProvider,
+  colorEmojiFallbackProvider,
+  userHoverPopupProvider,
+  previewCardModeProvider,
+  composeFontFamilyProvider,
+  // 動作
+  restoreReadPositionProvider,
+  confirmBeforePostProvider,
+  mouseDragScrollProvider,
+  streamingEnabledProvider,
+  showStreamReconnectDetailProvider,
+  updateCheckEnabledProvider,
+  nowPlayingUrlProviderProvider,
+  postTouchActionsProvider,
+  // 履歴
+  recentEmojisProvider,
+  composeTemplateHistoryProvider,
+];

@@ -260,16 +260,18 @@ class PushRegistrationService {
       debugPrint(
         'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
       );
-      // NB: 以前はここで `_client.unregister(relayId)` を呼んで relay row を
-      // 掃除していたが、これは重大なバグだった。relay schema は UNIQUE(token)
-      // で **1 デバイス = 1 row** のため、N アカウントを同時登録すると
-      // 全員が同じ relay row (同じ relayId / push_token) を共有する。
-      // 1 アカウントの subscribePush が失敗したときに unregister すると、
-      // **他の全アカウントが使っている endpoint を巻き添えで破壊** し、
-      // Mastodon から push が来ても relay が 404 を返し、subscription が
-      // destroy される連鎖が起きる。relay row の寿命は device-scoped なので、
-      // 登録フェーズの失敗では触らない。掃除は unregisterAccount 経由の
-      // 明示的なログアウト時のみに任せる。
+      // NB: 登録フェーズの失敗では relay row を触らない。
+      //
+      // ⚠ **この判断の元の理由（UNIQUE(token) の 1 デバイス = 1 row で、
+      // 全アカウントが同じ row を共有するので巻き添えになる）は、現行スキーマ
+      // では成り立たない**（#950）。relay は `UNIQUE(token, account, server)` で
+      // row はアカウント単位。旧スキーマは `migrate_to_subscription_scoped!` が
+      // 捨てている。
+      //
+      // それでも触らないままにしてあるのは、**この catch が
+      // `_client.register` 自体の失敗でも走り、row が作られたかどうかを
+      // ここでは区別できない**ため。安全側に倒して残し、掃除は
+      // `_cleanupDeviceRegistration` / ログアウト経路に任せる。
       // PushKeyStore は今回の attempt で書き換えた場合のみ delete する。
       // 書き換える前（_client.register の早期失敗など）の catch では
       // 既存 working state を残す（wipe すると古いサーバー側 subscription が
@@ -332,12 +334,16 @@ class PushRegistrationService {
 
   /// 単一アカウントのプッシュ通知登録を解除する（ログアウト経路）。
   ///
-  /// **relay row は削除しない**。capsicum-relay は UNIQUE(token) で 1 デバイス
-  /// = 1 row 設計のため、複数アカウントが同じ row を共有している。ここで
-  /// `_client.unregister` を呼ぶと他のアカウントの endpoint を巻き添えで
-  /// 破壊し、Mastodon 側の subscription が 404 で destroy される連鎖が起きる。
-  /// 同一デバイスの全アカウントを同時に掃除したいときは
-  /// [unregisterDevice] を別途呼び出す（例：token rotation）。
+  /// **relay row は削除しない**。同一デバイスの全アカウントを掃除したいときは
+  /// [collectRelayIds] → [unregisterDevice] を別途呼ぶ（例：token rotation）。
+  ///
+  /// ⚠ **かつてここに書いていた「UNIQUE(token) で 1 デバイス = 1 row だから、
+  /// 消すと他アカウントを巻き添えにする」という理由は成り立たない**（#950）。
+  /// 現行スキーマは `UNIQUE(token, account, server)` で **row はアカウント単位**。
+  /// 旧スキーマは `migrate_to_subscription_scoped!` が捨てている。
+  /// 現在この経路が row を残しているのは**惰性であって設計判断ではない**ため、
+  /// ログアウトのたびに relay 側へ孤児行が 1 本残る（上流の購読は解除済みなので
+  /// 配信はされない = 死んだ行が溜まるだけ）。**掃除を足すかは別途判断する。**
   ///
   /// SNS 側サブスクリプションの解除とローカル鍵削除は独立に try。
   /// 上流の段階が失敗しても後続の掃除を止めない。
@@ -412,22 +418,54 @@ class PushRegistrationService {
     await _syncWnsPushKeys();
   }
 
-  /// デバイスの relay row を削除する。token rotation 時など、共有 row を
-  /// 確実に掃除したい場合に呼ぶ。いずれかのアカウントの保存済み relayId
-  /// を 1 つ選んで DELETE /register/:id を叩けば、row は UNIQUE なので
-  /// デバイス全体の relay 登録が消える。
-  static Future<void> unregisterDevice(List<Account> accounts) async {
-    int? relayId;
+  /// 各アカウントの relay 登録 id を、キーストアが消される前に読み出す (#950)。
+  ///
+  /// **[unregisterAccount] より先に呼ぶこと。** あちらは
+  /// `PushKeyStore.delete(accountKey)` で `_Slot.relayId` を含む全スロットを
+  /// 消すため、後から読んでも null しか返らない。
+  static Future<List<int>> collectRelayIds(List<Account> accounts) async {
+    final ids = <int>{};
     for (final a in accounts) {
-      relayId = await PushKeyStore.getRelayId(a.key.toStorageKey());
-      if (relayId != null) break;
+      // 1 アカウント読めなかっただけで投げない。ここは起動時の掃除経路の
+      // 先頭にあり、投げると呼び出し元（splash の firebaseReady チェーン）に
+      // catch が無いため **registerAllAccounts ごと飛んでそのセッションが
+      // プッシュ不達**になる。掃除し損ねた行は上流の失効で自然に消えるので、
+      // 「掃除の取りこぼし」より「登録が立たない」方が重い。
+      // reconcileDeviceToken が getDeviceToken の読み取り失敗で採っている
+      // 判断と揃える。
+      try {
+        final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
+        if (id != null) ids.add(id);
+      } catch (e) {
+        debugPrint(
+          'capsicum: push.registration: relay id read failed for '
+          '${a.key.toStorageKey()}: $e',
+        );
+      }
     }
-    if (relayId == null) return;
-    try {
-      await _client.unregister(relayId);
-    } catch (e, st) {
-      debugPrint('capsicum: push.registration: relay unregister failed: $e');
-      _reportUnregisterFailure(e, st, '(device)', 'relay');
+    return ids.toList();
+  }
+
+  /// 渡された relay 登録 id を `DELETE /register/:id` で削除する。
+  ///
+  /// ⚠ **relay の row は「デバイス単位」ではない。** 現行スキーマは
+  /// `UNIQUE(token, account, server)`（capsicum-relay の `lib/relay/database.rb`）
+  /// で、同一端末に N アカウントを登録すれば **N 行**あり、各行が独立した
+  /// `push_token` を持つ。`UNIQUE(token)` 単独は `migrate_to_subscription_scoped!`
+  /// が捨てた**旧**スキーマで、この doc と実装は長らくそちらの前提のまま
+  /// 「1 行消せばデバイス全体が消える」と書いていた (#950)。
+  /// **1 つだけ叩くと N-1 行が孤児になる**ので、[collectRelayIds] が返した
+  /// 全件を渡すこと。
+  ///
+  /// 個々の失敗で残りを止めない（部分的にでも消えた方がよい）。
+  static Future<void> unregisterDevice(List<int> relayIds) async {
+    for (final relayId in relayIds) {
+      try {
+        await _client.unregister(relayId);
+      } catch (e, st) {
+        debugPrint('capsicum: push.registration: relay unregister failed: $e');
+        _reportUnregisterFailure(e, st, '(device)', 'relay');
+      }
     }
   }
 
@@ -524,19 +562,27 @@ class PushRegistrationService {
   /// デバイス全体のプッシュ登録を畳む。古いリレー登録・SNS サブスクリプ
   /// ション・ローカル鍵を掃除する。呼び出し側が続けて登録し直す前提。
   ///
-  /// relay row は device-scoped（UNIQUE(token)）なので、各アカウントの
-  /// [unregisterAccount] では削除せず、最後に [unregisterDevice] で 1 回だけ
-  /// 叩く。この順序で、先に各 Mastodon/Misskey 側の subscription 解除 +
-  /// ローカル鍵削除を済ませ、relay row は最後にまとめて消す。
+  /// relay row は各アカウントの [unregisterAccount] では削除せず、最後に
+  /// [unregisterDevice] でまとめて叩く。この順序で、先に各 Mastodon/Misskey
+  /// 側の subscription 解除 + ローカル鍵削除を済ませ、relay row は最後に消す。
+  ///
+  /// ⚠ **relay 登録 id の読み出しは、必ず掃除ループの前に行う** (#950)。
+  /// `unregisterAccount` の中の `PushKeyStore.delete(accountKey)` が
+  /// `_Slot.relayId` を含む全スロットを消すため、後から
+  /// `PushKeyStore.getRelayId` を舐めても null しか得られず、
+  /// **`DELETE /register/:id` が一度も発行されない**（v1.53 以前から同じ順序
+  /// だったが、#937 の `reconcileDeviceToken` が「毎起動でトークン変化を検出
+  /// したら掃除」という高頻度トリガをこの経路に繋いだので効き方が変わった）。
   ///
   /// お知らせ通知 (#477) は opt-out モデルに移行したので、明示 OFF 履歴の
   /// 無いアカウントは [_registerAccountImpl] 末尾の autoEnableIfDefault で
   /// 自動的に復活する。手動 restore は不要。
   static Future<void> _cleanupDeviceRegistration(List<Account> accounts) async {
+    final relayIds = await collectRelayIds(accounts);
     for (final account in accounts) {
       await unregisterAccount(account);
     }
-    await unregisterDevice(accounts);
+    await unregisterDevice(relayIds);
     // 掃除した以上、記録済みトークンは「登録に使われている値」ではなくなる。
     // 残すと次回起動の突き合わせ ([reconcileDeviceToken]) が誤検知する。
     await PushKeyStore.deleteDeviceToken();

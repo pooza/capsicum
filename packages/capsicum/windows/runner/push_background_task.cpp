@@ -173,7 +173,9 @@ struct PushBackgroundTask
             // title / body はサーバー生成・ローカライズ済み。tag は WebSocket
             // 経路 (#569) と同じ導出に揃える (#933)。bg task が動くのはアプリ
             // 終了中なので二重にはならないが、起動直後に WebSocket 経路が同じ
-            // 通知を出したときに OS 側で畳めるよう表現を合わせておく。
+            // 通知を出したときに OS 側で畳めるよう表現を合わせておく。通知 ID を
+            // 持たない払い出しでは Tag を付けない (#956)。付けると連続して届いた
+            // 分が同じ Tag で差し替わり、Action Center に最後の 1 件しか残らない。
             capsicum::ShowRawToast(display.title, display.body,
                                    /*launch_arg=*/"",
                                    capsicum::NotificationTagFor(

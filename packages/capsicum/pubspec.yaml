@@ -1,7 +1,7 @@
 name: capsicum
 description: Flutter-based Mastodon / Misskey client
 publish_to: none
-version: 1.54.0+167
+version: 1.55.0+168
 
 environment:
   sdk: ^3.11.0
@@ -28,7 +28,7 @@ dependencies:
   aiscript:
     git:
       url: https://github.com/pooza/aiscript-dart.git
-      ref: a38d3c7a9c231fec68a21ff9ff81e5ddaebbb731
+      ref: 106e55c984be43f5a2f64dbe9cad2daa51f29d58
   flutter_riverpod: ^2.6.1
   go_router: ^14.8.1
   flutter_secure_storage: ^9.2.4

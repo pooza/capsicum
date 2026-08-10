@@ -13,7 +13,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../model/account.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
@@ -25,12 +24,14 @@ import '../../provider/platform_providers.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
+import '../util/program_schedule_display.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
@@ -269,14 +270,6 @@ class ComposeScreen extends ConsumerStatefulWidget {
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
 }
 
-/// SharedPreferences keys for the auto-saved compose draft.
-///
-/// Only fresh compose sessions (no reply/quote/redraft/shared/initial text)
-/// participate in auto-save, so a single global slot is sufficient.
-const _draftTextKey = 'compose_draft_text';
-const _draftCwTextKey = 'compose_draft_cw_text';
-const _draftCwEnabledKey = 'compose_draft_cw_enabled';
-
 class _ComposeScreenState extends ConsumerState<ComposeScreen>
     with WidgetsBindingObserver {
   final _controller = ShortcodeWarningController();
@@ -334,6 +327,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// initial text). Replies and quotes are tied to a specific post and
   /// can't be meaningfully restored from a text-only draft.
   bool _draftAutoSave = false;
+  // ローカル自動保存の永続化 (#966)。「破棄したあとは書き戻さない」判定を
+  // 含めてストア側が持つ。
+  final _draftStore = ComposeDraftStore();
 
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
   /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
@@ -792,12 +788,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 先頭一致を優先し、その後に部分一致 / alias 一致を続ける。Mastodon /
     // Misskey Web UI と同様の挙動。最大 20 件で打ち切り、横スクロール chips
     // のレイアウト崩れを防ぐ。
-    // 補完は picker と同じく visible_in_picker=false を除外する (#622)。
+    // 補完は picker と同じ除外条件を使う (#622 visible_in_picker /
+    // #944「非推奨」カテゴリ)。判定は CustomEmoji.offeredForInput が正本。
     // 警告判定用に `_allEmojis` 自体は全件保持しているため、ここでフィルタする。
     final prefix = <CustomEmoji>[];
     final contain = <CustomEmoji>[];
     for (final e in all) {
-      if (!e.visibleInPicker) continue;
+      if (!e.offeredForInput) continue;
       final sc = e.shortcode.toLowerCase();
       if (sc.startsWith(lower)) {
         prefix.add(e);
@@ -884,38 +881,54 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
   Future<void> _saveDraft() async {
     if (!_draftAutoSave) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_draftTextKey, _controller.text);
-    await prefs.setString(_draftCwTextKey, _cwController.text);
-    await prefs.setBool(_draftCwEnabledKey, _cwEnabled);
+    // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
+    // (#966) ではこの直後に State が dispose され、`_controller` も dispose
+    // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
+    await _draftStore.save(
+      ComposeDraft(
+        text: _controller.text,
+        cwText: _cwController.text,
+        cwEnabled: _cwEnabled,
+        attachmentCount: _attachments.length,
+      ),
+    );
   }
 
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedText = prefs.getString(_draftTextKey);
-    final savedCwText = prefs.getString(_draftCwTextKey);
-    final savedCwEnabled = prefs.getBool(_draftCwEnabledKey) ?? false;
-    if (!mounted) return;
-    if (savedText != null && savedText.isNotEmpty) {
-      _controller.text = savedText;
-      _controller.selection = TextSelection.collapsed(offset: savedText.length);
+    final saved = await _draftStore.restore();
+    if (!mounted || saved == null) return;
+    if (saved.hasText) {
+      _controller.text = saved.text;
+      _controller.selection = TextSelection.collapsed(
+        offset: saved.text.length,
+      );
     }
-    if (savedCwText != null && savedCwText.isNotEmpty) {
-      _cwController.text = savedCwText;
+    if (saved.cwText.isNotEmpty) {
+      _cwController.text = saved.cwText;
     }
-    if (savedCwEnabled) {
+    if (saved.cwEnabled) {
       setState(() => _cwEnabled = true);
+    }
+    // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
+    // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
+    // 空で何も復元していないなら、伝えることがないので出さない。
+    if (saved.hasText && saved.attachmentCount > 0) {
+      // initState の post-frame は _restoreDraft の await より先に走りうるので、
+      // ここで改めて次フレームに載せる。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('前回の入力を復元しました（添付 ${saved.attachmentCount} 件は含まれません）'),
+          ),
+        );
+      });
     }
   }
 
   /// Remove any persisted draft (called after a successful post).
-  Future<void> _clearDraft() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_draftTextKey);
-    await prefs.remove(_draftCwTextKey);
-    await prefs.remove(_draftCwEnabledKey);
-  }
+  Future<void> _clearDraft() => _draftStore.clear();
 
   void _initReplyMentions(Post replyTo) {
     final currentUser = ref.read(currentAccountProvider)?.user;
@@ -3534,10 +3547,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     // 表示中はデスクトップメニューバーに投稿操作を出す (#835)。デスクトップ以外は
     // メニューバー自体が描かれないので、包んでも何も起きない。
-    return ScreenMenu(
+    final menu = ScreenMenu(
       label: ref.watch(postLabelProvider),
       entries: _buildComposeMenuEntries(),
       child: scaffold,
+    );
+
+    // 投稿せずに画面を離れたら入力を自動保存する (#966)。`canPop: true` なので
+    // 遷移は止めず、pop が確定した時点で保存だけ走らせる。システムバック /
+    // 予測型バック / AppBar の戻るボタン (`context.pop()`) はいずれも
+    // Navigator を経由するため、この 1 か所で全経路を拾える。
+    //
+    // ⚠ 投稿成功・サーバー下書き保存の直後もここを通るが、それらは先に
+    // [_clearDraft] が `_draftDiscarded` を立てるので書き戻さない。
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _saveDraft();
+      },
+      child: menu,
     );
   }
 }
@@ -3896,6 +3924,14 @@ class _TagsetSheetState extends State<_TagsetSheet> {
 
   String _programSublabel(MulukhiyaProgram p) {
     final flags = <String>[];
+    // 放送日時をサブラベルの先頭に置く (#965)。`nextOn` が無い枠は「毎日」に
+    // なるので、ここが空になるのは日時をまったく持たないエントリだけ。
+    final schedule = programScheduleLabel(
+      nextOn: p.nextOn,
+      startTime: p.startTime,
+      now: DateTime.now(),
+    );
+    if (schedule.isNotEmpty) flags.add(schedule);
     if (p.air) flags.add('エア番組');
     if (p.livecure) flags.add('実況');
     if (p.minutes != null) flags.add('${p.minutes}分');

@@ -22,8 +22,17 @@
 // `on_uri` は本関数のワーカースレッド上で必ず 1 度呼ばれる（取得不可時は空
 // 文字列）。channel を取得できない起動（パッケージ ID 無しの非 MSIX 起動・
 // ネットワーク不通・WinRT 例外）では `on_uri("")` を呼んで即 return する。
+//
+// `on_presented` は in-process 受信がトーストを表示するたびに、その dedup キー
+// (`username@host|notificationId`) を伴って**ワーカースレッド上で**呼ばれる
+// (#945)。Dart 側 NotificationDedupChannel の `onRemotePresented` へ渡し、
+// WebSocket 経路 (#569) に同じ通知を二重表示させないための合図。
+// flutter::MethodChannel はプラットフォーム（UI）スレッド affinity を持つので、
+// 呼び出し側が PostMessage で marshal すること。省略時は通知しない
+// （dedup は WNS→Dart 方向だけ効かなくなる。表示は従来どおり動く）。
 void RunWnsChannelReceiver(
-    const std::function<void(const std::string&)>& on_uri);
+    const std::function<void(const std::string&)>& on_uri,
+    const std::function<void(const std::string&)>& on_presented = {});
 
 // flutter_secure_storage の現在の push 鍵セットを LocalState の push_keys.json に
 // 再同期する (#474 フェーズ C / Option A)。アプリ起動時 ([RunWnsChannelReceiver]

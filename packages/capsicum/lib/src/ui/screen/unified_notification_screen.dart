@@ -15,6 +15,7 @@ import '../util/notification_type_display.dart';
 import '../util/relative_time.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
+import '../widget/retry_error_view.dart';
 import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
 
@@ -67,21 +68,10 @@ class UnifiedNotificationScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('通知の読み込みに失敗しました\n$error', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(unifiedNotificationProvider),
-                  child: const Text('再試行'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, stack) => RetryErrorView(
+          message: '通知の読み込みに失敗しました\n$error',
+          isRetrying: state.isLoading,
+          onRetry: () => ref.invalidate(unifiedNotificationProvider),
         ),
       ),
     );

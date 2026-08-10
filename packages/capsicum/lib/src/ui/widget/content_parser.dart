@@ -1478,18 +1478,35 @@ class ContentRenderer {
         ];
 
       case 'position':
-        // 平行移動 (#748)。`.x=<em>,y=<em>`。em ≒ フォントサイズとして換算。
-        final fs = style.fontSize ?? 14.0;
-        final px = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 0) * fs;
-        final py = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 0) * fs;
+        // 平行移動 (#748)。`.x=<em>,y=<em>`。
+        //
+        // em は「実際に描かれる文字の大きさ」に対する比 (#913)。グリフは
+        // `RenderParagraph` が**レイアウト時に textScaler を掛けて**描くので、
+        // 換算にも同じ倍率を通さないと、文字サイズ設定を上げたときにグリフだけ
+        // 太ってずれ量が据え置かれ、装飾の位置が崩れる。本家 Misskey は CSS の
+        // `em` なので常に計算後のフォントサイズに追従する。
+        //
+        // 倍率は描画時に `MediaQuery` から読む。`ContentRenderer` の生成箇所は
+        // 16 あり、そこへ倍率を通すと #628 の再生成 invariant にも倍率を足して
+        // 回ることになる。ここで読めば設定変更にも自動で追従する。
+        final positionX = (_parseNum(_fnArg(node.fnArgs, 'x')) ?? 0).toDouble();
+        final positionY = (_parseNum(_fnArg(node.fnArgs, 'y')) ?? 0).toDouble();
+        final declaredSize = style.fontSize ?? 14.0;
+        // 子は Builder の外で 1 度だけ組む。中で組むと再生成のたびに
+        // gesture recognizer が積み増される（[dispose] が回収するのは
+        // [_recognizers] に入った分だけ）。
+        final positionChildren = _renderNodes(node.children, style);
         return [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: Transform.translate(
-              offset: Offset(px, py),
-              child: Text.rich(
-                TextSpan(children: _renderNodes(node.children, style)),
-              ),
+            child: Builder(
+              builder: (context) {
+                final fs = MediaQuery.textScalerOf(context).scale(declaredSize);
+                return Transform.translate(
+                  offset: Offset(positionX * fs, positionY * fs),
+                  child: Text.rich(TextSpan(children: positionChildren)),
+                );
+              },
             ),
           ),
         ];

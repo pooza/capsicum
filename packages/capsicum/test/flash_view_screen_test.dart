@@ -193,7 +193,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('実行のたびに結果が変わります'), findsOneWidget);
-      expect(find.textContaining('Web版と異なる結果'), findsOneWidget);
+      // #896 で条件が絞られた。シード固定の Play は Web と一致するようになり、
+      // 食い違うのは 1.x 宣言の Play を force-run したときだけになった。
+      expect(find.textContaining('Web 版と同じ結果'), findsOneWidget);
+      expect(find.textContaining('結果が食い違います'), findsOneWidget);
     });
 
     testWidgets('乱数を使わない Play には出さない (#935)', (tester) async {
@@ -207,8 +210,9 @@ void main() {
       expect(find.textContaining('乱数について'), findsNothing);
     });
 
-    /// **同じブロックに並べない**という #935 の制約。並ぶと「バージョンのせい」
-    /// に吸収され、注記の目的（バージョンとは無関係だと伝えること）が壊れる。
+    /// **同じブロックに並べない**という #935 の制約。警告と注記が並ぶと、注記が
+    /// 「バージョン警告の補足」に見えて読み飛ばされる。注記は force-run して
+    /// 実際に走らせたあと（＝警告が消えたあと）に効く情報。
     testWidgets('バージョン警告が出ている間は乱数注記を出さない (#935)', (tester) async {
       final adapter = _FakeAdapter();
       await _pump(

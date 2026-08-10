@@ -1,9 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// このインストールを一意に指す ID（#932 / capsicum-relay#15）。
+/// このインストールを一意に指す ID（#932 / #952 / capsicum-relay#15）。
 ///
 /// capsicum-relay の `subscriptions` は `UNIQUE(token, account, server)` で
 /// 行を管理しているため、**デバイスの push トークンが更新されると衝突せずに
@@ -20,15 +21,64 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - **ハードウェア識別子は使わない**（IDFV / ANDROID_ID / MachineGuid 等）。
 ///   ストアのポリシー上の制約があるうえ、端末の同定が目的ではなく「同じ
 ///   インストールか」が分かれば足りる。よって乱数 UUID v4。
-/// - **保存先は SharedPreferences**。アプリ更新をまたいで残り、アンインストール
-///   で消えればよい、という寿命がちょうど要件と一致する。
-///   `flutter_secure_storage` は accessibility 変更で既存 item を取りこぼす罠が
-///   あり（docs/tech-notes.md 認証フロー）、機密でもないので使う理由がない。
+/// - **保存先は「別筐体へ複製されない」場所**でなければならない。#932 の初版は
+///   SharedPreferences に置いていたが、これは Android Auto Backup（既定 ON・
+///   `shared_prefs/` を含む）と iOS の iCloud / 暗号化バックアップ
+///   （NSUserDefaults = `Library/Preferences/*.plist`）の対象で、**機種変で
+///   復元した端末が元の端末と同じ ID を送る**。relay#15 の
+///   `UNIQUE(account, server, device_id)` upsert が入った瞬間、後から登録した
+///   側が先の行を上書きし、**もう一方の端末に push が届かなくなる** (#952)。
+///
+/// ## 保存先（#952）
+///
+/// flutter_secure_storage に置く。狙いは機密性ではなく **寿命** で、
+/// 「同じ物理端末なら同じ値・別筐体なら別値」だけが要件。
+///
+/// - **iOS / macOS**: [KeychainAccessibility.first_unlock_this_device]
+///   （`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`）。ThisDeviceOnly の
+///   item は **バックアップに含まれない**ので、復元先の端末には item が無く、
+///   その端末で新しい ID が生成される。`this_device` でない `first_unlock` は
+///   バックアップに乗るため、ここでは選べない。`unlocked` 系でなく
+///   first_unlock 系なのは、プッシュ登録がロック中のバックグラウンドでも走る
+///   ため（PushKeyStore #392 / AccountStorage #643 と同じ理由）。
+/// - **Android**: EncryptedSharedPreferences のマスター鍵は Android Keystore に
+///   あり、**バックアップされない**。復元先では既存のエントリを復号できず read が
+///   失敗するので、その場で作り直す（[_load] の catch）。
+/// - **desktop**: Windows は DPAPI（ユーザー + マシン束縛）、Linux は libsecret、
+///   macOS は上記 Keychain。いずれもプロファイルのコピーでは復号できない。
+///
+/// `groupId` は付けない。NSE から読む値ではないうえ、Keychain partition を
+/// 変えると既存 item の読み出しに影響しうる（AccountStorage と同じ判断）。
+///
+/// **旧 ID は移行しない。** SharedPreferences に残っている値を引き継ぐと、
+/// 複製された ID がそのまま生き残って #952 が消えない。全端末で 1 度だけ ID が
+/// 変わるが、relay はまだ device_id を dedup に使っていない（行のキーは
+/// `UNIQUE(token, account, server)`）ので実害がない。旧キーは best-effort で
+/// 掃除する。
+///
+/// なお #932 が書いていた「アンインストールで消えればよい」という寿命は捨てた。
+/// iOS の Keychain item はアンインストール後も残るため、再インストールすると
+/// 同じ ID に戻る。dedup の要件は「別筐体で別値」であって「再インストールで
+/// 別値」ではなく、むしろ行が増えない分だけ望ましい。
 class DeviceInstallId {
   DeviceInstallId._();
 
   @visibleForTesting
-  static const prefsKey = 'capsicum_device_install_id';
+  static const storageKey = 'capsicum_device_install_id';
+
+  /// #932 の初版が使っていた SharedPreferences のキー。読みには使わず、
+  /// 残骸を消すためだけに参照する（#952）。
+  @visibleForTesting
+  static const legacyPrefsKey = 'capsicum_device_install_id';
+
+  static const _storage = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+    mOptions: MacOsOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
 
   /// 生成レースを塞ぐためのメモ。プッシュ登録はアカウントごとに走るため
   /// [get] は起動直後にほぼ同時多発で呼ばれる。await を挟んで
@@ -41,14 +91,24 @@ class DeviceInstallId {
   static Future<String> get() => _pending ??= _load();
 
   static Future<String> _load() async {
+    String? existing;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final existing = prefs.getString(prefsKey);
-      if (existing != null && existing.isNotEmpty) return existing;
+      existing = await _storage.read(key: storageKey);
+    } catch (e) {
+      // Android の復元直後（マスター鍵が別）や Keychain 一過性失敗。前者は
+      // 作り直すのが正解、後者もこの起動では読めないので同じ扱いにする。
+      // 一過性で作り直してしまうと relay に行が 1 つ増えるが、恒久的に
+      // 復元端末と ID を共有するより害が小さい。
+      debugPrint('capsicum: device install id unreadable: $e');
+    }
+    if (existing != null && existing.isNotEmpty) {
+      await _removeLegacyPrefsKey();
+      return existing;
+    }
 
-      final generated = _generateUuidV4();
-      await prefs.setString(prefsKey, generated);
-      return generated;
+    final generated = _generateUuidV4();
+    try {
+      await _storage.write(key: storageKey, value: generated);
     } catch (e) {
       // 永続化に失敗しても push 登録そのものは従来どおり（token をキーにした
       // 動作）で通したいので、その場限りの値を返して続行する。
@@ -58,7 +118,21 @@ class DeviceInstallId {
       // 全アカウントが同じ値**を使うほうが害が小さい。永続化のやり直しは
       // 次回起動（新しいプロセス）に任せる。
       debugPrint('capsicum: device install id unavailable: $e');
-      return _generateUuidV4();
+    }
+    await _removeLegacyPrefsKey();
+    return generated;
+  }
+
+  /// #932 の初版が SharedPreferences に書いた ID を消す。値は引き継がない
+  /// （引き継ぐと複製された ID が生き残る）。失敗しても実害はないので握る。
+  static Future<void> _removeLegacyPrefsKey() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey(legacyPrefsKey)) {
+        await prefs.remove(legacyPrefsKey);
+      }
+    } catch (e) {
+      debugPrint('capsicum: legacy device install id cleanup failed: $e');
     }
   }
 

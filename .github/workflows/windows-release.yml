@@ -75,6 +75,8 @@ jobs:
           rem 一致することを確認しており、既定のコードページで読まれると外れる。
           cl /nologo /EHsc /utf-8 /std:c++17 notification_tag_test.cpp notification_tag.cpp || exit /b 1
           .\notification_tag_test.exe || exit /b 1
+          cl /nologo /EHsc /std:c++17 notification_dedup_test.cpp notification_dedup.cpp || exit /b 1
+          .\notification_dedup_test.exe || exit /b 1
 
       # sentry_flutter 9.x が transitive で引き込む jni 0.14.x が
       # JNI_CreateJavaVM のリンクで JDK の jvm.lib (x64) を要求する。

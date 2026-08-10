@@ -92,9 +92,13 @@ class HashtagTimelineNotifier
             ? raw.where((p) => !hasLivecureTag(p)).toList()
             : raw;
 
+        // 既にリストにある投稿は落とす (#909)。各行は id をキーにしているので、
+        // ページ境界の重複をそのまま足すと Duplicate keys で描画ごと落ちる。
+        final knownIds = {for (final p in base.posts) p.id};
+        final appended = older.where((p) => knownIds.add(p.id)).toList();
         state = AsyncData(
           base.copyWith(
-            posts: [...base.posts, ...older],
+            posts: [...base.posts, ...appended],
             isLoadingMore: false,
             hasMore: raw.length >= _pageSize,
             loadMoreError: null,

@@ -65,9 +65,52 @@ class AccountManagerState {
   );
 }
 
+/// オフライン保持アカウントの背景再試行、立ち上がりの間隔 (#792)。
+/// サーバー再構築直後の復帰を素早く拾うために短く刻む。
+const kOfflineRetryRampUp = [
+  Duration(seconds: 2),
+  Duration(seconds: 5),
+  Duration(seconds: 15),
+  Duration(seconds: 30),
+];
+
+/// 立ち上がりを使い切った後の定常間隔 (#938)。
+const kOfflineRetrySteadyInterval = Duration(seconds: 60);
+
+/// [attempt] 回目（0 始まり）の背景再試行までの待ち時間 (#938)。
+///
+/// **どの [attempt] に対しても値を返す＝打ち切らないのが本質。** 以前は
+/// [kOfflineRetryRampUp] の 4 回・計 52 秒でループを終了し、以降の自動トリガが
+/// 一切無かったため「接続が戻っても、画面を開いたまま待っていてもタイムラインへ
+/// 復帰しない」状態になっていた。
+///
+/// #792 が想定していたのはサーバー再構築中の一時的な不通で、その文脈なら 52 秒は
+/// 妥当だった。しかし #917 で **この画面は端末側がオフラインのときにも出る**ことが
+/// 分かった。機内モードや回線断から復帰するのはたいてい 52 秒より後なので、
+/// **この画面が最も出やすい状況でこそ自動復帰が効かない**という形だった。
+///
+/// 常駐コストはオフライン保持中のアカウント 1 つにつき 60 秒に 1 回の probe。
+/// オンラインへ戻れば対象が空になりループ自体が終わる。モバイルはバックグラウンド
+/// で実行が止まるので、そこは
+/// [AccountManagerNotifier.refreshOfflineRestoresOnResume] が復帰時に補う。
+Duration offlineRetryDelay(int attempt) => attempt < kOfflineRetryRampUp.length
+    ? kOfflineRetryRampUp[attempt]
+    : kOfflineRetrySteadyInterval;
+
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
-  AccountManagerState build() => const AccountManagerState();
+  AccountManagerState build() {
+    ref.onDispose(() => _disposed = true);
+    return const AccountManagerState();
+  }
+
+  /// provider が破棄されたか。背景再試行ループ ([_retryOfflineRestores]) は
+  /// 打ち切りを持たないので、これを見て抜ける。
+  bool _disposed = false;
+
+  /// 背景再試行ループが走っているか。ループが無限になった (#938) 以上、
+  /// 二重起動すると probe が恒久的に 2 倍走る。
+  bool _offlineRetryLoopRunning = false;
 
   /// host ごとのモロヘイヤ自動再検出の最終実行時刻。フォアグラウンド復帰 / ドロワー
   /// 表示のたびに `/about` を叩かないよう TTL で間引く (#775)。
@@ -422,7 +465,30 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     String? token,
   }) async {
     try {
-      final dio = Dio(BaseOptions(connectTimeout: kNetworkConnectTimeout));
+      // ⚠ この Dio は detect 用の使い捨てではなく、**成功したら
+      // MulukhiyaService がそのまま抱えて以降の全 API で使い続ける**。
+      // #900 で既定タイムアウトを入れたのは Mastodon / Misskey の
+      // アダプター用 Dio だけで、こちらは connectTimeout しか無く
+      // receive / send が無制限のまま残っていた (#951)。
+      //
+      // 無制限だと、モロヘイヤ導入サーバーが TCP は受けるのに応答を返さない
+      // 状態になったとき `subscribePushViaProxy` が永久に返らず、
+      // `registerAllAccounts` の `Future.wait` ごと固まる。splash はその
+      // await の直後で `startTokenRefreshListener` を張るので、**そのセッション
+      // 中ずっと token rotation を拾えなくなる**。
+      //
+      // 値はアダプターと揃える。5 秒側（`kNetworkReceive*`）を当てないのは、
+      // 番組表など重い API を正常系ごと切ってしまうため。receiveTimeout が
+      // 「ヘッダー到達までの絶対上限」にも効く点は network_timeouts.dart の
+      // doc が正本。detect() 自身は per-request Options で 5 秒を当てており、
+      // per-request が BaseOptions を上書きするのでその見切りの速さは保たれる。
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: kNetworkConnectTimeout,
+          receiveTimeout: kAdapterReceiveTimeout,
+          sendTimeout: kAdapterSendTimeout,
+        ),
+      );
       final mulukhiya = await MulukhiyaService.detect(dio, host, token: token);
       if (mulukhiya != null) {
         debugPrint(
@@ -705,8 +771,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     );
   }
 
-  /// [key] のオフライン保持の [OfflineAccount.retrying] フラグを更新する
-  /// (#792)。背景リトライを尽くした後は false（手動再試行は可能）。
+  /// [key] のオフライン保持の [OfflineAccount.retrying] フラグを更新する。
+  ///
+  /// ⚠ **意味が #938 で変わった。** #792 では「背景 backoff がまだ残っている」で、
+  /// 使い切ると恒久的に false になる＝「もう自動では戻らない」の印だった。
+  /// 背景再試行が打ち切りを持たなくなったので、いまは **「この瞬間 probe が
+  /// 走っている」** を表す（周回の合間は false）。UI の「再試行中…」/「接続を
+  /// 待っています」はこの粒度で出し分ける。
   void _markOfflineRetrying(AccountKey key, bool retrying) {
     final idx = state.offlineAccounts.indexWhere((o) => o.key == key);
     if (idx < 0) return;
@@ -716,64 +787,91 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   }
 
   /// 一時的な到達不能で初回復元に失敗し、オフライン保持したアカウントを、
-  /// 回線 / サーバー復帰を待ってバックグラウンドで再試行する (#730 / #792)。
-  /// 短い backoff を数回かけ、成功すればオンラインへ昇格してユーザー操作なしで
-  /// 自動回復する（offline entry は [_restoreOne] が除去）。手動ログイン等で
-  /// 既に復元済みのものはスキップ。auth 失効（401/403）等へ転じたら再ログイン
-  /// 扱いで offline から drop + 観測。全 backoff 後も不通なら offline 保持のまま
-  /// `retrying=false` にし（手動再試行は可能）、観測を 1 度残す。
+  /// 回線 / サーバー復帰を待ってバックグラウンドで再試行する (#730 / #792 / #938)。
+  ///
+  /// 成功すればオンラインへ昇格してユーザー操作なしで自動回復する（offline entry は
+  /// [_restoreOne] が除去）。手動ログイン等で既に復元済みのものはスキップ。
+  /// auth 失効（401/403）等へ転じたら再ログイン扱いで offline から drop + 観測。
+  ///
+  /// ⚠ **このループは打ち切らない (#938)。** 到達不能なアカウントが残っている
+  /// 限り [_offlineRetrySteadyInterval] で回り続ける。理由はそちらの doc。
   Future<void> _retryOfflineRestores(
     List<({String keyStr, Map<String, String> secrets})> pending,
   ) async {
-    const delays = [
-      Duration(seconds: 2),
-      Duration(seconds: 5),
-      Duration(seconds: 15),
-      Duration(seconds: 30),
-    ];
-    var remaining = pending;
-    for (final delay in delays) {
-      if (remaining.isEmpty) return;
-      await Future<void>.delayed(delay);
-      final stillFailing = <({String keyStr, Map<String, String> secrets})>[];
-      for (final item in remaining) {
-        // 別経路（手動ログイン等）で既に復元済みなら何もしない。
-        final alreadyRestored = state.accounts.any(
-          (a) => a.key.toStorageKey() == item.keyStr,
-        );
-        if (alreadyRestored) continue;
-        try {
-          await _restoreOne(item.keyStr, item.secrets);
-        } catch (e, st) {
-          if (classifyRestoreFailure(e) == RestoreOutcome.retriable) {
-            stillFailing.add(item); // まだ到達不能。次の backoff で再試行。
-          } else {
-            // auth 失効（401/403）等へ転じたら再ログイン扱い。offline から
-            // drop して観測する（一覧に残すと復帰しないゾンビになる）。
-            debugPrint(
-              'capsicum: account_restore: retry gave up for ${item.keyStr}: $e',
-            );
-            _dropOfflineByKeyStr(item.keyStr);
-            _reportRestoreOnce(item.keyStr, e, st);
+    if (_offlineRetryLoopRunning) {
+      // 既に回っているループへ任せる。二重に走らせると probe が恒久的に
+      // 2 倍になる（打ち切りが無いため自然には収束しない）。
+      return;
+    }
+    _offlineRetryLoopRunning = true;
+    try {
+      var remaining = pending;
+      var attempt = 0;
+      while (remaining.isNotEmpty && !_disposed) {
+        final delay = offlineRetryDelay(attempt);
+        attempt++;
+        await Future<void>.delayed(delay);
+        if (_disposed) return;
+
+        final stillFailing = <({String keyStr, Map<String, String> secrets})>[];
+        for (final item in remaining) {
+          // 別経路（手動ログイン等）で既に復元済みなら何もしない。
+          final alreadyRestored = state.accounts.any(
+            (a) => a.key.toStorageKey() == item.keyStr,
+          );
+          if (alreadyRestored) continue;
+          // この周回で実際に probe している間だけ「再試行中…」を出す (#938)。
+          _markOfflineByKeyStr(item.keyStr, retrying: true);
+          try {
+            await _restoreOne(item.keyStr, item.secrets);
+          } catch (e, st) {
+            if (classifyRestoreFailure(e) == RestoreOutcome.retriable) {
+              stillFailing.add(item); // まだ到達不能。次の間隔で再試行。
+              // 次の周回まで待ちに入るので「再試行中…」は下ろす。
+              _markOfflineByKeyStr(item.keyStr, retrying: false);
+            } else {
+              // auth 失効（401/403）等へ転じたら再ログイン扱い。offline から
+              // drop して観測する（一覧に残すと復帰しないゾンビになる）。
+              debugPrint(
+                'capsicum: account_restore: retry gave up for '
+                '${item.keyStr}: $e',
+              );
+              _dropOfflineByKeyStr(item.keyStr);
+              _reportRestoreOnce(item.keyStr, e, st);
+            }
+          }
+        }
+        remaining = stillFailing;
+
+        // ramp-up を使い切った時点＝**52 秒以内には戻らなかった**という観測
+        // 上の節目。#792 はここで打ち切っていたが、#938 で継続へ変えたので
+        // 「打ち切り」ではなく marker として 1 度だけ記録する。per-process
+        // dedup があるので、以降の周回では二重に上がらない。
+        if (attempt == kOfflineRetryRampUp.length && remaining.isNotEmpty) {
+          debugPrint(
+            'capsicum: restoreSessions: ${remaining.length} account(s) still '
+            'unreachable after ramp-up; keeping retry loop running '
+            '(${kOfflineRetrySteadyInterval.inSeconds}s interval)',
+          );
+          for (final item in remaining) {
+            _reportRestoreExhaustedOnce(item.keyStr);
           }
         }
       }
-      remaining = stillFailing;
+    } finally {
+      _offlineRetryLoopRunning = false;
     }
-    if (remaining.isNotEmpty) {
-      debugPrint(
-        'capsicum: restoreSessions: ${remaining.length} account(s) still '
-        'unreachable after retries; kept offline (user can retry / re-login)',
-      );
-      // 全 backoff 後も不通＝「一過性」前提が外れて恒久障害だった可能性がある。
-      // #792 では消さずオフライン保持したまま retrying=false にして「再試行
-      // 中」表示を止める（手動再試行 / 再ログインは可能）。#730 と同じく、
-      // 握り潰しが恒久障害を覆い隠さないよう per-process dedup で 1 度だけ観測。
-      for (final item in remaining) {
-        _markOfflineByKeyStr(item.keyStr, retrying: false);
-        _reportRestoreExhaustedOnce(item.keyStr);
-      }
-    }
+  }
+
+  /// フォアグラウンド復帰を契機に、オフライン保持中のアカウントを即座に
+  /// 再試行する (#938)。
+  ///
+  /// 定常間隔は 60 秒あり、またモバイルでは背面にいる間タイマーが進まない。
+  /// オフライン中はアプリを閉じていることも多いので、この契機がいちばん効く。
+  /// 復元済み / オフライン無しなら何もしない。
+  void refreshOfflineRestoresOnResume() {
+    if (state.offlineAccounts.isEmpty) return;
+    unawaited(retryOfflineRestores());
   }
 
   /// keyStr（storage key）から offline entry を除去する。破損 key は無視。
@@ -794,10 +892,27 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     }
   }
 
-  /// オフライン保持中のアカウントを、ユーザー操作で即時に再試行する (#792)。
-  /// オフラインプレースホルダ / 切替 UI の「再試行」から呼ぶ。secret は state に
-  /// 持たず storage から読み直す。成功すればオンラインへ昇格する。
+  /// オフライン保持中のアカウントを即時に再試行する (#792)。
+  /// オフラインプレースホルダ / 切替 UI の「再試行」ボタンと、フォアグラウンド
+  /// 復帰 ([refreshOfflineRestoresOnResume]) から呼ぶ。secret は state に持たず
+  /// storage から読み直す。成功すればオンラインへ昇格する。
+  ///
+  /// 進行中の呼び出しがあれば no-op。#938 でユーザー操作以外（復帰）からも
+  /// 叩くようになったので、連続した resume やボタン連打で同じ probe が
+  /// 積み上がらないようにする。
   Future<void> retryOfflineRestores() async {
+    if (_manualRetryRunning) return;
+    _manualRetryRunning = true;
+    try {
+      await _retryOfflineRestoresNow();
+    } finally {
+      _manualRetryRunning = false;
+    }
+  }
+
+  bool _manualRetryRunning = false;
+
+  Future<void> _retryOfflineRestoresNow() async {
     final storage = ref.read(accountStorageProvider);
     // 反復中に state.offlineAccounts が変化するのでスナップショットを取る。
     final targets = [...state.offlineAccounts];

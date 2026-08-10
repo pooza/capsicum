@@ -73,7 +73,13 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   late final List<_PickerTab> _tabs;
+
+  /// サーバーの全件。shortcode → 絵文字の**解決表**として使う（パレットの
+  /// 描画・単語辞書のプレビュー）ので、入力導線から外した絵文字も落とさない。
   List<CustomEmoji>? _customEmojis;
+
+  /// [_customEmojis] のうち、picker のグリッドに並べるもの（`offeredForInput`）。
+  List<CustomEmoji>? _pickerEmojis;
   bool _loadingCustom = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -132,14 +138,30 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     try {
       final support = widget.adapter as CustomEmojiSupport;
       final emojis = await support.getEmojis();
-      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker UI には
-      // visible_in_picker=true のものだけ並べる (#622)。
-      final pickerEmojis = emojis.where((e) => e.visibleInPicker).toList();
+      // getEmojis() は全件返す (警告判定 / プレビュー兼用)。picker の**グリッドに
+      // 並べる**ものだけを絞った版を別に持つ (#622 visible_in_picker /
+      // #944 「非推奨」カテゴリ)。判定は CustomEmoji.offeredForInput が正本で、
+      // compose の `:` 補完と共有している。
+      //
+      // ⚠ **絞った方を _customEmojis に入れてはいけない。**こちらは shortcode →
+      // 絵文字の解決表（パレットの描画・単語辞書のプレビュー）も兼ねており、
+      // 痩せさせるとサーバーが旧コードを「非推奨」へ退避した瞬間に、**ユーザーの
+      // 既存パレットに登録済みのその絵文字が画像でなく `:code:` の生テキストで
+      // 描かれる**。非推奨カテゴリはまさに既存パレットに入っている旧コードの
+      // 集合なので、当たる確率が高い。
       if (mounted) {
-        setState(() => _customEmojis = pickerEmojis);
+        setState(() {
+          _customEmojis = emojis;
+          _pickerEmojis = emojis.where((e) => e.offeredForInput).toList();
+        });
       }
     } catch (_) {
-      if (mounted) setState(() => _customEmojis = []);
+      if (mounted) {
+        setState(() {
+          _customEmojis = [];
+          _pickerEmojis = [];
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _loadingCustom = false);
@@ -161,8 +183,8 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       case _PickerTab.custom:
         // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
         if (!_loadingCustom &&
-            _customEmojis != null &&
-            _customEmojis!.isNotEmpty) {
+            _pickerEmojis != null &&
+            _pickerEmojis!.isNotEmpty) {
           _searchFocusNode.requestFocus();
         }
       case _PickerTab.unicode:
@@ -519,7 +541,9 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     if (_loadingCustom) {
       return const Center(child: CircularProgressIndicator());
     }
-    final emojis = _customEmojis;
+    // グリッドに並べるのは絞った方。解決表（[_customEmojis]）は
+    // _buildCustomCategories が別途参照する。
+    final emojis = _pickerEmojis;
     if (emojis == null || emojis.isEmpty) {
       return const Center(child: Text('カスタム絵文字がありません'));
     }
@@ -589,8 +613,11 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
         : ref.watch(emojiPaletteProvider(widget.host));
 
     // Index custom emojis by shortcode for palette lookup.
+    // **引数の `emojis`（グリッド用に絞った版）ではなく全件を引く。** パレットに
+    // 既に入っている絵文字がサーバー側で「非推奨」へ移ると、ここで解決できず
+    // `:code:` の生テキストになってしまう (#944)。
     final emojiByCode = <String, CustomEmoji>{};
-    for (final e in emojis) {
+    for (final e in _customEmojis ?? emojis) {
       emojiByCode[e.shortcode] = e;
     }
 
@@ -601,7 +628,22 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       (grouped[cat] ??= []).add(emoji);
     }
 
-    final hasPalette = widget.adapter is ReactionSupport;
+    // パレット欄はスタンプモードでは丸ごと畳む (#953-1)。理由は 2 つある。
+    //
+    // 1. **押しても何も起きない導線ができる。** パレットのエントリは
+    //    `emojiByCode` でカスタム絵文字として解決できないとき（Unicode 絵文字 /
+    //    サーバーから消えた shortcode）素のテキストとして描画され、`_selectEmoji`
+    //    ＝ `widget.onSelected` に流れる。スタンプモードは `onCustomEmojiSelected`
+    //    しか渡さないので**無反応でシートも閉じない**。同じ画面のカスタム絵文字
+    //    タイルと「最近使った」は正しく流れるので、挙動が割れて見える
+    // 2. **本文用のパレットをスタンプ選択画面から壊せる。** メニューの
+    //    「サーバーから同期 / テキストから追加 / クリア」が触るのは本文挿入用の
+    //    `emojiPaletteProvider` で、ここから編集させる筋がない
+    //
+    // なお `_selectEmoji` は先に `recentEmojisProvider.add()` を呼ぶため、
+    // この経路だけが `_buildCustomEmojiTile` に書いた「スタンプモードでは
+    // 『最近使った』へ記録しない」という決定を破ってもいた。
+    final hasPalette = !_stickerMode && widget.adapter is ReactionSupport;
 
     // Featured custom emojis (Mastodon 4.6 のカテゴリ代表絵文字、#735)。
     // 各カテゴリの代表を先頭のセクションにまとめて素早く到達できるようにする。

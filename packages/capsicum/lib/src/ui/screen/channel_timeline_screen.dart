@@ -84,7 +84,10 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
                             child: Center(child: CircularProgressIndicator()),
                           );
                         }
-                        return PostTile(post: state.posts[index]);
+                        return PostTile(
+                          key: ValueKey(state.posts[index].id),
+                          post: state.posts[index],
+                        );
                       },
                     ),
                   ),

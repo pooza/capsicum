@@ -13,9 +13,11 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "notification_dedup.h"
 #include "smtc_now_playing.h"
 #include "windows_store_iap.h"
 #include "wns_push.h"
@@ -58,6 +60,34 @@ bool FlutterWindow::OnCreate() {
         }
       });
 
+  // 起動中二重通知の dedup チャンネル (#945)。チャネル名とキー形式は macOS
+  // (#674) と共通で、Dart 側は NotificationDedupChannel が終端。
+  {
+    std::lock_guard<std::mutex> lock(dedup_state_->mutex);
+    dedup_state_->hwnd = GetHandle();
+  }
+  notification_dedup_channel_ = std::make_unique<flutter::MethodChannel<>>(
+      flutter_controller_->engine()->messenger(),
+      "net.shrieker.capsicum/notification_dedup",
+      &flutter::StandardMethodCodec::GetInstance());
+  notification_dedup_channel_->SetMethodCallHandler(
+      [](const flutter::MethodCall<>& call,
+         std::unique_ptr<flutter::MethodResult<>> result) {
+        if (call.method_name() == "addEmitted") {
+          // WebSocket 経路 (#569) が出したキー。以降、同じキーの WNS 通知は
+          // トーストを作らない。
+          const auto* key = std::get_if<std::string>(call.arguments());
+          if (key != nullptr) {
+            capsicum::NotificationDedupRegistry::Instance().MarkShown(*key);
+          }
+          result->Success();
+        } else {
+          // getDeliveredRemotes / removeDelivered は macOS の NSE 掃除 (#673)
+          // 専用で Windows には無い。Dart 側も macOS 限定で呼ぶ。
+          result->NotImplemented();
+        }
+      });
+
   // WNS push の Channel URI 取得チャンネル (#474 フェーズ1)。Dart 側
   // WnsService が 'requestChannelUri' を呼ぶ。WinRT の取得は STA で .get()
   // ブロックすると停止しうるため MTA ワーカーで実行し、UI スレッドを塞がない。
@@ -86,16 +116,33 @@ bool FlutterWindow::OnCreate() {
           // 取得した URI を UI スレッドへ marshal するコールバックだけ渡す。
           // RunWnsChannelReceiver は購読後プロセス終了までブロックするため、
           // スレッドは detach する。
-          std::thread([this, hwnd]() {
-            RunWnsChannelReceiver([this, hwnd](const std::string& uri) {
-              {
-                std::lock_guard<std::mutex> lock(wns_mutex_);
-                wns_uri_ = uri;
-              }
-              if (hwnd) {
-                PostMessage(hwnd, WM_WNS_CHANNEL_READY, 0, 0);
-              }
-            });
+          auto dedup_state = dedup_state_;
+          std::thread([this, hwnd, dedup_state]() {
+            RunWnsChannelReceiver(
+                [this, hwnd](const std::string& uri) {
+                  {
+                    std::lock_guard<std::mutex> lock(wns_mutex_);
+                    wns_uri_ = uri;
+                  }
+                  if (hwnd) {
+                    PostMessage(hwnd, WM_WNS_CHANNEL_READY, 0, 0);
+                  }
+                },
+                // in-process 受信がトーストを出したら Dart へ伝える (#945)。
+                // FlutterWindow より長生きしうるので this ではなく共有状態を
+                // 捕捉し、破棄後 (window_alive=false) は何もしない (#795 と同型)。
+                [dedup_state](const std::string& key) {
+                  HWND target = nullptr;
+                  {
+                    std::lock_guard<std::mutex> lock(dedup_state->mutex);
+                    if (!dedup_state->window_alive) return;
+                    dedup_state->presented.push_back(key);
+                    target = dedup_state->hwnd;
+                  }
+                  if (target) {
+                    PostMessage(target, WM_NOTIFICATION_PRESENTED, 0, 0);
+                  }
+                });
           }).detach();
           // 取得は非同期。要求受理だけ即 ack し、結果は onChannelUri で返す。
           result->Success();
@@ -221,6 +268,16 @@ void FlutterWindow::OnDestroy() {
     store_state_->hwnd = nullptr;
   }
 
+  // WNS 受信ワーカーはプロセス終了までブロックし続けるため、ウィンドウ破棄後も
+  // トースト表示を続けうる (#945)。同じ理由で共有状態へ消滅を伝え、以降は
+  // キューにも積ませず PostMessage もさせない。
+  {
+    std::lock_guard<std::mutex> lock(dedup_state_->mutex);
+    dedup_state_->window_alive = false;
+    dedup_state_->hwnd = nullptr;
+    dedup_state_->presented.clear();
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -260,6 +317,24 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                        ? std::make_unique<flutter::EncodableValue>()
                        : std::make_unique<flutter::EncodableValue>(uri);
         wns_channel_->InvokeMethod("onChannelUri", std::move(arg));
+      }
+      return 0;
+    }
+    case WM_NOTIFICATION_PRESENTED: {
+      // WNS 経路が出したトーストのキーを UI スレッド上で Dart へ渡す (#945)。
+      // 受信ワーカーは複数キーを続けて積みうる（PostMessage が合流することも
+      // ある）ので、溜まっている分をまとめて引き取る。
+      std::vector<std::string> keys;
+      {
+        std::lock_guard<std::mutex> lock(dedup_state_->mutex);
+        keys.swap(dedup_state_->presented);
+      }
+      if (notification_dedup_channel_) {
+        for (const auto& key : keys) {
+          notification_dedup_channel_->InvokeMethod(
+              "onRemotePresented",
+              std::make_unique<flutter::EncodableValue>(key));
+        }
       }
       return 0;
     }

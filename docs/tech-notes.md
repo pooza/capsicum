@@ -8,6 +8,16 @@
 
 `List<dynamic>.firstWhere` に `orElse: () => null` を渡す書き方は型安全でないため、手動 for ループに置換する方が安全。
 
+### 行の State に「隠す」フラグを bool で持たない（キー無しリストの State 再利用）
+
+タイムラインのようなリストで、行ウィジェットの `State` に `bool _deleted` のような**その行を隠すフラグ**を持たせてはいけない。`ListView` / `ScrollablePositionedList` の各行に `key` が無いと、**Flutter は State を「位置」で再利用する**。先頭に要素が挿入されると、それまで A を描いていた State が B を描くようになり、そこへ A 由来の `setState(() => _deleted = true)` が走ると **B が隠れる**。`didUpdateWidget` で id 変化を見てリセットしていても、**フラグを立てるのが id 変化より後**なら復帰の機会が無い。
+
+必ず **`String? _hiddenPostId` のように対象の id で持ち、`_hiddenPostId == widget.post.id` のときだけ隠す**。ブースト経由の操作は対象が内側の投稿になるので `reblog?.id` とも突き合わせる。
+
+#909 で実際に踏んだ。「削除してタグづけ」はモロヘイヤが **Misskey では投稿→削除の順**で行うため、HTTP レスポンスが返る前に streaming が再投稿を先頭へ挿す。その結果、元投稿は `removePost` でデータから消え、再投稿は `_deleted` で描画から消え、**両方いなくなった**。原因が取り込み処理に見えて実は描画側だったため切り分けに時間がかかっている。通常の削除・削除して再編集・NowPlaying 削除でも同じ構造なので、**削除直後に新着が届けば無関係な投稿が消える**。
+
+**根本対処として各行に `ValueKey(post.id)` を付ける場合は、そのリストの `loadMore` が重複排除しているかを先に確認する。** ページ境界やレースで同じ id が二重に入ると `Duplicate keys found` で描画ごと落ちる。capsicum では home / hashtag / list / channel の 4 つとも `[...posts, ...older]` で無防備だったので、キーと同時に dedup を入れた。streaming の先頭挿入が無い画面（ブックマーク / クリップ / アンテナ / 検索 / プロフィール）は本症状が起きないので、`loadMore` を監査するまでキーを付けない。
+
 ### `WidgetSpan` 内で `width: double.infinity` は使わない
 
 親 `Text` の制約を超えるレイアウトエラーになる。自然幅（指定なし）で組むこと。iPad の広い画面で `RenderFlex` overflow を起こした実績あり（#60）。
@@ -70,6 +80,20 @@ Google Play は 64bit `.so` の LOAD セグメントが 16KB 整列（`p_align >
 
 - `build()` の先頭でフラグを `false` に戻す（Notifier のインスタンスは再計算をまたいで生き残るため、リセットしないと戻らない）
 - 「古い build の非同期処理が新しい state を上書きしない」ことは、フラグではなく **世代カウンタ**（`final generation = ++_buildGeneration;` を build 冒頭で採り、書き戻し時に `generation != _buildGeneration` なら捨てる）で担保する
+
+### 「その端末だけの値」を SharedPreferences に置かない — OS バックアップで別筐体へ複製される（#952）
+
+SharedPreferences は **Android / iOS とも OS のバックアップ対象**で、機種変・復元で**別の物理デバイスへ丸ごと複製される**。Android は Auto Backup が既定 ON で `shared_prefs/` を含み（`android:allowBackup="false"` も `dataExtractionRules` も置いていない場合）、iOS は NSUserDefaults（`Library/Preferences/*.plist`）が iCloud / 暗号化バックアップに入る。アンインストール → 再インストールでも復元されうるので、「アンインストールで消える」も前提にできない。
+
+したがって **「この端末を他の端末と区別する値」を SharedPreferences に置くと、復元した端末と元の端末が同じ値を名乗る**。capsicum ではプッシュ購読の dedup キー（`DeviceInstallId`）がこれを踏み、サーバー側が `UNIQUE(account, server, device_id)` の upsert に切り替わると**どちらか一方の端末に push が届かなくなる**設計欠陥になっていた。
+
+寿命で選ぶなら `flutter_secure_storage`（機密性ではなく**バックアップに乗らない**のが採用理由）:
+
+- **iOS / macOS**: `KeychainAccessibility.first_unlock_this_device`（`…ThisDeviceOnly`）。ThisDeviceOnly の item はバックアップに含まれないため復元先には存在せず、その端末で作り直される。`_this_device` の付かない `first_unlock` / `unlocked` はバックアップに乗るので**この用途では選べない**。
+- **Android**: EncryptedSharedPreferences のマスター鍵が Android Keystore にあり、鍵はバックアップされない。復元先では既存エントリを復号できず read が失敗するので、**その場で作り直す実装にしておく**（例外を握り潰して同じ値を返し続けてはいけない）。
+- **desktop**: Windows は DPAPI（ユーザー + マシン束縛）、Linux は libsecret。プロファイルのコピーでは復号できない。
+
+保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
 
 ## 体感速度の改善（先出し・キャッシュ）
 
@@ -159,6 +183,8 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 - **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②relay の `subscriptions` を `device_type` 別に「行数 / 実アカウント数」で割り、**プラットフォーム間で比を比べる**（突出しているものが endpoint を作り直している）→ ③孤児を整理して再現するか見る。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。
 
 **⚠ 「client 側の修正では直らない」と決めつけない（2026-08-05 に反例が出た）。**#692 の時点ではそう書いていたが、[#937](https://github.com/pooza/capsicum/issues/937) は **client が孤児を作っている側**だった —— push の endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay の行（`UNIQUE(token, account, server)`、`token` はデバイストークン）が新規作成されたときだけ発行される。**再起動をまたいでデバイストークンが変わると新しい endpoint になるが、起動経路は古い endpoint を unregister しない**（プロセス内のローテーションは `_runTokenRefresh` が正しく掃除するのに、再起動をまたぐ変化はその経路に乗らない）。Windows は WNS の channel URI が変わりやすく、relay 実測で **86 行 / 20 アカウント = 4.3** と他プラットフォーム（iOS 2.05 / Android 1.9 / macOS 1.6）から突出していた。
+
+**⚠ この 4.3 を endpoint churn だけに帰さないこと（[#950](https://github.com/pooza/capsicum/issues/950)）。** 掃除側も効いていなかった —— `_cleanupDeviceRegistration` は「全アカウントを `unregisterAccount` → 最後に `unregisterDevice`」の順で回すが、前段の `PushKeyStore.delete(accountKey)` が **`relayId` スロットごと消す**ため、後段は保存済み id を 1 つも見つけられず `DELETE /register/:id` を**一度も発行していなかった**。孤児が増える一方で、アプリから relay row を消す経路が実質存在しない状態。加えて doc / 実装が `UNIQUE(token)`（**旧**スキーマ）の「1 行消せばデバイス全体が消える」前提のままで、現行の `UNIQUE(token, account, server)` では **N アカウント中 1 行しか消えない**形でもあった。両方 v1.55 で是正済み。
 
 恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
 

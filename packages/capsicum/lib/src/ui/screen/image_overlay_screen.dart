@@ -7,8 +7,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
+import '../../util/exception_scrub.dart';
 import '../util/image_overlay_geometry.dart';
 import '../widget/sticker_picker_sheet.dart';
+
+/// スタンプ素材として受け入れるレスポンスボディの上限 (#953-2)。
+///
+/// 素材の供給元はサーバー由来の任意 URL（`CustomEmoji.url`）で、**サイズを
+/// こちらで保証できない**。プリセット 3 サーバーの実データで最大が 1MB 弱
+/// （アニメーション webp）なので、桁 1 つぶんの余裕を見て 8MB。カスタム絵文字は
+/// 一覧に並べて使うものなので、これを超える素材は運用上そもそも成立しない。
+const _kMaxStickerBytes = 8 * 1024 * 1024;
+
+/// スタンプ素材をデコードする最大高さ（px、#953-2）。
+///
+/// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
+/// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
+/// その 1/2 を上限にしておけば拡大しても粗が出ない。
+const _kMaxStickerDecodeHeight = 2048;
 
 /// 添付画像に重ねる 1 レイヤの共通部分 (#576 / #883)。
 ///
@@ -115,14 +131,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 入力バイト列をネイティブコーデックでデコードし、原寸サイズと表示用 PNG を
   /// 得る。デコードできない画像は対象外として呼び出し元へ戻す。
   Future<void> _decode() async {
+    // 解放は try/finally に寄せる (#953-4)。成功パスの一直線上に dispose を
+    // 置くと、`toByteData` が投げたときに原寸画像ぶんのネイティブメモリが
+    // そのまま残る。
+    ui.Codec? codec;
+    ui.Image? image;
     try {
-      final codec = await ui.instantiateImageCodec(widget.imageData);
+      codec = await ui.instantiateImageCodec(widget.imageData);
       final frame = await codec.getNextFrame();
-      final image = frame.image;
+      image = frame.image;
       final size = Size(image.width.toDouble(), image.height.toDouble());
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      codec.dispose();
       if (data == null) {
         throw StateError('Failed to encode normalized PNG');
       }
@@ -132,18 +151,31 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         _imageSize = size;
       });
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('この画像は編集できませんでした')));
       Navigator.of(context).pop();
+    } finally {
+      image?.dispose();
+      codec?.dispose();
     }
   }
 
   /// テキスト入力ダイアログ。[initial] を渡すと既存レイヤの編集。
-  Future<String?> _promptText({String initial = ''}) {
+  Future<String?> _promptText({String initial = ''}) async {
     final controller = TextEditingController(text: initial);
+    try {
+      return await _showTextPrompt(controller);
+    } finally {
+      // ダイアログを開くたびに ChangeNotifier が 1 個ずつリークしていた
+      // (#953-4)。`showDialog` の解決後に必ず捨てる。
+      controller.dispose();
+    }
+  }
+
+  Future<String?> _showTextPrompt(TextEditingController controller) {
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -202,7 +234,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         _loadingSticker = false;
       });
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      // ⚠ ここには **リモート URL 由来の DioException** が来る。dio の版差で
+      // uri が message に載りうるので必ず scrub を通す (#953-4)。
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
       setState(() => _loadingSticker = false);
       ScaffoldMessenger.of(
@@ -219,18 +253,53 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// 絵文字のフレーム 0 はいずれも「全フレーム中の最大被覆」の 6 割以上を占めて
   /// おり、空・スカスカのものは 1 つも無かった。よって「途中のフレームを選ぶ」
   /// ヒューリスティックは持たない（#883 のコメントに実測値）。
+  /// ⚠ **タイムアウトだけでは巨大ボディを止められない** (#953-2)。
+  /// `receiveTimeout` は dio 仕様上「受信バイトイベントの間隔」なので、
+  /// 5 秒未満の間隔で細く流れ続ける数百 MB のボディは打ち切られない。
+  /// 素材はサーバー由来の任意 URL（`emoji.url`）なので、**総バイト数と
+  /// デコード後の寸法の両方に上限を張る**。
   Future<ui.Image> _loadStickerImage(String url) async {
-    final response = await Dio(
-      BaseOptions(
-        connectTimeout: kNetworkConnectTimeout,
-        receiveTimeout: kNetworkReceiveTimeout,
-      ),
-    ).get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+    final response =
+        await Dio(
+          BaseOptions(
+            connectTimeout: kNetworkConnectTimeout,
+            receiveTimeout: kNetworkReceiveTimeout,
+            // Content-Length が付いていれば、1 バイトも読まずにここで弾ける。
+            // 付いていない（chunked）場合は下の onReceiveProgress で見る。
+            maxRedirects: 3,
+          ),
+        ).get<List<int>>(
+          url,
+          options: Options(responseType: ResponseType.bytes),
+          onReceiveProgress: (received, total) {
+            if (received > _kMaxStickerBytes) {
+              throw const FormatException('sticker body too large');
+            }
+          },
+        );
+    final contentLength = response.headers.value(Headers.contentLengthHeader);
+    final declared = contentLength == null ? null : int.tryParse(contentLength);
+    if (declared != null && declared > _kMaxStickerBytes) {
+      throw const FormatException('sticker body too large');
+    }
     final bytes = response.data;
     if (bytes == null || bytes.isEmpty) {
       throw const FormatException('empty sticker body');
     }
-    final codec = await ui.instantiateImageCodec(Uint8List.fromList(bytes));
+    // onReceiveProgress が呼ばれない実装（レスポンス全体を一括で渡す adapter）
+    // でも取りこぼさないよう、手元に来た実体でもう一度確かめる。
+    if (bytes.length > _kMaxStickerBytes) {
+      throw const FormatException('sticker body too large');
+    }
+    // `targetHeight` を渡してデコード段で縮める。渡さないと 8000x8000 の PNG が
+    // 原寸（= 256MB のピクセルバッファ）で展開される。スタンプは元画像の高さの
+    // 数割にしか描かれないので、原寸を保持する意味がそもそも無い。
+    // 幅は指定しない（アスペクト比が保たれる）。
+    final codec = await ui.instantiateImageCodec(
+      Uint8List.fromList(bytes),
+      targetHeight: _kMaxStickerDecodeHeight,
+      allowUpscaling: false,
+    );
     try {
       final frame = await codec.getNextFrame();
       return frame.image;
@@ -298,18 +367,21 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     final size = _imageSize;
     if (size == null || _rendering) return;
     setState(() => _rendering = true);
+    // 解放は try/finally に寄せる (#953-4)。dispose が成功パスの一直線上に
+    // しか無いと、書き出し失敗を繰り返すたびに原寸画像ぶんのネイティブメモリが
+    // 積み上がる。
+    ui.Codec? codec;
+    ui.Image? src;
+    ui.Picture? picture;
+    ui.Image? out;
     try {
-      final codec = await ui.instantiateImageCodec(widget.imageData);
+      codec = await ui.instantiateImageCodec(widget.imageData);
       final frame = await codec.getNextFrame();
-      final src = frame.image;
+      src = frame.image;
       // PopScope で塞いでいるが、await 明けに State が生きていることを
       // 描画前にもう一度確かめる（プログラム的な pop など経路は他にもある）。
       // ここを抜けた後は破棄済みの `item.image` を掴みうる。
-      if (!mounted) {
-        src.dispose();
-        codec.dispose();
-        return;
-      }
+      if (!mounted) return;
       final w = size.width;
       final h = size.height;
 
@@ -326,14 +398,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         }
       }
 
-      final picture = recorder.endRecording();
-      final out = await picture.toImage(w.round(), h.round());
+      picture = recorder.endRecording();
+      out = await picture.toImage(w.round(), h.round());
       final data = await out.toByteData(format: ui.ImageByteFormat.png);
-
-      src.dispose();
-      codec.dispose();
-      picture.dispose();
-      out.dispose();
 
       if (data == null) {
         throw StateError('Failed to encode composited PNG');
@@ -341,12 +408,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(data.buffer.asUint8List());
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
       setState(() => _rendering = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('画像の書き出しに失敗しました')));
+    } finally {
+      out?.dispose();
+      picture?.dispose();
+      src?.dispose();
+      codec?.dispose();
     }
   }
 
@@ -636,7 +708,17 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   Widget _buildAddRow() {
-    return Row(
+    // `Row` ではなく `Wrap`。v1.53 までは `TextButton.icon` 1 個だったところに
+    // #883 で「スタンプを追加」を足したが、`Row` のままだったので狭幅で
+    // RenderFlex overflow していた (#953-3)。widget test の実測で **320 論理 px
+    // 幅で 9.4px、テキストスケール 1.15 で 32px、1.3 で 54px**、375px でも 1.35
+    // 倍以上で破綻する。該当は iPhone SE(1st) / iPod touch、iOS の Display Zoom、
+    // Android の「表示サイズ」拡大。
+    //
+    // `Expanded` / `Flexible` ではなく `Wrap` を選んだのは、ラベルを省略記号で
+    // 削るより 2 行に折り返す方がボタンの意味が残るため。入る幅では 1 行のまま
+    // なので通常時の見た目は変わらない。
+    return Wrap(
       children: [
         TextButton.icon(
           onPressed: _addTextItem,

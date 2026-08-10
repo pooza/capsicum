@@ -35,6 +35,17 @@ std::string NotificationTagKey(const std::string& account,
 // [NotificationTagKey] + [StableNotificationTag] を通し、トーストの Tag に
 // そのまま渡せる 10 進文字列を返す。flutter_local_notifications 側が
 // `to_hstring(int)` で作る Tag と一致する表現。
+//
+// **notification_id が空なら空文字を返す**（#956）。Tag が一致するトーストは
+// OS が差し替えるので、ID を持たない払い出しで `hash("account|")` を返すと
+// **そのアカウント宛が全部同じ Tag になり、Action Center に最後の 1 件しか
+// 残らない**。ShowRawToast は空 Tag を「Tag を付けない」と解釈する
+// (`win_toast.cpp` の `if (!tag.empty())`) ので、#933 以前と同じ「畳まない」
+// 挙動に戻る。畳めないのは取りこぼしだが、消えるより軽い。
+//
+// ⚠ [NotificationTagKey] は**空に正規化しない**。あちらは dedup レジストリの
+// キーで、空文字にすると「キー無し」と区別できなくなる。ID が無いときに
+// dedup を通さない判断は呼び出し側にある（`wns_push.cpp` の `dedupable`）。
 std::string NotificationTagFor(const std::string& account,
                                const std::string& notification_id);
 

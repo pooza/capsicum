@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -170,6 +172,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
   @override
   void dispose() {
+    _cancelResultReport();
     _runtime?.dispose();
     _summaryRenderer?.dispose();
     super.dispose();
@@ -315,6 +318,10 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       }
     };
 
+    // 「もう一度実行」で前回の待ち合わせが生き残ると、古い runtime の出目を
+    // 新しい実行のものとして記録しうる (#898)。
+    _cancelResultReport();
+
     setState(() {
       _running = true;
       _error = null;
@@ -331,7 +338,11 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       // #898: 成功した実行の「出目」を追跡記録する（前向き実験・記憶非依存）。
       // 絵文字追加の前後で「対象集合と交差する Play だけ出目が変わる」を予測と
       // 突き合わせるための材料。記録の失敗で Play を巻き込まないよう握りつぶす。
-      _reportResult(runtime, host);
+      //
+      // ⚠ ここで即座に指紋を取ってはいけない。run() が待つのはトップレベルの
+      // 評価だけで、出目をアニメーションで出す Play はまだ途中経過が載っている
+      // （詳細は [_scheduleResultReport]）。
+      _scheduleResultReport(runtime, host);
     } on FlashRuntimeError catch (e, st) {
       // 分類済みの失敗も Sentry へ流す。どの `Ui:` / `Mk:` が未実装かを
       // `flash.unimplemented` タグに載せ、issue は集約したまま機能別に件数
@@ -359,15 +370,96 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     }
   }
 
+  /// ツリーの更新がこの時間だけ止まったら「出目が確定した」とみなす (#898)。
+  /// 実在の Play で最も遅いアニメーションはスロット系の 50ms 間隔なので、
+  /// コマの合間を誤って確定と読まない程度に長く取る。
+  static const _settleQuietWindow = Duration(milliseconds: 800);
+
+  /// 落ち着くのを待つ上限 (#898)。`Async:interval` で回り続ける Play は永久に
+  /// 確定しないため、ここで打ち切って [reportPlayUnsettled] に倒す。
+  static const _settleTimeout = Duration(seconds: 10);
+
+  Timer? _settleTimer;
+  Timer? _settleDeadline;
+  void Function()? _settleListener;
+  FlashRuntime? _settleRuntime;
+  DateTime? _settleStartedAt;
+
+  /// 出目の指紋を **ツリーが落ち着いてから** 取って記録する (#898)。
+  ///
+  /// `runtime.run()` が await するのはトップレベルの評価だけで、`Async:timeout` は
+  /// 素の `Timer` を仕掛けて即座に返る。スロット系のように「30 コマのアニメーション
+  /// → 確定した出目」という構成の Play は、run() 完了時点ではまだ `Math:rnd`
+  /// （**無シード**）で描かれたコマが載っている。そのまま指紋を取ると実行のたびに
+  /// 違う値になり、**シードも走査対象集合も同じなのに出目が変わったように見える**。
+  ///
+  /// 2026-08-10 の突合でこれを実測した（同一ユーザー・同一日・同一 `emoji.hash` の
+  /// 使徒スロット 3 組で `result.hash` が全て相異なる一方、`CUSTOM_EMOJIS` を使わない
+  /// 静的な Play 10 組は完全に不変）。#896 の結論（乱数エンジンは無罪）は揺らがず、
+  /// 壊れていたのは計測器の側だった。
+  void _scheduleResultReport(FlashRuntime runtime, String host) {
+    _cancelResultReport();
+    _settleRuntime = runtime;
+    _settleStartedAt = DateTime.now();
+
+    void finish({required bool settled}) {
+      final startedAt = _settleStartedAt;
+      _cancelResultReport();
+      // 画面を離れた／別の実行が始まったあとの記録は、部分的な出目を「成功」と
+      // して混ぜてしまうので捨てる（run() 直後の !mounted ガードと同じ理由）。
+      if (!mounted || _runtime != runtime) return;
+      if (!settled) {
+        // 確定した出目を持たない Play。突合データに雑音を入れないため
+        // play.result は送らず、件数だけ別に数える。
+        reportPlayUnsettled(
+          flashId: runtime.flashId,
+          host: host,
+          forced: _forceRun,
+        );
+        return;
+      }
+      _reportResult(runtime, host, startedAt: startedAt);
+    }
+
+    void restartQuietTimer() {
+      _settleTimer?.cancel();
+      _settleTimer = Timer(_settleQuietWindow, () => finish(settled: true));
+    }
+
+    _settleListener = restartQuietTimer;
+    runtime.addListener(restartQuietTimer);
+    // 静的な Play は run() 以降まったく更新が来ないので、待ち合わせ自体をここで
+    // 始めておく（リスナー任せにすると永久に発火しない）。
+    restartQuietTimer();
+    _settleDeadline = Timer(_settleTimeout, () => finish(settled: false));
+  }
+
+  void _cancelResultReport() {
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    _settleDeadline?.cancel();
+    _settleDeadline = null;
+    final listener = _settleListener;
+    if (listener != null) _settleRuntime?.removeListener(listener);
+    _settleListener = null;
+    _settleRuntime = null;
+    _settleStartedAt = null;
+  }
+
   /// 成功した実行の出目とインベントリ版を Sentry へ記録する (#898)。
   /// 追跡が本来の Play 動作を壊さないよう、指紋計算まで含め例外は握りつぶす。
-  void _reportResult(FlashRuntime runtime, String host) {
+  void _reportResult(
+    FlashRuntime runtime,
+    String host, {
+    required DateTime? startedAt,
+  }) {
     try {
       reportPlayResult(
         flashId: runtime.flashId,
         host: host,
         inventory: playEmojiInventoryDigest(runtime.customEmojis),
         resultDigest: playResultDigest(runtime.rootChildren, runtime.component),
+        settleBucket: _settleBucket(startedAt),
         // force-run（互換性無視の実行）は評価器レジームが通常と異なるため
         // タグで分離する（#881 / #898 の突合汚染防止）。
         forced: _forceRun,
@@ -375,6 +467,17 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
     } catch (_) {
       // 追跡記録は best-effort。
     }
+  }
+
+  /// 確定までに待った時間のバケット (#898)。生の ms はタグの基数を無駄に増やす
+  /// だけで、欲しいのは「待たずに取れた／アニメーションを待った」の別。
+  static String _settleBucket(DateTime? startedAt) {
+    if (startedAt == null) return 'unknown';
+    final waited = DateTime.now().difference(startedAt) - _settleQuietWindow;
+    if (waited <= Duration.zero) return 'immediate';
+    if (waited < const Duration(seconds: 1)) return 'lt1s';
+    if (waited < const Duration(seconds: 3)) return 'lt3s';
+    return 'gte3s';
   }
 
   Future<void> _toggleLike() async {
@@ -586,17 +689,24 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
 
 /// 「Web 版と出目が違う」への手掛かりを、バージョン警告とは独立に置く (#935)。
 ///
-/// 出目差は **AiScript のバージョンとは無関係**（#896: 乱数の生成方式が
-/// `seedrandom` 互換でない）に起きるが、ユーザーから見るとバージョン警告
-/// (#934) 以外に手掛かりが無く、結果として警告が真因を隠していた。
+/// **2026-08-10 に前提が変わった (#896)。**それまで出目差は AiScript のバージョン
+/// とは無関係に起きていた（生成方式が `seedrandom` 互換でなかった）が、互換化した
+/// 結果、**いま食い違うのは宣言バージョンが 1.0 以上の Play を force-run した
+/// ときだけ**になった。本家 Misskey は宣言で実行系を振り分けており、
+///
+/// - 宣言なし / 1.0 未満 → `@syuilo/aiscript-0-19-0` = **seedrandom** → capsicum と一致
+/// - 1.0 以上 → `@syuilo/aiscript` 1.x = **chacha20**（secure context の既定・
+///   seed を SHA-384 に通して ChaCha20）→ capsicum（0.16 相当の評価器）とは別物
+///
+/// 後者は #881 の gate で本来ブラウザへ倒すが、「このまま実行する」を選べば
+/// 評価される。よって注記は**条件を明示する**（実測: ろぐぼチャレンジ＝宣言なしは
+/// 一致 / ダイ大おみくじ＝`/// @ 1.2.0` は不一致）。
 ///
 /// 書き方の制約 (#935):
 ///
-/// - **「不具合ではありません」と断定しない。** 照合先は `@syuilo/aiscript-0-19-0`
-///   (seedrandom) で、互換化すれば一致しうる。#896 が開いている以上、恒久仕様の
-///   ように書くと矛盾する。「現状は異なります」に留める
-/// - **「シード固定で食い違うなら報告してください」と書かない。** 現状はシードを
-///   固定しても食い違うのが既知で、報告を促すと無駄足になる
+/// - **「不具合ではありません」と断定しない。**
+/// - **「シード固定で食い違うなら報告してください」と書かない。** 1.x 宣言の
+///   Play では食い違うのが既知で、報告を促すと無駄足になる
 class _RandomnessNote extends StatelessWidget {
   const _RandomnessNote();
 
@@ -617,7 +727,7 @@ class _RandomnessNote extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         ),
         title: Text(
-          '乱数について（AiScript のバージョンとは無関係です）',
+          '乱数について',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -625,8 +735,10 @@ class _RandomnessNote extends StatelessWidget {
         children: [
           Text(
             '乱数を使う Play は、実行のたびに結果が変わります。\n'
-            'また、日付などでシードを固定する Play も、現状は Web版と異なる結果に'
-            'なります。乱数の生成方式が異なるためで、バージョンの新旧とは別の話です。',
+            '日付などでシードを固定する Play は、Web 版と同じ結果になります。'
+            'ただし「新しい AiScript で書かれています」と表示された Play を'
+            'そのまま実行した場合は、Web 版と乱数の作り方が変わるため、'
+            '結果が食い違います。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

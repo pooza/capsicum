@@ -246,4 +246,85 @@ void main() {
       }
     });
   });
+
+  group('Math:gen_rng が Misskey Web と同じ出目を出す (#896)', () {
+    /// 期待値は本物の seedrandom 3.0.5（本家 aiscript 0.19.0 が使う版）を Node で
+    /// 回した実測値。フォーク側にも同じ固定があるが、**pin を上げたときに
+    /// capsicum の CI で気づける**ようここにも置く。ここが落ちたら、シードを
+    /// 固定しても Web と出目が一致しない状態に戻っている。
+    Future<String> drawnBy(FlashRuntime runtime, String seedExpr) async {
+      await runtime.run('''
+        let r = Math:gen_rng($seedExpr)
+        var s = ""
+        for (let i, 5) {
+          s = `{s},{r(0 100000)}`
+        }
+        Ui:render([Ui:C:text({ text: s }, "t")])
+      ''');
+      return runtime.component('t')!.text!;
+    }
+
+    test('実在の Play が使う形のシード', () async {
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+
+      expect(
+        await drawnBy(runtime, '"user12345_2026_7_26_comfy_slot"'),
+        ',51954,23544,4594,30169,42535',
+      );
+    });
+
+    test('数値シードは JS と同じ文字列化を経る', () async {
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+
+      // 本家は seed.value.toString() を渡すので 5 と "5" は同値。
+      expect(await drawnBy(runtime, '5'), ',7790,71777,69339,58096,31513');
+    });
+  });
+
+  group('run() は非同期コールバックを待たない (#898)', () {
+    // 出目をアニメーションで出す Play（スロット系）を模す。トップレベルは
+    // Async:timeout を仕掛けて即座に終わり、確定した出目はコールバックの中で
+    // 初めてツリーに載る。
+    const animated = '''
+      let random = Math:gen_rng("seed_fixed")
+      let box = Ui:C:mfm({ text: "とちゅう" }, "reel")
+      Ui:render([box])
+
+      @finish() {
+        Ui:get("reel").update({ text: `かくてい{random(0 9)}` })
+      }
+      Async:timeout(10 finish)
+    ''';
+
+    test('run() 直後はまだ途中経過が載っている', () async {
+      final runtime = _runtime();
+      addTearDown(runtime.dispose);
+
+      await runtime.run(animated);
+
+      // ここで指紋を取ると「出目」ではなく途中経過を測ることになる。これが
+      // 2026-08-10 の突合で判明した計測器の不備の正体（#898）。
+      expect(runtime.component('reel')!.text, 'とちゅう');
+    });
+
+    test('落ち着くまで待てば確定した出目が載り、同じシードなら再実行でも一致する', () async {
+      Future<String> settledText() async {
+        final runtime = _runtime();
+        addTearDown(runtime.dispose);
+        await runtime.run(animated);
+        // Async:timeout のコールバックが載るまで待つ。
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        return runtime.component('reel')!.text!;
+      }
+
+      final first = await settledText();
+      final second = await settledText();
+
+      expect(first, startsWith('かくてい'));
+      // シードが同じなら出目も同じ。ここが割れるなら乱数側の回帰。
+      expect(first, second);
+    });
+  });
 }

@@ -72,7 +72,15 @@ class _PostTileState extends ConsumerState<PostTile> {
   bool _tagsExpanded = false;
   late bool _cwExpanded = widget.initialExpanded;
   bool _filterExpanded = false;
-  bool _deleted = false;
+
+  /// 自分で削除した投稿の id。**bool ではなく id で持つ** (#909)。
+  ///
+  /// タイムラインの各行にはキーが無く、State は位置で再利用される。削除の直前に
+  /// streaming が新着を先頭へ挿すと、この State が描く投稿が別のものへ入れ替わる
+  /// ので、bool だと**無関係な投稿を隠してしまう**。「削除してタグづけ」は
+  /// モロヘイヤが投稿→削除の順で行い、レスポンスが返る前に再投稿が streaming で
+  /// 届くため、これがそのまま「再投稿が出てこない」に化けていた。
+  String? _deletedPostId;
   List<PreviewCard> _fetchedCards = [];
   // カード取得対象の URL（本文中で API 由来カードに含まれない分）。順序保持。
   List<String> _cardUrlsToFetch = const [];
@@ -93,7 +101,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   void didUpdateWidget(PostTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.post.id != widget.post.id) {
-      _deleted = false;
+      _deletedPostId = null;
       _expanded = widget.initialExpanded;
       _cwExpanded = widget.initialExpanded;
       _tagsExpanded = false;
@@ -383,7 +391,13 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   @override
   Widget build(BuildContext context) {
-    if (_deleted) return const SizedBox.shrink();
+    // いま描いている投稿そのものを削除したときだけ隠す。ブースト経由の削除は
+    // 対象が内側の投稿になるので、そちらの id とも突き合わせる。
+    final deletedId = _deletedPostId;
+    if (deletedId != null &&
+        (deletedId == widget.post.id || deletedId == widget.post.reblog?.id)) {
+      return const SizedBox.shrink();
+    }
 
     final displayPost = post.reblog ?? post;
     final isFilteredWarn = displayPost.filterAction == FilterAction.warn;
@@ -1457,7 +1471,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
-                if (mounted) setState(() => _deleted = true);
+                if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
               }, '${ref.read(postLabelProvider)}を削除しました');
             },
@@ -1547,7 +1561,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
-                if (mounted) setState(() => _deleted = true);
+                if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
@@ -1775,7 +1789,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                   )
                   .then((_) {
                     timeline.removePost(targetPost.id);
-                    if (mounted) setState(() => _deleted = true);
+                    if (mounted) setState(() => _deletedPostId = targetPost.id);
                     if (context.mounted) _popIfInThread(context);
                     messenger.showSnackBar(
                       const SnackBar(content: Text('NowPlaying を削除しました')),
@@ -1824,14 +1838,24 @@ class _PostTileState extends ConsumerState<PostTile> {
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
           final timeline = readVisibleTimelines(ref);
+          final adapter = ref.read(currentAdapterProvider);
           try {
-            await mulukhiya.updateStatusTags(
+            final raw = await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,
               id: targetPost.id,
               tags: tags,
             );
             timeline.removePost(targetPost.id);
-            if (mounted) setState(() => _deleted = true);
+            // 再投稿はモロヘイヤがサーバー側で行うので、capsicum は新しい id を
+            // 知らない。レスポンスに完全な投稿が入っているので、それを「削除して
+            // 再編集」と同じ楽観挿入に乗せる。これが無いとライブ更新 OFF や
+            // スクロール中は streaming 待ちになる (#909 / #887 の残り)。
+            if (raw != null && adapter is MulukhiyaRepostSupport) {
+              final reposted = (adapter as MulukhiyaRepostSupport)
+                  .parseRepostedPost(raw);
+              if (reposted != null) timeline.insertOwnPost(reposted);
+            }
+            if (mounted) setState(() => _deletedPostId = targetPost.id);
             if (context.mounted) _popIfInThread(context);
             messenger.showSnackBar(const SnackBar(content: Text('タグを変更しました')));
           } catch (e, st) {

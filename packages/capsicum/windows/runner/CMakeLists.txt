@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "smtc_now_playing.cpp"
   "windows_store_iap.cpp"
   "wns_push.cpp"
+  "notification_dedup.cpp"
   "notification_tag.cpp"
   "notification_type_label.cpp"
   "push_diagnostics.cpp"
@@ -47,6 +48,8 @@ add_executable(${BINARY_NAME} WIN32
 # notification_tag_test は /utf-8 が要る（マルチバイトのテストベクタを Dart 側
 # の utf8.encode と一致させているため）:
 #   cl /EHsc /utf-8 /std:c++17 notification_tag_test.cpp notification_tag.cpp
+# 起動中二重通知の dedup レジストリ (#945):
+#   cl /EHsc /std:c++17 notification_dedup_test.cpp notification_dedup.cpp
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
