@@ -937,8 +937,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           child: Center(child: CircularProgressIndicator()),
                         );
                       }
+                      final post = tlState.posts[index];
+                      // 投稿 id をキーにして State を投稿に固定する (#909)。
+                      // 無いと streaming の先頭挿入で State が位置ごとズレて
+                      // 再利用され、削除中の行の状態が別の投稿へ移る。
                       return PostTile(
-                        post: tlState.posts[index],
+                        key: ValueKey(post.id),
+                        post: post,
                         selected: keyboardSelectedIndex == index,
                       );
                     },

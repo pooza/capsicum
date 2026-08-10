@@ -1569,6 +1569,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (post.filterAction == FilterAction.hide) return;
     final hideLivecure = ref.read(hideLivecureProvider);
     if (hideLivecure && _hasLivecureTag(post)) return;
+    // 既に載っているなら何もしない。「削除してタグづけ」は Misskey では
+    // 投稿→削除の順で行われるため、レスポンスが返る前に streaming が再投稿を
+    // 先に載せていることがある (#909)。
     if (current.posts.any((p) => p.id == post.id)) return;
     if (_pendingPosts.any((p) => p.id == post.id)) return;
     // streaming は `!_isNearTop` のとき _pendingPosts にキューしてスクロール
@@ -1699,9 +1702,15 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         final enrichedMore = await _enrichIsCat(allVisible);
         // Re-read state to preserve posts added by streaming during await.
         final latest = state.valueOrNull ?? current;
+        // 既にリストにある投稿は落とす (#909)。ページ境界の max_id が両端を含む
+        // サーバーや、await 中に streaming が同じ投稿を先に載せた場合に重複する。
+        // 一覧の各行は id をキーにしているので、重複すると Duplicate keys で
+        // 描画ごと落ちる。
+        final knownIds = {for (final p in latest.posts) p.id};
+        final appended = enrichedMore.where((p) => knownIds.add(p.id)).toList();
         state = AsyncData(
           latest.copyWith(
-            posts: [...latest.posts, ...enrichedMore],
+            posts: [...latest.posts, ...appended],
             isLoadingMore: false,
             hasMore: hasMore,
             loadMoreError: null,
