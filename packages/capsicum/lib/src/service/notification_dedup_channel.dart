@@ -18,12 +18,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// `username@host|notificationId`（NSE が復号 payload から stamp する ID と
 /// 同じ ID 空間。docs/desktop-notification-design.md §5）。
 ///
-/// 本チャネルが配線されているのは macOS (#468) だけで、macOS 以外では何も
-/// しない。Windows の WNS push (#474) も出荷済みだが、そちらは bg task が
-/// 別プロセスで動く都合上この受け渡しに乗せられないため、**両経路のトースト
-/// Tag を同じ導出に揃えて OS 側に畳ませる**方式を採っている (#933。
-/// `notification_tag.dart`)。通知音の重複までは防げないぶん弱い抑止で、
-/// 必要なら本チャネルの Windows 拡張を後から足す。
+/// 配線されているのは **macOS (#468) と Windows (#945)** で、それ以外では何も
+/// しない。
+///
+/// Windows は当初「両経路のトースト Tag を同じ導出に揃えて OS 側に畳ませる」
+/// 方式だった (#933。`notification_tag.dart`)。bg task が別プロセスで動くため
+/// この受け渡しに乗せられない、という理由だったが、
+///
+/// - **実機で畳まれなかった** (#945。Tag / Group / AUMID はいずれも一致して
+///   いるのに 2 通出る)
+/// - 畳めたとしても 2 通目のトースト自体は作られるので**通知音の重複が残る**
+/// - **起動中**の WNS 受信は bg task ではなく本体プロセス (`wns_push.cpp` の
+///   in-process 受信) が担うので、そもそもプロセスを跨がない
+///
+/// の 3 点から、macOS と同じ「先に出した方が勝つ」方式へ寄せた。native 側の
+/// 終端は `windows/runner/notification_dedup.{h,cpp}`。Tag を揃える #933 の
+/// 実装は、dedup を取りこぼしたときの二段目の受け皿として残してある。
+///
+/// なお **アプリ完全終了中の bg task はこの dedup を通らない**。別プロセスで
+/// 動くうえ、そのとき WebSocket 経路は存在しないので競合しない。
 class NotificationDedupChannel {
   NotificationDedupChannel({@visibleForTesting MethodChannel? channel})
     : _channel =
@@ -42,7 +55,12 @@ class NotificationDedupChannel {
   /// 掃除のトリガとして配線する。
   void Function()? onRemoteArrived;
 
-  bool get _supported => !kIsWeb && Platform.isMacOS;
+  /// 双方向 dedup（[start] / [addEmitted] / [onRemotePresented]）が使えるか。
+  bool get _supported => !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+
+  /// NSE 由来の配信済み通知の掃除 (#673) が使えるか。**macOS 専用**で、Windows
+  /// には NSE も通知センターの列挙 API も無い（native 側は NotImplemented）。
+  bool get _deliveredCleanupSupported => !kIsWeb && Platform.isMacOS;
 
   /// native からの逆方向通知を listen し始める。アプリ起動時に 1 回呼ぶ。
   void start() {
@@ -74,7 +92,7 @@ class NotificationDedupChannel {
   /// 配信済み通知のうち APNs remote 由来のものを取得する (#673 掃除用)。
   /// 失敗時 (proxy 未 install 等) は空リスト = 掃除対象なし扱い。
   Future<List<DeliveredRemoteNotification>> getDeliveredRemotes() async {
-    if (!_supported) return const [];
+    if (!_deliveredCleanupSupported) return const [];
     try {
       final raw = await _channel.invokeListMethod<Map<Object?, Object?>>(
         'getDeliveredRemotes',
@@ -100,7 +118,7 @@ class NotificationDedupChannel {
 
   /// 配信済み通知を identifier 指定で通知センターから削除する (#673 掃除用)。
   Future<void> removeDelivered(List<String> identifiers) async {
-    if (!_supported || identifiers.isEmpty) return;
+    if (!_deliveredCleanupSupported || identifiers.isEmpty) return;
     try {
       await _channel.invokeMethod<void>('removeDelivered', identifiers);
     } on PlatformException {

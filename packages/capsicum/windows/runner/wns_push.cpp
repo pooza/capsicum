@@ -9,10 +9,12 @@
 #include <condition_variable>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <string>
 
 #include "local_state_files.h"
+#include "notification_dedup.h"
 #include "notification_tag.h"
 #include "web_push_key_reader.h"
 #include "web_push_receive.h"
@@ -116,6 +118,29 @@ void RegisterPushBackgroundTaskOnce() {
   }
 }
 
+// 起動中に WNS 経路がトーストを出したことを Dart へ伝えるコールバック (#945)。
+// [RunWnsChannelReceiver] が購読開始前に 1 度だけ設定し、以降は受信ワーカー
+// スレッドから呼ばれる。UI スレッドへの marshal は呼び出し側 (flutter_window)
+// の責務。未設定（テスト・非 MSIX 起動）でも受信自体は動く。
+std::mutex& PresentedCallbackMutex() {
+  static std::mutex m;
+  return m;
+}
+
+std::function<void(const std::string&)>& PresentedCallback() {
+  static std::function<void(const std::string&)> callback;
+  return callback;
+}
+
+void NotifyPresented(const std::string& key) {
+  std::function<void(const std::string&)> callback;
+  {
+    std::lock_guard<std::mutex> lock(PresentedCallbackMutex());
+    callback = PresentedCallback();
+  }
+  if (callback) callback(key);
+}
+
 // raw 通知 1 通を復号してトースト表示する。失敗（非暗号化通知・鍵不在・復号
 // 失敗）は黙って捨てる。title / body はサーバーが生成・ローカライズ済み。
 void DisplayRawNotification(const std::string& content) {
@@ -128,16 +153,31 @@ void DisplayRawNotification(const std::string& content) {
           labels)) {
     return;
   }
+  // 起動中は WebSocket 経路 (#569) が同じ通知を先に出していることがある。
+  // #933 は両経路のトースト Tag を揃えて OS に畳ませる方式だったが、**実機で
+  // 畳まれないことが確認された** (#945)。Tag が畳めても 2 通目のトースト自体は
+  // 作られるので通知音の重複は残る。よって macOS (#674) と同じ「先に出した方が
+  // 勝つ」方式に寄せ、負けた側はトーストを作らない。
+  const std::string dedup_key = capsicum::NotificationTagKey(
+      display.account, display.notification_id);
+  if (capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
+    return;
+  }
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
-  // 安定ハッシュ）にする。アプリ起動中は両経路が同じ通知を出しうるが、Tag が
-  // 一致すれば OS 側が差し替えて 1 通に畳む (#933)。WebSocket 経路は
-  // flutter_local_notifications 経由で、その Windows 実装が Tag を int の id
-  // から作るため、SNS 通知 ID の文字列ではなく整数側へ揃えている。
+  // 安定ハッシュ）のまま残す。dedup を取りこぼしたときの二段目の受け皿として、
+  // OS 側の畳み込みに賭ける価値はある（効かない環境があるだけで害は無い）。
   // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
   // ため、ここでは付けない。
-  capsicum::ShowRawToast(
-      display.title, display.body, /*launch_arg=*/"",
-      capsicum::NotificationTagFor(display.account, display.notification_id));
+  if (!capsicum::ShowRawToast(
+          display.title, display.body, /*launch_arg=*/"",
+          capsicum::NotificationTagFor(display.account,
+                                       display.notification_id))) {
+    // 表示できなかったので claim しない。ここで記録すると、WebSocket 経路まで
+    // 抑止されて**通知が 1 通も出なくなる**。
+    return;
+  }
+  capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
+  NotifyPresented(dedup_key);
 }
 
 }  // namespace
@@ -205,7 +245,13 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
 }
 
 void RunWnsChannelReceiver(
-    const std::function<void(const std::string&)>& on_uri) {
+    const std::function<void(const std::string&)>& on_uri,
+    const std::function<void(const std::string&)>& on_presented) {
+  {
+    // 購読を張る前に設定する。張った後だと最初の 1 通を取りこぼしうる。
+    std::lock_guard<std::mutex> lock(PresentedCallbackMutex());
+    PresentedCallback() = on_presented;
+  }
   PushNotificationChannel channel{nullptr};
   try {
     // .get() でブロックするため MTA。CreatePushNotificationChannelForApplication-

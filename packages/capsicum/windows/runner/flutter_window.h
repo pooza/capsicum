@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "win32_window.h"
 
@@ -26,6 +27,12 @@
 // 得た結果を PostMessage で marshal し、UI スレッド側で Success/Error を返す。
 // wparam に結果 id を載せる。
 #define WM_STORE_IAP_RESULT (WM_APP + 2)
+
+// 起動中に WNS 経路がトーストを出したことを Dart へ伝えるためのメッセージ
+// (#945)。in-process 受信は MTA ワーカースレッドで走るが、InvokeMethod は
+// プラットフォーム（UI）スレッドでしか呼べないため、キーをキューに積んで
+// PostMessage し、UI スレッド側で 'onRemotePresented' を投げる。
+#define WM_NOTIFICATION_PRESENTED (WM_APP + 3)
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -63,6 +70,28 @@ class FlutterWindow : public Win32Window {
   // 複数回起動すると MTA スレッドと PushNotificationReceived 購読が多重化し、
   // 同一 raw 通知でトーストが複数回出る。
   std::atomic<bool> wns_receiver_started_{false};
+
+  // 起動中二重通知の dedup 用メソッドチャンネル (#945)。macOS (#674) と同じ
+  // チャネル名・同じキー空間で、Dart 側 NotificationDedupChannel と対になる。
+  //
+  // - Dart → native: 'addEmitted'（WebSocket 経路が出したキー）を受けて
+  //   NotificationDedupRegistry に記録し、WNS 経路の表示を抑止する
+  // - native → Dart: WNS 経路が出したら 'onRemotePresented' を投げ、
+  //   DesktopNotificationDispatcher に emit をスキップさせる
+  std::unique_ptr<flutter::MethodChannel<>> notification_dedup_channel_;
+
+  // WNS 受信ワーカー（detached・プロセス終了までブロック）と UI スレッドが
+  // 共有する状態。ワーカーが FlutterWindow より長生きするため、Store IAP
+  // (#795) と同じく shared_ptr に載せて延命し、破棄後は書き込まない。
+  struct DedupDispatchState {
+    std::mutex mutex;
+    // ワーカーが積み、UI スレッド (WM_NOTIFICATION_PRESENTED) が引き取る。
+    std::vector<std::string> presented;
+    bool window_alive = true;
+    HWND hwnd = nullptr;
+  };
+  std::shared_ptr<DedupDispatchState> dedup_state_ =
+      std::make_shared<DedupDispatchState>();
 
   // 投げ銭 IAP (#599) 用メソッドチャンネル。Dart 側 WindowsStoreBackend が
   // 'queryProducts' / 'purchase' / 'reportFulfillment' を呼ぶ。WinRT 呼び出しは
