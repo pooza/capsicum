@@ -20,6 +20,10 @@ std::string NotificationTagKey(const std::string& account,
 
 std::string NotificationTagFor(const std::string& account,
                                const std::string& notification_id) {
+  // ID が無いなら Tag を付けない。理由はヘッダ参照 (#956)。
+  if (notification_id.empty()) {
+    return std::string();
+  }
   return std::to_string(
       StableNotificationTag(NotificationTagKey(account, notification_id)));
 }

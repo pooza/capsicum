@@ -177,6 +177,8 @@ void DisplayRawNotification(const std::string& content) {
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
   // 安定ハッシュ）のまま残す。dedup を取りこぼしたときの二段目の受け皿として、
   // OS 側の畳み込みに賭ける価値はある（効かない環境があるだけで害は無い）。
+  // 通知 ID が無ければ NotificationTagFor が空文字を返し、Tag 無し＝畳まない
+  // 挙動になる (#956)。上の dedupable と同じ前提で、別々に判断していない。
   // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
   // ため、ここでは付けない。
   if (!capsicum::ShowRawToast(
