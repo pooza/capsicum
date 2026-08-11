@@ -175,26 +175,57 @@ void main() {
   /// `ref.read(timelineProvider.notifier)` すると、**誰も購読していない provider を
   /// 新しく起こして** REST を叩き、結果は使われずに捨てられる。投稿アクションの
   /// たびにこれが走る。
-  group('本線 TL を触ってよいかの判定 (#887 followup)', () {
+  group('本線 TL を触ってよいかの判定 (#887 followup / #925-3)', () {
     test('本線タブ（ホーム等）では触ってよい', () {
       expect(
-        mainTimelineIsVisible(const TimelineTab(TimelineType.home)),
+        mainTimelineIsVisible(
+          const TimelineTab(TimelineType.home),
+          listResolved: false,
+        ),
         isTrue,
       );
       expect(
-        mainTimelineIsVisible(const TimelineTab(TimelineType.local)),
+        mainTimelineIsVisible(
+          const TimelineTab(TimelineType.local),
+          listResolved: false,
+        ),
         isTrue,
       );
     });
 
-    test('ハッシュタグ / リストタブでは触らない（購読されていない）', () {
-      expect(mainTimelineIsVisible(const HashtagTab('capsicum')), isFalse);
-      expect(mainTimelineIsVisible(const ListTab(id: 'l1')), isFalse);
+    test('ハッシュタグ / 解決済みリストタブでは触らない（購読されていない）', () {
+      expect(
+        mainTimelineIsVisible(
+          const HashtagTab('capsicum'),
+          listResolved: false,
+        ),
+        isFalse,
+      );
+      expect(
+        mainTimelineIsVisible(const ListTab(id: 'l1'), listResolved: true),
+        isFalse,
+      );
+    });
+
+    test('リストが未解決なら本線 TL を触ってよい（HomeScreen は本線にフォールバック中）', () {
+      // listsProvider 未ロード / id 不一致で selectedListProvider が null のとき、
+      // HomeScreen は本線 TL を描画している。ここで list TL を触ると REST を
+      // 無駄打ちし、変更も見えている本線 TL に届かない (#925-3)。
+      expect(
+        mainTimelineIsVisible(const ListTab(id: 'l1'), listResolved: false),
+        isTrue,
+      );
     });
 
     test('チャンネル / 通知タブでは触ってよい（本線の watch は続いている）', () {
-      expect(mainTimelineIsVisible(const ChannelTab(id: 'ch1')), isTrue);
-      expect(mainTimelineIsVisible(const NotificationsTab()), isTrue);
+      expect(
+        mainTimelineIsVisible(const ChannelTab(id: 'ch1'), listResolved: false),
+        isTrue,
+      );
+      expect(
+        mainTimelineIsVisible(const NotificationsTab(), listResolved: false),
+        isTrue,
+      );
     });
   });
 }

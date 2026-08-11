@@ -442,6 +442,36 @@ Future<TimelineState> fetchUntilVisible({
   );
 }
 
+/// 一覧そのものの組み替えを行う純粋関数群 (#925)。mixin
+/// ([TimelineListMutations]) と本線 ([TimelineNotifier]) は、pending バッファ /
+/// 起動窓 / removalSeq といった副作用を各自持ちつつ、**一覧の組み替えだけ**は
+/// ここを共有する。以前は両者に同じ where / map が逐語的に重複していた。
+
+/// [id] 一致の投稿を除いた一覧。
+List<Post> postsWithoutId(List<Post> posts, String id) =>
+    posts.where((p) => p.id != id).toList();
+
+/// [updated] を id 一致（reblog 先も見る）へ差し替えた一覧。
+List<Post> postsWithReplacement(List<Post> posts, Post updated) => [
+  for (final p in posts)
+    if (p.id == updated.id)
+      updated
+    else if (p.reblog?.id == updated.id)
+      p.copyWith(reblog: updated)
+    else
+      p,
+];
+
+/// [userId] 本人、またはその人のブースト元かどうか（ブロック / ミュート判定）。
+/// ブースト元も見るのは、ブロックした相手をブーストした第三者の投稿が残ると
+/// 「ブロックしたのに本文が見え続ける」状態になるため。
+bool postIsByUser(Post p, String userId) =>
+    p.author.id == userId || p.reblog?.author.id == userId;
+
+/// [userId] 本人／その人のブースト元を除いた一覧。
+List<Post> postsWithoutUser(List<Post> posts, String userId) =>
+    posts.where((p) => !postIsByUser(p, userId)).toList();
+
 /// ハッシュタグ / リスト / チャンネルの各 TL に、ホーム TL と同じ「表示中の
 /// リストを手元で直す」操作を持たせる (#887)。
 ///
@@ -449,13 +479,22 @@ Future<TimelineState> fetchUntilVisible({
 /// おらず、ハッシュタグタブやリストタブを見ているときは画面が変わらないまま
 /// だった（タブを切り替えると再取得が走って初めて反映される）。表示中の TL が
 /// どれであっても同じ操作を適用できるよう、共通の変更手段をここに置く。
+///
+/// ここの操作はすべて **同期・ローカルな state 差し替えのみ**（I/O なし）で、
+/// 失敗する余地が無い。だから戻り値を持たない（#925-2）。将来 I/O を伴う
+/// fan-out 変更を足すなら、部分失敗を握り潰さないよう成否を返す形へ変えること。
 mixin TimelineListMutations<Arg>
     on AutoDisposeFamilyAsyncNotifier<TimelineState, Arg> {
   /// 削除された投稿を一覧から取り除く。
+  ///
+  /// 本線 ([TimelineNotifier.removePost]) と違い、除去対象が無ければ state を
+  /// 差し替えない早期 return を持つ。本線は pending バッファ (#296) の掃除で
+  /// 一覧が変わらなくても pendingCount が動くため早期 return できないが、各種 TL
+  /// は pending を持たないので、一覧が変わらないなら何もしないのが自然。
   void removePost(String id) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.where((p) => p.id != id).toList();
+    final posts = postsWithoutId(current.posts, id);
     if (posts.length == current.posts.length) return;
     state = AsyncData(current.copyWith(posts: posts));
   }
@@ -464,27 +503,19 @@ mixin TimelineListMutations<Arg>
   void updatePost(Post updated) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.map((p) {
-      if (p.id == updated.id) return updated;
-      if (p.reblog?.id == updated.id) return p.copyWith(reblog: updated);
-      return p;
-    }).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    state = AsyncData(
+      current.copyWith(posts: postsWithReplacement(current.posts, updated)),
+    );
   }
 
   /// ブロック / ミュートした相手の投稿を一覧から取り除く。
   ///
-  /// 本線 TL 側 ([TimelineNotifier.removePostsByUser]) と同じ判定。ブースト元の
-  /// 投稿者も見るのは、ブロックした相手をブーストした第三者の投稿が残ると、
-  /// 「ブロックしたのに本文が見え続ける」状態になるため。
+  /// 判定は本線 TL 側 ([TimelineNotifier.removePostsByUser]) と共通
+  /// （[postIsByUser]）。早期 return を持つ理由は [removePost] と同じ。
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.where((p) {
-      if (p.author.id == userId) return false;
-      if (p.reblog?.author.id == userId) return false;
-      return true;
-    }).toList();
+    final posts = postsWithoutUser(current.posts, userId);
     if (posts.length == current.posts.length) return;
     state = AsyncData(current.copyWith(posts: posts));
   }
@@ -1538,15 +1569,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で捨てられないよう控える (#921)。
     if (_awaitingInitialSnapshot) _windowUpdatedPosts[updated.id] = updated;
-    final posts = current.posts.map((p) {
-      if (p.id == updated.id) return updated;
-      // Also check reblog target.
-      if (p.reblog?.id == updated.id) {
-        return p.copyWith(reblog: updated);
-      }
-      return p;
-    }).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    state = AsyncData(
+      current.copyWith(posts: postsWithReplacement(current.posts, updated)),
+    );
   }
 
   /// Remove a post from the list by ID (e.g. after deletion).
@@ -1559,10 +1584,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
     if (_awaitingInitialSnapshot) _windowRemovedIds.add(id);
-    final posts = current.posts.where((p) => p.id != id).toList();
+    // mixin 版と違い早期 return しない: 一覧が変わらなくても pending の掃除で
+    // pendingCount が動くため (#925)。
     state = AsyncData(
       current.copyWith(
-        posts: posts,
+        posts: postsWithoutId(current.posts, id),
         pendingCount: _dropPending((p) => p.id == id),
       ),
     );
@@ -1632,11 +1658,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
     // ブロックは安全のための操作なので、この窓でも穴を作らない (#887)。
     if (_awaitingInitialSnapshot) _windowBlockedUserIds.add(userId);
-    bool byUser(Post p) =>
-        p.author.id == userId || p.reblog?.author.id == userId;
-    final posts = current.posts.where((p) => !byUser(p)).toList();
     state = AsyncData(
-      current.copyWith(posts: posts, pendingCount: _dropPending(byUser)),
+      current.copyWith(
+        posts: postsWithoutUser(current.posts, userId),
+        pendingCount: _dropPending((p) => postIsByUser(p, userId)),
+      ),
     );
   }
 

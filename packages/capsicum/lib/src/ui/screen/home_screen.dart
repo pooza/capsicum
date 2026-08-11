@@ -20,6 +20,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
+import '../../provider/tab_selection_provider.dart';
 import '../../constants.dart';
 import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
@@ -39,21 +40,6 @@ import '../widget/tab_management_sheet.dart';
 import 'announcement_screen.dart';
 import 'channel_timeline_screen.dart';
 import 'notification_screen.dart';
-
-/// Convenience providers derived from [selectedTabProvider] for backward
-/// compatibility with widgets that only need to know the selected list or
-/// hashtag.
-final selectedListProvider = Provider<PostList?>((ref) {
-  final tab = ref.watch(selectedTabProvider);
-  if (tab is! ListTab) return null;
-  final lists = ref.watch(listsProvider).valueOrNull ?? [];
-  return lists.where((l) => l.id == tab.id).firstOrNull;
-});
-
-final selectedHashtagProvider = Provider<String?>((ref) {
-  final tab = ref.watch(selectedTabProvider);
-  return tab is HashtagTab ? tab.tag : null;
-});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
