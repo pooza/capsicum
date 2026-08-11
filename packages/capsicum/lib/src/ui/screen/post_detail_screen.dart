@@ -49,14 +49,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
   /// 対象リストは `data:` ブランチでしか代入していないので、投稿アクションで
   /// スレッドを invalidate した後の再取得が失敗すると、**前のスレッドが対象として
   /// 残り続ける**。キーハンドラを張る [Focus] はその間も生きているため、↑ ↓ と
-  /// Enter で画面に出ていない投稿を開けてしまう（ホーム側と同型 / home_screen の
-  /// 同名メソッド参照）。
+  /// Enter で画面に出ていない投稿を開けてしまう。選択の後始末は mixin の
+  /// [resetKeyboardSelectionAfterFrame] に集約した (#928)。
   void _clearKeyboardTargets() {
     _thread = const [];
-    if (keyboardSelectedIndex == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) resetKeyboardSelection();
-    });
+    resetKeyboardSelectionAfterFrame();
   }
 
   /// 未選択から ↑ ↓ を押したときは、開いた時点でアンカーしている対象リプライ

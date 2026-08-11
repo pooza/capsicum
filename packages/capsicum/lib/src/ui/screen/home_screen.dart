@@ -154,13 +154,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 張る [Focus] はその間も生きているため、↑ ↓ と Enter で**画面に出ていない
   /// 前のタブの投稿を開けてしまう**（エラー時は再試行するまでその状態が続く）。
   ///
-  /// 選択の解除は build 中に setState できないのでフレーム後に回す。
+  /// 選択の後始末は mixin の [resetKeyboardSelectionAfterFrame] に集約した (#928)。
   void _clearKeyboardTargets() {
     _keyboardPosts = const [];
-    if (keyboardSelectedIndex == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) resetKeyboardSelection();
-    });
+    resetKeyboardSelectionAfterFrame();
   }
 
   @override
@@ -551,12 +548,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
 
     // タブを移るとリストの中身が別物になるので、キーボード選択 (#849) は解除する。
-    // ref.listen は build 中に呼ばれうるので、setState は次フレームへ逃がす。
+    // ref.listen は build 中に呼ばれうるので、後始末は mixin 経由で次フレームへ
+    // 逃がす (#928)。
     ref.listen(selectedTabProvider, (previous, next) {
       if (previous == next) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) resetKeyboardSelection();
-      });
+      resetKeyboardSelectionAfterFrame();
     });
 
     // 画面幅 >= 900px なら左ドロワーを常駐させる (#541)。閾値は実況用途で
