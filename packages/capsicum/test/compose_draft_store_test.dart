@@ -73,5 +73,56 @@ void main() {
       expect(restored!.hasText, isFalse);
       expect(restored.cwEnabled, isTrue);
     });
+
+    test('REGRESSION(#969): 別画面が clear したら古い画面の save は書き戻さない', () async {
+      // デスクトップで Ctrl+N / メニューバーからコンポーズを重ねて開くと、
+      // 保存スロットは 1 枠なのに画面（インスタンス）は 2 つになる。片方が
+      // 投稿して clear したあと、もう片方が離脱時保存 (#966) を走らせると、
+      // 消したはずの本文が復活して二重投稿の種になる。
+      await ComposeDraftStore().save(const ComposeDraft(text: 'hello'));
+
+      // 画面 A / B とも同じ下書きを復元。
+      final a = ComposeDraftStore();
+      final b = ComposeDraftStore();
+      expect((await a.restore())!.text, 'hello');
+      expect((await b.restore())!.text, 'hello');
+
+      // B が投稿 → clear。A は破棄済みではない（別インスタンス）。
+      await b.clear();
+
+      // A が離脱 → 保存を試みるが、世代が進んでいるので書き戻さない。
+      await a.save(const ComposeDraft(text: 'hello'));
+
+      expect(await ComposeDraftStore().restore(), isNull);
+    });
+
+    test('#969: clear 後に新しい画面が restore→save すれば自動保存は復活する', () async {
+      await ComposeDraftStore().save(const ComposeDraft(text: '投稿した本文'));
+
+      final posted = ComposeDraftStore();
+      await posted.restore();
+      await posted.clear();
+
+      // clear 後に開いた新しい画面。復元は空だが、以降の保存は効く。
+      final fresh = ComposeDraftStore();
+      expect(await fresh.restore(), isNull);
+      await fresh.save(const ComposeDraft(text: '新しい下書き'));
+
+      expect((await ComposeDraftStore().restore())!.text, '新しい下書き');
+    });
+
+    test('#969: restore を挟まない単発 save は従来どおり書ける（世代ガードで塞がない）', () async {
+      // 世代を一度進めておく（別画面の投稿相当）。
+      final prior = ComposeDraftStore();
+      await prior.save(const ComposeDraft(text: '前の本文'));
+      await prior.clear();
+
+      // restore を通らないインスタンスは基準世代 null なので、現世代を採用して
+      // 通常どおり保存できる（standalone 契約を壊さない）。
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '単発保存'));
+
+      expect((await ComposeDraftStore().restore())!.text, '単発保存');
+    });
   });
 }
