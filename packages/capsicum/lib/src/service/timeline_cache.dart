@@ -122,6 +122,12 @@ class TimelineCache {
   ) async {
     try {
       final file = await _file();
+      // Linux では他ユーザーから読めないよう 0600 に絞る (#958)。writeAsString は
+      // 0644 で作り ~/.cache/<app>/ も 0755 なので、同ホストの別ユーザーが生の
+      // ホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。dart:io に
+      // chmod が無いので chmod(1) を呼ぶ。**新規作成時だけ**行う（既存ファイルの
+      // mode は上書きしても保たれるので、毎回サブプロセスを起こさない）。
+      final needsChmod = Platform.isLinux && !await file.exists();
       await file.writeAsString(
         jsonEncode({
           'contextKey': contextKey,
@@ -130,11 +136,7 @@ class TimelineCache {
         }),
         flush: false,
       );
-      // Linux では他ユーザーから読めないよう 0600 に絞る (#958)。writeAsString は
-      // 0644 で作り ~/.cache/<app>/ も 0755 なので、同ホストの別ユーザーが生の
-      // ホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。dart:io に
-      // chmod が無いので chmod(1) を呼ぶ。best-effort（失敗しても保存は活かす）。
-      if (Platform.isLinux) {
+      if (needsChmod) {
         try {
           await Process.run('chmod', ['600', file.path]);
         } catch (_) {

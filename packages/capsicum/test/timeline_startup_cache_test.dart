@@ -213,13 +213,14 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(timelineProvider.future);
-    // 保存は unawaited なので 1 tick 待つ。
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-
-    final saved = await TimelineCache.load(
-      contextKeyFor(),
-      now: DateTime.now(),
-    );
+    // 保存は unawaited で、静的な書き込みキュー (_writeQueue) 越しに直列化される
+    // （Linux では新規作成時に chmod サブプロセスも挟む）。固定 delay だと CI の
+    // 負荷でレースするため、書き上がるまでポーリングする (#958)。
+    List<Map<String, dynamic>>? saved;
+    for (var i = 0; i < 200 && saved == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      saved = await TimelineCache.load(contextKeyFor(), now: DateTime.now());
+    }
     expect(saved?.map((e) => e['id']), ['new1', 'new2']);
   });
 
