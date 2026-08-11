@@ -309,8 +309,12 @@ class PostTouchActionRow extends ConsumerWidget {
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
     Future<void> Function() action,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    // 付与と取り消しで別系列にする (#924)。ここは付与導線のみだが、post_tile と
+    // シグネチャを揃え、将来取り消し経路が増えても reaction_remove を渡せるように
+    // しておく。
+    String phase = 'reaction_add',
+  }) async {
     // notifier は await の前に取得する（_unrepeat と同じ理由）。
     final timeline = readVisibleTimelines(ref);
     try {
@@ -329,7 +333,7 @@ class PostTouchActionRow extends ConsumerWidget {
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+          withScope: (scope) => scope.setTag('phase', phase),
         ),
       );
       messenger.showSnackBar(

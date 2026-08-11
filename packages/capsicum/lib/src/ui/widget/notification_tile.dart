@@ -436,8 +436,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     BackendAdapter adapter,
     String postId,
     Future<void> Function() action,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    // 付与と取り消しで別系列にする (#924)。ここは付与導線のみだが、post_tile と
+    // シグネチャを揃え、将来取り消し経路が増えても reaction_remove を渡せるように
+    // しておく。
+    String phase = 'reaction_add',
+  }) async {
     // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
     // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
     // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
@@ -457,7 +461,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+          withScope: (scope) => scope.setTag('phase', phase),
         ),
       );
       messenger.showSnackBar(

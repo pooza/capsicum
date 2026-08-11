@@ -18,6 +18,14 @@ import '../ui/flash/flash_result_digest.dart';
 ///   氏名が混じりうるため、比較には [playResultDigest] のハッシュだけを使う（PII を
 ///   中央に集めない）。絵文字の name/category はサーバー公開情報なので件数を載せる。
 /// - Sentry SDK 側の失敗で Play の UI を止めない。
+/// - **同一 Play の連続実行は throttle する** (#924)。info イベントを実行ごとに
+///   1 件出すため、「もう一度実行」の連打で母数が膨らむと quota を圧迫する
+///   （`tracesSampleRate` は `captureMessage` に効かない）。同一インベントリの再実行
+///   は出目も同じ（#896）で情報が増えないので、`flash.id` ごとに間引く
+///   （chat_provider の captureException throttle と同型）。
+const _playResultThrottle = Duration(seconds: 30);
+final _lastPlayResultCapture = <String, DateTime>{};
+
 void reportPlayResult({
   required String flashId,
   required String host,
@@ -26,6 +34,12 @@ void reportPlayResult({
   required String settleBucket,
   bool forced = false,
 }) {
+  // 同一 Play の連打を間引く (#924)。別 Play は記録する（実験の突合材料を落とさ
+  // ないよう global ではなく flash.id ごとに throttle する）。
+  final now = DateTime.now();
+  final last = _lastPlayResultCapture[flashId];
+  if (last != null && now.difference(last) < _playResultThrottle) return;
+  _lastPlayResultCapture[flashId] = now;
   try {
     Sentry.captureMessage(
       'play.result',

@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants.dart';
 import '../../provider/preferences_provider.dart';
 import 'reaction_picker_sheet.dart';
 
@@ -147,7 +148,12 @@ class _ReactionChip extends StatelessWidget {
         );
       }
     }
-    return Text(reaction, style: TextStyle(fontSize: emojiSize));
+    return Text(
+      reaction,
+      style: TextStyle(
+        fontSize: emojiSize * AppConstants.emojiFallbackTextScale,
+      ),
+    );
   }
 }
 

@@ -1040,6 +1040,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.id,
         () => reactionAdapter.removeReaction(targetPost.id, emoji),
         'リアクションを取り消しました',
+        phase: 'reaction_remove',
       );
     } else {
       _runReactionAction(
@@ -1640,8 +1641,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     BackendAdapter adapter,
     String postId,
     Future<void> Function() action,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    // 付与と取り消しで別系列にする (#924)。既定は付与。取り消しは呼び出し側で
+    // reaction_remove を渡す。両方が reaction_add に畳まれると、Sentry で絞った
+    // ときにどちらの失敗かが混ざる。
+    String phase = 'reaction_add',
+  }) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
     final timeline = readVisibleTimelines(ref);
     try {
@@ -1660,7 +1665,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+          withScope: (scope) => scope.setTag('phase', phase),
         ),
       );
       messenger.showSnackBar(
@@ -2538,7 +2543,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: ConstrainedBox(
-                    // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
+                    // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
+                    // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
+                    // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
+                    // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
                     constraints: BoxConstraints(
                       maxHeight: emojiSize,
                       maxWidth: emojiSize * 3,
@@ -2549,7 +2557,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                       fit: BoxFit.contain,
                       errorBuilder: (_, _, _) => Text(
                         widget.reactionKey,
-                        style: TextStyle(fontSize: emojiSize * 0.7),
+                        style: TextStyle(
+                          fontSize:
+                              emojiSize * AppConstants.emojiFallbackTextScale,
+                        ),
                       ),
                     ),
                   ),
@@ -2563,7 +2574,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                     height: emojiSize,
                     errorBuilder: (_, _, _) => Text(
                       widget.reactionKey,
-                      style: TextStyle(fontSize: emojiSize * 0.7),
+                      style: TextStyle(
+                        fontSize:
+                            emojiSize * AppConstants.emojiFallbackTextScale,
+                      ),
                     ),
                   ),
                 ),

@@ -100,7 +100,7 @@ class SupporterScreen extends ConsumerWidget {
           title: const Text('Patreon'),
           subtitle: const Text('ブラウザで開きます'),
           trailing: const Icon(Icons.open_in_new, size: 18),
-          onTap: () => launchUrlSafely(AppConstants.patreonUrl),
+          onTap: () => _openSupportLink(context, AppConstants.patreonUrl),
         ),
         ListTile(
           leading: Image.asset(
@@ -111,7 +111,7 @@ class SupporterScreen extends ConsumerWidget {
           title: const Text('Liberapay'),
           subtitle: const Text('ブラウザで開きます'),
           trailing: const Icon(Icons.open_in_new, size: 18),
-          onTap: () => launchUrlSafely(AppConstants.liberapayUrl),
+          onTap: () => _openSupportLink(context, AppConstants.liberapayUrl),
         ),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -183,5 +183,18 @@ class SupporterScreen extends ConsumerWidget {
         ),
       ),
     ];
+  }
+
+  /// Web の支援先を外部ブラウザで開く。起動に失敗したら黙って捨てず SnackBar で
+  /// 知らせる (#924)。annict_link / spotify_link の「戻り値 false を見て SnackBar」
+  /// と同型に寄せ、fire-and-forget を残さない。
+  Future<void> _openSupportLink(BuildContext context, Uri url) async {
+    if (!await launchUrlSafely(url)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ブラウザを開けませんでした')));
+      }
+    }
   }
 }
