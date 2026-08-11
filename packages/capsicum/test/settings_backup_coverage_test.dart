@@ -12,7 +12,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// ソースを読む検査なのは、設定キーが 2,000 行のプロバイダに定数として散って
 /// いて、実行時に列挙する手段が無いため。キー定義の書式
-/// （`const _xxxKey = 'yyy';`）が変わったらこのテストも直す。
+/// （`const _xxxKey = 'yyy';` / `const _xxxPrefix = 'yyy_';`）が変わったら
+/// このテストも直す。
+///
+/// `_…Key` だけでなく `_…Prefix`（アカウント別設定の接頭辞）も拾う (#968)。
+/// prefix 形式は `exportableSettings` / `deviceLocalKeys` / `accountScopedKeys` の
+/// どれにも入らないと**検査から完全に見えず**、足し忘れを黙って通してしまう
+/// （f331cb53 の `background_opacity` がこの盲点を突いた壊れ方だった）。
 void main() {
   test('設定キーはすべてバックアップ対象か、意図的な除外かのどちらかである', () {
     final source = File(
@@ -20,7 +26,7 @@ void main() {
     ).readAsStringSync();
 
     final keys = RegExp(
-      r"^const _[A-Za-z]+Key = '([^']+)';",
+      r"^const _[A-Za-z]+(?:Key|Prefix) = '([^']+)';",
       multiLine: true,
     ).allMatches(source).map((m) => m.group(1)!).toSet();
 

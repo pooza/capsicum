@@ -113,7 +113,25 @@ const deviceLocalKeys = <String>{
 /// 空振りし、読み込みは移行キーへ書くので per-account 値をまだ持たない全
 /// アカウントへ染み出す**という壊れ方をしていた。名前が同じでも実体が別キー
 /// なら対象にできない。
-const accountScopedKeys = <String>{'background_opacity'};
+const accountScopedKeys = <String>{
+  'background_opacity',
+  // 以下はアカウント別設定の **プレフィックス**（実体は `<prefix><アカウント>`）。
+  // preferences_provider.dart に `_…Prefix` として定義され、素のプレフィックスが
+  // 保存キーになることはない。どのアカウントへ復元するか決められないため対象外で、
+  // アカウント込みの復元は #967。カバレッジ検査 (settings_backup_coverage_test) が
+  // `_…Prefix` も拾うようになったので、`background_opacity` と同じく「意図的な除外」
+  // として明示する（列挙漏れを黙って通さないため）。
+  'theme_color_',
+  'tab_order_',
+  'last_tab_',
+  'emoji_palette_',
+  'emoji_reaction_palette_',
+  'pinned_hashtags_',
+  'hidden_list_ids_',
+  'list_order_',
+  'hidden_timeline_types_',
+  'tab_config_',
+};
 
 /// 読み込み結果。
 class SettingsImportResult {
