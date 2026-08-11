@@ -21,7 +21,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 残り続ける / そもそも先出しされない、のどちらかになる。
 class _FakeAdapter extends Mock
     implements DecentralizedBackendAdapter, TimelineCacheSupport {
-  _FakeAdapter({required this.fresh, this.fetchGate, this.failFetch = false});
+  _FakeAdapter({
+    required this.fresh,
+    this.fetchGate,
+    this.failFetch = false,
+    this.olderPages = const {},
+  });
 
   /// getTimeline が返す「サーバー側の」投稿。
   final List<Post> fresh;
@@ -32,7 +37,15 @@ class _FakeAdapter extends Mock
   /// true のとき getTimeline は投げる（オフライン起動・5xx 相当）。
   final bool failFetch;
 
+  /// loadMore（maxId 指定）が返す「その maxId より古いページ」。既定は空
+  /// （従来どおり「これ以上無い」）。#942 の窓中 loadMore を試すために使う。
+  final Map<String, List<Post>> olderPages;
+
   int fetchCount = 0;
+
+  /// getTimeline に渡された maxId の履歴（null = 初回ページ）。#942 で「どの id を
+  /// 起点に続きを取ったか」を確かめるのに使う。
+  final List<String?> seenMaxIds = [];
 
   @override
   AdapterCapabilities get capabilities => _FakeCapabilities();
@@ -43,10 +56,21 @@ class _FakeAdapter extends Mock
     TimelineQuery? query,
   }) async {
     fetchCount++;
+    // gate を待つ前に記録する（窓中に「maxId 指定の取得へ入ったか」を待たずに
+    // 観測できるように）。
+    seenMaxIds.add(query?.maxId);
     if (fetchGate != null) await fetchGate;
     if (failFetch) throw Exception('network down');
     if (query?.maxId != null) {
-      return const TimelineResponse(posts: [], rawCount: 0);
+      final older = olderPages[query!.maxId] ?? const <Post>[];
+      return TimelineResponse(
+        posts: older,
+        rawCount: older.length,
+        rawLastId: older.isNotEmpty ? older.last.id : null,
+        rawJson: [
+          for (final p in older) {'id': p.id, 'content': p.content},
+        ],
+      );
     }
     return TimelineResponse(
       posts: fresh,
@@ -325,6 +349,62 @@ void main() {
       await TimelineCache.load(contextKeyFor(), now: DateTime.now()),
       isNull,
       reason: 'ブロックを跨いだ取得結果を clear の後ろに書き戻さない',
+    );
+  });
+
+  /// #942: 先出しの窓（fresh 未着）の間に下端へ達して loadMore が走ると、旧実装は
+  /// cached-last を起点に古いページを取ってしまい、直後に届く fresh の全置換で
+  /// 捨てられる（重なり無し）／ギャップが残る（後着）。権威ページが着くのを待って
+  /// から、その最深を起点に続きを取る。
+  test('窓の間の loadMore は fresh を待ってからその最深を起点に続きを取る (#942)', () async {
+    await TimelineCache.save(contextKeyFor(), [
+      {'id': '200', 'content': '前回1'},
+      {'id': '100', 'content': '前回2'},
+    ], now: DateTime.now());
+
+    // fresh はキャッシュと重ならない新しいページ（＝旧実装なら loadMore ぶんが
+    // 全置換で消えるケース）。続きは fresh 最深 '800' の下にだけ用意する。
+    final gate = Completer<void>();
+    final adapter = _FakeAdapter(
+      fresh: [_post('900'), _post('800')],
+      fetchGate: gate.future,
+      olderPages: {
+        '800': [_post('700')],
+      },
+    );
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    final first = await container.read(timelineProvider.future);
+    expect(first.fromCache, isTrue);
+    expect(first.posts.map((p) => p.id), ['200', '100']);
+
+    // 窓が開いている（fresh 未着）間に loadMore。
+    final loadMore = container.read(timelineProvider.notifier).loadMore();
+    await Future<void>.delayed(Duration.zero);
+
+    // fresh が着く前は、cached-last(100) を起点にした続き取得へ入っていない。
+    expect(
+      adapter.seenMaxIds.where((m) => m != null),
+      isEmpty,
+      reason: 'fresh を待たずに cached-last を起点にした古いページを取らない',
+    );
+
+    // fresh を解放 → 窓が閉じ、loadMore は fresh の最深から続きを取る。
+    gate.complete();
+    await loadMore;
+    await Future<void>.delayed(Duration.zero);
+
+    final after = container.read(timelineProvider).value!;
+    expect(after.posts.map((p) => p.id), [
+      '900',
+      '800',
+      '700',
+    ], reason: '権威ページに続きが正しく連結され、loadMore ぶんが捨てられない');
+    expect(
+      adapter.seenMaxIds.where((m) => m != null),
+      ['800'],
+      reason: 'cached-last(100) ではなく fresh の最深(800) を起点にする',
     );
   });
 }

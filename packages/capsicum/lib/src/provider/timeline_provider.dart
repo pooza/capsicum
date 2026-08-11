@@ -548,6 +548,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 取りこぼさないようにする。窓の外では記録しない（コストも挙動変化も無い）。
   bool _awaitingInitialSnapshot = false;
 
+  /// 先出しの裏で走る初回取得の in-flight future (#942)。窓が開いている間に
+  /// [loadMore] が来たら、これを待って**権威ページ (fresh) が着いてから**下端の
+  /// 続きを取りに行く。cached-last を起点にした古いページを継ぐと、fresh の全置換
+  /// で捨てられる（重なり無し）／ギャップが残る（後着）ため。`publishToState` で
+  /// state を差し替えた時点で完了する（＝窓が閉じる）ので、待つ＝窓の解消を待つ。
+  Future<void>? _backgroundInitialLoad;
+
   /// 窓の間にユーザー操作で差し替えられた投稿 (#921)。REST スナップショットは
   /// 操作より前に発行済みで結果を含まないため、**こちらを優先**する。
   final Map<String, Post> _windowUpdatedPosts = {};
@@ -599,6 +606,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _disposed = false;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
+    _backgroundInitialLoad = null;
     final generation = ++_buildGeneration;
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
@@ -660,15 +668,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (cached != null) {
       // ここから REST 完了までが「窓」(#921)。この間の操作を記録する。
       _resetSnapshotWindow(awaiting: true);
-      unawaited(
-        _loadInitialInBackground(
-          adapter: adapter,
-          type: type,
-          contextKey: contextKey,
-          hideLivecure: hideLivecure,
-          generation: generation,
-        ),
+      // future を控えておく。窓の間に来た loadMore がこれを待つ (#942)。
+      final backgroundLoad = _loadInitialInBackground(
+        adapter: adapter,
+        type: type,
+        contextKey: contextKey,
+        hideLivecure: hideLivecure,
+        generation: generation,
       );
+      _backgroundInitialLoad = backgroundLoad;
+      unawaited(backgroundLoad);
       return cached;
     }
 
@@ -1661,6 +1670,23 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     }
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+
+    // 起動キャッシュの先出し中（窓が開いている間）は、cached-last を起点に古い
+    // ページを取ると fresh の全置換で捨てられる／ギャップが残る (#942)。権威ページ
+    // (fresh) が着くのを待ってから下端の続きを取る。待つ間もスピナー
+    // （isLoadingMore = true）は出したままなので、体感上のブロックにはならない。
+    // 先出しを遅らせない（publish 側は待たせない）ため、待つのは消費側に寄せる。
+    if (_awaitingInitialSnapshot) {
+      final pending = _backgroundInitialLoad;
+      if (pending != null) {
+        // [_loadInitialInBackground] は内部で捕捉するので、この await は投げない。
+        await pending;
+        // 裏の取得が失敗して AsyncError になったら、続きを積む土台が無い。
+        // エラー画面の再試行導線に任せて降りる（isLoadingMore は AsyncError に
+        // 引き継がれない）。
+        if (state.valueOrNull == null) return;
+      }
+    }
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {
