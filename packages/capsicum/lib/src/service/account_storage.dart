@@ -8,6 +8,22 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
+/// (#959)。
+///
+/// Keychain ロック（-25308・画面解錠前の起動）/ Android Keystore の一過性失敗 /
+/// plugin register race など、**次回以降なら読めるはず**の transient を表す。
+/// 呼び出し側はこれをログアウト（skip / drop）扱いにせず、オフライン保持して
+/// 再試行へ回す。恒久的な欠落（`getSecrets` が null を返すケース＝索引はあるが
+/// secret が本当に無い / 破損 delete 後）とは区別する。
+class TransientSecretUnavailableException implements Exception {
+  final Object cause;
+  const TransientSecretUnavailableException(this.cause);
+
+  @override
+  String toString() => 'TransientSecretUnavailableException($cause)';
+}
+
 /// Persists account secrets.
 ///
 /// Secrets (`secret_<key>`, `client_creds_<host>`) live in
@@ -98,7 +114,8 @@ class AccountStorage {
         'capsicum: plugin register race persisted for $accountKey: $e',
       );
       _reportOnce('secret:$accountKey', e, st);
-      return null;
+      // secret は消していないので transient。ログアウト扱いにしない (#959)。
+      throw TransientSecretUnavailableException(e);
     } on PlatformException catch (e, st) {
       // macOS / iOS の Keychain ロック (errSecInteractionNotAllowed = -25308)
       // は **transient** で、画面解錠後に再起動すれば読めるはずなので
@@ -110,7 +127,8 @@ class AccountStorage {
           'capsicum: keychain transient for $accountKey (code=${e.code}): $e',
         );
         _reportOnce('secret:$accountKey:transient', e, st, code: e.code);
-        return null;
+        // secret は残っている。解錠後の再試行で読めるので transient (#959)。
+        throw TransientSecretUnavailableException(e);
       }
       // Android の Keystore 復号エラーは、transient（起動時にロック中 / Keystore
       // 準備前 / register race）と permanent（再インストールで鍵再生成）が
@@ -125,7 +143,8 @@ class AccountStorage {
           'keeping secret (code=${e.code}): $e',
         );
         _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
-        return null;
+        // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
+        throw TransientSecretUnavailableException(e);
       }
       debugPrint('capsicum: failed to read secrets for $accountKey: $e');
       _reportOnce('secret:$accountKey', e, st);
@@ -140,7 +159,9 @@ class AccountStorage {
       );
       if (Platform.isAndroid) {
         _reportOnce('secret:$accountKey:android_keystore', e, st);
-        return null;
+        // Android は secret を消さない（一過性の Keystore 失敗と区別しづらい）ので
+        // transient 扱い (#959 / #730 / #731)。
+        throw TransientSecretUnavailableException(e);
       }
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
