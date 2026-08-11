@@ -4,9 +4,11 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../provider/preferences_provider.dart';
+import '../../../service/sentry_op_failure.dart';
 import '../../../service/settings_backup.dart';
 
 /// 設定のバックアップ (#857)。
@@ -50,7 +52,16 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       );
       await File(location.path).writeAsString(yaml);
       messenger.showSnackBar(const SnackBar(content: Text('設定を書き出しました')));
-    } catch (e) {
+    } catch (e, st) {
+      // 新規のファイル I/O 機能なので本番の失敗率（権限 / 容量等）を観測する
+      // (#968)。reportOpFailure が scrubException を通すので、生 URL / トークンは
+      // 載らない。バックアップはアカウント非依存なので host / backend は '-'。
+      reportOpFailure(
+        tagKey: 'settings_backup.op',
+        operation: 'export',
+        error: e,
+        stackTrace: st,
+      );
       messenger.showSnackBar(SnackBar(content: Text('書き出せませんでした: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -87,17 +98,68 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       final text = await file.readAsString();
       final prefs = await SharedPreferences.getInstance();
       final result = await applySettingsBackupYaml(prefs, text);
+      // ref を触る前に mounted を見る (#955)。読み込み中に画面を離れると
+      // ref.invalidate が StateError を投げ、下の catch が「読み込めません
+      // でした」と出す——**設定は書き込み済みなのに**失敗したように見える。
+      if (!mounted) return;
       // 各 Notifier は build() で prefs を読み直すので、invalidate すれば
       // 画面が新しい設定で組み直される（再起動を求めない）。
       _refreshPreferenceProviders();
-      if (!mounted) return;
+      _reportImportSkips(result);
       messenger.showSnackBar(SnackBar(content: Text(_importSummary(result))));
-    } on SettingsBackupFormatException catch (e) {
+    } on SettingsBackupFormatException catch (e, st) {
+      // 不正 YAML / 版違い / 設定ファイルでない、の失敗率を観測する (#968)。
+      // **例外の message は Sentry に載せない**: 「読み込めませんでした: <yaml
+      // エラー>」の yaml エラーにファイルの行断片（＝設定値）が混じりうるため、
+      // 内容を含まない合成エラーで件数だけ数える。画面には従来どおり理由を出す
+      // （ユーザー自身のファイルなので UI に出すのは問題ない）。fingerprint は
+      // 下の汎用失敗と分ける。
+      reportOpFailure(
+        tagKey: 'settings_backup.op',
+        operation: 'import',
+        error: StateError('settings backup: unparseable / incompatible file'),
+        stackTrace: st,
+        tags: {'reason': 'format'},
+      );
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (e) {
+    } catch (e, st) {
+      // 権限 / 容量 / 読み取り失敗など。IO 例外の toString はローカルパスを含む
+      // が値は含まない。scrubException は通す。
+      reportOpFailure(
+        tagKey: 'settings_backup.op',
+        operation: 'import',
+        error: e,
+        stackTrace: st,
+      );
       messenger.showSnackBar(SnackBar(content: Text('読み込めませんでした: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 取り込まなかったキーの内訳を Sentry へ残す (#968)。
+  ///
+  /// 画面には件数しか出ず記録も残らないため、版をまたいで互換が崩れても（未知の
+  /// キー・型違い・範囲外が増えても）気付けなかった。**キー名と理由だけ**を載せ、
+  /// **値は載せない**（テンプレート履歴・フォント名などが入るため）。失敗ではなく
+  /// 分布観測なので captureMessage（info）で、fingerprint は 1 本に集約する。
+  void _reportImportSkips(SettingsImportResult result) {
+    if (result.skipped.isEmpty) return;
+    try {
+      Sentry.captureMessage(
+        'settings_backup: import skipped ${result.skipped.length} keys',
+        level: SentryLevel.info,
+        withScope: (scope) {
+          scope.setTag('settings_backup.op', 'import_skip');
+          // key -> 理由。値は含めない（result.skipped は key→理由 の対応）。
+          scope.setContexts('settings_backup_skipped', {
+            for (final entry in result.skipped.entries) entry.key: entry.value,
+          });
+          scope.fingerprint = ['settings_backup.op', 'import_skip'];
+        },
+      );
+    } catch (_) {
+      // Sentry 失敗で UI を止めない。
     }
   }
 
@@ -159,7 +221,10 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
               '次の設定は端末ごとに決めるものなので、書き出しに含まれません。\n'
               '・背景画像\n'
               '・絵文字などのパレットの高さ\n'
-              '・ウィンドウ常駐、ログイン時に起動',
+              '・ウィンドウ常駐、ログイン時に起動\n'
+              '\n'
+              'アカウントごとに決まる設定も含まれません（背景の濃さ、'
+              'テーマ色、タブ構成、絵文字パレット、ピン留めハッシュタグなど）。',
             ),
           ),
         ],

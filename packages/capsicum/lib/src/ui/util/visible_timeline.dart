@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
+import '../../provider/tab_selection_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/timeline_cache.dart';
 import '../widget/content_parser.dart';
@@ -112,12 +113,16 @@ bool postMatchesHashtagSpec(Post post, String spec) {
   return [primary, ...?all].every((t) => tags.contains(t.toLowerCase()));
 }
 
-/// 本線 TL（[timelineProvider]）がいま購読されているか。
+/// 本線 TL（[timelineProvider]）がいま HomeScreen の body に描かれているか。
 ///
-/// HomeScreen が本線 TL を watch するのは「ハッシュタグでもリストでもない」ときだけ
-/// で、判定は `build()` の TL 選択と同じ（ハッシュタグ / リストのときはそれぞれの
-/// family provider に切り替わる）。チャンネル・通知・お知らせの各タブは、画面には
-/// 別のビューが出ていても本線 TL の watch 自体は続いているので生きている。
+/// HomeScreen の body 選択は `hashtag ?? list ?? main` で、ハッシュタグでも
+/// **解決済み**リストでもないときに本線 TL を出す。チャンネル・通知・お知らせの
+/// 各タブは、画面には別のビューが出ていても本線 TL の watch 自体は続いているので
+/// 生きている。
+///
+/// [listResolved] は `selectedListProvider` が非 null の [PostList] を解決できたか。
+/// **[ListTab] でも listsProvider 未ロード / id 不一致だと false** で、そのとき
+/// HomeScreen は本線 TL にフォールバックして描画している (#925-3)。
 ///
 /// **ここが false のときに `ref.read(timelineProvider.notifier)` を呼んではいけない。**
 /// 誰も購読していない autoDispose provider を新しく起こしてしまい、その `build()` が
@@ -127,22 +132,32 @@ bool postMatchesHashtagSpec(Post post, String spec) {
 /// なお、破棄済み notifier への `state` 代入自体は例外にならず黙って捨てられる
 /// （flutter_riverpod 2.6.1 で実測）。本線 TL は次に表示するとき build() から作り
 /// 直されるので、ここで触らなくても取りこぼしにはならない。
-bool mainTimelineIsVisible(TabType tab) =>
-    tab is! HashtagTab && tab is! ListTab;
+bool mainTimelineIsVisible(TabType tab, {required bool listResolved}) {
+  if (tab is HashtagTab) return false;
+  if (tab is ListTab) return !listResolved;
+  return true;
+}
 
 /// 表示中の TL への変更ハンドルを取得する。**await をまたぐ前に**呼ぶこと。
+///
+/// 判定軸は HomeScreen の描画と同じ派生 provider（[selectedListProvider] /
+/// [selectedHashtagProvider]）を共有する (#925-3)。生の `tab is ListTab` で
+/// `listTimelineProvider` を触ると、list 未解決の窓（HomeScreen は本線 TL を
+/// 描画中）で、誰も watch しない list TL provider を起こして REST を無駄打ちし、
+/// しかも変更は実際に見えている本線 TL へ届かない。
 VisibleTimelineMutator readVisibleTimelines(WidgetRef ref) {
   final tab = ref.read(selectedTabProvider);
+  final resolvedList = ref.read(selectedListProvider);
   return VisibleTimelineMutator._(
-    main: mainTimelineIsVisible(tab)
+    main: mainTimelineIsVisible(tab, listResolved: resolvedList != null)
         ? ref.read(timelineProvider.notifier)
         : null,
     hashtag: tab is HashtagTab
         ? ref.read(hashtagTimelineProvider(tab.tag).notifier)
         : null,
     hashtagSpec: tab is HashtagTab ? tab.tag : null,
-    list: tab is ListTab
-        ? ref.read(listTimelineProvider(tab.id).notifier)
+    list: resolvedList != null
+        ? ref.read(listTimelineProvider(resolvedList.id).notifier)
         : null,
     channel: tab is ChannelTab
         ? ref.read(channelTimelineProvider(tab.id).notifier)

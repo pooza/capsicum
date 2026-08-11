@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../constants.dart';
+import '../util/exception_scrub.dart';
 
 class ServerMetadata {
   final String name;
@@ -96,7 +97,10 @@ class ServerMetadataCache {
       _pending.remove(host);
       return metadata;
     } catch (e) {
-      debugPrint('capsicum: failed to fetch server metadata for $host: $e');
+      debugLogException(
+        'capsicum: failed to fetch server metadata for $host',
+        e,
+      );
       _cache[host] = _CacheEntry(null, DateTime.now());
       _pending.remove(host);
       return null;

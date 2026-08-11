@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import '../util/exception_scrub.dart';
 
 /// Receives the APNs device token from the iOS native layer via MethodChannel.
 ///
@@ -66,7 +67,7 @@ class ApnsService {
         );
       case 'onDeviceTokenError':
         final error = call.arguments as String;
-        debugPrint('capsicum: push.apns: registration failed: $error');
+        debugLogException('capsicum: push.apns: registration failed', error);
         // APNs 登録失敗は debug ではログのみで release では消える。#468 macOS
         // 本配線で実機の登録失敗を切り分けられるよう計装する。AppDelegate が
         // 組む detail は domain / code / userInfo のみでトークンを含まない。

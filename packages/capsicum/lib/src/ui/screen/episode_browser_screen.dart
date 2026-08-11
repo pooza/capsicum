@@ -8,6 +8,7 @@ import '../../provider/account_manager_provider.dart';
 import '../util/annict_link.dart';
 import 'annict_record_screen.dart';
 import 'annict_review_screen.dart';
+import '../../util/exception_scrub.dart';
 
 /// エピソード行の操作メニュー (#593)。`ListTile.trailing` にアイコンを並べると
 /// スマホ縦持ちで窮屈になるため PopupMenuButton に集約する。
@@ -65,7 +66,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       );
       if (mounted) setState(() => _works = works);
     } catch (e) {
-      debugPrint('Episode browser search error: $e');
+      debugLogException('Episode browser search error', e);
       if (mounted) {
         final status = e is DioException ? e.response?.statusCode : null;
         final isAuthError = status == 401 || status == 403;
@@ -136,7 +137,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
       final episodes = await mulukhiya.getEpisodes(work.annictId);
       if (mounted) setState(() => _episodes = episodes);
     } catch (e) {
-      debugPrint('Episode load error: $e');
+      debugLogException('Episode load error', e);
       if (mounted) setState(() => _episodesError = 'エピソードの取得に失敗しました');
     } finally {
       if (mounted) setState(() => _episodesLoading = false);

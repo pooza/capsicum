@@ -396,7 +396,10 @@ class PushRegistrationService {
     try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
-      debugPrint('capsicum: push.registration: keystore delete failed: $e');
+      debugLogException(
+        'capsicum: push.registration: keystore delete failed',
+        e,
+      );
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
 
@@ -426,8 +429,22 @@ class PushRegistrationService {
   static Future<List<int>> collectRelayIds(List<Account> accounts) async {
     final ids = <int>{};
     for (final a in accounts) {
-      final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
-      if (id != null) ids.add(id);
+      // 1 アカウント読めなかっただけで投げない。ここは起動時の掃除経路の
+      // 先頭にあり、投げると呼び出し元（splash の firebaseReady チェーン）に
+      // catch が無いため **registerAllAccounts ごと飛んでそのセッションが
+      // プッシュ不達**になる。掃除し損ねた行は上流の失効で自然に消えるので、
+      // 「掃除の取りこぼし」より「登録が立たない」方が重い。
+      // reconcileDeviceToken が getDeviceToken の読み取り失敗で採っている
+      // 判断と揃える。
+      try {
+        final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
+        if (id != null) ids.add(id);
+      } catch (e) {
+        debugPrint(
+          'capsicum: push.registration: relay id read failed for '
+          '${a.key.toStorageKey()}: $e',
+        );
+      }
     }
     return ids.toList();
   }
@@ -449,7 +466,10 @@ class PushRegistrationService {
       try {
         await _client.unregister(relayId);
       } catch (e, st) {
-        debugPrint('capsicum: push.registration: relay unregister failed: $e');
+        debugLogException(
+          'capsicum: push.registration: relay unregister failed',
+          e,
+        );
         _reportUnregisterFailure(e, st, '(device)', 'relay');
       }
     }
@@ -520,7 +540,10 @@ class PushRegistrationService {
       _tokenRefreshChain = _tokenRefreshChain
           .then((_) => _runTokenRefresh(getAccounts))
           .catchError((Object e, StackTrace st) {
-            debugPrint('capsicum: push.registration: token refresh failed: $e');
+            debugLogException(
+              'capsicum: push.registration: token refresh failed',
+              e,
+            );
             Sentry.captureException(
               e,
               stackTrace: st,
@@ -600,7 +623,10 @@ class PushRegistrationService {
     } catch (e) {
       // 読めなければ判定できない。掃除せず通常の登録へ進む（誤って掃除して
       // push を止めるより、重複が残る方が軽い）。
-      debugPrint('capsicum: push.registration: device token read failed: $e');
+      debugLogException(
+        'capsicum: push.registration: device token read failed',
+        e,
+      );
       return;
     }
     // 未保存（本機能の導入前・初回起動）は変化と判定できない。既存の孤児は

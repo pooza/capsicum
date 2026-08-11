@@ -17,6 +17,14 @@
 /// 別の通知として扱う）。変更するときは両方と、双方のテストベクタ
 /// (`test/notification_tag_test.dart` /
 /// `windows/runner/notification_tag_test.cpp`) を揃えて直すこと。
+///
+/// **native 側だけにある規則が 1 つある。**`NotificationTagFor` は
+/// `notification_id` が空なら空文字を返し、Tag を付けない (#956)。WNS の生
+/// ペイロードは通知 ID を欠くことがあり、そのまま導出すると `hash("account|")`
+/// が全通知で同一 Tag になって Action Center に最後の 1 件しか残らないため。
+/// ここ（Dart 側）に対応物が無いのは、WebSocket 経路の通知 ID が API から
+/// パース済みで常に埋まっており、かつ `show()` の id は省略できないから。
+/// **アルゴリズムのズレではないので、揃えようとして消さないこと。**
 library;
 
 import 'dart:convert';

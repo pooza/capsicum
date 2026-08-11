@@ -71,4 +71,36 @@ void main() {
       reason: '既定へ戻す操作を保存値の到着で巻き戻さない',
     );
   });
+
+  test('打鍵ごとの保存はデバウンスされ、state だけ即時反映される (#927)', () async {
+    final container = boot({});
+    final notifier = container.read(composeFontFamilyProvider.notifier);
+
+    // 連続打鍵を模す。state は最後の値で即時反映される。
+    unawaited(notifier.setFontFamily('H'));
+    unawaited(notifier.setFontFamily('Ha'));
+    unawaited(notifier.setFontFamily('HackGen'));
+    expect(container.read(composeFontFamilyProvider), 'HackGen');
+
+    // デバウンス満了前は prefs へ書かれていない。
+    final prefsBefore = await SharedPreferences.getInstance();
+    expect(prefsBefore.getString('compose_font_family'), isNull);
+
+    // 満了後に一度だけ最終値が書かれる。
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final prefsAfter = await SharedPreferences.getInstance();
+    expect(prefsAfter.getString('compose_font_family'), 'HackGen');
+  });
+
+  test('空欄で確定するとキーごと消える (#927)', () async {
+    final container = boot({'compose_font_family': 'HackGen'});
+    await Future<void>.delayed(Duration.zero);
+    final notifier = container.read(composeFontFamilyProvider.notifier);
+
+    unawaited(notifier.setFontFamily(''));
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('compose_font_family'), isNull);
+  });
 }

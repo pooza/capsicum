@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -262,7 +263,12 @@ class _AnnouncementReactionChip extends StatelessWidget {
                 errorBuilder: (_, _, _) => Text(reaction.name),
               )
             else
-              Text(reaction.name, style: TextStyle(fontSize: emojiSize * 0.8)),
+              Text(
+                reaction.name,
+                style: TextStyle(
+                  fontSize: emojiSize * AppConstants.emojiFallbackTextScale,
+                ),
+              ),
             const SizedBox(width: 4),
             Text(
               '${reaction.count}',

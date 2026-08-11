@@ -95,6 +95,72 @@ enum NowPlayingUrlProvider {
 /// (詳細は #372 のコメント参照)。
 enum AvatarShape { auto, circle, squircle }
 
+// ---------------------------------------------------------------------------
+// 単一値を SharedPreferences に保存する Notifier の共通基底 (#927)。
+// ---------------------------------------------------------------------------
+
+/// enum の `name` 文字列から値を引く（保存値の復元用）。未知 / null は null。
+T? _enumByName<T extends Enum>(List<T> values, String? name) =>
+    name == null ? null : values.where((e) => e.name == name).firstOrNull;
+
+/// build() で既定値を返し、保存値を **非同期に** 読んで差し替える単一値設定の
+/// 共通実装 (#927)。
+///
+/// 以前は各 Notifier が同じ形（build() が既定を返す → [_load] が非同期に保存値へ
+/// 差し替える → setter が state 更新 + 書き込み）を個別に書いていた。その往復
+/// （`SharedPreferences.getInstance()` 1 回ぶん）の最中にユーザーが値を変えると、
+/// 後から解決した [_load] が保存済みの旧値で上書きしてしまう。この「非同期ロードと
+/// ユーザー編集の競合」ガードは [ComposeFontFamilyNotifier] (#892) と
+/// [LastTabNotifier] (#579) にしか無く、他は同じ形なのに素通しだった。ここへ
+/// 集約し、全 Notifier で同じ作法にする。
+///
+/// 起動直後に同期参照して race を構造的に消したい設定（`residentMode` /
+/// `updateCheckEnabled` / `restoreReadPosition` / `postTouchActions` / タブ構成
+/// 等）は、この基底を使わず build() で [sharedPrefsOrThrow] を直接読む従来の形を
+/// 保つ（非同期化しない）。
+abstract class PersistedNotifier<T> extends Notifier<T> {
+  /// 未保存時の既定値。
+  T get defaultValue;
+
+  /// SharedPreferences から保存値を読む。未保存 / 不正は null。
+  T? readSaved(SharedPreferences prefs);
+
+  /// SharedPreferences へ値を書く。
+  Future<void> writeSaved(SharedPreferences prefs, T value);
+
+  /// 保存・反映の前に値を整える（double の clamp 等）。既定は素通し。
+  T normalize(T value) => value;
+
+  /// build() → [_load] の往復中にユーザーが編集したか。
+  bool _userEdited = false;
+
+  @override
+  T build() {
+    _userEdited = false;
+    _load();
+    return defaultValue;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 往復の間にユーザーが編集していたら、その入力を保存値で上書きしない。
+    if (_userEdited) return;
+    final saved = readSaved(prefs);
+    if (saved != null && !_userEdited) state = normalize(saved);
+  }
+
+  /// 値を確定して保存する。ユーザー編集として記録するので、以降 [_load] は
+  /// この値を上書きしない。**等値でも記録する**のは、既定へ戻す編集（例: 空欄化）を
+  /// 保存値の到着で巻き戻さないため (#892)。
+  Future<void> persist(T value) async {
+    _userEdited = true;
+    final normalized = normalize(value);
+    state = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await writeSaved(prefs, normalized);
+  }
+}
+
 /// Default font scale factor (1.0 = system default).
 const defaultFontScale = 1.0;
 
@@ -797,44 +863,57 @@ final composeFontFamilyProvider =
       ComposeFontFamilyNotifier.new,
     );
 
-class ComposeFontFamilyNotifier extends Notifier<String> {
-  /// 保存値の読み込みが終わる前にユーザーが編集したか (#892 followup)。
-  ///
-  /// [build] は `''` を返してから [_load] が非同期に保存値を入れる。その往復の
-  /// 最中に設定画面で打つと、`setFontFamily` が入れた値を後から `_load` が
-  /// **保存済みの古い値で上書きする**（打った内容が黙って戻る）。逆に、既定へ
-  /// 戻すつもりで欄を空にしたときも、古い値が復活する。
-  bool _userEdited = false;
+class ComposeFontFamilyNotifier extends PersistedNotifier<String> {
+  /// 打鍵ごとの書き込みをまとめるデバウンス (#927-2)。
+  Timer? _writeDebounce;
+
+  @override
+  String get defaultValue => '';
+
+  @override
+  String? readSaved(SharedPreferences prefs) =>
+      prefs.getString(_composeFontFamilyKey);
+
+  /// 空文字は「既定へ戻す」なのでキーごと消す（＝トグルを兼ねる）。
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, String value) =>
+      value.isEmpty
+      ? prefs.remove(_composeFontFamilyKey)
+      : prefs.setString(_composeFontFamilyKey, value);
 
   @override
   String build() {
-    _userEdited = false;
-    _load();
-    return '';
+    // 前世代のデバウンスを持ち越さない。破棄時は保留中の書き込みを取りこぼさない。
+    _writeDebounce?.cancel();
+    _writeDebounce = null;
+    ref.onDispose(() {
+      final timer = _writeDebounce;
+      if (timer != null && timer.isActive) {
+        timer.cancel();
+        unawaited(_flush(state));
+      }
+    });
+    return super.build();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_composeFontFamilyKey);
-    // 往復の間にユーザーが編集していたら、その入力を保存値で上書きしない。
-    if (_userEdited) return;
-    if (saved != null) state = saved;
-  }
-
+  /// 設定画面の入力欄から**打鍵ごと**に呼ばれる (#927-2)。ライブプレビューのため
+  /// state は即時更新するが、`prefs` への書き込みは 400ms デバウンスして連続打鍵で
+  /// 叩き続けないようにする。編集済みフラグは等値判定より前に立て、既定へ戻す
+  /// （空欄化）編集も保存値の到着で巻き戻さない (#892)。
   Future<void> setFontFamily(String value) async {
     final trimmed = value.trim();
-    // 「同じ値なので何もしない」より **前**に立てる。既定へ戻すつもりで空にした
-    // とき（state が既に空＝初期値のまま）ここで早期 return すると、フラグが
-    // 立たないまま _load が古い値を復活させてしまう。
     _userEdited = true;
-    if (state == trimmed) return;
     state = trimmed;
+    _writeDebounce?.cancel();
+    _writeDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => unawaited(_flush(trimmed)),
+    );
+  }
+
+  Future<void> _flush(String value) async {
     final prefs = await SharedPreferences.getInstance();
-    if (trimmed.isEmpty) {
-      await prefs.remove(_composeFontFamilyKey);
-    } else {
-      await prefs.setString(_composeFontFamilyKey, trimmed);
-    }
+    await writeSaved(prefs, value);
   }
 }
 
@@ -843,27 +922,17 @@ final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
   ThemeModeNotifier.new,
 );
 
-class ThemeModeNotifier extends Notifier<ThemeMode> {
+class ThemeModeNotifier extends PersistedNotifier<ThemeMode> {
   @override
-  ThemeMode build() {
-    _load();
-    return ThemeMode.system;
-  }
+  ThemeMode get defaultValue => ThemeMode.system;
+  @override
+  ThemeMode? readSaved(SharedPreferences prefs) =>
+      _enumByName(ThemeMode.values, prefs.getString(_themeModeKey));
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, ThemeMode value) =>
+      prefs.setString(_themeModeKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_themeModeKey);
-    if (saved != null) {
-      final mode = ThemeMode.values.where((m) => m.name == saved).firstOrNull;
-      if (mode != null) state = mode;
-    }
-  }
-
-  Future<void> setMode(ThemeMode mode) async {
-    state = mode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_themeModeKey, mode.name);
-  }
+  Future<void> setMode(ThemeMode mode) => persist(mode);
 }
 
 /// Whether to hide posts with #実況 hashtag.
@@ -880,54 +949,30 @@ final mfmAnimationEnabledProvider =
       MfmAnimationEnabledNotifier.new,
     );
 
-class MfmAnimationEnabledNotifier extends Notifier<bool> {
+class MfmAnimationEnabledNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return true;
-  }
+  bool get defaultValue => true;
+  @override
+  bool? readSaved(SharedPreferences prefs) => prefs.getBool(_mfmAnimationKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_mfmAnimationKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_mfmAnimationKey);
-    if (saved != null) state = saved;
-  }
-
-  Future<void> setEnabled(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_mfmAnimationKey, value);
-  }
+  Future<void> setEnabled(bool value) => persist(value);
 }
 
-class HideLivecureNotifier extends Notifier<bool> {
+class HideLivecureNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) => prefs.getBool(_hideLivecureKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_hideLivecureKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_hideLivecureKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
+  Future<void> toggle() => persist(!state);
 
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hideLivecureKey, state);
-  }
-
-  Future<void> setHidden(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hideLivecureKey, value);
-  }
+  Future<void> setHidden(bool value) => persist(value);
 }
 
 /// Drawer / TabBar 等の横スクロール要素をマウスドラッグでも掴めるように
@@ -940,27 +985,17 @@ final mouseDragScrollProvider = NotifierProvider<MouseDragScrollNotifier, bool>(
   MouseDragScrollNotifier.new,
 );
 
-class MouseDragScrollNotifier extends Notifier<bool> {
+class MouseDragScrollNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_mouseDragScrollKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_mouseDragScrollKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_mouseDragScrollKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setEnabled(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_mouseDragScrollKey, value);
-  }
+  Future<void> setEnabled(bool value) => persist(value);
 }
 
 /// 接続インジケータで再接続の詳細 (再接続回数バッジ + 直近切断時刻) を出すか
@@ -973,27 +1008,17 @@ final showStreamReconnectDetailProvider =
       ShowStreamReconnectDetailNotifier.new,
     );
 
-class ShowStreamReconnectDetailNotifier extends Notifier<bool> {
+class ShowStreamReconnectDetailNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_showStreamReconnectDetailKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_showStreamReconnectDetailKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_showStreamReconnectDetailKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setEnabled(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_showStreamReconnectDetailKey, value);
-  }
+  Future<void> setEnabled(bool value) => persist(value);
 }
 
 /// タイムラインのライブ更新 (streaming) を行うか (#854)。default ON。モバイルで
@@ -1006,27 +1031,17 @@ final streamingEnabledProvider =
       StreamingEnabledNotifier.new,
     );
 
-class StreamingEnabledNotifier extends Notifier<bool> {
+class StreamingEnabledNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return true;
-  }
+  bool get defaultValue => true;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_streamingEnabledKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_streamingEnabledKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_streamingEnabledKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setEnabled(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_streamingEnabledKey, value);
-  }
+  Future<void> setEnabled(bool value) => persist(value);
 }
 
 /// 投稿のリアクション・ブースト・お気に入り等のチップにポインタを合わせた
@@ -1037,27 +1052,16 @@ final userHoverPopupProvider = NotifierProvider<UserHoverPopupNotifier, bool>(
   UserHoverPopupNotifier.new,
 );
 
-class UserHoverPopupNotifier extends Notifier<bool> {
+class UserHoverPopupNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return true;
-  }
+  bool get defaultValue => true;
+  @override
+  bool? readSaved(SharedPreferences prefs) => prefs.getBool(_userHoverPopupKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_userHoverPopupKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_userHoverPopupKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setEnabled(bool value) async {
-    if (state == value) return;
-    state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_userHoverPopupKey, value);
-  }
+  Future<void> setEnabled(bool value) => persist(value);
 }
 
 /// Linux でカラー絵文字フォールバック (`Noto Color Emoji` を fontFamilyFallback
@@ -1228,29 +1232,17 @@ final previewCardModeProvider =
       PreviewCardModeNotifier.new,
     );
 
-class PreviewCardModeNotifier extends Notifier<PreviewCardMode> {
+class PreviewCardModeNotifier extends PersistedNotifier<PreviewCardMode> {
   @override
-  PreviewCardMode build() {
-    _load();
-    return PreviewCardMode.show;
-  }
+  PreviewCardMode get defaultValue => PreviewCardMode.show;
+  @override
+  PreviewCardMode? readSaved(SharedPreferences prefs) =>
+      _enumByName(PreviewCardMode.values, prefs.getString(_previewCardModeKey));
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, PreviewCardMode value) =>
+      prefs.setString(_previewCardModeKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_previewCardModeKey);
-    if (saved != null) {
-      final mode = PreviewCardMode.values
-          .where((m) => m.name == saved)
-          .firstOrNull;
-      if (mode != null) state = mode;
-    }
-  }
-
-  Future<void> setMode(PreviewCardMode mode) async {
-    state = mode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_previewCardModeKey, mode.name);
-  }
+  Future<void> setMode(PreviewCardMode mode) => persist(mode);
 }
 
 /// ナウプレ URL の優先プロバイダ設定 (#681)。既定は Apple Music。
@@ -1259,29 +1251,22 @@ final nowPlayingUrlProviderProvider =
       NowPlayingUrlProviderNotifier.new,
     );
 
-class NowPlayingUrlProviderNotifier extends Notifier<NowPlayingUrlProvider> {
+class NowPlayingUrlProviderNotifier
+    extends PersistedNotifier<NowPlayingUrlProvider> {
   @override
-  NowPlayingUrlProvider build() {
-    _load();
-    return NowPlayingUrlProvider.appleMusic;
-  }
+  NowPlayingUrlProvider get defaultValue => NowPlayingUrlProvider.appleMusic;
+  @override
+  NowPlayingUrlProvider? readSaved(SharedPreferences prefs) => _enumByName(
+    NowPlayingUrlProvider.values,
+    prefs.getString(_nowPlayingUrlProviderKey),
+  );
+  @override
+  Future<void> writeSaved(
+    SharedPreferences prefs,
+    NowPlayingUrlProvider value,
+  ) => prefs.setString(_nowPlayingUrlProviderKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_nowPlayingUrlProviderKey);
-    if (saved != null) {
-      final provider = NowPlayingUrlProvider.values
-          .where((p) => p.name == saved)
-          .firstOrNull;
-      if (provider != null) state = provider;
-    }
-  }
-
-  Future<void> setProvider(NowPlayingUrlProvider provider) async {
-    state = provider;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_nowPlayingUrlProviderKey, provider.name);
-  }
+  Future<void> setProvider(NowPlayingUrlProvider provider) => persist(provider);
 }
 
 /// アカウントアイコンの形状設定 (#372)。
@@ -1289,29 +1274,17 @@ final avatarShapeProvider = NotifierProvider<AvatarShapeNotifier, AvatarShape>(
   AvatarShapeNotifier.new,
 );
 
-class AvatarShapeNotifier extends Notifier<AvatarShape> {
+class AvatarShapeNotifier extends PersistedNotifier<AvatarShape> {
   @override
-  AvatarShape build() {
-    _load();
-    return AvatarShape.auto;
-  }
+  AvatarShape get defaultValue => AvatarShape.auto;
+  @override
+  AvatarShape? readSaved(SharedPreferences prefs) =>
+      _enumByName(AvatarShape.values, prefs.getString(_avatarShapeKey));
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, AvatarShape value) =>
+      prefs.setString(_avatarShapeKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_avatarShapeKey);
-    if (saved != null) {
-      final shape = AvatarShape.values
-          .where((s) => s.name == saved)
-          .firstOrNull;
-      if (shape != null) state = shape;
-    }
-  }
-
-  Future<void> setShape(AvatarShape shape) async {
-    state = shape;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_avatarShapeKey, shape.name);
-  }
+  Future<void> setShape(AvatarShape shape) => persist(shape);
 }
 
 /// Per-account hidden list IDs.
@@ -1432,20 +1405,15 @@ final confirmBeforePostProvider =
       ConfirmBeforePostNotifier.new,
     );
 
-class ConfirmBeforePostNotifier extends Notifier<bool> {
+class ConfirmBeforePostNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_confirmBeforePostKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_confirmBeforePostKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_confirmBeforePostKey, value);
 
   /// Returns the persisted value directly from SharedPreferences.
   ///
@@ -1454,15 +1422,13 @@ class ConfirmBeforePostNotifier extends Notifier<bool> {
   Future<bool> readPersisted() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getBool(_confirmBeforePostKey) ?? false;
+    // 確定値を読んだので、遅れて解決する _load に上書きされないよう記録する。
+    _userEdited = true;
     state = value;
     return value;
   }
 
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_confirmBeforePostKey, state);
-  }
+  Future<void> toggle() => persist(!state);
 }
 
 /// Whether to blur all images regardless of NSFW flag.
@@ -1470,26 +1436,16 @@ final blurAllImagesProvider = NotifierProvider<BlurAllImagesNotifier, bool>(
   BlurAllImagesNotifier.new,
 );
 
-class BlurAllImagesNotifier extends Notifier<bool> {
+class BlurAllImagesNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) => prefs.getBool(_blurAllImagesKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_blurAllImagesKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_blurAllImagesKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_blurAllImagesKey, state);
-  }
+  Future<void> toggle() => persist(!state);
 }
 
 /// Whether to hide the instance ticker (source-server band) on remote posts.
@@ -1498,26 +1454,17 @@ final hideInstanceTickerProvider =
       HideInstanceTickerNotifier.new,
     );
 
-class HideInstanceTickerNotifier extends Notifier<bool> {
+class HideInstanceTickerNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_hideInstanceTickerKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_hideInstanceTickerKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_hideInstanceTickerKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hideInstanceTickerKey, state);
-  }
+  Future<void> toggle() => persist(!state);
 }
 
 /// Whether to restore the saved read position (#25 markers) on cold start.
@@ -1556,30 +1503,22 @@ const double kDefaultPickerSheetHeight = 0.5;
 /// ピッカーシート高さの永続化ノーティファイア共通実装。挿入用とリアクション用で
 /// **記憶する高さは別**にする（挿入は連続入力、リアクションは 1 タップで閉じる、と
 /// 用途が違うため望ましい高さも違う）。差分は保存キーだけなので基底に寄せる。
-abstract class PickerSheetHeightNotifier extends Notifier<double> {
+abstract class PickerSheetHeightNotifier extends PersistedNotifier<double> {
   /// SharedPreferences の保存キー。
   String get prefsKey;
 
   @override
-  double build() {
-    _load();
-    return kDefaultPickerSheetHeight;
-  }
+  double get defaultValue => kDefaultPickerSheetHeight;
+  @override
+  double normalize(double value) =>
+      value.clamp(kMinPickerSheetHeight, kMaxPickerSheetHeight);
+  @override
+  double? readSaved(SharedPreferences prefs) => prefs.getDouble(prefsKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(prefsKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(prefsKey);
-    if (saved != null) {
-      state = saved.clamp(kMinPickerSheetHeight, kMaxPickerSheetHeight);
-    }
-  }
-
-  Future<void> set(double value) async {
-    final clamped = value.clamp(kMinPickerSheetHeight, kMaxPickerSheetHeight);
-    state = clamped;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(prefsKey, clamped);
-  }
+  Future<void> set(double value) => persist(value);
 }
 
 /// 投稿本文・簡易投稿バーの挿入ピッカーの高さ (#690)。
@@ -1624,26 +1563,16 @@ final absoluteTimeProvider = NotifierProvider<AbsoluteTimeNotifier, bool>(
   AbsoluteTimeNotifier.new,
 );
 
-class AbsoluteTimeNotifier extends Notifier<bool> {
+class AbsoluteTimeNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) => prefs.getBool(_absoluteTimeKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_absoluteTimeKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_absoluteTimeKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_absoluteTimeKey, state);
-  }
+  Future<void> toggle() => persist(!state);
 }
 
 /// タイムライン上の投稿タイルに直接表示する「タッチ操作」ボタンの種別 (#565)。
@@ -1729,73 +1658,48 @@ class PostTouchActionsNotifier extends Notifier<Set<PostTouchAction>> {
   }
 }
 
-class FontScaleNotifier extends Notifier<double> {
+class FontScaleNotifier extends PersistedNotifier<double> {
   @override
-  double build() {
-    _load();
-    return defaultFontScale;
-  }
+  double get defaultValue => defaultFontScale;
+  @override
+  double normalize(double value) => value.clamp(minFontScale, maxFontScale);
+  @override
+  double? readSaved(SharedPreferences prefs) => prefs.getDouble(_fontScaleKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(_fontScaleKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_fontScaleKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setScale(double scale) async {
-    final clamped = scale.clamp(minFontScale, maxFontScale);
-    state = clamped;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_fontScaleKey, clamped);
-  }
+  Future<void> setScale(double scale) => persist(scale);
 }
 
-class EmojiSizeNotifier extends Notifier<double> {
+class EmojiSizeNotifier extends PersistedNotifier<double> {
   @override
-  double build() {
-    _load();
-    return defaultEmojiSize;
-  }
+  double get defaultValue => defaultEmojiSize;
+  @override
+  double normalize(double value) => value.clamp(minEmojiSize, maxEmojiSize);
+  @override
+  double? readSaved(SharedPreferences prefs) => prefs.getDouble(_emojiScaleKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(_emojiScaleKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_emojiScaleKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setSize(double size) async {
-    final clamped = size.clamp(minEmojiSize, maxEmojiSize);
-    state = clamped;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_emojiScaleKey, clamped);
-  }
+  Future<void> setSize(double size) => persist(size);
 }
 
-class ThumbnailScaleNotifier extends Notifier<double> {
+class ThumbnailScaleNotifier extends PersistedNotifier<double> {
   @override
-  double build() {
-    _load();
-    return defaultThumbnailScale;
-  }
+  double get defaultValue => defaultThumbnailScale;
+  @override
+  double normalize(double value) =>
+      value.clamp(minThumbnailScale, maxThumbnailScale);
+  @override
+  double? readSaved(SharedPreferences prefs) =>
+      prefs.getDouble(_thumbnailScaleKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, double value) =>
+      prefs.setDouble(_thumbnailScaleKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getDouble(_thumbnailScaleKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> setScale(double scale) async {
-    final clamped = scale.clamp(minThumbnailScale, maxThumbnailScale);
-    state = clamped;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_thumbnailScaleKey, clamped);
-  }
+  Future<void> setScale(double scale) => persist(scale);
 }
 
 /// Default background opacity.
@@ -1921,26 +1825,17 @@ final emojiZeroWidthSpaceProvider =
       EmojiZeroWidthSpaceNotifier.new,
     );
 
-class EmojiZeroWidthSpaceNotifier extends Notifier<bool> {
+class EmojiZeroWidthSpaceNotifier extends PersistedNotifier<bool> {
   @override
-  bool build() {
-    _load();
-    return false;
-  }
+  bool get defaultValue => false;
+  @override
+  bool? readSaved(SharedPreferences prefs) =>
+      prefs.getBool(_emojiZeroWidthSpaceKey);
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, bool value) =>
+      prefs.setBool(_emojiZeroWidthSpaceKey, value);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool(_emojiZeroWidthSpaceKey);
-    if (saved != null) {
-      state = saved;
-    }
-  }
-
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_emojiZeroWidthSpaceKey, state);
-  }
+  Future<void> toggle() => persist(!state);
 }
 
 /// Preset dark surface colors.
@@ -1988,29 +1883,19 @@ final darkSurfaceVariantProvider =
       DarkSurfaceVariantNotifier.new,
     );
 
-class DarkSurfaceVariantNotifier extends Notifier<DarkSurfaceVariant> {
+class DarkSurfaceVariantNotifier extends PersistedNotifier<DarkSurfaceVariant> {
   @override
-  DarkSurfaceVariant build() {
-    _load();
-    return DarkSurfaceVariant.standard;
-  }
+  DarkSurfaceVariant get defaultValue => DarkSurfaceVariant.standard;
+  @override
+  DarkSurfaceVariant? readSaved(SharedPreferences prefs) => _enumByName(
+    DarkSurfaceVariant.values,
+    prefs.getString(_darkSurfaceVariantKey),
+  );
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, DarkSurfaceVariant value) =>
+      prefs.setString(_darkSurfaceVariantKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_darkSurfaceVariantKey);
-    if (saved != null) {
-      final v = DarkSurfaceVariant.values
-          .where((e) => e.name == saved)
-          .firstOrNull;
-      if (v != null) state = v;
-    }
-  }
-
-  Future<void> setVariant(DarkSurfaceVariant variant) async {
-    state = variant;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_darkSurfaceVariantKey, variant.name);
-  }
+  Future<void> setVariant(DarkSurfaceVariant variant) => persist(variant);
 }
 
 // --- Dark text color ---
@@ -2062,27 +1947,17 @@ final darkTextColorProvider =
       DarkTextColorNotifier.new,
     );
 
-class DarkTextColorNotifier extends Notifier<DarkTextColor> {
+class DarkTextColorNotifier extends PersistedNotifier<DarkTextColor> {
   @override
-  DarkTextColor build() {
-    _load();
-    return DarkTextColor.standard;
-  }
+  DarkTextColor get defaultValue => DarkTextColor.standard;
+  @override
+  DarkTextColor? readSaved(SharedPreferences prefs) =>
+      _enumByName(DarkTextColor.values, prefs.getString(_darkTextColorKey));
+  @override
+  Future<void> writeSaved(SharedPreferences prefs, DarkTextColor value) =>
+      prefs.setString(_darkTextColorKey, value.name);
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_darkTextColorKey);
-    if (saved != null) {
-      final v = DarkTextColor.values.where((e) => e.name == saved).firstOrNull;
-      if (v != null) state = v;
-    }
-  }
-
-  Future<void> setColor(DarkTextColor color) async {
-    state = color;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_darkTextColorKey, color.name);
-  }
+  Future<void> setColor(DarkTextColor color) => persist(color);
 }
 
 /// 設定のバックアップ (#857) で取り込んだ値を画面へ反映するための provider 一覧。
@@ -2102,7 +1977,8 @@ final backedUpPreferenceProviders = <ProviderOrFamily>[
   fontScaleProvider,
   emojiSizeProvider,
   thumbnailScaleProvider,
-  backgroundOpacityProvider,
+  // backgroundOpacityProvider は入れない。アカウントごとの family で、素の
+  // `background_opacity` は移行専用キー（`accountScopedKeys`）。
   absoluteTimeProvider,
   blurAllImagesProvider,
   hideInstanceTickerProvider,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Notification;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +27,7 @@ import 'reaction_picker_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
+import '../../util/exception_scrub.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
   final Notification notification;
@@ -355,8 +357,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     } catch (e, st) {
       // 同ファイルの _runReactionAction と揃える。汎用文言＋無記録のままだと、
       // 通知画面から実行した投稿アクションの失敗だけが観測から抜け落ちる。
-      debugPrint('_runAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -436,8 +438,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     BackendAdapter adapter,
     String postId,
     Future<void> Function() action,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    // 付与と取り消しで別系列にする (#924)。ここは付与導線のみだが、post_tile と
+    // シグネチャを揃え、将来取り消し経路が増えても reaction_remove を渡せるように
+    // しておく。
+    String phase = 'reaction_add',
+  }) async {
     // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
     // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
     // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
@@ -449,15 +455,15 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       timelines.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runReactionAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runReactionAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+          withScope: (scope) => scope.setTag('phase', phase),
         ),
       );
       messenger.showSnackBar(

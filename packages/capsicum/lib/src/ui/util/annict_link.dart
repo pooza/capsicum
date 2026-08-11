@@ -64,7 +64,7 @@ Future<bool> runAnnictLinkFlow(BuildContext context, WidgetRef ref) async {
     }
     return true;
   } catch (e) {
-    debugPrint('Annict auth error: ${scrubException(e)}');
+    debugLogException('Annict auth error', e);
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,

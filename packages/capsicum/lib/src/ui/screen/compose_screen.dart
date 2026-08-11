@@ -330,6 +330,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // ローカル自動保存の永続化 (#966)。「破棄したあとは書き戻さない」判定を
   // 含めてストア側が持つ。
   final _draftStore = ComposeDraftStore();
+  // 復元 (#966) が完了したか。initState の `_restoreDraft` は非同期で、
+  // SharedPreferences のロード前に画面を閉じると、離脱時保存 (#966) が空文字を
+  // 書いて保存済み下書きを消しうる。復元完了まで保存を保留してこの窓を塞ぐ
+  // (#969)。復元は initState で必ず走るので、実操作でここが false のまま save に
+  // 到達するのはプロセス初回の prefs ロード中だけ。
+  bool _draftRestored = false;
 
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
   /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
@@ -880,7 +886,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
   Future<void> _saveDraft() async {
-    if (!_draftAutoSave) return;
+    if (!_draftAutoSave || !_draftRestored) return;
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
@@ -897,6 +903,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
     final saved = await _draftStore.restore();
+    // 復元経路の解決をもって、以降の離脱時保存 (#966) を解禁する (#969)。
+    // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
+    _draftRestored = true;
     if (!mounted || saved == null) return;
     if (saved.hasText) {
       _controller.text = saved.text;

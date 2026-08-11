@@ -64,7 +64,7 @@ Future<bool> runSpotifyLinkFlow(BuildContext context, WidgetRef ref) async {
     }
     return true;
   } catch (e) {
-    debugPrint('Spotify auth error: ${scrubException(e)}');
+    debugLogException('Spotify auth error', e);
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -108,7 +108,7 @@ Future<bool> runSpotifyUnlinkFlow(BuildContext context, WidgetRef ref) async {
     }
     return true;
   } catch (e) {
-    debugPrint('Spotify unlink error: ${scrubException(e)}');
+    debugLogException('Spotify unlink error', e);
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,

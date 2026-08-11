@@ -81,7 +81,10 @@ class ResidentModeService with WindowListener, TrayListener {
         // 常駐 ON のままウィンドウを閉じてもアプリが落ちる（ユーザーには無反応に
         // 見える）。兄弟サービス launch_at_login (#763) と同じく Sentry に記録して
         // 乖離を可視化する。debugPrint だけでは本番で観測できないため。
-        debugPrint('capsicum: resident_mode: native sync($value) failed: $e');
+        debugLogException(
+          'capsicum: resident_mode: native sync($value) failed',
+          e,
+        );
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
@@ -108,7 +111,10 @@ class ResidentModeService with WindowListener, TrayListener {
         }
       }
     } catch (e) {
-      debugPrint('capsicum: resident_mode: setEnabled($value) failed: $e');
+      debugLogException(
+        'capsicum: resident_mode: setEnabled($value) failed',
+        e,
+      );
     }
   }
 
@@ -189,7 +195,7 @@ class ResidentModeService with WindowListener, TrayListener {
           .timeout(const Duration(seconds: 1));
       return value.asBoolean();
     } catch (e) {
-      debugPrint('capsicum: resident_mode: tray host probe failed: $e');
+      debugLogException('capsicum: resident_mode: tray host probe failed', e);
       return false;
     } finally {
       await client.close();

@@ -158,14 +158,27 @@ void DisplayRawNotification(const std::string& content) {
   // 畳まれないことが確認された** (#945)。Tag が畳めても 2 通目のトースト自体は
   // 作られるので通知音の重複は残る。よって macOS (#674) と同じ「先に出した方が
   // 勝つ」方式に寄せ、負けた側はトーストを作らない。
-  const std::string dedup_key = capsicum::NotificationTagKey(
-      display.account, display.notification_id);
-  if (capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
+  //
+  // ⚠ dedup できるのは通知 ID が取れたときだけ。NotificationTagKey は
+  // `account + "|" + id` を返すので **id が空でもキーは空にならず**、
+  // NotificationDedupRegistry 側の空キーガードは発火しない。id を持たない
+  // payload が来ると全部が同じキーに潰れ、そのアカウント宛の 2 通目以降が
+  // 黙って消える。**dedup を通さなければ最悪二重に出るだけ**なので、
+  // 取れなかったときは素通しする方へ倒す。
+  const bool dedupable = !display.notification_id.empty();
+  const std::string dedup_key =
+      dedupable ? capsicum::NotificationTagKey(display.account,
+                                               display.notification_id)
+                : std::string();
+  if (dedupable &&
+      capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
     return;
   }
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
   // 安定ハッシュ）のまま残す。dedup を取りこぼしたときの二段目の受け皿として、
   // OS 側の畳み込みに賭ける価値はある（効かない環境があるだけで害は無い）。
+  // 通知 ID が無ければ NotificationTagFor が空文字を返し、Tag 無し＝畳まない
+  // 挙動になる (#956)。上の dedupable と同じ前提で、別々に判断していない。
   // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
   // ため、ここでは付けない。
   if (!capsicum::ShowRawToast(
@@ -174,6 +187,9 @@ void DisplayRawNotification(const std::string& content) {
                                        display.notification_id))) {
     // 表示できなかったので claim しない。ここで記録すると、WebSocket 経路まで
     // 抑止されて**通知が 1 通も出なくなる**。
+    return;
+  }
+  if (!dedupable) {
     return;
   }
   capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);

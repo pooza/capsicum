@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../util/exception_scrub.dart';
 
 /// Windows のネイティブ層 (runner) から WNS Channel URI を受け取る (#474)。
 ///
@@ -35,7 +36,7 @@ class WnsService {
     // 要求自体は非同期（ネイティブが MTA ワーカーで取得 → onChannelUri）。
     // ここでブロックせず投げっぱなしにし、結果はストリームで受ける。
     _channel.invokeMethod<void>('requestChannelUri').catchError((Object e) {
-      debugPrint('capsicum: push.wns: requestChannelUri failed: $e');
+      debugLogException('capsicum: push.wns: requestChannelUri failed', e);
     });
   }
 
@@ -51,7 +52,7 @@ class WnsService {
     try {
       return await _channel.invokeMethod<String>('consumePushDiagnostics');
     } catch (e) {
-      debugPrint('capsicum: push.wns: consumePushDiagnostics failed: $e');
+      debugLogException('capsicum: push.wns: consumePushDiagnostics failed', e);
       return null;
     }
   }
@@ -67,7 +68,7 @@ class WnsService {
     try {
       await _channel.invokeMethod<void>('syncPushKeys');
     } catch (e) {
-      debugPrint('capsicum: push.wns: syncPushKeys failed: $e');
+      debugLogException('capsicum: push.wns: syncPushKeys failed', e);
     }
   }
 
@@ -83,7 +84,7 @@ class WnsService {
     try {
       await _channel.invokeMethod<void>('syncPushLabels', labelsJson);
     } catch (e) {
-      debugPrint('capsicum: push.wns: syncPushLabels failed: $e');
+      debugLogException('capsicum: push.wns: syncPushLabels failed', e);
     }
   }
 

@@ -14,6 +14,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pubspec.lock churn ガード (#970) が push / PR の差分と範囲内の
+          # コミットメッセージを git で参照するため、全履歴を取る。
+          fetch-depth: 0
+      # #970: pubspec.lock が pubspec.yaml / Flutter pin (workflow) の変更を伴わず
+      # 単独で動いていたら落とす。#836 で決めた「揃える前に出た lock 差分はコミット
+      # しない」規約を機械で受ける（1fd1a135 で docs コミットに lock のダウングレード
+      # が紛れ込み、release PR まで気付かれなかった実績あり）。
+      #
+      # 抜け道: リリース前の `flutter pub upgrade`（store-release-guide §4.1）は
+      # lock だけが動く正当な操作。コミットメッセージを chore(deps) にするか本文に
+      # [pubspec-lock] を付けたものは許可する。粒度は「この push / PR の差分」で、
+      # develop push でも起動する（release PR を待たず早期に検出できる）。
+      - name: Guard pubspec.lock churn (#970)
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            files="$(git diff --name-only "$PR_BASE"..."$PR_HEAD")"
+            msgs="$(git log --format='%s %b' "$PR_BASE".."$PR_HEAD")"
+          else
+            # ブランチ新規作成（before が全ゼロ）は範囲を取れないのでスキップ。
+            if printf '%s' "$PUSH_BEFORE" | grep -qE '^0+$'; then
+              echo "branch creation push; skip lock guard"; exit 0
+            fi
+            files="$(git diff --name-only "$PUSH_BEFORE" "$GITHUB_SHA")"
+            msgs="$(git log --format='%s %b' "$PUSH_BEFORE".."$GITHUB_SHA")"
+          fi
+
+          lock_changed=false
+          companion_changed=false
+          while IFS= read -r f; do
+            case "$f" in
+              pubspec.lock|*/pubspec.lock) lock_changed=true ;;
+              pubspec.yaml|*/pubspec.yaml) companion_changed=true ;;
+              .github/workflows/*.yml|.github/workflows/*.yaml) companion_changed=true ;;
+            esac
+          done <<< "$files"
+
+          if [ "$lock_changed" != true ]; then
+            echo "pubspec.lock unchanged; ok"; exit 0
+          fi
+          if [ "$companion_changed" = true ]; then
+            echo "pubspec.lock changed together with pubspec.yaml / workflow pin; ok"
+            exit 0
+          fi
+          if printf '%s' "$msgs" | grep -qiE 'chore\(deps\)|\[pubspec-lock\]'; then
+            echo "lock-only change is an explicit deps/upgrade commit; ok"; exit 0
+          fi
+          echo "::error::pubspec.lock が pubspec.yaml / Flutter pin (workflow) の変更を伴わず単独で変わっています (#970)。依存を足す/上げるなら pubspec.yaml を、Flutter 版追従なら workflow の pin を同じ変更に含めてください。リリース前の pub upgrade（意図的な lock 単独更新）はコミットメッセージを chore(deps) にするか本文に [pubspec-lock] を付けてください。"
+          exit 1
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

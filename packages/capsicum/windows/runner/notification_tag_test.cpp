@@ -78,6 +78,16 @@ int main() {
   CheckEqStr(NotificationTagFor("pooza@mstdn.b-shock.org", "123456"),
              "70693920", "tag string");
 
+  // 通知 ID が無い払い出しでは Tag を付けない (#956)。付けると
+  // hash("account|") が全通知で同一になり、OS が差し替え続けて Action Center
+  // に最後の 1 件しか残らない。空 Tag は ShowRawToast が「付けない」と解釈する。
+  CheckEqStr(NotificationTagFor("pooza@mstdn.b-shock.org", ""), "",
+             "empty notification id yields no tag");
+  // ⚠ NotificationTagKey は空に正規化しない。dedup レジストリのキーとして
+  // 「キー無し」と区別できなくなるため（判断は wns_push.cpp の dedupable 側）。
+  CheckEqStr(NotificationTagKey("pooza@mstdn.b-shock.org", ""),
+             "pooza@mstdn.b-shock.org|", "tag key keeps the empty id");
+
   if (g_failures == 0) {
     std::printf("All tests passed\n");
     return 0;

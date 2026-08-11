@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -58,7 +57,10 @@ class LaunchAtLoginService {
       // 「オン」のまま実際には起動しない。debugPrint だけでは本番で観測でき
       // ないため Sentry に記録して乖離を可視化する (#763)。意図値 (value) を
       // タグに残し、enable/disable どちらが失敗したか追えるようにする。
-      debugPrint('capsicum: launch_at_login: setEnabled($value) failed: $e');
+      debugLogException(
+        'capsicum: launch_at_login: setEnabled($value) failed',
+        e,
+      );
       Sentry.captureException(
         scrubException(e),
         stackTrace: st,

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/is_cat_provider.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
+import '../../util/exception_scrub.dart';
 
 enum UserListType { followers, following, favouritedBy, rebloggedBy }
 
@@ -67,7 +68,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
             result.users.length >= _pageSize && result.nextCursor != null;
       });
     } catch (e) {
-      debugPrint('UserListScreen load error: $e');
+      debugLogException('UserListScreen load error', e);
       if (!mounted) return;
       setState(() => _loading = false);
     }
@@ -91,7 +92,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
             result.users.length >= _pageSize && result.nextCursor != null;
       });
     } catch (e) {
-      debugPrint('UserListScreen loadMore error: $e');
+      debugLogException('UserListScreen loadMore error', e);
       if (!mounted) return;
       setState(() => _loadingMore = false);
     }
