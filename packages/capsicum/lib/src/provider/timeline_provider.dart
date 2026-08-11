@@ -560,6 +560,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 起動直後の窓でも崩さないため。
   final Set<String> _windowBlockedUserIds = {};
 
+  /// 削除・ブロックのたびに +1 する世代印 (#958)。窓 (#921) の内外を問わず数える。
+  ///
+  /// 窓ベースの `_windowRemovedIds` / `_windowBlockedUserIds` は
+  /// `_awaitingInitialSnapshot` の間しか記録しないため、窓の外で走る
+  /// [_loadInitial]（pull-to-refresh / タブ・アカウント切替＝build() 再実行）が
+  /// 取得中にブロックが起きても検知できず、**取得前の生 JSON（ブロック相手の投稿を
+  /// 含む）を `clear()` の後ろに save して復活させていた**。[_loadInitial] の開始時に
+  /// この値を控え、save の直前に変化していたら書かない。
+  int _removalSeq = 0;
+
   /// 窓の記録を捨てる。窓を開くとき / 閉じるとき / build() のたびに呼ぶ。
   void _resetSnapshotWindow({required bool awaiting}) {
     _awaitingInitialSnapshot = awaiting;
@@ -688,6 +698,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }) async {
     final fetchSw = measureHomePaint ? (Stopwatch()..start()) : null;
 
+    // 取得開始時の削除・ブロック世代を控える (#958)。取得中にブロック等が起きたら
+    // allRaw は stale なので save しない（下の save 手前で照合する）。
+    final removalSeqAtStart = _removalSeq;
+
     // Initial REST fetch — retry pages until visible posts are found or the
     // timeline is exhausted (same logic as loadMore).
     final allVisible = <Post>[];
@@ -798,17 +812,23 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 次の起動で先出しできるよう、ホーム TL の初回ページを控える (#890)。
     // 書き込み失敗は握り潰される（キャッシュは無くても動く）。
     //
-    // 窓の間に削除 / ブロックがあったときは書かない (#921)。
-    // `removePostsByUser` は `TimelineCache.clear()` を呼ぶが、その後にここの
-    // `save` が書き込みキューへ積まれると**ブロックした相手の投稿がディスクに
-    // 復活する**。allRaw は生 JSON なので投稿者を汎用に判定できず、消して書く
-    // より書かない方が安全（次回の取得で書き直される）。
+    // 削除 / ブロックがあったときは書かない。`removePostsByUser` は
+    // `TimelineCache.clear()` を呼ぶが、その後にここの `save` が書き込みキューへ
+    // 積まれると**ブロックした相手の投稿がディスクに復活する**。allRaw は生 JSON
+    // なので投稿者を汎用に判定できず、消して書くより書かない方が安全（次回の取得で
+    // 書き直される）。
+    //
+    // 窓 (#921) の内側は `_windowRemovedIds` / `_windowBlockedUserIds` で、窓の外
+    // （build() 再実行の直接取得）は取得開始からの `_removalSeq` の変化で検知する
+    // (#958)。後者を欠くと、pull-to-refresh 中のブロックが取りこぼされていた。
     final windowHadRemovals =
         _windowRemovedIds.isNotEmpty || _windowBlockedUserIds.isNotEmpty;
+    final removalDuringFetch = _removalSeq != removalSeqAtStart;
     if (type == TimelineType.home &&
         contextKey != null &&
         allRaw.isNotEmpty &&
-        !windowHadRemovals) {
+        !windowHadRemovals &&
+        !removalDuringFetch) {
       unawaited(TimelineCache.save(contextKey, allRaw, now: DateTime.now()));
     }
 
@@ -949,6 +969,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           withScope: (scope) => scope.setTag('phase', 'startup_timeline'),
         ),
       );
+      // 窓を閉じる (#958)。成功側 ([_loadInitial] の publish) は閉じるのに、失敗側
+      // だけ開けっぱなしだった（`_resetSnapshotWindow` の doc「窓を開くとき / 閉じる
+      // とき / build() のたびに呼ぶ」と非対称）。今は次の入口の早期 return に救われて
+      // 実害は無いが、非対称を残さない。
+      _resetSnapshotWindow(awaiting: false);
       state = AsyncError(scrubbed, st);
     }
   }
@@ -1517,6 +1542,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   /// Remove a post from the list by ID (e.g. after deletion).
   void removePost(String id) {
+    // 取得中の save がこの削除を跨いで書き戻さないよう世代を進める (#958)。state が
+    // まだ null（初回取得中）でも in-flight の [_loadInitial] は save に到達するので、
+    // 一覧更新の可否とは独立に、早期 return より前で数える。
+    _removalSeq++;
     final current = state.valueOrNull;
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
@@ -1584,6 +1613,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   /// Remove all posts by a user (e.g. after block/mute).
   void removePostsByUser(String userId) {
+    // 取得中の save がこのブロックを跨いで書き戻さないよう世代を進める (#958)。
+    // state が null（初回取得中）でも in-flight の [_loadInitial] は save に到達する
+    // ため、一覧更新の可否とは独立に早期 return より前で数える。ブロックは安全の
+    // ための操作なので、ここを取りこぼすと復活の穴になる。
+    _removalSeq++;
     final current = state.valueOrNull;
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。

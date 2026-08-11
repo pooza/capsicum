@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../util/exception_scrub.dart';
 
@@ -53,8 +54,9 @@ class TimelineCache {
   /// どのみち捨てる）。OS がキャッシュを掃除しても、キャッシュ無しの起動経路に
   /// 落ちるだけで壊れない。
   ///
-  /// **Linux の他ユーザーからの可読性はこれでは解決しない**（`0644` /
-  /// `~/.cache/<app>/` も `0755`）。塞ぐなら別途 `chmod 600` が要る。
+  /// **Linux の他ユーザーからの可読性**は保存先だけでは塞げない（`0644` /
+  /// `~/.cache/<app>/` も `0755`）ため、[_save] が書き込み後に `chmod 600` で
+  /// 所有者のみ可読にする (#958)。
   static Future<File> _file() async {
     final dir =
         directoryOverride ?? (await getApplicationCacheDirectory()).path;
@@ -82,6 +84,7 @@ class TimelineCache {
       debugPrint(
         'capsicum: timeline cache legacy cleanup failed: ${scrubException(e)}',
       );
+      _reportIoFailureOnce('legacy_cleanup', e);
     }
   }
 
@@ -127,6 +130,17 @@ class TimelineCache {
         }),
         flush: false,
       );
+      // Linux では他ユーザーから読めないよう 0600 に絞る (#958)。writeAsString は
+      // 0644 で作り ~/.cache/<app>/ も 0755 なので、同ホストの別ユーザーが生の
+      // ホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。dart:io に
+      // chmod が無いので chmod(1) を呼ぶ。best-effort（失敗しても保存は活かす）。
+      if (Platform.isLinux) {
+        try {
+          await Process.run('chmod', ['600', file.path]);
+        } catch (_) {
+          // 権限設定に失敗しても保存自体は有効。
+        }
+      }
     } catch (e) {
       // 例外はそのまま出さない。release ビルドでは sentry_flutter の
       // DebugPrintIntegration が debugPrint を丸ごと breadcrumb 化するため、
@@ -134,7 +148,33 @@ class TimelineCache {
       // 投稿本文の断片）がそのまま Sentry へ送られる。#586 で用意した
       // scrubException を必ず通す。
       debugPrint('capsicum: timeline cache save failed: ${scrubException(e)}');
+      _reportIoFailureOnce('save', e);
     }
+  }
+
+  /// キャッシュの読み書き失敗を **1 プロセス 1 回だけ** Sentry に上げる (#958)。
+  ///
+  /// 恒久的な失敗（ディスク満杯・サンドボックス拒否）で #890 の先出しが黙って
+  /// 無効化されても、これまでは `from_cache` タグから間接推測するしかなかった。
+  /// **生の例外文字列は載せない**（このファイルには投稿本文が入っており、
+  /// `FormatException.toString()` 等が断片を抱えるため）。経路と例外型だけを
+  /// タグにして 1 issue へ集約する。
+  static bool _ioFailureReported = false;
+
+  static void _reportIoFailureOnce(String op, Object e) {
+    if (_ioFailureReported) return;
+    _ioFailureReported = true;
+    unawaited(
+      Sentry.captureMessage(
+        'timeline_cache.io_failure',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('cache.op', op);
+          scope.setTag('cache.error', e.runtimeType.toString());
+          scope.fingerprint = ['timeline_cache.io_failure'];
+        },
+      ),
+    );
   }
 
   /// [contextKey] に一致し、かつ [maxAge] 以内に保存されたキャッシュを返す。
@@ -165,6 +205,7 @@ class TimelineCache {
       // 壊れたファイルの jsonDecode 失敗がここに来る。scrub の理由は save 側の
       // コメントを参照（この経路が実際にいちばん踏まれる）。
       debugPrint('capsicum: timeline cache load failed: ${scrubException(e)}');
+      _reportIoFailureOnce('load', e);
       return null;
     }
   }
@@ -189,6 +230,7 @@ class TimelineCache {
       if (await file.exists()) await file.delete();
     } catch (e) {
       debugPrint('capsicum: timeline cache clear failed: ${scrubException(e)}');
+      _reportIoFailureOnce('clear', e);
     }
   }
 }

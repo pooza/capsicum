@@ -287,4 +287,43 @@ void main() {
     ], reason: '切替前のアカウントの取得結果が、切替後の一覧を上書きしない');
     expect(after.contextKey, isNot(equals(contextKeyFor())));
   });
+
+  /// #958-1: 先出しの窓の**外**（build() 再実行＝pull-to-refresh / タブ・アカウント
+  /// 切替）で取得している最中にブロックすると、取得前の生 JSON（ブロック相手の投稿を
+  /// 含む）が `clear()` の後ろに save されて復活していた。窓の内側は
+  /// `_windowBlockedUserIds` で防いでいたが、窓の外は取得開始からの `_removalSeq` の
+  /// 変化で塞ぐ。
+  test('取得中にブロックしたら（窓の外でも）その一覧を書き戻さない (#958)', () async {
+    // 取得を gate で止め、その隙にブロックする（＝窓ではない直接取得の最中）。
+    final gate = Completer<void>();
+    final adapter = _FakeAdapter(
+      fresh: [_post('blocked1')],
+      fetchGate: gate.future,
+    );
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    // build() を起こし、_loadInitial を gate 上の getTimeline で待たせる。
+    final future = container.read(timelineProvider.future);
+    // getTimeline に入る＝取得開始（世代を控えた後）まで進める。ここより後の
+    // ブロックだけが「取得を跨いだ」ケースになる。
+    while (adapter.fetchCount == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // visible_timeline 相当: 一覧からの除去 + キャッシュ clear。除去で世代が進む。
+    container.read(timelineProvider.notifier).removePostsByUser('u1');
+    await TimelineCache.clear();
+
+    // 取得完了 → save に到達するが、世代が進んでいるので書かない。
+    gate.complete();
+    await future;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(
+      await TimelineCache.load(contextKeyFor(), now: DateTime.now()),
+      isNull,
+      reason: 'ブロックを跨いだ取得結果を clear の後ろに書き戻さない',
+    );
+  });
 }
