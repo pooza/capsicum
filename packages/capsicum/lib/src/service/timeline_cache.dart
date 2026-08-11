@@ -149,7 +149,7 @@ class TimelineCache {
       // FormatException.toString() が抱える source（＝このファイルに入っている
       // 投稿本文の断片）がそのまま Sentry へ送られる。#586 で用意した
       // scrubException を必ず通す。
-      debugPrint('capsicum: timeline cache save failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache save failed', e);
       _reportIoFailureOnce('save', e);
     }
   }
@@ -206,7 +206,7 @@ class TimelineCache {
     } catch (e) {
       // 壊れたファイルの jsonDecode 失敗がここに来る。scrub の理由は save 側の
       // コメントを参照（この経路が実際にいちばん踏まれる）。
-      debugPrint('capsicum: timeline cache load failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache load failed', e);
       _reportIoFailureOnce('load', e);
       return null;
     }
@@ -231,7 +231,7 @@ class TimelineCache {
       final file = await _file();
       if (await file.exists()) await file.delete();
     } catch (e) {
-      debugPrint('capsicum: timeline cache clear failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache clear failed', e);
       _reportIoFailureOnce('clear', e);
     }
   }

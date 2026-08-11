@@ -22,6 +22,7 @@ import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
+import '../util/exception_scrub.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -450,7 +451,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       final probe = await probeInstance(dio, host);
       return probe?.softwareVersion;
     } catch (e) {
-      debugPrint('capsicum: software version detection error on $host: $e');
+      debugLogException(
+        'capsicum: software version detection error on $host',
+        e,
+      );
       return null;
     }
   }
@@ -500,7 +504,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       }
       return mulukhiya;
     } catch (e) {
-      debugPrint('capsicum: mulukhiya detection error on $host: $e');
+      debugLogException('capsicum: mulukhiya detection error on $host', e);
       return null;
     }
   }
@@ -669,7 +673,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // (#496)。debugPrint で起動ログに出し、Sentry にも accountKey 単位で
       // 1 度だけ送る (Keystore 破壊で全アカウント同時失敗するケースで Sentry を
       // 埋めないように)。
-      debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
+      debugLogException('capsicum: account_restore: failed for $keyStr', e, st);
       _reportRestoreOnce(keyStr, e, st);
       return (account: null, outcome: outcome);
     }

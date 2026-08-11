@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -14,6 +15,7 @@ import '../util/post_action_error.dart';
 import '../util/post_scope_display.dart';
 import '../util/visible_timeline.dart';
 import 'reaction_picker_sheet.dart';
+import '../../util/exception_scrub.dart';
 
 /// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
 ///
@@ -259,8 +261,8 @@ class PostTouchActionRow extends ConsumerWidget {
       // モバイルでのブースト取り消しの主導線なので、ここが汎用文言 + 無記録の
       // ままだと `phase: post_action` の母数から取り消しが導線ごと欠ける。
       // 次に触るときは対で見ること（規約は describePostActionError の doc）。
-      debugPrint('_unrepeat failed: $e');
-      if (e is DioException) {
+      debugLogException('_unrepeat failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -325,8 +327,8 @@ class PostTouchActionRow extends ConsumerWidget {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runReactionAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runReactionAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -360,8 +362,8 @@ class PostTouchActionRow extends ConsumerWidget {
       // ブックマーク/ブースト/お気に入り等の失敗も、同ファイルの
       // _runReactionAction と揃えて観測する（#855 追加で穴が広がったのを塞ぐ・
       // リリース前レビュー黄）。文言も汎用固定から describePostActionError へ。
-      debugPrint('_runAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       // phase は**操作の種類**を表す軸で、導線は名乗らない（`reaction_add` が

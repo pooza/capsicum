@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import '../util/exception_scrub.dart';
 
 /// FCM デバイストークンを取得・管理するサービス。
 ///
@@ -59,7 +60,7 @@ class FcmService {
         _tokenController.add(token);
       });
     } catch (e, st) {
-      debugPrint('capsicum: push.fcm: initialization failed: $e');
+      debugLogException('capsicum: push.fcm: initialization failed', e);
       Sentry.captureException(
         e,
         stackTrace: st,
@@ -96,7 +97,10 @@ class FcmService {
         try {
           await messaging.deleteToken();
         } catch (deleteErr) {
-          debugPrint('capsicum: push.fcm: deleteToken failed: $deleteErr');
+          debugLogException(
+            'capsicum: push.fcm: deleteToken failed',
+            deleteErr,
+          );
           // delete 失敗は rethrow せず getToken リトライに進む。ベースの状態が
           // 既に壊れているケースでも、新規トークン発行は試す価値がある。
         }

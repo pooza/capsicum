@@ -1,9 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
 import 'notification_subsystem.dart';
+import '../../util/exception_scrub.dart';
 
 /// 全プラットフォーム共通の flutter_local_notifications ベース実装。
 ///
@@ -77,7 +77,7 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
           >();
       await androidPlugin?.requestNotificationsPermission();
     } catch (e, st) {
-      debugPrint('capsicum: notification: init failed: $e');
+      debugLogException('capsicum: notification: init failed', e);
       // 初期化失敗は通知配信が完全に止まる致命的状態だが、UI 起動経路は
       // 止めない（observability 故障で本体を落とさない方針）。Sentry に
       // 上げて気付ける状態を確保する。bg isolate / Sentry 未初期化経路でも

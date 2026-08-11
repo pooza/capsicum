@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Notification;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +27,7 @@ import 'reaction_picker_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
+import '../../util/exception_scrub.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
   final Notification notification;
@@ -355,8 +357,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     } catch (e, st) {
       // 同ファイルの _runReactionAction と揃える。汎用文言＋無記録のままだと、
       // 通知画面から実行した投稿アクションの失敗だけが観測から抜け落ちる。
-      debugPrint('_runAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -453,8 +455,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       timelines.updatePost(updated);
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runReactionAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runReactionAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(

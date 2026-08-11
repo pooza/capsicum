@@ -24,6 +24,7 @@ import '../widget/user_avatar.dart';
 import '../util/user_acct.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
+import '../../util/exception_scrub.dart';
 
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
 /// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの
@@ -422,7 +423,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       );
       if (mounted) setState(() => _relationship = rel);
     } catch (e, st) {
-      debugPrint('Failed to load relationship: $e\n$st');
+      debugLogException('Failed to load relationship', e, st);
     }
   }
 
@@ -439,7 +440,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           context,
         ).showSnackBar(SnackBar(content: Text('操作に失敗しました')));
       }
-      debugPrint('User action error: $e');
+      debugLogException('User action error', e);
       return false;
     } finally {
       if (mounted) setState(() => _relationshipLoading = false);
@@ -1576,7 +1577,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         context.push('/profile', extra: user);
       }
     } on Exception catch (e) {
-      debugPrint('Failed to look up mention $mention: $e');
+      debugLogException('Failed to look up mention $mention', e);
     }
   }
 

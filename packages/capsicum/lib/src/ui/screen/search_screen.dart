@@ -12,6 +12,7 @@ import '../util/fediverse_link.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
+import '../../util/exception_scrub.dart';
 
 enum _QueryType { account, hashtag, url, fulltext }
 
@@ -107,7 +108,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       );
       if (mounted) setState(() => _results = results);
     } catch (e) {
-      debugPrint('Search error: $e');
+      debugLogException('Search error', e);
       if (mounted) setState(() => _error = '検索に失敗しました');
     } finally {
       if (mounted) setState(() => _serverLoading = false);
@@ -151,7 +152,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         });
       }
     } catch (e) {
-      debugPrint('Notestock search error: $e');
+      debugLogException('Notestock search error', e);
       if (mounted) setState(() => _notestockLoading = false);
     }
   }

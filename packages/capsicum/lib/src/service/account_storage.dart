@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../util/exception_scrub.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
 /// (#959)。
@@ -146,7 +147,7 @@ class AccountStorage {
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
         throw TransientSecretUnavailableException(e);
       }
-      debugPrint('capsicum: failed to read secrets for $accountKey: $e');
+      debugLogException('capsicum: failed to read secrets for $accountKey', e);
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
@@ -219,7 +220,7 @@ class AccountStorage {
         // shared_preferences 上での JSON 破損は極めて稀だが、出たら空に
         // して前進する（Sentry には出さない。secure_storage ほどの信号
         // 価値がないため）。
-        debugPrint('capsicum: failed to parse account keys: $e');
+        debugLogException('capsicum: failed to parse account keys', e);
         await prefs.remove(_accountListKey);
         return [];
       }
@@ -355,7 +356,7 @@ class AccountStorage {
       );
       _reportOnce('secret:$accountKey:delete', e, st);
     } on PlatformException catch (e, st) {
-      debugPrint('capsicum: failed to delete secret for $accountKey: $e');
+      debugLogException('capsicum: failed to delete secret for $accountKey', e);
       _reportOnce('secret:$accountKey:delete', e, st);
     }
     try {
@@ -370,7 +371,10 @@ class AccountStorage {
         }
       }
     } catch (e, st) {
-      debugPrint('capsicum: verify after delete failed for $accountKey: $e');
+      debugLogException(
+        'capsicum: verify after delete failed for $accountKey',
+        e,
+      );
       _reportOnce('secret:$accountKey:verify', e, st);
     }
   }
@@ -470,7 +474,10 @@ class AccountStorage {
       // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
       // (BadPaddingException) が host_credentials 側で発火しても観測できる
       // よう、_reportOnce 経路に揃える (#501)。
-      debugPrint('capsicum: failed to read client credentials for $host: $e');
+      debugLogException(
+        'capsicum: failed to read client credentials for $host',
+        e,
+      );
       _reportOnce('client_creds:$host', e, st);
       return null;
     }

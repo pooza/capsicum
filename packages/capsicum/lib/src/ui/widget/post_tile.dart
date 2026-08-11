@@ -6,6 +6,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +36,7 @@ import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
+import '../../util/exception_scrub.dart';
 
 String _stripHtml(String html) => stripHtml(html);
 
@@ -336,7 +338,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         context.push('/profile', extra: user);
       }
     } on Exception catch (e) {
-      debugPrint('Failed to look up mention $mention: $e');
+      debugLogException('Failed to look up mention $mention', e);
     }
   }
 
@@ -1087,8 +1089,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       // 片方だけ直すと `phase: post_action` の母数から「取り消し」が導線ごと
       // 欠け、失敗文言も導線で変わる。実際にリリース前レビュー 3 巡目でここだけ
       // 直し、4 巡目で向こうの取りこぼしを指摘された。次に触るときは対で見ること。
-      debugPrint('_unrepeat failed: $e');
-      if (e is DioException) {
+      debugLogException('_unrepeat failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -1657,8 +1659,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runReactionAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runReactionAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -1696,8 +1698,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       // _runAction を揃える（リリース前レビュー 2 巡目）。**投稿アクションの
       // catch はここだけではない**ので、規約は describePostActionError の doc を
       // 見ること（全数を数え上げるコメントは繰り返し古くなった）。
-      debugPrint('_runAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -1723,8 +1725,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runVoidAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runVoidAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       // 文言は元から describePostActionError だが観測が無く、post_action の
@@ -2841,7 +2843,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
         );
       }
     } catch (e) {
-      debugPrint('Poll vote error: $e');
+      debugLogException('Poll vote error', e);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -2855,7 +2857,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     try {
       widget.onActionCompleted?.call();
     } catch (e) {
-      debugPrint('Poll vote onActionCompleted error: $e');
+      debugLogException('Poll vote onActionCompleted error', e);
     }
   }
 

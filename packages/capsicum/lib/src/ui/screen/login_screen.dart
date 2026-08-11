@@ -918,7 +918,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 旧実装はすべて「通信に失敗しました」とし、Keychain 保存失敗
         // (#643) 等を通信エラーと誤診させていた。
         final failure = classifyLoginFailure(e);
-        debugPrint('Login error (${failure.kind.name}): $e');
+        debugLogException('Login error (${failure.kind.name})', e);
         Sentry.captureException(
           scrubException(e),
           stackTrace: st,
@@ -1005,7 +1005,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _redirectUri,
         );
       } catch (e) {
-        debugPrint('capsicum: OOB app re-registration failed: $e');
+        debugLogException('capsicum: OOB app re-registration failed', e);
       }
       oobReady = true;
     }
@@ -1165,7 +1165,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Mastodon サーバ実装があるため、そのまま debugPrint すると AppImage
       // の AppRun ログ (~/.local/share/capsicum/logs/) に平文で残る (#499)。
       // util/exception_scrub.dart で URL を含まない安全な表現に詰め替える。
-      debugPrint('Manual code fallback error: ${scrubException(e)}');
+      debugLogException('Manual code fallback error', e);
       if (mounted) {
         setState(() => _error = '認証コードが正しくありません');
       }

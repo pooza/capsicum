@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../util/exception_scrub.dart';
 
 /// このインストールを一意に指す ID（#932 / #952 / capsicum-relay#15）。
 ///
@@ -99,7 +100,7 @@ class DeviceInstallId {
       // 作り直すのが正解、後者もこの起動では読めないので同じ扱いにする。
       // 一過性で作り直してしまうと relay に行が 1 つ増えるが、恒久的に
       // 復元端末と ID を共有するより害が小さい。
-      debugPrint('capsicum: device install id unreadable: $e');
+      debugLogException('capsicum: device install id unreadable', e);
     }
     if (existing != null && existing.isNotEmpty) {
       await _removeLegacyPrefsKey();
@@ -117,7 +118,7 @@ class DeviceInstallId {
       // relay から 1 インストールが N デバイスに見える。**このプロセス内では
       // 全アカウントが同じ値**を使うほうが害が小さい。永続化のやり直しは
       // 次回起動（新しいプロセス）に任せる。
-      debugPrint('capsicum: device install id unavailable: $e');
+      debugLogException('capsicum: device install id unavailable', e);
     }
     await _removeLegacyPrefsKey();
     return generated;
@@ -132,7 +133,7 @@ class DeviceInstallId {
         await prefs.remove(legacyPrefsKey);
       }
     } catch (e) {
-      debugPrint('capsicum: legacy device install id cleanup failed: $e');
+      debugLogException('capsicum: legacy device install id cleanup failed', e);
     }
   }
 

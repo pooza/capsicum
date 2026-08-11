@@ -9,6 +9,7 @@ import '../../util/startup_trace.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
 import 'eula_screen.dart';
+import '../../util/exception_scrub.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -32,7 +33,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           .read(accountManagerProvider.notifier)
           .restoreSessions();
     } catch (e, st) {
-      debugPrint('capsicum: failed to restore sessions: $e\n$st');
+      debugLogException('capsicum: failed to restore sessions', e, st);
     }
     restoreSw.stop();
 
