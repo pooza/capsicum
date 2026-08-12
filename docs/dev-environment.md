@@ -147,6 +147,17 @@ sudo apt install -y \
 - **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
 - MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
 - **Windows runner の純ロジック C++ テストは Mac の clang でも走る**。`windows/runner/notification_tag_test.cpp` / `notification_dedup_test.cpp` は Windows 固有 API に依存しないので、`cd packages/capsicum/windows/runner && clang++ -std=c++17 -o /tmp/t notification_tag_test.cpp notification_tag.cpp && /tmp/t`（dedup も同様）で macOS から検証できる（2026-08-10 実行・全通過）。テストのヘッダは `cl`（VS Developer 環境）しか案内していないため Windows CI 待ちにしがちだが、ロジックだけの変更ならここで即確認できる
+- **WinRT に触る TU は「単体コンパイル」で数秒で検査できる**（`flutter build windows` を待たなくてよい）。`wns_push.cpp` / `push_background_task.cpp` のように WinRT 依存で Mac に持っていけないものは、`vcvars64.bat` を通したうえで **実ビルドと同じ厳格設定**でコンパイルだけ回す（2026-08-12 #957 で確立）:
+
+  ```bat
+  cl /nologo /c /W4 /WX /wd4100 /EHsc /std:c++17 ^
+     /DUNICODE /D_UNICODE /DNOMINMAX /D_HAS_EXCEPTIONS=0 ^
+     wns_push.cpp
+  ```
+
+  フラグは `windows/CMakeLists.txt` の `APPLY_STANDARD_SETTINGS` に合わせてある（`/WX` があるので警告 1 個で CI が落ちる）。CMakeLists への新ファイル追加や実際のリンクまで見たいときだけ `flutter build windows --debug` を回す（x64 実機で約 195 秒。`capsicum.exe` と `push_background_task.dll` の両ターゲットが出る）。
+  - ⚠ **cmd の `cl /Fo:"%~dp0"` は壊れる**。`%~dp0` が `\` で終わるため `\"` がクォートのエスケープとして食われ、`error D8003: ソース ファイル名がありません` になる。出力先を分けたいなら `/Fo` を使わず出力ディレクトリへ `cd` してから絶対パスのソースを渡す
+  - ⚠ ビルドした exe は **`.\` を付けて起動する**（この端末では cwd が exe 検索パスに入っていない）。CI (`windows-release.yml`) が `.\xxx_test.exe` と書いているのと同じ理由
 
 #### トラブルシュート: RustDesk 経由で capsicum が真っ白
 
