@@ -128,7 +128,22 @@ void main() {
     initSharedPreferencesCache(await SharedPreferences.getInstance());
   });
 
-  tearDown(() {
+  tearDown(() async {
+    // 保存は `unawaited` で投げられるので、テスト本体が終わった時点でも書き込みが
+    // [TimelineCache] の直列化キューに残りうる。**Windows は開いているファイルを
+    // 削除できない**ため、待たずに消すと tearDown が errno 32（プロセスはファイルに
+    // アクセスできません）で落ちる。POSIX は開いたまま消せるので Linux CI では
+    // 通ってしまい、Windows 実機でだけこのファイルが 4 件赤くなっていた。
+    //
+    // clear() は save と同じキューに並ぶので、これを待てば先行の書き込みは必ず
+    // 終わっている。**directoryOverride を落とす前に**流し切ること（先に null に
+    // すると、残った書き込みが実アプリのキャッシュ場所を引きに行って
+    // MissingPluginException になる）。
+    try {
+      await TimelineCache.clear();
+    } catch (_) {
+      // 後始末の失敗はテスト結果に影響しない。
+    }
     TimelineCache.directoryOverride = null;
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   });
