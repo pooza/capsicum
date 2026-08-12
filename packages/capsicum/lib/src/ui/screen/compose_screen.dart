@@ -27,8 +27,10 @@ import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
+import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
+import '../../util/upstream_error_message.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -2569,9 +2571,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } catch (e, st) {
       if (mounted) {
         setState(() => _sending = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('下書きの保存に失敗しました')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            // サーバーが返した理由を添える (#886)。下書き上限 (TOO_MANY_DRAFTS)
+            // が「保存に失敗しました」としか出ず原因が分からなかった #879 の
+            // 受け皿。理由が読めなければ従来どおり汎用文言のまま。
+            content: Text(upstreamFailureText('下書きの保存に失敗しました', e)),
+          ),
+        );
       }
       // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
       // 上で SnackBar 通知済みなので赤ではない。
@@ -2581,8 +2588,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         error: e,
         stackTrace: st,
         account: ref.read(currentAccountProvider),
+        // scrubException が DioException を `status=400 path=...` に丸めるため、
+        // Sentry 上では上限超過も他の 400 も同じ 1 件に見えていた（CAPSICUM-3X）。
+        // 透過されるようになった code をタグに載せて内訳を分けられるようにする
+        // (#886)。値は Misskey の定数で、本文・アカウントは含まない。
+        tags: _upstreamErrorTags(e),
       );
     }
+  }
+
+  /// 上流の `error.code` が読めたときだけ Sentry のタグに載せる (#886)。
+  static Map<String, String>? _upstreamErrorTags(Object error) {
+    final code = misskeyApiErrorCode(error);
+    return code == null ? null : {'upstream.error_code': code};
   }
 
   /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
@@ -2761,7 +2779,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         if (mounted) setState(() => _sending = false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました')),
+          SnackBar(
+            // 投稿できない理由（禁止語・メンション過多・ブースト不可等）は
+            // サーバーしか知らないので、透過されてきたものを添える (#886)。
+            content: Text(
+              upstreamFailureText('${ref.read(postLabelProvider)}に失敗しました', e),
+            ),
+          ),
         );
         setState(() => _sending = false);
       }
