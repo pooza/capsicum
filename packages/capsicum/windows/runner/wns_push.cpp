@@ -16,6 +16,8 @@
 #include "local_state_files.h"
 #include "notification_dedup.h"
 #include "notification_tag.h"
+#include "push_diagnostics.h"
+#include "push_diagnostics_store.h"
 #include "web_push_key_reader.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
@@ -185,8 +187,16 @@ void DisplayRawNotification(const std::string& content) {
           display.title, display.body, /*launch_arg=*/"",
           capsicum::NotificationTagFor(display.account,
                                        display.notification_id))) {
-    // 表示できなかったので claim しない。ここで記録すると、WebSocket 経路まで
-    // 抑止されて**通知が 1 通も出なくなる**。
+    // 復号までは通ったのに表示できなかった。無記録だと**無言で落ちる**ため、
+    // bg task と同じ LocalState スロットへ観測を残す (#957)。ここが空白だと
+    // 「WNS は届いているのに通知が出ない」の切り分けが手掛かり無しになる。
+    // 記録は次回起動時に runner が回収して Sentry へ上げる。
+    capsicum::RecordPushDiagnostic(
+        "wns.show_failed",
+        capsicum::PushDiagnosticHostFromAccount(display.account));
+    // 表示できなかったので dedup レジストリには claim しない（MarkShown /
+    // NotifyPresented を通さず return する）。ここで claim すると、WebSocket
+    // 経路まで抑止されて**通知が 1 通も出なくなる**。
     return;
   }
   if (!dedupable) {

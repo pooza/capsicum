@@ -130,6 +130,45 @@ int main() {
           "異常系 → 別の異常系は最新で上書きする");
   }
 
+  // 9) 表示失敗コードは正常系ではない (#957)。単一スロットでは異常系が温存
+  //    されるため、後続の bgtask.shown に飲まれず warning のまま回収される。
+  //    ここが benign 側に入ると「表示できていない」観測が info に沈む。
+  {
+    std::string a =
+        BuildPushDiagnosticJson("", "bgtask.show_failed", "a.test", 10);
+    std::string b = BuildPushDiagnosticJson(a, "bgtask.shown", "b.test", 20);
+    PushDiagnostic d;
+    ParsePushDiagnosticJson(b, &d);
+    Check(d.code == "bgtask.show_failed" && d.at_ms == 10 &&
+              d.host == "a.test" && d.count == 2,
+          "bgtask.show_failed は後続の shown で上書きされない");
+
+    // in-process 受信 (runner) が同じスロットへ書く経路も同様 (#957)。
+    std::string c = BuildPushDiagnosticJson("", "wns.show_failed", "c.test", 30);
+    std::string e = BuildPushDiagnosticJson(c, "bgtask.shown", "", 40);
+    PushDiagnostic f;
+    ParsePushDiagnosticJson(e, &f);
+    Check(f.code == "wns.show_failed" && f.at_ms == 30 && f.host == "c.test",
+          "wns.show_failed も正常系で上書きされない");
+  }
+
+  // 10) 観測レコードの host は `username@host` の host 部分のみ（username は
+  //     載せない、#800）。
+  {
+    using capsicum::PushDiagnosticHostFromAccount;
+    Check(PushDiagnosticHostFromAccount("alice@mstdn.b-shock.org") ==
+              "mstdn.b-shock.org",
+          "username@host → host のみ");
+    // ローカルパートに @ を含むアカウント表記でも、最後の @ で切る。
+    Check(PushDiagnosticHostFromAccount("a@b@ex.test") == "ex.test",
+          "@ が複数なら最後の @ 以降");
+    Check(PushDiagnosticHostFromAccount("nohost").empty(),
+          "@ 無し → 空（host 不明）");
+    Check(PushDiagnosticHostFromAccount("trailing@").empty(),
+          "@ が末尾 → 空（host 不明）");
+    Check(PushDiagnosticHostFromAccount("").empty(), "空文字列 → 空");
+  }
+
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;
