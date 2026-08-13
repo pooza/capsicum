@@ -826,10 +826,10 @@ packages:
     dependency: transitive
     description:
       name: in_app_purchase_storekit
-      sha256: "702a23c3d2ddc177b075d521d264900e82f01663881e4ef3ce17775de298c0e3"
+      sha256: "9602e249a0e30351f047d5715957f27709ed7b42f631fba8941dcad51489932a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.11"
+    version: "0.4.11+1"
   injector:
     dependency: transitive
     description:
