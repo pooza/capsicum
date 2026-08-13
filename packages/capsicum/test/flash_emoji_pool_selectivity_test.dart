@@ -17,8 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 実際 v1.52 の計測開始から 2 週間で 1 度も発生していない。
 ///
 /// ここでは seed を固定したままインベントリだけを差し替え、同じことを制御された
-/// 条件で確かめる。自然実験より強い証拠になる（削除・改名や「挿入位置の違い」まで
-/// 原因を 1 つずつ動かせるため）。
+/// 条件で確かめる。自然実験より強い証拠になる（削除・改名まで原因を 1 つずつ
+/// 動かせるため）。
 ///
 /// ## 走査順の前提（実測 2026-08-13・daisskey 760 件）
 ///
@@ -28,19 +28,23 @@ import 'package:flutter_test/flutter_test.dart';
 /// よって絵文字を 1 つ足すと、**そのカテゴリブロック内の name 順の位置に挿入**され、
 /// それ以降の要素の乱数消費位置がすべて 1 つずれる。
 ///
-/// ## 判定基準の精緻化（本テストで判明）
+/// ## Play は 2 段構えで、件数そのものが効く（ここを外すと結論を誤る）
 ///
-/// #898 本文の「交差すれば変わる」は**必要条件ではあるが十分条件ではない**。
-/// プール構築は `map(@(e){random(...)})` で**要素ごとに 1 回**引くため、走査順で
-/// **後ろに**入った変更は既存要素の乱数値をずらさない。よって実際の条件は:
+/// 実在の Play はプールを組んで終わりではなく、**組んだプールからさらに引く**:
 ///
-/// > 出目が変わる ⟺ 変更が「走査順で、上位（`slice`）に選ばれた要素より**前**」に
-/// > 入って以降の乱数対応をずらすか、変更された要素自身が上位に食い込む
+/// ```
+/// let emojis = CUSTOM_EMOJIS.filter(...).map(@(e){random(...)})...slice(0 10)  // 対象1件につき1回消費
+/// let picked = [emojis[random(...)] emojis[random(...)] emojis[random(...)]]   // その続きから3回
+/// ```
 ///
-/// この差は分類 (c)（全 `CUSTOM_EMOJIS` 走査）で顕著に出る。「どこの変更でも変わる」
-/// と要約されがちだが、当選要素が先頭カテゴリ由来なら後ろのカテゴリをいくら
-/// 触っても不変になる（下の 2 本がその対比）。#898 が想定した自然実験が 2 週間
-/// 発火しなかったのは、この「前方でなければ効かない」性質も効いている。
+/// プール構築が**対象1件につき乱数を1回**消費するので、対象の**件数が変われば
+/// 後段 3 回の乱数位置が丸ごとずれる**。つまり挿入位置に関係なく、走査対象カテゴリ
+/// の増減はそのまま出目を変える。
+///
+/// 当初この後段を省いて「プールの上位 3 件をそのまま表示」する簡略スクリプトで
+/// 検証したところ、末尾への追加が不変に見えた。これは**簡略化の副作用**であって
+/// 実物の性質ではない（実物相当の 2 段構えでは末尾追加でも変わることを実測）。
+/// 以降のテストは実物と同じ 2 段構えで書く。
 void main() {
   group('Play のプール選択性 (#898)', () {
     // --- 否定側: 構造的に保証される -----------------------------------------
@@ -67,7 +71,6 @@ void main() {
 
     // --- 肯定側 --------------------------------------------------------------
 
-    // 走査順の先頭に入るので、以降 7 件の乱数消費位置がすべてずれる。
     test('走査対象カテゴリの前寄りへの追加で出目が変わる', () async {
       final before = await _categoryPlayDigest(_baseline);
       final after = await _categoryPlayDigest(
@@ -97,24 +100,20 @@ void main() {
       expect(after, isNot(before));
     });
 
-    // --- 判定基準の但し書き --------------------------------------------------
-
-    // 走査順の末尾への追加は既存要素の乱数値をずらさない。ここでは新入りが上位に
-    // 食い込まなかったため出目は不変で、「交差すれば必ず変わる」が成り立たない
-    // 実例になっている。交差の有無だけでなく**挿入位置**まで見ないと予測できない。
-    test('走査対象カテゴリの末尾への追加では、上位に食い込まない限り変わらない', () async {
+    // 走査順の末尾に足しても、件数が変わることで後段 3 回の乱数位置がずれるため
+    // 出目は変わる。「前寄りに入ったときだけ変わる」ではない。
+    test('走査対象カテゴリの末尾への追加でも出目が変わる', () async {
       final before = await _categoryPlayDigest(_baseline);
       final after = await _categoryPlayDigest(
         _withEmoji(_baseline, name: 'zzz_newcomer', category: _targetCategory),
       );
 
-      expect(after, before);
+      expect(after, isNot(before));
     });
 
     // --- 分類 (c) / (d) ------------------------------------------------------
 
-    // 全件走査 Play はカテゴリで絞らないので、どのカテゴリの変更も走査集合に
-    // 交差する。前方に入れば当然のように変わる。
+    // 全件走査 Play はカテゴリで絞らないので、どのカテゴリの変更も走査集合に交差する。
     test('全 CUSTOM_EMOJIS を走査する Play は走査順の前方への追加で変わる', () async {
       final before = await _wholeInventoryPlayDigest(_baseline);
       final after = await _wholeInventoryPlayDigest(
@@ -128,17 +127,14 @@ void main() {
       expect(after, isNot(before));
     });
 
-    // ただし「全件走査だからどこの変更でも変わる」は成り立たない。この fixture の
-    // 当選 3 件は先頭カテゴリ由来なので、後ろのカテゴリを触っても乱数対応がずれず
-    // 不変のままになる。分類 (a) の否定側が**構造的に保証される**のに対し、こちらは
-    // **たまたま不変**であるという違いがある（当選要素の位置次第で結果が変わる）。
-    test('全件走査 Play でも、当選要素より後ろの変更では変わらない', () async {
+    // 全件走査なのでどのカテゴリの増減も走査件数を動かす。末尾でも変わる。
+    test('全件走査 Play は末尾カテゴリへの追加でも変わる', () async {
       final before = await _wholeInventoryPlayDigest(_baseline);
       final after = await _wholeInventoryPlayDigest(
         _withEmoji(_baseline, name: 'zzz_newcomer', category: 'ドラクエ'),
       );
 
-      expect(after, before);
+      expect(after, isNot(before));
     });
 
     // v1.52 の計測で観測された 5 本のうち 4 本がこの分類だった。
@@ -217,18 +213,28 @@ const _categoryPlayScript =
     '''
 let random = Math:gen_rng(`{USER_ID}20260813_pool_test`)
 let categories = ["$_targetCategory"]
-let emojis = CUSTOM_EMOJIS.filter(@(e){categories.incl(e.category)}).map(@(e){[e `{random(0 100000)}`]}).sort(@(a b){Str:lt(a[1] b[1])}).slice(0 3).map(@(d){`:{d[0].name}:`})
+let emojis = CUSTOM_EMOJIS.filter(@(e){categories.incl(e.category)}).map(@(e){[e `{random(0 100000)}`]}).sort(@(a b){Str:lt(a[1] b[1])}).slice(0 10).map(@(d){`:{d[0].name}:`})
+let picked = [
+  emojis[random(0 emojis.len-1)]
+  emojis[random(0 emojis.len-1)]
+  emojis[random(0 emojis.len-1)]
+]
 Ui:render([
-  Ui:C:mfm({ text: emojis.join(" ") }, "result")
+  Ui:C:mfm({ text: picked.join(" ") }, "result")
 ])
 ''';
 
 /// 分類 (c): 全 CUSTOM_EMOJIS を走査する Play。
 const _wholeInventoryPlayScript = '''
 let random = Math:gen_rng(`{USER_ID}20260813_pool_test`)
-let emojis = CUSTOM_EMOJIS.map(@(e){[e `{random(0 100000)}`]}).sort(@(a b){Str:lt(a[1] b[1])}).slice(0 3).map(@(d){`:{d[0].name}:`})
+let emojis = CUSTOM_EMOJIS.map(@(e){[e `{random(0 100000)}`]}).sort(@(a b){Str:lt(a[1] b[1])}).slice(0 10).map(@(d){`:{d[0].name}:`})
+let picked = [
+  emojis[random(0 emojis.len-1)]
+  emojis[random(0 emojis.len-1)]
+  emojis[random(0 emojis.len-1)]
+]
 Ui:render([
-  Ui:C:mfm({ text: emojis.join(" ") }, "result")
+  Ui:C:mfm({ text: picked.join(" ") }, "result")
 ])
 ''';
 
