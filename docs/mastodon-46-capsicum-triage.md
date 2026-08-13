@@ -66,6 +66,21 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 - **サーバー / 連合内部**: Collection item 読み取り属性の誤り（#40052）・item 上限の強制（#39969）/ 引用埋め込み処理の typo（#40049）/ `Account::Merging` の AccountWarning 欠落（#39982）/ `process_status_update_service` の添付 4 件上限 typo（#39978）。capsicum は送る／読むだけ。
 - **フォークのサーバー設定**: nginx の access ログをマスク付き `combined_masked` へ / `proxy_pass` を `127.0.0.1` 直指定へ / rc.d の pkill パターン限定。加えて **`PUT /api/v1/statuses/:id` の `X-Mulukhiya-Purpose` 分岐を `if` から map へ寄せた**（mulukhiya#4474 の本番反映）。`if` 内の `proxy_pass` が rewrite フェーズを終端せず後段の `return 405` が勝っていた件の修正で、[#121](https://github.com/pooza/capsicum/issues/121)（Mastodon の ALT 編集・v1.57）の on-hold 解除の根拠そのもの。**クライアントプロトコルは不変**。
 
+### v4.6.5 → v4.6.6（本番 3 台適用済み・2026-08-14 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/` ・ `app/controllers/api/` ・ `config/routes/api.rb` の diff がいずれも**完全に空**。クライアントから見える entity・エンドポイント・ルートは 1 つも動いていない。4.6.x 系はこれで打ち止め見込み（次は 4.7）。
+
+## 4.7 先読み（v4.6.6 → v4.7.0-beta.1・upstream 同士・2026-08-14）
+
+**まだベータ・自前サーバ未デプロイ**。GA 前に safe を確定させる方針（memory `project_mastodon_46_posture`）に沿った先読み。upstream に `-bshockdon` タグはまだ無いので upstream `v4.6.6..v4.7.0-beta.1` を diff した。**現時点で破壊的変更なし・capsicum 対応不要**。差分は「無効ハンドル（invalidated username）」対応の一式のみ:
+
+- **passive（additive・新 bool フィールド）**: account に `invalid_handle`（`if: :invalid_handle?`。webfinger で失効した remote アカウントの `! <id>` 化を表す）。未知フィールドとして無視で無害。UI バッジ化は任意の拾い物候補だが**ベータ・低価値のため起票せず様子見**。
+- **passive（既存フィールドの値正規化）**: account / status / announcement の `username`（および `acct`）が `pretty_username` / `pretty_acct` 経由になった。**通常アカウントでは値不変**（`pretty_username == username`）。失効ハンドルの稀なアカウントだけ生の `! 123` でなく `123` / `123@handle.invalid` を返すようになり、むしろ表示に優しい。capsicum は受け取った値をそのまま描画するだけで parse も壊れない。
+- **passive（条件変更）**: account の `suspended` を出す条件が `suspended?` → `unavailable?` に拡大。フィールド形状（bool）は不変。
+- **none（内部リファクタ）**: 新規 `app/controllers/api/v1/accounts/base_controller.rb` は共通基底の抽出でルート追加なし（`config/routes/api.rb` diff 空）。
+
+4.7 が GA / `-bshockdon` タグ化されたら同手順で再確認し、結果を 1 行足す。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）
