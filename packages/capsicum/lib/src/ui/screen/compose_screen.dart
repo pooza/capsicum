@@ -27,8 +27,11 @@ import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
+import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
+import '../../util/upstream_error_message.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -330,6 +333,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // ローカル自動保存の永続化 (#966)。「破棄したあとは書き戻さない」判定を
   // 含めてストア側が持つ。
   final _draftStore = ComposeDraftStore();
+  // 復元 (#966) が完了したか。initState の `_restoreDraft` は非同期で、
+  // SharedPreferences のロード前に画面を閉じると、離脱時保存 (#966) が空文字を
+  // 書いて保存済み下書きを消しうる。復元完了まで保存を保留してこの窓を塞ぐ
+  // (#969)。復元は initState で必ず走るので、実操作でここが false のまま save に
+  // 到達するのはプロセス初回の prefs ロード中だけ。
+  bool _draftRestored = false;
 
   /// Misskey は親投稿のチャンネルにぶら下げるのが Web UI 期待挙動。呼び出し側
   /// (post_tile / notification_tile) は replyTo / redraft / quoteTo だけ
@@ -880,7 +889,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
   Future<void> _saveDraft() async {
-    if (!_draftAutoSave) return;
+    if (!_draftAutoSave || !_draftRestored) return;
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
@@ -896,7 +905,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
-    final saved = await _draftStore.restore();
+    final ComposeDraft? saved;
+    try {
+      saved = await _draftStore.restore();
+    } catch (e) {
+      // 復元に失敗しても離脱時保存 (#966) は解禁する。ここで抜けると
+      // `_draftRestored` が false のまま `_saveDraft` が永久に no-op になり、
+      // **書きかけが黙って保存されなくなる**（#969 で解禁条件を足すまでは、
+      // 復元が失敗しても保存だけは動いていた）。呼び出し側は fire-and-forget
+      // なので、捕まえないと未処理の非同期エラーとしても上がる。
+      debugLogException('capsicum: compose draft restore failed', e);
+      _draftRestored = true;
+      return;
+    }
+    // 復元経路の解決をもって、以降の離脱時保存 (#966) を解禁する (#969)。
+    // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
+    _draftRestored = true;
     if (!mounted || saved == null) return;
     if (saved.hasText) {
       _controller.text = saved.text;
@@ -913,15 +937,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
     // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
     // 空で何も復元していないなら、伝えることがないので出さない。
-    if (saved.hasText && saved.attachmentCount > 0) {
+    final attachmentCount = saved.attachmentCount;
+    if (saved.hasText && attachmentCount > 0) {
       // initState の post-frame は _restoreDraft の await より先に走りうるので、
       // ここで改めて次フレームに載せる。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('前回の入力を復元しました（添付 ${saved.attachmentCount} 件は含まれません）'),
-          ),
+          SnackBar(content: Text('前回の入力を復元しました（添付 $attachmentCount 件は含まれません）')),
         );
       });
     }
@@ -2560,9 +2583,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     } catch (e, st) {
       if (mounted) {
         setState(() => _sending = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('下書きの保存に失敗しました')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            // サーバーが返した理由を添える (#886)。下書き上限 (TOO_MANY_DRAFTS)
+            // が「保存に失敗しました」としか出ず原因が分からなかった #879 の
+            // 受け皿。理由が読めなければ従来どおり汎用文言のまま。
+            content: Text(upstreamFailureText('下書きの保存に失敗しました', e)),
+          ),
+        );
       }
       // 失敗率を host/backend で相関できるよう低頻度計装（#837）。ユーザーには
       // 上で SnackBar 通知済みなので赤ではない。
@@ -2572,8 +2600,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         error: e,
         stackTrace: st,
         account: ref.read(currentAccountProvider),
+        // scrubException が DioException を `status=400 path=...` に丸めるため、
+        // Sentry 上では上限超過も他の 400 も同じ 1 件に見えていた（CAPSICUM-3X）。
+        // 透過されるようになった code をタグに載せて内訳を分けられるようにする
+        // (#886)。値は Misskey の定数で、本文・アカウントは含まない。
+        tags: _upstreamErrorTags(e),
       );
     }
+  }
+
+  /// 上流の `error.code` が読めたときだけ Sentry のタグに載せる (#886)。
+  static Map<String, String>? _upstreamErrorTags(Object error) {
+    final code = misskeyApiErrorCode(error);
+    return code == null ? null : {'upstream.error_code': code};
   }
 
   /// 送信の再入ガード (#908)。UI 無効化に使う `_sending` は確認設定の読み出しを
@@ -2752,7 +2791,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         if (mounted) setState(() => _sending = false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ref.read(postLabelProvider)}に失敗しました')),
+          SnackBar(
+            // 投稿できない理由（禁止語・メンション過多・ブースト不可等）は
+            // サーバーしか知らないので、透過されてきたものを添える (#886)。
+            content: Text(
+              upstreamFailureText('${ref.read(postLabelProvider)}に失敗しました', e),
+            ),
+          ),
         );
         setState(() => _sending = false);
       }

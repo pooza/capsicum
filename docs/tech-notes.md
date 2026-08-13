@@ -95,6 +95,20 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 
 保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
 
+### 画像を扱う UI のテストは `tester.runAsync` が要る — 無いと**黙ってハングする**（#947）
+
+`flutter_test` の既定は擬似非同期で、**画像コーデックのような実 I/O を進めない**。そのため `ui.instantiateImageCodec` / `Picture.toImage` / `Image.toByteData` を待つコードは、テスト内で呼ぶと**エラーも出さずに止まる**。「テストが黙ってタイムアウトする」ときは真っ先にここを疑う。
+
+- **`tester.runAsync(() async { ... })` の中でだけ実 I/O が進む。** ここを通せば `PictureRecorder` → `toImage` → PNG エンコード → デコード → ピクセル取り出しまで一通り動く（実測 2026-08-13）。**合成結果をピクセル単位で検証できる**ので、この層に integration_test は要らない。
+- **順序が効く。** 「操作 → `pump`（route 構築・`initState` の開始）→ `pump(遷移ぶん)` → `runAsync`（実 I/O）→ `pump` ×2（完了した Future の続きを反映）」。先に `runAsync` すると、まだ何も始まっていない時間だけ進めることになり画面が出てこない。
+- **`pumpAndSettle` は使えない。** デコード中は `CircularProgressIndicator` が回り続けるので必ずタイムアウトする。
+- **素材は `setUpAll` で作る。** `testWidgets` の本体は擬似非同期なので、その中で `toImage` を呼ぶとハングする。`ui.Image` を使い回すときは、画面側が dispose するので `clone()` を渡す。
+- 書き出し結果を受け取るまでには「実 I/O → `pop` → 遷移アニメーション → 呼び出し元の `push` future 解決」と段があり、1 回 `settle` しただけでは届かない。実時間と擬似時間を交互に進める。
+
+土台は [`test/support/image_editor_harness.dart`](../packages/capsicum/test/support/image_editor_harness.dart) に閉じ込めてあるので、利用側はこの作法を意識しなくてよい。ネットワークとアカウントを要求する経路（スタンプ素材の調達）は [`StickerSource`](../packages/capsicum/lib/src/service/sticker_source.dart) を override して切り離す。
+
+**ダイアログの `TextEditingController` は呼び出し側で dispose しない。** `showDialog` の future は `Navigator.pop` の時点で解決するが、そこはまだ**退場アニメーションの最中**で、`TextField` は再構築される。解決直後に dispose すると use-after-dispose の assertion になる（debug で落ち、release では黙って通る）。controller はダイアログ本体を `StatefulWidget` にして**そちらに所有させる**（State の dispose はルートが実際に外れてから呼ばれるので、リークもせず早すぎもしない）。
+
 ## 体感速度の改善（先出し・キャッシュ）
 
 ### 先出しキャッシュは「同じ状態への経路」を 2 本にする — 欠陥はほぼ全部その分岐から出る
@@ -169,7 +183,7 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 WNS raw push のバックグラウンドタスクは FullTrust 本体とは別プロセスの **AppContainer サンドボックス**で走る。そのため roaming AppData の `flutter_secure_storage.dat`（DPAPI 暗号化）を復号できず、**登録も活性化も成功するのにプッシュ鍵が読めずトーストが出ない**。解法は push 鍵セットだけを平文 JSON 化して `ApplicationData.Current.LocalFolder`（パッケージ ACL 保護）へ同期し、bg task はそこから読む（macOS NSE の App Group 共有と同型。正本は [`local_state_files.h`](../packages/capsicum/windows/runner/local_state_files.h) / [`web_push_key_reader.h`](../packages/capsicum/windows/runner/web_push_key_reader.h)）。付随する汎用 Windows 罠: PowerShell の `[System.IO.File]::ReadAllText` は cwd 相対解決するので**絶対パス必須**、パッケージアプリは `%TEMP%` が `AC\Temp` にリダイレクトされる。
 
-**観測結果を読むときの罠**: bg task は Sentry SDK を持てないため、診断コードは LocalState の単一スロットに書かれ、**次回アプリ起動時**に [`_flushWnsPushDiagnostics`](../packages/capsicum/lib/main.dart) が回収して送る。したがって `push.wns_bgtask: bgtask.shown` が Sentry に出ていないことは「トーストが出ていない」を意味しない（アプリを起動していないだけ）。同様に、リレー側の `WNS notification dropped` は**端末がオフライン / スリープだった**という正常系で、件数の多さは不達の証拠にならない。Windows push の健全性は Sentry でなく **flauros の journald で成功ログと突き合わせて**判定する（手順の正本は [capsicum-relay の開発ガイド «配信不達の切り分け»](https://github.com/pooza/capsicum-relay/blob/main/docs/CLAUDE.md#配信不達の切り分けjournald-を読む)。誤診の経緯は [#931](https://github.com/pooza/capsicum/issues/931)）。
+**観測結果を読むときの罠**: bg task は Sentry SDK を持てないため、診断コードは LocalState の単一スロットに書かれ、**次回アプリ起動時**に [`_flushWnsPushDiagnostics`](../packages/capsicum/lib/main.dart) が回収して送る。したがって `push.wns_bgtask: bgtask.shown` が Sentry に出ていないことは「トーストが出ていない」を意味しない（アプリを起動していないだけ）。**逆に `bgtask.shown` が出ていれば表示まで成功している**（#957 以降。それ以前は `ShowRawToast` の戻り値を捨てて無条件に記録していたため、「復号は通ったが表示だけ失敗」が `shown` に化け、relay / WNS 側の不達と誤診する方向に倒れていた）。表示だけ失敗した場合は `bgtask.show_failed`、**起動中**の in-process 受信で同じことが起きた場合は `wns.show_failed`（runner が同じスロットへ書く）が warning で上がる。同様に、リレー側の `WNS notification dropped` は**端末がオフライン / スリープだった**という正常系で、件数の多さは不達の証拠にならない。Windows push の健全性は Sentry でなく **flauros の journald で成功ログと突き合わせて**判定する（手順の正本は [capsicum-relay の開発ガイド «配信不達の切り分け»](https://github.com/pooza/capsicum-relay/blob/main/docs/CLAUDE.md#配信不達の切り分けjournald-を読む)。誤診の経緯は [#931](https://github.com/pooza/capsicum/issues/931)）。
 
 ### プッシュ通知の重複は「上流の孤児購読」を先に疑う（#692）
 

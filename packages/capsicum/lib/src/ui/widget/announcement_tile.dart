@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -259,10 +260,18 @@ class _AnnouncementReactionChip extends StatelessWidget {
                 reaction.url!,
                 height: emojiSize,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Text(reaction.name),
+                // 画像を出せなかったときだけ、生テキストへ落として縮める。
+                errorBuilder: (_, _, _) => Text(
+                  reaction.name,
+                  style: TextStyle(
+                    fontSize: emojiSize * AppConstants.emojiFallbackTextScale,
+                  ),
+                ),
               )
             else
-              Text(reaction.name, style: TextStyle(fontSize: emojiSize * 0.8)),
+              // Unicode 絵文字はここが通常表示。カスタム絵文字の画像
+              // （`height: emojiSize`）と揃うよう等倍で描く。
+              Text(reaction.name, style: TextStyle(fontSize: emojiSize)),
             const SizedBox(width: 4),
             Text(
               '${reaction.count}',

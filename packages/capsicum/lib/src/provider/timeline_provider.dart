@@ -442,6 +442,36 @@ Future<TimelineState> fetchUntilVisible({
   );
 }
 
+/// 一覧そのものの組み替えを行う純粋関数群 (#925)。mixin
+/// ([TimelineListMutations]) と本線 ([TimelineNotifier]) は、pending バッファ /
+/// 起動窓 / removalSeq といった副作用を各自持ちつつ、**一覧の組み替えだけ**は
+/// ここを共有する。以前は両者に同じ where / map が逐語的に重複していた。
+
+/// [id] 一致の投稿を除いた一覧。
+List<Post> postsWithoutId(List<Post> posts, String id) =>
+    posts.where((p) => p.id != id).toList();
+
+/// [updated] を id 一致（reblog 先も見る）へ差し替えた一覧。
+List<Post> postsWithReplacement(List<Post> posts, Post updated) => [
+  for (final p in posts)
+    if (p.id == updated.id)
+      updated
+    else if (p.reblog?.id == updated.id)
+      p.copyWith(reblog: updated)
+    else
+      p,
+];
+
+/// [userId] 本人、またはその人のブースト元かどうか（ブロック / ミュート判定）。
+/// ブースト元も見るのは、ブロックした相手をブーストした第三者の投稿が残ると
+/// 「ブロックしたのに本文が見え続ける」状態になるため。
+bool postIsByUser(Post p, String userId) =>
+    p.author.id == userId || p.reblog?.author.id == userId;
+
+/// [userId] 本人／その人のブースト元を除いた一覧。
+List<Post> postsWithoutUser(List<Post> posts, String userId) =>
+    posts.where((p) => !postIsByUser(p, userId)).toList();
+
 /// ハッシュタグ / リスト / チャンネルの各 TL に、ホーム TL と同じ「表示中の
 /// リストを手元で直す」操作を持たせる (#887)。
 ///
@@ -449,13 +479,22 @@ Future<TimelineState> fetchUntilVisible({
 /// おらず、ハッシュタグタブやリストタブを見ているときは画面が変わらないまま
 /// だった（タブを切り替えると再取得が走って初めて反映される）。表示中の TL が
 /// どれであっても同じ操作を適用できるよう、共通の変更手段をここに置く。
+///
+/// ここの操作はすべて **同期・ローカルな state 差し替えのみ**（I/O なし）で、
+/// 失敗する余地が無い。だから戻り値を持たない（#925-2）。将来 I/O を伴う
+/// fan-out 変更を足すなら、部分失敗を握り潰さないよう成否を返す形へ変えること。
 mixin TimelineListMutations<Arg>
     on AutoDisposeFamilyAsyncNotifier<TimelineState, Arg> {
   /// 削除された投稿を一覧から取り除く。
+  ///
+  /// 本線 ([TimelineNotifier.removePost]) と違い、除去対象が無ければ state を
+  /// 差し替えない早期 return を持つ。本線は pending バッファ (#296) の掃除で
+  /// 一覧が変わらなくても pendingCount が動くため早期 return できないが、各種 TL
+  /// は pending を持たないので、一覧が変わらないなら何もしないのが自然。
   void removePost(String id) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.where((p) => p.id != id).toList();
+    final posts = postsWithoutId(current.posts, id);
     if (posts.length == current.posts.length) return;
     state = AsyncData(current.copyWith(posts: posts));
   }
@@ -464,27 +503,19 @@ mixin TimelineListMutations<Arg>
   void updatePost(Post updated) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.map((p) {
-      if (p.id == updated.id) return updated;
-      if (p.reblog?.id == updated.id) return p.copyWith(reblog: updated);
-      return p;
-    }).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    state = AsyncData(
+      current.copyWith(posts: postsWithReplacement(current.posts, updated)),
+    );
   }
 
   /// ブロック / ミュートした相手の投稿を一覧から取り除く。
   ///
-  /// 本線 TL 側 ([TimelineNotifier.removePostsByUser]) と同じ判定。ブースト元の
-  /// 投稿者も見るのは、ブロックした相手をブーストした第三者の投稿が残ると、
-  /// 「ブロックしたのに本文が見え続ける」状態になるため。
+  /// 判定は本線 TL 側 ([TimelineNotifier.removePostsByUser]) と共通
+  /// （[postIsByUser]）。早期 return を持つ理由は [removePost] と同じ。
   void removePostsByUser(String userId) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final posts = current.posts.where((p) {
-      if (p.author.id == userId) return false;
-      if (p.reblog?.author.id == userId) return false;
-      return true;
-    }).toList();
+    final posts = postsWithoutUser(current.posts, userId);
     if (posts.length == current.posts.length) return;
     state = AsyncData(current.copyWith(posts: posts));
   }
@@ -548,6 +579,13 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 取りこぼさないようにする。窓の外では記録しない（コストも挙動変化も無い）。
   bool _awaitingInitialSnapshot = false;
 
+  /// 先出しの裏で走る初回取得の in-flight future (#942)。窓が開いている間に
+  /// [loadMore] が来たら、これを待って**権威ページ (fresh) が着いてから**下端の
+  /// 続きを取りに行く。cached-last を起点にした古いページを継ぐと、fresh の全置換
+  /// で捨てられる（重なり無し）／ギャップが残る（後着）ため。`publishToState` で
+  /// state を差し替えた時点で完了する（＝窓が閉じる）ので、待つ＝窓の解消を待つ。
+  Future<void>? _backgroundInitialLoad;
+
   /// 窓の間にユーザー操作で差し替えられた投稿 (#921)。REST スナップショットは
   /// 操作より前に発行済みで結果を含まないため、**こちらを優先**する。
   final Map<String, Post> _windowUpdatedPosts = {};
@@ -559,6 +597,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   /// 除いて取り込む。「見えているどの TL からも消える」保証 (#887) を、
   /// 起動直後の窓でも崩さないため。
   final Set<String> _windowBlockedUserIds = {};
+
+  /// 削除・ブロックのたびに +1 する世代印 (#958)。窓 (#921) の内外を問わず数える。
+  ///
+  /// 窓ベースの `_windowRemovedIds` / `_windowBlockedUserIds` は
+  /// `_awaitingInitialSnapshot` の間しか記録しないため、窓の外で走る
+  /// [_loadInitial]（pull-to-refresh / タブ・アカウント切替＝build() 再実行）が
+  /// 取得中にブロックが起きても検知できず、**取得前の生 JSON（ブロック相手の投稿を
+  /// 含む）を `clear()` の後ろに save して復活させていた**。[_loadInitial] の開始時に
+  /// この値を控え、save の直前に変化していたら書かない。
+  int _removalSeq = 0;
 
   /// 窓の記録を捨てる。窓を開くとき / 閉じるとき / build() のたびに呼ぶ。
   void _resetSnapshotWindow({required bool awaiting}) {
@@ -589,6 +637,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     _disposed = false;
     // 前の文脈の窓の記録を持ち越さない (#921)。
     _resetSnapshotWindow(awaiting: false);
+    _backgroundInitialLoad = null;
     final generation = ++_buildGeneration;
     _streamConnectionState = StreamConnectionState.connecting;
     _newestKnownId = null;
@@ -650,15 +699,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (cached != null) {
       // ここから REST 完了までが「窓」(#921)。この間の操作を記録する。
       _resetSnapshotWindow(awaiting: true);
-      unawaited(
-        _loadInitialInBackground(
-          adapter: adapter,
-          type: type,
-          contextKey: contextKey,
-          hideLivecure: hideLivecure,
-          generation: generation,
-        ),
+      // future を控えておく。窓の間に来た loadMore がこれを待つ (#942)。
+      final backgroundLoad = _loadInitialInBackground(
+        adapter: adapter,
+        type: type,
+        contextKey: contextKey,
+        hideLivecure: hideLivecure,
+        generation: generation,
       );
+      _backgroundInitialLoad = backgroundLoad;
+      unawaited(backgroundLoad);
       return cached;
     }
 
@@ -687,6 +737,10 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     required int generation,
   }) async {
     final fetchSw = measureHomePaint ? (Stopwatch()..start()) : null;
+
+    // 取得開始時の削除・ブロック世代を控える (#958)。取得中にブロック等が起きたら
+    // allRaw は stale なので save しない（下の save 手前で照合する）。
+    final removalSeqAtStart = _removalSeq;
 
     // Initial REST fetch — retry pages until visible posts are found or the
     // timeline is exhausted (same logic as loadMore).
@@ -798,17 +852,23 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     // 次の起動で先出しできるよう、ホーム TL の初回ページを控える (#890)。
     // 書き込み失敗は握り潰される（キャッシュは無くても動く）。
     //
-    // 窓の間に削除 / ブロックがあったときは書かない (#921)。
-    // `removePostsByUser` は `TimelineCache.clear()` を呼ぶが、その後にここの
-    // `save` が書き込みキューへ積まれると**ブロックした相手の投稿がディスクに
-    // 復活する**。allRaw は生 JSON なので投稿者を汎用に判定できず、消して書く
-    // より書かない方が安全（次回の取得で書き直される）。
+    // 削除 / ブロックがあったときは書かない。`removePostsByUser` は
+    // `TimelineCache.clear()` を呼ぶが、その後にここの `save` が書き込みキューへ
+    // 積まれると**ブロックした相手の投稿がディスクに復活する**。allRaw は生 JSON
+    // なので投稿者を汎用に判定できず、消して書くより書かない方が安全（次回の取得で
+    // 書き直される）。
+    //
+    // 窓 (#921) の内側は `_windowRemovedIds` / `_windowBlockedUserIds` で、窓の外
+    // （build() 再実行の直接取得）は取得開始からの `_removalSeq` の変化で検知する
+    // (#958)。後者を欠くと、pull-to-refresh 中のブロックが取りこぼされていた。
     final windowHadRemovals =
         _windowRemovedIds.isNotEmpty || _windowBlockedUserIds.isNotEmpty;
+    final removalDuringFetch = _removalSeq != removalSeqAtStart;
     if (type == TimelineType.home &&
         contextKey != null &&
         allRaw.isNotEmpty &&
-        !windowHadRemovals) {
+        !windowHadRemovals &&
+        !removalDuringFetch) {
       unawaited(TimelineCache.save(contextKey, allRaw, now: DateTime.now()));
     }
 
@@ -949,6 +1009,11 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           withScope: (scope) => scope.setTag('phase', 'startup_timeline'),
         ),
       );
+      // 窓を閉じる (#958)。成功側 ([_loadInitial] の publish) は閉じるのに、失敗側
+      // だけ開けっぱなしだった（`_resetSnapshotWindow` の doc「窓を開くとき / 閉じる
+      // とき / build() のたびに呼ぶ」と非対称）。今は次の入口の早期 return に救われて
+      // 実害は無いが、非対称を残さない。
+      _resetSnapshotWindow(awaiting: false);
       state = AsyncError(scrubbed, st);
     }
   }
@@ -1504,27 +1569,26 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で捨てられないよう控える (#921)。
     if (_awaitingInitialSnapshot) _windowUpdatedPosts[updated.id] = updated;
-    final posts = current.posts.map((p) {
-      if (p.id == updated.id) return updated;
-      // Also check reblog target.
-      if (p.reblog?.id == updated.id) {
-        return p.copyWith(reblog: updated);
-      }
-      return p;
-    }).toList();
-    state = AsyncData(current.copyWith(posts: posts));
+    state = AsyncData(
+      current.copyWith(posts: postsWithReplacement(current.posts, updated)),
+    );
   }
 
   /// Remove a post from the list by ID (e.g. after deletion).
   void removePost(String id) {
+    // 取得中の save がこの削除を跨いで書き戻さないよう世代を進める (#958)。state が
+    // まだ null（初回取得中）でも in-flight の [_loadInitial] は save に到達するので、
+    // 一覧更新の可否とは独立に、早期 return より前で数える。
+    _removalSeq++;
     final current = state.valueOrNull;
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
     if (_awaitingInitialSnapshot) _windowRemovedIds.add(id);
-    final posts = current.posts.where((p) => p.id != id).toList();
+    // mixin 版と違い早期 return しない: 一覧が変わらなくても pending の掃除で
+    // pendingCount が動くため (#925)。
     state = AsyncData(
       current.copyWith(
-        posts: posts,
+        posts: postsWithoutId(current.posts, id),
         pendingCount: _dropPending((p) => p.id == id),
       ),
     );
@@ -1584,16 +1648,21 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   /// Remove all posts by a user (e.g. after block/mute).
   void removePostsByUser(String userId) {
+    // 取得中の save がこのブロックを跨いで書き戻さないよう世代を進める (#958)。
+    // state が null（初回取得中）でも in-flight の [_loadInitial] は save に到達する
+    // ため、一覧更新の可否とは独立に早期 return より前で数える。ブロックは安全の
+    // ための操作なので、ここを取りこぼすと復活の穴になる。
+    _removalSeq++;
     final current = state.valueOrNull;
     if (current == null) return;
     // 起動キャッシュ先出しの窓なら、裏の初回取得で戻らないよう控える (#921)。
     // ブロックは安全のための操作なので、この窓でも穴を作らない (#887)。
     if (_awaitingInitialSnapshot) _windowBlockedUserIds.add(userId);
-    bool byUser(Post p) =>
-        p.author.id == userId || p.reblog?.author.id == userId;
-    final posts = current.posts.where((p) => !byUser(p)).toList();
     state = AsyncData(
-      current.copyWith(posts: posts, pendingCount: _dropPending(byUser)),
+      current.copyWith(
+        posts: postsWithoutUser(current.posts, userId),
+        pendingCount: _dropPending((p) => postIsByUser(p, userId)),
+      ),
     );
   }
 
@@ -1627,6 +1696,32 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     }
 
     state = AsyncData(current.copyWith(isLoadingMore: true));
+
+    // 起動キャッシュの先出し中（窓が開いている間）は、cached-last を起点に古い
+    // ページを取ると fresh の全置換で捨てられる／ギャップが残る (#942)。権威ページ
+    // (fresh) が着くのを待ってから下端の続きを取る。待つ間もスピナー
+    // （isLoadingMore = true）は出したままなので、体感上のブロックにはならない。
+    // 先出しを遅らせない（publish 側は待たせない）ため、待つのは消費側に寄せる。
+    if (_awaitingInitialSnapshot) {
+      final pending = _backgroundInitialLoad;
+      if (pending != null) {
+        // [_loadInitialInBackground] は内部で捕捉するので、この await は投げない。
+        await pending;
+        // 裏の取得が失敗して AsyncError になったら、続きを積む土台が無い。
+        // エラー画面の再試行導線に任せて降りる（isLoadingMore は AsyncError に
+        // 引き継がれない）。
+        final resumed = state.valueOrNull;
+        if (resumed == null) return;
+        // 待ち相手の publish は `AsyncData(_mergeWithWindow(fresh))` で state を
+        // **丸ごと差し替える**。fresh は新規インスタンスで isLoadingMore の既定が
+        // false なので、1698 行で立てた印は待ち明けには落ちている。張り直さないと
+        //   - 実際に取得している間だけ末尾スピナーが消える
+        //   - 再入ガード（1680 行）が素通りし、HomeScreen の自動 loadMore が
+        //     同じ maxId でもう 1 本 REST を叩く（#909 の重複除去に救われて一覧は
+        //     壊れないが、往復が丸ごと無駄になる）
+        state = AsyncData(resumed.copyWith(isLoadingMore: true));
+      }
+    }
 
     for (var attempt = 0; attempt <= loadMoreMaxRetries; attempt++) {
       try {

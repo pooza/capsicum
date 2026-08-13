@@ -23,6 +23,10 @@ std::string JsonQuote(const std::string& s) {
 // 観測上の「正常系」コード。これらは未消費の異常系コードを上書きしない
 // （単一スロットゆえ、異常系が後続の正常系イベントに飲まれて Sentry の warning が
 // 消えるのを防ぐ）。Dart 側 _flushWnsPushDiagnostics の benign 判定と揃えること。
+//
+// ⚠ `bgtask.shown` は**表示に成功したときだけ**記録される (#957)。表示失敗は
+// `bgtask.show_failed` / `wns.show_failed` で、いずれもここに含めない
+// （＝異常系として温存され warning で上がる）。
 bool IsBenignCode(const std::string& code) {
   return code == "bgtask.shown" || code == "bgtask.not_encrypted" ||
          code == "bgtask.not_raw";
@@ -172,6 +176,14 @@ bool ParsePushDiagnosticJson(const std::string& json, PushDiagnostic* out) {
   *out = PushDiagnostic();
   FlatParser parser(json);
   return parser.Parse(out);
+}
+
+std::string PushDiagnosticHostFromAccount(const std::string& account) {
+  size_t at = account.rfind('@');
+  if (at == std::string::npos || at + 1 >= account.size()) {
+    return std::string();
+  }
+  return account.substr(at + 1);
 }
 
 }  // namespace capsicum

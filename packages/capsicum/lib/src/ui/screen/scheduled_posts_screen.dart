@@ -1,10 +1,11 @@
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/exception_scrub.dart';
+import '../../util/upstream_error_message.dart';
 import '../widget/retry_error_view.dart';
 
 final _scheduledPostsProvider = FutureProvider.autoDispose<List<ScheduledPost>>(
@@ -152,18 +153,13 @@ class ScheduledPostsScreen extends ConsumerWidget {
               ).showSnackBar(const SnackBar(content: Text('タグを更新しました')));
             }
           } catch (e) {
-            var message = 'タグの更新に失敗しました';
-            if (e is DioException) {
-              final status = e.response?.statusCode;
-              final body = e.response?.data;
-              final detail = body is Map
-                  ? body['error'] ?? body.toString()
-                  : '$body';
-              message = '$message ($status: $detail)';
-              debugPrint('Tag update error: $status $detail');
-            } else {
-              message = '$message: $e';
-            }
+            // 以前は `body['error'] ?? body.toString()` をそのまま SnackBar に
+            // 載せていた。モロヘイヤ 5.31.0 の上流透過 (mulukhiya#4480) 以降は
+            // Misskey の `error` がオブジェクトになるため、そのままだと
+            // `{code: ..., message: ..., id: ...}` が画面に出る。既知コードは
+            // 日本語に訳し、読めないものは汎用文言に倒す (#886)。
+            final message = upstreamFailureText('タグの更新に失敗しました', e);
+            debugLogException('Tag update error', e);
             if (context.mounted) {
               ScaffoldMessenger.of(
                 context,

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../constants.dart';
 import '../../preset_servers.dart';
 import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key});
@@ -64,7 +65,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
         },
       );
     } catch (e) {
-      debugPrint('Server probe error: $e');
+      debugLogException('Server probe error', e);
       if (!mounted) return;
       setState(() {
         _error = '接続に失敗しました';

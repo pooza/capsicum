@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../util/exception_scrub.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
 ///
@@ -116,7 +116,7 @@ class PushKeyStore {
     } on PlatformException catch (e) {
       // ロック中 (-25308) 等で readAll / write が失敗しても起動は止めない。
       // flag を立てないので次回起動で再試行される。
-      debugPrint('capsicum: push key accessibility migration failed: $e');
+      debugLogException('capsicum: push key accessibility migration failed', e);
     }
   }
 

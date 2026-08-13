@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../widget/emoji_text.dart';
+import '../../util/exception_scrub.dart';
 
 class MediaCatalogScreen extends ConsumerStatefulWidget {
   const MediaCatalogScreen({super.key});
@@ -89,7 +90,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Media catalog load error: $e');
+      debugLogException('Media catalog load error', e);
       if (mounted) setState(() => _error = 'メディアカタログの取得に失敗しました');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -119,7 +120,7 @@ class _MediaCatalogScreenState extends ConsumerState<MediaCatalogScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Media catalog loadMore error: $e');
+      debugLogException('Media catalog loadMore error', e);
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -542,7 +543,7 @@ class _MediaDetailSheet extends ConsumerWidget {
         context.push('/profile', extra: user);
       }
     } catch (e) {
-      debugPrint('Failed to open profile: $e');
+      debugLogException('Failed to open profile', e);
     }
   }
 

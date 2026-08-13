@@ -4,6 +4,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants.dart';
 import '../../provider/preferences_provider.dart';
 import 'reaction_picker_sheet.dart';
 
@@ -143,12 +144,21 @@ class _ReactionChip extends StatelessWidget {
           url,
           height: emojiSize,
           fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => Text(reaction),
+          errorBuilder: (_, _, _) => _fallbackText(),
         );
       }
+      // URL を解決できなかったショートコードは、生のまま出すしかない fallback。
+      return _fallbackText();
     }
+    // Unicode 絵文字はここが通常表示（画像に落とせなかったのではない）。隣に
+    // 並ぶカスタム絵文字の画像が `height: emojiSize` なので、揃うよう等倍で描く。
     return Text(reaction, style: TextStyle(fontSize: emojiSize));
   }
+
+  Widget _fallbackText() => Text(
+    reaction,
+    style: TextStyle(fontSize: emojiSize * AppConstants.emojiFallbackTextScale),
+  );
 }
 
 /// reaction 用の絵文字ピッカーをボトムシートで開く (#612)。選択された絵文字を

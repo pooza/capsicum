@@ -29,7 +29,6 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
-#include <cstdint>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -37,6 +36,7 @@
 #include "local_state_files.h"
 #include "notification_tag.h"
 #include "push_diagnostics.h"
+#include "push_diagnostics_store.h"
 #include "web_push_receive.h"
 #include "win_toast.h"
 
@@ -95,42 +95,14 @@ std::string ReadLocalStateLabelsJson() {
   }
 }
 
-// UNIX エポックからのミリ秒。FILETIME（1601 起点・100ns 単位）から換算する。
-int64_t NowUnixMs() {
-  FILETIME ft;
-  GetSystemTimeAsFileTime(&ft);
-  ULARGE_INTEGER u;
-  u.LowPart = ft.dwLowDateTime;
-  u.HighPart = ft.dwHighDateTime;
-  // 1601-01-01 → 1970-01-01 は 11644473600 秒。
-  return static_cast<int64_t>(u.QuadPart / 10000ULL) - 11644473600000LL;
-}
-
-// `username@host` から host 部分のみ返す（username は観測に載せない）。
-std::string HostFromAccount(const std::string& account) {
-  size_t at = account.rfind('@');
-  if (at == std::string::npos || at + 1 >= account.size()) {
-    return std::string();
-  }
-  return account.substr(at + 1);
-}
-
 // bg task の観測コードを LocalState の単一スロットへ記録する (#474 フェーズ C)。
 // AppContainer の bg task は Sentry SDK もコンソールも持てないため、ここに
 // 残し、次回 FullTrust 起動時に runner が読んで Dart 経由で Sentry へ送る。
-// 失敗は黙殺する（観測機構が通知本体を巻き込まない）。
+// 実体は runner と共有する push_diagnostics_store（#957 で runner 側からも
+// 書くようになったため抽出した）。失敗は黙殺される（観測機構が通知本体を
+// 巻き込まない）。
 void RecordBgDiagnostic(const std::string& code, const std::string& host) {
-  try {
-    const std::wstring path = LocalStateFilePath(capsicum::kLocalStateDiagFile);
-    const std::string prev = ReadFileUtf8(path);
-    const std::string next = capsicum::BuildPushDiagnosticJson(
-        prev, code, host, NowUnixMs());
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (f) {
-      f.write(next.data(), static_cast<std::streamsize>(next.size()));
-    }
-  } catch (...) {
-  }
+  capsicum::RecordPushDiagnostic(code, host);
 }
 
 // HandleWnsRawPayload の error 文字列を観測コードへ写す。
@@ -176,19 +148,27 @@ struct PushBackgroundTask
             // 通知を出したときに OS 側で畳めるよう表現を合わせておく。通知 ID を
             // 持たない払い出しでは Tag を付けない (#956)。付けると連続して届いた
             // 分が同じ Tag で差し替わり、Action Center に最後の 1 件しか残らない。
-            capsicum::ShowRawToast(display.title, display.body,
-                                   /*launch_arg=*/"",
-                                   capsicum::NotificationTagFor(
-                                       display.account,
-                                       display.notification_id));
-            RecordBgDiagnostic("bgtask.shown", HostFromAccount(display.account));
+            const bool shown = capsicum::ShowRawToast(
+                display.title, display.body,
+                /*launch_arg=*/"",
+                capsicum::NotificationTagFor(display.account,
+                                             display.notification_id));
+            // ⚠ 戻り値を捨てて無条件に bgtask.shown を書くと、**復号まで成功
+            // したが表示だけ失敗した**（非 MSIX 起動 / WinRT 例外 / XML 不正）
+            // ケースが「出したのに届かなかった＝relay / WNS 側の問題」に見える
+            // (#957)。「bgtask.shown が無ければ未起動」というトリアージ規則を
+            // 成立させるため、成功したときだけ shown を記録する。
+            RecordBgDiagnostic(
+                shown ? "bgtask.shown" : "bgtask.show_failed",
+                capsicum::PushDiagnosticHostFromAccount(display.account));
           } else {
             // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと
             // bg task が動いたかすら分からないため観測コードを残す。account は
             // 復号前にエンベロープから display に載っているので、host を観測へ
             // 出して発生元サーバーを特定できるようにする (#800)。
-            RecordBgDiagnostic(DiagnosticCodeForError(error),
-                               HostFromAccount(display.account));
+            RecordBgDiagnostic(
+                DiagnosticCodeForError(error),
+                capsicum::PushDiagnosticHostFromAccount(display.account));
           }
         }
       } else {

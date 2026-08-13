@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_manager_provider.dart';
+import '../util/exception_scrub.dart';
 
 /// Fetches markers from the server (Mastodon only).
 final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {
@@ -34,7 +34,7 @@ class HomeMarkerSaver {
     final adapter = _ref.read(currentAdapterProvider);
     if (adapter is MarkerSupport) {
       (adapter as MarkerSupport).saveHomeMarker(id).catchError((Object e) {
-        debugPrint('Failed to save home marker: $e');
+        debugLogException('Failed to save home marker', e);
       });
     }
   }
@@ -68,7 +68,7 @@ class NotificationMarkerSaver {
       (adapter as MarkerSupport).saveNotificationMarker(id).catchError((
         Object e,
       ) {
-        debugPrint('Failed to save notification marker: $e');
+        debugLogException('Failed to save notification marker', e);
       });
     }
   }

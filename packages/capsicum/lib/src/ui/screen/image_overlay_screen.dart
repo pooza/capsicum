@@ -1,30 +1,13 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import '../../constants.dart';
+import '../../service/sticker_source.dart';
 import '../../util/exception_scrub.dart';
 import '../util/image_overlay_geometry.dart';
-import '../widget/sticker_picker_sheet.dart';
-
-/// スタンプ素材として受け入れるレスポンスボディの上限 (#953-2)。
-///
-/// 素材の供給元はサーバー由来の任意 URL（`CustomEmoji.url`）で、**サイズを
-/// こちらで保証できない**。プリセット 3 サーバーの実データで最大が 1MB 弱
-/// （アニメーション webp）なので、桁 1 つぶんの余裕を見て 8MB。カスタム絵文字は
-/// 一覧に並べて使うものなので、これを超える素材は運用上そもそも成立しない。
-const _kMaxStickerBytes = 8 * 1024 * 1024;
-
-/// スタンプ素材をデコードする最大高さ（px、#953-2）。
-///
-/// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
-/// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
-/// その 1/2 を上限にしておけば拡大しても粗が出ない。
-const _kMaxStickerDecodeHeight = 2048;
 
 /// 添付画像に重ねる 1 レイヤの共通部分 (#576 / #883)。
 ///
@@ -164,42 +147,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   }
 
   /// テキスト入力ダイアログ。[initial] を渡すと既存レイヤの編集。
-  Future<String?> _promptText({String initial = ''}) async {
-    final controller = TextEditingController(text: initial);
-    try {
-      return await _showTextPrompt(controller);
-    } finally {
-      // ダイアログを開くたびに ChangeNotifier が 1 個ずつリークしていた
-      // (#953-4)。`showDialog` の解決後に必ず捨てる。
-      controller.dispose();
-    }
-  }
-
-  Future<String?> _showTextPrompt(TextEditingController controller) {
+  Future<String?> _promptText({String initial = ''}) {
     return showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('テキスト / 絵文字'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: null,
-          decoration: const InputDecoration(
-            hintText: '重ねる文字や絵文字を入力',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) => _TextPromptDialog(initial: initial),
     );
   }
 
@@ -216,12 +167,13 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
   /// カスタム絵文字を選ばせ、その画像をスタンプレイヤとして追加する (#883)。
   Future<void> _addStickerItem() async {
     if (_loadingSticker) return;
-    final emoji = await showStickerPickerSheet(context: context, ref: ref);
+    final source = ref.read(stickerSourceProvider);
+    final emoji = await source.pick(context: context, ref: ref);
     if (emoji == null || !mounted) return;
 
     setState(() => _loadingSticker = true);
     try {
-      final image = await _loadStickerImage(emoji.url);
+      final image = await source.load(emoji.url);
       if (!mounted) {
         image.dispose();
         return;
@@ -242,69 +194,6 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('スタンプを読み込めませんでした')));
-    }
-  }
-
-  /// カスタム絵文字の画像を取得して 1 枚の [ui.Image] にする (#883)。
-  ///
-  /// **アニメーション絵文字は先頭フレームだけを使う。** 書き出し先が静止 PNG
-  /// である以上どこかのフレームを選ぶしかなく、プリセット 3 サーバーの実データ
-  /// （gif / webp / apng を無作為抽出）で測ったところ、実際にアニメーションする
-  /// 絵文字のフレーム 0 はいずれも「全フレーム中の最大被覆」の 6 割以上を占めて
-  /// おり、空・スカスカのものは 1 つも無かった。よって「途中のフレームを選ぶ」
-  /// ヒューリスティックは持たない（#883 のコメントに実測値）。
-  /// ⚠ **タイムアウトだけでは巨大ボディを止められない** (#953-2)。
-  /// `receiveTimeout` は dio 仕様上「受信バイトイベントの間隔」なので、
-  /// 5 秒未満の間隔で細く流れ続ける数百 MB のボディは打ち切られない。
-  /// 素材はサーバー由来の任意 URL（`emoji.url`）なので、**総バイト数と
-  /// デコード後の寸法の両方に上限を張る**。
-  Future<ui.Image> _loadStickerImage(String url) async {
-    final response =
-        await Dio(
-          BaseOptions(
-            connectTimeout: kNetworkConnectTimeout,
-            receiveTimeout: kNetworkReceiveTimeout,
-            // Content-Length が付いていれば、1 バイトも読まずにここで弾ける。
-            // 付いていない（chunked）場合は下の onReceiveProgress で見る。
-            maxRedirects: 3,
-          ),
-        ).get<List<int>>(
-          url,
-          options: Options(responseType: ResponseType.bytes),
-          onReceiveProgress: (received, total) {
-            if (received > _kMaxStickerBytes) {
-              throw const FormatException('sticker body too large');
-            }
-          },
-        );
-    final contentLength = response.headers.value(Headers.contentLengthHeader);
-    final declared = contentLength == null ? null : int.tryParse(contentLength);
-    if (declared != null && declared > _kMaxStickerBytes) {
-      throw const FormatException('sticker body too large');
-    }
-    final bytes = response.data;
-    if (bytes == null || bytes.isEmpty) {
-      throw const FormatException('empty sticker body');
-    }
-    // onReceiveProgress が呼ばれない実装（レスポンス全体を一括で渡す adapter）
-    // でも取りこぼさないよう、手元に来た実体でもう一度確かめる。
-    if (bytes.length > _kMaxStickerBytes) {
-      throw const FormatException('sticker body too large');
-    }
-    // `targetHeight` を渡してデコード段で縮める。渡さないと 8000x8000 の PNG が
-    // 原寸（= 256MB のピクセルバッファ）で展開される。スタンプは元画像の高さの
-    // 数割にしか描かれないので、原寸を保持する意味がそもそも無い。
-    // 幅は指定しない（アスペクト比が保たれる）。
-    final codec = await ui.instantiateImageCodec(
-      Uint8List.fromList(bytes),
-      targetHeight: _kMaxStickerDecodeHeight,
-      allowUpscaling: false,
-    );
-    try {
-      final frame = await codec.getNextFrame();
-      return frame.image;
-    } finally {
-      codec.dispose();
     }
   }
 
@@ -735,6 +624,60 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
                 )
               : const Icon(Icons.add_reaction_outlined),
           label: const Text('スタンプを追加'),
+        ),
+      ],
+    );
+  }
+}
+
+/// テキストレイヤの入力ダイアログ (#576)。
+///
+/// [TextEditingController] を**ダイアログ自身に所有させる**のが肝 (#947)。
+/// 呼び出し側で `showDialog` の解決直後に dispose すると、まだ退場アニメーション
+/// 中で `TextField` が再構築されるため use-after-dispose になる（#953-4 のリーク
+/// 修正がこの形だった）。State の dispose はルートが実際に外れてから呼ばれるので、
+/// リークもせず早すぎもしない。
+class _TextPromptDialog extends StatefulWidget {
+  const _TextPromptDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('テキスト / 絵文字'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLines: null,
+        decoration: const InputDecoration(
+          hintText: '重ねる文字や絵文字を入力',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('OK'),
         ),
       ],
     );

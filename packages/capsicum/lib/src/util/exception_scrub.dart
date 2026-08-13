@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 /// DioException や OAuth 例外のメタ情報のみを抜き出した安全な例外に詰め替える。
@@ -53,6 +54,26 @@ Object scrubException(Object e) {
     );
   }
   return e;
+}
+
+/// キャッチした例外をログへ出す共通経路 (#926)。
+///
+/// release ビルドでは sentry_flutter が `debugPrint` を丸ごと breadcrumb 化する
+/// ため、`debugPrint('...: $e')` の形で生の例外を埋めると、DioException の URL
+/// （relay の `push_token` / Mastodon `client_secret`）や WebSocket の accessToken
+/// などがそのまま Sentry に載る。この経路を通すことで [scrubException] のマスクを
+/// 必ず経由させ、「生の例外を直接埋める」形をリポジトリから無くす。
+///
+/// [context] は「どこで何に失敗したか」の識別子（従来 `debugPrint` に書いていた
+/// 前置き）。[stackTrace] は任意で、渡すと改行して続ける（従来 `$e\n$st` としていた
+/// 箇所の代替）。スタックはコード位置であり機微データを含まない前提で素通しする。
+void debugLogException(String context, Object error, [StackTrace? stackTrace]) {
+  final scrubbed = scrubException(error);
+  debugPrint(
+    stackTrace == null
+        ? '$context: $scrubbed'
+        : '$context: $scrubbed\n$stackTrace',
+  );
 }
 
 final _sensitiveQueryParam = RegExp(

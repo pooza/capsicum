@@ -6,6 +6,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
+import '../util/exception_scrub.dart';
 
 /// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
@@ -137,7 +138,7 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
     // 「本当に空」と区別できず、すべての `:foo:` を unknown 扱いで赤波下線
     // 化してしまう (#609 false positive)。AsyncError として伝播させて
     // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
-    debugPrint('getEmojis failed: $e');
+    debugLogException('getEmojis failed', e);
     Sentry.captureException(e, stackTrace: st);
     rethrow;
   }

@@ -22,6 +22,7 @@ import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
+import '../util/exception_scrub.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -450,7 +451,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       final probe = await probeInstance(dio, host);
       return probe?.softwareVersion;
     } catch (e) {
-      debugPrint('capsicum: software version detection error on $host: $e');
+      debugLogException(
+        'capsicum: software version detection error on $host',
+        e,
+      );
       return null;
     }
   }
@@ -500,7 +504,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       }
       return mulukhiya;
     } catch (e) {
-      debugPrint('capsicum: mulukhiya detection error on $host: $e');
+      debugLogException('capsicum: mulukhiya detection error on $host', e);
       return null;
     }
   }
@@ -520,11 +524,32 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final retriableFailures =
         <({String keyStr, Map<String, String> secrets})>[];
 
+    // secret が一過性で読めなかった（Keychain ロック等）アカウント (#959)。
+    // 索引はあるので「N 件あるのに読めなかった」ことは分かる。ログアウト扱い
+    // （skip）にすると #917 で直したのと同じ「ログアウトされた」画面（/server へ
+    // 引き戻し）になるため、オフライン保持して hasSession を保つ。
+    final transientOffline = <AccountKey>[];
+
     // secret を読み出せたアカウントだけを probe 対象に集める。順序は
     // getAccountKeys（＝MRU）を保持し、後段の一括反映でこの並びを使う。
     final entries = <({String keyStr, Map<String, String> secrets})>[];
     for (final keyStr in keys) {
-      final secrets = await storage.getSecrets(keyStr);
+      Map<String, String>? secrets;
+      try {
+        secrets = await storage.getSecrets(keyStr);
+      } on TransientSecretUnavailableException {
+        // secret は無傷だが今は読めない (#959)。secret 未取得なので background
+        // ループ（cached secret 前提）には載せられない。オフライン保持だけして、
+        // resume / 手動再試行 (_retryOfflineRestoresNow) が getSecrets を読み直して
+        // 復帰させる。AccountKey が parse できない破損 key は表現を作れず skip。
+        final key = _tryParseStorageKey(keyStr);
+        if (key != null) {
+          transientOffline.add(key);
+        } else {
+          skippedCount++;
+        }
+        continue;
+      }
       if (secrets == null) {
         // secret が例外なく単に存在しない (`getSecrets` の raw==null) 経路。
         // インデックス (#337 で分離) は生存しているのに secure storage 側の
@@ -559,12 +584,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         // 一時的な到達不能。消さずオフライン保持し、背景リトライへ回す (#792)。
         // AccountKey が parse できない破損 key はオフライン表現を作れないので
         // 従来どおり skip する。
-        AccountKey? key;
-        try {
-          key = AccountKey.fromStorageKey(entries[i].keyStr);
-        } catch (_) {
-          key = null;
-        }
+        final key = _tryParseStorageKey(entries[i].keyStr);
         if (key != null) {
           offline.add(OfflineAccount(key: key));
           retriableFailures.add(entries[i]);
@@ -577,6 +597,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         skippedCount++;
       }
     }
+
+    // secret が一過性で読めなかったアカウントもオフライン保持へ加える (#959)。
+    // これで hasSession が true になり /server へ引き戻されなくなる。
+    offline.addAll(transientOffline.map((key) => OfflineAccount(key: key)));
 
     if (restored.isNotEmpty || offline.isNotEmpty) {
       // MRU 順を保ったまま一括反映する。current は先頭（＝MRU 先頭）。splash 中は
@@ -649,7 +673,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // (#496)。debugPrint で起動ログに出し、Sentry にも accountKey 単位で
       // 1 度だけ送る (Keystore 破壊で全アカウント同時失敗するケースで Sentry を
       // 埋めないように)。
-      debugPrint('capsicum: account_restore: failed for $keyStr: $e\n$st');
+      debugLogException('capsicum: account_restore: failed for $keyStr', e, st);
       _reportRestoreOnce(keyStr, e, st);
       return (account: null, outcome: outcome);
     }
@@ -874,6 +898,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     unawaited(retryOfflineRestores());
   }
 
+  /// storage key を [AccountKey] に parse する。scheme 不正な legacy / 破損 key は
+  /// null（呼び出し側は skip する）。
+  AccountKey? _tryParseStorageKey(String keyStr) {
+    try {
+      return AccountKey.fromStorageKey(keyStr);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// keyStr（storage key）から offline entry を除去する。破損 key は無視。
   void _dropOfflineByKeyStr(String keyStr) {
     try {
@@ -923,7 +957,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         continue;
       }
       _markOfflineRetrying(offline.key, true);
-      final secrets = await storage.getSecrets(keyStr);
+      Map<String, String>? secrets;
+      try {
+        secrets = await storage.getSecrets(keyStr);
+      } on TransientSecretUnavailableException {
+        // まだ読めない（ロック継続中）。drop せず offline のまま次の契機
+        // （resume / 再試行ボタン）を待つ (#959)。null（secret 消失）とは違い、
+        // 諦めない。
+        _markOfflineRetrying(offline.key, false);
+        continue;
+      }
       if (secrets == null) {
         // secret が消えていれば復元不能。drop + 観測。
         _dropOfflineByKeyStr(keyStr);

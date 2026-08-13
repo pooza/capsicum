@@ -156,4 +156,39 @@ void main() {
     expect(state.keyboardSelectedIndex, isNull);
     expect(find.text('item 0 [selected]'), findsNothing);
   });
+
+  testWidgets(
+    '#928: resetKeyboardSelectionAfterFrame は次フレームで選択を消す（build 中から呼べる）',
+    (tester) async {
+      final state = await pumpHarness(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(state.keyboardSelectedIndex, 0);
+
+      // build / listener からの後始末を想定。呼んだ直後は残り、フレーム後に消える。
+      // 実利用では build 中に呼ばれ常にフレームが流れているが、テストは idle 起点
+      // なので post-frame callback を発火させるためフレームを 1 枚要求する。
+      state.resetKeyboardSelectionAfterFrame();
+      expect(state.keyboardSelectedIndex, 0);
+      tester.binding.scheduleFrame();
+      await tester.pumpAndSettle();
+      expect(state.keyboardSelectedIndex, isNull);
+    },
+  );
+
+  testWidgets('#928: 未選択で resetKeyboardSelectionAfterFrame を呼んでも無害', (
+    tester,
+  ) async {
+    final state = await pumpHarness(tester);
+    expect(state.keyboardSelectedIndex, isNull);
+
+    // 未選択なら早期 return で post-frame callback すら積まない。フレームを要求
+    // しても選択が発生しないことを確認する。
+    state.resetKeyboardSelectionAfterFrame();
+    tester.binding.scheduleFrame();
+    await tester.pumpAndSettle();
+
+    expect(state.keyboardSelectedIndex, isNull);
+  });
 }

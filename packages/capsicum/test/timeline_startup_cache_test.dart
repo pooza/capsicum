@@ -21,7 +21,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 残り続ける / そもそも先出しされない、のどちらかになる。
 class _FakeAdapter extends Mock
     implements DecentralizedBackendAdapter, TimelineCacheSupport {
-  _FakeAdapter({required this.fresh, this.fetchGate, this.failFetch = false});
+  _FakeAdapter({
+    required this.fresh,
+    this.fetchGate,
+    this.failFetch = false,
+    this.olderPages = const {},
+  });
 
   /// getTimeline が返す「サーバー側の」投稿。
   final List<Post> fresh;
@@ -32,7 +37,15 @@ class _FakeAdapter extends Mock
   /// true のとき getTimeline は投げる（オフライン起動・5xx 相当）。
   final bool failFetch;
 
+  /// loadMore（maxId 指定）が返す「その maxId より古いページ」。既定は空
+  /// （従来どおり「これ以上無い」）。#942 の窓中 loadMore を試すために使う。
+  final Map<String, List<Post>> olderPages;
+
   int fetchCount = 0;
+
+  /// getTimeline に渡された maxId の履歴（null = 初回ページ）。#942 で「どの id を
+  /// 起点に続きを取ったか」を確かめるのに使う。
+  final List<String?> seenMaxIds = [];
 
   @override
   AdapterCapabilities get capabilities => _FakeCapabilities();
@@ -43,10 +56,21 @@ class _FakeAdapter extends Mock
     TimelineQuery? query,
   }) async {
     fetchCount++;
+    // gate を待つ前に記録する（窓中に「maxId 指定の取得へ入ったか」を待たずに
+    // 観測できるように）。
+    seenMaxIds.add(query?.maxId);
     if (fetchGate != null) await fetchGate;
     if (failFetch) throw Exception('network down');
     if (query?.maxId != null) {
-      return const TimelineResponse(posts: [], rawCount: 0);
+      final older = olderPages[query!.maxId] ?? const <Post>[];
+      return TimelineResponse(
+        posts: older,
+        rawCount: older.length,
+        rawLastId: older.isNotEmpty ? older.last.id : null,
+        rawJson: [
+          for (final p in older) {'id': p.id, 'content': p.content},
+        ],
+      );
     }
     return TimelineResponse(
       posts: fresh,
@@ -104,7 +128,22 @@ void main() {
     initSharedPreferencesCache(await SharedPreferences.getInstance());
   });
 
-  tearDown(() {
+  tearDown(() async {
+    // 保存は `unawaited` で投げられるので、テスト本体が終わった時点でも書き込みが
+    // [TimelineCache] の直列化キューに残りうる。**Windows は開いているファイルを
+    // 削除できない**ため、待たずに消すと tearDown が errno 32（プロセスはファイルに
+    // アクセスできません）で落ちる。POSIX は開いたまま消せるので Linux CI では
+    // 通ってしまい、Windows 実機でだけこのファイルが 4 件赤くなっていた。
+    //
+    // clear() は save と同じキューに並ぶので、これを待てば先行の書き込みは必ず
+    // 終わっている。**directoryOverride を落とす前に**流し切ること（先に null に
+    // すると、残った書き込みが実アプリのキャッシュ場所を引きに行って
+    // MissingPluginException になる）。
+    try {
+      await TimelineCache.clear();
+    } catch (_) {
+      // 後始末の失敗はテスト結果に影響しない。
+    }
     TimelineCache.directoryOverride = null;
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   });
@@ -213,13 +252,14 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(timelineProvider.future);
-    // 保存は unawaited なので 1 tick 待つ。
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-
-    final saved = await TimelineCache.load(
-      contextKeyFor(),
-      now: DateTime.now(),
-    );
+    // 保存は unawaited で、静的な書き込みキュー (_writeQueue) 越しに直列化される
+    // （Linux では新規作成時に chmod サブプロセスも挟む）。固定 delay だと CI の
+    // 負荷でレースするため、書き上がるまでポーリングする (#958)。
+    List<Map<String, dynamic>>? saved;
+    for (var i = 0; i < 200 && saved == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      saved = await TimelineCache.load(contextKeyFor(), now: DateTime.now());
+    }
     expect(saved?.map((e) => e['id']), ['new1', 'new2']);
   });
 
@@ -287,4 +327,136 @@ void main() {
     ], reason: '切替前のアカウントの取得結果が、切替後の一覧を上書きしない');
     expect(after.contextKey, isNot(equals(contextKeyFor())));
   });
+
+  /// #958-1: 先出しの窓の**外**（build() 再実行＝pull-to-refresh / タブ・アカウント
+  /// 切替）で取得している最中にブロックすると、取得前の生 JSON（ブロック相手の投稿を
+  /// 含む）が `clear()` の後ろに save されて復活していた。窓の内側は
+  /// `_windowBlockedUserIds` で防いでいたが、窓の外は取得開始からの `_removalSeq` の
+  /// 変化で塞ぐ。
+  test('取得中にブロックしたら（窓の外でも）その一覧を書き戻さない (#958)', () async {
+    // 取得を gate で止め、その隙にブロックする（＝窓ではない直接取得の最中）。
+    final gate = Completer<void>();
+    final adapter = _FakeAdapter(
+      fresh: [_post('blocked1')],
+      fetchGate: gate.future,
+    );
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    // build() を起こし、_loadInitial を gate 上の getTimeline で待たせる。
+    final future = container.read(timelineProvider.future);
+    // getTimeline に入る＝取得開始（世代を控えた後）まで進める。ここより後の
+    // ブロックだけが「取得を跨いだ」ケースになる。
+    while (adapter.fetchCount == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // visible_timeline 相当: 一覧からの除去 + キャッシュ clear。除去で世代が進む。
+    container.read(timelineProvider.notifier).removePostsByUser('u1');
+    await TimelineCache.clear();
+
+    // 取得完了 → save に到達するが、世代が進んでいるので書かない。
+    gate.complete();
+    await future;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(
+      await TimelineCache.load(contextKeyFor(), now: DateTime.now()),
+      isNull,
+      reason: 'ブロックを跨いだ取得結果を clear の後ろに書き戻さない',
+    );
+  });
+
+  /// #942: 先出しの窓（fresh 未着）の間に下端へ達して loadMore が走ると、旧実装は
+  /// cached-last を起点に古いページを取ってしまい、直後に届く fresh の全置換で
+  /// 捨てられる（重なり無し）／ギャップが残る（後着）。権威ページが着くのを待って
+  /// から、その最深を起点に続きを取る。
+  test('窓の間の loadMore は fresh を待ってからその最深を起点に続きを取る (#942)', () async {
+    await TimelineCache.save(contextKeyFor(), [
+      {'id': '200', 'content': '前回1'},
+      {'id': '100', 'content': '前回2'},
+    ], now: DateTime.now());
+
+    // fresh はキャッシュと重ならない新しいページ（＝旧実装なら loadMore ぶんが
+    // 全置換で消えるケース）。続きは fresh 最深 '800' の下にだけ用意する。
+    final gate = Completer<void>();
+    final adapter = _FakeAdapter(
+      fresh: [_post('900'), _post('800')],
+      fetchGate: gate.future,
+      olderPages: {
+        '800': [_post('700')],
+      },
+    );
+    final container = makeContainer(adapter);
+    addTearDown(container.dispose);
+
+    final first = await container.read(timelineProvider.future);
+    expect(first.fromCache, isTrue);
+    expect(first.posts.map((p) => p.id), ['200', '100']);
+
+    // 窓が開いている（fresh 未着）間に loadMore。
+    final loadMore = container.read(timelineProvider.notifier).loadMore();
+    await Future<void>.delayed(Duration.zero);
+
+    // fresh が着く前は、cached-last(100) を起点にした続き取得へ入っていない。
+    expect(
+      adapter.seenMaxIds.where((m) => m != null),
+      isEmpty,
+      reason: 'fresh を待たずに cached-last を起点にした古いページを取らない',
+    );
+
+    // fresh を解放 → 窓が閉じ、loadMore は fresh の最深から続きを取る。
+    gate.complete();
+    await loadMore;
+    await Future<void>.delayed(Duration.zero);
+
+    final after = container.read(timelineProvider).value!;
+    expect(after.posts.map((p) => p.id), [
+      '900',
+      '800',
+      '700',
+    ], reason: '権威ページに続きが正しく連結され、loadMore ぶんが捨てられない');
+    expect(
+      adapter.seenMaxIds.where((m) => m != null),
+      ['800'],
+      reason: 'cached-last(100) ではなく fresh の最深(800) を起点にする',
+    );
+  });
+
+  // Linux 限定 (#958)。キャッシュには生のホーム TL（フォロワー限定 / DM 本文）が
+  // 入るので、同ホストの別ユーザーから読めてはいけない。他 OS では chmod 経路が
+  // そもそも走らないので skip する。
+  group('Linux: キャッシュのパーミッション (#958)', () {
+    Future<void> saveOne() => TimelineCache.save('home', [
+      {'id': '1', 'content': 'secret'},
+    ], now: DateTime.utc(2026, 8, 13));
+
+    int modeOf(File file) => file.statSync().mode & 0x3F;
+
+    test('新規作成したキャッシュは所有者しか読めない', () async {
+      await saveOne();
+
+      final file = File('${dir.path}/home_timeline_cache.json');
+      expect(file.existsSync(), isTrue);
+      expect(modeOf(file), 0, reason: 'group / other に許可ビットが残っている');
+    });
+
+    test('v1.55 以前から残っている 0644 のキャッシュも絞り直す', () async {
+      // 更新してきたユーザーの状態を作る。ファイル名・保存先は v1.55 と同じなので
+      // 「新規作成時だけ chmod」だとここが永久に 0644 のままになる。
+      final file = File('${dir.path}/home_timeline_cache.json')
+        ..writeAsStringSync('{"contextKey":"home","posts":[]}');
+      await Process.run('chmod', ['644', file.path]);
+      expect(modeOf(file), isNot(0), reason: '前提が作れていない');
+
+      await saveOne();
+
+      expect(modeOf(file), 0, reason: '既存ファイルが 0644 のまま取り残されている');
+      expect(
+        file.readAsStringSync(),
+        contains('secret'),
+        reason: '絞り直しのために本文が書けなくなっている',
+      );
+    });
+  }, skip: !Platform.isLinux);
 }

@@ -60,6 +60,20 @@ mixin KeyboardListNavigation<T extends StatefulWidget> on State<T> {
     setState(() => _selectedIndex = null);
   }
 
+  /// 選択を「次フレームで」解除する (#928)。
+  ///
+  /// build 中（`data:` / `loading:` / `error:` ビルダーや `ref.listen`）からは
+  /// setState できないため、後始末をフレーム後へ逃がす。リストの中身が別物へ
+  /// 入れ替わった / 消えたときにホスト画面から呼ぶ。各画面へ手書きコピーすると
+  /// 画面が増えるたびに取りこぼす（#849 で home / post_detail に別々に置いた同型
+  /// コードが Codex 3 巡目で顕在化した）ため mixin へ集約した。
+  void resetKeyboardSelectionAfterFrame() {
+    if (_selectedIndex == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) resetKeyboardSelection();
+    });
+  }
+
   /// リスト本体を包んでキー入力を受け取れるようにする。
   ///
   /// テキスト入力欄を内側に含めないこと（欄にフォーカスがあるときの ↑ ↓ は

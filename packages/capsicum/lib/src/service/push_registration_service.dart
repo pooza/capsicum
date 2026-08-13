@@ -396,7 +396,10 @@ class PushRegistrationService {
     try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
-      debugPrint('capsicum: push.registration: keystore delete failed: $e');
+      debugLogException(
+        'capsicum: push.registration: keystore delete failed',
+        e,
+      );
       _reportUnregisterFailure(e, st, account.key.host, 'keystore');
     }
 
@@ -463,7 +466,10 @@ class PushRegistrationService {
       try {
         await _client.unregister(relayId);
       } catch (e, st) {
-        debugPrint('capsicum: push.registration: relay unregister failed: $e');
+        debugLogException(
+          'capsicum: push.registration: relay unregister failed',
+          e,
+        );
         _reportUnregisterFailure(e, st, '(device)', 'relay');
       }
     }
@@ -534,7 +540,10 @@ class PushRegistrationService {
       _tokenRefreshChain = _tokenRefreshChain
           .then((_) => _runTokenRefresh(getAccounts))
           .catchError((Object e, StackTrace st) {
-            debugPrint('capsicum: push.registration: token refresh failed: $e');
+            debugLogException(
+              'capsicum: push.registration: token refresh failed',
+              e,
+            );
             Sentry.captureException(
               e,
               stackTrace: st,
@@ -614,7 +623,10 @@ class PushRegistrationService {
     } catch (e) {
       // 読めなければ判定できない。掃除せず通常の登録へ進む（誤って掃除して
       // push を止めるより、重複が残る方が軽い）。
-      debugPrint('capsicum: push.registration: device token read failed: $e');
+      debugLogException(
+        'capsicum: push.registration: device token read failed',
+        e,
+      );
       return;
     }
     // 未保存（本機能の導入前・初回起動）は変化と判定できない。既存の孤児は

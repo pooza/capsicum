@@ -18,7 +18,8 @@ namespace capsicum {
 
 // 観測コード。Dart 側 (push_diagnostics consume → Sentry) の level 判定と
 // 揃えること。
-//   bgtask.shown        : 復号成功 → トースト表示（正常・info）
+//   bgtask.shown        : 復号成功 → トースト表示成功（正常・info）
+//   bgtask.show_failed  : 復号成功 → トースト表示失敗（warning, #957）
 //   bgtask.not_encrypted: 暗号化通知でない（announcement 等。正常・info）
 //   bgtask.not_raw      : raw push trigger に RawNotification 以外が来た（info。
 //                         起動した事実のみ残す）
@@ -26,6 +27,14 @@ namespace capsicum {
 //   bgtask.no_keys      : 当該アカウントの鍵が無い（warning）
 //   bgtask.decrypt_failed / bgtask.parse_failed / bgtask.bad_payload : 異常
 //   bgtask.exception    : Run() で未捕捉例外（warning）
+//   wns.show_failed     : **起動中の** in-process 受信が復号に成功したのに
+//                         トースト表示に失敗した（warning, #957）。bg task では
+//                         なく runner が同じスロットへ書く（下記）
+//
+// `bgtask.` で始まらないコードは **FullTrust の runner（起動中の in-process
+// 受信）が同じスロットへ書いたもの**。書き手は違うが、記録・回収・Sentry 送出の
+// 機構は 1 本に保つ（二重管理を避ける）。Sentry のメッセージ接頭辞は
+// `push.wns_bgtask:` のままで、fingerprint は code 別に割れる。
 struct PushDiagnostic {
   std::string code;
   int64_t at_ms = 0;
@@ -48,6 +57,12 @@ std::string BuildPushDiagnosticJson(const std::string& prev_json,
 
 // スロット JSON を解析する。レコードが無い（空 / 不正 / code 不在）なら false。
 bool ParsePushDiagnosticJson(const std::string& json, PushDiagnostic* out);
+
+// `username@host` から host 部分だけを返す。観測レコードに username を載せない
+// ための正規化 (#800)。`@` を含まない / `@` が末尾なら空文字列（host 不明）。
+// 記録側 (bg task / runner) が別々に持つと片方だけ直したときにズレるため、
+// 純粋ロジックとしてここに置く。
+std::string PushDiagnosticHostFromAccount(const std::string& account);
 
 }  // namespace capsicum
 

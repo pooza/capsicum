@@ -22,6 +22,7 @@ import '../util/hashtag_actions.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
+import '../../util/exception_scrub.dart';
 
 /// Misskey Flash（UI 表記は **Play**）の詳細画面 (#830)。
 ///
@@ -191,7 +192,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         context.push('/profile', extra: user);
       }
     } on Exception catch (e) {
-      debugPrint('Failed to look up mention $mention: $e');
+      debugLogException('Failed to look up mention $mention', e);
     }
   }
 

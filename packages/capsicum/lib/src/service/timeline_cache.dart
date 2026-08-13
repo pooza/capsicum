@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../util/exception_scrub.dart';
 
@@ -53,8 +54,9 @@ class TimelineCache {
   /// どのみち捨てる）。OS がキャッシュを掃除しても、キャッシュ無しの起動経路に
   /// 落ちるだけで壊れない。
   ///
-  /// **Linux の他ユーザーからの可読性はこれでは解決しない**（`0644` /
-  /// `~/.cache/<app>/` も `0755`）。塞ぐなら別途 `chmod 600` が要る。
+  /// **Linux の他ユーザーからの可読性**は保存先だけでは塞げない（`0644` /
+  /// `~/.cache/<app>/` も `0755`）ため、[_save] が書き込み後に `chmod 600` で
+  /// 所有者のみ可読にする (#958)。
   static Future<File> _file() async {
     final dir =
         directoryOverride ?? (await getApplicationCacheDirectory()).path;
@@ -82,6 +84,7 @@ class TimelineCache {
       debugPrint(
         'capsicum: timeline cache legacy cleanup failed: ${scrubException(e)}',
       );
+      _reportIoFailureOnce('legacy_cleanup', e);
     }
   }
 
@@ -119,6 +122,7 @@ class TimelineCache {
   ) async {
     try {
       final file = await _file();
+      await _restrictToOwner(file);
       await file.writeAsString(
         jsonEncode({
           'contextKey': contextKey,
@@ -133,8 +137,66 @@ class TimelineCache {
       // FormatException.toString() が抱える source（＝このファイルに入っている
       // 投稿本文の断片）がそのまま Sentry へ送られる。#586 で用意した
       // scrubException を必ず通す。
-      debugPrint('capsicum: timeline cache save failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache save failed', e);
+      _reportIoFailureOnce('save', e);
     }
+  }
+
+  /// group / other の許可ビット（`0o077`）。
+  static const _groupOtherBits = 0x3F;
+
+  /// Linux で、キャッシュを所有者だけが読める `0600` に絞る (#958)。
+  ///
+  /// `writeAsString` は `0644` で作り `~/.cache/<app>/` も `0755` なので、同ホスト
+  /// の別ユーザーが生のホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。
+  /// dart:io に chmod が無いので `chmod(1)` を呼ぶ。
+  ///
+  /// **本文を書く前に**、かつ **今の mode を見て**判断する。当初は「新規作成時
+  /// だけ」（`!await file.exists()`）にしていたが、それだと 2 つ外れていた:
+  ///
+  /// - キャッシュのファイル名・保存先は v1.55 と同じなので、更新してきた
+  ///   ユーザーでは `exists()` が常に true になり **一度も `0600` にならない**。
+  ///   守りたかったデータが既存ユーザーだけまるごと取り残される
+  /// - `0644` で本文を書き切ってから chmod すると、その間だけ世界可読の窓が開く
+  ///
+  /// group / other のビットが落ちていれば何もしない（サブプロセスは通常 1 回だけ）。
+  static Future<void> _restrictToOwner(File file) async {
+    if (!Platform.isLinux) return;
+    try {
+      final stat = await file.stat();
+      final missing = stat.type == FileSystemEntityType.notFound;
+      if (!missing && stat.mode & _groupOtherBits == 0) return;
+      // 空で作ってから絞る。write より先に mode を決めるのが要点。
+      if (missing) await file.create(recursive: true);
+      await Process.run('chmod', ['600', file.path]);
+    } catch (_) {
+      // 権限設定に失敗しても保存自体は有効。
+    }
+  }
+
+  /// キャッシュの読み書き失敗を **1 プロセス 1 回だけ** Sentry に上げる (#958)。
+  ///
+  /// 恒久的な失敗（ディスク満杯・サンドボックス拒否）で #890 の先出しが黙って
+  /// 無効化されても、これまでは `from_cache` タグから間接推測するしかなかった。
+  /// **生の例外文字列は載せない**（このファイルには投稿本文が入っており、
+  /// `FormatException.toString()` 等が断片を抱えるため）。経路と例外型だけを
+  /// タグにして 1 issue へ集約する。
+  static bool _ioFailureReported = false;
+
+  static void _reportIoFailureOnce(String op, Object e) {
+    if (_ioFailureReported) return;
+    _ioFailureReported = true;
+    unawaited(
+      Sentry.captureMessage(
+        'timeline_cache.io_failure',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('cache.op', op);
+          scope.setTag('cache.error', e.runtimeType.toString());
+          scope.fingerprint = ['timeline_cache.io_failure'];
+        },
+      ),
+    );
   }
 
   /// [contextKey] に一致し、かつ [maxAge] 以内に保存されたキャッシュを返す。
@@ -164,7 +226,8 @@ class TimelineCache {
     } catch (e) {
       // 壊れたファイルの jsonDecode 失敗がここに来る。scrub の理由は save 側の
       // コメントを参照（この経路が実際にいちばん踏まれる）。
-      debugPrint('capsicum: timeline cache load failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache load failed', e);
+      _reportIoFailureOnce('load', e);
       return null;
     }
   }
@@ -188,7 +251,8 @@ class TimelineCache {
       final file = await _file();
       if (await file.exists()) await file.delete();
     } catch (e) {
-      debugPrint('capsicum: timeline cache clear failed: ${scrubException(e)}');
+      debugLogException('capsicum: timeline cache clear failed', e);
+      _reportIoFailureOnce('clear', e);
     }
   }
 }

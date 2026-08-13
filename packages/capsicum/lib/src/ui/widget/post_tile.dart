@@ -6,6 +6,7 @@ import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +36,7 @@ import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
+import '../../util/exception_scrub.dart';
 
 String _stripHtml(String html) => stripHtml(html);
 
@@ -336,7 +338,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         context.push('/profile', extra: user);
       }
     } on Exception catch (e) {
-      debugPrint('Failed to look up mention $mention: $e');
+      debugLogException('Failed to look up mention $mention', e);
     }
   }
 
@@ -1040,6 +1042,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.id,
         () => reactionAdapter.removeReaction(targetPost.id, emoji),
         'リアクションを取り消しました',
+        phase: 'reaction_remove',
       );
     } else {
       _runReactionAction(
@@ -1086,8 +1089,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       // 片方だけ直すと `phase: post_action` の母数から「取り消し」が導線ごと
       // 欠け、失敗文言も導線で変わる。実際にリリース前レビュー 3 巡目でここだけ
       // 直し、4 巡目で向こうの取りこぼしを指摘された。次に触るときは対で見ること。
-      debugPrint('_unrepeat failed: $e');
-      if (e is DioException) {
+      debugLogException('_unrepeat failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -1640,8 +1643,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     BackendAdapter adapter,
     String postId,
     Future<void> Function() action,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    // 付与と取り消しで別系列にする (#924)。既定は付与。取り消しは呼び出し側で
+    // reaction_remove を渡す。両方が reaction_add に畳まれると、Sentry で絞った
+    // ときにどちらの失敗かが混ざる。
+    String phase = 'reaction_add',
+  }) async {
     // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
     final timeline = readVisibleTimelines(ref);
     try {
@@ -1652,15 +1659,15 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runReactionAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runReactionAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
         Sentry.captureException(
           e,
           stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'reaction_add'),
+          withScope: (scope) => scope.setTag('phase', phase),
         ),
       );
       messenger.showSnackBar(
@@ -1691,8 +1698,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       // _runAction を揃える（リリース前レビュー 2 巡目）。**投稿アクションの
       // catch はここだけではない**ので、規約は describePostActionError の doc を
       // 見ること（全数を数え上げるコメントは繰り返し古くなった）。
-      debugPrint('_runAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       unawaited(
@@ -1718,8 +1725,8 @@ class _PostTileState extends ConsumerState<PostTile> {
       onActionCompleted?.call();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      debugPrint('_runVoidAction failed: $e');
-      if (e is DioException) {
+      debugLogException('_runVoidAction failed', e);
+      if (kDebugMode && e is DioException) {
         debugPrint('Response body: ${e.response?.data}');
       }
       // 文言は元から describePostActionError だが観測が無く、post_action の
@@ -2538,7 +2545,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: ConstrainedBox(
-                    // 横長絵文字は従来どおり高さの 3 倍で頭打ちにする。
+                    // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
+                    // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
+                    // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
+                    // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
                     constraints: BoxConstraints(
                       maxHeight: emojiSize,
                       maxWidth: emojiSize * 3,
@@ -2549,7 +2559,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                       fit: BoxFit.contain,
                       errorBuilder: (_, _, _) => Text(
                         widget.reactionKey,
-                        style: TextStyle(fontSize: emojiSize * 0.7),
+                        style: TextStyle(
+                          fontSize:
+                              emojiSize * AppConstants.emojiFallbackTextScale,
+                        ),
                       ),
                     ),
                   ),
@@ -2563,7 +2576,10 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
                     height: emojiSize,
                     errorBuilder: (_, _, _) => Text(
                       widget.reactionKey,
-                      style: TextStyle(fontSize: emojiSize * 0.7),
+                      style: TextStyle(
+                        fontSize:
+                            emojiSize * AppConstants.emojiFallbackTextScale,
+                      ),
                     ),
                   ),
                 ),
@@ -2827,7 +2843,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
         );
       }
     } catch (e) {
-      debugPrint('Poll vote error: $e');
+      debugLogException('Poll vote error', e);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -2841,7 +2857,7 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
     try {
       widget.onActionCompleted?.call();
     } catch (e) {
-      debugPrint('Poll vote onActionCompleted error: $e');
+      debugLogException('Poll vote onActionCompleted error', e);
     }
   }
 
