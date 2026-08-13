@@ -122,12 +122,7 @@ class TimelineCache {
   ) async {
     try {
       final file = await _file();
-      // Linux では他ユーザーから読めないよう 0600 に絞る (#958)。writeAsString は
-      // 0644 で作り ~/.cache/<app>/ も 0755 なので、同ホストの別ユーザーが生の
-      // ホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。dart:io に
-      // chmod が無いので chmod(1) を呼ぶ。**新規作成時だけ**行う（既存ファイルの
-      // mode は上書きしても保たれるので、毎回サブプロセスを起こさない）。
-      final needsChmod = Platform.isLinux && !await file.exists();
+      await _restrictToOwner(file);
       await file.writeAsString(
         jsonEncode({
           'contextKey': contextKey,
@@ -136,13 +131,6 @@ class TimelineCache {
         }),
         flush: false,
       );
-      if (needsChmod) {
-        try {
-          await Process.run('chmod', ['600', file.path]);
-        } catch (_) {
-          // 権限設定に失敗しても保存自体は有効。
-        }
-      }
     } catch (e) {
       // 例外はそのまま出さない。release ビルドでは sentry_flutter の
       // DebugPrintIntegration が debugPrint を丸ごと breadcrumb 化するため、
@@ -151,6 +139,38 @@ class TimelineCache {
       // scrubException を必ず通す。
       debugLogException('capsicum: timeline cache save failed', e);
       _reportIoFailureOnce('save', e);
+    }
+  }
+
+  /// group / other の許可ビット（`0o077`）。
+  static const _groupOtherBits = 0x3F;
+
+  /// Linux で、キャッシュを所有者だけが読める `0600` に絞る (#958)。
+  ///
+  /// `writeAsString` は `0644` で作り `~/.cache/<app>/` も `0755` なので、同ホスト
+  /// の別ユーザーが生のホーム TL（フォロワー限定 / DM 本文を含む）を読めてしまう。
+  /// dart:io に chmod が無いので `chmod(1)` を呼ぶ。
+  ///
+  /// **本文を書く前に**、かつ **今の mode を見て**判断する。当初は「新規作成時
+  /// だけ」（`!await file.exists()`）にしていたが、それだと 2 つ外れていた:
+  ///
+  /// - キャッシュのファイル名・保存先は v1.55 と同じなので、更新してきた
+  ///   ユーザーでは `exists()` が常に true になり **一度も `0600` にならない**。
+  ///   守りたかったデータが既存ユーザーだけまるごと取り残される
+  /// - `0644` で本文を書き切ってから chmod すると、その間だけ世界可読の窓が開く
+  ///
+  /// group / other のビットが落ちていれば何もしない（サブプロセスは通常 1 回だけ）。
+  static Future<void> _restrictToOwner(File file) async {
+    if (!Platform.isLinux) return;
+    try {
+      final stat = await file.stat();
+      final missing = stat.type == FileSystemEntityType.notFound;
+      if (!missing && stat.mode & _groupOtherBits == 0) return;
+      // 空で作ってから絞る。write より先に mode を決めるのが要点。
+      if (missing) await file.create(recursive: true);
+      await Process.run('chmod', ['600', file.path]);
+    } catch (_) {
+      // 権限設定に失敗しても保存自体は有効。
     }
   }
 

@@ -1710,7 +1710,16 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         // 裏の取得が失敗して AsyncError になったら、続きを積む土台が無い。
         // エラー画面の再試行導線に任せて降りる（isLoadingMore は AsyncError に
         // 引き継がれない）。
-        if (state.valueOrNull == null) return;
+        final resumed = state.valueOrNull;
+        if (resumed == null) return;
+        // 待ち相手の publish は `AsyncData(_mergeWithWindow(fresh))` で state を
+        // **丸ごと差し替える**。fresh は新規インスタンスで isLoadingMore の既定が
+        // false なので、1698 行で立てた印は待ち明けには落ちている。張り直さないと
+        //   - 実際に取得している間だけ末尾スピナーが消える
+        //   - 再入ガード（1680 行）が素通りし、HomeScreen の自動 loadMore が
+        //     同じ maxId でもう 1 本 REST を叩く（#909 の重複除去に救われて一覧は
+        //     壊れないが、往復が丸ごと無駄になる）
+        state = AsyncData(resumed.copyWith(isLoadingMore: true));
       }
     }
 

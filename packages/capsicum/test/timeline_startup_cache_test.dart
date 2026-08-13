@@ -422,4 +422,41 @@ void main() {
       reason: 'cached-last(100) ではなく fresh の最深(800) を起点にする',
     );
   });
+
+  // Linux 限定 (#958)。キャッシュには生のホーム TL（フォロワー限定 / DM 本文）が
+  // 入るので、同ホストの別ユーザーから読めてはいけない。他 OS では chmod 経路が
+  // そもそも走らないので skip する。
+  group('Linux: キャッシュのパーミッション (#958)', () {
+    Future<void> saveOne() => TimelineCache.save('home', [
+      {'id': '1', 'content': 'secret'},
+    ], now: DateTime.utc(2026, 8, 13));
+
+    int modeOf(File file) => file.statSync().mode & 0x3F;
+
+    test('新規作成したキャッシュは所有者しか読めない', () async {
+      await saveOne();
+
+      final file = File('${dir.path}/home_timeline_cache.json');
+      expect(file.existsSync(), isTrue);
+      expect(modeOf(file), 0, reason: 'group / other に許可ビットが残っている');
+    });
+
+    test('v1.55 以前から残っている 0644 のキャッシュも絞り直す', () async {
+      // 更新してきたユーザーの状態を作る。ファイル名・保存先は v1.55 と同じなので
+      // 「新規作成時だけ chmod」だとここが永久に 0644 のままになる。
+      final file = File('${dir.path}/home_timeline_cache.json')
+        ..writeAsStringSync('{"contextKey":"home","posts":[]}');
+      await Process.run('chmod', ['644', file.path]);
+      expect(modeOf(file), isNot(0), reason: '前提が作れていない');
+
+      await saveOne();
+
+      expect(modeOf(file), 0, reason: '既存ファイルが 0644 のまま取り残されている');
+      expect(
+        file.readAsStringSync(),
+        contains('secret'),
+        reason: '絞り直しのために本文が書けなくなっている',
+      );
+    });
+  }, skip: !Platform.isLinux);
 }

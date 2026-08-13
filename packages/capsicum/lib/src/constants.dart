@@ -113,6 +113,13 @@ class AppConstants {
   /// announcement_tile=0.8 / chat_reaction_bar=1.0 と 3 種に散らばっていたので
   /// 1 箇所へ統一した（#852 の横展開で生じた揺れ）。チップに収まるよう本文より
   /// 小さめにしている。
+  ///
+  /// ⚠ **当て先は「画像を出そうとして出せなかった」経路だけ**（`Image.network`
+  /// の `errorBuilder` と、ショートコードの URL を解決できなかったとき）。
+  /// Unicode 絵文字をそのまま `Text` で描く経路は fallback ではなく通常表示
+  /// なので、隣に並ぶ画像（`height: emojiSize`）と揃うよう等倍で描く。
+  /// v1.56 のリリース前レビューで、この統一を通常表示にも当ててしまい
+  /// メッセージのリアクションが 3 割縮んでいたのを検出した。
   static const emojiFallbackTextScale = 0.7;
 }
 

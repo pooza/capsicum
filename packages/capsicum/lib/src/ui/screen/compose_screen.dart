@@ -27,6 +27,7 @@ import '../../provider/timeline_provider.dart';
 import '../../service/compose_draft_store.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
@@ -904,7 +905,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   /// Restore a previously saved draft into the controllers.
   Future<void> _restoreDraft() async {
-    final saved = await _draftStore.restore();
+    final ComposeDraft? saved;
+    try {
+      saved = await _draftStore.restore();
+    } catch (e) {
+      // 復元に失敗しても離脱時保存 (#966) は解禁する。ここで抜けると
+      // `_draftRestored` が false のまま `_saveDraft` が永久に no-op になり、
+      // **書きかけが黙って保存されなくなる**（#969 で解禁条件を足すまでは、
+      // 復元が失敗しても保存だけは動いていた）。呼び出し側は fire-and-forget
+      // なので、捕まえないと未処理の非同期エラーとしても上がる。
+      debugLogException('capsicum: compose draft restore failed', e);
+      _draftRestored = true;
+      return;
+    }
     // 復元経路の解決をもって、以降の離脱時保存 (#966) を解禁する (#969)。
     // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
     _draftRestored = true;
@@ -924,15 +937,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
     // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
     // 空で何も復元していないなら、伝えることがないので出さない。
-    if (saved.hasText && saved.attachmentCount > 0) {
+    final attachmentCount = saved.attachmentCount;
+    if (saved.hasText && attachmentCount > 0) {
       // initState の post-frame は _restoreDraft の await より先に走りうるので、
       // ここで改めて次フレームに載せる。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('前回の入力を復元しました（添付 ${saved.attachmentCount} 件は含まれません）'),
-          ),
+          SnackBar(content: Text('前回の入力を復元しました（添付 $attachmentCount 件は含まれません）')),
         );
       });
     }

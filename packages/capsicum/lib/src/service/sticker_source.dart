@@ -45,27 +45,55 @@ class StickerSource {
 
   /// 素材 URL を取得してデコードする。呼び出し側が [ui.Image] の dispose に
   /// 責任を持つ。
+  ///
+  /// **アニメーション絵文字は先頭フレームだけを使う** (#883)。書き出し先が静止
+  /// PNG である以上どこかのフレームを選ぶしかなく、プリセット 3 サーバーの実データ
+  /// （gif / webp / apng を無作為抽出）で測ったところ、実際にアニメーションする
+  /// 絵文字のフレーム 0 はいずれも「全フレーム中の最大被覆」の 6 割以上を占めて
+  /// おり、空・スカスカのものは 1 つも無かった。よって「途中のフレームを選ぶ」
+  /// ヒューリスティックは持たない（#883 のコメントに実測値）。
+  ///
+  /// ⚠ **タイムアウトだけでは巨大ボディを止められない** (#953-2)。
+  /// `receiveTimeout` は dio 仕様上「受信バイトイベントの間隔」なので、5 秒未満の
+  /// 間隔で細く流れ続ける数百 MB のボディは打ち切られない。素材はサーバー由来の
+  /// 任意 URL（`CustomEmoji.url`）なので、**総バイト数（[kMaxStickerBytes]）と
+  /// デコード後の寸法（[kMaxStickerDecodeHeight]）の両方に上限を張る**。
   Future<ui.Image> load(String url) => _loadFromNetwork(url);
 
   Future<ui.Image> _loadFromNetwork(String url) async {
-    final response =
-        await Dio(
-          BaseOptions(
-            connectTimeout: kNetworkConnectTimeout,
-            receiveTimeout: kNetworkReceiveTimeout,
-            // Content-Length が付いていれば、1 バイトも読まずにここで弾ける。
-            // 付いていない（chunked）場合は下の onReceiveProgress で見る。
-            maxRedirects: 3,
-          ),
-        ).get<List<int>>(
-          url,
-          options: Options(responseType: ResponseType.bytes),
-          onReceiveProgress: (received, total) {
-            if (received > kMaxStickerBytes) {
-              throw const FormatException('sticker body too large');
-            }
-          },
-        );
+    // 上限超過を見つけたら **受信そのものを打ち切る**。onReceiveProgress は dio の
+    // `source.listen` の onData 内（しかもバッファへ add した後）で呼ばれるので、
+    // そこで throw しても購読は生きたままで、
+    //   - ダウンロードは止まらず、バイト列は無制限に積み上がる
+    //   - チャンクごとに zone の uncaught error が上がり、Sentry へ大量に飛ぶ
+    // という形になる。CancelToken なら購読ごと切れる。
+    final cancelToken = CancelToken();
+    var oversized = false;
+    final Response<List<int>> response;
+    try {
+      response =
+          await Dio(
+            BaseOptions(
+              connectTimeout: kNetworkConnectTimeout,
+              receiveTimeout: kNetworkReceiveTimeout,
+              maxRedirects: 3,
+            ),
+          ).get<List<int>>(
+            url,
+            cancelToken: cancelToken,
+            options: Options(responseType: ResponseType.bytes),
+            onReceiveProgress: (received, total) {
+              if (received <= kMaxStickerBytes || oversized) return;
+              oversized = true;
+              cancelToken.cancel('sticker body too large');
+            },
+          );
+    } on DioException {
+      if (oversized) throw const FormatException('sticker body too large');
+      rethrow;
+    }
+    // Content-Length の確認は事前弾きにはならない（`get` はボディを全部読み終えて
+    // から返る）。chunked で申告と実体がずれる場合の保険として残している。
     final contentLength = response.headers.value(Headers.contentLengthHeader);
     final declared = contentLength == null ? null : int.tryParse(contentLength);
     if (declared != null && declared > kMaxStickerBytes) {

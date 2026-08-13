@@ -260,15 +260,18 @@ class _AnnouncementReactionChip extends StatelessWidget {
                 reaction.url!,
                 height: emojiSize,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Text(reaction.name),
+                // 画像を出せなかったときだけ、生テキストへ落として縮める。
+                errorBuilder: (_, _, _) => Text(
+                  reaction.name,
+                  style: TextStyle(
+                    fontSize: emojiSize * AppConstants.emojiFallbackTextScale,
+                  ),
+                ),
               )
             else
-              Text(
-                reaction.name,
-                style: TextStyle(
-                  fontSize: emojiSize * AppConstants.emojiFallbackTextScale,
-                ),
-              ),
+              // Unicode 絵文字はここが通常表示。カスタム絵文字の画像
+              // （`height: emojiSize`）と揃うよう等倍で描く。
+              Text(reaction.name, style: TextStyle(fontSize: emojiSize)),
             const SizedBox(width: 4),
             Text(
               '${reaction.count}',
