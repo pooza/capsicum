@@ -455,7 +455,20 @@ cd ios && fastlane release && cd ..
 cd macos && fastlane release && cd ..
 ```
 
-審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
+#### 「このバージョンの新機能」欄（whatsNew）は定型文で運用する
+
+App Store / Mac App Store の `whatsNew` は、**バージョンごとの要約を書かず、GitHub リリースページへの誘導文で固定**する:
+
+```text
+変更内容の詳細は GitHub リリースページをご覧ください。
+https://github.com/pooza/capsicum/releases
+```
+
+`upload_to_app_store` は前バージョンの値を引き継ぐので、通常のリリースでは**何もしなくてよい**（macOS が引き継がず弾かれた場合の復旧は下の「whatsNew 未入力で submit が弾かれる罠」を参照）。
+
+**リリースノートの正本は GitHub Release 1 箇所**（§4.4）。ASC 側にも要約を置くと、Linux / Windows を含む全プラットフォーム向けの本文と、Apple 2 つだけに出る本文が二重管理になり、片方が陳腐化する。誘導文なら常に最新を指す。
+
+> この節はもともと「そのバージョンの変更内容の要約を記載すること」と書かれていたが、**v1.53〜v1.56 の iOS / macOS はすべて上記の定型文で提出されており**、記述が実態と合っていなかった（2026-08-13 の v1.56 リリース時に ASC API で実測して発覚）。pooza の判断で**実態に合わせる**方向で確定した。
 
 > ⚠️ **iOS の `fastlane release` は §4.2 の ipa が build/ に残っている前提**。iOS ベータの後に Android / macOS を `flutter clean` 込みでビルドすると `build/ios/ipa/capsicum.ipa` が消え、`skip_binary_upload: true` でもレーンが ipa パスの存在検証で `Could not find ipa file` で落ちる。復旧は `flutter build ipa`（build 番号据え置き = 再アップロードされない）で ipa を再生成してから `fastlane release`。ただし再生成後の submit で deliver が **「Waiting for the build to show up in the build list」ループから抜けられずハングする**ことがある（既存 build は ASC 上に存在するのに API 選択が回らない。v1.44.0 で発生）。数分待って進まなければ **ASC UI から該当 build を手動で「審査へ提出」する方が速い**（1分程度）。macOS の pkg は最後にビルドしたものが残るため、iOS の ipa 再生成で `flutter clean` する前に macOS の submit を先に済ませること。
 >
