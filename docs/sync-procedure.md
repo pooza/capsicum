@@ -40,6 +40,7 @@
 - `gh pr list --state open` — open PR 一覧
 - `gh issue list --state closed --limit 10` — 最近クローズされた Issue（前回同期以降の進捗把握）
 - マイルストーン未割り当ての open Issue を一覧として列挙する（割り当てを促す文言は不要）
+- **capsicum-relay に対しても同じ 4 つを実行する**（`--repo pooza/capsicum-relay` を付ける）。ステップ 8 の「関連リポジトリの同期確認」でリポジトリの差分を見るのとは別で、**relay の Issue 管理は capsicum 本体と同じ工程として扱う**。詳細は下の「relay を同列に扱う」節
 
 ## 4. ユーザーフィードバックの確認（#capsicum タグ + ダイスキー capsicum チャンネル）
 
@@ -55,6 +56,17 @@
 - MEMORY.md のマイルストーン構成（件数）が実態と一致しているか確認し、ズレがあれば更新する
 - クローズ済みマイルストーンの残 Issue が 0 であることを確認する
 - リリース直後の同期では、open マイルストーンの description が実態と乖離していないかも確認する。GitHub Milestones が正本（CLAUDE.md に複写しない方針）のため、description が空・古い場合は同期内で `gh api -X PATCH repos/pooza/capsicum/milestones/{number} -f description="..."` で整える。最低限、(a) 大更新の単独配置か否か、(b) 主な含有 Issue、(c) 並走条件 を 1〜3 行で書く
+- **capsicum-relay の同名マイルストーンにも同じ集計・description 点検を行う**（`repos/pooza/capsicum-relay/milestones`）
+
+### relay を同列に扱う
+
+capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ工程・同じ粒度**で扱う。relay を「関連リポジトリの同期確認」（ステップ 8）だけで済ませると、リポジトリの git 差分は見えても Issue の消化・残が見えず、リリース時に対応漏れが起きる。
+
+- ステップ 3（Issue・PR）・ステップ 5（マイルストーン集計と description 点検）は **capsicum と relay の両方に対して実行する**
+- ステップ 10 の報告では、**relay を末尾に 1 行添える形にしない**。同名マイルストーン（capsicum v1.56 ↔ relay v1.56）の消化 / 残を、本体と同じ見出しレベル・同じ粒度で並記する
+- relay 側の残件は「本体のついで」ではなく、そのマイルストーンの完了条件の一部として報告する
+
+（2026-08-11 に pooza から指示。2026-08-13 の同期で 3 度目の指摘を受けたため、メモリだけでなく本手順書に組み込んだ）
 
 ## 6. Codex レビューコメントの確認
 
@@ -93,3 +105,4 @@
 ## 10. 同期結果の報告
 
 - 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、各確認項目の結果をまとめて報告する
+- **capsicum と capsicum-relay の稼働中マイルストーンを、同じ見出しレベル・同じ粒度で並記する**（「relay を同列に扱う」節を参照）。relay の残件を末尾の 1 行に圧縮しない
