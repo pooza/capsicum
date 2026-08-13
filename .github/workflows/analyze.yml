@@ -43,6 +43,14 @@ jobs:
             if printf '%s' "$PUSH_BEFORE" | grep -qE '^0+$'; then
               echo "branch creation push; skip lock guard"; exit 0
             fi
+            # force-push すると before は到達不能な SHA になり、git diff が
+            # `fatal: bad object` (exit 128) で落ちる。`set -e` があるので
+            # 意図した ::error:: ではなく無関係な失敗としてジョブが赤くなる
+            # （v1.56 のリリース作業でコミットメッセージを直した際に実踏）。
+            # 範囲が取れない push は判定対象外としてスキップする。
+            if ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              echo "force-push (before unreachable); skip lock guard"; exit 0
+            fi
             files="$(git diff --name-only "$PUSH_BEFORE" "$GITHUB_SHA")"
             msgs="$(git log --format='%s %b' "$PUSH_BEFORE".."$GITHUB_SHA")"
           fi
