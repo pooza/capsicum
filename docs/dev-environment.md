@@ -322,6 +322,46 @@ release で不可な理由は環境変数だけでなく **API 経路も塞が�
 
 ストア版は物理 GPU ＋ アクティブ画面で描画するため**この現象は非該当**（実ユーザーが真っ白になる原因は別で、その場合は Sentry に痕跡が出る）。**製品版の描画経路は変えない。**
 
+#### WHEA（PCIe 訂正可能エラー）でイベントログが埋まる
+
+**2026-08-13 に発見・同日 ASPM を切って解決。** `Microsoft-Windows-WHEA-Logger` のイベント 17（`A corrected hardware error has occurred`）が**毎分 11.6 件**という頻度で出続けていた。
+
+```text
+Component: PCI Express Root Port
+Error Source: Advanced Error Reporting (PCI Express)
+PCI バス 0, デバイス 29, 機能 0 → Intel PCI Express Root Port #10
+  └ Qualcomm QCA61x4A 802.11ac Wireless Adapter（配下はこの 1 台のみ）
+```
+
+**実害は訂正可能エラーそのものではなく、System イベントログが埋まること。** 発見時は全 12,881 レコード中 **12,259 件（95%）が WHEA** で、20MB の循環ログが **2.5 日で一周**していた。Windows の障害調査は System ログが起点なので、この状態だと何かあっても遡れない（実際、同日の再起動失敗を調べたときに 8/10 より前が見られなかった）。**発生開始時期も、ログが自分で自分を押し流すため特定不能だった。**
+
+対処（この順で適用・いずれも管理者権限が要る）:
+
+1. **System ログを 128MB へ拡大** — `wevtutil sl System /ms:134217728`。現在のペースなら約 16 日分。観測性の回復が目的で、リスクはない
+2. **PCIe の ASPM をオフ** — 既定が「**最大限の省電力**」（3 段階で最も攻めた設定）だった。これを切ったところ **9.9 分間で 0 件**（直前まで 11.6 件/分）と、完全に停止した
+
+```powershell
+powercfg /setacvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ASPM 0
+powercfg /setdcvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ASPM 0
+powercfg /S SCHEME_CURRENT
+```
+
+**無線 LAN アダプタの無効化は選択肢に入れない。** エラーは止まるが、蓋を閉じて画面もない端末にとって**唯一の予備経路**を失う。有線が抜けただけでリモートから消える。有線（`Ethernet 3` / メトリック 25）が主・無線（メトリック 35）が自動フェイルオーバー、という現在の構成を維持する。
+
+##### この端末の保守宿題（2026-08-13 時点・急ぎではない）
+
+中古で入手した個体で、**出荷時のファームウェアのまま**だった。Windows Update の任意ドライバは **設定 → Windows Update → 詳細オプション → オプションの更新プログラム → ドライバー更新プログラム**（Windows 11 で場所が変わっている）。
+
+| 対象 | 現在 | 提示されている版 |
+| --- | --- | --- |
+| **System Firmware (BIOS)** | **1.4.1（2019-07-05）** | 1.37.0（2025-08-05） |
+| Intel UHD Graphics 620 | 31.0.101.2130（2024-08-13） | 31.0.101.2135（2025-03-06） |
+| Intel Serial IO I2C | 30.100.1929.1（2019-07-15） | 30.100.2020.7（2020-05-12） |
+
+**Qualcomm QCA61x4A のドライバは Windows Update に出てこない**（現在 `12.0.0.1118` / 2021-06-15）。更新するなら Dell のサポートサイトか Dell Command Update 経由。ただし ASPM オフで WHEA は止まったので、**更新する動機は現時点でない**。
+
+⚠ **BIOS 更新は蓋を開けて・物理アクセスがあるときに行う。** 更新は再起動後の UEFI 段階で走るため **RustDesk では一切見えず**、蓋を閉じていると内蔵パネルも消えていて、HDMI ダミープラグは画面ではないので**どこにも進行が表示されない**。AC を挿したまま実施すること。
+
 ### 持ち込まないもの
 
 - Apple toolchain（Xcode / fastlane / Apple Distribution 証明書 / `AuthKey_*.p8`）
