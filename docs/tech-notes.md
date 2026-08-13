@@ -95,6 +95,20 @@ SharedPreferences は **Android / iOS とも OS のバックアップ対象**で
 
 保存先を移すときは**旧値を移行しない**。移行すると複製された値がそのまま生き残り、直したい事象が消えない。旧キーは掃除だけする。正本は [`device_install_id.dart`](../packages/capsicum/lib/src/service/device_install_id.dart)。
 
+### 画像を扱う UI のテストは `tester.runAsync` が要る — 無いと**黙ってハングする**（#947）
+
+`flutter_test` の既定は擬似非同期で、**画像コーデックのような実 I/O を進めない**。そのため `ui.instantiateImageCodec` / `Picture.toImage` / `Image.toByteData` を待つコードは、テスト内で呼ぶと**エラーも出さずに止まる**。「テストが黙ってタイムアウトする」ときは真っ先にここを疑う。
+
+- **`tester.runAsync(() async { ... })` の中でだけ実 I/O が進む。** ここを通せば `PictureRecorder` → `toImage` → PNG エンコード → デコード → ピクセル取り出しまで一通り動く（実測 2026-08-13）。**合成結果をピクセル単位で検証できる**ので、この層に integration_test は要らない。
+- **順序が効く。** 「操作 → `pump`（route 構築・`initState` の開始）→ `pump(遷移ぶん)` → `runAsync`（実 I/O）→ `pump` ×2（完了した Future の続きを反映）」。先に `runAsync` すると、まだ何も始まっていない時間だけ進めることになり画面が出てこない。
+- **`pumpAndSettle` は使えない。** デコード中は `CircularProgressIndicator` が回り続けるので必ずタイムアウトする。
+- **素材は `setUpAll` で作る。** `testWidgets` の本体は擬似非同期なので、その中で `toImage` を呼ぶとハングする。`ui.Image` を使い回すときは、画面側が dispose するので `clone()` を渡す。
+- 書き出し結果を受け取るまでには「実 I/O → `pop` → 遷移アニメーション → 呼び出し元の `push` future 解決」と段があり、1 回 `settle` しただけでは届かない。実時間と擬似時間を交互に進める。
+
+土台は [`test/support/image_editor_harness.dart`](../packages/capsicum/test/support/image_editor_harness.dart) に閉じ込めてあるので、利用側はこの作法を意識しなくてよい。ネットワークとアカウントを要求する経路（スタンプ素材の調達）は [`StickerSource`](../packages/capsicum/lib/src/service/sticker_source.dart) を override して切り離す。
+
+**ダイアログの `TextEditingController` は呼び出し側で dispose しない。** `showDialog` の future は `Navigator.pop` の時点で解決するが、そこはまだ**退場アニメーションの最中**で、`TextField` は再構築される。解決直後に dispose すると use-after-dispose の assertion になる（debug で落ち、release では黙って通る）。controller はダイアログ本体を `StatefulWidget` にして**そちらに所有させる**（State の dispose はルートが実際に外れてから呼ばれるので、リークもせず早すぎもしない）。
+
 ## 体感速度の改善（先出し・キャッシュ）
 
 ### 先出しキャッシュは「同じ状態への経路」を 2 本にする — 欠陥はほぼ全部その分岐から出る
