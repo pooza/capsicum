@@ -216,6 +216,17 @@ end
 
 対象範囲は `v前リリース..HEAD` の差分。Codex（`chatgpt-codex-connector[bot]`）は PR ready 時に走るので併走させ、重複しない指摘だけを拾う。
 
+#### 「横断的に揃える」変更は、揃える対象の判定条件を疑う
+
+**そのマイルストーンで入れた「統一」「絞り込み」系の変更は、当てる経路が正しいかを分岐まで辿って確かめる。** 差分だけ見ると「定数に置き換えた」「ガードを足した」に見えて通ってしまう。
+
+v1.56 のレビューで出た 🔴 2 件は、どちらもこの型だった:
+
+- **[#924](https://github.com/pooza/capsicum/issues/924)** 絵文字 fallback 倍率の統一が、本来の fallback（`Image.network` の `errorBuilder`）ではなく **Unicode 絵文字をそのまま描く通常表示**に当たっていた。メッセージのリアクションが 3 割縮み、本来の fallback は素通しのまま
+- **[#958](https://github.com/pooza/capsicum/issues/958)** キャッシュを `chmod 600` に絞る処理が `!await file.exists()` ガード付きで、**ファイル名・保存先が前版と同じ**なため更新してきたユーザーには一度も当たらなかった（＝守りたかったデータが既存ユーザーだけ無防備）
+
+いずれも「やったこと」は正しく、**「どれに対してやるか」の判定式が間違っていた**。レビュー時は定数・ガードの導入箇所そのものではなく、**その条件が真になるのは実際どの経路か**を確認する。
+
 指摘は以下の基準で分類し、必要最小限のみリリース前に対応、残りは Issue 起票して次リリース以降に送る:
 
 - **赤（必修）**: データ破損・セキュリティ・ユーザー可視の機能不全
@@ -270,6 +281,11 @@ v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart fo
 # 製品版提出が「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれた（v1.43.0 で実踏）。
 
 # 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
+#
+# ⚠ このコミットのメッセージは必ず `chore(deps):` で始めるか、本文に [pubspec-lock]
+# を入れること。#970 の lock ガード（analyze.yml）は「pubspec.yaml / workflow の pin を
+# 伴わない pubspec.lock 単独の変更」を落とすので、`chore:` だと CI が赤くなる。
+# v1.56 のリリース作業で実際に踏み、amend + force-push で直した。
 cd packages/capsicum
 flutter pub upgrade
 
