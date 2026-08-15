@@ -153,7 +153,8 @@ void main() {
   });
 
   group('AnnouncementSubscriptionService.autoEnableIfDefault', () {
-    test('非対応プラットフォームでは既存の自動購読を片付ける (#673 macOS)', () async {
+    // 非対応 = Windows / Linux。macOS は #919 で対応側へ移った。
+    test('非対応プラットフォームでは既存の自動購読を片付ける', () async {
       AnnouncementSubscriptionService.debugPlatformSupportedOverride = false;
       addTearDown(() {
         AnnouncementSubscriptionService.debugPlatformSupportedOverride = null;

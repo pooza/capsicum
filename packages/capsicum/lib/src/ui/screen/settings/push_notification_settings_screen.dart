@@ -61,6 +61,51 @@ class PushNotificationSettingsScreen extends ConsumerWidget {
   }
 }
 
+/// アカウント行の下に出すお知らせ通知 (#477) の UI 種別。
+enum AnnouncementRowKind {
+  /// 何も出さない。
+  none,
+
+  /// opt-in トグルを出す (購読対応プラットフォーム)。
+  toggle,
+
+  /// 「アプリ起動中しか届かない」旨の説明を出す (#919)。
+  runningOnlyNote,
+}
+
+/// アカウント行に出すお知らせ通知の UI 種別を決める (#919)。
+///
+/// 判断材料が真偽値だけなので、画面から切り出してテスト可能にしてある
+/// (desktop_menu_model.dart の #960 節と同じ流儀)。
+///
+/// - [platformSupported] … relay がそのプラットフォームへ配送するか
+///   ([AnnouncementSubscriptionService.platformSupported])
+/// - [serverSupported] … モロヘイヤが features.announcement_push を返すか
+/// - [registered] … 親 push subscription が registered か (新規 enable の入口)
+/// - [hasLocalState] … saved subscription / opt-out marker がローカルに在るか
+///
+/// トグルを [registered] だけで出すと、register snapshot が一時的に
+/// idle / failed に落ちている間に「relay 側の subscription は active なのに
+/// UI から OFF にできない」状態が生まれるため、[hasLocalState] でも出す
+/// (Codex 指摘)。
+///
+/// 説明は**購読できないプラットフォームだけ**に出す。トグルが出る環境で
+/// 「起動中のみ」と書くと嘘になるし、対応サーバーでない環境ではそもそも
+/// お知らせ push の話題自体が無関係になる。
+@visibleForTesting
+AnnouncementRowKind resolveAnnouncementRow({
+  required bool platformSupported,
+  required bool serverSupported,
+  required bool registered,
+  required bool hasLocalState,
+}) {
+  if (!serverSupported) return AnnouncementRowKind.none;
+  if (!platformSupported) return AnnouncementRowKind.runningOnlyNote;
+  return (registered || hasLocalState)
+      ? AnnouncementRowKind.toggle
+      : AnnouncementRowKind.none;
+}
+
 class _AccountStatusTile extends ConsumerStatefulWidget {
   const _AccountStatusTile({
     required this.account,
@@ -116,19 +161,13 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
       snapshot?.reason,
     );
 
-    // お知らせ通知 (#477) は購読対応プラットフォーム (mobile のみ。relay は
-    // macos に配送しないため macOS ではトグル自体を出さない) かつ
-    // features.announcement_push: true のモロヘイヤが必須。そのうえで、
-    // (a) 親 push subscription が registered (新規 enable 操作の入口) または
-    // (b) ローカルに saved subscription / opt-out marker がある (relay 側
-    // active subscription を OFF にする経路を保つ) なら表示する。
-    // (b) は register snapshot が一時的に idle/failed でも、既存の subscription
-    // で push が届き続ける状況で UI から OFF にできないと事故るため (Codex 指摘)。
-    final announcementSupported =
-        AnnouncementSubscriptionService.platformSupported &&
-        (account.mulukhiya?.announcementPushEnabled ?? false) &&
-        (state == PushRegistrationState.registered ||
-            _hasAnnouncementLocalState);
+    // お知らせ通知 (#477 / #919)。判断は [resolveAnnouncementRow] に集約する。
+    final announcementRow = resolveAnnouncementRow(
+      platformSupported: AnnouncementSubscriptionService.platformSupported,
+      serverSupported: account.mulukhiya?.announcementPushEnabled ?? false,
+      registered: state == PushRegistrationState.registered,
+      hasLocalState: _hasAnnouncementLocalState,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,7 +189,11 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
                 )
               : null,
         ),
-        if (announcementSupported) _AnnouncementToggle(account: account),
+        switch (announcementRow) {
+          AnnouncementRowKind.none => const SizedBox.shrink(),
+          AnnouncementRowKind.toggle => _AnnouncementToggle(account: account),
+          AnnouncementRowKind.runningOnlyNote => const _RunningOnlyNote(),
+        },
       ],
     );
   }
@@ -167,6 +210,40 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
     PushRegistrationService.registerAccount(
       account,
       eligible: widget.hasPreset,
+    );
+  }
+}
+
+/// お知らせ push を購読できないプラットフォームで、トグルの代わりに出す説明
+/// (#919)。
+///
+/// Windows / Linux ではお知らせが WebSocket 経路 (#569) からしか来ないので、
+/// アプリを終了している間のお知らせは通知に出ない。**黙って何も出さないと
+/// 「お知らせ通知に対応していない」と読まれる**（Windows でトグルが見当たらない
+/// という報告が #919 の発端）ので、届く条件と取りこぼしの回収先を明示する。
+class _RunningOnlyNote extends StatelessWidget {
+  const _RunningOnlyNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 0, 16, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'お知らせの通知はアプリの起動中のみ届きます。'
+              '終了している間に投稿されたお知らせは、'
+              '次に起動したときお知らせ画面で確認できます。',
+              style: TextStyle(fontSize: 12, color: color),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

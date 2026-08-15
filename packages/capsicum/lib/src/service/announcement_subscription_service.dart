@@ -1,11 +1,10 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/account.dart';
 import '../util/exception_scrub.dart';
+import 'push_device_type.dart';
 import 'push_key_store.dart';
 import 'push_relay_client.dart';
 
@@ -49,15 +48,37 @@ class AnnouncementSubscriptionService {
 
   /// お知らせ push を購読するプラットフォームか。
   ///
-  /// relay の AnnouncementWorker は device_type が ios / android のときだけ
-  /// 配送し、macos は配送しない。macOS はアプリ起動中のお知らせを WebSocket
-  /// 経路 (#569) がリッチ通知で出すうえ、非起動時の取りこぼしはアプリ内の
-  /// お知らせ画面で読めるため、push 購読は mobile 限定とする
-  /// (docs/desktop-notification-design.md の #673 節)。設定画面のトグル表示
-  /// 判定にも使う。
+  /// **relay の [AnnouncementWorker#deliver] が配る device_type と 1 対 1 で
+  /// 揃える**。ここが広いと「登録できるのに届かない」死に subscription を作り、
+  /// 狭いと「届くのに購読できない」。設定画面のトグル表示判定にも使う。
+  ///
+  /// macOS は capsicum-relay#36 Phase 1 (relay `0530a9a`) で配送対象に入った
+  /// ので含める。iOS と同一 Bundle ID・同一 APNs Auth Key で送れ、NSE は
+  /// `body` / `encoding` を持たない push を早期 guard で素通しするため、relay が
+  /// 付けた `aps.alert` がそのまま表示される (capsicum-relay#17 で実測)。
+  /// **client 側に受信の作り込みは要らない** (#919)。
+  ///
+  /// ⚠ **Windows はまだ含めない**。WNS raw push には `aps.alert` に相当する
+  /// OS 側の表示機構が無く、bg task は Web Push の暗号化ペイロードしか解釈
+  /// しない (無暗号化は `bgtask.not_encrypted` で捨てる)。#978 で bg task 側の
+  /// 経路が入り、relay#36 Phase 2 が対になってから含める。Linux はネイティブ
+  /// push の経路自体が無い (#475)。
+  ///
+  /// 非対応プラットフォームでも、アプリ**起動中**のお知らせは WebSocket 経路
+  /// (#569) が拾って OS 通知に出す。設定画面はトグルの代わりにその旨を説明
+  /// する ([resolveAnnouncementRow])。
   static bool get platformSupported =>
       debugPlatformSupportedOverride ??
-      (!kIsWeb && (Platform.isIOS || Platform.isAndroid));
+      deliverableDeviceTypes.contains(currentPushDeviceType);
+
+  /// relay の `AnnouncementWorker#deliver` が実際に配送する device_type
+  /// (capsicum-relay#36 Phase 1 時点)。[platformSupported] の実体で、
+  /// **relay 側の `case` と 1 対 1 に保つ**。
+  ///
+  /// `windows` を足すのは #978 (bg task 側で無暗号化 announcement を表示する)
+  /// と relay#36 Phase 2 が揃ってから。
+  @visibleForTesting
+  static const deliverableDeviceTypes = {'ios', 'android', 'macos'};
 
   /// 指定アカウントが announcement push に opt-in 済みか。
   static Future<bool> isEnabled(String accountStorageKey) async {
@@ -88,7 +109,7 @@ class AnnouncementSubscriptionService {
   static Future<void> autoEnableIfDefault(Account account) async {
     final accountStorageKey = account.key.toStorageKey();
     if (!platformSupported) {
-      // 非対応プラットフォーム (macOS 等)。過去の自動購読が残っていれば
+      // 非対応プラットフォーム (Windows / Linux)。過去の自動購読が残っていれば
       // 片付ける — relay には配送されない死に subscription のため。
       // opt-out marker はユーザー意思の記録なので触らない。
       if (await isEnabled(accountStorageKey)) {

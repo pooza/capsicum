@@ -131,6 +131,15 @@ class DesktopNotificationDispatcher {
   void _refreshAnnouncementsIfNeeded(Account account, Notification n) {
     if (n.type != NotificationType.announcement) return;
     if (_ref.read(currentAccountProvider)?.key != account.key) return;
+    // 生きているときだけ反映する (#915 → #919)。announcementProvider は
+    // autoDispose なので、誰も watch していない状態で `.notifier` を read すると
+    // **provider がここで新規生成され**、build() の取得と refresh() の取り直しで
+    // 同じ一覧を 2 回投げて即破棄される。デスクトップでは DesktopMenuBar が
+    // 未読数を watch しているため通常は生きているが、それに依存する構造には
+    // しない（メニューバーの構成が変われば黙って無駄打ちに戻る）。生きていない
+    // 間の新着は、次に一覧を開いたときの build() が最新を取るので落ちない。
+    // chat_provider の #636 と同型。
+    if (!_ref.exists(announcementProvider)) return;
     unawaited(_ref.read(announcementProvider.notifier).refresh());
   }
 

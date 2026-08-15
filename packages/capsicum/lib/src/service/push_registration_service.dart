@@ -15,6 +15,7 @@ import 'apns_service.dart';
 import 'device_install_id.dart';
 import '../util/exception_scrub.dart';
 import 'fcm_service.dart';
+import 'push_device_type.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
@@ -151,13 +152,15 @@ class PushRegistrationService {
       }
 
       // relay 側で APNs/FCM/WNS の振り分けと集計を分けるため device_type を
-      // プラットフォーム別に登録する。macOS は iOS と同じ APNs だが 'macos'
-      // (#468)、Windows は WNS で 'windows' (#474)。
-      final deviceType = Platform.isMacOS
-          ? 'macos'
-          : Platform.isWindows
-          ? 'windows'
-          : (Platform.isIOS ? 'ios' : 'android');
+      // プラットフォーム別に登録する。導出は [resolvePushDeviceType] に集約
+      // してある（購読ゲート側と綴りを揃えるため・#919）。
+      // isPushBackendWired で弾いた後なので通常 null にはならないが、両者が
+      // ずれたときに未知の device_type で登録しないよう止める。
+      final deviceType = currentPushDeviceType;
+      if (deviceType == null) {
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
 
       // インストール単位で安定した ID (#932)。relay 側がこれをキーに upsert
       // することで、トークン更新のたびに subscription 行が増えて古い購読が
