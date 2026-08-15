@@ -7,7 +7,9 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
+import '../widget/desktop_menu_model.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/screen_menu.dart';
 import 'media_viewer_screen.dart';
 
 class DriveManagerScreen extends ConsumerStatefulWidget {
@@ -785,7 +787,6 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   @override
   Widget build(BuildContext context) {
     final drive = ref.watch(driveContentsProvider(_currentFolderId));
-    final theme = Theme.of(context);
 
     // loadMore 失敗を SnackBar でユーザーに 1 回だけ通知する (#430)。
     // 失敗中はスクロール由来の自動再試行が抑止されるため、ユーザーは
@@ -803,6 +804,29 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         }
       }
     });
+
+    return ScreenMenu(
+      label: 'ドライブ',
+      // コールバックは**名前付きメソッドのテアオフ**で渡す (#835)。その場で作った
+      // 無名関数はビルドのたびに別物になり、[MenuActionEntry] の値等価が崩れて
+      // メニューバー全体が作り直される。
+      entries: buildDriveMenuEntries(
+        canGoUp: _folderStack.isNotEmpty,
+        selectionMode: _selectionMode,
+        hasSelection: _selectedFileIds.isNotEmpty,
+        onGoUp: _goBack,
+        onRefresh: _refresh,
+        onCreateFolder: _createFolder,
+        onEnterSelectionMode: _enterSelectionMode,
+        onExitSelectionMode: _exitSelectionMode,
+        onMoveSelected: _promptMoveSelectedFiles,
+      ),
+      child: _buildScaffold(context, drive),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, AsyncValue<DriveState> drive) {
+    final theme = Theme.of(context);
 
     return PopScope(
       canPop: _folderStack.isEmpty && !_selectionMode,
@@ -1071,6 +1095,73 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     );
   }
 }
+
+/// ドライブ画面のデスクトップメニュー項目 (#939)。
+///
+/// この画面は AppBar に実操作が揃っているので、そこにあるものをそのまま写す。
+/// **出し分けの条件は AppBar 側と同一にする**（#835）——「使えない操作をメニュー
+/// にだけ見せない」ため。項目を消すのではなく**無効化して残す**のはスレッド画面
+/// （`buildThreadMenuEntries`）と同じ判断で、項目が消えると場所が動いて探しにくい
+/// ため。この画面は選択モードで AppBar の actions が丸ごと入れ替わるので、消す方を
+/// 採ると 3 項目が入れ替わり立ち替わりして特に読みにくい。
+///
+/// ⚠ 「上の階層へ」は [canGoUp] が false のとき無効にする。AppBar の leading は
+/// 同じ [onGoUp] を常に出しているが、ルートに居るときのそれは **× で画面を閉じる**
+/// 操作であって「上の階層へ」ではない。メニューでは行き先のラベルを名乗る以上、
+/// 上が無ければ押せてはいけない。
+///
+/// ダイアログを開く項目に付く `…` は既存メニューの表記（`絵文字…` / `予約投稿…`）
+/// に揃えたもの。issue の項目表では「フォルダを作成」だが、`移動…` と同じく
+/// ダイアログを開くので同じ menu 内で表記が割れないよう `…` を付けている。
+///
+/// ファイル / フォルダ単位の操作（リネーム・削除・ALT 編集等）は載せていない。
+/// 「どの対象への操作か」を指す口が無く、選択という概念を持つこの画面なら書ける
+/// が、上の 6 項目が入って動いてから別途判断する（#939 本文）。
+///
+/// コールバックを引数で受けるのは、画面全体を pump せずに項目の出し分けを試験
+/// できるようにするため（条件が 3 つの bool で表せるので切り出せる。基準は
+/// `desktop_menu_model.dart` の「画面メニュー貢献のテストの流儀」#960）。
+@visibleForTesting
+List<MenuEntry> buildDriveMenuEntries({
+  required bool canGoUp,
+  required bool selectionMode,
+  required bool hasSelection,
+  required VoidCallback onGoUp,
+  required VoidCallback onRefresh,
+  required VoidCallback onCreateFolder,
+  required VoidCallback onEnterSelectionMode,
+  required VoidCallback onExitSelectionMode,
+  required VoidCallback onMoveSelected,
+}) => [
+  MenuActionEntry(
+    label: '上の階層へ',
+    icon: Icons.drive_folder_upload_outlined,
+    onSelected: canGoUp ? onGoUp : null,
+  ),
+  MenuActionEntry(label: '再読み込み', icon: Icons.refresh, onSelected: onRefresh),
+  const MenuGroupSeparator(),
+  MenuActionEntry(
+    label: 'フォルダを作成…',
+    icon: Icons.create_new_folder_outlined,
+    onSelected: selectionMode ? null : onCreateFolder,
+  ),
+  const MenuGroupSeparator(),
+  MenuActionEntry(
+    label: '複数選択',
+    icon: Icons.checklist,
+    onSelected: selectionMode ? null : onEnterSelectionMode,
+  ),
+  MenuActionEntry(
+    label: '選択を解除',
+    icon: Icons.close,
+    onSelected: selectionMode ? onExitSelectionMode : null,
+  ),
+  MenuActionEntry(
+    label: '移動…',
+    icon: Icons.drive_file_move_outline,
+    onSelected: selectionMode && hasSelection ? onMoveSelected : null,
+  ),
+];
 
 class _FolderEntry {
   final String id;
