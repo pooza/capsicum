@@ -16,6 +16,16 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // #948: debug ビルドの既定向け先は staging。テストは debug モードで走るため、
+  // RELAY_BASE_URL 上書き無しなら staging を指すことを固定する（prod に戻ると
+  // debug 端末トークン=APNs サンドボックスと prod relay が食い違い 401 になる）。
+  test('debug の既定リレー向け先は staging (#948)', () {
+    expect(
+      PushRelayClient.relayBaseUrl,
+      'https://st.relay.capsicum.shrieker.net',
+    );
+  });
+
   test('404 は冪等な成功として飲み込む (投げない)', () async {
     final client = PushRelayClient()
       ..httpClientAdapterForTesting = _StatusAdapter(404);

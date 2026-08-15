@@ -9,7 +9,23 @@ import '../constants.dart';
 /// リレーサーバーにデバイストークンを登録し、Web Push の受信エンドポイントを
 /// 取得する。リレーサーバーは受信した Web Push を APNs / FCM に変換して転送する。
 class PushRelayClient {
-  static const relayBaseUrl = 'https://relay.capsicum.shrieker.net';
+  /// リレーの向け先。**ビルド種別で自動的に決まる** (#948)。
+  ///
+  /// - **debug**: staging (`st.relay.*`)。debug 端末トークンは APNs サンドボックス
+  ///   宛で、staging relay は `apns.sandbox: true` で構成されるため噛み合う。
+  /// - **release**（TestFlight / 製品版）: prod。本番 APNs でないと通らない。
+  ///
+  /// ビルド種別と向け先がもともと 1 対 1 なので人手のフラグは持たせない。
+  /// TestFlight を staging へ向ける等の変則ケース用に
+  /// `--dart-define=RELAY_BASE_URL=...` の上書き口だけ残す。shared_secret は
+  /// prod / staging で同一（staging は APNs サンドボックス + 空 DB のため漏洩の
+  /// 実害が prod に及ばない・#948 決定 A）なので、切り替えは URL 1 本で済む。
+  static const relayBaseUrl = String.fromEnvironment(
+    'RELAY_BASE_URL',
+    defaultValue: kDebugMode ? _stagingRelayUrl : _prodRelayUrl,
+  );
+  static const _prodRelayUrl = 'https://relay.capsicum.shrieker.net';
+  static const _stagingRelayUrl = 'https://st.relay.capsicum.shrieker.net';
   static const _secret = String.fromEnvironment('RELAY_SECRET');
 
   /// register リトライ間隔。fcm_service の `_transientRetryDelays` と同じ
