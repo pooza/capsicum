@@ -24,7 +24,31 @@ const _categoryLabels = <Category, String>{
 };
 
 /// ピッカーのタブ種別。表示順は [_EmojiPickerState._tabs] で確定する。
-enum _PickerTab { custom, unicode, word }
+///
+/// 公開しているのは [EmojiPicker.initialTab] で開く先を名指しするため (#971)。
+/// デスクトップメニューは「絵文字…」1 項目でなくタブごとに項目を出すので、
+/// 呼び出し側がどのタブかを指せる必要がある。**どのタブが実在するかは
+/// [EmojiPicker] 側の条件（カスタム絵文字対応 / モロヘイヤの `word_suggest`）が
+/// 決める**ので、無いタブを指定しても落ちず先頭に開くだけにしてある。
+enum InsertPickerTab { custom, unicode, word }
+
+/// [tabs] の中で [initial] を開くときの [TabController.initialIndex] (#971)。
+///
+/// ⚠ **実在しないタブの指定と、タブが 1 つも無い場合の両方を 0 に倒す。**
+/// どのタブが出るかはサーバー側の条件（カスタム絵文字対応・モロヘイヤの
+/// `word_suggest`）で決まり、メニューの出し分けがそれとズレることはありうる
+/// （プロフィール切り替えの直後など）。そこで落ちると「絵文字が開けない」に
+/// なるので、指定は best-effort として扱う。[tabs] が空になるのはスタンプ
+/// モードでカスタム絵文字非対応のバックエンドに当たった場合。
+@visibleForTesting
+int resolveInitialTabIndex(
+  List<InsertPickerTab> tabs,
+  InsertPickerTab? initial,
+) {
+  if (tabs.isEmpty) return 0;
+  final index = tabs.indexWhere((t) => t == initial);
+  return index < 0 ? 0 : index;
+}
 
 class EmojiPicker extends ConsumerStatefulWidget {
   final BackendAdapter adapter;
@@ -51,6 +75,13 @@ class EmojiPicker extends ConsumerStatefulWidget {
   final String? accessToken;
   final bool forReaction;
 
+  /// 開いた直後に選択しておくタブ (#971)。null なら先頭。
+  ///
+  /// **実在しないタブを指しても先頭にフォールバックする**。タブの有無はサーバー
+  /// 側の条件（カスタム絵文字対応・モロヘイヤの `word_suggest`）で決まり、呼び
+  /// 出し側がそれを完全に再現する義務を負うと条件が 2 箇所に散るため。
+  final InsertPickerTab? initialTab;
+
   const EmojiPicker({
     super.key,
     required this.adapter,
@@ -60,6 +91,7 @@ class EmojiPicker extends ConsumerStatefulWidget {
     this.mulukhiya,
     this.accessToken,
     this.forReaction = false,
+    this.initialTab,
   }) : assert(
          onSelected != null || onCustomEmojiSelected != null,
          'いずれかの選択コールバックが要る',
@@ -72,7 +104,7 @@ class EmojiPicker extends ConsumerStatefulWidget {
 class _EmojiPickerState extends ConsumerState<EmojiPicker>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final List<_PickerTab> _tabs;
+  late final List<InsertPickerTab> _tabs;
 
   /// サーバーの全件。shortcode → 絵文字の**解決表**として使う（パレットの
   /// 描画・単語辞書のプレビュー）ので、入力導線から外した絵文字も落とさない。
@@ -114,12 +146,17 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     super.initState();
     final hasCustom = widget.adapter is CustomEmojiSupport;
     _tabs = [
-      if (hasCustom) _PickerTab.custom,
-      if (!_stickerMode) _PickerTab.unicode,
-      if (!_stickerMode && _hasWordSuggest) _PickerTab.word,
+      if (hasCustom) InsertPickerTab.custom,
+      if (!_stickerMode) InsertPickerTab.unicode,
+      if (!_stickerMode && _hasWordSuggest) InsertPickerTab.word,
     ];
-    _tabController = TabController(length: _tabs.length, vsync: this)
-      ..addListener(_onTabChanged);
+    // 生成後に animateTo せず initialIndex で渡すのは、初回フレームでタブが
+    // 流れて見えないようにするため。解決規則は [resolveInitialTabIndex]。
+    _tabController = TabController(
+      length: _tabs.length,
+      vsync: this,
+      initialIndex: resolveInitialTabIndex(_tabs, widget.initialTab),
+    )..addListener(_onTabChanged);
     if (hasCustom) {
       _loadCustomEmojis();
     }
@@ -179,17 +216,21 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
   }
 
   void _focusActiveTabSearch() {
+    // タブが 1 つも無いとき（スタンプモード × カスタム絵文字非対応）は
+    // build が TabBar を組まないので、合わせる先も無い。初回の
+    // postFrameCallback はその場合でも走るため、ここで降りる。
+    if (_tabs.isEmpty) return;
     switch (_tabs[_tabController.index]) {
-      case _PickerTab.custom:
+      case InsertPickerTab.custom:
         // カスタムタブ。loading 中・空のときは検索欄自体が無いので無視。
         if (!_loadingCustom &&
             _pickerEmojis != null &&
             _pickerEmojis!.isNotEmpty) {
           _searchFocusNode.requestFocus();
         }
-      case _PickerTab.unicode:
+      case InsertPickerTab.unicode:
         _unicodeSearchFocusNode.requestFocus();
-      case _PickerTab.word:
+      case InsertPickerTab.word:
         _wordSearchFocusNode.requestFocus();
     }
   }
@@ -233,24 +274,24 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
     );
   }
 
-  String _tabLabel(_PickerTab tab) {
+  String _tabLabel(InsertPickerTab tab) {
     switch (tab) {
-      case _PickerTab.custom:
+      case InsertPickerTab.custom:
         return 'カスタム';
-      case _PickerTab.unicode:
+      case InsertPickerTab.unicode:
         return 'Unicode';
-      case _PickerTab.word:
+      case InsertPickerTab.word:
         return '劇中ワード';
     }
   }
 
-  Widget _buildTab(_PickerTab tab) {
+  Widget _buildTab(InsertPickerTab tab) {
     switch (tab) {
-      case _PickerTab.custom:
+      case InsertPickerTab.custom:
         return _buildCustomTab();
-      case _PickerTab.unicode:
+      case InsertPickerTab.unicode:
         return _buildUnicodeTab();
-      case _PickerTab.word:
+      case InsertPickerTab.word:
         return _buildWordTab();
     }
   }

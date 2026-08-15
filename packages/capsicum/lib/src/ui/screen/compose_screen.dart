@@ -1010,6 +1010,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
   }
 
+  /// タブを名指しでピッカーを開く経路 (#971)。デスクトップメニューは
+  /// 「絵文字…」1 項目でなくタブごとに項目を出すため、開く先を指せる口がいる。
+  ///
+  /// **ビルドのたびに無名関数を作らない**よう、タブごとに名前付きメソッドを
+  /// 置いている（[MenuActionEntry] の値等価。#835）。3 つしかないので
+  /// `Map<InsertPickerTab, VoidCallback>` にするより素直。
+  void _showCustomEmojiPicker() => _showEmojiPickerAt(InsertPickerTab.custom);
+
+  void _showUnicodeEmojiPicker() => _showEmojiPickerAt(InsertPickerTab.unicode);
+
+  void _showWordPicker() => _showEmojiPickerAt(InsertPickerTab.word);
+
+  void _showEmojiPickerAt(InsertPickerTab tab) {
+    showInsertPickerSheet(
+      context: context,
+      ref: ref,
+      onSelected: _insertEmoji,
+      initialTab: tab,
+    );
+  }
+
   /// CW 欄へカーソル位置挿入する (#686)。本文と別 controller のため専用経路。
   void _insertIntoCw(String value) {
     final text = _cwController.text;
@@ -2493,6 +2514,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       scope: () => setState(() => _scope = scope),
   };
 
+  /// 投稿言語 / 引用許可のメニュー項目のコールバック (#971)。[_scopeSetters] と
+  /// 同じ理由でフィールドに一度だけ組む。
+  late final Map<String, VoidCallback> _languageSetters = {
+    for (final code in _languageOptions.keys)
+      code: () => setState(() => _language = code),
+  };
+
+  late final Map<String, VoidCallback> _quoteApprovalSetters = {
+    for (final policy in _quoteApprovalLabels.keys)
+      policy: () => setState(() => _quoteApprovalPolicy = policy),
+  };
+
   /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
   /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
   /// モバイルでは修飾キーが無いため発火しない。
@@ -2860,11 +2893,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           icon: Icons.cloud_outlined,
           onSelected: busy ? null : _pickDriveFiles,
         ),
+      // 絵文字ピッカーはタブごとに項目を分ける (#971)。1 項目にまとめると、
+      // 開いてからタブを選び直す 2 手が常に要る。**出す条件はピッカー側のタブ
+      // 生成条件と同じ**にし、開いても存在しないタブへは案内しない。
+      if (adapter is CustomEmojiSupport)
+        MenuActionEntry(
+          label: 'カスタム絵文字…',
+          icon: Icons.emoji_emotions_outlined,
+          onSelected: busy ? null : _showCustomEmojiPicker,
+        ),
       MenuActionEntry(
-        label: '絵文字…',
-        icon: Icons.emoji_emotions_outlined,
-        onSelected: busy ? null : _showEmojiPicker,
+        label: 'Unicode 絵文字…',
+        icon: Icons.sentiment_satisfied_alt_outlined,
+        onSelected: busy ? null : _showUnicodeEmojiPicker,
       ),
+      if (mulukhiya?.wordSuggestEnabled == true)
+        MenuActionEntry(
+          label: '劇中ワード…',
+          icon: Icons.menu_book_outlined,
+          onSelected: busy ? null : _showWordPicker,
+        ),
       if (adapter is ReactionSupport)
         MenuActionEntry(
           label: 'MFM 装飾…',
@@ -2913,6 +2961,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             ),
         ],
       ),
+      // 投稿言語 (#971)。ツールバーの Dropdown と同条件で、`_language` が
+      // 決まっている＝ Mastodon 系のときだけ出す（Misskey は言語を持たない）。
+      if (_language != null)
+        MenuSubmenuEntry(
+          label: '言語',
+          children: [
+            for (final entry in _languageOptions.entries)
+              MenuActionEntry(
+                label: entry.value,
+                checked: _language == entry.key,
+                onSelected: busy ? null : _languageSetters[entry.key],
+              ),
+          ],
+        ),
+      // 引用許可 (#971)。ツールバーと同じ Mastodon 限定。⚠ ツールバーの
+      // Dropdown は未指定（null）を **hint でしか表せず選び直せない**ので、
+      // メニュー側も 3 択のみ・未指定はどれにもチェックが付かない状態で表す。
+      if (adapter is MastodonAdapter)
+        MenuSubmenuEntry(
+          label: '引用許可',
+          children: [
+            for (final entry in _quoteApprovalLabels.entries)
+              MenuActionEntry(
+                label: entry.value,
+                icon: _quoteApprovalIcons[entry.key],
+                checked: _quoteApprovalPolicy == entry.key,
+                onSelected: busy ? null : _quoteApprovalSetters[entry.key],
+              ),
+          ],
+        ),
       const MenuGroupSeparator(),
       if (mulukhiya != null)
         MenuActionEntry(
