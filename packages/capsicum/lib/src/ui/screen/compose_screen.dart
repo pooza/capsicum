@@ -32,6 +32,7 @@ import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
 import '../../util/upstream_error_message.dart';
+import '../util/draft_display.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -2207,6 +2208,81 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// サーバー下書きのクイックチューザを開く (#963)。テンプレートと同じく、
+  /// 選択と保存が compose 内で完結するようにするための導線。
+  Future<void> _showDraftSheet() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! DraftSupport) return;
+    final account = ref.read(currentAccountProvider);
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return _DraftSheet(
+          draftSupport: adapter as DraftSupport,
+          onSelect: (draft) async {
+            Navigator.pop(sheetContext);
+            await _restoreDraftFromSheet(draft);
+          },
+          onLoadError: (e, st) => reportOpFailure(
+            tagKey: 'draft.op',
+            operation: 'load_sheet',
+            error: e,
+            stackTrace: st,
+            account: account,
+          ),
+        );
+      },
+    );
+  }
+
+  /// シートから選んだ下書きを開く (#963)。
+  ///
+  /// **本文を in-place で差し替えず、compose を丸ごと開き直す**（テンプレートとは
+  /// ここが違う）。理由:
+  ///
+  /// - `_saveServerDraft` は `inReplyToId` / `quoteId` / `channelId` も保存する。
+  ///   開いている compose の返信先やチャンネルを途中で差し替えるのは安全でない
+  /// - 開き直せば router の既存 seeding 経路（`restoreDraft` から reply / quote /
+  ///   channel を取る分岐・#833）がそのまま効く。復元ロジックを二重に書かない
+  /// - **`_restoredDraftId` の付け替えが起きない。** in-place だと「下書き A を
+  ///   復元中に B を選ぶ」で A の id を手放す後始末が要り、漏らすと選び直しただけで
+  ///   A が消える / 消え残る。State ごと作り直せばこの分岐自体が発生しない
+  ///
+  /// ⚠ `pushReplacement` は現在の入力を捨てるので、**先に上書き確認**する。
+  /// 確認を通ったらローカル自動保存 (#966) も破棄する。これをしないと離脱時の
+  /// [PopScope] が「上書きします」と言った本文を書き戻し、次に素の compose を
+  /// 開いたときに復活する。
+  Future<void> _restoreDraftFromSheet(Draft draft) async {
+    final hasContent =
+        _controller.text.trim().isNotEmpty ||
+        _cwController.text.trim().isNotEmpty ||
+        _attachments.isNotEmpty;
+    if (hasContent) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('下書きを開く'),
+          content: const Text('現在の入力内容は破棄されます。よろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('開く'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    await _clearDraft();
+    if (!mounted) return;
+    context.pushReplacement('/compose', extra: {'restoreDraft': draft});
+  }
+
   /// テンプレートの内容を本文・CW へ反映し、使用履歴を更新する。CW は空なら
   /// 触らない（既存の CW を消さない）。呼び出し側で必要なら setState する。
   void _applyTemplateContent(ComposeTemplate template) {
@@ -3111,6 +3187,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           icon: Icons.description_outlined,
           onSelected: busy ? null : _showTemplateSheet,
         ),
+      // 呼び戻し側 (#963)。保存側の「下書き保存」は上のグループにある。
+      if (adapter is DraftSupport)
+        MenuActionEntry(
+          label: '下書き…',
+          icon: Icons.edit_note,
+          onSelected: busy ? null : _showDraftSheet,
+        ),
       if (adapter is ScheduleSupport)
         MenuActionEntry(
           label: '予約投稿…',
@@ -3618,6 +3701,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           tooltip: '投稿テンプレート',
                           visualDensity: VisualDensity.compact,
                         ),
+                      // サーバー下書きの呼び戻し (#963)。保存側は AppBar の
+                      // オーバーフローに残る。DraftSupport は現状 Misskey のみ。
+                      if (ref.watch(currentAdapterProvider) is DraftSupport)
+                        IconButton(
+                          onPressed: _sending ? null : _showDraftSheet,
+                          icon: const Icon(Icons.edit_note),
+                          tooltip: '下書き',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
                       // Spotify 連携）がこの端末で使えるときだけ出す。
                       if (ref
@@ -4083,6 +4175,122 @@ class _TemplateSheetState extends State<_TemplateSheet> {
               onTap: widget.onManage,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// サーバー下書きのクイックチューザ (#963)。`_TemplateSheet` を写したもの。
+///
+/// **全件を出す**（素の下書きだけに絞らない）。同じ「下書き」なのに画面によって
+/// 件数が違うのは分かりにくく、Misskey の 10 件上限に当たったときの切り分けにも
+/// 使えなくなるため。ヘッダに件数を出しているのもその用途で、「保存に失敗する」
+/// というユーザー報告（2026-07-22）に対して一覧が見えるだけで自己解決しやすくなる。
+///
+/// 削除等の管理は `/drafts` 画面が持つ（ドロワーから辿れる）。#805 の様式でいう
+/// 「管理 UI はクイックチューザの奥**または対象画面内**に温存する」の後者。
+class _DraftSheet extends StatefulWidget {
+  final DraftSupport draftSupport;
+  final void Function(Draft draft) onSelect;
+  final void Function(Object error, StackTrace stackTrace) onLoadError;
+
+  const _DraftSheet({
+    required this.draftSupport,
+    required this.onSelect,
+    required this.onLoadError,
+  });
+
+  @override
+  State<_DraftSheet> createState() => _DraftSheetState();
+}
+
+class _DraftSheetState extends State<_DraftSheet> {
+  List<Draft>? _drafts;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final drafts = await widget.draftSupport.getDrafts();
+      if (mounted) {
+        setState(() {
+          _drafts = drafts;
+          _loading = false;
+        });
+      }
+    } catch (e, st) {
+      widget.onLoadError(e, st);
+      if (mounted) {
+        setState(() {
+          // 生の例外文字列は UI へ出さない (#867)。詳細は onLoadError で計装済み。
+          _error = '下書きの読み込みに失敗しました';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final drafts = _drafts ?? const <Draft>[];
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              // 件数は上限（Misskey は 10 件）に当たったときの手掛かり。読み込み前
+              // と失敗時は数を名乗らない。
+              _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (_error != null)
+            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
+          else if (drafts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                // `/drafts` と同文言。
+                '下書きはありません',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final d in drafts)
+                    ListTile(
+                      leading: const Icon(Icons.edit_note),
+                      title: Text(
+                        draftBodyPreview(d),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(draftSubtitle(d)),
+                      onTap: () => widget.onSelect(d),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );

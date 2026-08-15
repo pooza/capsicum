@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../util/draft_display.dart';
 import '../util/op_error.dart';
 import '../widget/retry_error_view.dart';
 
@@ -130,26 +131,16 @@ class _DraftTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dt = draft.createdAt.toLocal();
-    final dateStr =
-        '${dt.year}/${dt.month}/${dt.day} '
-        '${dt.hour.toString().padLeft(2, '0')}:'
-        '${dt.minute.toString().padLeft(2, '0')}';
-    final preview = draft.content?.trim();
-
+    // 表記は compose のクイックチューザ (#963) と共有する。
     return ListTile(
       onTap: onTap,
       leading: const Icon(Icons.edit_note),
       title: Text(
-        preview?.isNotEmpty == true ? preview! : '（本文なし）',
+        draftBodyPreview(draft),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        draft.attachments.isNotEmpty
-            ? '$dateStr ・ 添付${draft.attachments.length}件'
-            : dateStr,
-      ),
+      subtitle: Text(draftSubtitle(draft)),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         tooltip: '削除',
