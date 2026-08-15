@@ -157,6 +157,13 @@ sudo apt install -y \
   $xml.Package.Identity.Publisher -eq (Get-AppxPackage -Name '9AFBB08E.capsicum').Publisher
   ```
 
+- **native クラッシュ（minidump）のトリアージは `.sentry-native` を直接見る**（2026-08-16 [#773](https://github.com/pooza/capsicum/issues/773) で確立）。置き場は **MSIX のパッケージコンテナではなく実体の `%APPDATA%\net.shrieker\capsicum\.sentry-native\`** — capsicum は FullTrust で動くため `getApplicationSupportDirectory()` が `LocalCache` 側に落ちない（`LocalState` の push 系ファイルとは別階層なので探し間違えやすい）。見るもの:
+  - `last_crash` … 最後にクラッシュした時刻（UTC）。Sentry のイベント時刻と突き合わせれば**その端末が発生元かどうか**が確定する
+  - `reports` / `attachments` … **空なら滞留なし＝取れた分は送信済み**。ここに溜まっていれば「クラッシュが止まった」ではなく「送れていない」
+  - `installation_id` … 作成時刻＝この端末で native 計装が始まった時刻
+
+  「Sentry に native crash が来なくなった」ときは、まずこの 3 つで**クラッシュが止まったのか報告が止まったのか**を切り分ける。報告側の生存確認は、crashpad バイナリ（`crashpad_handler.exe` / `crashpad_wer.dll` / `sentry.dll`）が MSIX に同梱されているかと、他プラットフォームの minidump が届き続けているかでも取れる。
+
 - **bg task（アプリ完全終了中の push）の実機確認手順**（#474 フェーズ C / #978）。単体テストは `web_push_receive` のレイヤまでしか届かず、`push_background_task.cpp` の `Run()` だけは WinRT 依存で自動テストできないため、ここを触ったら実機で 1 往復する:
   1. MSIX を導入（上記の発行元チェックつき）し、**一度起動して終了する** — 起動時に鍵が `LocalState\push_keys.json` へ同期され、bg task が新しい DLL で再登録される。同時に未消費の観測スロットが Sentry へフラッシュされる
   2. `capsicum.exe` が終了していることを確認したうえで、**別経路（Web UI 等）から通知を 1 通発生させる**
