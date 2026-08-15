@@ -127,6 +127,10 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
+  # 背景再試行ループ (#938 / #974) のように分〜十数分の間隔で回るタイマーを、
+  # 実時間を待たずに検証するため。通常は flutter_test 経由の transitive だが、
+  # lint (depend_on_referenced_packages) 回避のため明示する。
+  fake_async: ^1.3.3
   sentry_dart_plugin: ^2.3.0
   # SharedPreferencesAsyncPlatform のテスト用 in-memory 実装を使うため。
   # 通常は shared_preferences 経由の transitive だが、lint
