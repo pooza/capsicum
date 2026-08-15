@@ -146,6 +146,21 @@ sudo apt install -y \
 - **ローカルソースビルドは ARM Windows（上記 VM）では通らない**ため、ARM 環境での検証は上記 CI artifact の MSIX で行う。ARM で詰まる箇所: `flutter_secure_storage_windows` / `flutter_local_notifications_windows` が ATL ヘッダ（`atlstr.h` / `atlbase.h`、VS Build Tools に「C++ ATL for v143」追加が必要）、`jni` が `jni.h`（JDK 未導入）、`sentry-native`（crashpad）が x64 ターゲットビルド中に ARM64 専用 marmasm targets を踏む。前 2 つは追加導入で解決余地があるが crashpad の ARM/x64 不整合が残るため深追いしない
 - **x64 実機では `flutter build windows --release` が通る**（2026-06-12 確認。crashpad の ARM/x64 不整合は x64 ネイティブでは発生しない）。必要なツールチェーン: VS Build Tools 2022 の「C++ によるデスクトップ開発」ワークロード + **C++ ATL** + **C++ CMake tools** + **Windows 11 SDK**（`Microsoft.VisualStudio.Workload.VCTools --includeRecommended` で一括導入可。GUI が白画面で開けない場合は `setup.exe modify ... --quiet` で CLI 導入。`--wait` は modify では不可）、`jni.h` 用の **JDK**（`JAVA_HOME` 設定）、**Windows 開発者モード ON**（無効だとシンボリックリンク作成で失敗）、`melos bootstrap` + コード生成（`build_runner` が必要なのは `fediverse_objects` のみ。`melos run build_runner` は Pub Cache bin が PATH 外だと内部の `melos` 解決に失敗するため、当該パッケージで直接 `dart run build_runner build` する）
 - MSIX は release build なので、debug では確認できない OS 連携系（`window_manager` の位置・サイズ復元 #559 / OAuth の OS デフォルトブラウザ起動 #382 系 / OS スキーム・ネイティブダイアログ）も artifact MSIX 経由で内部ベータ同等に先行検証できる（x64 MSIX は ARM Windows 上でエミュレーション動作する）
+- ⚠ **MSIX を入れる前に、既存インストールと発行元が一致するかを必ず確認する**（2026-08-16 #978 の検証で確立）。一致すれば `Add-AppxPackage` は**その場アップグレード**になり `LocalState`（push 鍵・観測スロット）もアカウント設定も残るが、**一致しないと Windows が上書きを拒否し、アンインストール（＝ログイン状態と設定の消失）が必要になる**。CI は Repository Secrets の PFX が未投入だと ephemeral cert にフォールバックするため、発行元は黙って変わりうる。
+
+  ```powershell
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $z = [System.IO.Compression.ZipFile]::OpenRead($msix)
+  $e = $z.Entries | Where-Object { $_.FullName -eq 'AppxManifest.xml' }
+  $sr = New-Object System.IO.StreamReader($e.Open())
+  $xml = [xml]$sr.ReadToEnd(); $sr.Close(); $z.Dispose()
+  $xml.Package.Identity.Publisher -eq (Get-AppxPackage -Name '9AFBB08E.capsicum').Publisher
+  ```
+
+- **bg task（アプリ完全終了中の push）の実機確認手順**（#474 フェーズ C / #978）。単体テストは `web_push_receive` のレイヤまでしか届かず、`push_background_task.cpp` の `Run()` だけは WinRT 依存で自動テストできないため、ここを触ったら実機で 1 往復する:
+  1. MSIX を導入（上記の発行元チェックつき）し、**一度起動して終了する** — 起動時に鍵が `LocalState\push_keys.json` へ同期され、bg task が新しい DLL で再登録される。同時に未消費の観測スロットが Sentry へフラッシュされる
+  2. `capsicum.exe` が終了していることを確認したうえで、**別経路（Web UI 等）から通知を 1 通発生させる**
+  3. トーストが出ること、`%LOCALAPPDATA%\Packages\9AFBB08E.capsicum_8ekzzj58251a2\LocalState\push_diag.json` に `bgtask.shown` が新規記録されることを見る。アプリ未起動のまま記録されていれば in-process 受信ではなく bg task 経路と確定できる
 - **Windows runner の純ロジック C++ テストは Mac の clang でも走る**。`windows/runner/notification_tag_test.cpp` / `notification_dedup_test.cpp` は Windows 固有 API に依存しないので、`cd packages/capsicum/windows/runner && clang++ -std=c++17 -o /tmp/t notification_tag_test.cpp notification_tag.cpp && /tmp/t`（dedup も同様）で macOS から検証できる（2026-08-10 実行・全通過）。テストのヘッダは `cl`（VS Developer 環境）しか案内していないため Windows CI 待ちにしがちだが、ロジックだけの変更ならここで即確認できる
 - **WinRT に触る TU は「単体コンパイル」で数秒で検査できる**（`flutter build windows` を待たなくてよい）。`wns_push.cpp` / `push_background_task.cpp` のように WinRT 依存で Mac に持っていけないものは、`vcvars64.bat` を通したうえで **実ビルドと同じ厳格設定**でコンパイルだけ回す（2026-08-12 #957 で確立）:
 
