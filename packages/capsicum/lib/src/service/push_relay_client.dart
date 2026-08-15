@@ -29,6 +29,13 @@ class PushRelayClient {
     ),
   );
 
+  /// テストが HTTP 応答をモックするための注入点。dio の `httpClientAdapter` を
+  /// 差し替えて、実ネットワークを叩かずに 404 等の応答を再現する。
+  @visibleForTesting
+  set httpClientAdapterForTesting(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+  }
+
   /// デバイストークンをリレーサーバーに登録する。
   ///
   /// 戻り値に `id`（登録解除用）と `push_token`（Web Push エンドポイント構築用）
@@ -98,11 +105,23 @@ class PushRelayClient {
 
   /// お知らせ通知の subscription を解除する (#477)。`id` は
   /// [registerAnnouncementSubscription] が返した値。
+  ///
+  /// 対象が既に relay 側に無い (404) 場合は冪等な成功として扱う (#979)。解除は
+  /// 「その subscription が存在しない状態」を目指す操作で、relay が先に GC 済み /
+  /// 二重解除でも望む状態には到達している。[fetchSupporterStatus] の 404=未登録
+  /// 扱いと同じ方針。ここで飲まないと [DioException] が
+  /// `AnnouncementSubscriptionService.disable` の catch で `scrubException`
+  /// 経由の error として Sentry (CAPSICUM-3G) に計上されてしまう。
   Future<void> unregisterAnnouncementSubscription(int id) async {
-    await _dio.delete(
-      '/announcement_subscriptions/$id',
-      options: Options(headers: {'X-Relay-Secret': _secret}),
-    );
+    try {
+      await _dio.delete(
+        '/announcement_subscriptions/$id',
+        options: Options(headers: {'X-Relay-Secret': _secret}),
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return; // 既に解除済み = 冪等成功
+      rethrow;
+    }
   }
 
   /// 投げ銭イベントをサーバー側サポーター状態に記録する (#596 /
