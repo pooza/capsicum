@@ -3,10 +3,8 @@ import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:capsicum_backends/capsicum_backends.dart';
-import 'package:dio/dio.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +15,7 @@ import '../../constants.dart';
 import '../../platform/platform_info.dart';
 import '../../url_helper.dart';
 import '../util/post_action_error.dart';
+import '../util/post_actions.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/server_metadata_cache.dart';
@@ -1055,56 +1054,22 @@ class _PostTileState extends ConsumerState<PostTile> {
     }
   }
 
-  /// ブースト / リノートの取り消し (#561)。長押しメニューとタッチ操作の
-  /// 両方から使う共通ロジック。Misskey は自分のリノート note 表示そのものを
-  /// delete、Mastodon は元 status の id で /unreblog する。
+  /// ブースト / リノートの取り消し (#561)。実体は [PostActionRunner.unrepeat]
+  /// で、以前あった `post_touch_action_row._unrepeat` との双子はそこへ寄せた
+  /// (#943)。
   Future<void> _unrepeat(
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
     Post targetPost,
     bool isOwnRenote,
     String boostLabel,
-  ) async {
-    // await 中にタイルが dispose されると ref.read が StateError を投げうる。
-    // notifier を await 前に退避し以降はローカル参照する (#665)。
-    final timeline = readVisibleTimelines(ref);
-    try {
-      await adapter.unrepeatPost(isOwnRenote ? post : targetPost);
-      if (isOwnRenote) {
-        timeline.removePost(post.id);
-      }
-      if (targetPost.reblogged) {
-        final updated = targetPost.copyWith(
-          reblogged: false,
-          reblogCount: targetPost.reblogCount > 0
-              ? targetPost.reblogCount - 1
-              : 0,
-        );
-        timeline.updatePost(updated);
-      }
-      onActionCompleted?.call();
-      messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
-    } catch (e, st) {
-      // **双子が post_touch_action_row._unrepeat にある**（同名・同構造）。
-      // 片方だけ直すと `phase: post_action` の母数から「取り消し」が導線ごと
-      // 欠け、失敗文言も導線で変わる。実際にリリース前レビュー 3 巡目でここだけ
-      // 直し、4 巡目で向こうの取りこぼしを指摘された。次に触るときは対で見ること。
-      debugLogException('_unrepeat failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'post_action'),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  ) => _runner(messenger).unrepeat(
+    adapter: adapter,
+    outerPost: post,
+    targetPost: targetPost,
+    isOwnRenote: isOwnRenote,
+    boostLabel: boostLabel,
+  );
 
   void _showActionMenu(BuildContext context) {
     final adapter = ref.read(currentAdapterProvider);
@@ -1638,111 +1603,39 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
+  /// 実行と失敗の扱いは [PostActionRunner] に寄せた (#943)。以前はこの 4 本が
+  /// `post_touch_action_row` / `notification_tile` にも同名・同構造で並んでおり、
+  /// 片方だけ直して母数が欠ける事故を繰り返していた。
+  PostActionRunner _runner(ScaffoldMessengerState messenger) =>
+      PostActionRunner(
+        ref: ref,
+        messenger: messenger,
+        onPostUpdated: widget.onPostUpdated,
+        onActionCompleted: onActionCompleted,
+      );
+
   Future<void> _runReactionAction(
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    // 付与と取り消しで別系列にする (#924)。既定は付与。取り消しは呼び出し側で
-    // reaction_remove を渡す。両方が reaction_add に畳まれると、Sentry で絞った
-    // ときにどちらの失敗かが混ざる。
     String phase = 'reaction_add',
-  }) async {
-    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = readVisibleTimelines(ref);
-    try {
-      await action();
-      // Refetch the post and update the timeline.
-      final updated = await adapter.getPostById(postId);
-      timeline.updatePost(updated);
-      onActionCompleted?.call();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e, st) {
-      debugLogException('_runReactionAction failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', phase),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  }) => _runner(
+    messenger,
+  ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Future<void> _runAction(
     ScaffoldMessengerState messenger,
     Future<Post> Function() action,
     String successMessage,
-  ) async {
-    // notifier を await 前に退避（await 中の dispose で ref.read が StateError, #665）。
-    final timeline = readVisibleTimelines(ref);
-    try {
-      final updated = await action();
-      timeline.updatePost(updated);
-      widget.onPostUpdated?.call(updated);
-      onActionCompleted?.call();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e, st) {
-      // 同じお気に入り / ブースト / ブックマーク / ピン留めでも、アクションシート
-      // 経由（ここ）とタッチ操作行経由（post_touch_action_row._runAction）で失敗の
-      // 見え方が割れていた。あちらは describePostActionError で 403 を「権限が
-      // ありません」と説明し Sentry にも上げるのに、こちらは汎用文言のうえ無記録で、
-      // phase タグの件数を見ても母数が分からない状態だった。3 ファイルの
-      // _runAction を揃える（リリース前レビュー 2 巡目）。**投稿アクションの
-      // catch はここだけではない**ので、規約は describePostActionError の doc を
-      // 見ること（全数を数え上げるコメントは繰り返し古くなった）。
-      debugLogException('_runAction failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'post_action'),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  ) => _runner(messenger).run(action, successMessage);
 
   Future<void> _runVoidAction(
     ScaffoldMessengerState messenger,
     Future<void> Function() action,
     String successMessage,
-  ) async {
-    try {
-      await action();
-      onActionCompleted?.call();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e, st) {
-      debugLogException('_runVoidAction failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      // 文言は元から describePostActionError だが観測が無く、post_action の
-      // 母数から漏れていた（チャンネルへのリノート等がここを通る）。
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'post_action'),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  ) => _runner(messenger).runVoid(action, successMessage);
 
   /// スレッド画面（/post）にいる場合、タイムラインに戻る。
   void _popIfInThread(BuildContext context) {

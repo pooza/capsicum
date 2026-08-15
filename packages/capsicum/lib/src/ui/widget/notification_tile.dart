@@ -1,13 +1,10 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Notification;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -16,7 +13,7 @@ import '../../service/tco_resolver.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
-import '../util/post_action_error.dart';
+import '../util/post_actions.dart';
 import '../util/visible_timeline.dart';
 import '../util/relative_time.dart';
 import '../util/post_scope_display.dart';
@@ -27,7 +24,6 @@ import 'reaction_picker_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
 import 'user_avatar.dart';
-import '../../util/exception_scrub.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
   final Notification notification;
@@ -355,39 +351,21 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     );
   }
 
+  /// 実行と失敗の扱いは [PostActionRunner] に寄せた (#943)。以前は post_tile /
+  /// post_touch_action_row にも同名・同構造の写しがあり、片方だけ直して
+  /// `phase: post_action` の母数からこの導線が欠ける事故を繰り返していた。
+  ///
+  /// ⚠ 通知画面はタブの上に push されるので、ハッシュタグ / リストタブを開いた
+  /// まま来ることがある。反映先を [readVisibleTimelines] で解決するのは runner
+  /// 側に入っている (#887)。
+  PostActionRunner _runner(ScaffoldMessengerState messenger) =>
+      PostActionRunner(ref: ref, messenger: messenger);
+
   Future<void> _runAction(
     ScaffoldMessengerState messenger,
     Future<Post> Function() action,
     String successMessage,
-  ) async {
-    // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
-    // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
-    // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
-    // 誰も購読していない本線 TL を起こしたうえ、目の前の一覧には反映されない (#887)。
-    final timelines = readVisibleTimelines(ref);
-    try {
-      final updated = await action();
-      timelines.updatePost(updated);
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e, st) {
-      // 同ファイルの _runReactionAction と揃える。汎用文言＋無記録のままだと、
-      // 通知画面から実行した投稿アクションの失敗だけが観測から抜け落ちる。
-      debugLogException('_runAction failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', 'post_action'),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  ) => _runner(messenger).run(action, successMessage);
 
   /// 通知本文中のカスタム絵文字をタップしたときに表示するアクションメニュー (#310)。
   /// post_tile 側と対称な実装。BottomSheet 自体は #396 で共通化。
@@ -454,38 +432,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    // 付与と取り消しで別系列にする (#924)。ここは付与導線のみだが、post_tile と
-    // シグネチャを揃え、将来取り消し経路が増えても reaction_remove を渡せるように
-    // しておく。
     String phase = 'reaction_add',
-  }) async {
-    // 表示中の TL のハンドルを await 前に退避（await 中の dispose で ref.read が
-    // StateError, #665）。通知画面はタブの上に push されるので、ハッシュタグ /
-    // リストタブを開いたまま来ることがある。`timelineProvider` を直に read すると
-    // 誰も購読していない本線 TL を起こしたうえ、目の前の一覧には反映されない (#887)。
-    final timelines = readVisibleTimelines(ref);
-    try {
-      await action();
-      final updated = await adapter.getPostById(postId);
-      timelines.updatePost(updated);
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
-    } catch (e, st) {
-      debugLogException('_runReactionAction failed', e);
-      if (kDebugMode && e is DioException) {
-        debugPrint('Response body: ${e.response?.data}');
-      }
-      unawaited(
-        Sentry.captureException(
-          e,
-          stackTrace: st,
-          withScope: (scope) => scope.setTag('phase', phase),
-        ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text(describePostActionError(e))),
-      );
-    }
-  }
+  }) => _runner(
+    messenger,
+  ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Widget _buildHeader(BuildContext context, String label) {
     final theme = Theme.of(context);

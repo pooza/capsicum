@@ -9,8 +9,10 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
+import '../util/post_actions.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -97,23 +99,119 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 
   void _reload() => ref.invalidate(_threadProvider(post.id));
 
+  /// ↑ ↓ で辿っている投稿 (#849)。未選択なら null。
+  ///
+  /// **メニューはこの選択に乗る**（#943）。「どの投稿への操作か」を表す状態が
+  /// 画面に既にあるので、新しく増やさずに済む。
+  Post? get _selectedPost {
+    final index = keyboardSelectedIndex;
+    if (index == null || index < 0 || index >= _thread.length) return null;
+    return _thread[index];
+  }
+
+  PostActionRunner _runner() => PostActionRunner(
+    ref: ref,
+    messenger: ScaffoldMessenger.of(context),
+    // 実行後はスレッドを取り直す。カウンタ表示や自分のリノート行の増減が
+    // タイルへ反映される。
+    onActionCompleted: _reload,
+  );
+
+  /// 選択中の投稿に対してアクションを起こす。⚠ 判定は
+  /// [PostActionAvailability] を通す。メニュー項目の出し分けと実行側で条件が
+  /// 割れると、無効に見えるのに走る / その逆が起きる。
+  void _withSelected(void Function(PostActionAvailability a) action) {
+    final selected = _selectedPost;
+    if (selected == null) return;
+    action(PostActionAvailability.of(ref, selected));
+  }
+
+  void _replyToSelected() => _withSelected(
+    (a) => context.push('/compose', extra: {'replyTo': a.targetPost}),
+  );
+
+  void _quoteSelected() => _withSelected(
+    (a) => context.push('/compose', extra: {'quoteTo': a.targetPost}),
+  );
+
+  void _boostSelected() => _withSelected((a) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    // 公開範囲を選ぶ chip はシート側の作り込みなので、メニューからは既定
+    // （チャンネル指定なし・元の公開範囲）で実行する。
+    _runner().run(
+      () => adapter.repeatPost(a.targetPost.id),
+      '${a.boostLabel}しました',
+    );
+  });
+
+  void _unboostSelected() => _withSelected((a) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    _runner().unrepeat(
+      adapter: adapter,
+      outerPost: a.outerPost,
+      targetPost: a.targetPost,
+      isOwnRenote: a.isOwnRenote,
+      boostLabel: a.boostLabel,
+    );
+  });
+
+  void _favoriteSelected() => _withSelected((a) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! FavoriteSupport) return;
+    _runner().run(
+      () => (adapter as FavoriteSupport).favoritePost(a.targetPost.id),
+      'お気に入りに追加しました',
+    );
+  });
+
+  void _bookmarkSelected() => _withSelected((a) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! BookmarkSupport) return;
+    _runner().run(
+      () => (adapter as BookmarkSupport).bookmarkPost(a.targetPost.id),
+      '${a.bookmarkLabel}に追加しました',
+    );
+  });
+
   @override
   Widget build(BuildContext context) {
     final threadFuture = ref.watch(_threadProvider(post.id));
     // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
     final showJump = (threadFuture.asData?.value.length ?? 0) > 1;
+    final selected = _selectedPost;
 
     return ScreenMenu(
       label: 'スレッド',
       // コールバックは**名前付きメソッドのテアオフ**で渡す (#835)。その場で
       // 作った無名関数はビルドのたびに別物になり、[MenuActionEntry] の値等価が
       // 崩れてメニューバー全体が作り直される。
-      entries: buildThreadMenuEntries(
-        showJump: showJump,
-        onJumpToTop: _jumpToTop,
-        onJumpToBottom: _jumpToBottom,
-        onReload: _reload,
-      ),
+      entries: [
+        ...buildThreadMenuEntries(
+          showJump: showJump,
+          onJumpToTop: _jumpToTop,
+          onJumpToBottom: _jumpToBottom,
+          onReload: _reload,
+        ),
+        const MenuGroupSeparator(),
+        // 選択中の投稿への操作 (#943)。未選択なら全項目が無効で並ぶ。
+        ...buildPostActionMenuEntries(
+          boostLabel: ref.watch(reblogLabelProvider),
+          bookmarkLabel: ref.watch(currentAdapterProvider) is ReactionSupport
+              ? 'お気に入り'
+              : 'ブックマーク',
+          availability: selected == null
+              ? null
+              : PostActionAvailability.of(ref, selected),
+          onReply: _replyToSelected,
+          onQuote: _quoteSelected,
+          onBoost: _boostSelected,
+          onUnboost: _unboostSelected,
+          onFavorite: _favoriteSelected,
+          onBookmark: _bookmarkSelected,
+        ),
+      ],
       child: _buildScaffold(context, threadFuture, showJump: showJump),
     );
   }
