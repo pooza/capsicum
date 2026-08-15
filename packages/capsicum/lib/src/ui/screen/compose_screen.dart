@@ -120,10 +120,72 @@ class _OversizeFile {
 /// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
 enum _AttachmentMenuAction { preview, crop, addOverlay, editDescription }
 
+/// 添付 1 件ぶんのメニューコールバック束 (#941)。デスクトップメニューは添付ごとに
+/// サブメニューを出すので、index を捕まえた 4 本を組にして持ち回る。
+class AttachmentMenuCallbacks {
+  const AttachmentMenuCallbacks({
+    required this.preview,
+    required this.crop,
+    required this.addOverlay,
+    required this.editDescription,
+  });
+
+  final VoidCallback preview;
+  final VoidCallback crop;
+  final VoidCallback addOverlay;
+  final VoidCallback editDescription;
+}
+
 /// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
 /// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
 /// 保存 #767）とプレビューを overflow に畳んで actions の飽和を防ぐ。
 enum _ComposeMenuAction { saveDraft, saveTemplate, preview }
+
+/// 添付 1 件のデスクトップメニュー項目 (#941)。
+///
+/// 中身は `_showAttachmentMenu`（サムネタップのシート・#769）と同じ 4 つ。
+/// **出し分けの条件もシートと同一**にする（#835）——「使えない操作をメニューにだけ
+/// 見せない」ため。
+///
+/// ⚠ シートは条件に合わない項目を**隠す**が、こちらは**無効化して残す**。
+/// メニューバー側の既存 2 画面（#912 スレッド / #939 ドライブ）が無効化で揃って
+/// おり、動画の添付で「トリミング・回転が無い」より「あるが押せない」の方が
+/// 理由を推測しやすいため。シートは指で触る面なので隠す方が妥当で、この非対称は
+/// 意図的。
+///
+/// 削除は入れない（呼び出し側のコメント参照）。
+///
+/// コールバックを引数で受けるのは、画面全体を pump せずに出し分けを試験できる
+/// ようにするため（条件が 3 つの bool で表せる。基準は `desktop_menu_model.dart`
+/// の「画面メニュー貢献のテストの流儀」#960）。
+@visibleForTesting
+List<MenuEntry> buildAttachmentMenuEntries({
+  required bool previewable,
+  required bool croppable,
+  required bool busy,
+  required AttachmentMenuCallbacks callbacks,
+}) => [
+  MenuActionEntry(
+    label: '拡大して確認',
+    icon: Icons.zoom_in,
+    onSelected: (busy || !previewable) ? null : callbacks.preview,
+  ),
+  MenuActionEntry(
+    label: 'トリミング・回転',
+    icon: Icons.crop_rotate,
+    onSelected: (busy || !croppable) ? null : callbacks.crop,
+  ),
+  MenuActionEntry(
+    label: '文字・スタンプを入れる',
+    icon: Icons.title,
+    onSelected: (busy || !croppable) ? null : callbacks.addOverlay,
+  ),
+  MenuActionEntry(
+    label: '説明 (ALT)',
+    icon: Icons.subtitles_outlined,
+    onSelected: busy ? null : callbacks.editDescription,
+  ),
+];
 
 /// 添付画像を原寸で確認するためのフルスクリーンビューア (#660)。トリミング結果も
 /// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。編集操作は
@@ -2526,6 +2588,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       policy: () => setState(() => _quoteApprovalPolicy = policy),
   };
 
+  /// 添付 1 件ぶんのメニューコールバック (#941)。上 2 つと同じく、ビルドのたびに
+  /// 無名関数を作らないよう一度組んだものを使い回す。
+  ///
+  /// ⚠ **キーは添付の同一性ではなく「何件目か」**。削除で並びが詰まった後も
+  /// 「2 件目」の項目は *そのとき* 2 件目にあるものを指すべきで、実体の
+  /// [_MediaEntry] を捕まえてはいけない。実行側（`_cropImage` 等）も index を
+  /// 受け取る形なので、位置で持つのが素直。
+  final Map<int, AttachmentMenuCallbacks> _attachmentCallbacks = {};
+
+  AttachmentMenuCallbacks _callbacksForAttachment(int index) =>
+      _attachmentCallbacks.putIfAbsent(
+        index,
+        () => AttachmentMenuCallbacks(
+          preview: () => _openAttachmentViewer(index),
+          crop: () => _cropImage(index),
+          addOverlay: () => _addOverlay(index),
+          editDescription: () => _editDescription(index),
+        ),
+      );
+
   /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
   /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
   /// モバイルでは修飾キーが無いため発火しない。
@@ -2924,6 +3006,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           label: 'ナウプレを挿入',
           icon: Icons.music_note,
           onSelected: (busy || _insertingNowPlaying) ? null : _insertNowPlaying,
+        ),
+      // 添付ごとのサブメニュー (#941)。`_showAttachmentMenu` はタップしたサムネの
+      // index で開くので、「いま操作対象になっている添付」という状態は画面に無く、
+      // メニューからは対象を指せない。**添付を列挙して指す**ことで画面に状態を
+      // 増やさずに済ませる（#941 の案 1）。
+      //
+      // 削除は入れない。サムネ右上の × に置いてあり、そちらは確認なしで即消える。
+      // 幅が足りなくても × は隠れない（メニューバーの動機は横スクロールに逃げる
+      // ツールバーの救済）ので、取り返しのつかない操作を増やす理由が無い。
+      if (_attachments.isNotEmpty)
+        MenuSubmenuEntry(
+          label: '添付メディア',
+          children: [
+            for (var i = 0; i < _attachments.length; i++)
+              MenuSubmenuEntry(
+                label: '${i + 1} 枚目',
+                children: buildAttachmentMenuEntries(
+                  previewable:
+                      _attachmentImageProvider(_attachments[i]) != null,
+                  croppable: _isCroppableImage(_attachments[i]),
+                  busy: busy,
+                  callbacks: _callbacksForAttachment(i),
+                ),
+              ),
+          ],
         ),
       const MenuGroupSeparator(),
       MenuActionEntry(
