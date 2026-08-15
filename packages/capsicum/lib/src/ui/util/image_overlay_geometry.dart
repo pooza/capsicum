@@ -7,7 +7,18 @@
 /// 賄えるようにするため。
 library;
 
-import 'dart:ui';
+import 'dart:math' as math;
+
+import 'package:flutter/widgets.dart';
+
+/// 操作スライダの識別キー (#946)。
+///
+/// #883 の時点ではスライダが 1 本しか無く、テストは `find.byType(Slider)` で
+/// 掴んでいた。回転を足して 2 本になったので、**どちらを動かしたいのか**を
+/// 型でなくキーで名指しする。定数を画面側でなくここに置くのは、寸法まわりの
+/// 取り決めと同じくテストから import させるため。
+const overlaySizeSliderKey = Key('overlay_size_slider');
+const overlayAngleSliderKey = Key('overlay_angle_slider');
 
 /// テキストレイヤの折り返し幅の、描画幅に対する比率 (#960)。書き出し側
 /// (`painter.layout(maxWidth: w * この値)`) とプレビュー側
@@ -31,6 +42,22 @@ const double kOverlayMaxStickerSizeFrac = 0.8;
 
 /// テキストアウトライン幅 = `fontSize ÷ この値`。
 const double kOverlayOutlineWidthDivisor = 22;
+
+/// 回転角スライダの範囲（ラジアン）(#946)。中央が 0（無回転）になるよう
+/// ±π＝ ±180° を取る。
+///
+/// ⚠ **0° / 90° 付近への吸着（スナップ）は入れていない。** ミーム的な用途では
+/// 「わざと少し傾ける」が主で、吸着があると狙った角度に置けない。代わりに
+/// **中央が正確に 0 になる範囲**と、明示的なリセット導線を用意している
+/// （スライダだけだと 0 へ戻すのが難しいため）。
+const double kOverlayMaxAngle = math.pi;
+const double kOverlayMinAngle = -math.pi;
+
+/// 回転角をユーザーに見せる度数表記（例 `-12°`）。編集画面のラベル用。
+String overlayAngleLabel(double radians) {
+  final degrees = radians * 180 / math.pi;
+  return '${degrees.round()}°';
+}
 
 /// スタンプ (画像レイヤ) の描画矩形を返す (#883)。
 ///

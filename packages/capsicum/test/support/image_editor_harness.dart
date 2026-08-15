@@ -23,6 +23,7 @@ import 'dart:ui' as ui;
 
 import 'package:capsicum/src/service/sticker_source.dart';
 import 'package:capsicum/src/ui/screen/image_overlay_screen.dart';
+import 'package:capsicum/src/ui/util/image_overlay_geometry.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -204,8 +205,28 @@ class ImageEditorHarness {
   }
 
   /// 選択中レイヤの大きさスライダーを動かす。[value] は 0..1 の割合。
-  Future<void> setSize(double value) async {
-    final slider = find.byType(Slider);
+  Future<void> setSize(double value) =>
+      _dragSlider(overlaySizeSliderKey, value);
+
+  /// 選択中レイヤの回転スライダーを動かす (#946)。[value] は 0..1 の割合で、
+  /// 0.5 が無回転。度数で指定したいときは [setAngleDegrees]。
+  Future<void> setAngle(double value) =>
+      _dragSlider(overlayAngleSliderKey, value);
+
+  /// 回転スライダーを度数で動かす (#946)。-180..180。
+  Future<void> setAngleDegrees(double degrees) =>
+      setAngle((degrees + 180) / 360);
+
+  /// 「角度をリセット」を押す (#946)。
+  Future<void> resetAngle() async {
+    await tester.tap(find.byTooltip('角度をリセット'));
+    await tester.pump();
+  }
+
+  /// ⚠ **キーで名指しする。** スライダは大きさと回転の 2 本あり、
+  /// `find.byType(Slider)` では取り違える。
+  Future<void> _dragSlider(Key key, double value) async {
+    final slider = find.byKey(key);
     expect(slider, findsOneWidget, reason: 'レイヤ未選択だとスライダーが出ない');
     final widget = tester.widget<Slider>(slider);
     widget.onChanged!(widget.min + (widget.max - widget.min) * value);

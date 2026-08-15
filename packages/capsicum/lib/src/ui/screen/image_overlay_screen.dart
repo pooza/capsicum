@@ -13,8 +13,7 @@ import '../util/image_overlay_geometry.dart';
 ///
 /// 位置は画像内の正規化中心座標 (0..1)、大きさは画像高さに対する比率で保持
 /// する。こうすることで編集画面 (画像を画面に fit 表示) と書き出し (原寸
-/// Canvas) で同じ見た目を再現できる (WYSIWYG)。回転角も同じ性質を持つので、
-/// 入れるならここに足せる (#946)。
+/// Canvas) で同じ見た目を再現できる (WYSIWYG)。
 sealed class _OverlayItem {
   _OverlayItem({required this.sizeFrac});
 
@@ -23,6 +22,14 @@ sealed class _OverlayItem {
 
   /// 画像高さに対する比率。文字ならフォントサイズ、スタンプなら描画高さ。
   double sizeFrac;
+
+  /// 中心まわりの回転角（ラジアン・時計回り）(#946)。
+  ///
+  /// [nx] / [ny] / [sizeFrac] と同じくスケール不変なので、編集画面と書き出しで
+  /// **同じ値をそのまま使える**。⚠ ただし回す中心は両方とも「レイヤの中心」で
+  /// なければならない。プレビューは [Transform.rotate]（既定で中心まわり）、
+  /// 書き出しは `translate(中心) → rotate → 中心原点で描画` で揃えている。
+  double angle = 0;
 }
 
 /// 文字 / Unicode 絵文字のレイヤ (#576)。
@@ -324,11 +331,10 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
     // 画像幅の 96% を上限に折り返す。
     painter.layout(maxWidth: w * kOverlayTextWrapFraction);
-    final center = Offset(item.nx * w, item.ny * h);
-    painter.paint(
-      canvas,
-      center - Offset(painter.width / 2, painter.height / 2),
-    );
+    _paintRotated(canvas, item, w, h, () {
+      // 回転の中心を原点に持ってきてあるので、ここは中心原点で描く。
+      painter.paint(canvas, -Offset(painter.width / 2, painter.height / 2));
+    });
   }
 
   void _paintSticker(
@@ -337,23 +343,47 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     double w,
     double h,
   ) {
+    // 中心を原点にした矩形。位置は _paintRotated の translate が担う。
     final dst = stickerOverlayRect(
-      center: Offset(item.nx * w, item.ny * h),
+      center: Offset.zero,
       sizeFrac: item.sizeFrac,
       aspect: item.aspect,
       referenceHeight: h,
     );
-    canvas.drawImageRect(
-      item.image,
-      Rect.fromLTWH(
-        0,
-        0,
-        item.image.width.toDouble(),
-        item.image.height.toDouble(),
-      ),
-      dst,
-      Paint()..filterQuality = FilterQuality.high,
-    );
+    _paintRotated(canvas, item, w, h, () {
+      canvas.drawImageRect(
+        item.image,
+        Rect.fromLTWH(
+          0,
+          0,
+          item.image.width.toDouble(),
+          item.image.height.toDouble(),
+        ),
+        dst,
+        Paint()..filterQuality = FilterQuality.high,
+      );
+    });
+  }
+
+  /// レイヤの中心を原点に据え、[_OverlayItem.angle] だけ回した状態で [paint] を
+  /// 呼ぶ (#946)。
+  ///
+  /// ⚠ **回す中心はプレビュー側（[Transform.rotate] の既定 = 中心）と揃える。**
+  /// 左上まわりに回すと、角度を動かした瞬間にレイヤが画面上を移動して見え、
+  /// 編集画面と書き出しでも位置が食い違う。
+  void _paintRotated(
+    Canvas canvas,
+    _OverlayItem item,
+    double w,
+    double h,
+    VoidCallback paint,
+  ) {
+    final center = Offset(item.nx * w, item.ny * h);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(item.angle);
+    paint();
+    canvas.restore();
   }
 
   @override
@@ -455,39 +485,49 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       top: item.ny * dispH,
       child: FractionalTranslation(
         translation: const Offset(-0.5, -0.5),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _selected = index),
-          onPanUpdate: (details) {
-            setState(() {
-              item.nx = (item.nx + details.delta.dx / dispW).clamp(0.0, 1.0);
-              item.ny = (item.ny + details.delta.dy / dispH).clamp(0.0, 1.0);
-              _selected = index;
-            });
-          },
-          child: Container(
-            // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
-            // `painter.layout(maxWidth: w * 0.96)` と対になっている。スタンプに
-            // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
-            // (drawImageRect は制約を受けない) と食い違う。
-            constraints: item is _TextOverlayItem
-                ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
-                : null,
-            decoration: selected
-                ? BoxDecoration(
-                    border: Border.all(color: Colors.white70),
-                    borderRadius: BorderRadius.circular(4),
-                  )
-                : null,
-            padding: const EdgeInsets.all(2),
-            child: switch (item) {
-              _TextOverlayItem() => Text(
-                item.text,
-                textAlign: TextAlign.center,
-                style: _textStyle(item.color, item.sizeFrac * dispH),
-              ),
-              _StickerOverlayItem() => _buildStickerPreview(item, dispH),
+        // ⚠ **回転は GestureDetector の外側に置く。** [Transform] はレイアウト
+        // 寸法を変えないので、内側に置くと当たり判定だけ回らない矩形のまま残り、
+        // 「枠は傾いているのに掴めるのは元の位置」になる。外側なら
+        // `transformHitTests`（既定 true）がポインタを子の座標系へ写す。
+        //
+        // ドラッグの `details.delta` はグローバル座標由来なので回転の影響を
+        // 受けず、下の pan 処理（画面座標で nx / ny を動かす）はそのままでよい。
+        child: Transform.rotate(
+          angle: item.angle,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _selected = index),
+            onPanUpdate: (details) {
+              setState(() {
+                item.nx = (item.nx + details.delta.dx / dispW).clamp(0.0, 1.0);
+                item.ny = (item.ny + details.delta.dy / dispH).clamp(0.0, 1.0);
+                _selected = index;
+              });
             },
+            child: Container(
+              // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
+              // `painter.layout(maxWidth: w * 0.96)` と対になっている。スタンプに
+              // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
+              // (drawImageRect は制約を受けない) と食い違う。
+              constraints: item is _TextOverlayItem
+                  ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
+                  : null,
+              decoration: selected
+                  ? BoxDecoration(
+                      border: Border.all(color: Colors.white70),
+                      borderRadius: BorderRadius.circular(4),
+                    )
+                  : null,
+              padding: const EdgeInsets.all(2),
+              child: switch (item) {
+                _TextOverlayItem() => Text(
+                  item.text,
+                  textAlign: TextAlign.center,
+                  style: _textStyle(item.color, item.sizeFrac * dispH),
+                ),
+                _StickerOverlayItem() => _buildStickerPreview(item, dispH),
+              },
+            ),
           ),
         ),
       ),
@@ -528,6 +568,9 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
               // 色は文字レイヤ専用。スタンプは元画像の色をそのまま使う。
               if (item is _TextOverlayItem) _buildColorRow(item),
               _buildSizeRow(item),
+              // 回転は文字とスタンプの両方に効く (#946)。片方だけに付けると、
+              // 同じキャンバス上の 2 種類のレイヤで操作体系が食い違う。
+              _buildAngleRow(item),
             ],
             _buildAddRow(),
           ],
@@ -564,6 +607,50 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     );
   }
 
+  /// 回転角の操作行 (#946)。
+  ///
+  /// **2 本指の回転ジェスチャは採らない。** デスクトップ 3 OS では入力手段が
+  /// 無く、「UI の分岐軸はプラットフォームではなく画面幅」(docs/CLAUDE.md) と
+  /// 噛み合わない。大きさと同じスライダに揃える。
+  ///
+  /// ⚠ **リセットボタンは飾りではない。** スライダは連続値なので、一度傾けると
+  /// 正確な 0° へ戻すのが難しい。吸着（スナップ）を入れない判断
+  /// （[kOverlayMaxAngle] の doc）とセットで要る導線。
+  Widget _buildAngleRow(_OverlayItem item) {
+    return Row(
+      children: [
+        const Icon(Icons.rotate_right, color: Colors.white, size: 20),
+        Expanded(
+          child: Slider(
+            key: overlayAngleSliderKey,
+            value: item.angle.clamp(kOverlayMinAngle, kOverlayMaxAngle),
+            min: kOverlayMinAngle,
+            max: kOverlayMaxAngle,
+            label: overlayAngleLabel(item.angle),
+            onChanged: (v) => setState(() => item.angle = v),
+          ),
+        ),
+        // 現在角度を数値でも出す。スライダの位置だけだと「ほぼ真っ直ぐ」なのか
+        // 「少しだけ傾いている」のかが見分けられない。
+        SizedBox(
+          width: 48,
+          child: Text(
+            overlayAngleLabel(item.angle),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.restart_alt, color: Colors.white),
+          tooltip: '角度をリセット',
+          onPressed: item.angle == 0
+              ? null
+              : () => setState(() => item.angle = 0),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSizeRow(_OverlayItem item) {
     final isText = item is _TextOverlayItem;
     return Row(
@@ -575,6 +662,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
         ),
         Expanded(
           child: Slider(
+            key: overlaySizeSliderKey,
             value: item.sizeFrac,
             // スタンプは絵として見せるので、文字より大きく引き伸ばせる。
             min: kOverlayMinSizeFrac,
