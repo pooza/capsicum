@@ -125,6 +125,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           : notification.collection != null
           ? () =>
                 context.push('/collection', extra: notification.collection!.id)
+          // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
+          : notification.type == NotificationType.achievementEarned
+          ? () => context.push('/achievements')
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)
@@ -168,6 +171,18 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                     const SizedBox(height: 4),
                     Text(
                       notification.collection!.name,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  // 実績解除通知 (#918): 解除した実績名（見出しのみ・説明文は出さない）を
+                  // 表示する。タイル全体のタップで実績一覧へ遷移する。
+                  if (notification.type ==
+                      NotificationType.achievementEarned) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _achievementLabel(notification.achievement),
                       style: theme.textTheme.bodyMedium,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -532,6 +547,16 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
       postLabel: widget.postLabel,
     );
     return (display.icon, display.label);
+  }
+
+  /// 実績キー (`notes1` 等) を実績名（絵文字つき）に解決する (#918)。
+  /// カタログに無い未知キーはキーをそのまま出す（新実績で壊れないため）。
+  /// キー自体が無ければ汎用の「実績」に倒す。
+  String _achievementLabel(String? key) {
+    if (key == null) return '実績';
+    final meta = achievementCatalog[key];
+    if (meta == null) return key;
+    return '${meta.emoji} ${meta.label}';
   }
 
   Widget _buildReactionEmoji(String reaction) {

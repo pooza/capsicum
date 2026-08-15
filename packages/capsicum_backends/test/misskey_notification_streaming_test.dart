@@ -25,6 +25,26 @@ void main() {
       expect(n.type, NotificationType.follow);
     });
 
+    test('achievementEarned は実績キーを載せて変換される (#918)', () {
+      final msg = jsonEncode({
+        'type': 'channel',
+        'body': {
+          'id': 'sub1',
+          'type': 'notification',
+          'body': {
+            'id': 'n2',
+            'type': 'achievementEarned',
+            'achievement': 'notes1',
+            'createdAt': '2026-06-07T00:00:00.000Z',
+          },
+        },
+      });
+      final n = MisskeyNotificationStreaming.parseMessage(msg, 'example.test');
+      expect(n, isNotNull);
+      expect(n!.type, NotificationType.achievementEarned);
+      expect(n.achievement, 'notes1');
+    });
+
     test('announcementCreated becomes an announcement Notification', () {
       final msg = jsonEncode({
         'type': 'channel',

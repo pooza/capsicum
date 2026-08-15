@@ -133,6 +133,7 @@ const misskeyNotificationTypeMap = <String, NotificationType>{
   'pollEnded': NotificationType.poll,
   'login': NotificationType.login,
   'createToken': NotificationType.createToken,
+  'achievementEarned': NotificationType.achievementEarned,
 };
 
 extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
@@ -147,6 +148,7 @@ extension CapsicumMisskeyNotificationExtension on MisskeyNotification {
       user: user?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       post: note?.toCapsicum(localHost, adminRoleIds: adminRoleIds),
       reaction: reaction,
+      achievement: achievement,
     );
   }
 }

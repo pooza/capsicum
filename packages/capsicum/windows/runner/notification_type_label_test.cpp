@@ -51,6 +51,9 @@ int main() {
   const std::string kGeneric = "\xe9\x80\x9a\xe7\x9f\xa5";  // 通知
   const std::string kChatMessage =
       "\xe3\x83\xa1\xe3\x83\x83\xe3\x82\xbb\xe3\x83\xbc\xe3\x82\xb8";  // メッセージ
+  const std::string kAchievementEarned =
+      "\xe5\xae\x9f\xe7\xb8\xbe\xe3\x82\x92\xe8\xa7\xa3"
+      "\xe9\x99\xa4";  // 実績を解除
   const std::string kEditSuffix =
       "\xe3\x82\x92\xe7\xb7\xa8\xe9\x9b\x86";  // 〜を編集
 
@@ -75,6 +78,10 @@ int main() {
   // 3) Misskey 新 chat の Web Push type はメッセージに寄せる (#765)。
   CheckEq(NotificationTypeDisplayLabel("newChatMessage", reblog, post),
           kChatMessage, "newChatMessage → メッセージ");
+
+  // 3b) Misskey の実績解除通知は「実績を解除」に寄せる (#918)。
+  CheckEq(NotificationTypeDisplayLabel("achievementEarned", reblog, post),
+          kAchievementEarned, "achievementEarned → 実績を解除");
 
   // 4) 未知 type / 空 type は汎用 "通知"。
   CheckEq(NotificationTypeDisplayLabel("totally_unknown", reblog, post),

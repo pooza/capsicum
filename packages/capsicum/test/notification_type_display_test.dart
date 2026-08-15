@@ -48,6 +48,13 @@ void main() {
         'コレクションを更新',
       );
     });
+
+    test('実績解除は「実績を解除」(#918)', () {
+      expect(
+        notificationTypeDisplay(NotificationType.achievementEarned).label,
+        '実績を解除',
+      );
+    });
   });
 
   group('notificationTypeFromString', () {
@@ -98,6 +105,13 @@ void main() {
       expect(
         notificationTypeFromString('collection_update'),
         NotificationType.collectionUpdate,
+      );
+    });
+
+    test('achievementEarned は NotificationType.achievementEarned (#918)', () {
+      expect(
+        notificationTypeFromString('achievementEarned'),
+        NotificationType.achievementEarned,
       );
     });
   });

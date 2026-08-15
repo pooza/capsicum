@@ -16,6 +16,9 @@ enum NotificationType {
   createToken,
   chat,
   announcement,
+  // Misskey の実績解除通知 (achievementEarned, #918)。Mastodon 等価なし。
+  // 解除した実績のキーは [Notification.achievement] に載る。
+  achievementEarned,
   // Mastodon 4.6 Collections (FEP-7aa9) の被フィーチャー通知 (#741)。Misskey 等価なし。
   addedToCollection,
   collectionUpdate,
@@ -42,6 +45,11 @@ class Notification {
   /// 表示するために保持する。それ以外の type では null。
   final Collection? collection;
 
+  /// `type == achievementEarned` のとき解除した実績のキー (#918)。
+  /// Misskey の `achievement` フィールド（例: `notes1`）をそのまま持ち、
+  /// 表示側が `achievementCatalog` で実績名に解決する。それ以外の type では null。
+  final String? achievement;
+
   const Notification({
     required this.id,
     required this.type,
@@ -52,5 +60,6 @@ class Notification {
     this.unread = true,
     this.announcement,
     this.collection,
+    this.achievement,
   });
 }

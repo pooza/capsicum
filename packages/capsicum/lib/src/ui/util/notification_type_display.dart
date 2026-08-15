@@ -65,6 +65,11 @@ NotificationTypeDisplay notificationTypeDisplay(
       );
     case NotificationType.announcement:
       return const NotificationTypeDisplay(icon: Icons.campaign, label: 'お知らせ');
+    case NotificationType.achievementEarned:
+      return const NotificationTypeDisplay(
+        icon: Icons.emoji_events,
+        label: '実績を解除',
+      );
     case NotificationType.addedToCollection:
       return const NotificationTypeDisplay(
         icon: Icons.bookmark_add,
@@ -123,6 +128,10 @@ NotificationType notificationTypeFromString(String? raw) {
     // Misskey 標準の通知 type には存在せず、capsicum-relay が独自に発火する。
     case 'announcement':
       return NotificationType.announcement;
+    // Misskey の実績解除通知 (#918)。/api/i/notifications と push payload の
+    // 双方で `achievementEarned`。
+    case 'achievementEarned':
+      return NotificationType.achievementEarned;
     // Mastodon 4.6 Collections の被フィーチャー通知 (#741)。
     case 'added_to_collection':
       return NotificationType.addedToCollection;
