@@ -608,10 +608,14 @@ class PushRegistrationService {
   ///
   /// endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay
   /// の行（`UNIQUE(token, account, server)`・`token` はデバイストークン）が新規
-  /// 作成されたときだけ発行される。よってトークンが変わると endpoint も変わり、
-  /// **Misskey は `sw/register` を `(userId, endpoint)` で引いて無ければ INSERT
-  /// する**ため古い購読が孤児として残る（Mastodon は create 冒頭で既存を destroy
-  /// するので残らない）。孤児は失効まで生き続け、同じ通知が複数回届く。
+  /// 作成されたときだけ発行される。よってトークンが変わると endpoint も変わる。
+  /// **Misskey の `sw/register` は `(userId, endpoint, auth, publickey)` で引いて
+  /// 無ければ INSERT する**（pooza フォークの `findOneBy`・#960 で実装確認。auth /
+  /// publickey まで含めて一致しないと別行になる）。加えて
+  /// `_cleanupDeviceRegistration` は keyset ごと捨てて再生成するので、**endpoint
+  /// 据え置きでも必ず新しい `sw_subscription` 行になる**。古い購読は孤児として
+  /// 残る（Mastodon は create 冒頭で既存を destroy するので残らない）。孤児は
+  /// 失効まで生き続け、同じ通知が複数回届く。
   static Future<void> reconcileDeviceToken(List<Account> accounts) async {
     if (!isPushBackendWired || accounts.isEmpty) return;
     final String? current = _getDeviceToken() ?? await _waitForDeviceToken();

@@ -191,7 +191,7 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 
 - **溜まり方はサーバー実装で違う**。ここが最重要で、**Mastodon と Misskey は非対称**（どちらも pooza フォークのソースで確認済み）:
   - **Mastodon** は `POST /api/v1/push/subscription` の `create` 冒頭で `destroy_web_push_subscriptions!` を呼ぶ（`app/controllers/api/v1/push/subscriptions_controller.rb`）。**1 アクセストークン = 1 購読**で、endpoint が変わっても置換される。再ログインで**トークンごと**変わったときだけ古いものが残る。
-  - **Misskey** の `sw/register` は `(userId, endpoint)` で探し、無ければ **INSERT する**（`packages/backend/src/server/api/endpoints/sw/register.ts`）。**古い行は消えない**ので、endpoint が変わるたびに購読が 1 本増え続ける。
+  - **Misskey** の `sw/register` は `(userId, endpoint, auth, publickey)` で探し（`findOneBy`・`packages/backend/src/server/api/endpoints/sw/register.ts`。**auth / publickey まで含めて一致**しないと別行）、無ければ **INSERT する**。**古い行は消えない**ので、endpoint が変わるたび（あるいは client が keyset を作り直すたび）に購読が 1 本増え続ける。
   - → **「Misskey だけで重複する」報告はこの非対称そのもの**。Mastodon 側が静かなことは、client が無実である証拠にならない。
 - **relay は純粋な 1:1 フォワーダなので無実**。届いた購読ぶんだけ忠実に送る。relay のログで「複数回送信」が見えても、それは原因ではなく結果。
 - **切り分け順序**: ①上流の購読テーブルを見て同一 endpoint / 同一ユーザーの行数を数える → ②relay の `subscriptions` を `device_type` 別に「行数 / 実アカウント数」で割り、**プラットフォーム間で比を比べる**（突出しているものが endpoint を作り直している）→ ③孤児を整理して再現するか見る。iOS と Android で症状が違って見えても**同根**のことがある（#692 がそうだった）。

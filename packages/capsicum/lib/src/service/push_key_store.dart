@@ -72,6 +72,9 @@ class PushKeyStore {
   /// ないため no-op に近い処理になるが、フラグを立てるためには走らせる。
   static const _migrationFlagKey = 'push_keystore_accessibility_migrated_v2';
 
+  /// デバイストークン（アカウント非依存・デバイス単位）の保存キー。
+  static const _deviceTokenKey = '${_prefix}device_token';
+
   static Future<void> migrateAccessibilityIfNeeded() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_migrationFlagKey) ?? false) return;
@@ -188,8 +191,6 @@ class PushKeyStore {
   static Future<void> deleteDeviceToken() async {
     await _storage.delete(key: _deviceTokenKey);
   }
-
-  static const _deviceTokenKey = '${_prefix}device_token';
 
   /// 指定アカウントの鍵・登録情報をすべて削除する。
   static Future<void> delete(String accountStorageKey) async {

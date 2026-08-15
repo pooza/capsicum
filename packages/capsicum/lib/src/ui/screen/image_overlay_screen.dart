@@ -27,7 +27,8 @@ sealed class _OverlayItem {
 
 /// 文字 / Unicode 絵文字のレイヤ (#576)。
 class _TextOverlayItem extends _OverlayItem {
-  _TextOverlayItem({required this.text}) : super(sizeFrac: 0.08);
+  _TextOverlayItem({required this.text})
+    : super(sizeFrac: kOverlayDefaultTextSizeFrac);
 
   String text;
   Color color = Colors.white;
@@ -39,7 +40,7 @@ class _TextOverlayItem extends _OverlayItem {
 /// アニメーション絵文字でフレームがずれうるうえ、二重に取得することになる。
 class _StickerOverlayItem extends _OverlayItem {
   _StickerOverlayItem({required this.image, required this.shortcode})
-    : super(sizeFrac: 0.2);
+    : super(sizeFrac: kOverlayDefaultStickerSizeFrac);
 
   final ui.Image image;
 
@@ -237,7 +238,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
     final outline = color.computeLuminance() > 0.5
         ? Colors.black
         : Colors.white;
-    final d = fontSize / 22;
+    final d = fontSize / kOverlayOutlineWidthDivisor;
     return TextStyle(
       color: color,
       fontSize: fontSize,
@@ -322,7 +323,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
       textDirection: TextDirection.ltr,
     );
     // 画像幅の 96% を上限に折り返す。
-    painter.layout(maxWidth: w * 0.96);
+    painter.layout(maxWidth: w * kOverlayTextWrapFraction);
     final center = Offset(item.nx * w, item.ny * h);
     painter.paint(
       canvas,
@@ -470,7 +471,7 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
             // (drawImageRect は制約を受けない) と食い違う。
             constraints: item is _TextOverlayItem
-                ? BoxConstraints(maxWidth: dispW * 0.96)
+                ? BoxConstraints(maxWidth: dispW * kOverlayTextWrapFraction)
                 : null,
             decoration: selected
                 ? BoxDecoration(
@@ -576,8 +577,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
           child: Slider(
             value: item.sizeFrac,
             // スタンプは絵として見せるので、文字より大きく引き伸ばせる。
-            min: 0.03,
-            max: isText ? 0.25 : 0.8,
+            min: kOverlayMinSizeFrac,
+            max: isText ? kOverlayMaxTextSizeFrac : kOverlayMaxStickerSizeFrac,
             onChanged: (v) => setState(() => item.sizeFrac = v),
           ),
         ),

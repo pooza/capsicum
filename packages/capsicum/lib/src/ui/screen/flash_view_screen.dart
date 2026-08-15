@@ -264,17 +264,18 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
       // 予測ではなく事実（両方のバージョンと、1.0 で何が変わったか）を出す
       // (#934)。「正しく動作しない可能性があります」はほぼ常に真で反証できず、
       // 無関係な症状（Web との出目差 #896 など）まで吸収して調査を止めるため。
-      final declared = FlashRuntime.scriptLangVersion(widget.flash.script);
+      // degrade は isScriptLangUnsupported が true のときだけ起き、それは
+      // scriptLangVersion が非 null で major >= 1 のときに限る。よって declared は
+      // 必ず埋まっている（#960 で到達不能だった `declared == null` 分岐を削除）。
+      final declared = FlashRuntime.scriptLangVersion(widget.flash.script)!;
       setState(() {
         _error = FlashRuntimeError(
-          declared == null
-              ? 'この Play は新しい AiScript 向けです'
-              : 'この Play は AiScript $declared 以降向けです',
+          'この Play は AiScript $declared 以降向けです',
           'このアプリの AiScript は ${FlashRuntime.engineLangVersion} です'
-          '${declared == null ? '' : '（$declared は作者の申告値）'}。'
-          'AiScript 1.0 で演算子の優先順位などが変わったため、'
-          'エラーにならないまま結果だけ変わることがあります。'
-          'ブラウザで開けば本家の実行系で動きます。',
+              '（$declared は作者の申告値）。'
+              'AiScript 1.0 で演算子の優先順位などが変わったため、'
+              'エラーにならないまま結果だけ変わることがあります。'
+              'ブラウザで開けば本家の実行系で動きます。',
           langUnsupported: true,
         );
       });

@@ -9,6 +9,29 @@ library;
 
 import 'dart:ui';
 
+/// テキストレイヤの折り返し幅の、描画幅に対する比率 (#960)。書き出し側
+/// (`painter.layout(maxWidth: w * この値)`) とプレビュー側
+/// (`BoxConstraints(maxWidth: dispW * この値)`) の両方がこれを使う。片方だけ
+/// リテラルで持つと WYSIWYG が割れるため、寸法の式と同じくここに集約する。
+const double kOverlayTextWrapFraction = 0.96;
+
+/// テキストレイヤ追加時の初期サイズ比率（基準高さに対する比率）。
+const double kOverlayDefaultTextSizeFrac = 0.08;
+
+/// スタンプ（画像レイヤ）追加時の初期サイズ比率。
+const double kOverlayDefaultStickerSizeFrac = 0.2;
+
+/// サイズ比率スライダの下限。
+const double kOverlayMinSizeFrac = 0.03;
+
+/// サイズ比率スライダの上限。テキストは行が伸びすぎないよう低め、スタンプは
+/// 大きく貼れるよう高め。
+const double kOverlayMaxTextSizeFrac = 0.25;
+const double kOverlayMaxStickerSizeFrac = 0.8;
+
+/// テキストアウトライン幅 = `fontSize ÷ この値`。
+const double kOverlayOutlineWidthDivisor = 22;
+
 /// スタンプ (画像レイヤ) の描画矩形を返す (#883)。
 ///
 /// 高さは [sizeFrac] × [referenceHeight] で決め、幅は元画像の [aspect]
