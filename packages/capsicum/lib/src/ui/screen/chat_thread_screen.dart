@@ -16,8 +16,8 @@ import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
-import '../widget/user_avatar.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/user_avatar.dart';
 
 class ChatThreadScreen extends ConsumerStatefulWidget {
   final User otherUser;

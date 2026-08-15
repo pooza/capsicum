@@ -2817,6 +2817,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// Cmd/Ctrl+Enter）と二重に走る余地があり、当初はそれが二重投稿になりえた。
   /// #908 の再入ガードで二重投稿そのものは塞がったので**表示を足すことは可能**だが、
   /// 実機で二重発火の有無を確かめてからにしたい。項目の調整は #912 で拾う。
+  ///
+  /// 画面の可変状態と `ref.watch` に広く依存するので private のまま置く
+  /// （`desktop_menu_model.dart` の「画面メニュー貢献のテストの流儀」#960）。
   List<MenuEntry> _buildComposeMenuEntries() {
     final adapter = ref.watch(currentAdapterProvider);
     final mulukhiya = ref.watch(currentMulukhiyaProvider);

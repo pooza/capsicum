@@ -7,8 +7,8 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
-import 'media_viewer_screen.dart';
 import '../widget/retry_error_view.dart';
+import 'media_viewer_screen.dart';
 
 class DriveManagerScreen extends ConsumerStatefulWidget {
   const DriveManagerScreen({super.key});

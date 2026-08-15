@@ -13,8 +13,8 @@ import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
-import '../widget/screen_menu.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/screen_menu.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
@@ -245,7 +245,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 /// 開けるようにするのは単独で扱う（#912 のコメント参照）。
 ///
 /// コールバックを引数で受けるのは、画面全体を pump せずに項目の出し分けを
-/// 試験できるようにするため。
+/// 試験できるようにするため（出し分けの条件が `showJump` 1 つで表せるので
+/// 切り出せる。基準は `desktop_menu_model.dart` の「画面メニュー貢献のテストの
+/// 流儀」#960）。
 @visibleForTesting
 List<MenuEntry> buildThreadMenuEntries({
   required bool showJump,

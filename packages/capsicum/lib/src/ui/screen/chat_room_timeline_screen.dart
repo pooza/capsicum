@@ -17,9 +17,9 @@ import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
 import '../widget/oauth_scope_error_view.dart';
+import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
 import 'chat_room_edit_screen.dart';
-import '../widget/retry_error_view.dart';
 
 enum _RoomMenuAction { members, toggleMute, edit, leave, delete }
 

@@ -743,7 +743,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
             child: OutlinedButton.icon(
               onPressed: () => _showImportDialog(context),
               icon: const Icon(Icons.download, size: 18),
-              label: const Text('Web版の絵文字パレットから一括追加'),
+              label: const Text('Web 版の絵文字パレットから一括追加'),
             ),
           ),
         ],
