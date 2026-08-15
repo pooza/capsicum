@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/bookmark_provider.dart';
+import '../util/op_error.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -72,7 +73,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) => RetryErrorView(
-          message: '$titleの読み込みに失敗しました\n$error',
+          message: '$titleの読み込みに失敗しました\n${summarizeOpError(error)}',
           isRetrying: bookmarks.isLoading,
           onRetry: () => ref.invalidate(bookmarkProvider),
         ),

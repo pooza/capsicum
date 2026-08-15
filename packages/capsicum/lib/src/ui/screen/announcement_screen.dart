@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
+import '../util/op_error.dart';
 import '../widget/announcement_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -103,7 +104,7 @@ class _AnnouncementViewState extends ConsumerState<AnnouncementView> {
             ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => RetryErrorView(
-        message: 'お知らせの読み込みに失敗しました\n$error',
+        message: 'お知らせの読み込みに失敗しました\n${summarizeOpError(error)}',
         isRetrying: announcements.isLoading,
         onRetry: () => ref.invalidate(announcementProvider),
       ),

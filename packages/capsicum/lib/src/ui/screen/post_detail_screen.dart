@@ -10,6 +10,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../util/keyboard_list_navigation.dart';
+import '../util/op_error.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
 import '../widget/screen_menu.dart';
@@ -205,7 +206,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
       error: (error, stack) {
         _clearKeyboardTargets();
         return RetryErrorView(
-          message: 'スレッドの読み込みに失敗しました\n$error',
+          message: 'スレッドの読み込みに失敗しました\n${summarizeOpError(error)}',
           isRetrying: threadFuture.isLoading,
           onRetry: () => ref.invalidate(_threadProvider(post.id)),
         );

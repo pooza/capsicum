@@ -53,8 +53,11 @@ class RetryErrorView extends StatelessWidget {
   /// （画面ごとに「どこに何を挟むか」が違うため、ここでは分解しない）。
   ///
   /// **URL やトークンが載りうる例外をそのまま入れないこと。** Misskey の URL には
-  /// `?i=<accessToken>` が付く（#460）。チャット系が `summarizeOpError` を通して
-  /// いるのはそのため。
+  /// `?i=<accessToken>` が付く（#460）。生の `$error` は #900 のタイムアウト時に
+  /// `The request took longer than 0:00:60 ... RequestOptions.receiveTimeout` の
+  /// ような英語の開発者向け文をそのままユーザーに出す。呼び出し側は例外の要約に
+  /// `summarizeOpError` を通すこと（チャット系・取得失敗系の各画面がそうしている・
+  /// #960）。
   final String message;
 
   /// 再取得が進行中か。`AsyncValue.isLoading` をそのまま渡す。

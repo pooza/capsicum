@@ -10,6 +10,7 @@ import '../../provider/marker_provider.dart';
 import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
+import '../util/op_error.dart';
 import '../widget/notification_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -163,7 +164,7 @@ class _NotificationViewState extends ConsumerState<NotificationView>
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => RetryErrorView(
-        message: '通知の読み込みに失敗しました\n$error',
+        message: '通知の読み込みに失敗しました\n${summarizeOpError(error)}',
         isRetrying: notifications.isLoading,
         onRetry: () => ref.invalidate(notificationProvider),
       ),
