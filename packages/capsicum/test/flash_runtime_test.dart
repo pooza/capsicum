@@ -1,6 +1,99 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:aiscript/aiscript.dart';
 import 'package:capsicum/src/ui/flash/flash_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// フォーク (pooza/aiscript-dart) の中で乱数を引いている箇所の既知の全量 (#960)。
+///
+/// `<ファイル名>:<直前の組み込み名>` の形。`<top-level>` は組み込みの外側で、
+/// `stdlib.dart` の `final _rng = Random();` と `const _uuid = Uuid();` の宣言に
+/// 当たる。`Util:uuid` は乱数だが「出目」ではない識別子生成なので
+/// [FlashRuntime.usesRandomness] の対象から意図的に外している（これを拾うと
+/// コンポーネント id に uuid を振るだけの Play にまで注記が出る）。
+const _knownRandomnessSites = {
+  'stdlib.dart:<top-level>',
+  'stdlib.dart:Math:rnd',
+  'stdlib.dart:Math:gen_rng',
+  'stdlib.dart:Util:uuid',
+};
+
+/// 乱数の入口になりうる字面。`Random` の直接生成のほか、内部で暗黙に乱数を使う
+/// `List.shuffle` と uuid 生成も見る。
+const _randomnessTokens = [
+  'Random(',
+  '_rng',
+  'SeedRandom(',
+  '.shuffle(',
+  'Uuid(',
+  '_uuid',
+];
+
+/// 組み込みのキー行（`'Math:rnd':` / `'shuffle':`）。
+final _builtinKeyPattern = RegExp(r"^\s*'([A-Za-z0-9_:]+)'\s*:");
+
+/// pub-cache に展開されたフォークの `lib/` を指す。
+///
+/// `Isolate.resolvePackageUri` は flutter_tester では動かない
+/// （Unsupported operation）ので、melos ワークスペース root の
+/// `.dart_tool/package_config.json` を辿る。
+Directory _aiscriptLibDir() {
+  var dir = Directory.current;
+  while (true) {
+    final config = File('${dir.path}/.dart_tool/package_config.json');
+    if (config.existsSync()) {
+      final packages =
+          (jsonDecode(config.readAsStringSync())
+                  as Map<String, dynamic>)['packages']
+              as List<dynamic>;
+      final aiscript = packages.cast<Map<String, dynamic>>().firstWhere(
+        (p) => p['name'] == 'aiscript',
+        orElse: () =>
+            throw StateError('${config.path} に aiscript が無い（pub get 未実行？）'),
+      );
+      // rootUri は package_config.json のあるディレクトリからの相対でもありうる。
+      final root = config.uri.resolve(aiscript['rootUri'] as String);
+      return Directory.fromUri(root.resolve('lib/'));
+    }
+    final parent = dir.parent;
+    if (parent.path == dir.path) {
+      throw StateError('package_config.json が見つからない (${Directory.current})');
+    }
+    dir = parent;
+  }
+}
+
+/// フォークの lib/ を実際に読んで、乱数を引いている箇所を洗い出す。
+///
+/// `seedrandom.dart` は乱数生成器そのものの実装なので対象外（ここに
+/// `Random` 相当が出るのは定義上あたりまえで、組み込みの増減を表さない）。
+Set<String> _randomnessSitesInFork() {
+  final libDir = _aiscriptLibDir();
+  expect(libDir.existsSync(), isTrue, reason: '${libDir.path} が無い');
+
+  final sites = <String>{};
+  final sources =
+      libDir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+  for (final file in sources) {
+    final name = file.uri.pathSegments.last;
+    if (name == 'seedrandom.dart') continue;
+
+    var current = '<top-level>';
+    for (final line in file.readAsLinesSync()) {
+      final key = _builtinKeyPattern.firstMatch(line);
+      if (key != null) current = key.group(1)!;
+      if (_randomnessTokens.any(line.contains)) sites.add('$name:$current');
+    }
+  }
+  return sites;
+}
 
 FlashRuntime _runtime() => FlashRuntime(
   flashId: 'flash1',
@@ -235,11 +328,27 @@ void main() {
 
     /// 評価器の乱数源はこの 2 つだけ、というのが判定の前提。フォークが乱数を
     /// 使う組み込みを増やしたらここが落ちるので、判定側も足す。
-    test('評価器の乱数源はこの 2 つだけ（前提の固定）', () {
-      const knownRandomBuiltins = ['Math:rnd', 'Math:gen_rng'];
-      for (final name in knownRandomBuiltins) {
+    ///
+    /// 実装と同じ文字列を `usesRandomness` に食わせて true を確かめるだけでは、
+    /// フォークの stdlib を一切見ていないので常に通ってしまう（#960）。
+    /// pub-cache に展開されたフォークの実体を読み、乱数プリミティブを引いて
+    /// いる箇所を洗い出して突き合わせる。
+    test('評価器の乱数源はこの 2 つだけ（フォークの stdlib を実測 #960）', () {
+      final found = _randomnessSitesInFork();
+
+      expect(
+        found,
+        _knownRandomnessSites,
+        reason:
+            'フォーク (pubspec の aiscript ref) が乱数を引く箇所を増減させた。'
+            '出目に効く組み込みなら FlashRuntime.usesRandomness に足し、'
+            '効かないなら理由を添えて _knownRandomnessSites を更新する',
+      );
+
+      // 出目に効く組み込みは判定側が拾えていること。
+      for (final name in ['Math:rnd', 'Math:gen_rng']) {
         expect(
-          FlashRuntime.usesRandomness('x($name)'.replaceAll('\$name', name)),
+          FlashRuntime.usesRandomness('let x = $name(0 10)'),
           isTrue,
           reason: '$name を乱数源として数えている',
         );
