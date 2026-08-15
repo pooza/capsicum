@@ -545,7 +545,7 @@ class PushRegistrationService {
               e,
             );
             Sentry.captureException(
-              e,
+              scrubException(e),
               stackTrace: st,
               withScope: (scope) {
                 scope.setTag('service', 'push_registration');
