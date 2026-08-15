@@ -152,6 +152,41 @@ int main() {
           "wns.show_failed も正常系で上書きされない");
   }
 
+  // 9b) お知らせ push の観測コード (#978)。表示成功は正常系（異常系を上書き
+  //     しない）、表示失敗・本文欠落は異常系（後続の正常系に飲まれない）。
+  {
+    // 表示成功は正常系: 未消費の異常系を上書きしない。
+    std::string a =
+        BuildPushDiagnosticJson("", "bgtask.decrypt_failed", "a.test", 10);
+    std::string b =
+        BuildPushDiagnosticJson(a, "bgtask.announcement_shown", "b.test", 20);
+    PushDiagnostic d;
+    ParsePushDiagnosticJson(b, &d);
+    Check(d.code == "bgtask.decrypt_failed" && d.at_ms == 10 && d.count == 2,
+          "bgtask.announcement_shown は正常系（異常系を上書きしない）");
+
+    // 表示失敗は異常系: 後続の正常系で上書きされず warning のまま回収される。
+    std::string c = BuildPushDiagnosticJson(
+        "", "bgtask.announcement_show_failed", "c.test", 30);
+    std::string e = BuildPushDiagnosticJson(c, "bgtask.shown", "", 40);
+    PushDiagnostic f;
+    ParsePushDiagnosticJson(e, &f);
+    Check(f.code == "bgtask.announcement_show_failed" && f.at_ms == 30 &&
+              f.host == "c.test",
+          "bgtask.announcement_show_failed は正常系で上書きされない");
+
+    // relay が整形済み本文を載せていない状態も異常系（気付けないと
+    // 「Windows だけお知らせが出ない」が手掛かり無しになる）。
+    std::string g =
+        BuildPushDiagnosticJson("", "bgtask.announcement_no_body", "g.test", 50);
+    std::string h =
+        BuildPushDiagnosticJson(g, "bgtask.announcement_shown", "", 60);
+    PushDiagnostic i;
+    ParsePushDiagnosticJson(h, &i);
+    Check(i.code == "bgtask.announcement_no_body" && i.at_ms == 50,
+          "bgtask.announcement_no_body は正常系で上書きされない");
+  }
+
   // 10) 観測レコードの host は `username@host` の host 部分のみ（username は
   //     載せない、#800）。
   {

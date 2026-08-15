@@ -24,12 +24,13 @@ std::string JsonQuote(const std::string& s) {
 // （単一スロットゆえ、異常系が後続の正常系イベントに飲まれて Sentry の warning が
 // 消えるのを防ぐ）。Dart 側 _flushWnsPushDiagnostics の benign 判定と揃えること。
 //
-// ⚠ `bgtask.shown` は**表示に成功したときだけ**記録される (#957)。表示失敗は
-// `bgtask.show_failed` / `wns.show_failed` で、いずれもここに含めない
-// （＝異常系として温存され warning で上がる）。
+// ⚠ `bgtask.shown` / `bgtask.announcement_shown` は**表示に成功したときだけ**
+// 記録される (#957 / #978)。表示失敗は `bgtask.show_failed` /
+// `bgtask.announcement_show_failed` / `wns.show_failed` で、いずれもここに
+// 含めない（＝異常系として温存され warning で上がる）。
 bool IsBenignCode(const std::string& code) {
-  return code == "bgtask.shown" || code == "bgtask.not_encrypted" ||
-         code == "bgtask.not_raw";
+  return code == "bgtask.shown" || code == "bgtask.announcement_shown" ||
+         code == "bgtask.not_encrypted" || code == "bgtask.not_raw";
 }
 
 // 自前で生成した flat オブジェクト（値は文字列 or 数値）を解く最小パーサ。

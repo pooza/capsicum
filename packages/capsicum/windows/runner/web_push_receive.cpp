@@ -226,4 +226,50 @@ bool HandleWnsRawPayloadFromKeysetJson(const std::string& raw_payload,
                                  error, push_labels_json);
 }
 
+bool TryBuildAnnouncementDisplay(const std::string& raw_payload,
+                                 PushDisplay* out, std::string* error) {
+  auto fail = [&](const char* message) {
+    if (error != nullptr) *error = message;
+    return false;
+  };
+
+  std::map<std::string, std::string> envelope;
+  if (!ParseFlatObject(raw_payload, &envelope)) {
+    return fail("invalid envelope");
+  }
+  // announcement でないものは暗号化通知。**account の検査より先に**判定する。
+  // 逆順にすると、account を欠いた暗号化通知が "missing account" ではなく
+  // announcement 側の失敗として観測に載り、切り分けを誤らせる。
+  if (MapGet(envelope, "notification_type") != "announcement") {
+    return fail("not an announcement");
+  }
+  const std::string account = MapGet(envelope, "account");
+  if (account.empty()) {
+    return fail("missing account");
+  }
+  if (out != nullptr) {
+    out->account = account;
+  }
+  // relay が整形済みの本文。空なら**表示しない**。ここで announcement_content
+  // (HTML) に倒すと C++ 側に HTML 剥がしを持つことになり、寄せた意味が消える。
+  // 旧 relay 相手に空トーストを出すより、観測へ落として気付ける方に倒す。
+  const std::string body = MapGet(envelope, "announcement_body");
+  if (body.empty()) {
+    return fail("missing announcement body");
+  }
+
+  out->title = ResolveDisplayTitle("announcement", std::string(),
+                                   kDefaultReblogLabel, kDefaultPostLabel);
+  out->body = body;
+  out->type = "announcement";
+  // WebSocket 経路 (#569) の `Notification.id` と同じ表現。id が無ければ空の
+  // ままにして Tag を付けさせない (#956)。付けると id を持たないお知らせが
+  // 全部同じ Tag へ潰れ、Action Center に最後の 1 件しか残らない。
+  const std::string announcement_id = MapGet(envelope, "announcement_id");
+  if (!announcement_id.empty()) {
+    out->notification_id = "announcement:" + announcement_id;
+  }
+  return true;
+}
+
 }  // namespace capsicum

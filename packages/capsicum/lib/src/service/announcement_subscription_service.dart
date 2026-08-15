@@ -58,27 +58,30 @@ class AnnouncementSubscriptionService {
   /// 付けた `aps.alert` がそのまま表示される (capsicum-relay#17 で実測)。
   /// **client 側に受信の作り込みは要らない** (#919)。
   ///
-  /// ⚠ **Windows はまだ含めない**。WNS raw push には `aps.alert` に相当する
-  /// OS 側の表示機構が無く、bg task は Web Push の暗号化ペイロードしか解釈
-  /// しない (無暗号化は `bgtask.not_encrypted` で捨てる)。#978 で bg task 側の
-  /// 経路が入り、relay#36 Phase 2 が対になってから含める。Linux はネイティブ
-  /// push の経路自体が無い (#475)。
+  /// Windows は #978 で bg task 側の経路が入ったので含める。WNS raw push には
+  /// `aps.alert` に相当する OS 側の表示機構が無いため、macOS と違って
+  /// **client 側の作り込みが要る** — bg task が `notification_type:
+  /// "announcement"` のエンベロープを解釈し、relay が整形した
+  /// `announcement_body` でトーストを組む。Linux はネイティブ push の経路
+  /// 自体が無い (#475)。
   ///
-  /// 非対応プラットフォームでも、アプリ**起動中**のお知らせは WebSocket 経路
-  /// (#569) が拾って OS 通知に出す。設定画面はトグルの代わりにその旨を説明
-  /// する ([resolveAnnouncementRow])。
+  /// 非対応プラットフォーム (Linux) でも、アプリ**起動中**のお知らせは
+  /// WebSocket 経路 (#569) が拾って OS 通知に出す。設定画面はトグルの代わりに
+  /// その旨を説明する ([resolveAnnouncementRow])。
   static bool get platformSupported =>
       debugPlatformSupportedOverride ??
       deliverableDeviceTypes.contains(currentPushDeviceType);
 
-  /// relay の `AnnouncementWorker#deliver` が実際に配送する device_type
-  /// (capsicum-relay#36 Phase 1 時点)。[platformSupported] の実体で、
-  /// **relay 側の `case` と 1 対 1 に保つ**。
+  /// relay の `AnnouncementWorker#deliver` が実際に配送する device_type。
+  /// [platformSupported] の実体で、**relay 側の `case` と 1 対 1 に保つ**。
   ///
-  /// `windows` を足すのは #978 (bg task 側で無暗号化 announcement を表示する)
-  /// と relay#36 Phase 2 が揃ってから。
+  /// ⚠ `windows` を含める以上、**relay#36 Phase 2 (`when 'windows'` +
+  /// `announcement_body`) を v1.57 の Windows 出荷までにデプロイしておく**
+  /// こと。デプロイ順はどちらが先でも壊れない — 現行 (v1.56 以前) の Windows
+  /// クライアントはこのゲートに阻まれて announcement subscription を 1 行も
+  /// 作っていないので、relay を先に広げても送る先が無い。
   @visibleForTesting
-  static const deliverableDeviceTypes = {'ios', 'android', 'macos'};
+  static const deliverableDeviceTypes = {'ios', 'android', 'macos', 'windows'};
 
   /// 指定アカウントが announcement push に opt-in 済みか。
   static Future<bool> isEnabled(String accountStorageKey) async {

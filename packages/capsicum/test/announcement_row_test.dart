@@ -6,8 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// macOS が relay の配送対象に入った (capsicum-relay#36 Phase 1) ことで、
 /// この判定は「mobile か否か」から「relay が配るか否か」に変わった。配らない
 /// プラットフォームでは黙るのではなく「起動中のみ届く」と説明する。
+///
+/// Windows も #978 で配送対象に入ったので、説明が残るのは Linux だけになった
+/// (#475 でネイティブ push の経路が無い)。判定は真偽値で受けるので、この
+/// テスト自体はプラットフォームが増減しても書き換わらない。
 void main() {
-  group('購読できるプラットフォーム (iOS / Android / macOS)', () {
+  group('購読できるプラットフォーム (iOS / Android / macOS / Windows)', () {
     test('registered ならトグルを出す', () {
       expect(
         resolveAnnouncementRow(
@@ -66,7 +70,7 @@ void main() {
     });
   });
 
-  group('購読できないプラットフォーム (Windows / Linux)', () {
+  group('購読できないプラットフォーム (Linux)', () {
     // #919 の発端。トグルが無い理由と、取りこぼしの回収先を書く。
     test('registered でも説明を出す (トグルは出さない)', () {
       expect(

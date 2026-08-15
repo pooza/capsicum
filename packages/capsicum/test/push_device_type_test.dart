@@ -53,11 +53,12 @@ void main() {
   group('お知らせ push の配送対象 (capsicum-relay#36)', () {
     // relay の AnnouncementWorker#deliver と 1 対 1。ここがずれると
     // 「登録できるのに届かない」か「届くのに購読できない」が生まれる。
-    test('ios / android / macos の 3 種', () {
+    test('ios / android / macos / windows の 4 種', () {
       expect(AnnouncementSubscriptionService.deliverableDeviceTypes, {
         'ios',
         'android',
         'macos',
+        'windows',
       });
     });
 
@@ -69,12 +70,13 @@ void main() {
       );
     });
 
-    // ⚠ #978 (bg task の無暗号化 announcement 対応) と relay#36 Phase 2 が
-    // 揃うまでは、足すと「送っても黙って捨てられる」。
-    test('Windows はまだ含まれない', () {
+    // #978 の本体。bg task が無暗号化 announcement を解釈できるようになった。
+    // ⚠ 対になる relay#36 Phase 2 (`when 'windows'` + `announcement_body`) が
+    // 未デプロイのうちは、購読行はできるが配送されない（壊れはしない）。
+    test('Windows が含まれる', () {
       expect(
         AnnouncementSubscriptionService.deliverableDeviceTypes,
-        isNot(contains(_resolve(isWindows: true))),
+        contains(_resolve(isWindows: true)),
       );
     });
 

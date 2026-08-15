@@ -54,6 +54,8 @@ int main() {
   const std::string kAchievementEarned =
       "\xe5\xae\x9f\xe7\xb8\xbe\xe3\x82\x92\xe8\xa7\xa3"
       "\xe9\x99\xa4";  // 実績を解除
+  const std::string kAnnouncement =
+      "\xe3\x81\x8a\xe7\x9f\xa5\xe3\x82\x89\xe3\x81\x9b";  // お知らせ
   const std::string kEditSuffix =
       "\xe3\x82\x92\xe7\xb7\xa8\xe9\x9b\x86";  // 〜を編集
 
@@ -82,6 +84,12 @@ int main() {
   // 3b) Misskey の実績解除通知は「実績を解除」に寄せる (#918)。
   CheckEq(NotificationTypeDisplayLabel("achievementEarned", reblog, post),
           kAchievementEarned, "achievementEarned → 実績を解除");
+
+  // 3c) capsicum-relay が発火するお知らせ push は「お知らせ」に寄せる
+  //     (#477 / #978)。case が無いと bg task のお知らせトーストが「通知」に
+  //     なり、iOS / Android / WebSocket 経路と文言が割れる。
+  CheckEq(NotificationTypeDisplayLabel("announcement", reblog, post),
+          kAnnouncement, "announcement → お知らせ");
 
   // 4) 未知 type / 空 type は汎用 "通知"。
   CheckEq(NotificationTypeDisplayLabel("totally_unknown", reblog, post),
