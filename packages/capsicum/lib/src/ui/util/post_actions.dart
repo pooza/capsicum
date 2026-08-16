@@ -62,7 +62,7 @@ class PostActionRunner {
       final updated = await action();
       timeline.updatePost(updated);
       onPostUpdated?.call(updated);
-      onActionCompleted?.call();
+      _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       _report('run', e, st, phase: 'post_action');
@@ -77,7 +77,7 @@ class PostActionRunner {
   ) async {
     try {
       await action();
-      onActionCompleted?.call();
+      _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       _report('runVoid', e, st, phase: 'post_action');
@@ -101,7 +101,7 @@ class PostActionRunner {
       await action();
       final updated = await adapter.getPostById(postId);
       timeline.updatePost(updated);
-      onActionCompleted?.call();
+      _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       _report('runReaction', e, st, phase: phase);
@@ -136,10 +136,26 @@ class PostActionRunner {
         );
         timeline.updatePost(updated);
       }
-      onActionCompleted?.call();
+      _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
     } catch (e, st) {
       _report('unrepeat', e, st, phase: 'post_action');
+    }
+  }
+
+  /// 成功後の後始末（スレッドの取り直し等）を呼ぶ。
+  ///
+  /// ⚠ **アクション本体の失敗と混ぜない。** 渡ってくるのは呼び出し側の再取得で、
+  /// スレッド画面は `ref.invalidate` を渡している。応答が返る前に画面を離れると
+  /// dispose 済みの `ref` に触れて投げるため、本体の `try` に直接置くと
+  /// **API は成功しているのに「失敗しました」**が出て、Sentry の `post_action`
+  /// にも偽の失敗が 1 件乗る。投票の導線 ([post_tile] の `_PollCard`) が同じ理由で
+  /// 個別に包んでいたものを、集約したこちらでも同じ形にする。
+  void _notifyCompleted() {
+    try {
+      onActionCompleted?.call();
+    } catch (e) {
+      debugLogException('PostActionRunner onActionCompleted error', e);
     }
   }
 

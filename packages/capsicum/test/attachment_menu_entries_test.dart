@@ -34,10 +34,10 @@ void main() {
 
   test('項目はシートと同じ 4 つ・同じ並び', () {
     expect(build().whereType<MenuActionEntry>().map((e) => e.label), [
-      '拡大して確認',
-      'トリミング・回転',
-      '文字・スタンプを入れる',
-      '説明 (ALT)',
+      '拡大して確認…',
+      'トリミング・回転…',
+      '文字・スタンプを入れる…',
+      '説明 (ALT)…',
     ]);
   });
 
@@ -54,7 +54,7 @@ void main() {
   test('ローカル静止画（プレビュー可・トリミング可）は全項目が有効', () {
     final entries = build();
 
-    for (final label in ['拡大して確認', 'トリミング・回転', '文字・スタンプを入れる', '説明 (ALT)']) {
+    for (final label in ['拡大して確認…', 'トリミング・回転…', '文字・スタンプを入れる…', '説明 (ALT)…']) {
       expect(action(entries, label).onSelected, isNotNull, reason: label);
     }
   });
@@ -64,19 +64,19 @@ void main() {
   test('ドライブ画像はプレビューだけ有効', () {
     final entries = build(previewable: true, croppable: false);
 
-    expect(action(entries, '拡大して確認').onSelected, isNotNull);
-    expect(action(entries, 'トリミング・回転').onSelected, isNull);
-    expect(action(entries, '文字・スタンプを入れる').onSelected, isNull);
+    expect(action(entries, '拡大して確認…').onSelected, isNotNull);
+    expect(action(entries, 'トリミング・回転…').onSelected, isNull);
+    expect(action(entries, '文字・スタンプを入れる…').onSelected, isNull);
   });
 
   /// 動画 / 音声。`_attachmentImageProvider` が null を返すのでプレビューも不可。
   test('動画・音声は説明 (ALT) だけ有効', () {
     final entries = build(previewable: false, croppable: false);
 
-    expect(action(entries, '拡大して確認').onSelected, isNull);
-    expect(action(entries, 'トリミング・回転').onSelected, isNull);
-    expect(action(entries, '文字・スタンプを入れる').onSelected, isNull);
-    expect(action(entries, '説明 (ALT)').onSelected, isNotNull);
+    expect(action(entries, '拡大して確認…').onSelected, isNull);
+    expect(action(entries, 'トリミング・回転…').onSelected, isNull);
+    expect(action(entries, '文字・スタンプを入れる…').onSelected, isNull);
+    expect(action(entries, '説明 (ALT)…').onSelected, isNotNull);
   });
 
   test('説明 (ALT) は添付の種類によらず有効（シートと同じ）', () {
@@ -85,7 +85,7 @@ void main() {
         expect(
           action(
             build(previewable: previewable, croppable: croppable),
-            '説明 (ALT)',
+            '説明 (ALT)…',
           ).onSelected,
           isNotNull,
         );
@@ -106,7 +106,7 @@ void main() {
     final log = <String>[];
     final entries = build(log: log);
 
-    for (final label in ['拡大して確認', 'トリミング・回転', '文字・スタンプを入れる', '説明 (ALT)']) {
+    for (final label in ['拡大して確認…', 'トリミング・回転…', '文字・スタンプを入れる…', '説明 (ALT)…']) {
       action(entries, label).onSelected!();
     }
 

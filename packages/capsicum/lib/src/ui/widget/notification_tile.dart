@@ -107,6 +107,23 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
         : _contentRenderer!.renderMfm(content);
   }
 
+  /// 実績一覧を開く (#918)。実績は自分のものしか通知されないので、対象は
+  /// 常に現在のアカウント。
+  ///
+  /// 解決できないときは何もしない（この通知が並んでいる時点でログイン済みな
+  /// ので実際には起きないが、`extra` 無しで push すると router 側が落ちる）。
+  void _openAchievements(BuildContext context) {
+    final user = ref.read(currentAccountProvider)?.user;
+    if (user == null) return;
+    context.push(
+      '/achievements',
+      extra: {
+        'userId': user.id,
+        'displayName': user.displayName ?? user.username,
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -122,8 +139,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           ? () =>
                 context.push('/collection', extra: notification.collection!.id)
           // 実績解除通知 (#918): post を持たないため、タップで実績一覧を開く。
+          // ⚠ **`extra` は省略できない。** `/achievements` の builder は
+          // `state.extra!` で `userId` を取り出すので、付けずに push すると
+          // その場で例外になる（プロフィール画面の導線と同じ形で渡す）。
           : notification.type == NotificationType.achievementEarned
-          ? () => context.push('/achievements')
+          ? () => _openAchievements(context)
           : null,
       onLongPress: notification.post != null
           ? () => _showActionMenu(context)

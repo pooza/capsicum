@@ -112,7 +112,7 @@ class AnnouncementSubscriptionService {
   static Future<void> autoEnableIfDefault(Account account) async {
     final accountStorageKey = account.key.toStorageKey();
     if (!platformSupported) {
-      // 非対応プラットフォーム (Windows / Linux)。過去の自動購読が残っていれば
+      // 非対応プラットフォーム (Linux)。過去の自動購読が残っていれば
       // 片付ける — relay には配送されない死に subscription のため。
       // opt-out marker はユーザー意思の記録なので触らない。
       if (await isEnabled(accountStorageKey)) {

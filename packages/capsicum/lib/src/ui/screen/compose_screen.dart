@@ -166,23 +166,27 @@ List<MenuEntry> buildAttachmentMenuEntries({
   required bool busy,
   required AttachmentMenuCallbacks callbacks,
 }) => [
+  // ⚠ **4 つとも `…` が付く。** いずれも選ぶとさらに UI が開く（前 3 つは全画面、
+  // 説明 (ALT) はダイアログ）。規約は `drive_manager_screen.dart` の
+  // [buildDriveMenuEntries] が正本。**シート側 ([_showAttachmentMenu]) には
+  // 付けない** — あちらは項目そのものが操作で、開くことを予告する必要がない。
   MenuActionEntry(
-    label: '拡大して確認',
+    label: '拡大して確認…',
     icon: Icons.zoom_in,
     onSelected: (busy || !previewable) ? null : callbacks.preview,
   ),
   MenuActionEntry(
-    label: 'トリミング・回転',
+    label: 'トリミング・回転…',
     icon: Icons.crop_rotate,
     onSelected: (busy || !croppable) ? null : callbacks.crop,
   ),
   MenuActionEntry(
-    label: '文字・スタンプを入れる',
+    label: '文字・スタンプを入れる…',
     icon: Icons.title,
     onSelected: (busy || !croppable) ? null : callbacks.addOverlay,
   ),
   MenuActionEntry(
-    label: '説明 (ALT)',
+    label: '説明 (ALT)…',
     icon: Icons.subtitles_outlined,
     onSelected: busy ? null : callbacks.editDescription,
   ),
@@ -2278,7 +2282,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       );
       if (ok != true || !mounted) return;
     }
-    await _clearDraft();
+    // ⚠ **fresh-compose セッションだけが対象**（投稿成功・サーバー下書き保存の
+    // 経路と同じ条件）。`pushReplacement` は pop を伴うので #966 の離脱時保存が
+    // 走り、「破棄します」と言った本文がローカルスロットへ書き戻る——これを
+    // 防ぐのがここの目的だが、reply/quote/redraft/share はそもそも autosave して
+    // いない（[_saveDraft] が入口で no-op）。無条件に消すと、**別のセッションで
+    // 保存されていた無関係の下書きを巻き添えにする**。[ComposeDraftStore.clear]
+    // は世代印も進めるので、重ねて開いている compose の離脱時保存まで無効化する。
+    if (_draftAutoSave) {
+      await _clearDraft();
+    }
     if (!mounted) return;
     context.pushReplacement('/compose', extra: {'restoreDraft': draft});
   }

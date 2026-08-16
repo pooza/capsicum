@@ -217,10 +217,15 @@ class _AccountStatusTileState extends ConsumerState<_AccountStatusTile> {
 /// お知らせ push を購読できないプラットフォームで、トグルの代わりに出す説明
 /// (#919)。
 ///
-/// Windows / Linux ではお知らせが WebSocket 経路 (#569) からしか来ないので、
-/// アプリを終了している間のお知らせは通知に出ない。**黙って何も出さないと
-/// 「お知らせ通知に対応していない」と読まれる**（Windows でトグルが見当たらない
-/// という報告が #919 の発端）ので、届く条件と取りこぼしの回収先を明示する。
+/// Linux ではお知らせが WebSocket 経路 (#569) からしか来ないので、アプリを
+/// 終了している間のお知らせは通知に出ない。**黙って何も出さないと「お知らせ通知に
+/// 対応していない」と読まれる**（Windows でトグルが見当たらないという報告が #919
+/// の発端）ので、届く条件と取りこぼしの回収先を明示する。
+///
+/// ⚠ **Windows は #978 で購読側へ移ったのでここには来ない。**（`windows` が
+/// [AnnouncementSubscriptionService.deliverableDeviceTypes] に入り、トグルが出る）。
+/// 発端が Windows だったぶん誤読しやすいので、増やすときは
+/// `deliverableDeviceTypes` との対応を先に確かめること。
 class _RunningOnlyNote extends StatelessWidget {
   const _RunningOnlyNote();
 
