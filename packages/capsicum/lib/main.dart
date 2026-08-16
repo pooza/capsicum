@@ -600,9 +600,15 @@ Future<void> _flushWnsPushDiagnostics() async {
 
     // 正常系（表示成功・暗号化通知でない・raw 以外で起動）は info、異常系は
     // warning。ネイティブ push_diagnostics.cpp の IsBenignCode と揃えること。
-    // ⚠ bgtask.shown は**表示に成功したときだけ**記録される (#957)。表示失敗
-    // (bgtask.show_failed / wns.show_failed) はここに入れない。
-    const benign = {'bgtask.shown', 'bgtask.not_encrypted', 'bgtask.not_raw'};
+    // ⚠ bgtask.shown / bgtask.announcement_shown は**表示に成功したときだけ**
+    // 記録される (#957 / #978)。表示失敗 (bgtask.show_failed /
+    // bgtask.announcement_show_failed / wns.show_failed) はここに入れない。
+    const benign = {
+      'bgtask.shown',
+      'bgtask.announcement_shown',
+      'bgtask.not_encrypted',
+      'bgtask.not_raw',
+    };
     final level = benign.contains(code)
         ? SentryLevel.info
         : SentryLevel.warning;

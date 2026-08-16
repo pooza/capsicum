@@ -216,6 +216,17 @@ end
 
 対象範囲は `v前リリース..HEAD` の差分。Codex（`chatgpt-codex-connector[bot]`）は PR ready 時に走るので併走させ、重複しない指摘だけを拾う。
 
+#### 「横断的に揃える」変更は、揃える対象の判定条件を疑う
+
+**そのマイルストーンで入れた「統一」「絞り込み」系の変更は、当てる経路が正しいかを分岐まで辿って確かめる。** 差分だけ見ると「定数に置き換えた」「ガードを足した」に見えて通ってしまう。
+
+v1.56 のレビューで出た 🔴 2 件は、どちらもこの型だった:
+
+- **[#924](https://github.com/pooza/capsicum/issues/924)** 絵文字 fallback 倍率の統一が、本来の fallback（`Image.network` の `errorBuilder`）ではなく **Unicode 絵文字をそのまま描く通常表示**に当たっていた。メッセージのリアクションが 3 割縮み、本来の fallback は素通しのまま
+- **[#958](https://github.com/pooza/capsicum/issues/958)** キャッシュを `chmod 600` に絞る処理が `!await file.exists()` ガード付きで、**ファイル名・保存先が前版と同じ**なため更新してきたユーザーには一度も当たらなかった（＝守りたかったデータが既存ユーザーだけ無防備）
+
+いずれも「やったこと」は正しく、**「どれに対してやるか」の判定式が間違っていた**。レビュー時は定数・ガードの導入箇所そのものではなく、**その条件が真になるのは実際どの経路か**を確認する。
+
 指摘は以下の基準で分類し、必要最小限のみリリース前に対応、残りは Issue 起票して次リリース以降に送る:
 
 - **赤（必修）**: データ破損・セキュリティ・ユーザー可視の機能不全
@@ -270,6 +281,11 @@ v1.27 では `timeline_provider.dart` / `preferences_provider.dart` が `dart fo
 # 製品版提出が「フル ネーム 9AFBB08E.capsicum_X.Y.Z.0_X64 が重複」で弾かれた（v1.43.0 で実踏）。
 
 # 依存パッケージを最新互換バージョンに更新（リリースのタイミングで実施）
+#
+# ⚠ このコミットのメッセージは必ず `chore(deps):` で始めるか、本文に [pubspec-lock]
+# を入れること。#970 の lock ガード（analyze.yml）は「pubspec.yaml / workflow の pin を
+# 伴わない pubspec.lock 単独の変更」を落とすので、`chore:` だと CI が赤くなる。
+# v1.56 のリリース作業で実際に踏み、amend + force-push で直した。
 cd packages/capsicum
 flutter pub upgrade
 
@@ -455,7 +471,20 @@ cd ios && fastlane release && cd ..
 cd macos && fastlane release && cd ..
 ```
 
-審査提出時のリリースノート（「このバージョンの新機能」欄）には、そのバージョンの変更内容の要約を記載すること。
+#### 「このバージョンの新機能」欄（whatsNew）は定型文で運用する
+
+App Store / Mac App Store の `whatsNew` は、**バージョンごとの要約を書かず、GitHub リリースページへの誘導文で固定**する:
+
+```text
+変更内容の詳細は GitHub リリースページをご覧ください。
+https://github.com/pooza/capsicum/releases
+```
+
+`upload_to_app_store` は前バージョンの値を引き継ぐので、通常のリリースでは**何もしなくてよい**（macOS が引き継がず弾かれた場合の復旧は下の「whatsNew 未入力で submit が弾かれる罠」を参照）。
+
+**リリースノートの正本は GitHub Release 1 箇所**（§4.4）。ASC 側にも要約を置くと、Linux / Windows を含む全プラットフォーム向けの本文と、Apple 2 つだけに出る本文が二重管理になり、片方が陳腐化する。誘導文なら常に最新を指す。
+
+> この節はもともと「そのバージョンの変更内容の要約を記載すること」と書かれていたが、**v1.53〜v1.56 の iOS / macOS はすべて上記の定型文で提出されており**、記述が実態と合っていなかった（2026-08-13 の v1.56 リリース時に ASC API で実測して発覚）。pooza の判断で**実態に合わせる**方向で確定した。
 
 > ⚠️ **iOS の `fastlane release` は §4.2 の ipa が build/ に残っている前提**。iOS ベータの後に Android / macOS を `flutter clean` 込みでビルドすると `build/ios/ipa/capsicum.ipa` が消え、`skip_binary_upload: true` でもレーンが ipa パスの存在検証で `Could not find ipa file` で落ちる。復旧は `flutter build ipa`（build 番号据え置き = 再アップロードされない）で ipa を再生成してから `fastlane release`。ただし再生成後の submit で deliver が **「Waiting for the build to show up in the build list」ループから抜けられずハングする**ことがある（既存 build は ASC 上に存在するのに API 選択が回らない。v1.44.0 で発生）。数分待って進まなければ **ASC UI から該当 build を手動で「審査へ提出」する方が速い**（1分程度）。macOS の pkg は最後にビルドしたものが残るため、iOS の ipa 再生成で `flutter clean` する前に macOS の submit を先に済ませること。
 >

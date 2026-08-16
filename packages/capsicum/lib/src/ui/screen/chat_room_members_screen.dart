@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/op_error.dart';
-import '../widget/user_avatar.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/user_avatar.dart';
 
 /// 指定ルームのメンバー一覧 (#438)。owner は招待ボタンも表示される。
 /// メンバーをタップすると相手のプロフィール画面へ。

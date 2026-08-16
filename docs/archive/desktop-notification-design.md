@@ -256,11 +256,16 @@ killed due to sluggish startup」で kill し、元 payload（relay のフォー
 - willPresent ベースの dedup（NotificationDedupPlugin）は前面時の即時黙殺として
   存続。NSE appex も「OS 側が直れば自動復帰する保険」として残置
 - アプリ非起動時の generic 文面は macOS の到達上限として受容する
-- **お知らせ push（#477）は macOS では購読しない**。relay の AnnouncementWorker
-  は device_type=ios/android にしか配送せず（macos はスキップ）、アプリ起動中の
-  お知らせは WebSocket 経路がリッチ通知で出す。非起動時の取りこぼしはアプリ内の
-  お知らせ画面で読めるため許容。macOS では自動購読をスキップし設定画面の
-  トグルも出さない（`AnnouncementSubscriptionService.platformSupported`）
+- ~~**お知らせ push（#477）は macOS では購読しない**~~ **← 2026-08-15 に撤回（#919）**。
+  当時は relay の AnnouncementWorker が device_type=ios/android にしか配送せず
+  （macos はスキップ）、非起動時の取りこぼしはアプリ内のお知らせ画面で読める
+  ため許容としていた。その後 capsicum-relay#36 Phase 1 で `when 'ios', 'macos'`
+  に広げ、macOS も配送対象になった。NSE は `body`/`encoding` を持たない push を
+  素通しするので relay が付けた `aps.alert` がそのまま表示され、client 側の
+  受信実装は不要（capsicum-relay#17 で実測）。現在は
+  `AnnouncementSubscriptionService.platformSupported` が macOS を含み、設定画面の
+  トグルも出る。**Windows / Linux は引き続き非購読**（Windows は #978 待ち・
+  Linux はネイティブ push の経路なし）で、設定画面はその旨を説明に出す
 
 ## 実装フェーズ
 

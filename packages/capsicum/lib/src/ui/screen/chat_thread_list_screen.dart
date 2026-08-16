@@ -9,8 +9,8 @@ import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
 import '../widget/oauth_scope_error_view.dart';
-import '../widget/user_avatar.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/user_avatar.dart';
 
 class ChatThreadListScreen extends ConsumerStatefulWidget {
   const ChatThreadListScreen({super.key});

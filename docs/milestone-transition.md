@@ -67,7 +67,7 @@ capsicum-relay は独自のリリースサイクル（tag / GitHub Release）を
 
 - **その回に relay を触らないなら枠を作らない。**空枠を量産しない（0 件の枠は「やらない」と区別が付かず、v1.20.1 が 3 ヶ月半放置された）。
 - 枠を作らないと決めた回は、capsicum 側マイルストーンの description に「relay: なし」と明記する。**判断したことが読み取れる状態にする**のが目的で、無言の未割り当てにしない。
-- relay 側の作業範囲は commit + flauros デプロイまで（メモリ `feedback_capsicum_relay_deploy_delegation` が正本）。ブランチは原則 main 直（`feedback_capsicum_relay_branching`）。
+- relay 側の作業範囲は commit + リレーサーバーへのデプロイまで（メモリ `feedback_capsicum_relay_deploy_delegation` が正本）。ブランチは原則 main 直（`feedback_capsicum_relay_branching`）。
 
 ### 4. 直近ロードマップの調整
 

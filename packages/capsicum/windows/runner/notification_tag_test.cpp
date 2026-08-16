@@ -7,7 +7,12 @@
 // 更新すること。
 //
 // ビルド & 実行（VS Developer 環境）:
-//   cl /EHsc /std:c++17 notification_tag_test.cpp notification_tag.cpp
+//   cl /EHsc /std:c++17 /utf-8 notification_tag_test.cpp notification_tag.cpp
+//
+// ⚠ `/utf-8` は必須 (#960)。下のベクタに `u8"ぷーざ@..."` の生マルチバイトが
+// あり、CP932 環境で `/utf-8` 無しで叩くと MSVC がソースを CP932 と誤読して
+// UTF-8 バイト列が変わり、multibyte ベクタだけ FAIL する。CMakeLists.txt /
+// windows-release.yml も「/utf-8 必須」と明記している（出荷物の CI は正しい）。
 
 #include <cstdio>
 #include <string>

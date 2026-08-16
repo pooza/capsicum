@@ -45,12 +45,12 @@ class DesktopNotificationDispatcher {
   /// セッション内 dedup。native push と二重受信する通知を取りこぼさず
   /// 1 表示に抑える。`notification.id` はサーバーローカルでアカウント間で
   /// 衝突しうるため、account を含む複合キーで持つ。
-  final Set<String> _emittedKeys = {};
+  final _emittedKeys = _BoundedKeySet('emitted', _maxTrackedKeys);
 
   /// APNs 先着で native 側 (macOS NotificationDedupPlugin) が表示済みの
   /// `username@host|notificationId` キー (#674)。[NotificationDedupChannel] の
   /// onRemotePresented で流入し、同じ通知の WebSocket 側 emit をスキップする。
-  final Set<String> _nativeShownKeys = {};
+  final _nativeShownKeys = _BoundedKeySet('native_shown', _maxTrackedKeys);
   static const _maxTrackedKeys = 500;
 
   /// OS 通知本文の上限。OS 側でも truncate されるが念のため client 側でも切る。
@@ -70,9 +70,6 @@ class DesktopNotificationDispatcher {
     if (!isDesktop) return;
     // APNs 先着分の逆方向 dedup (#674)。macOS 以外では channel が no-op。
     _ref.read(notificationDedupChannelProvider).onRemotePresented = (key) {
-      if (_nativeShownKeys.length >= _maxTrackedKeys) {
-        _nativeShownKeys.clear();
-      }
       _nativeShownKeys.add(key);
     };
     // 配信済み generic 通知の掃除役 (#673)。ここで read して常駐させ、
@@ -134,13 +131,27 @@ class DesktopNotificationDispatcher {
   void _refreshAnnouncementsIfNeeded(Account account, Notification n) {
     if (n.type != NotificationType.announcement) return;
     if (_ref.read(currentAccountProvider)?.key != account.key) return;
+    // 生きているときだけ反映する (#915 → #919)。announcementProvider は
+    // autoDispose なので、誰も watch していない状態で `.notifier` を read すると
+    // **provider がここで新規生成され**、build() の取得と refresh() の取り直しで
+    // 同じ一覧を 2 回投げて即破棄される。デスクトップでは DesktopMenuBar が
+    // 未読数を watch しているため通常は生きているが、それに依存する構造には
+    // しない（メニューバーの構成が変われば黙って無駄打ちに戻る）。生きていない
+    // 間の新着は、次に一覧を開いたときの build() が最新を取るので落ちない。
+    // chat_provider の #636 と同型。
+    if (!_ref.exists(announcementProvider)) return;
     unawaited(_ref.read(announcementProvider.notifier).refresh());
   }
 
   Future<void> _emit(Account account, Notification n) async {
     // NSE (#673) が stamp する ID と同じキー空間 (`username@host|id`) の
-    // 横断 dedup キー (#674)。relay の account 表現に合わせる。
-    final relayKey = '${account.key.username}@${account.key.host}|${n.id}';
+    // 横断 dedup キー (#674)。relay の account 表現に合わせる。組み立ては
+    // native の `capsicum::NotificationTagKey` と揃える [notificationTagKey] を
+    // 通す（手書きにすると片方だけ書式が変わっても Dart テストは緑のまま・#960）。
+    final relayKey = notificationTagKey(
+      account: '${account.key.username}@${account.key.host}',
+      notificationId: n.id,
+    );
     if (_nativeShownKeys.contains(relayKey)) {
       // APNs 先着で OS 通知は表示済み。WebSocket 側は出さない。
       debugPrint(
@@ -151,11 +162,6 @@ class DesktopNotificationDispatcher {
     }
     final dedupKey = '${account.key.toStorageKey()}|${n.id}';
     if (!_emittedKeys.add(dedupKey)) return; // 既出
-    if (_emittedKeys.length > _maxTrackedKeys) {
-      _emittedKeys
-        ..clear()
-        ..add(dedupKey);
-    }
     // 後着の APNs banner を黙殺できるよう native 側の既出集合へ伝える
     // (#674。macOS 以外では no-op)。show より先に投げ、APNs との競争窓を
     // 最小化する。
@@ -365,3 +371,49 @@ final desktopNotificationDispatcherProvider =
       dispatcher.start();
       return dispatcher;
     });
+
+/// 挿入順を保つ上限つきキー集合 (#960)。
+///
+/// 上限超過時に [Set.clear] で**全消し**すると、直前まで覚えていたキーまで一斉に
+/// 失い、その瞬間に遅れて届いた同一通知が「未出」と判定されて二重表示になる。
+/// #933 は Windows を OS の Tag 一致に寄せたが、macOS 側（NotificationDedupChannel
+/// 経路）にはこの窓が残っていた。全消しをやめ、上限を超えたぶんだけ**最古から
+/// 押し出す**（FIFO）ことで、直近のキーは常に保持する。
+///
+/// 押し出した件数は [debugPrint] する。release ビルドでは sentry_flutter が
+/// debugPrint を breadcrumb 化するため、これで「上限に達して古いキーを捨てた」
+/// ことが観測に乗る（従来は計装が無かった）。
+class _BoundedKeySet {
+  _BoundedKeySet(this._name, this._maxSize);
+
+  final String _name;
+  final int _maxSize;
+
+  /// Dart の `Set` リテラルは `LinkedHashSet` で挿入順を保つため、`first` が
+  /// 最古のキーになる。
+  final Set<String> _keys = {};
+
+  /// 上限超過で押し出した累計件数（観測用）。
+  int dropped = 0;
+
+  bool contains(String key) => _keys.contains(key);
+
+  /// [key] を追加し、新規なら true を返す（`Set.add` と同じ意味）。上限を超えた
+  /// ぶんは最古から押し出す。
+  bool add(String key) {
+    final added = _keys.add(key);
+    var evicted = 0;
+    while (_keys.length > _maxSize) {
+      _keys.remove(_keys.first);
+      dropped++;
+      evicted++;
+    }
+    if (evicted > 0) {
+      debugPrint(
+        'capsicum: push.desktop: dedup "$_name" evicted $evicted oldest '
+        '(size=${_keys.length}/$_maxSize, total_dropped=$dropped)',
+      );
+    }
+    return added;
+  }
+}

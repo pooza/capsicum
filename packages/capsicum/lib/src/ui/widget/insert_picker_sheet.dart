@@ -7,6 +7,10 @@ import '../util/mouse_drag_scroll_behavior.dart';
 import 'emoji_picker.dart';
 import 'resizable_picker_sheet.dart';
 
+/// [showInsertPickerSheet] の [InsertPickerTab] 引数のために再公開する (#971)。
+/// 呼び出し側はこのランチャだけを見ればよく、ピッカー本体を直接 import しない。
+export 'emoji_picker.dart' show InsertPickerTab;
+
 /// 投稿本文・簡易投稿バー共通の挿入ピッカー起動経路 (#614)。
 ///
 /// 絵文字 (カスタム / Unicode) に加え、モロヘイヤ導入サーバーでは劇中ワード等の
@@ -19,11 +23,16 @@ import 'resizable_picker_sheet.dart';
 /// [closeOnSelect] が true のときは 1 件選択した時点でシートを閉じる。簡易投稿
 /// バーは 1 タップ挿入が主眼なので即閉じ、compose は連続挿入のため開いたまま、と
 /// 呼び出し側で使い分ける (#614)。
+///
+/// [initialTab] は開いた直後のタブ。投稿画面のデスクトップメニューがタブごとに
+/// 項目を出すために使う (#971)。実在しないタブを指しても先頭に開くだけで、条件
+/// 判定は [EmojiPicker] 側に一本化されている。
 Future<void> showInsertPickerSheet({
   required BuildContext context,
   required WidgetRef ref,
   required ValueChanged<String> onSelected,
   bool closeOnSelect = false,
+  InsertPickerTab? initialTab,
 }) async {
   final account = ref.read(currentAccountProvider);
   final adapter = account?.adapter;
@@ -49,6 +58,7 @@ Future<void> showInsertPickerSheet({
           host: account!.key.host,
           mulukhiya: account.mulukhiya,
           accessToken: account.userSecret.accessToken,
+          initialTab: initialTab,
           onSelected: (value) {
             onSelected(value);
             if (closeOnSelect) Navigator.of(sheetContext).pop();

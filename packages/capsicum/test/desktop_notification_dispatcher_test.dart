@@ -4,6 +4,7 @@ import 'package:capsicum/src/model/account.dart';
 import 'package:capsicum/src/model/account_key.dart';
 import 'package:capsicum/src/platform/notification_subsystem/notification_subsystem.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
+import 'package:capsicum/src/provider/announcement_provider.dart';
 import 'package:capsicum/src/provider/platform_providers.dart';
 import 'package:capsicum/src/service/desktop_notification_dispatcher.dart';
 import 'package:capsicum/src/service/notification_dedup_channel.dart';
@@ -100,6 +101,24 @@ Notification _mention(String id, {User? user}) => Notification(
   user: user,
 );
 
+Notification _announcement(String id) => Notification(
+  id: id,
+  type: NotificationType.announcement,
+  createdAt: DateTime(2026, 1, 1),
+);
+
+/// refresh() の呼び出し回数だけ数える announcementProvider の差し替え。
+/// build() でネットワークを叩かないよう空状態を返す。
+class _CountingAnnouncementNotifier extends AnnouncementNotifier {
+  static int refreshCount = 0;
+
+  @override
+  Future<AnnouncementState> build() async => const AnnouncementState();
+
+  @override
+  Future<void> refresh() async => refreshCount++;
+}
+
 /// listener 発火とストリーム配信のためにマイクロタスクを 1 巡させる。
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
@@ -112,11 +131,13 @@ void main() {
   setUp(() {
     subsystem = _RecordingSubsystem();
     dedupChannel = _FakeDedupChannel();
+    _CountingAnnouncementNotifier.refreshCount = 0;
     container = ProviderContainer(
       overrides: [
         notificationSubsystemProvider.overrideWithValue(subsystem),
         accountManagerProvider.overrideWith(_TestAccountNotifier.new),
         notificationDedupChannelProvider.overrideWithValue(dedupChannel),
+        announcementProvider.overrideWith(_CountingAnnouncementNotifier.new),
       ],
     );
     notifier =
@@ -267,5 +288,62 @@ void main() {
     a.controller.add(_mention('n2'));
     await _settle();
     expect(subsystem.shown.length, 1);
+  });
+
+  // お知らせ一覧の取り直し (#888) と、その autoDispose ガード (#915 → #919)。
+  group('お知らせイベントでの一覧取り直し', () {
+    test('一覧が生きていれば取り直す', () async {
+      final a = _makeAccount('alice', 'h1');
+      notifier.setAccounts([a.account]);
+      // 誰かが一覧を watch している状態 (お知らせ画面 / メニューバーの未読数)。
+      container.listen(announcementProvider, (_, _) {});
+      await _settle();
+
+      a.controller.add(_announcement('ann1'));
+      await _settle();
+
+      expect(_CountingAnnouncementNotifier.refreshCount, 1);
+    });
+
+    // ここでガードを外すと、read が autoDispose provider を新規生成し、
+    // build() と refresh() で同じ一覧を 2 回取って即破棄する。
+    test('一覧が生きていなければ provider を起こさない', () async {
+      final a = _makeAccount('alice', 'h1');
+      notifier.setAccounts([a.account]);
+      await _settle();
+
+      a.controller.add(_announcement('ann1'));
+      await _settle();
+
+      expect(_CountingAnnouncementNotifier.refreshCount, 0);
+      expect(container.exists(announcementProvider), isFalse);
+    });
+
+    // 通知そのものは従来どおり出す（取り直しをやめただけ）。
+    test('取り直しを飛ばしても OS 通知は出す', () async {
+      final a = _makeAccount('alice', 'h1');
+      notifier.setAccounts([a.account]);
+      await _settle();
+
+      a.controller.add(_announcement('ann1'));
+      await _settle();
+
+      expect(subsystem.shown.length, 1);
+    });
+
+    // 一覧は表示中アカウントのものなので、他垢のイベントでは触らない (#888)。
+    test('非アクティブ垢のお知らせでは取り直さない', () async {
+      final a = _makeAccount('alice', 'h1');
+      final b = _makeAccount('bob', 'h2');
+      // setAccounts は先頭をアクティブにする＝alice がアクティブ。
+      notifier.setAccounts([a.account, b.account]);
+      container.listen(announcementProvider, (_, _) {});
+      await _settle();
+
+      b.controller.add(_announcement('ann1'));
+      await _settle();
+
+      expect(_CountingAnnouncementNotifier.refreshCount, 0);
+    });
   });
 }

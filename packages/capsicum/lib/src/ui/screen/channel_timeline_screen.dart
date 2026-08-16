@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
 import '../widget/post_tile.dart';
-import '../widget/simple_post_bar.dart';
 import '../widget/retry_error_view.dart';
+import '../widget/simple_post_bar.dart';
 
 /// チャンネルタイムラインの本体（Scaffold/AppBar を持たない）。
 ///

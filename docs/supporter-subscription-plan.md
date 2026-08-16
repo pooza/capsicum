@@ -1,5 +1,7 @@
 # サポーターサブスクリプション（投げ銭）設計判断ドラフト
 
+> **状態: 実装済み（設計経緯の記録）。** 投げ銭本体は v1.27（[#428](https://github.com/pooza/capsicum/issues/428)）、Windows IAP は v1.43（[#599](https://github.com/pooza/capsicum/issues/599)）で出荷済み。以下は着手前に書かれた**意思決定の叩き台**で、「要決定」「まだ着手できない」「未実装」「次アクション」等の未来形は当時の下書き状態であり、現況ではない。現況の正本は §「決定事項（2026-05-20 確定）」・[CLAUDE.md](CLAUDE.md)「課金の方向性」節・§E（Windows IAP）は [archive/windows-iap-design.md](archive/windows-iap-design.md)。本書が現役で担うのは §C-2 / C-2b / C-2c のストア審査回答文（提出のたびに再利用する。[store-release-guide.md](store-release-guide.md) が参照）のみ。
+
 関連 Issue: [#428](https://github.com/pooza/capsicum/issues/428)（v1.27）
 関連: [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay)（初期設計経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md)）、docs/CLAUDE.md「運営元」「プッシュ通知」節
 

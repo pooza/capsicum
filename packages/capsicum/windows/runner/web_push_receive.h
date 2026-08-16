@@ -55,6 +55,40 @@ bool HandleWnsRawPayloadFromKeysetJson(
     PushDisplay* out, std::string* error = nullptr,
     const std::string& push_labels_json = std::string());
 
+// capsicum-relay がお知らせ (announcement) 用に組み立てる**無暗号化**エンベロープ
+// から表示フィールドを取り出す (#477 / #978)。`{notification_type:"announcement",
+// server, announcement_id, announcement_content, announcement_body,
+// announcement_published_at, account}` を受け、鍵も復号も要さない。
+//
+// [HandleWnsRawPayload] とは別関数にしてある。起動中の in-process 受信
+// (wns_push.cpp) はお知らせを WebSocket 経路 (#569) が既に出しているので**表示
+// してはならず**、両方を 1 つの関数にすると起動中に二重に出る。呼ぶのは
+// バックグラウンドタスク（アプリ終了中）だけ。
+//
+// 本文は relay が整形済みの `announcement_body` をそのまま使う。`announcement_
+// content` は HTML のままで、剥がして 80 文字に切る規則は Ruby
+// (AnnouncementWorker#summarize_content) と Dart
+// (PushMessageDispatcher.synthesizeAnnouncementBody) に既にある。ここで 3 つ目を
+// 書くと UTF-8 の文字数え（バイトで切ると日本語が壊れる）まで再実装することに
+// なるため、整形は relay 側に寄せた。
+//
+// title はサーバーから来ない。`announcement` の統一ラベル（「お知らせ」）を
+// [ResolveDisplayTitle] で解決する。
+//
+// notification_id は WebSocket 経路 (#569 `notification_streaming.dart`) が使う
+// `announcement:<id>` と**同じ表現**にする。両経路のトースト Tag が揃い、起動
+// 直後に同じお知らせが streaming から出ても OS 側で畳める (#933)。
+//
+// 成功時 true。false のとき `error` は:
+//   - "not an announcement"      : notification_type が announcement でない
+//                                  （＝暗号化通知。呼び出し側が復号経路へ回す）
+//   - "invalid envelope"         : エンベロープ JSON が不正
+//   - "missing account"          : account が無い
+//   - "missing announcement body": relay が整形本文を載せていない（旧 relay）
+bool TryBuildAnnouncementDisplay(const std::string& raw_payload,
+                                 PushDisplay* out,
+                                 std::string* error = nullptr);
+
 }  // namespace capsicum
 
 #endif  // RUNNER_WEB_PUSH_RECEIVE_H_

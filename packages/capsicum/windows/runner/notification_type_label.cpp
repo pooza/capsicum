@@ -33,6 +33,11 @@ const char kCreateToken[] =
     "\xe3\x82\xaf\xe3\x83\xb3\xe4\xbd\x9c\xe6\x88\x90";  // アクセストークン作成
 const char kChatMessage[] =
     "\xe3\x83\xa1\xe3\x83\x83\xe3\x82\xbb\xe3\x83\xbc\xe3\x82\xb8";  // メッセージ
+const char kAchievementEarned[] =
+    "\xe5\xae\x9f\xe7\xb8\xbe\xe3\x82\x92\xe8\xa7\xa3"
+    "\xe9\x99\xa4";  // 実績を解除
+const char kAnnouncement[] =
+    "\xe3\x81\x8a\xe7\x9f\xa5\xe3\x82\x89\xe3\x81\x9b";  // お知らせ
 const char kGeneric[] = "\xe9\x80\x9a\xe7\x9f\xa5";  // 通知
 
 }  // namespace
@@ -79,6 +84,18 @@ std::string NotificationTypeDisplayLabel(const std::string& type,
   // 「通知」にフォールバックしていた (#765)。
   if (type == "newChatMessage") {
     return kChatMessage;
+  }
+  // Misskey の実績解除通知 (#918)。Dart notificationTypeDisplay /
+  // NotificationType.achievementEarned と同じく「実績を解除」に寄せる。
+  if (type == "achievementEarned") {
+    return kAchievementEarned;
+  }
+  // capsicum-relay が独自に発火するお知らせ push (#477 / #978)。Mastodon /
+  // Misskey 標準の通知 type には存在しない。Dart notificationTypeDisplay の
+  // NotificationType.announcement と同じく「お知らせ」に寄せる。case が無いと
+  // bg task のお知らせトーストが「通知」になる。
+  if (type == "announcement") {
+    return kAnnouncement;
   }
   return kGeneric;
 }

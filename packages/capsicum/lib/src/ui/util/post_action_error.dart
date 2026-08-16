@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
 
+import '../../util/misskey_api_error.dart';
+import '../../util/upstream_error_message.dart';
+
 /// 投稿アクション (リアクション・お気に入り・ブースト等) の失敗時に
 /// ユーザー向けに表示するメッセージを生成する。
 ///
@@ -17,9 +20,26 @@ import 'package:dio/dio.dart';
 /// この規約は各 catch のコメントに散っていて新しい catch を書くときに辿り着けず、
 /// v1.53 のリリース前レビューで 3 巡連続（3 / 4 / 5 巡目）で取りこぼしが出た。
 /// 追加の catch を書くときはここを見ること。
+///
+/// ## ステータス別の分岐規約
+///
+/// - **400 + Misskey の `error.code`**: [misskeyErrorReason] で既知コードを日本語の
+///   理由に訳す（#886 で用意した表を再利用）。チャンネルへのリノート (#895) が返す
+///   `CANNOT_RENOTE_OUTSIDE_OF_CHANNEL` / `NO_SUCH_CHANNEL` や、その他のブースト
+///   不可・対象消失系の 400 がここで拾える (#923)。未知コードは表に無いので下の
+///   汎用文言へ倒れる。
+/// - **403**: 権限・再ログイン系。Misskey 固有コードより一般的な案内を優先する。
+/// - **500**: サーバー内部エラー。
 String describePostActionError(Object e) {
   if (e is DioException) {
     final statusCode = e.response?.statusCode;
+    if (statusCode == 400) {
+      final code = misskeyApiErrorCode(e);
+      if (code != null) {
+        final reason = misskeyErrorReason(code);
+        if (reason != null) return reason;
+      }
+    }
     if (statusCode == 403) {
       return '権限がありません。再ログインが必要な場合があります';
     }

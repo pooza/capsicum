@@ -7,6 +7,23 @@
 /// （[renderMacMenuBar] / [renderInWindowMenuBar]）が各 UI に変換する。プラット
 /// フォーム差（アイコン有無・OS 提供項目・主修飾キー・チェック表現）はレンダラと
 /// [MenuShortcut] の 1 箇所に閉じ込める。
+///
+/// ## 画面メニュー貢献のテストの流儀 (#960)
+///
+/// 画面が `ScreenMenu` に出す項目の組み立ては、画面ごとに書き方が割れないよう
+/// 次の基準で決める（v1.54 時点で 3 画面の書き方が揃っていなかったのを整理した
+/// もの。項目の定義自体はこのモデルに一本化されており二重管理は無い）。
+///
+/// - **出し分けの条件が少数の値で表せるなら**、top-level の
+///   `@visibleForTesting` 関数に切り出して単体テストを書く（例:
+///   `buildThreadMenuEntries` / `test/thread_menu_entries_test.dart`）。
+///   画面全体を pump せずに「使えない操作をメニューにだけ見せていないか」を
+///   確かめられる。
+/// - **画面の可変状態や `ref.watch` に広く依存するなら**、private メソッドの
+///   ままにする（例: 投稿画面の `_buildComposeMenuEntries`・簡易投稿バーの
+///   `_buildScreenMenuEntries`）。引数へ引き出すと 20 個規模の
+///   コールバックを並べることになり、テストが実装の写経に落ちて
+///   [MenuEntry] の値等価も壊しやすい。担保はウィジェットテスト側に置く。
 library;
 
 import 'package:flutter/material.dart';

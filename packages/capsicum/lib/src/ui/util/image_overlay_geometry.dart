@@ -7,7 +7,57 @@
 /// 賄えるようにするため。
 library;
 
-import 'dart:ui';
+import 'dart:math' as math;
+
+import 'package:flutter/widgets.dart';
+
+/// 操作スライダの識別キー (#946)。
+///
+/// #883 の時点ではスライダが 1 本しか無く、テストは `find.byType(Slider)` で
+/// 掴んでいた。回転を足して 2 本になったので、**どちらを動かしたいのか**を
+/// 型でなくキーで名指しする。定数を画面側でなくここに置くのは、寸法まわりの
+/// 取り決めと同じくテストから import させるため。
+const overlaySizeSliderKey = Key('overlay_size_slider');
+const overlayAngleSliderKey = Key('overlay_angle_slider');
+
+/// テキストレイヤの折り返し幅の、描画幅に対する比率 (#960)。書き出し側
+/// (`painter.layout(maxWidth: w * この値)`) とプレビュー側
+/// (`BoxConstraints(maxWidth: dispW * この値)`) の両方がこれを使う。片方だけ
+/// リテラルで持つと WYSIWYG が割れるため、寸法の式と同じくここに集約する。
+const double kOverlayTextWrapFraction = 0.96;
+
+/// テキストレイヤ追加時の初期サイズ比率（基準高さに対する比率）。
+const double kOverlayDefaultTextSizeFrac = 0.08;
+
+/// スタンプ（画像レイヤ）追加時の初期サイズ比率。
+const double kOverlayDefaultStickerSizeFrac = 0.2;
+
+/// サイズ比率スライダの下限。
+const double kOverlayMinSizeFrac = 0.03;
+
+/// サイズ比率スライダの上限。テキストは行が伸びすぎないよう低め、スタンプは
+/// 大きく貼れるよう高め。
+const double kOverlayMaxTextSizeFrac = 0.25;
+const double kOverlayMaxStickerSizeFrac = 0.8;
+
+/// テキストアウトライン幅 = `fontSize ÷ この値`。
+const double kOverlayOutlineWidthDivisor = 22;
+
+/// 回転角スライダの範囲（ラジアン）(#946)。中央が 0（無回転）になるよう
+/// ±π＝ ±180° を取る。
+///
+/// ⚠ **0° / 90° 付近への吸着（スナップ）は入れていない。** ミーム的な用途では
+/// 「わざと少し傾ける」が主で、吸着があると狙った角度に置けない。代わりに
+/// **中央が正確に 0 になる範囲**と、明示的なリセット導線を用意している
+/// （スライダだけだと 0 へ戻すのが難しいため）。
+const double kOverlayMaxAngle = math.pi;
+const double kOverlayMinAngle = -math.pi;
+
+/// 回転角をユーザーに見せる度数表記（例 `-12°`）。編集画面のラベル用。
+String overlayAngleLabel(double radians) {
+  final degrees = radians * 180 / math.pi;
+  return '${degrees.round()}°';
+}
 
 /// スタンプ (画像レイヤ) の描画矩形を返す (#883)。
 ///

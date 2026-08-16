@@ -14,6 +14,9 @@ class MisskeyNotification {
   final MisskeyNote? note;
   final String? reaction;
 
+  /// `type == 'achievementEarned'` のとき解除した実績のキー（例: `notes1`, #918）。
+  final String? achievement;
+
   const MisskeyNotification({
     required this.id,
     required this.type,
@@ -21,6 +24,7 @@ class MisskeyNotification {
     this.user,
     this.note,
     this.reaction,
+    this.achievement,
   });
 
   factory MisskeyNotification.fromJson(Map<String, dynamic> json) =>

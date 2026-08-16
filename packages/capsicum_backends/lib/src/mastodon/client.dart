@@ -593,10 +593,13 @@ class MastodonClient {
     return (statuses: statuses, lastConversationId: lastConversationId);
   }
 
-  /// POST /api/v1/media
+  /// POST /api/v2/media
   ///
-  /// v1 は同期処理で、トランスコード完了後に 200 + 完全な JSON を返す。
-  /// モロヘイヤ経由の場合も安定して動作する。
+  /// v2 は小さいファイルには 200 + 完全な JSON を即返すが、大きいファイルには
+  /// **202 + `url` が null** を返してトランスコードを非同期化する。その場合は
+  /// 処理完了まで `GET /api/v1/media/:id` でポーリングする（下の 202 分岐）。
+  /// モロヘイヤ経由でも安定して動作する。（同期のみの v1 は deprecated 方向で、
+  /// #960 で doc を実装に合わせた）
   Future<MastodonMediaAttachment> uploadMedia(
     String filePath, {
     String? mimeType,

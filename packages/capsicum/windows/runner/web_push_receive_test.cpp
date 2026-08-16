@@ -119,6 +119,43 @@ std::string Envelope(const std::string& account, const std::string& encoding,
   return out;
 }
 
+void CheckEq(const std::string& got, const std::string& want,
+             const char* name) {
+  if (got == want) {
+    std::printf("  ok   - %s\n", name);
+  } else {
+    std::printf("  FAIL - %s (got=\"%s\" want=\"%s\")\n", name, got.c_str(),
+                want.c_str());
+    ++g_failures;
+  }
+}
+
+// capsicum-relay の AnnouncementWorker#build_payload が組み立てる無暗号化
+// エンベロープ (#477 / #978)。空文字列のフィールドは載せない（旧 relay を
+// 模す）。
+std::string AnnouncementEnvelope(const std::string& account,
+                                 const std::string& announcement_id,
+                                 const std::string& announcement_body) {
+  std::string out = "{";
+  out += JsonStr("notification_type") + ":" + JsonStr("announcement") + ",";
+  out += JsonStr("server") + ":" + JsonStr("example.test") + ",";
+  if (!announcement_id.empty()) {
+    out += JsonStr("announcement_id") + ":" + JsonStr(announcement_id) + ",";
+  }
+  // HTML のままの本文。C++ 側はこれを**使わない**ことをテストで固定する。
+  out += JsonStr("announcement_content") + ":" +
+         JsonStr("<p>raw <b>html</b> body</p>") + ",";
+  if (!announcement_body.empty()) {
+    out +=
+        JsonStr("announcement_body") + ":" + JsonStr(announcement_body) + ",";
+  }
+  out += JsonStr("announcement_published_at") + ":" +
+         JsonStr("2026-08-16T00:00:00Z") + ",";
+  out += JsonStr("account") + ":" + JsonStr(account);
+  out += "}";
+  return out;
+}
+
 }  // namespace
 
 int main() {
@@ -214,6 +251,109 @@ int main() {
           d.account.c_str());
       ++g_failures;
     }
+  }
+
+  // ---- 無暗号化のお知らせ push (#978) ----
+  using capsicum::TryBuildAnnouncementDisplay;
+
+  // 「お知らせ」の UTF-8 期待値（このテストは /utf-8 なしでコンパイルするため
+  //  日本語リテラルは \xHH で書く。notification_type_label_test と同じ流儀）。
+  const std::string kAnnouncementLabel =
+      "\xe3\x81\x8a\xe7\x9f\xa5\xe3\x82\x89\xe3\x81\x9b";  // お知らせ
+
+  // 9) 正常系: relay が整形した本文をそのまま使い、title は統一ラベルに解決。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildAnnouncementDisplay(
+        AnnouncementEnvelope(kAccount, "42", "SUMMARIZED BODY"), &d, &err);
+    if (ok) {
+      std::printf("  ok   - お知らせエンベロープを受理する\n");
+    } else {
+      std::printf("  FAIL - お知らせエンベロープを受理しない (err=\"%s\")\n",
+                  err.c_str());
+      ++g_failures;
+    }
+    CheckEq(d.title, kAnnouncementLabel, "title は統一ラベル「お知らせ」");
+    CheckEq(d.body, "SUMMARIZED BODY",
+            "body は relay の整形済み本文をそのまま（HTML を使わない）");
+    CheckEq(d.type, "announcement", "type は announcement");
+    CheckEq(d.account, kAccount, "account を観測用に載せる");
+    // #569 の notification_streaming.dart が作る Notification.id と同じ表現。
+    // ここがズレると起動直後の streaming 通知と Tag が揃わず OS が畳めない。
+    CheckEq(d.notification_id, "announcement:42",
+            "notification_id は WebSocket 経路と同じ announcement:<id>");
+  }
+
+  // 10) 暗号化通知のエンベロープは announcement 経路に入らない（呼び出し側が
+  //     復号経路へ回す合図）。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildAnnouncementDisplay(
+        Envelope(kAccount, "aes128gcm", kBody), &d, &err);
+    CheckErr(ok, err, "not an announcement",
+             "暗号化エンベロープは announcement でない");
+  }
+
+  // 11) relay が announcement_body を載せていない（Phase 2 より古い relay）。
+  //     announcement_content (HTML) に倒して空トーストを出すのではなく、
+  //     観測へ落とす。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildAnnouncementDisplay(
+        AnnouncementEnvelope(kAccount, "42", ""), &d, &err);
+    CheckErr(ok, err, "missing announcement body",
+             "整形済み本文が無ければ表示しない（HTML に倒さない）");
+  }
+
+  // 12) account 欠落。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok =
+        TryBuildAnnouncementDisplay(AnnouncementEnvelope("", "42", "SUMMARIZED BODY"), &d,
+                                    &err);
+    CheckErr(ok, err, "missing account", "お知らせでも account は必須");
+  }
+
+  // 13) announcement_id が無ければ Tag を付けない (#956)。付けると id を持た
+  //     ないお知らせが全部同じ Tag へ潰れ、最後の 1 件しか残らない。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok =
+        TryBuildAnnouncementDisplay(AnnouncementEnvelope(kAccount, "", "SUMMARIZED BODY"),
+                                    &d, &err);
+    if (ok && d.notification_id.empty()) {
+      std::printf("  ok   - id 無しのお知らせは notification_id を空にする\n");
+    } else {
+      std::printf(
+          "  FAIL - id 無しで notification_id が空でない (ok=%d got=\"%s\")\n",
+          ok ? 1 : 0, d.notification_id.c_str());
+      ++g_failures;
+    }
+  }
+
+  // 14) 壊れたエンベロープ。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = TryBuildAnnouncementDisplay("{not json", &d, &err);
+    CheckErr(ok, err, "invalid envelope", "壊れたお知らせエンベロープ");
+  }
+
+  // 15) 逆向きの固定: お知らせを **暗号化経路に渡しても表示材料にならない**。
+  //     起動中の in-process 受信 (wns_push.cpp) はこの関数しか呼ばないので、
+  //     お知らせは WebSocket 経路 (#569) だけが出す＝二重に出ない。
+  {
+    capsicum::PushDisplay d;
+    std::string err;
+    bool ok = HandleWnsRawPayload(
+        AnnouncementEnvelope(kAccount, "42", "SUMMARIZED BODY"), dat, &d, &err);
+    CheckErr(ok, err, "not an encrypted notification",
+             "お知らせは暗号化経路では表示されない（起動中の二重表示防止）");
   }
 
   _wremove(dat.c_str());

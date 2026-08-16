@@ -11,10 +11,11 @@
 | `docs/`（GitHub・**公開**） | 公開 | プロジェクトの規約・設計方針・運用手順・再発する技術罠（[tech-notes.md](tech-notes.md)） |
 | `MEMORY.md` + `memory/*`（Google Drive 共有・**非公開**） | 全端末で共有・非公開 | Claude 向け作業ルール（feedback）・端末固有値・GitHub / コードから導けない状態や判断経緯 |
 | `docs/archive/`（GitHub・公開） | 公開 | 役目を終えた設計書・計画・廃止手順（参照はするが現役運用しない） |
+| chubo2 `docs/infra-note.md`（別リポジトリ・**private**・git 共有） | 全セッション共有・非公開 | サーバーインフラの構成・手順・再発する罠（capsicum の公開 docs に書けない内部情報） |
 
 判断の軸:
 
-- **公開境界**: `docs/` は公開リポジトリ。secrets・端末固有値（UDID / Key ID / 個人ディレクトリパス / SDK パス）・特定運用者の私的判断は置かない → memory へ。
+- **公開境界**: `docs/` は公開リポジトリ。secrets・端末固有値（UDID / Key ID / 個人ディレクトリパス / SDK パス）・特定運用者の私的判断は置かない → memory へ。**サーバーインフラの内部情報**（内部 SSH ホスト名・ホスティング業者/プラン・deploy ユーザー・server 側コマンド・内部 IP・デプロイ手順）は infra-note へ（step 4）。
 - **二重管理禁止**: GitHub Issues / Releases / Milestones が正本の情報を docs / memory に複写しない。
 - **メモリはポインタ運用**: 再発する技術罠の正本は docs（tech-notes 等）に置き、memory 側は一行ポインタ＋「なぜ非自明か」だけ残す構成を既定とする。
 - **メモリの役割分担**: `MEMORY.md` は Claude 向け作業ルールと端末固有情報のみ。プロジェクトの規約・方針・手順は docs に書く。
@@ -57,13 +58,23 @@
 - `memory/reference_*` か `project_*` へ移し、docs 側は公開して良い一般記述に置換する（「正本は memory 側」のポインタは docs に残してよいが、値そのものは memory に置く）。
 - 先例: 端末固有値は `reference_dev_environment_specifics`、secrets 実体の場所は `reference_secrets_env_location`。
 
-### 4. 役目を終えた docs のアーカイブ
+### 4. docs → infra-note（インフラ記述の移設）
+
+capsicum は公開リポジトリなので、**サーバーインフラの内部情報を公開 docs に置かない**。共有正本は chubo2（private）の [infra-note.md](https://github.com/pooza/chubo2)（`docs/infra-note.md`）。モロヘイヤ/chubo2 側 `docs/doc-maintenance.md` の「memory → infra-note 昇格」と対になる運用で、あちらが**セッションメモリ**を、こちらが**公開 docs**を入口にする。
+
+- 走査対象（移設候補のシグナル）: 内部 SSH ホスト名（`*.b-shock.local` / SSH 接続先の `*.b-shock.co.jp`、例 `flauros`）・ホスティング業者/プラン（Linode / Nanode / VPS スペック / server の OS 版）・deploy ユーザー名・server 側の `systemctl` / `journalctl` / `nginx` / `certbot` / デプロイコマンド・内部 IP（192.168.x.x）・puma / sqlite 等のサーバー内部。
+- 見つけたら infra-note へ移す（既に載っていれば確認のみ。infra-note は非常に手厚いので**大半は「既にある → 公開 docs 側を剥がすだけ」**になる）。公開 docs 側は一般表現に置換する。
+- **ポインタの張り方**: 公開 docs から private な infra-note へは直リンクできない。文字列で「chubo2 `docs/infra-note.md` が正本」と書くか、メモリ（例 `feedback_capsicum_relay_deploy_delegation`）経由にする。メモリに逐語コマンドが残っているなら、それも infra-note に寄せてメモリ側はポインタ＋作業上の注意だけにする（二重管理禁止）。
+- **移さないもの**: クライアントが接続する公開エンドポイント（`relay.capsicum.shrieker.net` 等）・自前 SNS サーバーの公開ドメイン（`mstdn.b-shock.org` 等）・公開リポジトリで既に開示済みの実装スタック（capsicum-relay の Ruby + Sinatra 等）・Sentry org サブドメイン。
+- infra-note は別リポジトリなので変更は**PR にする**（chubo2 の慣習）。冒頭「最終ドキュメント棚卸し」を当日に更新する。
+
+### 5. 役目を終えた docs のアーカイブ
 
 - 現役運用しないが履歴・経緯として残す価値がある docs（完了した設計書・計画・廃止された手順）を `docs/archive/` へ移動する。
 - 移動後、参照元（CLAUDE.md ほか）のリンクを `archive/` パスへ更新する。ファイル冒頭に「アーカイブ（現役運用では参照しない）」の一行を付ける。
-- 完全に無価値なものは削除してよい（GitHub 履歴に残るため復元可能）。
+- 完全に無価値なものは削除してよい（GitHub 履歴に残るため復元可能）。⚠ **現役の運用参照が残っている docs はアーカイブしない**（例: 出荷済み機能の設計ドラフトでも、審査回答文など提出のたび再利用する節があれば docs に残し、冒頭に「実装済み・以下は当時の下書き」バナーを付けて未来形の誤読だけ封じる）。
 
 ## 実施後
 
-- 変更は docs 修正の commit で残す（memory は Google Drive 同期のため commit 不要）。
+- 変更は docs 修正の commit で残す（memory は Google Drive 同期のため commit 不要）。infra-note（chubo2）を触った場合はそちらは別途 PR。
 - 大きく動かした場合は `MEMORY.md` の索引と関連 `[[リンク]]`、CLAUDE.md のディレクトリ構成・参照リンクの整合を確認する。

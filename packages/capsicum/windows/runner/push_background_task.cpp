@@ -105,6 +105,19 @@ void RecordBgDiagnostic(const std::string& code, const std::string& host) {
   capsicum::RecordPushDiagnostic(code, host);
 }
 
+// TryBuildAnnouncementDisplay の error 文字列を観測コードへ写す (#978)。
+// "not an announcement" は暗号化経路へ回るだけなのでここには来ない。
+std::string AnnouncementDiagnosticCodeForError(const std::string& error) {
+  // relay が announcement_body を載せていない（capsicum-relay#36 Phase 2 より
+  // 古い relay）。お知らせを名乗っているのに表示材料が無い状態で、無記録だと
+  // 「Windows だけお知らせが出ない」が手掛かり無しになる。
+  if (error == "missing announcement body") {
+    return "bgtask.announcement_no_body";
+  }
+  // invalid envelope / missing account。
+  return "bgtask.announcement_bad_payload";
+}
+
 // HandleWnsRawPayload の error 文字列を観測コードへ写す。
 std::string DiagnosticCodeForError(const std::string& error) {
   if (error == "no push keys") return "bgtask.no_keys";
@@ -118,6 +131,86 @@ std::string DiagnosticCodeForError(const std::string& error) {
   return "bgtask.bad_payload";
 }
 
+// 無暗号化のお知らせ push を表示する (#978)。announcement でなければ false を
+// 返し、呼び出し側が暗号化経路へ回す。表示・観測まで完結させたときは true。
+bool HandleAnnouncementContent(const std::string& content) {
+  capsicum::PushDisplay announcement;
+  std::string error;
+  if (!capsicum::TryBuildAnnouncementDisplay(content, &announcement, &error)) {
+    if (error == "not an announcement") {
+      return false;  // 暗号化通知。復号経路へ。
+    }
+    // announcement を名乗っているのに表示材料が足りない。暗号化経路へ回しても
+    // "not an encrypted notification" になるだけで理由が消えるので、ここで
+    // 専用コードとして残す。
+    RecordBgDiagnostic(
+        AnnouncementDiagnosticCodeForError(error),
+        capsicum::PushDiagnosticHostFromAccount(announcement.account));
+    return true;
+  }
+  // Tag は WebSocket 経路 (#569) と同じ `announcement:<id>` 由来なので、起動
+  // 直後に streaming が同じお知らせを出しても OS 側で畳める (#933)。表示に
+  // 成功したときだけ shown を記録するのは暗号化経路と同じ規律 (#957)。
+  //
+  // ⚠ 通常の通知と**同じ bgtask.shown に合流させない**。「bgtask.shown が
+  // 無ければ bg task 未起動」というトリアージ規則は通知 push の母数の上で
+  // 成り立っており、配送経路も発火契機も違うお知らせを混ぜると母数が濁る。
+  const bool shown = capsicum::ShowRawToast(
+      announcement.title, announcement.body,
+      /*launch_arg=*/"",
+      capsicum::NotificationTagFor(announcement.account,
+                                   announcement.notification_id));
+  RecordBgDiagnostic(
+      shown ? "bgtask.announcement_shown" : "bgtask.announcement_show_failed",
+      capsicum::PushDiagnosticHostFromAccount(announcement.account));
+  return true;
+}
+
+// 暗号化された通知 push を復号して表示する。
+void HandleEncryptedContent(const std::string& content) {
+  // 鍵は FullTrust 本体が LocalState に同期した push_keys.json から読む
+  // （AppContainer はローミング %APPDATA% の .dat を読めないため）。
+  const std::string keyset = ReadLocalStateKeysetJson();
+  if (keyset.empty()) {
+    // Option A の鍵同期がまだ走っていない（FullTrust を一度も起動して
+    // いない等）。鍵不在と区別して記録する。
+    RecordBgDiagnostic("bgtask.no_keyset", std::string());
+    return;
+  }
+  capsicum::PushDisplay display;
+  std::string error;
+  // アカウント別 reblog/post ラベルを LocalState から読む (#770)。無ければ
+  // 既定ラベルにフォールバックする（title 文言のみ・鍵/復号には無関係）。
+  const std::string labels = ReadLocalStateLabelsJson();
+  if (capsicum::HandleWnsRawPayloadFromKeysetJson(content, keyset, &display,
+                                                  &error, labels)) {
+    // title / body はサーバー生成・ローカライズ済み。tag は WebSocket
+    // 経路 (#569) と同じ導出に揃える (#933)。bg task が動くのはアプリ
+    // 終了中なので二重にはならないが、起動直後に WebSocket 経路が同じ
+    // 通知を出したときに OS 側で畳めるよう表現を合わせておく。通知 ID を
+    // 持たない払い出しでは Tag を付けない (#956)。付けると連続して届いた
+    // 分が同じ Tag で差し替わり、Action Center に最後の 1 件しか残らない。
+    const bool shown = capsicum::ShowRawToast(
+        display.title, display.body,
+        /*launch_arg=*/"",
+        capsicum::NotificationTagFor(display.account, display.notification_id));
+    // ⚠ 戻り値を捨てて無条件に bgtask.shown を書くと、**復号まで成功
+    // したが表示だけ失敗した**（非 MSIX 起動 / WinRT 例外 / XML 不正）
+    // ケースが「出したのに届かなかった＝relay / WNS 側の問題」に見える
+    // (#957)。「bgtask.shown が無ければ未起動」というトリアージ規則を
+    // 成立させるため、成功したときだけ shown を記録する。
+    RecordBgDiagnostic(shown ? "bgtask.shown" : "bgtask.show_failed",
+                       capsicum::PushDiagnosticHostFromAccount(display.account));
+    return;
+  }
+  // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと
+  // bg task が動いたかすら分からないため観測コードを残す。account は
+  // 復号前にエンベロープから display に載っているので、host を観測へ
+  // 出して発生元サーバーを特定できるようにする (#800)。
+  RecordBgDiagnostic(DiagnosticCodeForError(error),
+                     capsicum::PushDiagnosticHostFromAccount(display.account));
+}
+
 struct PushBackgroundTask
     : winrt::implements<PushBackgroundTask, IBackgroundTask> {
   void Run(IBackgroundTaskInstance const& instance) {
@@ -127,49 +220,11 @@ struct PushBackgroundTask
       auto raw = instance.TriggerDetails().try_as<RawNotification>();
       if (raw) {
         const std::string content = winrt::to_string(raw.Content());
-        // 鍵は FullTrust 本体が LocalState に同期した push_keys.json から読む
-        // （AppContainer はローミング %APPDATA% の .dat を読めないため）。
-        const std::string keyset = ReadLocalStateKeysetJson();
-        if (keyset.empty()) {
-          // Option A の鍵同期がまだ走っていない（FullTrust を一度も起動して
-          // いない等）。鍵不在と区別して記録する。
-          RecordBgDiagnostic("bgtask.no_keyset", std::string());
-        } else {
-          capsicum::PushDisplay display;
-          std::string error;
-          // アカウント別 reblog/post ラベルを LocalState から読む (#770)。無ければ
-          // 既定ラベルにフォールバックする（title 文言のみ・鍵/復号には無関係）。
-          const std::string labels = ReadLocalStateLabelsJson();
-          if (capsicum::HandleWnsRawPayloadFromKeysetJson(
-                  content, keyset, &display, &error, labels)) {
-            // title / body はサーバー生成・ローカライズ済み。tag は WebSocket
-            // 経路 (#569) と同じ導出に揃える (#933)。bg task が動くのはアプリ
-            // 終了中なので二重にはならないが、起動直後に WebSocket 経路が同じ
-            // 通知を出したときに OS 側で畳めるよう表現を合わせておく。通知 ID を
-            // 持たない払い出しでは Tag を付けない (#956)。付けると連続して届いた
-            // 分が同じ Tag で差し替わり、Action Center に最後の 1 件しか残らない。
-            const bool shown = capsicum::ShowRawToast(
-                display.title, display.body,
-                /*launch_arg=*/"",
-                capsicum::NotificationTagFor(display.account,
-                                             display.notification_id));
-            // ⚠ 戻り値を捨てて無条件に bgtask.shown を書くと、**復号まで成功
-            // したが表示だけ失敗した**（非 MSIX 起動 / WinRT 例外 / XML 不正）
-            // ケースが「出したのに届かなかった＝relay / WNS 側の問題」に見える
-            // (#957)。「bgtask.shown が無ければ未起動」というトリアージ規則を
-            // 成立させるため、成功したときだけ shown を記録する。
-            RecordBgDiagnostic(
-                shown ? "bgtask.shown" : "bgtask.show_failed",
-                capsicum::PushDiagnosticHostFromAccount(display.account));
-          } else {
-            // 復号できない通知（鍵不在・レガシー aesgcm 等）は捨てるが、無言だと
-            // bg task が動いたかすら分からないため観測コードを残す。account は
-            // 復号前にエンベロープから display に載っているので、host を観測へ
-            // 出して発生元サーバーを特定できるようにする (#800)。
-            RecordBgDiagnostic(
-                DiagnosticCodeForError(error),
-                capsicum::PushDiagnosticHostFromAccount(display.account));
-          }
+        // お知らせ push は無暗号化なので**鍵より先に**判定する (#978)。鍵セット
+        // の同期が遅れていてもお知らせは出せるし、読む必要のない
+        // push_keys.json を開かずに済む。
+        if (!HandleAnnouncementContent(content)) {
+          HandleEncryptedContent(content);
         }
       } else {
         // raw push trigger なのに RawNotification 以外（toast/badge/tile 等）が

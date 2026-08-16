@@ -32,6 +32,7 @@ import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
 import '../../util/upstream_error_message.dart';
+import '../util/draft_display.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -120,10 +121,76 @@ class _OversizeFile {
 /// 添付画像の編集メニュー ([_showAttachmentMenu], #769) の選択結果。
 enum _AttachmentMenuAction { preview, crop, addOverlay, editDescription }
 
+/// 添付 1 件ぶんのメニューコールバック束 (#941)。デスクトップメニューは添付ごとに
+/// サブメニューを出すので、index を捕まえた 4 本を組にして持ち回る。
+class AttachmentMenuCallbacks {
+  const AttachmentMenuCallbacks({
+    required this.preview,
+    required this.crop,
+    required this.addOverlay,
+    required this.editDescription,
+  });
+
+  final VoidCallback preview;
+  final VoidCallback crop;
+  final VoidCallback addOverlay;
+  final VoidCallback editDescription;
+}
+
 /// AppBar のオーバーフローメニュー ([compose_screen] の actions) の選択結果。
 /// 主 CTA の送信は独立した IconButton に残し、保存系（下書き保存・将来のテンプレート
 /// 保存 #767）とプレビューを overflow に畳んで actions の飽和を防ぐ。
 enum _ComposeMenuAction { saveDraft, saveTemplate, preview }
+
+/// 添付 1 件のデスクトップメニュー項目 (#941)。
+///
+/// 中身は `_showAttachmentMenu`（サムネタップのシート・#769）と同じ 4 つ。
+/// **出し分けの条件もシートと同一**にする（#835）——「使えない操作をメニューにだけ
+/// 見せない」ため。
+///
+/// ⚠ シートは条件に合わない項目を**隠す**が、こちらは**無効化して残す**。
+/// メニューバー側の既存 2 画面（#912 スレッド / #939 ドライブ）が無効化で揃って
+/// おり、動画の添付で「トリミング・回転が無い」より「あるが押せない」の方が
+/// 理由を推測しやすいため。シートは指で触る面なので隠す方が妥当で、この非対称は
+/// 意図的。
+///
+/// 削除は入れない（呼び出し側のコメント参照）。
+///
+/// コールバックを引数で受けるのは、画面全体を pump せずに出し分けを試験できる
+/// ようにするため（条件が 3 つの bool で表せる。基準は `desktop_menu_model.dart`
+/// の「画面メニュー貢献のテストの流儀」#960）。
+@visibleForTesting
+List<MenuEntry> buildAttachmentMenuEntries({
+  required bool previewable,
+  required bool croppable,
+  required bool busy,
+  required AttachmentMenuCallbacks callbacks,
+}) => [
+  // ⚠ **4 つとも `…` が付く。** いずれも選ぶとさらに UI が開く（前 3 つは全画面、
+  // 説明 (ALT) はダイアログ）。規約は `drive_manager_screen.dart` の
+  // [buildDriveMenuEntries] が正本。**シート側 ([_showAttachmentMenu]) には
+  // 付けない** — あちらは項目そのものが操作で、開くことを予告する必要がない。
+  MenuActionEntry(
+    label: '拡大して確認…',
+    icon: Icons.zoom_in,
+    onSelected: (busy || !previewable) ? null : callbacks.preview,
+  ),
+  MenuActionEntry(
+    label: 'トリミング・回転…',
+    icon: Icons.crop_rotate,
+    onSelected: (busy || !croppable) ? null : callbacks.crop,
+  ),
+  MenuActionEntry(
+    label: '文字・スタンプを入れる…',
+    icon: Icons.title,
+    onSelected: (busy || !croppable) ? null : callbacks.addOverlay,
+  ),
+  MenuActionEntry(
+    label: '説明 (ALT)…',
+    icon: Icons.subtitles_outlined,
+    onSelected: busy ? null : callbacks.editDescription,
+  ),
+];
 
 /// 添付画像を原寸で確認するためのフルスクリーンビューア (#660)。トリミング結果も
 /// 含めて投稿前に原寸で確認でき、ピンチ / ダブルタップでズームできる。編集操作は
@@ -1008,6 +1075,27 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   void _showEmojiPicker() {
     showInsertPickerSheet(context: context, ref: ref, onSelected: _insertEmoji);
+  }
+
+  /// タブを名指しでピッカーを開く経路 (#971)。デスクトップメニューは
+  /// 「絵文字…」1 項目でなくタブごとに項目を出すため、開く先を指せる口がいる。
+  ///
+  /// **ビルドのたびに無名関数を作らない**よう、タブごとに名前付きメソッドを
+  /// 置いている（[MenuActionEntry] の値等価。#835）。3 つしかないので
+  /// `Map<InsertPickerTab, VoidCallback>` にするより素直。
+  void _showCustomEmojiPicker() => _showEmojiPickerAt(InsertPickerTab.custom);
+
+  void _showUnicodeEmojiPicker() => _showEmojiPickerAt(InsertPickerTab.unicode);
+
+  void _showWordPicker() => _showEmojiPickerAt(InsertPickerTab.word);
+
+  void _showEmojiPickerAt(InsertPickerTab tab) {
+    showInsertPickerSheet(
+      context: context,
+      ref: ref,
+      onSelected: _insertEmoji,
+      initialTab: tab,
+    );
   }
 
   /// CW 欄へカーソル位置挿入する (#686)。本文と別 controller のため専用経路。
@@ -2124,6 +2212,90 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     );
   }
 
+  /// サーバー下書きのクイックチューザを開く (#963)。テンプレートと同じく、
+  /// 選択と保存が compose 内で完結するようにするための導線。
+  Future<void> _showDraftSheet() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! DraftSupport) return;
+    final account = ref.read(currentAccountProvider);
+
+    await showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return _DraftSheet(
+          draftSupport: adapter as DraftSupport,
+          onSelect: (draft) async {
+            Navigator.pop(sheetContext);
+            await _restoreDraftFromSheet(draft);
+          },
+          onLoadError: (e, st) => reportOpFailure(
+            tagKey: 'draft.op',
+            operation: 'load_sheet',
+            error: e,
+            stackTrace: st,
+            account: account,
+          ),
+        );
+      },
+    );
+  }
+
+  /// シートから選んだ下書きを開く (#963)。
+  ///
+  /// **本文を in-place で差し替えず、compose を丸ごと開き直す**（テンプレートとは
+  /// ここが違う）。理由:
+  ///
+  /// - `_saveServerDraft` は `inReplyToId` / `quoteId` / `channelId` も保存する。
+  ///   開いている compose の返信先やチャンネルを途中で差し替えるのは安全でない
+  /// - 開き直せば router の既存 seeding 経路（`restoreDraft` から reply / quote /
+  ///   channel を取る分岐・#833）がそのまま効く。復元ロジックを二重に書かない
+  /// - **`_restoredDraftId` の付け替えが起きない。** in-place だと「下書き A を
+  ///   復元中に B を選ぶ」で A の id を手放す後始末が要り、漏らすと選び直しただけで
+  ///   A が消える / 消え残る。State ごと作り直せばこの分岐自体が発生しない
+  ///
+  /// ⚠ `pushReplacement` は現在の入力を捨てるので、**先に上書き確認**する。
+  /// 確認を通ったらローカル自動保存 (#966) も破棄する。これをしないと離脱時の
+  /// [PopScope] が「上書きします」と言った本文を書き戻し、次に素の compose を
+  /// 開いたときに復活する。
+  Future<void> _restoreDraftFromSheet(Draft draft) async {
+    final hasContent =
+        _controller.text.trim().isNotEmpty ||
+        _cwController.text.trim().isNotEmpty ||
+        _attachments.isNotEmpty;
+    if (hasContent) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('下書きを開く'),
+          content: const Text('現在の入力内容は破棄されます。よろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('開く'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    // ⚠ **fresh-compose セッションだけが対象**（投稿成功・サーバー下書き保存の
+    // 経路と同じ条件）。`pushReplacement` は pop を伴うので #966 の離脱時保存が
+    // 走り、「破棄します」と言った本文がローカルスロットへ書き戻る——これを
+    // 防ぐのがここの目的だが、reply/quote/redraft/share はそもそも autosave して
+    // いない（[_saveDraft] が入口で no-op）。無条件に消すと、**別のセッションで
+    // 保存されていた無関係の下書きを巻き添えにする**。[ComposeDraftStore.clear]
+    // は世代印も進めるので、重ねて開いている compose の離脱時保存まで無効化する。
+    if (_draftAutoSave) {
+      await _clearDraft();
+    }
+    if (!mounted) return;
+    context.pushReplacement('/compose', extra: {'restoreDraft': draft});
+  }
+
   /// テンプレートの内容を本文・CW へ反映し、使用履歴を更新する。CW は空なら
   /// 触らない（既存の CW を消さない）。呼び出し側で必要なら setState する。
   void _applyTemplateContent(ComposeTemplate template) {
@@ -2493,6 +2665,38 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       scope: () => setState(() => _scope = scope),
   };
 
+  /// 投稿言語 / 引用許可のメニュー項目のコールバック (#971)。[_scopeSetters] と
+  /// 同じ理由でフィールドに一度だけ組む。
+  late final Map<String, VoidCallback> _languageSetters = {
+    for (final code in _languageOptions.keys)
+      code: () => setState(() => _language = code),
+  };
+
+  late final Map<String, VoidCallback> _quoteApprovalSetters = {
+    for (final policy in _quoteApprovalLabels.keys)
+      policy: () => setState(() => _quoteApprovalPolicy = policy),
+  };
+
+  /// 添付 1 件ぶんのメニューコールバック (#941)。上 2 つと同じく、ビルドのたびに
+  /// 無名関数を作らないよう一度組んだものを使い回す。
+  ///
+  /// ⚠ **キーは添付の同一性ではなく「何件目か」**。削除で並びが詰まった後も
+  /// 「2 件目」の項目は *そのとき* 2 件目にあるものを指すべきで、実体の
+  /// [_MediaEntry] を捕まえてはいけない。実行側（`_cropImage` 等）も index を
+  /// 受け取る形なので、位置で持つのが素直。
+  final Map<int, AttachmentMenuCallbacks> _attachmentCallbacks = {};
+
+  AttachmentMenuCallbacks _callbacksForAttachment(int index) =>
+      _attachmentCallbacks.putIfAbsent(
+        index,
+        () => AttachmentMenuCallbacks(
+          preview: () => _openAttachmentViewer(index),
+          crop: () => _cropImage(index),
+          addOverlay: () => _addOverlay(index),
+          editDescription: () => _editDescription(index),
+        ),
+      );
+
   /// Cmd+Enter (macOS) / Ctrl+Enter (Windows / Linux) での送信 (#708)。
   /// Enter 単独は従来どおり改行のまま。物理キーボードのある desktop 前提で、
   /// モバイルでは修飾キーが無いため発火しない。
@@ -2817,6 +3021,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// Cmd/Ctrl+Enter）と二重に走る余地があり、当初はそれが二重投稿になりえた。
   /// #908 の再入ガードで二重投稿そのものは塞がったので**表示を足すことは可能**だが、
   /// 実機で二重発火の有無を確かめてからにしたい。項目の調整は #912 で拾う。
+  ///
+  /// 画面の可変状態と `ref.watch` に広く依存するので private のまま置く
+  /// （`desktop_menu_model.dart` の「画面メニュー貢献のテストの流儀」#960）。
   List<MenuEntry> _buildComposeMenuEntries() {
     final adapter = ref.watch(currentAdapterProvider);
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
@@ -2857,11 +3064,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           icon: Icons.cloud_outlined,
           onSelected: busy ? null : _pickDriveFiles,
         ),
+      // 絵文字ピッカーはタブごとに項目を分ける (#971)。1 項目にまとめると、
+      // 開いてからタブを選び直す 2 手が常に要る。**出す条件はピッカー側のタブ
+      // 生成条件と同じ**にし、開いても存在しないタブへは案内しない。
+      if (adapter is CustomEmojiSupport)
+        MenuActionEntry(
+          label: 'カスタム絵文字…',
+          icon: Icons.emoji_emotions_outlined,
+          onSelected: busy ? null : _showCustomEmojiPicker,
+        ),
       MenuActionEntry(
-        label: '絵文字…',
-        icon: Icons.emoji_emotions_outlined,
-        onSelected: busy ? null : _showEmojiPicker,
+        label: 'Unicode 絵文字…',
+        icon: Icons.sentiment_satisfied_alt_outlined,
+        onSelected: busy ? null : _showUnicodeEmojiPicker,
       ),
+      if (mulukhiya?.wordSuggestEnabled == true)
+        MenuActionEntry(
+          label: '劇中ワード…',
+          icon: Icons.menu_book_outlined,
+          onSelected: busy ? null : _showWordPicker,
+        ),
       if (adapter is ReactionSupport)
         MenuActionEntry(
           label: 'MFM 装飾…',
@@ -2873,6 +3095,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           label: 'ナウプレを挿入',
           icon: Icons.music_note,
           onSelected: (busy || _insertingNowPlaying) ? null : _insertNowPlaying,
+        ),
+      // 添付ごとのサブメニュー (#941)。`_showAttachmentMenu` はタップしたサムネの
+      // index で開くので、「いま操作対象になっている添付」という状態は画面に無く、
+      // メニューからは対象を指せない。**添付を列挙して指す**ことで画面に状態を
+      // 増やさずに済ませる（#941 の案 1）。
+      //
+      // 削除は入れない。サムネ右上の × に置いてあり、そちらは確認なしで即消える。
+      // 幅が足りなくても × は隠れない（メニューバーの動機は横スクロールに逃げる
+      // ツールバーの救済）ので、取り返しのつかない操作を増やす理由が無い。
+      if (_attachments.isNotEmpty)
+        MenuSubmenuEntry(
+          label: '添付メディア',
+          children: [
+            for (var i = 0; i < _attachments.length; i++)
+              MenuSubmenuEntry(
+                label: '${i + 1} 枚目',
+                children: buildAttachmentMenuEntries(
+                  previewable:
+                      _attachmentImageProvider(_attachments[i]) != null,
+                  croppable: _isCroppableImage(_attachments[i]),
+                  busy: busy,
+                  callbacks: _callbacksForAttachment(i),
+                ),
+              ),
+          ],
         ),
       const MenuGroupSeparator(),
       MenuActionEntry(
@@ -2910,6 +3157,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             ),
         ],
       ),
+      // 投稿言語 (#971)。ツールバーの Dropdown と同条件で、`_language` が
+      // 決まっている＝ Mastodon 系のときだけ出す（Misskey は言語を持たない）。
+      if (_language != null)
+        MenuSubmenuEntry(
+          label: '言語',
+          children: [
+            for (final entry in _languageOptions.entries)
+              MenuActionEntry(
+                label: entry.value,
+                checked: _language == entry.key,
+                onSelected: busy ? null : _languageSetters[entry.key],
+              ),
+          ],
+        ),
+      // 引用許可 (#971)。ツールバーと同じ Mastodon 限定。⚠ ツールバーの
+      // Dropdown は未指定（null）を **hint でしか表せず選び直せない**ので、
+      // メニュー側も 3 択のみ・未指定はどれにもチェックが付かない状態で表す。
+      if (adapter is MastodonAdapter)
+        MenuSubmenuEntry(
+          label: '引用許可',
+          children: [
+            for (final entry in _quoteApprovalLabels.entries)
+              MenuActionEntry(
+                label: entry.value,
+                icon: _quoteApprovalIcons[entry.key],
+                checked: _quoteApprovalPolicy == entry.key,
+                onSelected: busy ? null : _quoteApprovalSetters[entry.key],
+              ),
+          ],
+        ),
       const MenuGroupSeparator(),
       if (mulukhiya != null)
         MenuActionEntry(
@@ -2922,6 +3199,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           label: '投稿テンプレート…',
           icon: Icons.description_outlined,
           onSelected: busy ? null : _showTemplateSheet,
+        ),
+      // 呼び戻し側 (#963)。保存側の「下書き保存」は上のグループにある。
+      if (adapter is DraftSupport)
+        MenuActionEntry(
+          label: '下書き…',
+          icon: Icons.edit_note,
+          onSelected: busy ? null : _showDraftSheet,
         ),
       if (adapter is ScheduleSupport)
         MenuActionEntry(
@@ -3430,6 +3714,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                           tooltip: '投稿テンプレート',
                           visualDensity: VisualDensity.compact,
                         ),
+                      // サーバー下書きの呼び戻し (#963)。保存側は AppBar の
+                      // オーバーフローに残る。DraftSupport は現状 Misskey のみ。
+                      if (ref.watch(currentAdapterProvider) is DraftSupport)
+                        IconButton(
+                          onPressed: _sending ? null : _showDraftSheet,
+                          icon: const Icon(Icons.edit_note),
+                          tooltip: '下書き',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
                       // Spotify 連携）がこの端末で使えるときだけ出す。
                       if (ref
@@ -3895,6 +4188,122 @@ class _TemplateSheetState extends State<_TemplateSheet> {
               onTap: widget.onManage,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// サーバー下書きのクイックチューザ (#963)。`_TemplateSheet` を写したもの。
+///
+/// **全件を出す**（素の下書きだけに絞らない）。同じ「下書き」なのに画面によって
+/// 件数が違うのは分かりにくく、Misskey の 10 件上限に当たったときの切り分けにも
+/// 使えなくなるため。ヘッダに件数を出しているのもその用途で、「保存に失敗する」
+/// というユーザー報告（2026-07-22）に対して一覧が見えるだけで自己解決しやすくなる。
+///
+/// 削除等の管理は `/drafts` 画面が持つ（ドロワーから辿れる）。#805 の様式でいう
+/// 「管理 UI はクイックチューザの奥**または対象画面内**に温存する」の後者。
+class _DraftSheet extends StatefulWidget {
+  final DraftSupport draftSupport;
+  final void Function(Draft draft) onSelect;
+  final void Function(Object error, StackTrace stackTrace) onLoadError;
+
+  const _DraftSheet({
+    required this.draftSupport,
+    required this.onSelect,
+    required this.onLoadError,
+  });
+
+  @override
+  State<_DraftSheet> createState() => _DraftSheetState();
+}
+
+class _DraftSheetState extends State<_DraftSheet> {
+  List<Draft>? _drafts;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final drafts = await widget.draftSupport.getDrafts();
+      if (mounted) {
+        setState(() {
+          _drafts = drafts;
+          _loading = false;
+        });
+      }
+    } catch (e, st) {
+      widget.onLoadError(e, st);
+      if (mounted) {
+        setState(() {
+          // 生の例外文字列は UI へ出さない (#867)。詳細は onLoadError で計装済み。
+          _error = '下書きの読み込みに失敗しました';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final drafts = _drafts ?? const <Draft>[];
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              // 件数は上限（Misskey は 10 件）に当たったときの手掛かり。読み込み前
+              // と失敗時は数を名乗らない。
+              _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (_error != null)
+            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
+          else if (drafts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                // `/drafts` と同文言。
+                '下書きはありません',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final d in drafts)
+                    ListTile(
+                      leading: const Icon(Icons.edit_note),
+                      title: Text(
+                        draftBodyPreview(d),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(draftSubtitle(d)),
+                      onTap: () => widget.onSelect(d),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );

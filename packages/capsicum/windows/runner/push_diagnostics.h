@@ -20,7 +20,16 @@ namespace capsicum {
 // 揃えること。
 //   bgtask.shown        : 復号成功 → トースト表示成功（正常・info）
 //   bgtask.show_failed  : 復号成功 → トースト表示失敗（warning, #957）
-//   bgtask.not_encrypted: 暗号化通知でない（announcement 等。正常・info）
+//   bgtask.not_encrypted: 暗号化通知でも announcement でもない（正常・info）
+//   お知らせ push (#978。無暗号化・鍵を要さない):
+//   bgtask.announcement_shown       : トースト表示成功（正常・info）
+//   bgtask.announcement_show_failed : 表示失敗（warning）
+//   bgtask.announcement_no_body     : relay が整形済み本文を載せていない
+//                                     （relay#36 Phase 2 前・warning）
+//   bgtask.announcement_bad_payload : エンベロープ不正 / account 欠落（warning）
+//   ⚠ **通常の通知と同じ bgtask.shown に合流させない**。「bgtask.shown が
+//   無ければ bg task 未起動」というトリアージ規則は通知 push の母数の上で
+//   成り立っており、発火契機の違うお知らせを混ぜると母数が濁る。
 //   bgtask.not_raw      : raw push trigger に RawNotification 以外が来た（info。
 //                         起動した事実のみ残す）
 //   bgtask.no_keyset    : LocalState に鍵セット未同期（Option A 未実行・warning）

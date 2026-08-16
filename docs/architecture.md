@@ -26,8 +26,20 @@ capsicum
 
 - `capsicum_core` は外部依存を持たない pure Dart パッケージ。テストしやすい
 - `fediverse_objects` は `json_annotation` のみに依存。API レスポンスの型定義に特化
-- `capsicum_backends` は HTTP 通信を担う唯一のパッケージ
+- `capsicum_backends` は **SNS API（Mastodon / Misskey / モロヘイヤ）の HTTP 通信を担う唯一のパッケージ**
 - `capsicum` は Flutter アプリ本体。全パッケージに依存
+
+### HTTP をどこで叩くか（#960）
+
+「`capsicum_backends` が唯一」は **SNS API について**の話。リレー登録・OAuth の
+サーバー探索・更新チェック・素材や画像の取得のように、アダプターの API 面に乗らない
+通信は `capsicum` 側にある。これらは **`service/` か `provider/` に置き、UI（`ui/screen`
+・`ui/widget`）から dio を直に組まない**（差し替え口が無くなり、テストがネットワーク
+必須になるため。#947 の `StickerSource` はこの形に寄せた実例）。
+
+現時点の例外は `login_screen` / `server_selection_screen` / `search_screen` /
+`media_viewer_screen` の 4 画面で、いずれも v1.54 以前からの持ち越し。触るついでに
+service へ寄せる。
 
 ## 技術スタック
 

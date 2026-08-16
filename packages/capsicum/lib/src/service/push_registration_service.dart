@@ -15,6 +15,7 @@ import 'apns_service.dart';
 import 'device_install_id.dart';
 import '../util/exception_scrub.dart';
 import 'fcm_service.dart';
+import 'push_device_type.dart';
 import 'push_key_store.dart';
 import 'push_registration_status.dart';
 import 'push_relay_client.dart';
@@ -151,13 +152,15 @@ class PushRegistrationService {
       }
 
       // relay 側で APNs/FCM/WNS の振り分けと集計を分けるため device_type を
-      // プラットフォーム別に登録する。macOS は iOS と同じ APNs だが 'macos'
-      // (#468)、Windows は WNS で 'windows' (#474)。
-      final deviceType = Platform.isMacOS
-          ? 'macos'
-          : Platform.isWindows
-          ? 'windows'
-          : (Platform.isIOS ? 'ios' : 'android');
+      // プラットフォーム別に登録する。導出は [resolvePushDeviceType] に集約
+      // してある（購読ゲート側と綴りを揃えるため・#919）。
+      // isPushBackendWired で弾いた後なので通常 null にはならないが、両者が
+      // ずれたときに未知の device_type で登録しないよう止める。
+      final deviceType = currentPushDeviceType;
+      if (deviceType == null) {
+        store.update(accountKey, PushRegistrationState.skipped);
+        return;
+      }
 
       // インストール単位で安定した ID (#932)。relay 側がこれをキーに upsert
       // することで、トークン更新のたびに subscription 行が増えて古い購読が
@@ -545,7 +548,7 @@ class PushRegistrationService {
               e,
             );
             Sentry.captureException(
-              e,
+              scrubException(e),
               stackTrace: st,
               withScope: (scope) {
                 scope.setTag('service', 'push_registration');
@@ -608,14 +611,21 @@ class PushRegistrationService {
   ///
   /// endpoint は `${relayBaseUrl}/push/${push_token}` で、`push_token` は relay
   /// の行（`UNIQUE(token, account, server)`・`token` はデバイストークン）が新規
-  /// 作成されたときだけ発行される。よってトークンが変わると endpoint も変わり、
-  /// **Misskey は `sw/register` を `(userId, endpoint)` で引いて無ければ INSERT
-  /// する**ため古い購読が孤児として残る（Mastodon は create 冒頭で既存を destroy
-  /// するので残らない）。孤児は失効まで生き続け、同じ通知が複数回届く。
+  /// 作成されたときだけ発行される。よってトークンが変わると endpoint も変わる。
+  /// **Misskey の `sw/register` は `(userId, endpoint, auth, publickey)` で引いて
+  /// 無ければ INSERT する**（pooza フォークの `findOneBy`・#960 で実装確認。auth /
+  /// publickey まで含めて一致しないと別行になる）。加えて
+  /// `_cleanupDeviceRegistration` は keyset ごと捨てて再生成するので、**endpoint
+  /// 据え置きでも必ず新しい `sw_subscription` 行になる**。古い購読は孤児として
+  /// 残る（Mastodon は create 冒頭で既存を destroy するので残らない）。孤児は
+  /// 失効まで生き続け、同じ通知が複数回届く。
   static Future<void> reconcileDeviceToken(List<Account> accounts) async {
     if (!isPushBackendWired || accounts.isEmpty) return;
     final String? current = _getDeviceToken() ?? await _waitForDeviceToken();
-    if (current == null) return;
+    if (current == null) {
+      _reportReconcile('no_token', accounts);
+      return;
+    }
 
     final String? previous;
     try {
@@ -631,14 +641,19 @@ class PushRegistrationService {
     }
     // 未保存（本機能の導入前・初回起動）は変化と判定できない。既存の孤児は
     // 古いトークンの失効に伴い relay の 410 経路で自然に掃除される。
-    if (previous == null || previous == current) return;
+    if (previous == null || previous == current) {
+      _reportReconcile(previous == null ? 'first_run' : 'unchanged', accounts);
+      return;
+    }
 
     debugPrint(
       'capsicum: push.registration: device token changed across restarts, '
       'cleaning up stale subscriptions',
     );
+    _reportReconcile('changed', accounts);
     // どのプラットフォームでどれだけ起きるかが分からないと #932 の効き方も
-    // 評価できないので計測する。トークンそのものは載せない。
+    // 評価できないので計測する。トークンそのものは載せない。CAPSICUM-48 の
+    // トリアージ継続のため、母数 (`push.reconcile`) とは別イベントで残す。
     Sentry.captureMessage(
       'push.token_changed_across_restart',
       level: SentryLevel.info,
@@ -649,6 +664,32 @@ class PushRegistrationService {
       },
     );
     await _cleanupDeviceRegistration(accounts);
+  }
+
+  /// 再起動をまたいだトークン照合の結果を計測する (#960)。
+  ///
+  /// [reconcileDeviceToken] は毎起動で走るので、これが
+  /// `push.token_changed_across_restart`（= `outcome:changed`）の**分母**になる。
+  /// この 1 イベントに `outcome` タグ（first_run / unchanged / changed /
+  /// no_token）を載せておけば、プラットフォーム別に「何回の起動のうち何回
+  /// トークンが変わったか」を Sentry のタグ集計だけで出せる。プッシュ非対応
+  /// ビルドとアカウント 0 件の起動は、そもそも変化が起きえないので数えない
+  /// （分母から外す）。トークンを取れなかった起動は `no_token` として数え、
+  /// 「取れていない」こと自体も見えるようにする。従来は成功側の計装がアプリ内 UI
+  /// ([PushRegistrationStatusStore]) と debugPrint だけで、近い分母の
+  /// `app.startup.restore` は [startupTracesSampleRate] = 0.2 のため素で割ると
+  /// 実勢の 5 倍にズレていた。ここは sampling せず 1 起動 1 件で出す。
+  static void _reportReconcile(String outcome, List<Account> accounts) {
+    Sentry.captureMessage(
+      'push.reconcile',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('push.platform', Platform.operatingSystem);
+        scope.setTag('push.reconcile_outcome', outcome);
+        scope.setTag('push.accounts', accounts.length.toString());
+        scope.fingerprint = ['push.reconcile'];
+      },
+    );
   }
 
   /// 全アカウントのプッシュ通知登録を行う（アプリ起動時に呼ぶ）。

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import 'emoji_picker.dart';
+import 'picker_sheet_account_context.dart';
 import 'resizable_picker_sheet.dart';
 
 /// 添付画像に重ねるスタンプ（カスタム絵文字）を選ぶボトムシート (#883)。
@@ -23,15 +24,12 @@ Future<CustomEmoji?> showStickerPickerSheet({
   final adapter = account?.adapter;
   if (account == null || adapter is! CustomEmojiSupport) return null;
 
-  // シート builder は遅延実行される。実行時点で currentAccountProvider が
-  // 入れ替わっていても安全なよう、ここで確定した非 null 値をローカルへ退避し、
-  // closure 内で `!` / `as` を再評価しない (#739 / Sentry CAPSICUM-32)。
-  final backend = adapter as BackendAdapter;
-  final host = account.key.host;
-  final mulukhiya = account.mulukhiya;
-  final accessToken = account.userSecret.accessToken;
-  // 画面高は親 context から取る（sheet 表示後もキーボード開閉で不変）。
-  final screenHeight = MediaQuery.of(context).size.height;
+  // シート builder の遅延実行に備えた退避（#739 の詳細は
+  // [PickerSheetAccountContext]）。
+  final picker = PickerSheetAccountContext.capture(
+    context: context,
+    account: account,
+  );
 
   return showModalBottomSheet<CustomEmoji>(
     context: context,
@@ -40,13 +38,13 @@ Future<CustomEmoji?> showStickerPickerSheet({
     // 再描画されて context が外れたとき MediaQuery._of が null check で fatal
     // になる (#683 / Sentry CAPSICUM-2T)。
     builder: (sheetContext) => ResizablePickerSheet(
-      screenHeight: screenHeight,
+      screenHeight: picker.screenHeight,
       heightProvider: stickerPickerHeightProvider,
       child: EmojiPicker(
-        adapter: backend,
-        host: host,
-        mulukhiya: mulukhiya,
-        accessToken: accessToken,
+        adapter: picker.backend,
+        host: picker.host,
+        mulukhiya: picker.mulukhiya,
+        accessToken: picker.accessToken,
         onCustomEmojiSelected: (emoji) => Navigator.of(sheetContext).pop(emoji),
       ),
     ),

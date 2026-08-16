@@ -38,6 +38,10 @@ enum NotificationTypeLabel {
         // 寄せる。case が無いと title が「通知」にフォールバックしていた (#765)。
         case "newChatMessage":
             return "メッセージ"
+        // Misskey の実績解除通知 (#918)。Dart notificationTypeDisplay /
+        // NotificationType.achievementEarned と同じく「実績を解除」に寄せる。
+        case "achievementEarned":
+            return "実績を解除"
         default:
             return "通知"
         }

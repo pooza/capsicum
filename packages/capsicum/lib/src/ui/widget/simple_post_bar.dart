@@ -250,6 +250,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
   /// 出す条件もツールバー側と同一にする。「キーボードをしまう」はソフトキーボード
   /// が出ているときだけの項目で、メニューバーのあるデスクトップには原理的に
   /// 出ないため除く。
+  ///
+  /// 送信中フラグ・パレット開閉といった State の可変値に依存するので private の
+  /// まま置く（`desktop_menu_model.dart` の「画面メニュー貢献のテストの流儀」
+  /// #960）。
   List<MenuEntry> _buildScreenMenuEntries({
     required String postLabel,
     required bool hasRecents,

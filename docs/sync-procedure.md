@@ -92,7 +92,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - **mulukhiya-toot-proxy**: `cd ~/repos/mulukhiya-toot-proxy && git fetch origin` + `git log HEAD..origin/develop --oneline` でリモートとの差分を確認。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `cd ~/repos/chubo2 && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
-- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバー（flauros）のデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（`git pull && bundle install` → `sudo -n systemctl restart capsicum-relay` → `/health` 確認）まで一連で実行
+- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `cd ~/repos/mastodon && git pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `cd ~/repos/misskey && git pull --ff-only` → `package.json` の `version`
@@ -106,3 +106,42 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - 現在のブランチ・状態、前回以降にクローズされた Issue、マイルストーン別の残件数、未割り当て Issue 一覧、Sentry 新着イベント、Mastodon / Misskey の現行バージョン、各確認項目の結果をまとめて報告する
 - **capsicum と capsicum-relay の稼働中マイルストーンを、同じ見出しレベル・同じ粒度で並記する**（「relay を同列に扱う」節を参照）。relay の残件を末尾の 1 行に圧縮しない
+
+---
+
+# 作業中断からの復帰
+
+## セッションそのものを戻す（`claude rc` が落ちた場合）
+
+リモート操作用の Mac で `claude rc`（= `claude remote-control`）を走らせている場合、ターミナルを閉じるとプロセスごと落ち、claude.ai/code のセッション一覧からも消える。会話履歴は `~/.claude/projects/<パスをエスケープしたディレクトリ名>/<セッション UUID>.jsonl` に残っているので、**会話ごと戻せる**。
+
+```sh
+cd /Volumes/extdata/repos/capsicum
+claude rc -c                       # このディレクトリの直近セッションを再開
+claude rc --session-id <UUID>      # 特定のセッションを再開（UUID は上記 .jsonl のファイル名）
+```
+
+フラグ無しの `claude rc` は**新規セッション**になる。目的のセッションが直近でない場合は `--session-id` を使う。どれが目的のセッションかは、`.jsonl` の更新時刻と、中身に出てくる Issue 番号で見分ける。
+
+戻るのは**会話だけ**である点に注意する。
+
+- **戻る**: 会話履歴、作業ツリーの未コミット変更、コミット
+- **戻らない**: 実行中だったプロセス・バックグラウンドタスク、MCP コネクタの接続（張り直しになる）
+
+そのため会話を戻した場合も、下の git 側の確認は同じように必要になる。ターミナルを閉じてもプロセスを残したいときは `screen` / `tmux` の中で `claude rc` を起動する。
+
+## 作業の続きを拾う（git 側）
+
+作業中にセッションが切れ、「続きをやって」と指示された場合の手順。**上記の同期手順（1〜10）は回さない**（同じセッションの続きであり、前任のセッションが開始時に同期済み）。回すのはステップ 2 の `git fetch origin` だけでよい。
+
+1. **`git status` と `git diff`** — 未コミットの作業ツリーが「切れた瞬間に手を付けていた 1 項目」。ここから読み始める
+2. **`git log --format='%H%n%B' -10`** — 直近コミットの**本文**を読む。1 コミット 1 Issue + 本文に消化項目を箇条書きする運用（[CLAUDE.md](CLAUDE.md#コミットの分割方針)）なので、コミット本文がそのまま「どこまで終わったか」の記録になる
+3. **`gh issue view <番号> --comments`** — チェックリストと 2 を突き合わせ、残件を確定する
+4. **`git log --oneline origin/develop -3` と比較** — セッションが切れているとほぼ確実に push されていない。復帰時に未 push のコミットが積まれている前提で見る
+5. 残件を消化し、最後に push + Issue のチェックボックス更新 + 経緯コメント
+
+復帰コストを下げるための作業側のルール:
+
+- **チェックリスト型 Issue（緑まとめ等）は、項目を消化するたびにチェックボックスを更新する。** まとめて最後に埋めると、切れたときに手順 2〜3 の突き合わせが必要になる
+- **コミット本文には「何を直したか」だけでなく「なぜその判断にしたか」を書く。** 復帰した側が同じ判断を再現できないと、続きが前半と割れる
+- **判断の根拠が指摘の前提ごと変わっていたら、Issue にコメントで残す**（例: #960 の「UI 層から生 Dio」は指摘後に #947 で解消済みだった）。チェックを入れるだけだと、次に読んだ人が消えた指摘を探すことになる
