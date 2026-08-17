@@ -9,8 +9,23 @@ on:
   pull_request:
     branches: [main]
 
+# 同一 ref への連続 push で古い run を完走させない (#987)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   check:
+    # draft PR ではスキップする (#987)。pull_request の対象は main のみ＝実質
+    # develop → main のリリース PR だけで、その中身は上の push トリガー
+    # (branches: [main, develop]) で既に同じコミットを検査済み。draft のあいだは
+    # 純粋な二重実行になるため落とす。v1.48 の format drift 対策として入れた
+    # push トリガーはそのまま残るので、開発中のガードは失われない。
+    #
+    # 副作用: pubspec.lock churn ガード (#970) の「PR 全体の差分」粒度での判定は
+    # ready 化まで遅れる。push 粒度の判定は develop への push で従来どおり効き、
+    # PR 粒度の判定もリリース準備時 (ready 化) には走るため許容する。
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

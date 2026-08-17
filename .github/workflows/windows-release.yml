@@ -11,6 +11,14 @@ on:
       - '.github/workflows/windows-release.yml'
   workflow_dispatch:
 
+# 同一 ref への連続 push で古い run を完走させない (#987)。
+# タグ駆動のリリースビルドは絶対に中断させたくないので、cancel-in-progress は
+# tag 以外に限定する (group に ref を含めてあるため tag は元々別グループだが、
+# 事故を二重に防ぐ)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   # 自己署名 MSIX を windows-latest (x64) で組み立てて
   # GitHub Releases (draft) に .msix + .cer を添付する (#423)。
@@ -18,6 +26,20 @@ jobs:
   # Repository Secrets 投入後に自動有効化される構造を維持しておく
   # (未投入なら publish step は skip)。手順は store-release-guide.md §4.6 参照。
   msix:
+    # draft PR ではビルドしない (#987)。
+    #
+    # pull_request の paths: フィルタは「その push の差分」ではなく「PR 全体の
+    # 差分」で判定される。develop → main のリリース PR は、マイルストーン着手時の
+    # バージョンバンプで packages/capsicum/pubspec.yaml を常に含むため、paths: が
+    # マイルストーン期間中ずっとヒットし続ける。結果、docs 修正のみの push でも
+    # 毎回 Windows ビルド (実測 15.3 分 / Linux の 2 倍単価) が起動していた。
+    # 過去 30 日で PR 起動 174 回に対し、タグ駆動の実リリースビルドは 10 回。
+    #
+    # リリース PR は直前まで draft で、ready 化するのがまさにリリース準備の瞬間
+    # なので、この条件で「リリース直前のみビルド」という本来の意図どおりになる。
+    # タグ駆動と workflow_dispatch は従来どおり無条件で走るため、任意のタイミング
+    # での手動確認も従来どおり可能。
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     permissions:
       # softprops/action-gh-release の draft Release 作成 + 添付に必要
