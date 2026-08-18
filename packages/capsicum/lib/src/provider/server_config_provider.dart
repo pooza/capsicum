@@ -214,6 +214,12 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
         if (disposed) rethrow;
         continue;
       }
+      // ⚠ **打ち切る側にも dispose 判定が要る**（PR #985 の Codex P2）。上の
+      // 再試行経路だけを見ていると、**恒久失敗（4xx）と最終試行が素通りする** —
+      // 飛行中の `getEmojis()` がアカウント切替で捨てられた provider のまま
+      // 落ちてくる経路がそれで、まさにここで消したかった「もう使っていない
+      // アダプタの失敗が Sentry に載る」形が残っていた。
+      if (disposed) rethrow;
       // 失敗時に `const []` を返すと consumer (shortcode 警告) からは
       // 「本当に空」と区別できず、すべての `:foo:` を unknown 扱いで赤波下線
       // 化してしまう (#609 false positive)。AsyncError として伝播させて
