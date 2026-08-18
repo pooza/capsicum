@@ -107,3 +107,28 @@ RestoreOutcome classifyRestoreFailure(Object error) {
   }
   return RestoreOutcome.giveUp;
 }
+
+/// [error] が「接続を張ろうとして即座に断られた」失敗かどうか (#989)。
+///
+/// **時間を使っていない失敗だけを true にするのが眼目。** 起動直後はプロセスの
+/// ネットワークスタックが立ち上がりきっておらず、`connect(2)` がタイムアウトを
+/// 待たずにエラーを返す窓がある。2026-08-18 の観測では **150 ms の間に 6
+/// アカウント中 5 件がこれで落ち、その 213 ms 後には同じホストへ到達できていた**。
+/// こういう失敗は、待つのではなく**すぐもう一度試せば通る**。
+///
+/// 逆に、次のものは false にする。もう一度すぐ試しても結果が変わらないか、
+/// 既に時間を使っているため:
+///
+/// - `connectionTimeout` / `receiveTimeout` / `sendTimeout` … 既に待っている
+/// - `badResponse` … サーバーには届いている（5xx は背景再試行の担当）
+/// - `badCertificate` … 300 ms 後に証明書が変わることはない
+/// - `cancel` … 呼び出し側が止めたもの
+bool isImmediateConnectFailure(Object error) {
+  if (error is DioException) {
+    if (error.type == DioExceptionType.connectionError) return true;
+    // dio が分類しきれず unknown へ落とすが、中身は接続レベルという経路。
+    return error.type == DioExceptionType.unknown &&
+        error.error is SocketException;
+  }
+  return error is SocketException;
+}

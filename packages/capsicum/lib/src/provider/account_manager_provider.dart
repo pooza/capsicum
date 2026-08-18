@@ -98,6 +98,18 @@ Duration offlineRetryDelay(int attempt) => attempt < kOfflineRetryRampUp.length
     ? kOfflineRetryRampUp[attempt]
     : kOfflineRetrySteadyInterval;
 
+/// 起動時の初回 probe が「接続を即断られた」ときに、もう一度試すまでの待ち (#989)。
+///
+/// ⚠ **[kOfflineRetryRampUp] の前に挟まる別物**で、あちらの代わりではない。
+/// ramp-up の初回は 2 秒あり、起動直後の一瞬のグリッチを吸うには長すぎる。
+/// 実測では失敗から **213 ms 後**には同じホストへ到達できていたので、その手前で
+/// 1 回だけ拾いにいく。
+///
+/// **長くしない。** ここで待った分は起動が遅くなり、[restoreSessions] は全
+/// アカウントを並列 probe しているので待ちは全体に効く。失敗が本物（本当に
+/// 回線が無い）だったときのコストが、そのまま起動の遅延になる。
+const kInitialProbeRetryDelay = Duration(milliseconds: 300);
+
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
   AccountManagerState build() {
@@ -659,6 +671,27 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       final account = await _probeAccount(keyStr, secrets);
       return (account: account, outcome: null);
     } catch (e, st) {
+      // 「接続を即断られた」だけなら、offline へ落とす前にもう一度だけ試す
+      // (#989)。起動直後はネットワークスタックが立ち上がりきっておらず、
+      // connect(2) がタイムアウトを待たずに失敗する窓がある。ここで拾えないと、
+      // 1 秒未満のグリッチが最短でも 2 秒（[kOfflineRetryRampUp] の初回）の
+      // オフラインへ増幅される。時間を使っていない失敗に限る判定は
+      // [isImmediateConnectFailure] を参照。
+      if (isImmediateConnectFailure(e)) {
+        await Future<void>.delayed(kInitialProbeRetryDelay);
+        try {
+          final account = await _probeAccount(keyStr, secrets);
+          debugPrint(
+            'capsicum: restoreSessions: $keyStr recovered on immediate retry '
+            '(${kInitialProbeRetryDelay.inMilliseconds}ms)',
+          );
+          return (account: account, outcome: null);
+        } catch (_) {
+          // 2 度目も落ちたら本物の不通として扱う。分類・観測は下の従来経路が
+          // **初回の例外** `e` に対して行う（2 度目の例外に差し替えると、
+          // 「なぜ offline になったか」が 300ms 後の別の姿にすり替わる）。
+        }
+      }
       // 一時的な到達不能（host lookup / connection / timeout / サーバー 5xx）の
       // 失敗は、secret は有効なのに probe（getMyself 等）が落ちただけ。これを
       // 「復元不能＝ログアウト」へ降格させない (#730 / #792)。回線ブリップや
