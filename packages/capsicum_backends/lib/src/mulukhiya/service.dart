@@ -67,8 +67,13 @@ class MulukhiyaProgram {
   final int? annictWorkId;
   final int? annictEpisodeId;
   // 放送開始時刻 (`HH:MM`, 24 時間制) と次回放送日 (#965)。モロヘイヤ #4287 /
-  // #4373 で番組表エントリが持つようになった。**`nextOn` が null の枠は「毎日」
-  // 扱い**で、値の欠落ではない (`program.ics` と同じ意味づけ)。
+  // #4373 で番組表エントリが持つようになった。
+  //
+  // ⚠ **`nextOn` が null でも「毎日」とは読まない** (#986)。#965 ではそう読み替えて
+  // 表示していたが、**放送日を持たないことと毎日放送であることは違う**ので取り
+  // やめた。表示側 (`program_schedule_display.dart` の `programScheduleLabel`) は
+  // 日付を出さない形になっている。ここを「毎日扱い」に戻すと、あちらの反転が
+  // 根拠を失う。
   //
   // `/mulukhiya/api/program` は `var/program.yaml` の値をそのまま載せるため、
   // 手編集や外部データソース由来の不正値がクライアントまで届く (`program.ics`

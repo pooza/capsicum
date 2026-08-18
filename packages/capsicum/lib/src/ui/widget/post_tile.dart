@@ -1421,6 +1421,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
+    // ⚠ **ダイアログ / シートを開く前に捕まえる** (#990)。コールバックは
+    // 閉じた後に走るので、その間に背後の TL が更新されてこのタイルが
+    // dispose されていると `ref.read` が StateError を投げる。しかもその
+    // 呼び出しが API 呼び出しより**前**にあるため、**操作が送信されないまま
+    // 成功も失敗も出ずに消える**。
+    final timeline = readVisibleTimelines(ref);
 
     showDialog(
       context: context,
@@ -1435,7 +1441,6 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1509,6 +1514,8 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    // 理由は [_confirmDelete] の同名コメント (#990)。
+    final timeline = readVisibleTimelines(ref);
 
     showDialog(
       context: context,
@@ -1525,7 +1532,6 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final timeline = readVisibleTimelines(ref);
               _runVoidAction(messenger, () async {
                 await adapter.deletePost(targetPost.id);
                 timeline.removePost(targetPost.id);
@@ -1583,6 +1589,10 @@ class _PostTileState extends ConsumerState<PostTile> {
   }
 
   void _showEmojiPicker(BuildContext context) {
+    // ⚠ アクションシートの項目から呼ばれる経路がある (#990 followup)。シートを
+    // 開いている間にこのタイルが dispose されていると、下の `ref.read` が同期的に
+    // 投げて**ピッカーがそもそも開かない**（unhandled で Sentry にも乗る）。
+    if (!mounted) return;
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
     if (adapter is! ReactionSupport) return;
@@ -1681,6 +1691,13 @@ class _PostTileState extends ConsumerState<PostTile> {
       !post.localOnly;
 
   void _confirmDeleteNowPlaying(BuildContext context, Post targetPost) {
+    final account = ref.read(currentAccountProvider);
+    final mulukhiya = account?.mulukhiya;
+    if (account == null || mulukhiya == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // 理由は [_confirmDelete] の同名コメント (#990)。
+    final timeline = readVisibleTimelines(ref);
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1694,12 +1711,6 @@ class _PostTileState extends ConsumerState<PostTile> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final account = ref.read(currentAccountProvider);
-              final mulukhiya = account?.mulukhiya;
-              if (account == null || mulukhiya == null) return;
-              final messenger = ScaffoldMessenger.of(context);
-              // 非同期の完了後に ref を触らないよう、変更ハンドルは先に取る (#665)。
-              final timeline = readVisibleTimelines(ref);
               mulukhiya
                   .deleteNowPlaying(
                     accessToken: account.userSecret.accessToken,
@@ -1745,6 +1756,13 @@ class _PostTileState extends ConsumerState<PostTile> {
         ? extractTrailingTagsHtml(retagContent)
         : extractTrailingTagsMfm(retagContent);
     final messenger = ScaffoldMessenger.of(context);
+    final adapter = ref.read(currentAdapterProvider);
+    // ⚠ **シートを開く前に捕まえる** (#990)。⚠ **このシートがいちばん危ない** —
+    // タグを編集する間ずっと開いており、その間に背後の TL が更新されてタイルが
+    // dispose される窓が広い。onSubmit は pop より前に走り、解決が
+    // `updateStatusTags` より**前**にあるので、投げると**タグづけが送信されない
+    // まま無言で消える**。タグ管理は capsicum の根幹機能 (docs/CLAUDE.md)。
+    final timeline = readVisibleTimelines(ref);
 
     showModalBottomSheet(
       context: context,
@@ -1752,11 +1770,9 @@ class _PostTileState extends ConsumerState<PostTile> {
       builder: (_) => _RetagSheet(
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
-        adapter: ref.read(currentAdapterProvider)!,
+        adapter: adapter!,
         postLabel: ref.read(postLabelProvider),
         onSubmit: (tags) async {
-          final timeline = readVisibleTimelines(ref);
-          final adapter = ref.read(currentAdapterProvider);
           try {
             final raw = await mulukhiya.updateStatusTags(
               accessToken: account.userSecret.accessToken,

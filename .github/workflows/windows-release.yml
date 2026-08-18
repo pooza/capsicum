@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*.*.*']
   pull_request:
+    # ⚠ 既定 (opened / synchronize / reopened) には ready_for_review が
+    # 含まれない。draft ガード (#987) を入れた以上、明示しないと
+    # **draft を ready にした瞬間に run が 1 本も生成されない**。
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, main]
     paths:
       - 'packages/capsicum/windows/**'

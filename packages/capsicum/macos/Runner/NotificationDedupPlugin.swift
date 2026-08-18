@@ -2,44 +2,6 @@ import AppKit
 import FlutterMacOS
 import UserNotifications
 
-/// 起動中の二重通知 dedup (#674)。
-///
-/// アプリ起動中は同じ通知イベントが 2 経路で届きうる:
-/// - #569: WebSocket 通知ストリーム → flutter_local_notifications のローカル通知
-/// - #468: APNs (capsicum-relay 経由) → NSE (#673) が復号して表示
-///
-/// 本 plugin は UNUserNotificationCenter delegate を proxy で包み、remote push
-/// の willPresent を `account|notificationId` キーで Dart 側 dispatcher の
-/// 既出集合と突き合わせて後着を黙殺する。flutter_local_notifications が delegate
-/// を保持する判断 (#569) は崩さず、FLN 由来の通知・タップ応答はすべて元 delegate
-/// へ素通しする。
-///
-/// 方向別の動作:
-/// - WebSocket 先着 → Dart が `addEmitted` でキーを先に登録 → APNs 側 willPresent
-///   が黙殺 (`completionHandler([])`)
-/// - APNs 先着 → willPresent がキーを登録 + `onRemotePresented` で Dart へ通知 →
-///   WebSocket 側 dispatcher が emit をスキップ
-///
-/// 制約 (2026-06-12 内部ベータ 104/105 で実測確定):
-/// - willPresent はアプリが非アクティブ (背面) のときは呼ばれない。
-///   そのケースの APNs banner は OS 既定で表示される。
-/// - macOS は NSE (#673) に didReceive を渡さず約 2 秒で kill するため
-///   (「Extension will be killed due to sluggish startup」、OS 側の実装欠落)、
-///   APNs 通知は常に stamp 無しの generic 文面で届く。
-///
-/// このため willPresent ベースの dedup は前面でしか効かず、背面では generic
-/// banner が重複表示される。後始末として Dart 側 DeliveredPushCleaner が
-/// [getDeliveredRemotes] で配信済み remote を取得 → 暗号化 body を main app の
-/// 鍵で復号して notificationId を特定 → WebSocket 側の既出キーと一致したものを
-/// [removeDelivered] で通知センターから削除する。掃除のトリガは
-/// AppDelegate の didReceiveRemoteNotification → [notifyRemoteArrived]
-/// (APNs 後着 = 主経路) と、WebSocket emit 直後 (APNs 先着の逆順) の 2 つ。
-///
-/// - NSE 復号に失敗した generic 通知は stamp (#673) が無く willPresent では
-///   dedup 不能。従来の FLN delegate は非 FLN 通知の completionHandler を
-///   呼ばず foreground 表示を事実上握りつぶしていたため、現状維持として
-///   黙殺する (重複より取りこぼしの方が安全、の例外。generic は WebSocket
-///   側が同イベントをリッチ文面で出す見込みが高い)。
 /// 上限に達したら**最古から押し出す**キー集合 (#983)。
 ///
 /// Dart 側 `desktop_notification_dispatcher.dart` の `_BoundedKeySet` と同じ
@@ -56,6 +18,11 @@ import UserNotifications
 ///   **#674 が防いでいる二重表示がそのまま復活する**
 ///
 /// 500 件は実況運用のセッションで到達しうる。
+///
+/// ⚠ **メインスレッド専用。** 触るのは `willPresent` デリゲートと
+/// `FlutterMethodChannel` のハンドラだけで、どちらもプラットフォーム（メイン）
+/// スレッドで走る。旧実装（`Set` 1 本）と違い `keys` と `order` の 2 つを整合
+/// させる構造なので、別キューから触ると壊れ方が悪い。
 struct BoundedKeySet {
   private let name: String
   private let maxSize: Int
@@ -95,6 +62,44 @@ struct BoundedKeySet {
   }
 }
 
+/// 起動中の二重通知 dedup (#674)。
+///
+/// アプリ起動中は同じ通知イベントが 2 経路で届きうる:
+/// - #569: WebSocket 通知ストリーム → flutter_local_notifications のローカル通知
+/// - #468: APNs (capsicum-relay 経由) → NSE (#673) が復号して表示
+///
+/// 本 plugin は UNUserNotificationCenter delegate を proxy で包み、remote push
+/// の willPresent を `account|notificationId` キーで Dart 側 dispatcher の
+/// 既出集合と突き合わせて後着を黙殺する。flutter_local_notifications が delegate
+/// を保持する判断 (#569) は崩さず、FLN 由来の通知・タップ応答はすべて元 delegate
+/// へ素通しする。
+///
+/// 方向別の動作:
+/// - WebSocket 先着 → Dart が `addEmitted` でキーを先に登録 → APNs 側 willPresent
+///   が黙殺 (`completionHandler([])`)
+/// - APNs 先着 → willPresent がキーを登録 + `onRemotePresented` で Dart へ通知 →
+///   WebSocket 側 dispatcher が emit をスキップ
+///
+/// 制約 (2026-06-12 内部ベータ 104/105 で実測確定):
+/// - willPresent はアプリが非アクティブ (背面) のときは呼ばれない。
+///   そのケースの APNs banner は OS 既定で表示される。
+/// - macOS は NSE (#673) に didReceive を渡さず約 2 秒で kill するため
+///   (「Extension will be killed due to sluggish startup」、OS 側の実装欠落)、
+///   APNs 通知は常に stamp 無しの generic 文面で届く。
+///
+/// このため willPresent ベースの dedup は前面でしか効かず、背面では generic
+/// banner が重複表示される。後始末として Dart 側 DeliveredPushCleaner が
+/// [getDeliveredRemotes] で配信済み remote を取得 → 暗号化 body を main app の
+/// 鍵で復号して notificationId を特定 → WebSocket 側の既出キーと一致したものを
+/// [removeDelivered] で通知センターから削除する。掃除のトリガは
+/// AppDelegate の didReceiveRemoteNotification → [notifyRemoteArrived]
+/// (APNs 後着 = 主経路) と、WebSocket emit 直後 (APNs 先着の逆順) の 2 つ。
+///
+/// - NSE 復号に失敗した generic 通知は stamp (#673) が無く willPresent では
+///   dedup 不能。従来の FLN delegate は非 FLN 通知の completionHandler を
+///   呼ばず foreground 表示を事実上握りつぶしていたため、現状維持として
+///   黙殺する (重複より取りこぼしの方が安全、の例外。generic は WebSocket
+///   側が同イベントをリッチ文面で出す見込みが高い)。
 class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
   /// Dart 側 DesktopNotificationDispatcher と同じ上限。
   private static let maxTrackedKeys = 500

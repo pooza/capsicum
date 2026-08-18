@@ -108,6 +108,12 @@ class PostActionRunner {
   ///
   /// [phase] は付与 (`reaction_add`) と取り消し (`reaction_remove`) で分ける
   /// (#924)。両方が `reaction_add` に畳まれると Sentry でどちらの失敗か混ざる。
+  ///
+  /// ⚠ **取り直し ([BackendAdapter.getPostById]) をアクション本体と同じ `try` に
+  /// 置かない。** 置くと、リアクションはサーバーに入っているのに「失敗しました」
+  /// が出て、Sentry の [phase] にも偽の失敗が 1 件乗る。ユーザーが押し直すと
+  /// Misskey が `ALREADY_REACTED` を返して 2 度目も失敗表示になる。
+  /// [_notifyCompleted] / [_notifyPostUpdated] を本体から切り離したのと同じ理由。
   Future<void> runReaction(
     BackendAdapter adapter,
     String postId,
@@ -118,12 +124,17 @@ class PostActionRunner {
     final timeline = _timeline;
     try {
       await action();
-      final updated = await adapter.getPostById(postId);
-      timeline.updatePost(updated);
-      _notifyCompleted();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       _report('runReaction', e, st, phase: phase);
+      return;
+    }
+    // ここから先は**アクションが成立した後**。失敗しても成功として見せる。
+    _notifyCompleted();
+    messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    try {
+      timeline.updatePost(await adapter.getPostById(postId));
+    } catch (e, st) {
+      _reportQuietly('runReaction.readback', e, st, phase: '${phase}_readback');
     }
   }
 
@@ -208,6 +219,21 @@ class PostActionRunner {
   /// 失敗が導線ごとに別系列へ散り、**どちらで絞っても母数にならない**状態だった。
   /// 規約は [describePostActionError] の doc が正本。
   void _report(String label, Object e, StackTrace st, {required String phase}) {
+    _reportQuietly(label, e, st, phase: phase);
+    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
+  }
+
+  /// 観測だけして、ユーザーには何も出さない失敗。
+  ///
+  /// **アクションが成立した後の後始末**（取り直し等）に使う。ここで snackbar を
+  /// 出すと「操作は成功しているのに失敗と伝える」ことになる。[phase] は本体と
+  /// 別系列にして、母数が混ざらないようにする。
+  void _reportQuietly(
+    String label,
+    Object e,
+    StackTrace st, {
+    required String phase,
+  }) {
     debugLogException('PostActionRunner.$label failed', e);
     if (kDebugMode && e is DioException) {
       debugPrint('Response body: ${e.response?.data}');
@@ -219,7 +245,6 @@ class PostActionRunner {
         withScope: (scope) => scope.setTag('phase', phase),
       ),
     );
-    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
   }
 }
 

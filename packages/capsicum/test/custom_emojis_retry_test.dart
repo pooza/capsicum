@@ -1,5 +1,4 @@
 import 'package:capsicum/src/provider/server_config_provider.dart';
-import 'package:capsicum/src/util/login_error.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,53 +19,63 @@ void main() {
   final options = RequestOptions(path: '/api/emojis');
 
   group('再取得の対象 (#988)', () {
+    // 分類そのものの担保は test/util/login_error_test.dart。ここは
+    // shouldRetryEmojiFetch が分類にどう乗るかだけを見る。
     test('接続断は対象（報告で観測された実際の失敗）', () {
       expect(
-        classifyRestoreFailure(
+        shouldRetryEmojiFetch(
           DioException(
             requestOptions: options,
             type: DioExceptionType.connectionError,
           ),
         ),
-        RestoreOutcome.retriable,
+        isTrue,
       );
     });
 
-    test('timeout も対象（絵文字一覧は重く、混雑時に伸びる）', () {
+    test('5xx も対象（即座に返るうえ、再構築中なら復帰しうる）', () {
       expect(
-        classifyRestoreFailure(
-          DioException(
-            requestOptions: options,
-            type: DioExceptionType.receiveTimeout,
-          ),
-        ),
-        RestoreOutcome.retriable,
-      );
-    });
-
-    test('5xx も対象（サーバー再構築中など）', () {
-      expect(
-        classifyRestoreFailure(
+        shouldRetryEmojiFetch(
           DioException(
             requestOptions: options,
             type: DioExceptionType.badResponse,
             response: Response<void>(requestOptions: options, statusCode: 503),
           ),
         ),
-        RestoreOutcome.retriable,
+        isTrue,
       );
     });
 
-    test('⚠ 4xx は対象外（待っても変わらないので即座に諦める）', () {
+    // ⚠ ここが #988 のリリース前レビューで見つかった退行。timeout を含めると
+    // receiveTimeout 60 秒 × 4 回 ＝ 約 4 分 provider が AsyncLoading のままに
+    // なり、Play は開始ゲートも再試行導線も出さないまま固まる（従来は約 1 分で
+    // エラー面に到達していた）。isImmediateConnectFailure と判断軸を揃える。
+    test('⚠ timeout は対象外（4 分スピナーを作らない）', () {
+      for (final type in [
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.sendTimeout,
+      ]) {
+        expect(
+          shouldRetryEmojiFetch(
+            DioException(requestOptions: options, type: type),
+          ),
+          isFalse,
+          reason: '$type を再試行すると 60 秒待ちが積み上がる',
+        );
+      }
+    });
+
+    test('⚠ 4xx は対象外（待っても変わらない）', () {
       expect(
-        classifyRestoreFailure(
+        shouldRetryEmojiFetch(
           DioException(
             requestOptions: options,
             type: DioExceptionType.badResponse,
             response: Response<void>(requestOptions: options, statusCode: 404),
           ),
         ),
-        isNot(RestoreOutcome.retriable),
+        isFalse,
       );
     });
   });
