@@ -54,9 +54,38 @@ Debug ビルドは「コードを動かしてみるための環境」であり�
 
 - **App Group / Keychain Access Group**: Debug ビルドは Release と同じ App Group ID (`group.jp.co.b-shock.capsicum`) と keychain-access-groups を共有しているため、Debug で動かした capsicum が ShareExtension 用 App Group コンテナへ書いたファイルを Release インスタンスが読む経路ができる ([#504](https://github.com/pooza/capsicum/issues/504))。本来は Debug 用に別 App Group ID (`group.jp.co.b-shock.capsicum.debug`) を分離すべきだが、開発機限定で同居する debug + release のクロス参照は実害が薄く、Xcode / Apple Developer Portal 側の provisioning 作業コストに見合わない。TestFlight 経由の検証で sandbox 境界の挙動は担保される
 - **macOS Debug の sandbox オフ**: ad-hoc 署名 + sandbox の組み合わせで ASWebAuthenticationSession / Keychain (`flutter_secure_storage`) が `errSecMissingEntitlement` (-34018) で動かないため、Debug は `com.apple.security.app-sandbox=false` で運用している。これも sandbox 挙動の検証は TestFlight で行う前提で運用ルール化されている
-- **APNs / FCM / dart-define 機密値**: 本物の値が必要なケースは Debug では検証成立しないため、TestFlight / 内部ベータ経由で検証する
+- **APNs / FCM の実配送**: OS ネイティブの受信経路が絡むケース（entitlements / NSE / bg task 等）は Debug では検証成立しないため、TestFlight / 内部ベータ経由で検証する
 
 判断ルール: 「Debug で再現しないからどうにかしたい」となったら、まず **TestFlight 経由で検証する経路があるか** を確認する。あるなら Debug を本番並みに引き上げるコストはかけない。
+
+⚠ ただし **dart-define 機密値は「Debug では成立しない」ものではない**。`RELAY_SECRET` を渡せば Debug ビルドも staging relay に登録でき、プッシュ登録までは Debug で確かめられる（[#948](https://github.com/pooza/capsicum/issues/948) が debug の向け先を staging にしたのはそのため）。渡し方は次節。
+
+## `flutter run` の実行手順
+
+```sh
+source ~/.config/capsicum/secrets.env
+cd packages/capsicum
+flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
+```
+
+### ⚠ `--dart-define` を省くとプッシュが 401 で落ちる
+
+`RELAY_SECRET` は `String.fromEnvironment` で読む **コンパイル時定数**（[`push_relay_client.dart`](../packages/capsicum/lib/src/service/push_relay_client.dart)）。**`secrets.env` を `source` して `export` しても Dart には届かない。**`--dart-define` で渡さないと空文字が焼き込まれ、relay の `authenticate!` が `halt 401` する。
+
+症状の見え方:
+
+- 端末: 設定 → プッシュ通知 の各アカウントが **401**
+- relay: **何も残らない**。401 はログを 1 行も出さない（[capsicum-relay#47](https://github.com/pooza/capsicum-relay/issues/47)）。サーバー側の journald が空なのを見て「リクエストが届いていない」と誤診しやすい
+
+⚠ **`export` 文と `flutter run` 文は必ず別の行にする。** `RELAY_SECRET="..." flutter run ...` と 1 行に前置すると `$RELAY_SECRET` は**親シェルで空に展開される**。同じ罠を release ビルドで踏んで `v1.21.0+50` の全アカウント push 不達を起こしている（[store-release-guide.md](store-release-guide.md) §4.2）。2026-08-18 には run 側で同じことが起き、「debug 版でプッシュ通知を見たことがない」という長期の状態になっていた（[#994](https://github.com/pooza/capsicum/issues/994)）。
+
+`SENTRY_DSN` は debug では**渡さない**のが既定。渡すと開発中の例外が本番プロジェクトへ流れる。
+
+### ⚠ リポジトリ root では iOS がデバイス候補に出ない
+
+`flutter run` は**カレントのプロジェクトが対応するプラットフォームだけ**を候補に出す。リポジトリ root は melos の workspace（`name: capsicum_workspace`）で `ios/` も `macos/` も持たないため、**シミュレータを起動していても iOS が候補から落ちる**。
+
+`flutter devices` は絞り込まずに全部並べるので、**「`flutter devices` には出るのに `flutter run` で選べない」**という食い違いが起きる。`packages/capsicum` へ `cd` してから実行する。
 
 ## メイン (macOS) セットアップ
 
