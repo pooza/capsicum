@@ -220,6 +220,24 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 
 恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
 
+## CI / ビルド
+
+### Windows: mpv アーカイブの `Integrity check failed` は一過性（再実行で通る）
+
+`windows-release.yml` の msix ジョブが、Dart のコンパイルより手前の CMake 段階で落ちることがある。
+
+```
+CMake Error at flutter/ephemeral/.plugin_symlinks/media_kit_libs_windows_video/windows/CMakeLists.txt:43 (message):
+  .../build/windows/x64/mpv-dev-x86_64-20230924-git-652a1dd.7z
+  Integrity check failed, please try to re-build project again.
+```
+
+`media_kit_libs_windows_video` がビルド時に外部から取得する mpv の `.7z` が壊れていて、チェックサム検証に落ちた状態。**コード起因ではない。**`gh run rerun <id> --failed` で通る（2026-08-18 の v1.58 リリース PR で実測。1 回目 5m31s で失敗 → 再実行 17m23s で成功）。
+
+⚠ **切り分けの手がかり**: 失敗地点が **Dart のコンパイルより前**なら、その run のコード差分は無関係とみてよい。同じツリーの直前の run が通っていればほぼ確定。
+
+Linux 側は `libmpv-dev` を apt で入れるので、この経路は Windows 固有。**2 回続けて落ちたら一過性ではない**ので、media_kit の配布元（GitHub Releases）側か runner のネットワークを疑う。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定
