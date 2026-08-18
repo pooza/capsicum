@@ -378,8 +378,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   /// ⚠ 通知画面はタブの上に push されるので、ハッシュタグ / リストタブを開いた
   /// まま来ることがある。反映先を [readVisibleTimelines] で解決するのは runner
   /// 側に入っている (#887)。
-  PostActionRunner _runner(ScaffoldMessengerState messenger) =>
-      PostActionRunner(ref: ref, messenger: messenger);
+  PostActionRunner _runner(
+    ScaffoldMessengerState messenger, {
+    VisibleTimelineMutator? timeline,
+  }) => PostActionRunner(ref: ref, messenger: messenger, timeline: timeline);
 
   Future<void> _runAction(
     ScaffoldMessengerState messenger,
@@ -399,6 +401,8 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final adapter = account?.adapter;
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
+    // シートを開く前に捕まえる (#990)。post_tile と同じ形。
+    final timeline = readVisibleTimelines(ref);
 
     EmojiActionSheet.show(
       context: context,
@@ -414,6 +418,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
                 ':$shortcode:',
               ),
               'リアクションしました',
+              timeline: timeline,
             )
           : null,
     );
@@ -430,6 +435,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final messenger = ScaffoldMessenger.of(context);
     final backend = adapter as BackendAdapter;
     final reaction = adapter as ReactionSupport;
+    // ⚠ **シートを開く前に捕まえる** (#990)。onSelected はシートを pop した後に
+    // 走るので、その間にこのタイルが dispose されていると実行時の解決が投げ、
+    // リアクションが送信されないまま無言で消える（post_tile と同じ形）。
+    final timeline = readVisibleTimelines(ref);
 
     unawaited(
       showReactionPickerSheet(
@@ -441,6 +450,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           targetPost.id,
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
+          timeline: timeline,
         ),
       ),
     );
@@ -453,8 +463,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     Future<void> Function() action,
     String successMessage, {
     String phase = 'reaction_add',
+    VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,
+    timeline: timeline,
   ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Widget _buildHeader(BuildContext context, String label) {

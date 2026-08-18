@@ -1559,6 +1559,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
 
+    // シートを開く前に捕まえる (#990)。`_showEmojiPicker` と同じ理由。
+    final timeline = readVisibleTimelines(ref);
+
     EmojiActionSheet.show(
       context: context,
       shortcode: shortcode,
@@ -1573,6 +1576,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                 ':$shortcode:',
               ),
               'リアクションしました',
+              timeline: timeline,
             )
           : null,
     );
@@ -1587,6 +1591,12 @@ class _PostTileState extends ConsumerState<PostTile> {
     final messenger = ScaffoldMessenger.of(context);
     final backend = adapter as BackendAdapter;
     final reaction = adapter as ReactionSupport;
+    // ⚠ **シートを開く前に捕まえる** (#990)。onSelected はシートを pop した後に
+    // 走るので、その間に背後の TL が更新されてこのタイルが dispose されていると、
+    // 実行時の `readVisibleTimelines(ref)` が StateError を投げていた。しかも
+    // その呼び出しは `addReaction` より前にあったため、リアクションが送信され
+    // ないまま成功も失敗も出ずに消えていた（Sentry CAPSICUM-4N）。
+    final timeline = readVisibleTimelines(ref);
 
     unawaited(
       showReactionPickerSheet(
@@ -1598,6 +1608,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           targetPost.id,
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
+          timeline: timeline,
         ),
       ),
     );
@@ -1606,14 +1617,19 @@ class _PostTileState extends ConsumerState<PostTile> {
   /// 実行と失敗の扱いは [PostActionRunner] に寄せた (#943)。以前はこの 4 本が
   /// `post_touch_action_row` / `notification_tile` にも同名・同構造で並んでおり、
   /// 片方だけ直して母数が欠ける事故を繰り返していた。
-  PostActionRunner _runner(ScaffoldMessengerState messenger) =>
-      PostActionRunner(
-        ref: ref,
-        messenger: messenger,
-        onPostUpdated: widget.onPostUpdated,
-        onActionCompleted: onActionCompleted,
-      );
+  PostActionRunner _runner(
+    ScaffoldMessengerState messenger, {
+    VisibleTimelineMutator? timeline,
+  }) => PostActionRunner(
+    ref: ref,
+    messenger: messenger,
+    timeline: timeline,
+    onPostUpdated: widget.onPostUpdated,
+    onActionCompleted: onActionCompleted,
+  );
 
+  /// [timeline] は、シート等で await をまたぐ導線が**開く前に**捕まえたもの
+  /// (#990)。渡さなければ実行時に取りにいく。
   Future<void> _runReactionAction(
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
@@ -1621,8 +1637,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     Future<void> Function() action,
     String successMessage, {
     String phase = 'reaction_add',
+    VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,
+    timeline: timeline,
   ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Future<void> _runAction(

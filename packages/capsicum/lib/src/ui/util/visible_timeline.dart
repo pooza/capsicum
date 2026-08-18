@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/channel_provider.dart';
@@ -98,6 +99,16 @@ class VisibleTimelineMutator {
     }
     _main?.insertOwnPost(post);
   }
+
+  /// 反映先を 1 つも持たないハンドル (#990)。
+  ///
+  /// 呼び出し元の widget が既に dispose されていて、どの TL notifier も取れな
+  /// かったときに返す。すべての操作が黙って no-op になる。
+  ///
+  /// **「反映できない」を「アクションを実行しない」に昇格させないための器**。
+  /// 本線 TL は次に表示するとき build() から作り直されるので、ここで取りこぼした
+  /// 差し替えは実害にならない（[mainTimelineIsVisible] の doc と同じ理由）。
+  static const detached = VisibleTimelineMutator._();
 }
 
 /// 投稿がハッシュタグ TL の spec（`tag` / AND 指定 `tag+tag2`）に載るか。
@@ -163,4 +174,28 @@ VisibleTimelineMutator readVisibleTimelines(WidgetRef ref) {
         ? ref.read(channelTimelineProvider(tab.id).notifier)
         : null,
   );
+}
+
+/// dispose 済みの `ref` でも投げない [readVisibleTimelines] (#990)。
+///
+/// ⚠ **これは「await をまたぐ前に呼ぶ」規約の代わりではなく、最後の砦。**
+/// 呼ぶ側は従来どおり await の前に [readVisibleTimelines] を済ませること。
+///
+/// それでも必要なのは、**await が呼び出し元の外にある**経路があるため。
+/// リアクションはボトムシートを開いて絵文字を選んでもらう形で、シートが開いて
+/// いる間に背後の TL が更新されると `PostTile` の element が破棄される。以前は
+/// ここで StateError が投げられ、しかもその呼び出しがアクション本体 (`action()`)
+/// より前にあったため、**リアクションが送信されないまま、成功も失敗も出さずに
+/// 消えていた**（Sentry CAPSICUM-4N）。
+///
+/// 反映先が取れないこと自体は実害が小さい（本線 TL は次に表示するとき build()
+/// から作り直される）。取り違えてはいけないのは、**「画面へ反映できない」で
+/// 「操作そのものを捨てる」ことの方**。
+VisibleTimelineMutator readVisibleTimelinesOrDetached(WidgetRef ref) {
+  try {
+    return readVisibleTimelines(ref);
+  } on StateError catch (e) {
+    debugPrint('capsicum: visible timeline unavailable (widget disposed): $e');
+    return VisibleTimelineMutator.detached;
+  }
 }
