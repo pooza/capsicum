@@ -7,6 +7,7 @@ import '../service/server_metadata_cache.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 import '../util/exception_scrub.dart';
+import '../util/login_error.dart';
 
 /// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
@@ -112,37 +113,91 @@ final themeSeedColorProvider = Provider<Color>((ref) {
 });
 
 /// URL of the :sabacan: custom emoji on the current server (null if unavailable).
+///
+/// ⚠ **自前で `getEmojis()` を叩かず [customEmojisProvider] から導出する** (#988)。
+/// 以前は同じ一覧をもう一度取りに行っており、(1) 全件取得が二重に走る
+/// (2) 失敗を `catch (_) { return null; }` で握るので、あちらの自動再取得
+/// (#988) の恩恵を受けられず固着する、の 2 つの問題があった。
+///
+/// consumer は `.valueOrNull` で読んでいるので、失敗時に AsyncError が伝播しても
+/// 従来どおり null として扱われる（表示は出ない）。
 final sabacanUrlProvider = FutureProvider<String?>((ref) async {
-  final adapter = ref.watch(currentAdapterProvider);
-  if (adapter is! CustomEmojiSupport) return null;
-  try {
-    final emojis = await (adapter as CustomEmojiSupport).getEmojis();
-    final sabacan = emojis.where((e) => e.shortcode == 'sabacan').firstOrNull;
-    return sabacan?.url;
-  } catch (_) {
-    return null;
-  }
+  final emojis = await ref.watch(customEmojisProvider.future);
+  return emojis.where((e) => e.shortcode == 'sabacan').firstOrNull?.url;
 });
+
+/// カスタム絵文字の取得が一過性の失敗で落ちたときの、自動再取得の刻み (#988)。
+///
+/// **有限にするのが眼目。** 無制限に粘ると、本当に圏外のときへ probe を撃ち
+/// 続けることになる。ここで拾いきれなかった分は
+/// [retryCustomEmojisIfFailed]（フォアグラウンド復帰）が受け持つ。
+const kCustomEmojiRetryDelays = [
+  Duration(milliseconds: 500),
+  Duration(seconds: 2),
+  Duration(seconds: 5),
+];
 
 /// 現在アカウントのサーバーが提供するカスタム絵文字一覧。アカウント切替で
 /// 自動再 fetch される。常時 mount される SimplePostBar 等から繰り返し参照
 /// される想定でキャッシュ目的に分離（emoji_picker は state 変数で都度 fetch
 /// しているが、別 issue でこちらに寄せる余地あり）。
+///
+/// ## 一過性の失敗を抱え込まない (#988)
+///
+/// この provider は素の [FutureProvider] なので、**一度 AsyncError になると
+/// その状態を保持し続ける**。再評価の契機は [currentAdapterProvider] の変化
+/// （＝アカウント切替）しか無く、回線が戻っても絵文字は戻らなかった。
+///
+/// 2026-08-18 のユーザー報告（毎朝の起動で絵文字が読めない）がこの形で、
+/// 「しばらくすると復活する」の正体は **オフライン保持していた別アカウントが
+/// 復元されて adapter が差し替わったタイミング**だった。つまり絵文字の復帰が
+/// 無関係なアカウント復元の完了に相乗りしていた。
+///
+/// 直すのは「保持し続ける」側であって、`const []` を返さず rethrow する方では
+/// ない（後述の #609 のとおり、そちらは正しい）。
 final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
   final adapter = ref.watch(currentAdapterProvider);
   if (adapter is! CustomEmojiSupport) return const [];
-  try {
-    return await (adapter as CustomEmojiSupport).getEmojis();
-  } catch (e, st) {
-    // 失敗時に `const []` を返すと consumer (shortcode 警告) からは
-    // 「本当に空」と区別できず、すべての `:foo:` を unknown 扱いで赤波下線
-    // 化してしまう (#609 false positive)。AsyncError として伝播させて
-    // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
-    debugLogException('getEmojis failed', e);
-    Sentry.captureException(e, stackTrace: st);
-    rethrow;
+  final support = adapter as CustomEmojiSupport;
+  for (var attempt = 0; ; attempt++) {
+    try {
+      return await support.getEmojis();
+    } catch (e, st) {
+      // 一過性（接続断 / timeout / 5xx）なら、少し待ってもう一度取りに行く。
+      // 恒久失敗（4xx 等）は待っても変わらないので即座に諦める。
+      if (attempt < kCustomEmojiRetryDelays.length &&
+          classifyRestoreFailure(e) == RestoreOutcome.retriable) {
+        debugPrint(
+          'getEmojis failed (attempt ${attempt + 1}), retrying in '
+          '${kCustomEmojiRetryDelays[attempt].inMilliseconds}ms: $e',
+        );
+        await Future<void>.delayed(kCustomEmojiRetryDelays[attempt]);
+        continue;
+      }
+      // 失敗時に `const []` を返すと consumer (shortcode 警告) からは
+      // 「本当に空」と区別できず、すべての `:foo:` を unknown 扱いで赤波下線
+      // 化してしまう (#609 false positive)。AsyncError として伝播させて
+      // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
+      debugLogException('getEmojis failed', e);
+      Sentry.captureException(e, stackTrace: st);
+      rethrow;
+    }
   }
 });
+
+/// カスタム絵文字が失敗状態で止まっていたら取り直す (#988)。
+///
+/// [kCustomEmojiRetryDelays] を使い切っても戻らなかった場合（回線が数十秒以上
+/// 落ちていた等）の受け皿。フォアグラウンド復帰から呼ぶ。
+///
+/// ⚠ **成功しているときに呼んでも取り直さない。** 復帰のたびに全サーバーの
+/// 絵文字一覧（数千件になることがある）を取り直すのは重すぎる。アカウント切替
+/// による通常の再 fetch とも二重になる。
+void retryCustomEmojisIfFailed(WidgetRef ref) {
+  if (ref.read(customEmojisProvider).hasError) {
+    ref.invalidate(customEmojisProvider);
+  }
+}
 
 /// Local timeline display name: use default hashtag if available.
 final localTimelineNameProvider = Provider<String>((ref) {

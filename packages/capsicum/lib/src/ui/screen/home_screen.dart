@@ -119,6 +119,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 替えるまで反映されなかった。常駐タイマーは持たず、復帰・画面を開いた
       // とき・streaming 受信の 3 つの機会で取り直す方針。
       unawaited(ref.read(announcementProvider.notifier).refresh());
+      // カスタム絵文字が失敗状態のまま止まっていたら取り直す (#988)。provider
+      // 内の自動再取得（数秒）を使い切っても戻らなかった分の受け皿。成功して
+      // いるときは no-op なので、復帰のたびに全件取り直すことにはならない。
+      retryCustomEmojisIfFailed(ref);
     }
   }
 
