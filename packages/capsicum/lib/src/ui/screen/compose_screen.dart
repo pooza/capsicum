@@ -4378,8 +4378,8 @@ class _TagsetSheetState extends State<_TagsetSheet> {
 
   String _programSublabel(MulukhiyaProgram p) {
     final flags = <String>[];
-    // 放送日時をサブラベルの先頭に置く (#965)。`nextOn` が無い枠は「毎日」に
-    // なるので、ここが空になるのは日時をまったく持たないエントリだけ。
+    // 放送日時をサブラベルの先頭に置く (#965)。`nextOn` が無い枠は日付を
+    // 出さないので (#986)、時刻も無ければここは空になり、要素ごと落ちる。
     final schedule = programScheduleLabel(
       nextOn: p.nextOn,
       startTime: p.startTime,

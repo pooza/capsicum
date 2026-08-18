@@ -62,15 +62,25 @@ void main() {
       );
     });
 
-    test('next_on が無い枠は「毎日」', () {
-      expect(
-        programScheduleLabel(nextOn: null, startTime: null, now: now),
-        '毎日',
-      );
+    test('⚠ next_on が無い枠は日付を出さない (#986)', () {
+      // #965 では「毎日」と出していた。放送日を持たないことと毎日放送である
+      // ことは違うので取りやめた。時刻だけある枠は時刻のみ、どちらも無ければ
+      // 空文字（呼び出し側が isNotEmpty で要素ごと落とす）。
+      expect(programScheduleLabel(nextOn: null, startTime: null, now: now), '');
       expect(
         programScheduleLabel(nextOn: null, startTime: '22:00', now: now),
-        '毎日 22:00',
+        '22:00',
       );
+    });
+
+    test('⚠ 日付が無いとき先頭に空白が残らない (#986)', () {
+      final label = programScheduleLabel(
+        nextOn: null,
+        startTime: '22:00',
+        now: now,
+      );
+      expect(label, isNot(startsWith(' ')), reason: '" 22:00" になっている');
+      expect(label.trim(), label);
     });
 
     test('start_time だけ落ちても日付は出す', () {
