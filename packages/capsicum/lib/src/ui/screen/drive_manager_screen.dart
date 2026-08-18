@@ -1110,6 +1110,17 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
 /// 操作であって「上の階層へ」ではない。メニューでは行き先のラベルを名乗る以上、
 /// 上が無ければ押せてはいけない。
 ///
+/// ⚠ **[selectionMode] のときも「上の階層へ」を無効にする** (#984)。同じ理由で、
+/// 選択モード中の戻る操作は `PopScope` の `onPopInvokedWithResult` が
+/// `_exitSelectionMode()` へ振り分けており、**上の階層へは行かない**。ここだけ
+/// 素通しにすると、選択を抱えたまま親フォルダへ移動でき、`hasSelection` が
+/// true のままなので **いま見えていないファイルを、別のフォルダを基準にした
+/// 移動先ピッカーで動かせてしまう**。
+///
+/// ⚠ **選択を解除してから移動する案は採らない。** 「上の階層へ」を選んだだけで
+/// 選択が消えるのは、メニューの他項目が選択を保つのと非対称になる。#835 の
+/// 「使えない操作は無効化して残す」に従って押せなくする方が揃う。
+///
 /// ダイアログを開く項目に付く `…` は既存メニューの表記（`絵文字…` / `予約投稿…`）
 /// に揃えたもの。issue の項目表では「フォルダを作成」だが、`移動…` と同じく
 /// ダイアログを開くので同じ menu 内で表記が割れないよう `…` を付けている。
@@ -1136,7 +1147,7 @@ List<MenuEntry> buildDriveMenuEntries({
   MenuActionEntry(
     label: '上の階層へ',
     icon: Icons.drive_folder_upload_outlined,
-    onSelected: canGoUp ? onGoUp : null,
+    onSelected: canGoUp && !selectionMode ? onGoUp : null,
   ),
   MenuActionEntry(label: '再読み込み', icon: Icons.refresh, onSelected: onRefresh),
   const MenuGroupSeparator(),
