@@ -78,9 +78,25 @@ void main() {
       expect(action(build(canGoUp: false), '上の階層へ').onSelected, isNull);
     });
 
-    test('選択モードでも階層の有無だけで決まる', () {
+    /// v1.57 までは選択モード中も有効で、**選択を抱えたまま親フォルダへ移動でき、
+    /// いま見えていないファイルを別フォルダ基準の移動先ピッカーで動かせた**
+    /// (#984)。選択モード中の戻る操作は `PopScope` が `_exitSelectionMode()` へ
+    /// 振り分けていて上の階層へは行かないので、メニューだけが分岐を通っていな
+    /// かった。
+    test('⚠ 選択モード中は無効（AppBar 側の戻る操作と条件を揃える / #984）', () {
       expect(
         action(build(canGoUp: true, selectionMode: true), '上の階層へ').onSelected,
+        isNull,
+      );
+    });
+
+    /// 選択を解除してから移動する案は採らなかった。「上の階層へ」を選んだだけで
+    /// 選択が消えるのは、メニューの他項目が選択を保つのと非対称になるため
+    /// （#835「使えない操作は無効化して残す」）。ここが崩れるとその判断が
+    /// ひっくり返ったことになる。
+    test('⚠ 選択モードを抜ければまた有効になる（解除して移動する形にしない / #984）', () {
+      expect(
+        action(build(canGoUp: true, selectionMode: false), '上の階層へ').onSelected,
         isNotNull,
       );
     });

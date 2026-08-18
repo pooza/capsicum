@@ -133,6 +133,24 @@ v1.53 の #890（ホーム TL の起動時キャッシュ）で、リリース�
 
 なお **6 巡のレビューでも「オフライン起動では router が `/server` へ飛ばすのでタイムライン画面に到達しない」ことは分からず、実機確認で初めて出た**（→ #917）。経路の存在自体を取り違えていると、静的レビューは何巡しても気付けない。
 
+## 観測（Sentry）
+
+### `level=fatal` / `handled=no` はプロセス死を意味しない（#901）
+
+sentry_flutter の `OnErrorIntegration` は、**`PlatformDispatcher.onError` に届いた例外へ一律に `SentryLevel.fatal` をハードコードする**（SDK 9.27.0 の `lib/src/integrations/on_error_integration.dart` で実測）。`handled` も「事前に設定されていた `onError` が `true` を返したか」でしかなく、アプリが落ちたかどうかとは無関係。SDK 自身のコメントも "the app **might** crash on some platforms after this is called" と書いている。
+
+Android では**非同期の未捕捉 Dart エラーでプロセスは落ちない**。したがって Sentry で `fatal` と出ているイベントの多くは「クラッシュ」ではなく、**どこかで処理が途中で飛んだだけ**である。
+
+これを取り違えると観測 issue が実害と接続できなくなる。#901 が実例で、起票時の本文に「fatal / **未捕捉クラッシュ**として再発している」と書いたため:
+
+- 実際に起きていたのは **タイムラインの無限スクロールが止まる**（再起動で復帰）という症状だった
+- pooza は突然終了を経験していないので「クラッシュの心当たりが無い」となり、**同じ現象なのに 3 週間以上ひも付かなかった**
+- pooza 側はその間ずっと**サーバー起因**を疑っていた
+
+**教訓**: 観測 issue には Sentry の文言をそのまま写さず、**「この例外が起きたとき、ユーザーには何が見えるか」を書く。**書けないなら、そこがまだ分かっていない部分として明示する。スタックが framework 内部で終わっていても、症状の予想は立てられる（例: `FutureHandlerProviderElementMixin.onData` での `Future already completed` は、**1 回目の完了は成功しているので値は届いており、2 回目の配信が落ちて UI が更新されない**と読める）。
+
+同じ取り違えは #89（「無限スクロールが数回で停止する」を WebSocket の未ハンドル例外 125 回から追った回）でも起きている。**「TL が更新されない」系の報告は、サーバー側を疑う前に Sentry の未捕捉 async エラーと突き合わせる。**
+
 ## デスクトップ（drag & drop / ネイティブ連携）
 
 ### drag-out の重い処理（ダウンロード等）は `dragItemProvider` ではなく virtual file provider に置く
@@ -201,6 +219,24 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 **⚠ この 4.3 を endpoint churn だけに帰さないこと（[#950](https://github.com/pooza/capsicum/issues/950)）。** 掃除側も効いていなかった —— `_cleanupDeviceRegistration` は「全アカウントを `unregisterAccount` → 最後に `unregisterDevice`」の順で回すが、前段の `PushKeyStore.delete(accountKey)` が **`relayId` スロットごと消す**ため、後段は保存済み id を 1 つも見つけられず `DELETE /register/:id` を**一度も発行していなかった**。孤児が増える一方で、アプリから relay row を消す経路が実質存在しない状態。加えて doc / 実装が `UNIQUE(token)`（**旧**スキーマ）の「1 行消せばデバイス全体が消える」前提のままで、現行の `UNIQUE(token, account, server)` では **N アカウント中 1 行しか消えない**形でもあった。両方 v1.55 で是正済み。
 
 恒久対処は上流側（モロヘイヤ [#4408](https://github.com/pooza/mulukhiya-toot-proxy/issues/4408) が `sw/register` を `(userId, endpoint)` 単位で dedup）＋ relay 側の保険 dedup（[capsicum-relay#16](https://github.com/pooza/capsicum-relay/issues/16)）＋ **client 側の endpoint 安定化**（[#932](https://github.com/pooza/capsicum/issues/932) の device-id + [capsicum-relay#15](https://github.com/pooza/capsicum-relay/issues/15)）。
+
+## CI / ビルド
+
+### Windows: mpv アーカイブの `Integrity check failed` は一過性（再実行で通る）
+
+`windows-release.yml` の msix ジョブが、Dart のコンパイルより手前の CMake 段階で落ちることがある。
+
+```
+CMake Error at flutter/ephemeral/.plugin_symlinks/media_kit_libs_windows_video/windows/CMakeLists.txt:43 (message):
+  .../build/windows/x64/mpv-dev-x86_64-20230924-git-652a1dd.7z
+  Integrity check failed, please try to re-build project again.
+```
+
+`media_kit_libs_windows_video` がビルド時に外部から取得する mpv の `.7z` が壊れていて、チェックサム検証に落ちた状態。**コード起因ではない。**`gh run rerun <id> --failed` で通る（2026-08-18 の v1.58 リリース PR で実測。1 回目 5m31s で失敗 → 再実行 17m23s で成功）。
+
+⚠ **切り分けの手がかり**: 失敗地点が **Dart のコンパイルより前**なら、その run のコード差分は無関係とみてよい。同じツリーの直前の run が通っていればほぼ確定。
+
+Linux 側は `libmpv-dev` を apt で入れるので、この経路は Windows 固有。**2 回続けて落ちたら一過性ではない**ので、media_kit の配布元（GitHub Releases）側か runner のネットワークを疑う。
 
 ## NodeInfo / Probing
 

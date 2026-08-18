@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*.*.*']
   pull_request:
+    # ⚠ 既定 (opened / synchronize / reopened) には ready_for_review が
+    # 含まれない。draft ガード (#987) を入れた以上、明示しないと
+    # **draft を ready にした瞬間に run が 1 本も生成されない**。
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, main]
     paths:
       - 'distribution/linux/**'
@@ -11,6 +15,14 @@ on:
       - 'packages/capsicum/pubspec.yaml'
       - '.github/workflows/linux-release.yml'
   workflow_dispatch:
+
+# 同一 ref への連続 push で古い run を完走させない (#987)。
+# タグ駆動のリリースビルドは絶対に中断させたくないので、cancel-in-progress は
+# tag 以外に限定する (group に ref を含めてあるため tag は元々別グループだが、
+# 事故を二重に防ぐ)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   # Phase 4a: portable AppImage を組み立てて GitHub Releases (draft) に添付。
@@ -26,6 +38,13 @@ jobs:
   # Debian 12 以前では動かなくなる (AppImage は glibc を同梱しない)。Linux 動画
   # 再生を成立させるための判断 (#492、build on noble)。
   appimage:
+    # draft PR ではビルドしない (#987)。理由は windows-release.yml の同名ガード
+    # に詳述。要点は「pull_request の paths: は PR 全体の差分で判定されるため、
+    # リリース PR に含まれる pubspec.yaml のバージョンバンプがマイルストーン期間中
+    # ずっとヒットし続け、docs 修正のみの push でも毎回ビルドが起動していた」。
+    # 下の assets-lint は ubuntu の軽量 lint で「低コストで毎回検証する」ことが
+    # 目的のため、意図的にこのガードを付けず draft PR でも走らせる。
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       # softprops/action-gh-release の draft Release 作成 + 添付に必要 (タグ駆動時のみ実行)

@@ -10,6 +10,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/visible_timeline.dart';
 import 'reaction_picker_sheet.dart';
 
 /// 投稿 / 通知タイル上のタッチ操作ボタン行を集約した共有 widget (#657)。
@@ -225,13 +226,17 @@ class PostTouchActionRow extends ConsumerWidget {
   /// 実行と失敗の扱いは [PostActionRunner] に寄せた (#943)。この 3 本は
   /// `post_tile` に同名・同構造の双子がおり、片方だけ直して `phase: post_action`
   /// の母数からこの導線が欠ける事故を繰り返していた。
-  PostActionRunner _runner(WidgetRef ref, ScaffoldMessengerState messenger) =>
-      PostActionRunner(
-        ref: ref,
-        messenger: messenger,
-        onPostUpdated: onPostUpdated,
-        onActionCompleted: onActionCompleted,
-      );
+  PostActionRunner _runner(
+    WidgetRef ref,
+    ScaffoldMessengerState messenger, {
+    VisibleTimelineMutator? timeline,
+  }) => PostActionRunner(
+    ref: ref,
+    messenger: messenger,
+    timeline: timeline,
+    onPostUpdated: onPostUpdated,
+    onActionCompleted: onActionCompleted,
+  );
 
   /// ブースト / リノートの取り消し (#561)。
   Future<void> _unrepeat(
@@ -260,6 +265,10 @@ class PostTouchActionRow extends ConsumerWidget {
     // （CAPSICUM-32 #739: closure 実行時の Null check operator クラッシュ対策）。
     final backend = adapter as BackendAdapter;
     final reaction = adapter as ReactionSupport;
+    // ⚠ **シートを開く前に捕まえる** (#990)。onSelected はシートを pop した後に
+    // 走るので、その間にこの行が dispose されていると実行時の解決が投げ、
+    // リアクションが送信されないまま無言で消える（post_tile と同じ形）。
+    final timeline = readVisibleTimelines(ref);
 
     unawaited(
       showReactionPickerSheet(
@@ -271,6 +280,7 @@ class PostTouchActionRow extends ConsumerWidget {
           backend,
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
+          timeline: timeline,
         ),
       ),
     );
@@ -283,9 +293,11 @@ class PostTouchActionRow extends ConsumerWidget {
     Future<void> Function() action,
     String successMessage, {
     String phase = 'reaction_add',
+    VisibleTimelineMutator? timeline,
   }) => _runner(
     ref,
     messenger,
+    timeline: timeline,
   ).runReaction(adapter, targetPost.id, action, successMessage, phase: phase);
 
   Future<void> _runAction(

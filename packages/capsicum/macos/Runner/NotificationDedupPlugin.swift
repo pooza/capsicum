@@ -2,6 +2,66 @@ import AppKit
 import FlutterMacOS
 import UserNotifications
 
+/// 上限に達したら**最古から押し出す**キー集合 (#983)。
+///
+/// Dart 側 `desktop_notification_dispatcher.dart` の `_BoundedKeySet` と同じ
+/// 意味を持たせる。Swift の `Set` は挿入順を保たないので、順序は配列で別に持つ。
+///
+/// ## なぜ全消しではいけないか
+///
+/// #960 で「全消しから FIFO 追い出しへ」を入れたとき、置き換えたのは Dart 側の
+/// 2 集合だけで、こちらは全消しのまま残っていた。ところが**効き方が違う**:
+///
+/// - Dart 側の 2 集合は「もう出したか」の記録。取りこぼしても多重表示になるだけ
+/// - こちらは `willPresent` で**抑止するかどうかを決める判定そのもの**。全消しの
+///   直後に遅れて届いた APNs banner は「未出」と判定されて表示されるので、
+///   **#674 が防いでいる二重表示がそのまま復活する**
+///
+/// 500 件は実況運用のセッションで到達しうる。
+///
+/// ⚠ **メインスレッド専用。** 触るのは `willPresent` デリゲートと
+/// `FlutterMethodChannel` のハンドラだけで、どちらもプラットフォーム（メイン）
+/// スレッドで走る。旧実装（`Set` 1 本）と違い `keys` と `order` の 2 つを整合
+/// させる構造なので、別キューから触ると壊れ方が悪い。
+struct BoundedKeySet {
+  private let name: String
+  private let maxSize: Int
+  private var keys = Set<String>()
+  /// 挿入順。`keys` と常に同じ要素を持つ。
+  private var order = [String]()
+  /// 上限超過で押し出した累計件数 (観測用)。
+  private(set) var dropped = 0
+
+  init(_ name: String, _ maxSize: Int) {
+    self.name = name
+    self.maxSize = maxSize
+  }
+
+  func contains(_ key: String) -> Bool { keys.contains(key) }
+
+  /// [key] を追加し、新規なら true を返す (`Set.add` と同じ意味)。
+  ///
+  /// ⚠ **既出キーでは順序を動かさない。** Dart の `LinkedHashSet` が再挿入で
+  /// 位置を変えないのに合わせる (LRU ではなく FIFO)。
+  @discardableResult
+  mutating func add(_ key: String) -> Bool {
+    guard keys.insert(key).inserted else { return false }
+    order.append(key)
+    var evicted = 0
+    while order.count > maxSize {
+      keys.remove(order.removeFirst())
+      dropped += 1
+      evicted += 1
+    }
+    if evicted > 0 {
+      NSLog(
+        "capsicum: dedup: \"\(name)\" evicted \(evicted) oldest "
+          + "(size=\(order.count)/\(maxSize), total_dropped=\(dropped))")
+    }
+    return true
+  }
+}
+
 /// 起動中の二重通知 dedup (#674)。
 ///
 /// アプリ起動中は同じ通知イベントが 2 経路で届きうる:
@@ -41,8 +101,7 @@ import UserNotifications
 ///   黙殺する (重複より取りこぼしの方が安全、の例外。generic は WebSocket
 ///   側が同イベントをリッチ文面で出す見込みが高い)。
 class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
-  /// Dart 側 DesktopNotificationDispatcher と同じ上限。超えたら全消しして
-  /// 作り直す (LRU は不要。取りこぼしても「多重表示の方が落とすより安全」)。
+  /// Dart 側 DesktopNotificationDispatcher と同じ上限。
   private static let maxTrackedKeys = 500
 
   private let channel: FlutterMethodChannel
@@ -50,7 +109,8 @@ class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
   /// タップ応答 (didReceive) はすべてここへ委譲する。
   private let wrapped: UNUserNotificationCenterDelegate
 
-  private var seenKeys = Set<String>()
+  /// ⚠ **全消しにしない** (#983)。理由は [BoundedKeySet] の docs。
+  private var seenKeys = BoundedKeySet("seen", NotificationDedupPlugin.maxTrackedKeys)
 
   private init(
     channel: FlutterMethodChannel,
@@ -139,10 +199,7 @@ class NotificationDedupPlugin: NSObject, UNUserNotificationCenterDelegate {
   }
 
   private func remember(_ key: String) {
-    if seenKeys.count >= Self.maxTrackedKeys {
-      seenKeys.removeAll()
-    }
-    seenKeys.insert(key)
+    seenKeys.add(key)
   }
 
   /// 非 FLN 通知 = APNs remote push (relay は userInfo に account を必ず載せる)。

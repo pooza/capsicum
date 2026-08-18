@@ -33,17 +33,36 @@ import 'visible_timeline.dart';
 /// タイル側は `messenger` と `ref` を渡して 1 つ持つ。⚠ **`messenger` と
 /// notifier は await の前に確定させる**のがこのクラスの存在理由の半分で、
 /// await 中にタイルが dispose されると `ref.read` が StateError を投げる
-/// (#665)。[run] 系は入口で [readVisibleTimelines] を呼んでからスタートする。
+/// (#665)。[run] 系は入口で [readVisibleTimelinesOrDetached] を呼んでから
+/// スタートする。
+///
+/// ## await が呼び出し元の外にある経路 (#990)
+///
+/// 「入口で確定させる」だけでは足りない場合がある。リアクションはボトムシートで
+/// 絵文字を選んでもらう形で、**runner が作られる時点で既にタイルが dispose 済み**
+/// になりうる（シートが開いている間に背後の TL が更新されると起きる）。この形は
+/// 入口の呼び出し自体が投げるので、`action()` へ辿り着かない。
+///
+/// 対策は 2 段に分けている:
+///
+/// 1. 呼び出し側が [timeline] を**シートを開く前に**捕まえて渡す（規約どおりの直し方）
+/// 2. それでも取れなかったときは [VisibleTimelineMutator.detached] へ落とし、
+///    **画面反映だけを諦めてアクションは実行する**
 class PostActionRunner {
   const PostActionRunner({
     required this.ref,
     required this.messenger,
+    this.timeline,
     this.onPostUpdated,
     this.onActionCompleted,
   });
 
   final WidgetRef ref;
   final ScaffoldMessengerState messenger;
+
+  /// 反映先の TL。**シート等で await をまたぐ導線は、開く前に捕まえて渡す** (#990)。
+  /// null なら実行時に [readVisibleTimelinesOrDetached] で取りにいく。
+  final VisibleTimelineMutator? timeline;
 
   /// 更新後の投稿を呼び出し側へ返す口（タイルのローカル表示更新用）。
   final void Function(Post updated)? onPostUpdated;
@@ -57,11 +76,11 @@ class PostActionRunner {
     Future<Post> Function() action,
     String successMessage,
   ) async {
-    final timeline = readVisibleTimelines(ref);
+    final timeline = _timeline;
     try {
       final updated = await action();
       timeline.updatePost(updated);
-      onPostUpdated?.call(updated);
+      _notifyPostUpdated(updated);
       _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
@@ -89,6 +108,12 @@ class PostActionRunner {
   ///
   /// [phase] は付与 (`reaction_add`) と取り消し (`reaction_remove`) で分ける
   /// (#924)。両方が `reaction_add` に畳まれると Sentry でどちらの失敗か混ざる。
+  ///
+  /// ⚠ **取り直し ([BackendAdapter.getPostById]) をアクション本体と同じ `try` に
+  /// 置かない。** 置くと、リアクションはサーバーに入っているのに「失敗しました」
+  /// が出て、Sentry の [phase] にも偽の失敗が 1 件乗る。ユーザーが押し直すと
+  /// Misskey が `ALREADY_REACTED` を返して 2 度目も失敗表示になる。
+  /// [_notifyCompleted] / [_notifyPostUpdated] を本体から切り離したのと同じ理由。
   Future<void> runReaction(
     BackendAdapter adapter,
     String postId,
@@ -96,15 +121,20 @@ class PostActionRunner {
     String successMessage, {
     String phase = 'reaction_add',
   }) async {
-    final timeline = readVisibleTimelines(ref);
+    final timeline = _timeline;
     try {
       await action();
-      final updated = await adapter.getPostById(postId);
-      timeline.updatePost(updated);
-      _notifyCompleted();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
       _report('runReaction', e, st, phase: phase);
+      return;
+    }
+    // ここから先は**アクションが成立した後**。失敗しても成功として見せる。
+    _notifyCompleted();
+    messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+    try {
+      timeline.updatePost(await adapter.getPostById(postId));
+    } catch (e, st) {
+      _reportQuietly('runReaction.readback', e, st, phase: '${phase}_readback');
     }
   }
 
@@ -121,7 +151,7 @@ class PostActionRunner {
     required bool isOwnRenote,
     required String boostLabel,
   }) async {
-    final timeline = readVisibleTimelines(ref);
+    final timeline = _timeline;
     try {
       await adapter.unrepeatPost(isOwnRenote ? outerPost : targetPost);
       if (isOwnRenote) {
@@ -140,6 +170,29 @@ class PostActionRunner {
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
     } catch (e, st) {
       _report('unrepeat', e, st, phase: 'post_action');
+    }
+  }
+
+  /// 反映先の TL を決める (#990)。
+  ///
+  /// 呼び出し側が [timeline] を渡していればそれを使い、無ければその場で取りにいく。
+  /// ⚠ **取れなくても投げない。** ここで投げると `action()` の手前で止まり、
+  /// 操作が送信されないまま成功も失敗も出ずに消える（Sentry CAPSICUM-4N）。
+  VisibleTimelineMutator get _timeline =>
+      timeline ?? readVisibleTimelinesOrDetached(ref);
+
+  /// 更新後の投稿を呼び出し側へ渡す。
+  ///
+  /// ⚠ **[_notifyCompleted] と同じ理由で本体の `try` から切り離す。** 渡ってくる
+  /// のはタイルのローカル表示更新（多くは `setState`）で、応答が返る前に画面を
+  /// 離れると dispose 済みの State に触れて投げる。本体の `try` の中で投げると
+  /// **API は成功しているのに「失敗しました」**が出て、Sentry の `post_action`
+  /// にも偽の失敗が 1 件乗る。
+  void _notifyPostUpdated(Post updated) {
+    try {
+      onPostUpdated?.call(updated);
+    } catch (e) {
+      debugLogException('PostActionRunner onPostUpdated error', e);
     }
   }
 
@@ -166,6 +219,21 @@ class PostActionRunner {
   /// 失敗が導線ごとに別系列へ散り、**どちらで絞っても母数にならない**状態だった。
   /// 規約は [describePostActionError] の doc が正本。
   void _report(String label, Object e, StackTrace st, {required String phase}) {
+    _reportQuietly(label, e, st, phase: phase);
+    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
+  }
+
+  /// 観測だけして、ユーザーには何も出さない失敗。
+  ///
+  /// **アクションが成立した後の後始末**（取り直し等）に使う。ここで snackbar を
+  /// 出すと「操作は成功しているのに失敗と伝える」ことになる。[phase] は本体と
+  /// 別系列にして、母数が混ざらないようにする。
+  void _reportQuietly(
+    String label,
+    Object e,
+    StackTrace st, {
+    required String phase,
+  }) {
     debugLogException('PostActionRunner.$label failed', e);
     if (kDebugMode && e is DioException) {
       debugPrint('Response body: ${e.response?.data}');
@@ -177,7 +245,6 @@ class PostActionRunner {
         withScope: (scope) => scope.setTag('phase', phase),
       ),
     );
-    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
   }
 }
 

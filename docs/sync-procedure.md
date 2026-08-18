@@ -92,7 +92,13 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - **mulukhiya-toot-proxy**: `cd ~/repos/mulukhiya-toot-proxy && git fetch origin` + `git log HEAD..origin/develop --oneline` でリモートとの差分を確認。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
 - **chubo2**: `cd ~/repos/chubo2 && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
-- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行
+- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
+
+  ```sh
+  curl -s https://relay.capsicum.shrieker.net/health | python3 -m json.tool   # revision が origin/main の HEAD と一致するか
+  ```
+
+  ⚠ 返るのは**稼働中プロセス**の revision なので、docs / テストだけの commit を main へ入れた回は**意図的に遅れる**（本番再起動は in-memory の `/metrics` counter をゼロに戻すため、サーバー挙動が変わらない commit で再起動しない）。不一致を見つけたら `git log <revision>..origin/main` で中身を見て、コードに触っていなければデプロイ不要と判断する。
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `cd ~/repos/mastodon && git pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `cd ~/repos/misskey && git pull --ff-only` → `package.json` の `version`
