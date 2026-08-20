@@ -30,6 +30,7 @@ capsicum で発生する不具合のうち、原因が Flutter framework 本体�
 
 ## chase 手順
 
+0. **テーブルの母数を先に合わせる。** `gh issue list --label flutter --state open` を実行し、監視対象テーブルとの差分を解消する（未掲載の open は追加・close 済みの行は「卒業した項目」へ移す）。⚠ **上流だけ見ていると capsicum 側の状態変化に気付けない**（2026-08-01 の chase が close 済みの #481 を「変化なし」と更新していた実例がある）
 1. 監視対象の各項目について、上流 Issue/PR の最新状態を確認する
    - `flutter/flutter` の場合: `gh -R flutter/flutter issue view <番号>` でステータス・直近コメントを確認
    - 他リポジトリ（`LinusU/flutter_web_auth_2` 等）も同様に `gh -R <owner/repo> issue view <番号>`
@@ -48,8 +49,20 @@ capsicum は Flutter stable channel に固定している。上流修正が次�
 
 サードパーティパッケージ（`flutter_web_auth_2` 等）由来の項目は、当該パッケージの release notes / changelog を確認し、`pubspec.yaml` の更新で取り込めるかを判断する。
 
-## routine
+## 実行タイミング（2026-08-21 に手動運用へ切り替え）
 
-月次 chase は capsicum リポジトリの schedule routine で自動実行される（毎月 1 日 09:00 JST）。実行内容は本 doc の「chase 手順」に準ずる。
+⚠ **クラウドの schedule routine は 2 本とも無効化した。月初に手元のセッションで回す。**
 
-あわせて月次巡回のついでに、**資格情報の満了チェック**も実施する（infra-note〔chubo2, private〕の「資格情報の満了一覧」§の月次チェック手順）。chubo2 を参照できる環境では満了 60 日 / 30 日以内の資格情報を報告し、参照できない環境ではスキップしてその旨を残す（満了日そのものは private な infra-note 側が正本。公開リポジトリには書かない）。
+「月初にこれを実行するのは案外おぼえている」（pooza）ので、月初のセッションで **「Flutter の chase をやって」** と指示すれば足りる。実行内容は本 doc の「chase 手順」に準ずる。
+
+### なぜ自動化をやめたか
+
+routine は 2026-05 / 06 / 07 / 08 と 4 か月連続で発火していたが、**develop に成果コミットを 1 件も残していなかった**。実務は毎回ローカルセッションが先回りして済ませており、2026-08-01 は routine の発火（09:04 JST）の 2 時間前にローカルが chase を終えていた。
+
+⚠ **さらに、クラウド巡回の prompt には構造的な穴があった。** 手順が「上流 Issue/PR の状態を見る」だけで、**capsicum 側の状態を見るステップが無い**。実際 #481 は 2026-07-22 に close 済みだったのに、10 日後の chase が監視テーブルの #481 行を「変化なし」と更新していた。手動で回す場合も**この穴は踏みうる**ので、chase 手順 0（テーブルと `--label flutter --state open` の突き合わせ）を必ず先にやる。
+
+⚠ **完全削除は <https://claude.ai/code/routines> からしかできない**（API では無効化止まり）。トリガー ID は `trig_01UyYc13dKiRLFKfWWvurMje`（本命）/ `trig_01LEdYNHZXkyjyYbhyFghyWU`（重複・2026-08-01 に無効化済み）。
+
+### ⚠ 一緒に止まったもの: 資格情報の満了チェック
+
+月次巡回に**相乗りさせていた**ため、これも自動では回らなくなった。chase と同じタイミングで手動実施する — infra-note〔chubo2, private〕の「資格情報の満了一覧」§の月次チェック手順に従い、chubo2 を参照できる環境では満了 60 日 / 30 日以内の資格情報を報告する（満了日そのものは private な infra-note 側が正本。公開リポジトリには書かない）。**直近で最も近い満了は WNS 資格情報の 2028-06-22** なので当面の切迫はないが、chase と切り離すと今度はこちらが忘れられる点に注意。
