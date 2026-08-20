@@ -196,20 +196,29 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
         ),
         const MenuGroupSeparator(),
         // 選択中の投稿への操作 (#943)。未選択なら全項目が無効で並ぶ。
-        ...buildPostActionMenuEntries(
-          boostLabel: ref.watch(reblogLabelProvider),
-          bookmarkLabel: ref.watch(currentAdapterProvider) is ReactionSupport
-              ? 'お気に入り'
-              : 'ブックマーク',
-          availability: selected == null
-              ? null
-              : PostActionAvailability.of(ref, selected),
-          onReply: _replyToSelected,
-          onQuote: _quoteSelected,
-          onBoost: _boostSelected,
-          onUnboost: _unboostSelected,
-          onFavorite: _favoriteSelected,
-          onBookmark: _bookmarkSelected,
+        //
+        // ⚠ **スレッド自体の操作と同じ階層に並べない** (#980)。操作対象は
+        // スレッドではなく「いま ↑ ↓ で指している投稿」なので、1 段下げないと
+        // 何に対する操作なのかが読み取れない（実際に「出し方がわからない」
+        // 状態になった）。見出しの「投稿」は [postLabelProvider] 由来で、
+        // モロヘイヤが名乗れば「現在のキュア！」等になる。
+        MenuSubmenuEntry(
+          label: '現在の${ref.watch(postLabelProvider)}',
+          children: buildPostActionMenuEntries(
+            boostLabel: ref.watch(reblogLabelProvider),
+            bookmarkLabel: ref.watch(currentAdapterProvider) is ReactionSupport
+                ? 'お気に入り'
+                : 'ブックマーク',
+            availability: selected == null
+                ? null
+                : PostActionAvailability.of(ref, selected),
+            onReply: _replyToSelected,
+            onQuote: _quoteSelected,
+            onBoost: _boostSelected,
+            onUnboost: _unboostSelected,
+            onFavorite: _favoriteSelected,
+            onBookmark: _bookmarkSelected,
+          ),
         ),
       ],
       child: _buildScaffold(context, threadFuture, showJump: showJump),
