@@ -2,21 +2,31 @@
 
 capsicum で発生する不具合のうち、原因が Flutter framework 本体または Flutter エコシステム（pub.dev のメンテパッケージ）側にあり、capsicum 側では根治できないものを集約する。月 1 回の chase routine で巡回し、上流の進捗を確認する。
 
+⚠ **監視対象テーブルの母数は「`flutter` ラベルが付いた open Issue」**。chase の最初に `gh issue list --label flutter --state open` を実行し、テーブルとの差分（未掲載の open / 掲載済みだが close 済み）を先に解消してから上流を追う。2026-08-21 の同期で、close 済みの #390 / #481 が残り open の #608 が載っていない状態を検出した — **上流だけ見ていると capsicum 側の状態変化に気付けない**。
+
 ## 監視対象
 
 | capsicum | タイトル | 上流参照 | 最終確認日 | 状態 |
 |---|---|---|---|---|
 | [#54](https://github.com/pooza/capsicum/issues/54) | ATOK で日本語入力が二重になる (iOS) | **iOS 本命起票済み: [flutter/flutter#187636](https://github.com/flutter/flutter/issues/187636)**（iOS ATOK 二重化。実機再現確認済み）。macOS 兄弟: [#149379](https://github.com/flutter/flutter/issues/149379) (OPEN) / 本質 [#160935](https://github.com/flutter/flutter/issues/160935) (CLOSED / r: fixed, #54 と同症状)。macOS 修正 PR [#166291](https://github.com/flutter/flutter/pull/166291) (MERGED 2025-06-21) は `darwin/macos/.../FlutterTextInputPlugin.mm` 1 ファイルのみ＝**macOS 専用、iOS 経路 (`darwin/ios/.../FlutterTextInputPlugin.mm`) は未修正**。関連: [#96092](https://github.com/flutter/flutter/issues/96092) (Android ATOK) / [#151103](https://github.com/flutter/flutter/issues/151103) / [#134926](https://github.com/flutter/flutter/issues/134926) (web) / [#154692](https://github.com/flutter/flutter/issues/154692) (Windows 同型) | 2026-08-01 | 前回のトリアージ（`P2` / `team-text-input` / `triaged-text-input` / `has reproducible steps` / `engine`）から**変化なし**。OPEN・最終更新 2026-06-11・コメント 0 件のまま＝オーナーは付いたが着手はされていない。root-cause = darwin FlutterTextInputPlugin の IME composing 確定処理の二重適用。引き続き #187636 のコメント・PR を追う |
 | [#94](https://github.com/pooza/capsicum/issues/94) | 投稿フォームのテキスト選択メニューが英語表示・範囲選択不可 | [flutter/flutter#105028](https://github.com/flutter/flutter/issues/105028) (OPEN, TextField toolbar button text do not match platform iOS and macOS text in Japanese) | 2026-08-01 | 上流 open、本命特定済。最終更新 2024-03-06・実質的な議論は 2023-08 が最後（翻訳文字列を Apple 系 / Windows 系で分ける必要があるという結論のまま停滞）。変化なし |
-| [#390](https://github.com/pooza/capsicum/issues/390) | macOS HardwareKeyboard assertion (リモート操作環境) | **本命特定: [flutter/flutter#125975](https://github.com/flutter/flutter/issues/125975)**（OPEN / `r: solved` / `has partial patch`、"Pressing and releasing a key before the framework has started throws"）。従来追っていた [#180809](https://github.com/flutter/flutter/issues/180809) は **#125975 の duplicate として close**（2026-01-12）＝周回していた close 群の集約先がここ。**修正 PR: [#181894](https://github.com/flutter/flutter/pull/181894)**（MERGED 2026-02-10, "Disable hardware keyboard regularity warning by default"）。不採用の partial patch: [#172154](https://github.com/flutter/flutter/pull/172154) (CLOSED)。OPEN 類似: [#152391](https://github.com/flutter/flutter/issues/152391) (PDA keyboard SHIFT, 最終活動 2025-09)。周辺: [#136419](https://github.com/flutter/flutter/issues/136419) (RawKeyboard deprecation tracking) | 2026-08-01 | **close 候補（要動作確認）**。#390 本文の `hardware_keyboard.dart:516 '!_pressedKeys.containsKey(event.physicalKey)'` は **pinned SDK（Flutter 3.44.6 / framework rev ee80f08bbf・2026-07-08）の同ファイルに既に存在しない**。#181894 で hard assert が廃止され、`_logEventIfIrregular`（L509-）が `debugPrintKeyboardEvents` == true のときだけ `debugPrint` する形に置換された。既定では false なので**赤画面は構造的に発生しない**。上流 #125975 が OPEN のままなのは debugPrintKeyboardEvents 有効時に再現が残るため（capsicum は無影響）。RustDesk リモート操作での再現が無いことを確認できたら close 可 |
-| [#481](https://github.com/pooza/capsicum/issues/481) | Sentry CAPSICUM-A: InkWell._startNewSplash で RenderBox not laid out (fatal × 3) | 本命未特定。探索した弱候補: [flutter/flutter#141497](https://github.com/flutter/flutter/issues/141497) (OPEN, RenderBox not laid out: RenderFittedBox / OpenContainer+AppBar・animations 由来), [#147452](https://github.com/flutter/flutter/issues/147452) (OPEN, _debugSubtreeRelayoutRootAlreadyMarkedNeedsLayout assertion) | 2026-08-01 | in_app_frame_mix=system-only で capsicum 側コードがスタックに出ない。`_startNewSplash` / InkWell + "RenderBox not laid out" で探索したが InkWell splash 由来の本命は未発見。弱候補（#141497 最終更新 2025-08-29 / #147452 同 2025-06-03）とも動きなし。変化なし |
 | [#463](https://github.com/pooza/capsicum/issues/463) | 入力エラー: かっこ等の変換が確定できずカーソルがワード左に飛ぶ (Android / Samsung Keyboard) | **本命: [flutter/flutter#120351](https://github.com/flutter/flutter/issues/120351)** (OPEN, "The operation of converting from Japanese strings to symbols on certain Android devices is bad", labels `e: samsung` / `a: text input` / `platform-android` / `a: internationalization` / `P2` / triaged-framework)。旧 close: [#31512](https://github.com/flutter/flutter/issues/31512) / [#51893](https://github.com/flutter/flutter/issues/51893) (Samsung composing region 重複, 2020 close) | 2026-08-01 | **chase で本命特定済**。Samsung 端末で日本語→記号変換が不正という症状が #463 (かっこ等の変換確定不可) と一致。上流は triaged-framework P2 だが最終更新 2024-02-20 で停滞のまま（担当者は 2024-02 に triage bot が解除して以降 未アサイン）。capsicum 側の全 TextField 共通触媒は棚卸し済みで該当なし。Gboard で回避可能。変化なし |
+| [#608](https://github.com/pooza/capsicum/issues/608) | Windows: IME 変換中にカーソルが文節先頭に固着し一時的に入力不能になる | **未調査**（2026-08-21 に監視対象へ追加）。#54 / #463 と同じ darwin/win32 の IME composing 系だが、Windows 経路は別実装。近縁候補として [flutter/flutter#154692](https://github.com/flutter/flutter/issues/154692)（Windows の ATOK 同型・#54 の行にも併記）から辿る | 2026-08-21 | ⚠ **上流参照は未特定**。`reproduction-needed` が付いており **Windows 実機での再現手順が先**（[dev-environment.md](dev-environment.md) の実機ゲート）。次回 chase で `f: text input` + `platform-windows` + IME / composing で探索する |
 
 ## close 候補
 
 上流が修正済みで、かつ pinned SDK に取り込み済みと確認できた項目。**実際の close は pooza が動作確認してから判断する**（chase 側では close しない）。
 
-- **[#390](https://github.com/pooza/capsicum/issues/390) macOS HardwareKeyboard assertion**（2026-08-01 chase で判定）— 上流 [flutter#181894](https://github.com/flutter/flutter/pull/181894) で hard assert が廃止され、Flutter 3.44.6 の `hardware_keyboard.dart` に該当 assert が存在しないことを直接確認済み。確認手順は RustDesk で Linux → Mac のリモート操作をしながら macOS 版にログインし、赤画面が出ないこと。
+現在なし。直近の掲載は #390（macOS HardwareKeyboard assertion）で、2026-08-01 の chase が「上流 [flutter#181894](https://github.com/flutter/flutter/pull/181894) で hard assert 廃止・pinned SDK に該当 assert なし」と判定し、**2026-08-10 に pooza が動作確認して close 済み**。
+
+## 卒業した項目
+
+監視対象テーブルから外した項目。⚠ **capsicum 側 Issue が close されたら、上流が OPEN のままでもテーブルから外す**（上流の進捗を追う理由が無くなるため）。
+
+| capsicum | 外した日 | 理由 |
+|---|---|---|
+| [#390](https://github.com/pooza/capsicum/issues/390) macOS HardwareKeyboard assertion | 2026-08-21 | 2026-08-10 に close 済み。上流 [flutter#125975](https://github.com/flutter/flutter/issues/125975) は OPEN のままだが、`debugPrintKeyboardEvents` 有効時のみ再現＝capsicum は無影響 |
+| [#481](https://github.com/pooza/capsicum/issues/481) InkWell.\_startNewSplash で RenderBox not laid out | 2026-08-21 | 2026-07-22 に close 済み。上流の本命は最後まで未特定だった |
 
 ## chase 手順
 
