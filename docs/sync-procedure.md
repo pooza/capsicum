@@ -102,7 +102,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `cd ~/repos/mastodon && git pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `cd ~/repos/misskey && git pull --ff-only` → `package.json` の `version`
-  - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-46-capsicum-triage.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
+  - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 
 ## 9. MEMORY.md の更新
 

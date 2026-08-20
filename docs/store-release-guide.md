@@ -885,7 +885,7 @@ dart run msix:create  # 未署名で生成 (開発者モード ON の Windows �
 
 #### E. 環境・互換の確認
 
-- Mastodon / Misskey の現行バージョンを fork pull で確認する（sync-procedure §8）。メジャー / マイナーが上がっていれば API トリアージ（[mastodon-46-capsicum-triage.md](mastodon-46-capsicum-triage.md) / [misskey-capsicum-api-watch.md](misskey-capsicum-api-watch.md)）の要否を判断する。
+- Mastodon / Misskey の現行バージョンを fork pull で確認する（sync-procedure §8）。メジャー / マイナーが上がっていれば API トリアージ（[mastodon-capsicum-api-watch.md](mastodon-capsicum-api-watch.md) / [misskey-capsicum-api-watch.md](misskey-capsicum-api-watch.md)）の要否を判断する。
 
 ## 5. 配布方針
 

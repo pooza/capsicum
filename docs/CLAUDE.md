@@ -202,7 +202,7 @@ capsicum/
     dev-environment.md    # 開発マシン・検証端末・Sentry 環境
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
     flutter-upstream-watch.md  # Flutter 上流バグの追跡（月次 chase routine と連動）
-    mastodon-46-capsicum-triage.md  # Mastodon 4.6 の API 変更を client 影響でトリアージ（フォーク diff 手順つき）
+    mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
     milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
