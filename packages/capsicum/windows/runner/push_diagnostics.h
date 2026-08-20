@@ -24,8 +24,13 @@ namespace capsicum {
 //   お知らせ push (#978。無暗号化・鍵を要さない):
 //   bgtask.announcement_shown       : トースト表示成功（正常・info）
 //   bgtask.announcement_show_failed : 表示失敗（warning）
-//   bgtask.announcement_no_body     : relay が整形済み本文を載せていない
-//                                     （relay#36 Phase 2 前・warning）
+//   bgtask.announcement_no_body     : 整形済み本文 (announcement_body) が空
+//                                     （warning）。⚠ **relay の版だけを疑わない**
+//                                     — 本文が空文字のお知らせでも同じコードに
+//                                     なる（relay の summarize_content はタグを
+//                                     剥がすので、画像だけ・装飾だけのお知らせは
+//                                     空になりうる）。relay#36 Phase 2 より古い
+//                                     relay でも同じコードが出る (#982)
 //   bgtask.announcement_bad_payload : エンベロープ不正 / account 欠落（warning）
 //   ⚠ **通常の通知と同じ bgtask.shown に合流させない**。「bgtask.shown が
 //   無ければ bg task 未起動」というトリアージ規則は通知 push の母数の上で

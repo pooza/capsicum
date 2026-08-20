@@ -506,7 +506,8 @@ class _ImageOverlayScreenState extends ConsumerState<ImageOverlayScreen> {
             },
             child: Container(
               // 折り返し幅の上限は**文字レイヤ専用**。書き出し側の
-              // `painter.layout(maxWidth: w * 0.96)` と対になっている。スタンプに
+              // `painter.layout(maxWidth: w * kOverlayTextWrapFraction)` と
+              // 対になっている（同じ定数を使うのが対であることの担保）。スタンプに
               // 掛けると RawImage が縮んでプレビューだけ小さくなり、書き出し
               // (drawImageRect は制約を受けない) と食い違う。
               constraints: item is _TextOverlayItem

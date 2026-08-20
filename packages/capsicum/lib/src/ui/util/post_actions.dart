@@ -369,9 +369,7 @@ class PostActionAvailability {
       canBookmark: adapter is BookmarkSupport,
       canReact: adapter is ReactionSupport,
       boostLabel: ref.read(reblogLabelProvider),
-      // Misskey の「お気に入り」は意味的にブックマーク相当（docs/CLAUDE.md の
-      // 機能マッピング）。ラベルだけ ReactionSupport の有無で切り替える。
-      bookmarkLabel: adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク',
+      bookmarkLabel: ref.read(bookmarkLabelProvider),
     );
   }
 

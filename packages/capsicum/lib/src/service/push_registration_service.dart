@@ -156,9 +156,31 @@ class PushRegistrationService {
       // してある（購読ゲート側と綴りを揃えるため・#919）。
       // isPushBackendWired で弾いた後なので通常 null にはならないが、両者が
       // ずれたときに未知の device_type で登録しないよう止める。
+      //
+      // ⚠ **ここは「対象外」ではなく内部の食い違い**なので、黙って skipped に
+      // せず理由を残す (#982)。以前は debugPrint も reason も Sentry も無い完全な
+      // 握りつぶしで、[isPushBackendWired] と [resolvePushDeviceType] がずれた
+      // とき **手掛かりがゼロ**だった（プッシュが登録されないのに設定画面には
+      // 「対象外」としか出ない）。前後の同種分岐はいずれも理由を残している。
       final deviceType = currentPushDeviceType;
       if (deviceType == null) {
-        store.update(accountKey, PushRegistrationState.skipped);
+        debugPrint(
+          'capsicum: push.registration: no device type '
+          '(isPushBackendWired と resolvePushDeviceType がずれている)',
+        );
+        store.update(
+          accountKey,
+          PushRegistrationState.failed,
+          reason: PushRegistrationFailureReason.unknown,
+          errorMessage: 'この環境ではプッシュ通知の送信先を判別できませんでした',
+        );
+        unawaited(
+          Sentry.captureMessage(
+            'push.registration.device_type_missing',
+            level: SentryLevel.error,
+            withScope: (scope) => scope.setTag('phase', 'push_registration'),
+          ),
+        );
         return;
       }
 

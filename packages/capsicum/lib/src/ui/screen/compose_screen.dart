@@ -44,6 +44,7 @@ import '../util/compose_template_display.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
+import '../widget/quick_chooser_sheet.dart';
 import '../widget/screen_menu.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
@@ -123,6 +124,17 @@ enum _AttachmentMenuAction { preview, crop, addOverlay, editDescription }
 
 /// 添付 1 件ぶんのメニューコールバック束 (#941)。デスクトップメニューは添付ごとに
 /// サブメニューを出すので、index を捕まえた 4 本を組にして持ち回る。
+///
+/// ⚠ **他のメニュー切り出しが `VoidCallback` を直に並べるなかで、ここだけ束を
+/// class にしているのは意図的** (#982 で確認)。理由は 2 つ:
+///
+/// - **添付の数だけ組が要る。** 呼び出し側は `_attachmentCallbacks` という
+///   `Map<int, AttachmentMenuCallbacks>` にキャッシュしており、同じ index には
+///   毎回同じインスタンスを返す。#835 の値等価（打鍵のたびにメニューバーを
+///   作り直さない）が成立するのは、束ごと使い回しているため。4 本を引数で
+///   並べる形にすると、キャッシュ側で 4-tuple 相当を自前で持つことになる
+/// - 他の切り出し（スレッド / ドライブ）は**画面に 1 組しかない**ので、直に
+///   並べても同じ問題が起きない
 class AttachmentMenuCallbacks {
   const AttachmentMenuCallbacks({
     required this.preview,
@@ -1373,7 +1385,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 説明 (ALT) と閲覧注意フラグは引き継ぐ。トリミング結果は一時ディレクトリに
   /// 書き出し、元のフォーマット (拡張子) と MIME タイプを維持する。
   Future<void> _cropImage(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final original = entry.file;
     if (original == null) return;
 
@@ -1420,7 +1433,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// スタンプ (#883) を重ねて書き出し、結果で元の添付を差し替える。説明 (ALT)
   /// と閲覧注意フラグは引き継ぐ。
   Future<void> _addOverlay(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final original = entry.file;
     if (original == null) return;
 
@@ -1717,7 +1731,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _editDescription(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final descController = TextEditingController(text: entry.description);
     final result = await showDialog<String>(
       context: context,
@@ -1776,7 +1791,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
   /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
   Future<void> _showAttachmentMenu(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final croppable = _isCroppableImage(entry);
     final previewable = _attachmentImageProvider(entry) != null;
     final action = await showModalBottomSheet<_AttachmentMenuAction>(
@@ -1836,7 +1852,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 添付画像を原寸で確認するフルスクリーンビューアを開く (#660 / #769)。編集
   /// メニューの「拡大して確認」から呼ぶ。閲覧専用（編集操作はメニュー側）。
   Future<void> _openAttachmentViewer(int index) async {
-    final provider = _attachmentImageProvider(_attachments[index]);
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
+    final provider = _attachmentImageProvider(entry);
     if (provider == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -2686,6 +2704,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 受け取る形なので、位置で持つのが素直。
   final Map<int, AttachmentMenuCallbacks> _attachmentCallbacks = {};
 
+  /// 添付を index で引く。範囲外なら null (#982)。
+  ///
+  /// ⚠ **素で `_attachments[index]` を引かない。** #941 でデスクトップメニューが
+  /// 添付ごとのサブメニューを持ち、コールバックを `_attachmentCallbacks` に
+  /// **index をキーにキャッシュ**するようになった。それまでは「タップした
+  /// サムネの index しか入口が無い」という構造的な安全があったが、キャッシュ
+  /// された束はメニューが開いている間に添付が減っても残るので、**削除した直後の
+  /// 古い項目を叩くと RangeError** になる。
+  ///
+  /// 落とすのは正しい（指している添付がもう無い）が、**黙って落とすと
+  /// 「メニューを押したのに何も起きない」になる**ので観測は残す。
+  _MediaEntry? _attachmentAt(int index) {
+    if (index < 0 || index >= _attachments.length) {
+      debugPrint(
+        'capsicum: compose: attachment index out of range '
+        '($index / ${_attachments.length})',
+      );
+      unawaited(
+        Sentry.captureMessage(
+          'compose.attachment_index_out_of_range',
+          level: SentryLevel.warning,
+          withScope: (scope) => scope.setTag('phase', 'compose_attachment'),
+        ),
+      );
+      return null;
+    }
+    return _attachments[index];
+  }
+
   AttachmentMenuCallbacks _callbacksForAttachment(int index) =>
       _attachmentCallbacks.putIfAbsent(
         index,
@@ -3067,6 +3114,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 絵文字ピッカーはタブごとに項目を分ける (#971)。1 項目にまとめると、
       // 開いてからタブを選び直す 2 手が常に要る。**出す条件はピッカー側のタブ
       // 生成条件と同じ**にし、開いても存在しないタブへは案内しない。
+      //
+      // ⚠ **簡易投稿バーは分けず「絵文字・劇中ワード…」1 項目のまま**で、粒度が
+      // 画面で割れている。これは意図的 (#982 で確認)。`showInsertPickerSheet` は
+      // `initialTab` を取るので分けること自体は可能だが、簡易投稿バーは 1 行投稿の
+      // ためのコンパクトな面で、メニューも 5 項目しかない。そこへ 2 項目足すより、
+      // 込み入った編集は「詳細な投稿画面…」へ抜ける導線に寄せる方が筋が通る。
       if (adapter is CustomEmojiSupport)
         MenuActionEntry(
           label: 'カスタム絵文字…',
@@ -4128,73 +4181,37 @@ class _TemplateSheetState extends State<_TemplateSheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              '投稿テンプレート',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+  Widget build(BuildContext context) => QuickChooserSheet(
+    title: '投稿テンプレート',
+    loading: _loading,
+    error: _error,
+    emptyMessage: 'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
+    items: [
+      for (final t in _templates ?? const <ComposeTemplate>[])
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: Text(t.name),
+          subtitle: Text(
+            composeTemplateBodyPreview(t),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            )
-          else if (_error != null)
-            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
-          else ...[
-            if ((_templates ?? const []).isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              )
-            else
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final t in _templates!)
-                      ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(t.name),
-                        subtitle: Text(
-                          composeTemplateBodyPreview(t),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: t.cw != null
-                            ? const Icon(Icons.warning_amber, size: 18)
-                            : null,
-                        onTap: () => widget.onSelect(t),
-                      ),
-                  ],
-                ),
-              ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('テンプレートを管理'),
-              onTap: widget.onManage,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+          trailing: t.cw != null
+              ? const Icon(Icons.warning_amber, size: 18)
+              : null,
+          onTap: () => widget.onSelect(t),
+        ),
+    ],
+    footer: ListTile(
+      leading: const Icon(Icons.settings_outlined),
+      title: const Text('テンプレートを管理'),
+      onTap: widget.onManage,
+    ),
+  );
 }
 
-/// サーバー下書きのクイックチューザ (#963)。`_TemplateSheet` を写したもの。
+/// サーバー下書きのクイックチューザ (#963)。外枠は [QuickChooserSheet] と共有する
+/// （#982 で `_TemplateSheet` からの丸写しを解消した）。
 ///
 /// **全件を出す**（素の下書きだけに絞らない）。同じ「下書き」なのに画面によって
 /// 件数が違うのは分かりにくく、Misskey の 10 件上限に当たったときの切り分けにも
@@ -4253,59 +4270,32 @@ class _DraftSheetState extends State<_DraftSheet> {
   @override
   Widget build(BuildContext context) {
     final drafts = _drafts ?? const <Draft>[];
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              // 件数は上限（Misskey は 10 件）に当たったときの手掛かり。読み込み前
-              // と失敗時は数を名乗らない。
-              _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
-              style: Theme.of(context).textTheme.titleMedium,
+    return QuickChooserSheet(
+      // 件数は「上限に当たったか」の手掛かり。読み込み前と失敗時は数を名乗らない。
+      //
+      // ⚠ **この数は上限診断としては既定値の範囲でしか効かない** (#982)。
+      // Misskey の `notes/drafts/list` は `limit` の既定が 30 で、capsicum は
+      // 明示していない（`getNoteDrafts`）。サーバーが `noteDraftLimit` を 30 超へ
+      // 引き上げていると、上限に当たる前にこの数が 30 で頭打ちになる。
+      // 既定 10 の範囲では実害なし。
+      title: _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
+      loading: _loading,
+      error: _error,
+      // `/drafts` と同文言。
+      emptyMessage: '下書きはありません',
+      items: [
+        for (final d in drafts)
+          ListTile(
+            leading: const Icon(Icons.edit_note),
+            title: Text(
+              draftBodyPreview(d),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+            subtitle: Text(draftSubtitle(d)),
+            onTap: () => widget.onSelect(d),
           ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            )
-          else if (_error != null)
-            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
-          else if (drafts.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                // `/drafts` と同文言。
-                '下書きはありません',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final d in drafts)
-                    ListTile(
-                      leading: const Icon(Icons.edit_note),
-                      title: Text(
-                        draftBodyPreview(d),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(draftSubtitle(d)),
-                      onTap: () => widget.onSelect(d),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }

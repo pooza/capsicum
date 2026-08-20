@@ -117,24 +117,38 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     onActionCompleted: _reload,
   );
 
-  /// 選択中の投稿に対してアクションを起こす。⚠ 判定は
-  /// [PostActionAvailability] を通す。メニュー項目の出し分けと実行側で条件が
-  /// 割れると、無効に見えるのに走る / その逆が起きる。
-  void _withSelected(void Function(PostActionAvailability a) action) {
+  /// 選択中の投稿に対してアクションを起こす。
+  ///
+  /// ⚠ **判定は [PostActionAvailability] を通す。** メニュー項目の出し分けと
+  /// 実行側で条件が割れると、無効に見えるのに走る / その逆が起きる。
+  ///
+  /// ⚠ **[allowed] を必須の引数にしてあるのは、その保証をコードで持たせるため**
+  /// (#982)。以前はこの doc が「通す」と名乗っているだけで、実行側は
+  /// `canBoost` / `canReply` / `canQuote` を見ずに走っていた。いまはメニューが
+  /// `onSelected: null` で無効化しているので到達不能だが、**ショートカット等の
+  /// 別入口が付いた瞬間に顕在化する**形だった。
+  void _withSelected(
+    bool Function(PostActionAvailability a) allowed,
+    void Function(PostActionAvailability a) action,
+  ) {
     final selected = _selectedPost;
     if (selected == null) return;
-    action(PostActionAvailability.of(ref, selected));
+    final availability = PostActionAvailability.of(ref, selected);
+    if (!allowed(availability)) return;
+    action(availability);
   }
 
   void _replyToSelected() => _withSelected(
+    (a) => a.canReply,
     (a) => context.push('/compose', extra: {'replyTo': a.targetPost}),
   );
 
   void _quoteSelected() => _withSelected(
+    (a) => a.canQuote,
     (a) => context.push('/compose', extra: {'quoteTo': a.targetPost}),
   );
 
-  void _boostSelected() => _withSelected((a) {
+  void _boostSelected() => _withSelected((a) => a.canBoost, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     // 公開範囲を選ぶ chip はシート側の作り込みなので、メニューからは既定
@@ -145,7 +159,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _unboostSelected() => _withSelected((a) {
+  void _unboostSelected() => _withSelected((a) => a.canUnrepeat, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     _runner().unrepeat(
@@ -157,7 +171,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _favoriteSelected() => _withSelected((a) {
+  void _favoriteSelected() => _withSelected((a) => a.canFavorite, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! FavoriteSupport) return;
     _runner().run(
@@ -166,7 +180,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _bookmarkSelected() => _withSelected((a) {
+  void _bookmarkSelected() => _withSelected((a) => a.canBookmark, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! BookmarkSupport) return;
     _runner().run(
@@ -206,9 +220,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
           label: '現在の${ref.watch(postLabelProvider)}',
           children: buildPostActionMenuEntries(
             boostLabel: ref.watch(reblogLabelProvider),
-            bookmarkLabel: ref.watch(currentAdapterProvider) is ReactionSupport
-                ? 'お気に入り'
-                : 'ブックマーク',
+            bookmarkLabel: ref.watch(bookmarkLabelProvider),
             availability: selected == null
                 ? null
                 : PostActionAvailability.of(ref, selected),

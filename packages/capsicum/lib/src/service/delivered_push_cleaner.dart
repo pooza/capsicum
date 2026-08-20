@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'notification_dedup_channel.dart';
+import 'bounded_key_set.dart';
 import 'push_message_dispatcher.dart';
 import 'web_push_decryptor.dart';
 
@@ -45,9 +46,12 @@ class DeliveredPushCleaner {
   final bool? _supportedOverride;
 
   /// WebSocket 側で表示済みの `username@host|id` キー。
-  /// DesktopNotificationDispatcher / NotificationDedupPlugin と同じ上限運用
-  /// (超えたら全消し。取りこぼしは「重複が残る」だけで安全側)。
-  final Set<String> _emittedKeys = {};
+  ///
+  /// ⚠ **上限超過は全消しでなく FIFO 追い出し** ([BoundedKeySet])。全消しだと
+  /// 掃除対象と分からなくなり、**通知センターに残骸が残る**。#960（dispatcher）/
+  /// #983（macOS ネイティブ）で順に FIFO へ寄せたが、ここだけ全消しのまま残って
+  /// おり、コメントも「全消し運用」と書いたままだった (#982)。
+  final _emittedKeys = BoundedKeySet('delivered_emitted', _maxTracked);
 
   /// identifier → 解決済み relayKey (解決不能は null)。配信済み通知は削除
   /// されるまで毎 sweep 列挙されるため、復号を 1 通知 1 回に抑える。
@@ -70,9 +74,6 @@ class DeliveredPushCleaner {
   /// [DesktopNotificationDispatcher] が emit 時に呼ぶ。
   void recordEmitted(String relayKey) {
     if (!_supported) return;
-    if (_emittedKeys.length >= _maxTracked) {
-      _emittedKeys.clear();
-    }
     _emittedKeys.add(relayKey);
     _scheduleSweep();
   }
@@ -110,6 +111,8 @@ class DeliveredPushCleaner {
       return _resolvedKeys[notification.identifier];
     }
     final key = await _resolve(notification);
+    // ⚠ こちらは**キャッシュ**なので全消しでよい。落としても次の sweep で
+    // 復号し直すだけで、[_emittedKeys] のように「忘れると壊れる」記憶ではない。
     if (_resolvedKeys.length >= _maxTracked) {
       _resolvedKeys.clear();
     }

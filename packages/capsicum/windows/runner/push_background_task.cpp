@@ -108,9 +108,14 @@ void RecordBgDiagnostic(const std::string& code, const std::string& host) {
 // TryBuildAnnouncementDisplay の error 文字列を観測コードへ写す (#978)。
 // "not an announcement" は暗号化経路へ回るだけなのでここには来ない。
 std::string AnnouncementDiagnosticCodeForError(const std::string& error) {
-  // relay が announcement_body を載せていない（capsicum-relay#36 Phase 2 より
-  // 古い relay）。お知らせを名乗っているのに表示材料が無い状態で、無記録だと
-  // 「Windows だけお知らせが出ない」が手掛かり無しになる。
+  // announcement_body が空。お知らせを名乗っているのに表示材料が無い状態で、
+  // 無記録だと「Windows だけお知らせが出ない」が手掛かり無しになる。
+  //
+  // ⚠ **原因を relay の版だと断定しない** (#982)。capsicum-relay#36 Phase 2 より
+  // 古い relay が載せていない場合もあるが、**本文が空文字のときも同じコードに
+  // なる**。relay の summarize_content は HTML タグを剥がすので、画像だけ・
+  // 装飾だけのお知らせは空文字になりうる。relay の版を疑って調べ始めると
+  // 遠回りになる。
   if (error == "missing announcement body") {
     return "bgtask.announcement_no_body";
   }

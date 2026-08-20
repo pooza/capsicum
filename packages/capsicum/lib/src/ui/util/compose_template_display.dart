@@ -9,10 +9,14 @@ import 'package:dio/dio.dart';
 /// と分岐カバレッジのズレを防ぐ。
 
 /// テンプレート一覧のサブタイトルに出す本文プレビュー。
-/// 本文が空なら「(本文なし)」、そうでなければ改行をスペースに畳んで 1 行にする。
+/// 本文が空なら「（本文なし）」、そうでなければ改行をスペースに畳んで 1 行にする。
+///
+/// ⚠ **括弧は全角。** `/drafts`・予約投稿・下書きシートが全角で、ここだけ半角に
+/// 割れていた (#982)。#963 で「下書き…」と「投稿テンプレート…」が同じメニューの
+/// 隣同士になり、2 操作で両方が見えるようになったので揃えた。
 String composeTemplateBodyPreview(ComposeTemplate template) {
   final body = template.body.trim();
-  return body.isEmpty ? '(本文なし)' : body.replaceAll('\n', ' ');
+  return body.isEmpty ? '（本文なし）' : body.replaceAll('\n', ' ');
 }
 
 /// テンプレート操作（作成 / 更新 / 削除）の失敗をユーザー向け文面へ変換する。

@@ -882,15 +882,28 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     _offlineRetryLoopRunning = true;
     try {
       var attempt = 0;
-      while (state.offlineAccounts.isNotEmpty && !_disposed) {
+      // ⚠ **`_disposed` を先に見る** (#982)。`state` は dispose 済みの Notifier で
+      // 読むと StateError を投げるので、評価順が逆だと打ち切りの周回で落ちる。
+      // prod では provider がアプリ寿命なので実害は薄いが、テストと将来の
+      // autoDispose 化で効く。
+      while (!_disposed && state.offlineAccounts.isNotEmpty) {
         final delay = offlineRetryDelay(attempt);
-        attempt++;
         await Future<void>.delayed(delay);
         if (_disposed) return;
 
         // 手動再試行（ボタン / resume）が走っている最中は no-op で返る。同じ
         // 仕事なので取りこぼしにはならず、次の周回で拾う。
-        await retryOfflineRestores();
+        //
+        // ⚠ **その周回では `attempt` を進めない** (#982)。進めてしまうと、
+        // 「1 度も probe していない周回」だけで ramp-up を消費でき、下の marker が
+        // **52 秒待たずに**上がる（resume を連打した直後が実際にその形になる）。
+        // marker は「ramp-up を使い切っても戻らなかった」ことの記録なので、
+        // 実際に試した回数で数える。
+        final probed = await retryOfflineRestores();
+        if (!probed) continue;
+        attempt++;
+        // await をまたいだので改めて見る。
+        if (_disposed) return;
 
         // ramp-up を使い切った時点＝**52 秒以内には戻らなかった**という観測
         // 上の節目。#792 はここで打ち切っていたが、#938 で継続へ変えたので
@@ -951,11 +964,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 進行中の呼び出しがあれば no-op。#938 でユーザー操作以外（復帰）からも
   /// 叩くようになったので、連続した resume やボタン連打で同じ probe が
   /// 積み上がらないようにする。
-  Future<void> retryOfflineRestores() async {
-    if (_manualRetryRunning) return;
+  ///
+  /// **実際に再試行を走らせたら true**、進行中の呼び出しがあって no-op で
+  /// 返したら false。⚠ 背景ループ ([_runOfflineRetryLoop]) が ramp-up の
+  /// 消費をこの戻り値で判断するので、意味を変えない (#982)。
+  Future<bool> retryOfflineRestores() async {
+    if (_manualRetryRunning) return false;
     _manualRetryRunning = true;
     try {
       await _retryOfflineRestoresNow();
+      return true;
     } finally {
       _manualRetryRunning = false;
     }

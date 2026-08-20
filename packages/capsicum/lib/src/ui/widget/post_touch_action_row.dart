@@ -104,9 +104,8 @@ class PostTouchActionRow extends ConsumerWidget {
     }
     if (enabled.contains(PostTouchAction.bookmark) &&
         adapter is BookmarkSupport) {
-      // Misskey の「お気に入り」は Mastodon のブックマーク相当（Mastodon の
-      // お気に入り=FavoriteSupport とは別機能）(#855)。状態に応じてトグルする。
-      final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+      // 状態に応じてトグルする。ラベルの由来は [bookmarkLabelProvider] (#855)。
+      final bookmarkLabel = ref.read(bookmarkLabelProvider);
       if (targetPost.bookmarked) {
         add(Icons.bookmark, '$bookmarkLabelを解除', () {
           _runAction(
