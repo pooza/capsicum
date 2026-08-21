@@ -128,7 +128,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/server',
-        builder: (context, state) => const ServerSelectionScreen(),
+        // `?host=` は未接続アカウントの「接続し直す」導線 (#967)。無ければ
+        // 従来どおり空欄で開く。`matchedLocation` はクエリを含まないので、
+        // 上の `isOnAuth` 判定はそのまま効く。
+        builder: (context, state) => ServerSelectionScreen(
+          initialHost: state.uri.queryParameters['host'],
+        ),
       ),
       GoRoute(
         path: '/login',

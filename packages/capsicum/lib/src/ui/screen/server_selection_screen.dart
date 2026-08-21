@@ -10,7 +10,11 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
-  const ServerSelectionScreen({super.key});
+  const ServerSelectionScreen({super.key, this.initialHost});
+
+  /// 接続先を埋めた状態で開く (#967)。未接続アカウントから「接続し直す」で
+  /// 来たとき、ホスト名を打ち直させないため。
+  final String? initialHost;
 
   @override
   ConsumerState<ServerSelectionScreen> createState() =>
@@ -18,7 +22,9 @@ class ServerSelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
-  final _hostController = TextEditingController();
+  late final _hostController = TextEditingController(
+    text: widget.initialHost ?? '',
+  );
   bool _isProbing = false;
   String? _error;
 

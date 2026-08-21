@@ -94,8 +94,7 @@ void main() {
       clearInteractions(storage);
 
       // 解錠された（= 以降は secret が消えている扱いにして、probe まで進まずに
-      // 決着させる）。null は「secret が本当に無い」経路で、offline から drop
-      // される。⚠ ここで見たいのは **ロック解除を検知できること** であって
+      // 決着させる）。⚠ ここで見たいのは **ロック解除を検知できること** であって
       // 復元の成否ではない。ネットワーク probe はこのテストの範囲外。
       when(() => storage.getSecrets(keyStr)).thenAnswer((_) async => null);
 
@@ -103,13 +102,21 @@ void main() {
       async.flushMicrotasks();
 
       verify(() => storage.getSecrets(keyStr)).called(1);
+      // #967 で drop をやめ「未接続」へ落とすようになった。一覧から消すと
+      // 「サーバーごと存在しないように」見えるのは #792 で直した問題と同じで、
+      // 原因が到達不能から secret 消失へ変わっただけ。
+      final after = container.read(accountManagerProvider).offlineAccounts;
+      expect(after, hasLength(1), reason: '一覧からは消さない');
       expect(
-        container.read(accountManagerProvider).offlineAccounts,
-        isEmpty,
-        reason: '読み直せた結果 secret 消失と判明したので offline から落ちる',
+        after.single.recoverableByRetry,
+        isFalse,
+        reason: 'secret が無いので背景リトライの対象から外れる',
       );
 
-      // 対象が空になったのでループも終わる。以降は読み直しが起きない。
+      // ⚠ **一覧に残っていてもループは回さない** (#967)。`recoverableByRetry`
+      // で絞っているので、未接続だけが残った状態は「対象ゼロ」と同じ扱いに
+      // なる。ここを取り違えると、戻る見込みが無い相手に永久に getSecrets を
+      // 打ち続ける。
       async.elapse(kOfflineRetrySteadyInterval * 3);
       verifyNever(() => storage.getSecrets(keyStr));
     });
