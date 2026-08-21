@@ -121,6 +121,10 @@ dependencies:
   # ギャラリー (#646)。デスクトップ 3 OS は file_selector の保存ダイアログ
   # (#572) を使うため、gal はモバイルのみで呼ばれる。
   gal: ^2.3.2
+  # 設定バックアップの書き出し (#972)。file_selector の getSaveLocation は
+  # file_selector_ios / file_selector_android のどちらも未実装
+  # （UnimplementedError）なので、モバイルは OS の共有シートへ渡す。
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:

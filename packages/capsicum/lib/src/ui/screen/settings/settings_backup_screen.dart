@@ -4,18 +4,25 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../platform/platform_info.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../../service/sentry_op_failure.dart';
 import '../../../service/settings_backup.dart';
+import '../../util/settings_backup_file_type.dart';
 
 /// 設定のバックアップ (#857)。
 ///
 /// アカウント・認証情報は含まない（理由は [settings_backup.dart] の doc）。
-/// モバイルはメディア以外のファイルを保存する手段が限られるため、当面
-/// デスクトップのみに出す（導線側で `isDesktop` ゲート）。
+///
+/// 書き出し先の取り方だけプラットフォームで分かれる (#972)。デスクトップは
+/// `file_selector` の保存ダイアログ、モバイルは OS の共有シート
+/// （`file_selector` の `getSaveLocation` がモバイルでは未実装のため）。
+/// 読み込み側の `openFile` は 5 OS すべてで実装されているので分岐は無い。
 class SettingsBackupScreen extends ConsumerStatefulWidget {
   const SettingsBackupScreen({super.key});
 
@@ -27,21 +34,28 @@ class SettingsBackupScreen extends ConsumerStatefulWidget {
 class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
   bool _busy = false;
 
-  static const _typeGroup = XTypeGroup(
-    label: '設定のバックアップ',
-    extensions: ['yaml', 'yml'],
-  );
+  /// 型グループの中身とプラットフォーム差は [settingsBackupTypeGroup] の doc。
+  static XTypeGroup get _typeGroup =>
+      settingsBackupTypeGroup(needsUti: fileTypeFilterNeedsUti);
+
+  static const _fileName = 'capsicum-settings.yaml';
 
   Future<void> _export() async {
     if (_busy) return;
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final location = await getSaveLocation(
-        suggestedName: 'capsicum-settings.yaml',
-        acceptedTypeGroups: const [_typeGroup],
-      );
-      if (location == null) return; // キャンセル
+      // 保存ダイアログのあるデスクトップは、先に保存先を聞いてから中身を作る
+      // （キャンセルなら prefs も読まない）。モバイルは保存ダイアログが無いので
+      // location は null のままで、下で共有シートへ渡す (#972)。
+      FileSaveLocation? location;
+      if (supportsFileSaveDialog) {
+        location = await getSaveLocation(
+          suggestedName: _fileName,
+          acceptedTypeGroups: [_typeGroup],
+        );
+        if (location == null) return; // キャンセル
+      }
 
       final prefs = await SharedPreferences.getInstance();
       final info = await PackageInfo.fromPlatform();
@@ -50,8 +64,12 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
         appVersion: '${info.version}+${info.buildNumber}',
         exportedAt: DateTime.now().toUtc().toIso8601String(),
       );
-      await File(location.path).writeAsString(yaml);
-      messenger.showSnackBar(const SnackBar(content: Text('設定を書き出しました')));
+      if (location != null) {
+        await File(location.path).writeAsString(yaml);
+        messenger.showSnackBar(const SnackBar(content: Text('設定を書き出しました')));
+      } else {
+        await _shareExport(yaml);
+      }
     } catch (e, st) {
       // 新規のファイル I/O 機能なので本番の失敗率（権限 / 容量等）を観測する
       // (#968)。reportOpFailure が scrubException を通すので、生 URL / トークンは
@@ -68,9 +86,45 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
     }
   }
 
+  /// 保存ダイアログを持たないプラットフォーム向けの書き出し (#972)。
+  ///
+  /// 一時ファイルへ書いてから OS の共有シートに渡し、保存先の選択はユーザーへ
+  /// 委ねる。iOS は「ファイルに保存」、Android は Drive / Files などが並ぶので、
+  /// iCloud Drive / Google Drive を挟めば PC 側と往復できる（この Issue の動機）。
+  ///
+  /// ⚠ **一時ファイルは消さない。** 共有シートは受け取り側アプリが実ファイルを
+  /// 非同期に読むため、`share` の完了を待って削除すると読み取り前に消えうる。
+  /// 置き場が一時ディレクトリなので OS がいずれ回収する。
+  Future<void> _shareExport(String yaml) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // iPad の共有シートは popover なのでアンカーが要る（無いと iOS 側が例外を
+    // 投げる）。await をまたぐ前に取る。
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box == null
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$_fileName');
+    await file.writeAsString(yaml);
+
+    final result = await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path, mimeType: 'application/x-yaml')],
+        fileNameOverrides: [_fileName],
+        subject: '設定のバックアップ',
+        sharePositionOrigin: origin,
+      ),
+    );
+    // dismissed はユーザーが閉じただけなので黙って戻る。unavailable は「共有は
+    // したが結果を追えない」なので成功側に寄せる（Android はこれになりうる）。
+    if (result.status == ShareResultStatus.dismissed) return;
+    messenger.showSnackBar(const SnackBar(content: Text('設定を書き出しました')));
+  }
+
   Future<void> _import() async {
     if (_busy) return;
-    final file = await openFile(acceptedTypeGroups: const [_typeGroup]);
+    final file = await openFile(acceptedTypeGroups: [_typeGroup]);
     if (file == null || !mounted) return; // キャンセル
 
     final confirmed = await showDialog<bool>(
