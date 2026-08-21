@@ -195,6 +195,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
     final showJump = (threadFuture.asData?.value.length ?? 0) > 1;
     final selected = _selectedPost;
+    final menuAdapter = ref.watch(currentAdapterProvider);
 
     return ScreenMenu(
       label: 'スレッド',
@@ -221,6 +222,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
           children: buildPostActionMenuEntries(
             boostLabel: ref.watch(reblogLabelProvider),
             bookmarkLabel: ref.watch(bookmarkLabelProvider),
+            // 概念の有無は**選択ではなくアダプタ**で決まる (#980)。read でなく
+            // watch なのは、アカウント切り替えで項目の有無が変わるため。
+            supportsFavorite: menuAdapter is FavoriteSupport,
+            supportsBookmark: menuAdapter is BookmarkSupport,
             availability: selected == null
                 ? null
                 : PostActionAvailability.of(ref, selected),

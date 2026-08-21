@@ -266,9 +266,28 @@ class PostActionRunner {
 /// 「メニューからは外せるがシートからは外せない」という新しい非対称が生まれる
 /// ので、揃えるならシートごと別途。ブーストだけ取り消しがあるのはシートに
 /// 「$boostLabel を取り消す」があるため。
+///
+/// ⚠ **[supportsFavorite] / [supportsBookmark] が false の項目は「無効化」では
+/// なく「非表示」にする** (#980)。#835 の「無効化して残す」は *その場の状態で
+/// 一時的に使えない* ものが対象で、根拠は「選択のたびに項目数が変わると場所が
+/// 動いて探しにくい」。バックエンドに概念自体が無い場合はこの根拠が立たない:
+///
+/// - `canFavorite` / `canBookmark` は `adapter is FavoriteSupport` /
+///   `BookmarkSupport` だけで決まり、**投稿ごとには変わらない**。項目数が動くのは
+///   アカウントを切り替えたときだけなので、位置は安定したまま
+/// - 「あるが押せない方が理由を推測しやすい」という compose_screen の理由づけも
+///   ここでは逆に働く。Misskey は `bookmarkLabel` も「お気に入り」なので、
+///   **同じラベルが 2 行並び上だけ常にグレー**という読めない並びになる
+/// - 長押しシートも Misskey では favorite を出していない。隠す方がシートと揃う
+///
+/// **選択状態ではなくアダプタの能力で決める**ため、[availability] とは別引数で
+/// 受ける。`availability` は未選択のとき null になるので、そこから引くと
+/// 「選択するまで項目が無い」という #835 が避けたい挙動そのものになる。
 List<MenuEntry> buildPostActionMenuEntries({
   required String boostLabel,
   required String bookmarkLabel,
+  required bool supportsFavorite,
+  required bool supportsBookmark,
   required PostActionAvailability? availability,
   required VoidCallback onReply,
   required VoidCallback onQuote,
@@ -303,17 +322,20 @@ List<MenuEntry> buildPostActionMenuEntries({
       icon: Icons.repeat_on,
       onSelected: enabledIf(availability?.canUnrepeat ?? false, onUnboost),
     ),
-    const MenuGroupSeparator(),
-    MenuActionEntry(
-      label: 'お気に入り',
-      icon: Icons.star_outline,
-      onSelected: enabledIf(availability?.canFavorite ?? false, onFavorite),
-    ),
-    MenuActionEntry(
-      label: bookmarkLabel,
-      icon: Icons.bookmark_outline,
-      onSelected: enabledIf(availability?.canBookmark ?? false, onBookmark),
-    ),
+    // 両方とも概念が無いバックエンドでは、区切り線だけが残らないようにする。
+    if (supportsFavorite || supportsBookmark) const MenuGroupSeparator(),
+    if (supportsFavorite)
+      MenuActionEntry(
+        label: 'お気に入り',
+        icon: Icons.star_outline,
+        onSelected: enabledIf(availability?.canFavorite ?? false, onFavorite),
+      ),
+    if (supportsBookmark)
+      MenuActionEntry(
+        label: bookmarkLabel,
+        icon: Icons.bookmark_outline,
+        onSelected: enabledIf(availability?.canBookmark ?? false, onBookmark),
+      ),
   ];
 }
 

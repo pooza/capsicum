@@ -46,10 +46,14 @@ void main() {
     PostActionAvailability? a,
     String boostLabel = 'ブースト',
     String bookmarkLabel = 'ブックマーク',
+    bool supportsFavorite = true,
+    bool supportsBookmark = true,
     List<String>? log,
   }) => buildPostActionMenuEntries(
     boostLabel: boostLabel,
     bookmarkLabel: bookmarkLabel,
+    supportsFavorite: supportsFavorite,
+    supportsBookmark: supportsBookmark,
     availability: a,
     onReply: () => log?.add('reply'),
     onQuote: () => log?.add('quote'),
@@ -136,10 +140,18 @@ void main() {
     });
 
     /// Misskey は FavoriteSupport を持たない（リアクションで代替）。
-    test('お気に入り非対応のサーバーでは無効', () {
-      final entries = build(a: availability(canFavorite: false));
+    /// ⚠ **お気に入り非対応のサーバーは「無効」ではなく「非表示」になった**
+    /// (#980)。`canFavorite` は `adapter is FavoriteSupport` だけで決まるので、
+    /// 「対応しているのに今は押せない」という状態は存在しない。項目の有無は
+    /// `supportsFavorite` が持ち、その検査は「概念の無い操作は隠す」group 側。
+    ///
+    /// ここは**ブックマークが巻き添えで消えていないこと**だけを見る。
+    test('お気に入り非対応でもブックマークは残る', () {
+      final entries = build(
+        a: availability(canFavorite: false),
+        supportsFavorite: false,
+      );
 
-      expect(action(entries, 'お気に入り').onSelected, isNull);
       expect(action(entries, 'ブックマーク').onSelected, isNotNull);
     });
 
@@ -185,6 +197,8 @@ void main() {
     List<MenuEntry> make() => buildPostActionMenuEntries(
       boostLabel: 'ブースト',
       bookmarkLabel: 'ブックマーク',
+      supportsFavorite: true,
+      supportsBookmark: true,
       availability: availability(),
       onReply: noop,
       onQuote: noop,
@@ -204,6 +218,8 @@ void main() {
         buildPostActionMenuEntries(
           boostLabel: 'ブースト',
           bookmarkLabel: 'ブックマーク',
+          supportsFavorite: true,
+          supportsBookmark: true,
           availability: a,
           onReply: noop,
           onQuote: noop,
@@ -214,5 +230,68 @@ void main() {
         );
 
     expect(sameMenuEntries(make(null), make(availability())), isFalse);
+  });
+
+  /// #980: バックエンドに概念が無い操作は「無効化して残す」ではなく隠す。
+  ///
+  /// Misskey は `FavoriteSupport` を持たない（リアクションで代替）ので、
+  /// 従来は **「お気に入り」が 2 行並び上だけ常にグレー**という並びになって
+  /// いた。`bookmarkLabel` が Misskey では「お気に入り」なので、同じラベルが
+  /// 隣り合う。
+  group('概念の無い操作は隠す (#980)', () {
+    List<String> labelsOf(List<MenuEntry> entries) => [
+      for (final e in entries)
+        if (e is MenuActionEntry) e.label,
+    ];
+
+    test('Misskey 相当: favorite が無ければ「お気に入り」は 1 行だけになる', () {
+      final labels = labelsOf(
+        build(
+          a: availability(),
+          bookmarkLabel: 'お気に入り',
+          supportsFavorite: false,
+        ),
+      );
+
+      expect(
+        labels.where((l) => l == 'お気に入り'),
+        hasLength(1),
+        reason: '同じラベルが 2 行並ぶと、上が常にグレーである理由が読めない',
+      );
+    });
+
+    test('Mastodon 相当: 両方あれば従来どおり 2 行とも出る', () {
+      final labels = labelsOf(build(a: availability()));
+
+      expect(labels, contains('お気に入り'));
+      expect(labels, contains('ブックマーク'));
+    });
+
+    test('両方無ければ区切り線だけが残らない', () {
+      final entries = build(
+        a: availability(),
+        supportsFavorite: false,
+        supportsBookmark: false,
+      );
+
+      expect(labelsOf(entries), isNot(contains('お気に入り')));
+      expect(labelsOf(entries), isNot(contains('ブックマーク')));
+      expect(
+        entries.last,
+        isNot(isA<MenuGroupSeparator>()),
+        reason: '末尾に区切り線が残ると、その下に何かあるように見える',
+      );
+    });
+
+    /// 隠す判断が **選択ではなくアダプタ** に紐づいていることの確認。
+    /// 選択で項目数が動くと、#835 が避けたかった「場所が動いて探しにくい」に
+    /// なる。
+    test('未選択でも項目数は変わらない（無効で並ぶだけ）', () {
+      expect(
+        labelsOf(build(a: null)),
+        labelsOf(build(a: availability())),
+        reason: '選択の有無で項目の数が変わってはいけない',
+      );
+    });
   });
 }
