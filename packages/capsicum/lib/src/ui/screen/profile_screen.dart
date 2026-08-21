@@ -1278,6 +1278,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               await _confirmAndBlock(adapter);
             case 'unblock':
               _performAction(() => adapter.unblockUser(widget.user.id));
+            case 'report':
+              await _confirmAndReportUser();
             case 'view_collections':
               _openCollections(
                 inCollections: false,
@@ -1320,6 +1322,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             const PopupMenuItem(value: 'unblock', child: Text('ブロック解除'))
           else
             const PopupMenuItem(value: 'block', child: Text('ブロック')),
+          // 通報はミュート / ブロックと同じ「相手への対処」なので隣に置く。
+          // 投稿の長押しメニューにしか無く、プロフィールから辿れなかった (#998)。
+          if (ref.read(currentAdapterProvider) is ReportSupport)
+            const PopupMenuItem(value: 'report', child: Text('通報')),
           if (_supportsCollections) ...[
             const PopupMenuItem(
               value: 'view_collections',
@@ -1516,6 +1522,69 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (!success || !mounted) return;
       timelines.removePostsByUser(widget.user.id);
       await _showReportToDeveloperDialog();
+    }
+  }
+
+  /// プロフィールからのユーザー通報 (#998)。投稿の長押しメニューにある通報と
+  /// 同型だが、投稿を特定せずアカウントに対して送る。
+  ///
+  /// `_performAction` を通さないのは、通報が関係性 (follow / mute / block) を
+  /// 変えず `_loadRelationship` の往復が無駄なのと、成功を伝えるトーストが
+  /// 要るため。
+  Future<void> _confirmAndReportUser() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! ReportSupport) return;
+    // await をまたいで context を触らないよう、messenger は先に取る。
+    final messenger = ScaffoldMessenger.of(context);
+    final commentController = TextEditingController();
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('通報'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('@${widget.user.username} をサーバー管理者に通報しますか？'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: commentController,
+                decoration: const InputDecoration(
+                  hintText: '理由（任意）',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('通報'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      final comment = commentController.text.trim();
+      try {
+        // try の中では `is!` ガードの型昇格が効かないため明示キャストする。
+        // `post_tile.dart` の `_confirmReport` も同じ形。
+        await (adapter as ReportSupport).reportUser(
+          widget.user.id,
+          comment: comment.isNotEmpty ? comment : null,
+        );
+        messenger.showSnackBar(const SnackBar(content: Text('通報しました')));
+      } catch (e) {
+        debugLogException('User report error', e);
+        messenger.showSnackBar(const SnackBar(content: Text('通報に失敗しました')));
+      }
+    } finally {
+      commentController.dispose();
     }
   }
 

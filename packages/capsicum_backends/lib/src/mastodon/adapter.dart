@@ -1426,6 +1426,13 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     await client.createReport(authorId, statusIds: [postId], comment: comment);
   }
 
+  @override
+  Future<void> reportUser(String userId, {String? comment}) async {
+    // status_ids を省くと「アカウントに対する通報」になる。空配列ではなく
+    // 未送信にする必要がある (#998)。
+    await client.createReport(userId, comment: comment);
+  }
+
   // TranslationSupport
 
   bool get isTranslationAvailable => _translationAvailable;

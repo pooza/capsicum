@@ -1526,7 +1526,14 @@ class _PostTileState extends ConsumerState<PostTile> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('この${ref.read(postLabelProvider)}をサーバー管理者に通報しますか？'),
+            // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
+            // Mastodon の `POST /api/v1/reports` は account_id が必須・
+            // status_ids が任意、Misskey の `report-abuse` に至っては投稿を
+            // 渡す口が無い。「投稿だけが通報された」と読める文面にしない。
+            Text(
+              'この${ref.read(postLabelProvider)}を添えて '
+              '@${targetPost.author.username} をサーバー管理者に通報しますか？',
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: commentController,
