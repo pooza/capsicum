@@ -36,6 +36,7 @@ import '../util/draft_display.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
@@ -411,7 +412,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _draftAutoSave = false;
   // ローカル自動保存の永続化 (#966)。「破棄したあとは書き戻さない」判定を
   // 含めてストア側が持つ。
-  final _draftStore = ComposeDraftStore();
+  //
+  // ⚠ **スロットはアカウント別** (#964)。単一グローバルスロットだと、A アカウント
+  // で書きかけた本文が B アカウントの新規投稿画面に出てくる。`late` なのは、
+  // アカウントが決まる `initState` 以降でしか key を作れないため。
+  late final ComposeDraftStore _draftStore;
+
+  /// 最後に自動保存できた時刻 (#964)。null は「まだ保存していない」。
+  /// 「保存されているタイミングがわかりづらい」という報告への回答で、
+  /// 入力欄の下に「自動保存 12:34」として常時出す。
+  DateTime? _draftSavedAt;
+
+  /// 復元した下書きを画面に書き戻したか (#964)。true の間だけ「前回の入力を
+  /// 復元しました／取消」のバナーを出す。**復元されたことも伝わっていない**
+  /// のが「わかりづらい」のもう半分の原因だった。
+  bool _draftRestoredNotice = false;
+
+  /// 「取消」で戻すための、復元前の状態 (#964)。復元は新規 compose のたびに
+  /// 黙って本文を書き戻すので、意図しない復元を 1 タップで捨てられるようにする。
+  ComposeDraft? _draftBeforeRestore;
+
+  /// 入力停止から自動保存までの猶予 (#964)。「離れたとき」(#966) だけだと
+  /// アプリの強制終了で取りこぼす。長すぎると保存前に落ち、短すぎると打鍵の
+  /// たびに書くので、体感で「少し止まったら」の 3 秒にした。
+  static const _draftDebounce = Duration(seconds: 3);
+  Timer? _draftDebounceTimer;
   // 復元 (#966) が完了したか。initState の `_restoreDraft` は非同期で、
   // SharedPreferences のロード前に画面を閉じると、離脱時保存 (#966) が空文字を
   // 書いて保存済み下書きを消しうる。復元完了まで保存を保留してこの窓を塞ぐ
@@ -493,6 +518,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   @override
   void initState() {
     super.initState();
+    // スロットはアカウント別 (#964)。アカウント未確定（起動直後等）のときは
+    // null を渡し、旧グローバルスロットのまま振る舞う。
+    _draftStore = ComposeDraftStore(
+      accountKey: ref.read(currentAccountProvider)?.key.toStorageKey(),
+    );
     if (ref.read(currentMulukhiyaProvider)?.wordSuggestEnabled == true) {
       // 劇中ワード辞書を事前充填し、本文インライン補完の初回打鍵で取得待ちが
       // 出ないようにする (#687)。best-effort。
@@ -649,6 +679,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // cancel しないと、IME 確定前の前回 query が 300ms 後に発火して古い
     // 候補を出してしまう race が残る。
     _mentionDebounce?.cancel();
+
+    // 入力停止からのデバウンス保存 (#964)。⚠ **IME の early return より前に
+    // 置く。** 変換中も打鍵は続いているので、ここで再スケジュールしないと
+    // 「長い変換の途中で落ちたら全部消える」が残る。保存自体は `_saveDraft` が
+    // 入口で条件（fresh compose / 復元済み）を見るので、ここでは無条件でよい。
+    _scheduleDraftSave();
 
     // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
     // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
@@ -933,6 +969,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _mentionDebounce?.cancel();
+    // 離脱時保存 (#966) は PopScope が同期的に走らせるので、ここで発火待ちの
+    // タイマーを残す意味は無い。放置すると dispose 済みの controller を読んで
+    // 落ちる (#964)。
+    _draftDebounceTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
@@ -964,6 +1004,72 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 「前回の入力を復元しました／取消」のバナー (#964)。
+  ///
+  /// SnackBar でなくインライン表示にしたのは、復元は**画面を開いた瞬間の状態**
+  /// であって一過性の通知ではないため。消えたあとに「これは前回の続きだったか」
+  /// を確かめる手段が無くなる。取消したら復元前へ戻し、バナーも畳む。
+  Widget _buildRestoredBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      color: scheme.secondaryContainer,
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      child: Row(
+        children: [
+          Icon(Icons.history, size: 16, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '前回の入力を復元しました',
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+          TextButton(onPressed: _undoDraftRestore, child: const Text('取消')),
+        ],
+      ),
+    );
+  }
+
+  /// 復元を取り消して、開いた直後の状態へ戻す (#964)。
+  ///
+  /// ⚠ **保存スロットも消す。** 戻したのに次に開いてまた同じものが復元されると、
+  /// 「取消」が効いていないように見える。
+  void _undoDraftRestore() {
+    final before = _draftBeforeRestore;
+    _draftDebounceTimer?.cancel();
+    _controller.text = before?.text ?? '';
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+    _cwController.text = before?.cwText ?? '';
+    setState(() {
+      _cwEnabled = before?.cwEnabled ?? false;
+      if (before?.scope != null) _scope = before!.scope!;
+      _sensitiveEnabled = before?.sensitive ?? false;
+      _localOnly = before?.localOnly ?? false;
+      _draftRestoredNotice = false;
+      _draftSavedAt = null;
+    });
+    unawaited(_clearDraft());
+  }
+
+  /// 入力停止から [_draftDebounce] 後に自動保存する (#964)。打鍵のたびに
+  /// 呼ばれ、そのつど先送りされる。
+  ///
+  /// 「離れたとき」(#966) だけでは、アプリが強制終了された分を取りこぼす。
+  void _scheduleDraftSave() {
+    if (!_draftAutoSave) return;
+    _draftDebounceTimer?.cancel();
+    _draftDebounceTimer = Timer(_draftDebounce, () {
+      // タイマー発火は dispose を生き延びうる。`_saveDraft` は controller を
+      // 読むので、破棄済みなら触らない。
+      if (mounted) unawaited(_saveDraft());
+    });
+  }
+
   /// Persist the current draft text and CW state to SharedPreferences.
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
@@ -972,14 +1078,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
-    await _draftStore.save(
+    final savedAt = await _draftStore.save(
       ComposeDraft(
         text: _controller.text,
         cwText: _cwController.text,
         cwEnabled: _cwEnabled,
         attachmentCount: _attachments.length,
+        // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
+        // 気づかず広い範囲へ投げる事故になる。
+        scope: _scope,
+        sensitive: _sensitiveEnabled,
+        localOnly: _localOnly,
       ),
+      now: DateTime.now(),
     );
+    // 世代ガード (#969) や破棄済みで no-op だったときは null。表示を更新すると
+    // 「保存された」と嘘をつくので、返ってきたときだけ反映する (#964)。
+    if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
   }
 
   /// Restore a previously saved draft into the controllers.
@@ -1001,6 +1116,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
     _draftRestored = true;
     if (!mounted || saved == null) return;
+
+    // 「取消」で戻せるよう、書き戻す前の状態を控える (#964)。復元は新規 compose
+    // のたびに黙って走るので、意図しない復元を 1 タップで捨てられるようにする。
+    _draftBeforeRestore = ComposeDraft(
+      text: _controller.text,
+      cwText: _cwController.text,
+      cwEnabled: _cwEnabled,
+      scope: _scope,
+      sensitive: _sensitiveEnabled,
+      localOnly: _localOnly,
+    );
+
     if (saved.hasText) {
       _controller.text = saved.text;
       _controller.selection = TextSelection.collapsed(
@@ -1010,9 +1137,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (saved.cwText.isNotEmpty) {
       _cwController.text = saved.cwText;
     }
-    if (saved.cwEnabled) {
-      setState(() => _cwEnabled = true);
-    }
+    setState(() {
+      if (saved!.cwEnabled) _cwEnabled = true;
+      // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
+      // （保存していなかった頃）で、既定値やアカウントの defaultScope を上書き
+      // してしまう。
+      if (saved.scope != null) _scope = saved.scope!;
+      _sensitiveEnabled = saved.sensitive;
+      _localOnly = saved.localOnly;
+      _draftSavedAt = saved.savedAt;
+      // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
+      // 「わかりづらい」のもう半分の原因だった。
+      _draftRestoredNotice = true;
+    });
     // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
     // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
     // 空で何も復元していないなら、伝えることがないので出さない。
@@ -3412,6 +3549,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ),
+                // 復元したことの告知 (#964)。黙って本文を書き戻すと、目の前の
+                // 文字列が「前回の続き」なのか判別できない。1 タップで取り消せる。
+                if (_draftRestoredNotice) _buildRestoredBanner(context),
                 Expanded(
                   child: Stack(
                     children: [
@@ -3475,6 +3615,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     ],
                   ),
                 ),
+                // 「保存されているタイミングがわかりづらい」への回答 (#964)。
+                // 自動保存は無音なので、最後に保存できた時刻を常時出す。
+                if (_draftAutoSave && _draftSavedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8, bottom: 2),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_mentionSuggestions.isNotEmpty)
                   SizedBox(
                     height: 48,

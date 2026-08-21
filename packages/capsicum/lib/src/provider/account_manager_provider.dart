@@ -15,6 +15,7 @@ import '../model/account_key.dart';
 import '../model/offline_account.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
+import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
@@ -258,6 +259,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 投稿を残さないよう捨てる。contextKey が一致しなければ使われない作りだが、
     // 端末上に残す理由も無い。
     await TimelineCache.clear();
+    // 書きかけの自動保存スロットも捨てる (#964)。放っておくと孤児キーが溜まり、
+    // 同じ `@user@host` で入り直したときに前の持ち主の書きかけが出てくる。
+    await ComposeDraftStore.clearForAccount(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
