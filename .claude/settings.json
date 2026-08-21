@@ -134,7 +134,7 @@
       "WebSearch",
       "Write(**)"
     ],
-    "defaultMode": "auto",
+    "defaultMode": "acceptEdits",
     "additionalDirectories": [
       "/opt/local",
       "/private/tmp",

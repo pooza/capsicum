@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
@@ -17,6 +18,7 @@ import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
+import '../util/attachment_description_edit.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 
@@ -108,13 +110,31 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     super.dispose();
   }
 
+  /// ALT 編集の導線を出すか。
+  ///
+  /// ⚠ **Mastodon はモロヘイヤ導入済みサーバーに限る** (#121)。Mastodon には
+  /// 投稿済み添付の説明だけを変える API が無く、投稿の更新 API を使うしかない。
+  /// その API は「送らなかったパラメータ」を現状維持ではなく**空で更新**として
+  /// 扱うため、素で呼ぶと **添付が全部外れ CW と閲覧注意も消える**
+  /// （mulukhiya#4589）。現状維持すべき値を補完するのはモロヘイヤ 5.34.0 以降の
+  /// 役目なので、いない環境では導線ごと出さない。
+  ///
+  /// 判定を UI 層に置いているのは、アダプタからモロヘイヤの有無が見えないため
+  /// （`MulukhiyaService` は `Account` が持つアプリ層の資産）。`TranslationSupport`
+  /// を `adapter is! MastodonAdapter || adapter.isTranslationAvailable` で
+  /// 出し分けている `post_tile` と同じ形。
+  ///
+  /// Misskey は `drive/files/update` が投稿済みでも効くので無条件で出す。
   bool get _canEdit {
-    if (widget.postAuthorId == null || widget.postId == null) return false;
     final currentUser = ref.read(currentAccountProvider)?.user;
-    if (currentUser == null) return false;
     final adapter = ref.read(currentAdapterProvider);
-    return currentUser.id == widget.postAuthorId &&
-        adapter is MediaUpdateSupport;
+    return canEditAttachmentDescription(
+      supportsMediaUpdate: adapter is MediaUpdateSupport,
+      needsMulukhiya: adapter is MastodonAdapter,
+      hasMulukhiya: ref.read(currentMulukhiyaProvider) != null,
+      isOwnPost: currentUser != null && currentUser.id == widget.postAuthorId,
+      hasPostContext: widget.postAuthorId != null && widget.postId != null,
+    );
   }
 
   Future<void> _editDescription() async {

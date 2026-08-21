@@ -109,7 +109,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         CollectionsSupport,
         TimelineCacheSupport,
         MulukhiyaRepostSupport,
-        TranslationSupport {
+        TranslationSupport,
+        MediaUpdateSupport {
   final MastodonClient client;
   MastodonStreaming? _streaming;
   MastodonNotificationStreaming? _notificationStreaming;
@@ -1431,6 +1432,33 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     // status_ids を省くと「アカウントに対する通報」になる。空配列ではなく
     // 未送信にする必要がある (#998)。
     await client.createReport(userId, comment: comment);
+  }
+
+  // MediaUpdateSupport
+
+  /// 投稿済みメディアの ALT を書き換える (#121)。
+  ///
+  /// Misskey の `drive/files/update` と違い、Mastodon は**投稿の更新 API 経由**
+  /// でしか投稿済み添付の説明を変えられない（`PUT /api/v1/media/:id` は投稿前の
+  /// メディアにしか効かない）。そのため [postId] が要る。
+  ///
+  /// ⚠ **モロヘイヤ導入済みサーバー限定の導線**。素で呼ぶと投稿が壊れる理由と、
+  /// モロヘイヤが何を補完するかは [MastodonClient.updateStatusMediaAttributes]
+  /// の doc を参照。出し分けは UI 側（`media_viewer_screen._canEdit`）が
+  /// `currentMulukhiyaProvider` で行う——アダプタからはモロヘイヤの有無が
+  /// 見えないため（`MulukhiyaService` は `Account` が持つアプリ層の資産）。
+  @override
+  Future<void> updateAttachmentDescription(
+    String mediaId,
+    String description, {
+    required String postId,
+  }) async {
+    await client.updateStatusMediaAttributes(
+      postId,
+      mediaAttributes: [
+        {'id': mediaId, 'description': description},
+      ],
+    );
   }
 
   // TranslationSupport
