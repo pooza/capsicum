@@ -286,7 +286,7 @@ void _accountIndexTests() {
         yamlWithAccounts([alice, bob]),
       );
 
-      expect(result.addedAccounts, 2);
+      expect(result.addedAccountKeys.length, 2);
       expect(prefs.getString(accountListKey), contains(alice));
       expect(prefs.getString(accountListKey), contains(bob));
     });
@@ -301,7 +301,7 @@ void _accountIndexTests() {
         yamlWithAccounts([alice, bob]),
       );
 
-      expect(result.addedAccounts, 1, reason: 'bob だけが増える');
+      expect(result.addedAccountKeys.length, 1, reason: 'bob だけが増える');
       final saved = prefs.getString(accountListKey)!;
       expect(saved, contains(alice));
       expect(saved, contains(bob));
@@ -325,7 +325,7 @@ void _accountIndexTests() {
         'version: 1\nsettings:\n  font_scale: 1.2\n',
       );
 
-      expect(result.addedAccounts, 0);
+      expect(result.addedAccountKeys, isEmpty);
       expect(result.applied, contains('font_scale'));
       expect(prefs.getString(accountListKey), isNull);
     });
@@ -340,7 +340,7 @@ void _accountIndexTests() {
         '  font_scale: 1.2\n',
       );
 
-      expect(result.addedAccounts, 1);
+      expect(result.addedAccountKeys.length, 1);
       expect(result.skipped['accounts'], isNotNull);
       expect(result.applied, contains('font_scale'));
     });
@@ -353,7 +353,7 @@ void _accountIndexTests() {
         'version: 1\naccounts: "alice"\nsettings:\n  font_scale: 1.2\n',
       );
 
-      expect(result.addedAccounts, 0);
+      expect(result.addedAccountKeys, isEmpty);
       expect(result.skipped['accounts'], isNotNull);
       expect(result.applied, contains('font_scale'));
     });
