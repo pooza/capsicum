@@ -52,29 +52,27 @@ void main() {
     });
   });
 
-  group('モロヘイヤの版判定 (#999)', () {
-    test('5.34.0 以降は補完を持つ', () {
-      expect(mulukhiyaSupportsMediaUpdate('5.34.0'), isTrue);
-      expect(mulukhiyaSupportsMediaUpdate('5.34.1'), isTrue);
-      expect(mulukhiyaSupportsMediaUpdate('6.0.0'), isTrue);
-    });
-
-    test('5.34.0 未満は持たない', () {
-      expect(mulukhiyaSupportsMediaUpdate('5.33.0'), isFalse);
-      expect(mulukhiyaSupportsMediaUpdate('5.9.0'), isFalse);
+  // ⚠ **版番号では判定しない (#999 / mulukhiya#4636)。**動く構成かどうかは
+  // モロヘイヤが刺している ginseng-fediverse の版で決まり、`package.version` から
+  // は区別できない:
+  //
+  // - 5.33.0 … `media_update` を受理するが `media_ids` / `spoiler_text` /
+  //   `sensitive` を補完しない → **投稿から添付が全部外れ CW も消える**
+  // - 5.34.0 … 補完はするが上流 PUT に `X-Mulukhiya` が付かず **405 で失敗**
+  //   （ginseng-fediverse#254 / 1.8.30 で修正・5.35.0 に載る）
+  //
+  // どちらも外からは「5.3x」としか名乗らないので、モロヘイヤ側のフラグを見る。
+  group('モロヘイヤのフラグ判定 (#999)', () {
+    test('フラグを名乗らないサーバーでは出さない', () {
       expect(
-        mulukhiyaSupportsMediaUpdate('5.33.99'),
+        can(mulukhiyaHandlesMediaUpdate: false),
         isFalse,
-        reason: 'minor が下なら patch がいくつでも未満',
+        reason: '5.33.0 なら投稿が壊れ、5.34.0 なら 405 で失敗する',
       );
     });
 
-    // ⚠ **「分からない」は「出さない」に倒す。**判定を誤る側の代償が
-    // 「投稿が壊れる」なので、版が読めないときに通してはいけない。
-    test('版が無い・読めないときは出さない', () {
-      expect(mulukhiyaSupportsMediaUpdate(null), isFalse);
-      expect(mulukhiyaSupportsMediaUpdate(''), isFalse);
-      expect(mulukhiyaSupportsMediaUpdate('unknown'), isFalse);
+    test('フラグを名乗るサーバーでだけ出す', () {
+      expect(can(mulukhiyaHandlesMediaUpdate: true), isTrue);
     });
   });
 
