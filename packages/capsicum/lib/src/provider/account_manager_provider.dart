@@ -877,6 +877,36 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = state.copyWith(offlineAccounts: updated);
   }
 
+  /// 設定バックアップの取り込みで索引へ足したアカウントを、**再起動を待たずに**
+  /// 「未接続」として一覧へ出す (#1001)。
+  ///
+  /// ⚠ **これが無いと「n 件のアカウントを追加しました」が嘘になる。**索引
+  /// （`capsicum_account_keys_v2`）は [restoreSessions] が起動時に 1 度だけ
+  /// 読むので、実行中に足しても次の起動まで画面に出ない。
+  ///
+  /// ⚠ **[restoreSessions] を呼び直さない。**あちらは全アカウントを probe し直す
+  /// 起動経路で、取り込みのたびに走らせるには重い。足したぶんだけを
+  /// `OfflineAccount.secretMissing` として積む（トークンが無いので probe は
+  /// そもそも組み立てられない）。
+  ///
+  /// 既にオンライン / オフラインで居るアカウントは触らない（取り込みは
+  /// **マージ**であって置き換えではない）。
+  void addDisconnectedAccounts(Iterable<AccountKey> keys) {
+    final known = {
+      ...state.accounts.map((a) => a.key),
+      ...state.offlineAccounts.map((o) => o.key),
+    };
+    final added = keys
+        .where(known.add)
+        .map((key) => OfflineAccount.secretMissing(key: key))
+        .toList();
+    if (added.isEmpty) return;
+
+    state = state.copyWith(
+      offlineAccounts: [...state.offlineAccounts, ...added],
+    );
+  }
+
   /// オフライン保持中のアカウントを「未接続」へ落とす (#967)。到達不能を待って
   /// いる間に secret が消えた場合に使う。⚠ **一覧からは消さない**——消すと
   /// #792 で直した「サーバーごと存在しないように見える」に戻る。

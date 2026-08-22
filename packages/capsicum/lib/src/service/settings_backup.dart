@@ -146,7 +146,7 @@ class SettingsImportResult {
   const SettingsImportResult({
     required this.applied,
     required this.skipped,
-    this.addedAccounts = 0,
+    this.addedAccountKeys = const [],
   });
 
   /// 実際に書き込んだ設定のキー。
@@ -156,10 +156,13 @@ class SettingsImportResult {
   /// 型違いをここへ集め、画面で「何を無視したか」を出せるようにする。
   final Map<String, String> skipped;
 
-  /// 索引へ新しく足したアカウント数 (#1001)。**トークンは入っていない**ので、
-  /// これらは「未接続」として一覧に並ぶ（#967）。画面で「n 件のアカウントを
-  /// 追加しました。ログインし直してください」を出すために使う。
-  final int addedAccounts;
+  /// 索引へ新しく足したアカウントの storage key (#1001)。**トークンは入って
+  /// いない**ので、これらは「未接続」として一覧に並ぶ（#967）。
+  ///
+  /// ⚠ **件数だけでなく key を返す。**呼び出し側が実行中の一覧へ反映する
+  /// （[AccountManagerNotifier.addDisconnectedAccounts]）ために要る。件数だけだと
+  /// 「追加しました」と言いながら次の起動まで画面に出ない。
+  final List<String> addedAccountKeys;
 }
 
 /// 読み込めないファイルを渡されたときに投げる。
@@ -299,7 +302,7 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   final byKey = {for (final s in exportableSettings) s.key: s};
   final applied = <String>[];
   final skipped = <String, String>{};
-  final addedAccounts = await _mergeAccounts(
+  final addedAccountKeys = await _mergeAccounts(
     prefs,
     parsed['accounts'],
     skipped,
@@ -331,12 +334,12 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   return SettingsImportResult(
     applied: applied,
     skipped: skipped,
-    addedAccounts: addedAccounts,
+    addedAccountKeys: addedAccountKeys,
   );
 }
 
 /// バックアップの `accounts:` を索引へ**マージ**する (#1001)。返り値は新しく
-/// 足したアカウント数。
+/// 足したアカウントの storage key。
 ///
 /// ⚠ **既存のアカウントを消さない。**移行先に既にアカウントが居ることがあり、
 /// 置き換えると「読み込んだら手元のアカウントが消えた」になる。既にある key は
@@ -347,20 +350,20 @@ Future<SettingsImportResult> applySettingsBackupYaml(
 ///
 /// 壊れた要素は黙って捨てず [skipped] に理由を積む。ファイル全体を捨てないのは
 /// 設定側と同じ方針。
-Future<int> _mergeAccounts(
+Future<List<String>> _mergeAccounts(
   SharedPreferences prefs,
   Object? node,
   Map<String, String> skipped,
 ) async {
-  if (node == null) return 0;
+  if (node == null) return const [];
   if (node is! YamlList) {
     skipped['accounts'] = 'アカウントの一覧が読めませんでした';
-    return 0;
+    return const [];
   }
 
   final existing = readAccountKeysForBackup(prefs);
   final merged = [...existing];
-  var added = 0;
+  final added = <String>[];
   var invalid = 0;
   for (final entry in node) {
     final key = entry is String ? entry : null;
@@ -370,12 +373,12 @@ Future<int> _mergeAccounts(
     }
     if (merged.contains(key)) continue;
     merged.add(key);
-    added++;
+    added.add(key);
   }
   if (invalid > 0) {
     skipped['accounts'] = '$invalid 件のアカウントを読み取れませんでした';
   }
-  if (added == 0) return 0;
+  if (added.isEmpty) return const [];
 
   // ⚠ setString は失敗しても throw せず false を返す（AccountStorage と同じ罠）。
   // 失敗を成功として報告すると「読み込んだのに増えていない」が無言になる。
@@ -385,7 +388,7 @@ Future<int> _mergeAccounts(
   );
   if (!ok) {
     skipped['accounts'] = 'アカウントの一覧を保存できませんでした';
-    return 0;
+    return const [];
   }
   return added;
 }

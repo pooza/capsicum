@@ -1,13 +1,21 @@
+import 'dart:io';
+
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:dio/dio.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants.dart';
+import '../../model/account_key.dart';
 import '../../preset_servers.dart';
+import '../../service/settings_backup.dart';
+import '../../platform/platform_info.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../util/settings_backup_file_type.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key, this.initialHost});
@@ -28,10 +36,79 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
   bool _isProbing = false;
   String? _error;
 
+  /// バックアップ取り込み中（二重起動を止める）。
+  bool _importing = false;
+
+  /// 取り込んだアカウントのホスト。⚠ **ログイン前はアカウント一覧の画面が無い**
+  /// ので、ここに出さないと「読み込めたのか」がユーザーから見えない (#1001)。
+  List<String> _importedHosts = const [];
+
   @override
   void dispose() {
     _hostController.dispose();
     super.dispose();
+  }
+
+  /// バックアップを取り込む (#1001)。**ログイン前でも使える唯一の導線**。
+  ///
+  /// 取り込むのは設定とアカウント索引だけで、トークンは入っていない（#857）。
+  /// したがってここで即ログイン状態にはならない。**ホスト名を埋めて、ログインへ
+  /// 送るところまで**が役割で、ログインすると残りは「未接続」として一覧に並ぶ
+  /// （#967）。
+  Future<void> _importBackup() async {
+    final file = await openFile(
+      acceptedTypeGroups: [
+        settingsBackupTypeGroup(needsUti: fileTypeFilterNeedsUti),
+      ],
+    );
+    if (file == null || !mounted) return;
+
+    setState(() {
+      _importing = true;
+      _error = null;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final text = await File(file.path).readAsString();
+      final prefs = await SharedPreferences.getInstance();
+      final result = await applySettingsBackupYaml(prefs, text);
+      if (!mounted) return;
+
+      final hosts = <String>[];
+      for (final raw in result.addedAccountKeys) {
+        try {
+          hosts.add(AccountKey.fromStorageKey(raw).host);
+        } catch (_) {
+          continue;
+        }
+      }
+      setState(() {
+        _importedHosts = hosts.toSet().toList();
+        // 最初のホストを埋めておく。移行直後にホスト名を打ち直させない
+        // （#967 の「接続し直す」導線と同じ考え方）。
+        if (_hostController.text.isEmpty && hosts.isNotEmpty) {
+          _hostController.text = hosts.first;
+        }
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            hosts.isEmpty
+                ? '設定を読み込みました'
+                : '設定と ${result.addedAccountKeys.length} 件のアカウントを読み込みました。'
+                      'ログインすると使えるようになります',
+          ),
+        ),
+      );
+    } on SettingsBackupFormatException catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('読み込めませんでした: $e')));
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
   }
 
   Future<void> _connectTo(String host) async {
@@ -146,6 +223,27 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(onPressed: _onSubmit, child: const Text('接続')),
+                const Divider(height: 32),
+                // ⚠ **ログイン前に置く**（Codex P1 / PR #1002）。設定画面は
+                // セッションが無いと router が /server へ引き戻すので、新しい
+                // 端末では到達できない。**移行はここから始まる**ので、バック
+                // アップの取り込みだけはログイン前に要る (#1001)。
+                Center(
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.download),
+                    label: const Text('バックアップから設定とアカウントを読み込む'),
+                    onPressed: _importing ? null : _importBackup,
+                  ),
+                ),
+                if (_importedHosts.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '読み込んだアカウント: ${_importedHosts.join(" / ")}\n'
+                      '上のサーバーを選んでログインすると使えるようになります。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
               ],
             ),
     );

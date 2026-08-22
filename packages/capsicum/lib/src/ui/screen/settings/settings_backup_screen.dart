@@ -9,7 +9,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../model/account_key.dart';
 import '../../../platform/platform_info.dart';
+import '../../../provider/account_manager_provider.dart';
 import '../../../provider/preferences_provider.dart';
 import '../../../service/sentry_op_failure.dart';
 import '../../../service/settings_backup.dart';
@@ -163,6 +165,7 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       // 各 Notifier は build() で prefs を読み直すので、invalidate すれば
       // 画面が新しい設定で組み直される（再起動を求めない）。
       _refreshPreferenceProviders();
+      _hydrateImportedAccounts(result);
       _reportImportSkips(result);
       messenger.showSnackBar(SnackBar(content: Text(_importSummary(result))));
     } on SettingsBackupFormatException catch (e, st) {
@@ -224,15 +227,15 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
   String _importSummary(SettingsImportResult result) {
     if (result.applied.isEmpty &&
         result.skipped.isEmpty &&
-        result.addedAccounts == 0) {
+        result.addedAccountKeys.isEmpty) {
       return 'このファイルに取り込める設定はありませんでした';
     }
     final buffer = StringBuffer('${result.applied.length} 件の設定を読み込みました');
     // ⚠ **アカウントは「追加した」で止め、使えるとは言わない** (#1001)。
     // トークンは移らないので、ログインし直すまで未接続のまま並ぶ (#967)。
-    if (result.addedAccounts > 0) {
+    if (result.addedAccountKeys.isNotEmpty) {
       buffer.write(
-        '。${result.addedAccounts} 件のアカウントを追加しました'
+        '。${result.addedAccountKeys.length} 件のアカウントを追加しました'
         '（未接続。ログインし直すと使えます）',
       );
     }
@@ -244,6 +247,26 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
 
   /// 取り込んだ値を画面へ反映する (#857)。
   ///
+  /// 取り込んだアカウントを実行中の一覧へ出す (#1001)。
+  ///
+  /// ⚠ **索引を書いただけでは画面に出ない。**`restoreSessions` は起動時に 1 度
+  /// だけ索引を読むので、これが無いと「n 件のアカウントを追加しました」と言い
+  /// ながら次の起動まで現れない（Codex P2 / PR #1002）。
+  void _hydrateImportedAccounts(SettingsImportResult result) {
+    if (result.addedAccountKeys.isEmpty) return;
+
+    final keys = <AccountKey>[];
+    for (final raw in result.addedAccountKeys) {
+      try {
+        keys.add(AccountKey.fromStorageKey(raw));
+      } catch (_) {
+        // 取り込み側が parse 済みなので通常は来ない。保険。
+        continue;
+      }
+    }
+    ref.read(accountManagerProvider.notifier).addDisconnectedAccounts(keys);
+  }
+
   /// **[exportableSettings] と 1:1 で対応させること。**ここに足し忘れると、
   /// 値は書き込まれているのに次の起動まで画面へ出ない。
   void _refreshPreferenceProviders() {
