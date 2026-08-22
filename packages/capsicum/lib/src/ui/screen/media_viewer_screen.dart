@@ -134,11 +134,11 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       supportsMediaUpdate: adapter is MediaUpdateSupport,
       needsMulukhiya: adapter is MastodonAdapter,
       hasMulukhiya: mulukhiya != null,
-      // ⚠ **版まで見る (#999)。**5.33.0 は media_update を受理するが補完しない
-      // ので、有無だけで出すと投稿から添付が全部外れ CW も消える。
-      mulukhiyaHandlesMediaUpdate: mulukhiyaSupportsMediaUpdate(
-        mulukhiya?.version,
-      ),
+      // ⚠ **フラグで見る (#999 / mulukhiya#4636)。**版番号では判定できない —
+      // 5.33.0 は補完せず投稿を壊し、5.34.0 は補完するが上流 PUT が 405 で失敗
+      // する。動く構成かどうかはモロヘイヤの ginseng ピン次第で、外からは
+      // `package.version` で区別できない。フラグを出さないサーバーでは出さない。
+      mulukhiyaHandlesMediaUpdate: mulukhiya?.mediaUpdateEnabled ?? false,
       isOwnPost: currentUser != null && currentUser.id == widget.postAuthorId,
       hasPostContext: widget.postAuthorId != null && widget.postId != null,
     );
