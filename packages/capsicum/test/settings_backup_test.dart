@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// #857: 設定のバックアップの書き出し / 読み込み。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  _accountIndexTests();
 
   Future<SharedPreferences> prefsWith(Map<String, Object> values) async {
     SharedPreferences.setMockInitialValues(values);
@@ -30,16 +31,22 @@ void main() {
       expect(yaml, isNot(contains('theme_mode')));
     });
 
-    test('アカウント・認証情報は書かない', () async {
+    // ⚠ **#1001 で契約が変わった。**アカウント索引（host + username）は**書く**。
+    // 書かないのは**トークンと端末固有 ID**。索引を運ばないと移行先にアカウントが
+    // 1 件も生まれず、「未接続として並べてログインし直す」(#967) が始まらない。
+    test('トークンと端末固有 ID は書かない（索引は書く）', () async {
       final prefs = await prefsWith({
         'font_scale': 1.2,
-        'capsicum_account_keys_v2': '["mstdn.example_pooza"]',
+        'capsicum_account_keys_v2': '["mastodon://pooza@mstdn.example"]',
+        'secret_mastodon://pooza@mstdn.example': 'token-must-not-leak',
         'capsicum_device_install_id': 'device-abc',
       });
 
       final yaml = yamlOf(prefs);
 
-      expect(yaml, isNot(contains('account')));
+      expect(yaml, contains('- "mastodon://pooza@mstdn.example"'));
+      expect(yaml, isNot(contains('token-must-not-leak')));
+      expect(yaml, isNot(contains('secret_')));
       expect(yaml, isNot(contains('device')));
     });
 
@@ -197,6 +204,158 @@ settings:
           reason: '「$text」を設定として受けてはいけない',
         );
       }
+    });
+  });
+}
+
+/// #1001: アカウント索引（host + username・トークン無し）の書き出し / 取り込み。
+///
+/// ⚠ **「索引を運ぶ」と「未接続として並べる」で 1 つの筋書き**（#967）。トークン
+/// は平文 YAML に載せられない（ファイル 1 つの流出で全アカウントが乗っ取られる）
+/// ので、移行先では未接続として並び、ログインし直して初めて使える。索引が載って
+/// いなければ移行先にアカウントは 1 件も生まれず、「スマホと PC で同期する」は
+/// 成立しない。
+void _accountIndexTests() {
+  const accountListKey = 'capsicum_account_keys_v2';
+  const alice = 'mastodon://alice@mstdn.example';
+  const bob = 'misskey://bob@misskey.example';
+
+  Future<SharedPreferences> prefsWith(Map<String, Object> values) async {
+    SharedPreferences.setMockInitialValues(values);
+    return SharedPreferences.getInstance();
+  }
+
+  String yamlOf(SharedPreferences prefs) => buildSettingsBackupYaml(
+    prefs,
+    appVersion: '1.59.0+172',
+    exportedAt: '2026-08-22T12:00:00Z',
+  );
+
+  group('アカウント索引の書き出し (#1001)', () {
+    test('索引にあるアカウントを accounts: へ書く', () async {
+      final prefs = await prefsWith({accountListKey: '["$alice","$bob"]'});
+
+      final yaml = yamlOf(prefs);
+
+      expect(yaml, contains('accounts:'));
+      expect(yaml, contains('- "$alice"'));
+      expect(yaml, contains('- "$bob"'));
+    });
+
+    test('アカウントが無ければ accounts: 自体を書かない', () async {
+      final prefs = await prefsWith({'font_scale': 1.2});
+
+      expect(yamlOf(prefs), isNot(contains('accounts:')));
+    });
+
+    // ⚠ **秘匿値が混ざらないことの固定。**索引は host + username だけで、
+    // secret は secure storage 側にある（YAML には触れさせない）。
+    test('トークンらしき文字列は書かない', () async {
+      final prefs = await prefsWith({
+        accountListKey: '["$alice"]',
+        'secret_$alice': 'token-must-not-leak',
+      });
+
+      final yaml = yamlOf(prefs);
+
+      expect(yaml, isNot(contains('token-must-not-leak')));
+      expect(yaml, isNot(contains('secret_')));
+    });
+
+    test('壊れた索引 JSON では accounts: を書かない', () async {
+      final prefs = await prefsWith({accountListKey: '{壊れている'});
+
+      expect(yamlOf(prefs), isNot(contains('accounts:')));
+    });
+  });
+
+  group('アカウント索引の取り込み (#1001)', () {
+    String yamlWithAccounts(List<String> keys) => [
+      'version: 1',
+      'accounts:',
+      ...keys.map((k) => '  - "$k"'),
+      'settings:',
+      '  font_scale: 1.2',
+    ].join('\n');
+
+    test('索引へ足し、件数を返す', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts([alice, bob]),
+      );
+
+      expect(result.addedAccounts, 2);
+      expect(prefs.getString(accountListKey), contains(alice));
+      expect(prefs.getString(accountListKey), contains(bob));
+    });
+
+    // ⚠ **既存のアカウントを消さない。**移行先に既にアカウントが居ることが
+    // あり、置き換えると「読み込んだら手元のアカウントが消えた」になる。
+    test('既にあるアカウントを消さず、重複も作らない', () async {
+      final prefs = await prefsWith({accountListKey: '["$alice"]'});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts([alice, bob]),
+      );
+
+      expect(result.addedAccounts, 1, reason: 'bob だけが増える');
+      final saved = prefs.getString(accountListKey)!;
+      expect(saved, contains(alice));
+      expect(saved, contains(bob));
+      expect(alice.allMatches(saved).length, 1, reason: '重複させない');
+    });
+
+    // ⚠ **secret は触らない。**索引だけが増えるので未接続として並ぶ (#967)。
+    test('secret を作らない（未接続として並ぶ状態にする）', () async {
+      final prefs = await prefsWith({});
+
+      await applySettingsBackupYaml(prefs, yamlWithAccounts([alice]));
+
+      expect(prefs.getKeys().where((k) => k.startsWith('secret_')), isEmpty);
+    });
+
+    test('accounts: が無いファイルでも従来どおり読める', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        'version: 1\nsettings:\n  font_scale: 1.2\n',
+      );
+
+      expect(result.addedAccounts, 0);
+      expect(result.applied, contains('font_scale'));
+      expect(prefs.getString(accountListKey), isNull);
+    });
+
+    // 壊れた要素でファイル全体を捨てない（設定側と同じ方針）。
+    test('読めない要素は理由を残して飛ばす', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        'version: 1\naccounts:\n  - "壊れている"\n  - "$alice"\nsettings:\n'
+        '  font_scale: 1.2\n',
+      );
+
+      expect(result.addedAccounts, 1);
+      expect(result.skipped['accounts'], isNotNull);
+      expect(result.applied, contains('font_scale'));
+    });
+
+    test('accounts: が一覧でなければ理由を残して続行する', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        'version: 1\naccounts: "alice"\nsettings:\n  font_scale: 1.2\n',
+      );
+
+      expect(result.addedAccounts, 0);
+      expect(result.skipped['accounts'], isNotNull);
+      expect(result.applied, contains('font_scale'));
     });
   });
 }

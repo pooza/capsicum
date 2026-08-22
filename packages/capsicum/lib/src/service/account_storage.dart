@@ -34,7 +34,13 @@ class TransientSecretUnavailableException implements Exception {
 /// entry for the index wipes every account.
 class AccountStorage {
   static const _legacyAccountListKey = 'capsicum_account_keys';
-  static const _accountListKey = 'capsicum_account_keys_v2';
+
+  /// アカウント索引の SharedPreferences キー。⚠ **設定バックアップ (#1001) が
+  /// ここへ書き戻す**ので公開している。値は `AccountKey.toStorageKey()`
+  /// （`mastodon://user@host`）の JSON 配列で、**host + username だけを持つ
+  /// 非秘匿値**（secret は secure storage 側）。
+  static const accountListKey = 'capsicum_account_keys_v2';
+  static const _accountListKey = accountListKey;
   // _v1 は #643 の初版で導入したが、当時の migration / write が旧 item を
   // accessibility 取りこぼしで救えておらず（後述）空振りでフラグだけ立てて
   // いた。修正版を全員に再実行させるため _v2 に上げる (内部ベータ

@@ -131,7 +131,11 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('設定を読み込む'),
-        content: const Text('この端末の設定が、ファイルの内容で上書きされます。よろしいですか？'),
+        content: const Text(
+          'この端末の設定が、ファイルの内容で上書きされます。\n'
+          'ファイルに入っているアカウントは一覧へ追加されます'
+          '（この端末の既存のアカウントは消えません）。よろしいですか？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -218,10 +222,20 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
   }
 
   String _importSummary(SettingsImportResult result) {
-    if (result.applied.isEmpty && result.skipped.isEmpty) {
+    if (result.applied.isEmpty &&
+        result.skipped.isEmpty &&
+        result.addedAccounts == 0) {
       return 'このファイルに取り込める設定はありませんでした';
     }
     final buffer = StringBuffer('${result.applied.length} 件の設定を読み込みました');
+    // ⚠ **アカウントは「追加した」で止め、使えるとは言わない** (#1001)。
+    // トークンは移らないので、ログインし直すまで未接続のまま並ぶ (#967)。
+    if (result.addedAccounts > 0) {
+      buffer.write(
+        '。${result.addedAccounts} 件のアカウントを追加しました'
+        '（未接続。ログインし直すと使えます）',
+      );
+    }
     if (result.skipped.isNotEmpty) {
       buffer.write('（${result.skipped.length} 件は取り込みませんでした）');
     }
@@ -251,7 +265,9 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
               'この端末の設定をファイルに書き出し、別の端末で読み込めます。\n'
-              'アカウントと認証情報は含まれません。読み込んだあとにログインし直してください。',
+              'アカウントの一覧（サーバーとユーザー名）も含まれますが、'
+              'パスワードとアクセストークンは含まれません。\n'
+              '読み込んだアカウントは「未接続」として並ぶので、ログインし直すと使えるようになります。',
             ),
           ),
           ListTile(
