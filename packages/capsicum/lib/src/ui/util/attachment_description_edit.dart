@@ -36,8 +36,12 @@ bool mulukhiyaSupportsMediaUpdate(String? version) {
 /// - [needsMulukhiya] … その API がモロヘイヤの補完を前提にするか（Mastodon は
 ///   true、Misskey は `drive/files/update` が投稿済みでも効くので false）
 /// - [hasMulukhiya] … 現在のアカウントのサーバーにモロヘイヤがいるか
-/// - [mulukhiyaHandlesMediaUpdate] … そのモロヘイヤが**補完を持つ版**か
-///   （5.34.0 以降。[mulukhiyaSupportsMediaUpdate] で判定する・#999）
+/// - [mulukhiyaHandlesMediaUpdate] … そのモロヘイヤが `features.media_update` を
+///   名乗っているか（#999 / mulukhiya#4636）。⚠ **版番号では判定しない** — 動く
+///   かどうかはモロヘイヤが刺している ginseng-fediverse の版で決まり、
+///   `package.version` からは区別できない（5.33.0 は補完せず投稿を壊し、5.34.0 は
+///   補完するが上流 PUT が 405 で失敗する。どちらも「5.3x」としか名乗らない）。
+///   フラグを出さないサーバーでは false ＝ **導線を出さない**
 /// - [isOwnPost] … 自分の投稿か（他人の添付は編集できない）
 /// - [hasPostContext] … 投稿 id と投稿者 id が揃っているか。メディアビューアは
 ///   投稿を伴わない経路からも開くため、揃わないことがある

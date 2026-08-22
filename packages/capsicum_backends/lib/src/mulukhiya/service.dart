@@ -444,6 +444,22 @@ class MulukhiyaService {
   /// 開ける。旧モロヘイヤ (フラグ未提供) は false にフォールバックする。
   final bool mediaCatalogEnabled;
 
+  /// `features.media_update` フラグ (mulukhiya#4636 / capsicum#999)。`true` の
+  /// サーバーは **投稿済みメディアの ALT 編集を安全に処理できる**構成（#4589 の
+  /// 補完 + #4621 の修正 + ginseng-fediverse 1.8.30 以降のピン）。
+  ///
+  /// ⚠ **版番号では判定できないのでフラグで判定する。**Mastodon には投稿済み
+  /// 添付の説明だけを変える API が無く、投稿の更新 API を使うしかない。その API
+  /// は送らなかったパラメータを**空で更新**として扱うため、補完の無いモロヘイヤ
+  /// （5.33.0）へ投げると**投稿から添付が全部外れ CW と閲覧注意も消える**。
+  /// 一方 5.34.0 は補完はするが上流 PUT に `X-Mulukhiya` が付かず 405 で失敗する。
+  /// **どちらも `package.version` からは区別できない**（動くかどうかはモロヘイヤ
+  /// が刺している ginseng-fediverse の版で決まる）。
+  ///
+  /// 旧モロヘイヤ（フラグ未提供）は false にフォールバックし、**導線を出さない**。
+  /// 「分からない」を「出さない」へ倒すのは、誤る側の代償が投稿の破壊だから。
+  final bool mediaUpdateEnabled;
+
   /// `features.announcement_push` フラグ (#477)。`true` のサーバーは capsicum-relay
   /// が `/api/v1/announcements` (または Misskey 相当) を polling して push を発火
   /// する経路に対応している。capsicum 側は probing 結果に基づき設定 UI のスイッチを
@@ -535,6 +551,7 @@ class MulukhiyaService {
     this.annictLinked = true,
     this.annictReviewEnabled = false,
     this.mediaCatalogEnabled = false,
+    this.mediaUpdateEnabled = false,
     this.announcementPushEnabled = false,
     this.wordSuggestEnabled = false,
     this.nowplayingResolverEnabled = false,
@@ -616,6 +633,7 @@ class MulukhiyaService {
         annictLinked: features?['annict_linked'] != false,
         annictReviewEnabled: features?['annict_review'] == true,
         mediaCatalogEnabled: features?['media_catalog'] == true,
+        mediaUpdateEnabled: features?['media_update'] == true,
         announcementPushEnabled: features?['announcement_push'] == true,
         wordSuggestEnabled: features?['word_suggest'] == true,
         nowplayingResolverEnabled: features?['nowplaying_resolver'] == true,
