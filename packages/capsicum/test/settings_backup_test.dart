@@ -345,6 +345,37 @@ void _accountIndexTests() {
       expect(result.applied, contains('font_scale'));
     });
 
+    // ⚠ **正規形にしてから保存する（Codex P2 / PR #1002）。**parse は通るが
+    // `toStorageKey()` と違う文字列（末尾スラッシュ等）をそのまま入れると、
+    // 接続し直した後に saveAccount が正規形を別行として足し、**同じアカウントが
+    // 「トークンあり」と「未接続」の 2 行に割れる**。
+    test('非正規形の key は正規形にして保存する', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts(['mastodon://alice@mstdn.example/']),
+      );
+
+      expect(result.addedAccountKeys, [alice]);
+      expect(prefs.getString(accountListKey), contains(alice));
+      expect(
+        prefs.getString(accountListKey),
+        isNot(contains('mstdn.example/')),
+      );
+    });
+
+    test('正規形と非正規形が両方あっても 1 件にまとめる', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts([alice, 'mastodon://alice@mstdn.example/']),
+      );
+
+      expect(result.addedAccountKeys, [alice]);
+    });
+
     test('accounts: が一覧でなければ理由を残して続行する', () async {
       final prefs = await prefsWith({});
 
