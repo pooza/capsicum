@@ -1482,12 +1482,18 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 呼び出しが API 呼び出しより**前**にあるため、**操作が送信されないまま
     // 成功も失敗も出ずに消える**。
     final timeline = readVisibleTimelines(ref);
+    // ⚠ **ラベルも同じ理由で開く前に確定させる (#1009)。** ダイアログのボタンは
+    // シートの項目タップ (#996) より**さらに後**に押されるので、`ref.read` を
+    // `onPressed` に置くと dispose 済みで投げる。しかも投げるのは
+    // `deletePost` より前で、CAPSICUM-4R と同じ「送信されないまま成功も失敗も
+    // 出ない」形になる。
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('${ref.read(postLabelProvider)}を削除'),
-        content: Text('この${ref.read(postLabelProvider)}を削除しますか？この操作は取り消せません。'),
+        title: Text('$postLabelを削除'),
+        content: Text('この$postLabelを削除しますか？この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1501,11 +1507,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                 timeline.removePost(targetPost.id);
                 if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              // ⚠ **タイルの context から取らない (#659)。**ダイアログが再ビルド
+              // される（キーボード開閉・回転・テーマ変更）と、dispose 済みの
+              // Element を辿って落ちる。
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1518,6 +1529,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter is! ReportSupport) return;
     final messenger = ScaffoldMessenger.of(context);
     final commentController = TextEditingController();
+    // 理由は [_confirmDelete] の同名コメント (#1009)。この文面は builder の中に
+    // あるので、キーボードの開閉でダイアログが再ビルドされたときに投げる。
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
@@ -1531,7 +1545,7 @@ class _PostTileState extends ConsumerState<PostTile> {
             // status_ids が任意、Misskey の `report-abuse` に至っては投稿を
             // 渡す口が無い。「投稿だけが通報された」と読める文面にしない。
             Text(
-              'この${ref.read(postLabelProvider)}を添えて '
+              'この$postLabelを添えて '
               '@${targetPost.author.username} をサーバー管理者に通報しますか？',
             ),
             const SizedBox(height: 12),
@@ -1576,16 +1590,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
-    // 理由は [_confirmDelete] の同名コメント (#990)。
+    // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
     final timeline = readVisibleTimelines(ref);
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('削除して再編集'),
-        content: Text(
-          '${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。',
-        ),
+        content: Text('$postLabelを削除し、内容を再編集します。この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1602,11 +1615,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除して再編集',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1829,6 +1844,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // `updateStatusTags` より**前**にあるので、投げると**タグづけが送信されない
     // まま無言で消える**。タグ管理は capsicum の根幹機能 (docs/CLAUDE.md)。
     final timeline = readVisibleTimelines(ref);
+    // ラベルも同じ理由で開く前に確定させる (#1009)。builder の中に置くと、
+    // 入力欄でキーボードが開いた再ビルドのときに dispose 済みで投げる。
+    final postLabel = ref.read(postLabelProvider);
 
     showModalBottomSheet(
       context: context,
@@ -1837,7 +1855,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
         adapter: adapter!,
-        postLabel: ref.read(postLabelProvider),
+        postLabel: postLabel,
         onSubmit: (tags) async {
           try {
             final raw = await mulukhiya.updateStatusTags(
