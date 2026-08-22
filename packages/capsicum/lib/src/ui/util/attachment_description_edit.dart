@@ -1,26 +1,3 @@
-import '../../service/server_version_checker.dart';
-
-/// ALT 編集の PUT を安全に受けられる最小のモロヘイヤ版 (#999)。
-///
-/// これ未満のモロヘイヤは `X-Mulukhiya-Purpose: media_update` を**受理はする**が、
-/// 上流へ送る body が `{status, media_attributes}` だけで `media_ids` /
-/// `spoiler_text` / `sensitive` を補完しない（5.33.0 の `mastodon_controller.rb`）。
-/// nginx の `$status_put_backend` map は 5.33.0 にもあるので **405 では止まらず、
-/// 投稿から添付が全部外れ CW と閲覧注意も消える**。補完が入るのは 5.34.0 から。
-const kMulukhiyaMediaUpdateMinVersion = '5.34.0';
-
-/// モロヘイヤの版が ALT 編集の補完を持つか (#999)。[version] が null（モロヘイヤ
-/// 不在・版が読めない）なら false に倒す。**判定を誤ると投稿が壊れる側なので、
-/// 「分からない」は常に「出さない」に寄せる。**
-bool mulukhiyaSupportsMediaUpdate(String? version) {
-  if (version == null || version.isEmpty) return false;
-
-  return ServerVersionChecker.isAtLeast(
-    version,
-    kMulukhiyaMediaUpdateMinVersion,
-  );
-}
-
 /// 投稿済みメディアの説明（ALT）を編集する導線を出してよいか (#121)。
 ///
 /// ⚠ **間違えると投稿が壊れる判定なので、画面から切り出してテストで固定する。**
