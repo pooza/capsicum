@@ -376,6 +376,24 @@ void _accountIndexTests() {
       expect(result.addedAccountKeys, [alice]);
     });
 
+    // ⚠ **parse が通っても中身が欠けていれば捨てる（Codex P2 / PR #1002）。**
+    // `AccountKey.fromStorageKey` は Uri.parse に乗っているだけなので
+    // `mastodon://alice` は host=alice / username='' として通り、正規形は
+    // `mastodon://@alice` になる。入れてしまうと**復帰できない未接続の行**を
+    // 作ったうえで「追加しました」と報告することになる。
+    test('username / host が欠けた key は取り込まない', () async {
+      final prefs = await prefsWith({});
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts(['mastodon://alice', 'mastodon://@mstdn.example']),
+      );
+
+      expect(result.addedAccountKeys, isEmpty);
+      expect(result.skipped['accounts'], isNotNull);
+      expect(prefs.getString(accountListKey), isNull);
+    });
+
     test('accounts: が一覧でなければ理由を残して続行する', () async {
       final prefs = await prefsWith({});
 
