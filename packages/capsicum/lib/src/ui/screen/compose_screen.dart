@@ -427,6 +427,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 走るので、同じ snackbar を出し続けない。
   bool _draftSaveFailureNotified = false;
 
+  /// 進行中の取消の消去 (Codex P2 / PR #1013)。[_saveDraft] はこれを待ってから
+  /// 書く。**保存と消去が並行に走ると、消去が保存直後の本文を消す。**
+  Future<void>? _draftClearing;
+
   /// 復元した下書きを画面に書き戻したか (#964)。true の間だけ「前回の入力を
   /// 復元しました／取消」のバナーを出す。**復元されたことも伝わっていない**
   /// のが「わかりづらい」のもう半分の原因だった。
@@ -1061,7 +1065,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
-    unawaited(_clearDraft(discard: false));
+    // ⚠ **消去の完了を握っておく (Codex P2 / PR #1013)。**取消の直後に背面化
+    // / 離脱すると、ライフサイクルと PopScope の保存がこの消去と**並行**に走る。
+    // 消去は世代を進めてから全キーを消すので、間に入った保存の本文をそのまま
+    // 消しうる。[_saveDraft] は最初にこれを待って直列化する。
+    _draftClearing = _clearDraft(discard: false);
+    unawaited(_draftClearing);
   }
 
   /// 入力停止から [_draftDebounce] 後に自動保存する (#964)。打鍵のたびに
@@ -1083,6 +1092,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
   Future<void> _saveDraft() async {
     if (!_draftAutoSave || !_draftRestored) return;
+    // 取消の消去と直列化する。⚠ **消去の失敗はここで報告しない** — 保存の
+    // 失敗として出すと原因を取り違える。
+    final clearing = _draftClearing;
+    if (clearing != null) {
+      try {
+        await clearing;
+      } catch (_) {
+        // 消去できていなくても、この後の保存は独立に試みる。
+      }
+      if (!mounted) return;
+    }
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
@@ -1205,8 +1225,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// Remove any persisted draft (called after a successful post).
   /// [discard] は「以降の自動保存も止めるか」。既定 true で画面を閉じる経路向け
   /// （[ComposeDraftStore.clear] の doc を参照）。取消だけ false (#1008)。
-  Future<void> _clearDraft({bool discard = true}) =>
-      _draftStore.clear(discard: discard);
+  ///
+  /// 永続化できなかったぶんは観測に残す (Codex P2 / PR #1013)。ユーザーには
+  /// 出さない — **この時点では実害が無い**（消えていないだけ）で、次に開いた
+  /// ときに古い下書きが復元されて初めて見える。投稿直後にも通る経路なので、
+  /// ここで snackbar を出すと「投稿は成功しているのに失敗したように読める」。
+  Future<void> _clearDraft({bool discard = true}) async {
+    final persisted = await _draftStore.clear(discard: discard);
+    if (persisted) return;
+    reportOpFailure(
+      tagKey: 'compose.op',
+      operation: 'draft_clear',
+      error: const ComposeDraftSaveException(
+        'shared preferences rejected clear',
+      ),
+      stackTrace: StackTrace.current,
+    );
+  }
 
   void _initReplyMentions(Post replyTo) {
     final currentUser = ref.read(currentAccountProvider)?.user;

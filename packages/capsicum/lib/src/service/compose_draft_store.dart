@@ -239,15 +239,31 @@ class ComposeDraftStore {
   /// これで、true のままだと [discarded] を戻す手段が無く、`late final` の
   /// ストアを持つその画面の自動保存が**二度と効かない**（取消のあとに書いた
   /// 本文が黙って失われる）。
-  Future<void> clear({bool discard = true}) async {
+  /// 完全に永続化できたかを返す。false は「拒まれた書き込みがある」＝ **次の
+  /// 起動で消したはずの本文が戻りうる**という意味 (Codex P2 / PR #1013)。
+  /// 呼び出し側は観測に残す。投げないのは、投稿成功の直後にも通る経路で、
+  /// ここで投げると**投稿は通っているのに失敗と伝える**ことになるため。
+  Future<bool> clear({bool discard = true}) async {
     if (discard) _discarded = true;
     final prefs = await SharedPreferences.getInstance();
     final next = (prefs.getInt(_k(generationKey)) ?? 0) + 1;
-    await prefs.setInt(_k(generationKey), next);
+    final advanced = await prefs.setInt(_k(generationKey), next);
     // 世代を進めた当人なので、自分の印も進める。放っておくと世代ガード (#969)
     // が**自分自身の**以降の保存を stale と見て捨てる。
+    //
+    // ⚠ **書き込みが拒まれても進める。**`SharedPreferences` は setter の結果に
+    // 関わらず**プロセス内のキャッシュを先に更新する**（`_setValue` は
+    // `_preferenceCache[key] = value` してからストアを呼ぶ）ので、拒否されても
+    // このプロセスの `getInt` は新しい世代を返す。ここで印を据え置くと、以降の
+    // [save] が毎回「世代ズレ」の no-op になり、**取消のあとの本文が黙って
+    // 保存されない**（#1008 と同じ症状が別経路で戻る）。永続化の失敗は戻り値で
+    // 伝える。
     if (!discard) _syncedGeneration = next;
-    await _removeAll(prefs, _k);
+    var removed = true;
+    for (final base in _allKeys) {
+      removed = await prefs.remove(_k(base)) && removed;
+    }
+    return advanced && removed;
   }
 
   /// アカウント削除時にそのスロットを掃除する (#964)。放っておくと孤児キーが
