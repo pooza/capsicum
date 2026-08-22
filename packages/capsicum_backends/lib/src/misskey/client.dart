@@ -352,6 +352,16 @@ class MisskeyClient {
   }
 
   /// POST /api/drive/files/update
+  /// ⚠ **null は「変更しない」。**Misskey は**キーの省略**を「変更なし」、
+  /// **明示的な null** を「消す」として扱う。ここは null-aware element で省略
+  /// するので、値を**消したい**ときは [clearDriveFileComment] のように明示的な
+  /// null を載せる経路を使う（`moveDriveFile` が folderId で同じ理由の迂回を
+  /// している）。
+  ///
+  /// ⚠ **更新対象が 1 つも無い body を送らない (#1005)。**Misskey の
+  /// `DriveService.updateFile` は受け取った値をそのまま
+  /// `driveFilesRepository.update` へ渡すため、**全部 undefined だと TypeORM が
+  /// 落ちて 500 になる**。呼び出し側で「何も変えない呼び出し」を作らないこと。
   Future<MisskeyDriveFile> updateDriveFile(
     String fileId, {
     String? comment,
@@ -366,6 +376,20 @@ class MisskeyClient {
         'name': ?name,
         'folderId': ?folderId,
       }),
+    );
+    return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// ALT（`comment`）を消す (#1005)。
+  ///
+  /// ⚠ **[updateDriveFile] では消せない。**あちらは null を「変更しない」として
+  /// キーごと省略するので、空文字を null に変換して渡すと body が `{fileId}` だけ
+  /// になり、**Misskey 側で更新対象が空になって 500** になる（それが #1005 の
+  /// 症状）。消すには**明示的な null** を送る必要がある。
+  Future<MisskeyDriveFile> clearDriveFileComment(String fileId) async {
+    final response = await dio.post(
+      '/api/drive/files/update',
+      data: createBody({'fileId': fileId, 'comment': null}),
     );
     return MisskeyDriveFile.fromJson(response.data as Map<String, dynamic>);
   }
