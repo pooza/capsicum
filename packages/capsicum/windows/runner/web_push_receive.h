@@ -60,10 +60,15 @@ bool HandleWnsRawPayloadFromKeysetJson(
 // server, announcement_id, announcement_content, announcement_body,
 // announcement_published_at, account}` を受け、鍵も復号も要さない。
 //
-// [HandleWnsRawPayload] とは別関数にしてある。起動中の in-process 受信
-// (wns_push.cpp) はお知らせを WebSocket 経路 (#569) が既に出しているので**表示
-// してはならず**、両方を 1 つの関数にすると起動中に二重に出る。呼ぶのは
-// バックグラウンドタスク（アプリ終了中）だけ。
+// [HandleWnsRawPayload] とは別関数にしてある（暗号化通知は鍵と復号を要し、
+// お知らせは要さないため）。呼ぶのは**バックグラウンドタスク（アプリ終了中）と
+// 起動中の in-process 受信 (wns_push.cpp) の両方**。
+//
+// ⚠ **「起動中は WebSocket 経路 (#569) が出すから in-process では表示しない」
+// という旧方針は #997 で撤回した。** streaming が落ちている間はお知らせが 1 通も
+// 出なくなり、まさにその保険として WNS 経路がある。起動中の二重表示は
+// wns_push.cpp 側の NotificationDedupRegistry が防ぐ（WebSocket 経路と同じ
+// `announcement:<id>` キーで claim し合う）ので、この関数を分けて防ぐ必要は無い。
 //
 // 本文は relay が整形済みの `announcement_body` をそのまま使う。`announcement_
 // content` は HTML のままで、剥がして 80 文字に切る規則は Ruby

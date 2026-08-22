@@ -44,6 +44,23 @@ namespace capsicum {
 //   wns.show_failed     : **起動中の** in-process 受信が復号に成功したのに
 //                         トースト表示に失敗した（warning, #957）。bg task では
 //                         なく runner が同じスロットへ書く（下記）
+//   起動中のお知らせ push (#997。bg task は Cancel されるので in-process が
+//   唯一の経路):
+//   wns.announcement_shown        : トースト表示成功（正常・info）
+//   wns.announcement_deduped      : WebSocket 経路 (#569) が先に出していたので
+//                                   抑止した（正常・info）。⚠ **これが最も普通の
+//                                   結末**で、streaming が生きている限りこちらに
+//                                   なる。記録するのは「WNS raw push が端末まで
+//                                   届いていたか」を残すため — 無いと「お知らせが
+//                                   出ない」報告で relay / WNS / streaming の
+//                                   どこを見るかが決まらない
+//   wns.announcement_show_failed  : 表示失敗（warning）
+//   wns.announcement_no_body      : 整形済み本文が空（warning）。⚠ 原因を relay の
+//                                   版だと断定しない（bgtask 版と同じ）
+//   wns.announcement_bad_payload  : エンベロープ不正 / account 欠落（warning）
+//   ⚠ **bgtask.announcement_* と合流させない**。bg task を Cancel して走る
+//   in-process の件数を混ぜると、「bgtask.* が無ければ bg task 未起動」という
+//   トリアージ規則が濁る（bgtask 側で同じ理由から通知 push と分けたのと同型）。
 //
 // `bgtask.` で始まらないコードは **FullTrust の runner（起動中の in-process
 // 受信）が同じスロットへ書いたもの**。書き手は違うが、記録・回収・Sentry 送出の
