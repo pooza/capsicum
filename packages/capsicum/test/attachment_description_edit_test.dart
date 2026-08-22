@@ -14,12 +14,14 @@ void main() {
     bool supportsMediaUpdate = true,
     bool needsMulukhiya = true,
     bool hasMulukhiya = true,
+    bool mulukhiyaHandlesMediaUpdate = true,
     bool isOwnPost = true,
     bool hasPostContext = true,
   }) => canEditAttachmentDescription(
     supportsMediaUpdate: supportsMediaUpdate,
     needsMulukhiya: needsMulukhiya,
     hasMulukhiya: hasMulukhiya,
+    mulukhiyaHandlesMediaUpdate: mulukhiyaHandlesMediaUpdate,
     isOwnPost: isOwnPost,
     hasPostContext: hasPostContext,
   );
@@ -35,6 +37,44 @@ void main() {
         isFalse,
         reason: '補完なしで通すと添付が全部外れ CW も消える（mulukhiya#4589）',
       );
+    });
+
+    // ⚠ **#999 の本題。**「いるか」だけを見ていたため、補完を持たない 5.33.0 でも
+    // 導線が出ていた（自前 4 サーバーが全部これだった）。5.33.0 は
+    // media_update を受理してしまい、nginx の map も 405 で止めないので、
+    // 出した時点で投稿が壊れる経路が開く。
+    test('モロヘイヤがいても補完を持たない版なら出さない', () {
+      expect(
+        can(mulukhiyaHandlesMediaUpdate: false),
+        isFalse,
+        reason: '5.33.0 は media_update を受理するが media_ids 等を補完しない',
+      );
+    });
+  });
+
+  group('モロヘイヤの版判定 (#999)', () {
+    test('5.34.0 以降は補完を持つ', () {
+      expect(mulukhiyaSupportsMediaUpdate('5.34.0'), isTrue);
+      expect(mulukhiyaSupportsMediaUpdate('5.34.1'), isTrue);
+      expect(mulukhiyaSupportsMediaUpdate('6.0.0'), isTrue);
+    });
+
+    test('5.34.0 未満は持たない', () {
+      expect(mulukhiyaSupportsMediaUpdate('5.33.0'), isFalse);
+      expect(mulukhiyaSupportsMediaUpdate('5.9.0'), isFalse);
+      expect(
+        mulukhiyaSupportsMediaUpdate('5.33.99'),
+        isFalse,
+        reason: 'minor が下なら patch がいくつでも未満',
+      );
+    });
+
+    // ⚠ **「分からない」は「出さない」に倒す。**判定を誤る側の代償が
+    // 「投稿が壊れる」なので、版が読めないときに通してはいけない。
+    test('版が無い・読めないときは出さない', () {
+      expect(mulukhiyaSupportsMediaUpdate(null), isFalse);
+      expect(mulukhiyaSupportsMediaUpdate(''), isFalse);
+      expect(mulukhiyaSupportsMediaUpdate('unknown'), isFalse);
     });
   });
 

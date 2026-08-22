@@ -117,7 +117,8 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   /// その API は「送らなかったパラメータ」を現状維持ではなく**空で更新**として
   /// 扱うため、素で呼ぶと **添付が全部外れ CW と閲覧注意も消える**
   /// （mulukhiya#4589）。現状維持すべき値を補完するのはモロヘイヤ 5.34.0 以降の
-  /// 役目なので、いない環境では導線ごと出さない。
+  /// 役目なので、**5.34.0 未満の環境では導線ごと出さない**（有無だけでなく版も
+  /// 見る・#999）。
   ///
   /// 判定を UI 層に置いているのは、アダプタからモロヘイヤの有無が見えないため
   /// （`MulukhiyaService` は `Account` が持つアプリ層の資産）。`TranslationSupport`
@@ -128,10 +129,16 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   bool get _canEdit {
     final currentUser = ref.read(currentAccountProvider)?.user;
     final adapter = ref.read(currentAdapterProvider);
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
     return canEditAttachmentDescription(
       supportsMediaUpdate: adapter is MediaUpdateSupport,
       needsMulukhiya: adapter is MastodonAdapter,
-      hasMulukhiya: ref.read(currentMulukhiyaProvider) != null,
+      hasMulukhiya: mulukhiya != null,
+      // ⚠ **版まで見る (#999)。**5.33.0 は media_update を受理するが補完しない
+      // ので、有無だけで出すと投稿から添付が全部外れ CW も消える。
+      mulukhiyaHandlesMediaUpdate: mulukhiyaSupportsMediaUpdate(
+        mulukhiya?.version,
+      ),
       isOwnPost: currentUser != null && currentUser.id == widget.postAuthorId,
       hasPostContext: widget.postAuthorId != null && widget.postId != null,
     );
