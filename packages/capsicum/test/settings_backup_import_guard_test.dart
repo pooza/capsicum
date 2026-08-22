@@ -15,8 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 押さえられない。
 void main() {
   const entries = {
-    'ログイン後（設定画面）':
-        'lib/src/ui/screen/settings/settings_backup_screen.dart',
+    'ログイン後（設定画面）': 'lib/src/ui/screen/settings/settings_backup_screen.dart',
     'ログイン前（サーバー選択画面）': 'lib/src/ui/screen/server_selection_screen.dart',
   };
 

@@ -122,6 +122,42 @@ void main() {
     });
   });
 
+  /// #1011: 起動判定 (#967) と probe 対象だけを絞っていたため、**ループの継続
+  /// 条件**が `offlineAccounts.isNotEmpty` のまま残っていた。到達不能で始まった
+  /// アカウントが未接続へ降格すると、probe 0 件の周回がプロセスの終わりまで
+  /// 回り続ける（`getSecrets` は呼ばれないので、上のテストでは見えない）。
+  test('REGRESSION: 未接続だけになったらループ自体が止まる', () {
+    fakeAsync((async) {
+      final storage = lockedStorage();
+      final container = ProviderContainer(
+        overrides: [accountStorageProvider.overrideWithValue(storage)],
+      );
+      addTearDown(container.dispose);
+
+      container.read(accountManagerProvider.notifier).restoreSessions();
+      async.flushMicrotasks();
+      expect(async.pendingTimers, isNotEmpty, reason: '到達不能で始まったのでループは回っている');
+
+      // secret が消えた（= 未接続へ降格）。
+      when(() => storage.getSecrets(keyStr)).thenAnswer((_) async => null);
+      async.elapse(kOfflineRetryRampUp.first);
+      async.flushMicrotasks();
+      expect(
+        container
+            .read(accountManagerProvider)
+            .offlineAccounts
+            .single
+            .recoverableByRetry,
+        isFalse,
+      );
+
+      // 次の周回に入る前に畳まれている。残っていると 60 秒ごとの空回りが続く。
+      async.elapse(kOfflineRetrySteadyInterval * 2);
+      async.flushMicrotasks();
+      expect(async.pendingTimers, isEmpty);
+    });
+  });
+
   test('オフライン保持が 1 件も無ければループは起きない', () {
     fakeAsync((async) {
       final storage = _MockStorage();

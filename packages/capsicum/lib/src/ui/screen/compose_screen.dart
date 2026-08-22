@@ -423,6 +423,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 入力欄の下に「自動保存 12:34」として常時出す。
   DateTime? _draftSavedAt;
 
+  /// 保存の失敗をこの画面で 1 度でも伝えたか (#1011)。自動保存は打鍵のたびに
+  /// 走るので、同じ snackbar を出し続けない。
+  bool _draftSaveFailureNotified = false;
+
   /// 復元した下書きを画面に書き戻したか (#964)。true の間だけ「前回の入力を
   /// 復元しました／取消」のバナーを出す。**復元されたことも伝わっていない**
   /// のが「わかりづらい」のもう半分の原因だった。
@@ -1082,22 +1086,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
-    final savedAt = await _draftStore.save(
-      ComposeDraft(
-        text: _controller.text,
-        cwText: _cwController.text,
-        cwEnabled: _cwEnabled,
-        attachmentCount: _attachments.length,
-        // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
-        // 気づかず広い範囲へ投げる事故になる。
-        scope: _scope,
-        sensitive: _sensitiveEnabled,
-        localOnly: _localOnly,
-      ),
-      now: DateTime.now(),
-    );
-    // 世代ガード (#969) や破棄済みで no-op だったときは null。表示を更新すると
-    // 「保存された」と嘘をつくので、返ってきたときだけ反映する (#964)。
+    final DateTime? savedAt;
+    try {
+      savedAt = await _draftStore.save(
+        ComposeDraft(
+          text: _controller.text,
+          cwText: _cwController.text,
+          cwEnabled: _cwEnabled,
+          attachmentCount: _attachments.length,
+          // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
+          // 気づかず広い範囲へ投げる事故になる。
+          scope: _scope,
+          sensitive: _sensitiveEnabled,
+          localOnly: _localOnly,
+        ),
+        now: DateTime.now(),
+      );
+    } catch (e, st) {
+      // ⚠ **握り潰さない (#1011)。**保存が投げると本文を失うのに、投げっぱなしの
+      // 呼び出し（ライフサイクル / PopScope / debounce）なので未処理の非同期
+      // エラーとして Sentry に出るだけで、画面には何も出ていなかった。復元側
+      // ([_restoreDraft]) は最初から catch している。
+      reportOpFailure(
+        tagKey: 'compose.op',
+        operation: 'draft_save',
+        error: e,
+        stackTrace: st,
+      );
+      // 打鍵のたびに走るので、1 画面 1 回だけ伝える。
+      if (mounted && !_draftSaveFailureNotified) {
+        _draftSaveFailureNotified = true;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('下書きを保存できませんでした')));
+      }
+      return;
+    }
+    // 世代ガード (#969)・破棄済み・書き込み失敗 (#1011) では null。表示を更新
+    // すると「保存された」と嘘をつくので、返ってきたときだけ反映する (#964)。
     if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
   }
 

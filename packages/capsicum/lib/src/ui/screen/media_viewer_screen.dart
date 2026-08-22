@@ -145,36 +145,45 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   }
 
   Future<void> _editDescription() async {
-    final attachment = _attachments[_currentIndex];
+    // ⚠ **添付と位置は開く前に確定させる (#1011)。**書き戻し先を「その時点の
+    // `_currentIndex`」にすると、保存中にページを送っただけで**別の添付の枠へ
+    // 上書き**してしまう（同じ画像が 2 枚並ぶ形で呼び出し側にも渡る）。
+    final index = _currentIndex;
+    final attachment = _attachments[index];
     final controller = TextEditingController(
       text: attachment.description ?? '',
     );
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('メディアの説明を編集'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: '説明を入力…',
-            border: OutlineInputBorder(),
+    final String? result;
+    try {
+      result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('メディアの説明を編集'),
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: '説明を入力…',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
           ),
-          autofocus: true,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('保存'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
 
     if (result == null || !mounted) return;
 
@@ -188,22 +197,33 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         result,
         postId: widget.postId!,
       );
-      setState(() {
-        _attachments[_currentIndex] = Attachment(
-          id: attachment.id,
-          type: attachment.type,
-          url: attachment.url,
-          previewUrl: attachment.previewUrl,
-          description: result,
-        );
-        _modified = true;
-      });
+      // ⚠ **`setState` にも mounted を見る (#1011)。**破棄済みだと下の catch へ
+      // 落ちて、**サーバー側は成功しているのに失敗扱い**になる。
       if (mounted) {
+        setState(() {
+          _attachments[index] = Attachment(
+            id: attachment.id,
+            type: attachment.type,
+            url: attachment.url,
+            previewUrl: attachment.previewUrl,
+            description: result,
+          );
+          _modified = true;
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('説明を更新しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // 同ファイルの他の操作と同じく件数を残す (#1011)。⚠ **フラグが true でも
+      // 失敗する窓が残っている** — 上流の PUT が 405 / 500 で落ちる構成があり
+      // （mulukhiya#4621）、ユーザーには理由不明の 1 行しか出ない。
+      reportOpFailure(
+        tagKey: 'media.op',
+        operation: 'alt_edit',
+        error: e,
+        stackTrace: st,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,

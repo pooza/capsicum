@@ -115,8 +115,8 @@ class ComposeDraftStore {
   /// さらに、**別インスタンスが [clear] してスロットの世代が進んでいたら**書き
   /// 戻さない (#969)。
   ///
-  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。no-op だった場合は
-  /// null。⚠ **時刻は呼び出し側が渡す** — `DateTime.now()` を内部で呼ぶと
+  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。no-op だった場合と
+  /// **書き込みに失敗した場合**は null (#1011)。⚠ **時刻は呼び出し側が渡す** — `DateTime.now()` を内部で呼ぶと
   /// テストで固定できない。
   Future<DateTime?> save(ComposeDraft draft, {required DateTime now}) async {
     if (_discarded) return null;
@@ -126,20 +126,26 @@ class ComposeDraftStore {
     // 進めていたら、こちらの書き戻しは stale なので捨てる。まだ同期していない
     // （null）場合は現世代を採用して通常どおり保存する。
     if (_syncedGeneration != null && _syncedGeneration != current) return null;
-    await prefs.setString(_k(textKey), draft.text);
-    await prefs.setString(_k(cwTextKey), draft.cwText);
-    await prefs.setBool(_k(cwEnabledKey), draft.cwEnabled);
-    await prefs.setInt(_k(attachmentCountKey), draft.attachmentCount);
-    await prefs.setBool(_k(sensitiveKey), draft.sensitive);
-    await prefs.setBool(_k(localOnlyKey), draft.localOnly);
-    await prefs.setString(_k(savedAtKey), now.toIso8601String());
+    // ⚠ **書けたかどうかを見る (#1011)。**`setString` 等は失敗しても throw せず
+    // false を返す。捨てていたため、**書けていないのに画面へ「自動保存 12:34」**
+    // が出ていた。ユーザーはそれを信じてアプリを終了し、本文を失う。
+    var ok = true;
+    ok = await prefs.setString(_k(textKey), draft.text) && ok;
+    ok = await prefs.setString(_k(cwTextKey), draft.cwText) && ok;
+    ok = await prefs.setBool(_k(cwEnabledKey), draft.cwEnabled) && ok;
+    ok =
+        await prefs.setInt(_k(attachmentCountKey), draft.attachmentCount) && ok;
+    ok = await prefs.setBool(_k(sensitiveKey), draft.sensitive) && ok;
+    ok = await prefs.setBool(_k(localOnlyKey), draft.localOnly) && ok;
+    ok = await prefs.setString(_k(savedAtKey), now.toIso8601String()) && ok;
     if (draft.scope != null) {
-      await prefs.setString(_k(scopeKey), draft.scope!.name);
+      ok = await prefs.setString(_k(scopeKey), draft.scope!.name) && ok;
     } else {
       await prefs.remove(_k(scopeKey));
     }
+    // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
     _syncedGeneration = current;
-    return now;
+    return ok ? now : null;
   }
 
   /// 保存済みの入力を読む。何も保存されていなければ null。
