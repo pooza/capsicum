@@ -33,6 +33,7 @@ import 'emoji_action_sheet.dart';
 import 'reaction_picker_sheet.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
+import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 import '../../util/exception_scrub.dart';
@@ -1383,7 +1384,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                   item(
                     leading: const Icon(Icons.flag_outlined),
                     title: const Text('通報'),
-                    onSelected: () => _confirmReport(context, targetPost),
+                    onSelected: () =>
+                        unawaited(_confirmReport(context, targetPost)),
                   ),
                 if (isOwn && adapter is PinSupport) ...[
                   const Divider(),
@@ -1524,64 +1526,35 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
-  void _confirmReport(BuildContext context, Post targetPost) {
+  Future<void> _confirmReport(BuildContext context, Post targetPost) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ReportSupport) return;
     final messenger = ScaffoldMessenger.of(context);
-    final commentController = TextEditingController();
-    // 理由は [_confirmDelete] の同名コメント (#1009)。この文面は builder の中に
-    // あるので、キーボードの開閉でダイアログが再ビルドされたときに投げる。
+    // 理由は [_confirmDelete] の同名コメント (#1009)。文面はダイアログを開く前に
+    // 組む（builder の中で `ref` を読むと、キーボードの開閉で再ビルドされたとき
+    // に dispose 済みで投げる）。
     final postLabel = ref.read(postLabelProvider);
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('通報'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
-            // Mastodon の `POST /api/v1/reports` は account_id が必須・
-            // status_ids が任意、Misskey の `report-abuse` に至っては投稿を
-            // 渡す口が無い。「投稿だけが通報された」と読める文面にしない。
-            Text(
-              'この$postLabelを添えて '
-              '@${targetPost.author.username} をサーバー管理者に通報しますか？',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: commentController,
-              decoration: const InputDecoration(
-                hintText: '理由（任意）',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              final comment = commentController.text.trim();
-              _runVoidAction(
-                messenger,
-                () => (adapter as ReportSupport).reportPost(
-                  targetPost.id,
-                  targetPost.author.id,
-                  comment: comment.isNotEmpty ? comment : null,
-                ),
-                '通報しました',
-              );
-            },
-            child: const Text('通報'),
-          ),
-        ],
+    // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
+    // Mastodon の `POST /api/v1/reports` は account_id が必須・status_ids が
+    // 任意、Misskey の `report-abuse` に至っては投稿を渡す口が無い。
+    // 「投稿だけが通報された」と読める文面にしない。
+    final comment = await showReportCommentDialog(
+      context,
+      message:
+          'この$postLabelを添えて '
+          '@${targetPost.author.username} をサーバー管理者に通報しますか？',
+    );
+    if (comment == null) return;
+
+    await _runVoidAction(
+      messenger,
+      () => (adapter as ReportSupport).reportPost(
+        targetPost.id,
+        targetPost.author.id,
+        comment: comment.isNotEmpty ? comment : null,
       ),
+      '通報しました',
     );
   }
 

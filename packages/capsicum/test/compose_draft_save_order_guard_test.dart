@@ -26,11 +26,7 @@ void main() {
     final start = lines.indexWhere(
       (l) => l.trimRight() == '  Future<void> _saveDraft() async {',
     );
-    expect(
-      start,
-      isNot(-1),
-      reason: '_saveDraft を見つけられない。シグネチャが変わったらこのテストも直す',
-    );
+    expect(start, isNot(-1), reason: '_saveDraft を見つけられない。シグネチャが変わったらこのテストも直す');
     final end = lines.indexWhere((l) => l == '  }', start + 1);
     expect(end, isNot(-1), reason: '_saveDraft の終端を見つけられない');
     // コメント行は落とす（この節は「await をまたぐ前に」と日本語で説明して
