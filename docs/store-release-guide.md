@@ -202,6 +202,26 @@ end
 
 ## 4. リリース手順（毎回）
 
+### 4.-1 リリース前ゲート: capsicum-relay の残件（2026-08-22 追加・必須）
+
+**ビルドに入る前に、relay の同名マイルストーンが残 0 であることを確認する。**capsicum 側の Issue だけを見てリリース工程に入らない。
+
+```sh
+gh issue list --repo pooza/capsicum-relay --milestone vX.YY --state open
+curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main の HEAD と一致するか
+```
+
+残っている場合、**次の 2 つのどちらかを必ず選ぶ**。無言でリリースに進まない。
+
+1. **消化する** — relay 側を実装・デプロイし、`/health` の revision が `origin/main` の HEAD と一致することまで確認する
+2. **明示的に繰り下げる** — 残 Issue を**次の同名マイルストーンへ移し**、capsicum 側 description の `## relay` 節を更新する（移送先と理由を書く）。マイルストーンを外して未割り当てに戻さない
+
+⚠ **先送りそのものは構わないが、進捗管理の外で起きてはならない。** 過去に何度か「relay 側を残したまま本体だけリリースした」ことがあり、**気づかないまま置き去りになった**のが問題（deferred なのか forgotten なのかが後から区別できない）。2 を選んだ時点で次の枠に載るので、次リリースで必ず視界に入る。
+
+⚠ **relay に実装が入っているのにデプロイしていない状態でリリースしない。** relay は tag / GitHub Release を持たないため、デプロイし忘れても GitHub 上のどこにも「未出荷」と出ない。判定は `/health` の revision 1 回で済む（relay#37）。
+
+規約の背景と `## relay` 節の書式は `docs/milestone-transition.md` §3-2、同期時の点検は `docs/sync-procedure.md` ステップ 5。
+
 ### 4.0 リリース前レビュー
 
 各マイルストーンの Issue が消化済みになった後、ビルドに入る前に実施する。**単一のセキュリティレビューだけでは実用上の問題が取りこぼされる**ため、以下 5 観点を独立したサブエージェントで並列に走らせ、指摘を合流させる。
