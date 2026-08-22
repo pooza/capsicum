@@ -682,16 +682,23 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // MediaUpdateSupport
 
+  /// ⚠ **空文字は「消す」であって「変更なし」ではない (#1005)。**
+  /// [MisskeyClient.updateDriveFile] は null をキーごと省略するので、空文字を
+  /// null に変換して渡すと body が `{fileId}` だけになり、Misskey 側で更新対象が
+  /// 空になって **500** になる（＝「更新に失敗しました」）。しかも仮に通っても
+  /// 省略は「変更なし」なので **ALT を消せない**。明示的な null を送る経路
+  /// （[MisskeyClient.clearDriveFileComment]）へ分ける。
   @override
   Future<void> updateAttachmentDescription(
     String mediaId,
     String description, {
     required String postId,
   }) async {
-    await client.updateDriveFile(
-      mediaId,
-      comment: description.isNotEmpty ? description : null,
-    );
+    if (description.isEmpty) {
+      await client.clearDriveFileComment(mediaId);
+      return;
+    }
+    await client.updateDriveFile(mediaId, comment: description);
   }
 
   // LoginSupport
@@ -1856,6 +1863,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     String? comment,
   }) async {
     await client.reportAbuse(authorId, comment: comment ?? '投稿 $postId に対する通報');
+  }
+
+  @override
+  Future<void> reportUser(String userId, {String? comment}) async {
+    // report-abuse はもともとユーザー単位なので、投稿を指さない通報はこちらが
+    // 素直な形 (#998)。comment は必須なので、未入力なら理由なしと明示する。
+    await client.reportAbuse(userId, comment: comment ?? 'このユーザーに対する通報');
   }
 
   // TranslationSupport

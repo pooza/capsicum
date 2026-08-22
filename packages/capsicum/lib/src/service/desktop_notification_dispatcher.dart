@@ -17,6 +17,7 @@ import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
 import 'delivered_push_cleaner.dart';
+import 'bounded_key_set.dart';
 import 'notification_dedup_channel.dart';
 import 'notification_tag.dart';
 
@@ -45,12 +46,12 @@ class DesktopNotificationDispatcher {
   /// セッション内 dedup。native push と二重受信する通知を取りこぼさず
   /// 1 表示に抑える。`notification.id` はサーバーローカルでアカウント間で
   /// 衝突しうるため、account を含む複合キーで持つ。
-  final _emittedKeys = _BoundedKeySet('emitted', _maxTrackedKeys);
+  final _emittedKeys = BoundedKeySet('emitted', _maxTrackedKeys);
 
   /// APNs 先着で native 側 (macOS NotificationDedupPlugin) が表示済みの
   /// `username@host|notificationId` キー (#674)。[NotificationDedupChannel] の
   /// onRemotePresented で流入し、同じ通知の WebSocket 側 emit をスキップする。
-  final _nativeShownKeys = _BoundedKeySet('native_shown', _maxTrackedKeys);
+  final _nativeShownKeys = BoundedKeySet('native_shown', _maxTrackedKeys);
   static const _maxTrackedKeys = 500;
 
   /// OS 通知本文の上限。OS 側でも truncate されるが念のため client 側でも切る。
@@ -371,49 +372,3 @@ final desktopNotificationDispatcherProvider =
       dispatcher.start();
       return dispatcher;
     });
-
-/// 挿入順を保つ上限つきキー集合 (#960)。
-///
-/// 上限超過時に [Set.clear] で**全消し**すると、直前まで覚えていたキーまで一斉に
-/// 失い、その瞬間に遅れて届いた同一通知が「未出」と判定されて二重表示になる。
-/// #933 は Windows を OS の Tag 一致に寄せたが、macOS 側（NotificationDedupChannel
-/// 経路）にはこの窓が残っていた。全消しをやめ、上限を超えたぶんだけ**最古から
-/// 押し出す**（FIFO）ことで、直近のキーは常に保持する。
-///
-/// 押し出した件数は [debugPrint] する。release ビルドでは sentry_flutter が
-/// debugPrint を breadcrumb 化するため、これで「上限に達して古いキーを捨てた」
-/// ことが観測に乗る（従来は計装が無かった）。
-class _BoundedKeySet {
-  _BoundedKeySet(this._name, this._maxSize);
-
-  final String _name;
-  final int _maxSize;
-
-  /// Dart の `Set` リテラルは `LinkedHashSet` で挿入順を保つため、`first` が
-  /// 最古のキーになる。
-  final Set<String> _keys = {};
-
-  /// 上限超過で押し出した累計件数（観測用）。
-  int dropped = 0;
-
-  bool contains(String key) => _keys.contains(key);
-
-  /// [key] を追加し、新規なら true を返す（`Set.add` と同じ意味）。上限を超えた
-  /// ぶんは最古から押し出す。
-  bool add(String key) {
-    final added = _keys.add(key);
-    var evicted = 0;
-    while (_keys.length > _maxSize) {
-      _keys.remove(_keys.first);
-      dropped++;
-      evicted++;
-    }
-    if (evicted > 0) {
-      debugPrint(
-        'capsicum: push.desktop: dedup "$_name" evicted $evicted oldest '
-        '(size=${_keys.length}/$_maxSize, total_dropped=$dropped)',
-      );
-    }
-    return added;
-  }
-}

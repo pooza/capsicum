@@ -1,6 +1,6 @@
 # Misskey API watch（capsicum 影響トリアージ）
 
-Misskey の新バージョンで **capsicum（クライアント）に対応が必要な API 変化**を切り分ける運用。Mastodon 版（`mastodon-46-capsicum-triage.md`）の Misskey 版にあたる。
+Misskey の新バージョンで **capsicum（クライアント）に対応が必要な API 変化**を切り分ける運用。Mastodon 版（[mastodon-capsicum-api-watch.md](mastodon-capsicum-api-watch.md)）の Misskey 版にあたる。
 
 ## なぜこの文書があるか
 
@@ -163,5 +163,5 @@ v1.50 のユーザー報告（Play スロット描画 #876 / いいね scope #87
 
 ## 関連
 
-- `docs/mastodon-46-capsicum-triage.md`（Mastodon 版）
+- `docs/mastodon-capsicum-api-watch.md`（Mastodon 版）
 - インフラ正本は memory `reference_server_forks`（`~/repos/misskey` = ダイスキー本番のフォーク本体）

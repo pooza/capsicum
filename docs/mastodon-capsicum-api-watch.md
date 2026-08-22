@@ -1,6 +1,8 @@
-# Mastodon 4.6 capsicum 影響トリアージ
+# Mastodon capsicum 影響トリアージ
 
-Mastodon 4.6（2026-06-18 GA）の新機能のうち、**capsicum（クライアント）に対応が必要なもの**を切り分けた一覧。
+Mastodon の各バージョンの変更のうち、**capsicum（クライアント）に対応が必要なもの**を切り分ける運用。Misskey 版（[misskey-capsicum-api-watch.md](misskey-capsicum-api-watch.md)）の Mastodon 版にあたる。
+
+⚠ **もとは 4.6 専用の一覧（`mastodon-46-capsicum-triage.md`）だった**が、4.7 まで同じ手順で追従したため 2026-08-21 に汎用化・改名した。4.6 の初回トリアージ結果は下の「トリアージ結果（v4.5.9 → v4.6.0）」節にそのまま残してある。
 
 ## なぜこの文書があるか
 
@@ -12,13 +14,16 @@ capsicum の実接続先は美食丼フォーク（`pooza/mastodon`）。**リ�
 
 ```bash
 cd ~/repos/mastodon
-OLD=v4.5.9-bshockdon; NEW=v4.6.0-bshockdon   # 次は v4.6.x-bshockdon → v4.7.0-bshockdon 等
+OLD=v4.7.0-bshockdon; NEW=v4.7.1-bshockdon   # 直近は v4.6.6-bshockdon → v4.7.0-bshockdon
 # クライアントに効く entity フィールド
 git diff $OLD..$NEW -- app/serializers/rest/
 # 新規 entity / endpoint
 git diff --name-status --diff-filter=A $OLD..$NEW -- app/serializers/rest/ app/controllers/api/
 # 新規ルート
 git diff $OLD..$NEW -- config/routes/api.rb
+# minor 跨ぎでは routes 全体・streaming・フォーク固有のオペ変更も見る（4.7 で追加）
+git diff --stat $OLD..$NEW -- config/routes/ streaming/
+git diff --name-status $OLD..$NEW | grep -iE 'nginx|mulukhiya|rc\.d'
 ```
 
 各項目を **none（server/web 専用・無関係）/ passive（additive で自動追従・無害）/ actionable（対応候補）** の3段でトリアージする。
@@ -47,6 +52,8 @@ git diff $OLD..$NEW -- config/routes/api.rb
 - **none（server / web / admin / 連合内部・capsicum 無関係）**: instance `wrapstodon`（年間まとめ）/ `/api/v1/donation_campaigns` / account `email_subscriptions` ＋ `/api/v1/accounts/:id/email_subscriptions` / `/api/v1/instance/terms_of_service` / annual_report・report・ip_block 系 / ActivityPub の feature・featured 連合 serializer 群。
 
 ## パッチ追従ログ（4.6.x）
+
+⚠ 4.7 以降は下の「4.7 GA トリアージ」節に続く。minor が上がったら `## 4.X GA トリアージ` を足し、その中に patch 追従を書く。
 
 minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日にデプロイ済み＝**その時点で capsicum は既にその patch と通信している**）。patch でも API 応答や streaming 挙動が動くことがあるため、上と同じ diff 手順で client 影響だけ機械抽出し、結果を 1 行残す（重複確認の防止）。
 
@@ -79,7 +86,20 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 - **passive（条件変更）**: account の `suspended` を出す条件が `suspended?` → `unavailable?` に拡大。フィールド形状（bool）は不変。
 - **none（内部リファクタ）**: 新規 `app/controllers/api/v1/accounts/base_controller.rb` は共通基底の抽出でルート追加なし（`config/routes/api.rb` diff 空）。
 
-4.7 が GA / `-bshockdon` タグ化されたら同手順で再確認し、結果を 1 行足す。
+→ **2026-08-21 に GA / `-bshockdon` タグ化を確認し、上の「v4.6.6 → v4.7.0」節で再確認済み。結論は変わらなかった。**
+
+## 4.7 GA トリアージ（v4.6.6-bshockdon → v4.7.0-bshockdon・本番 3 台適用済み・2026-08-21）
+
+**client 影響なし（capsicum コード変更ゼロ）**。⚠ **上の「4.7 先読み」節（beta.1 時点）の結論がそのまま GA でも成立した** — beta で見た 4 項目以外にクライアント可視の変化は増えていない。フォークのタグ全体では 717 ファイル動いているが、`config/routes/api.rb` の diff は**完全に空**で、`app/serializers/rest/` は 3 ファイル計 +18/-3 行しか動いていない。
+
+- **passive（additive・新 bool フィールド）**: account に `invalid_handle`（`if: :invalid_handle?`）。webfinger で失効した remote アカウントを示す。capsicum は未知フィールドとして無視で無害。
+- **passive（条件変更・形状不変）**: account の `suspended` を出す条件が `suspended?` → `unavailable?` へ拡大（`delegate` も追随）。bool のまま。
+- **passive（値の正規化）**: account / announcement / status の `username` が `pretty_username` 経由になった。通常アカウントでは値不変で、失効ハンドルの稀なケースだけ生の `! 123` でなく `123` を返す。capsicum は受け取った値をそのまま描画するので parse も壊れない。
+- **none（内部リファクタ・ルート追加なし）**: 新規 `app/controllers/api/v1/accounts/base_controller.rb` へ 8 コントローラの共通処理を集約（計 -52/+24 行）。`api/v1/accounts_controller` / `admin/ip_blocks` / `collections` / `collection_items` / `in_collections` の変更もこの整理の一部。
+- **none（capsicum 無関係）**: `config/routes/` の差分は `admin.rb` の 2 行のみ（管理画面）。`streaming/` は `package.json` の依存更新だけで**プロトコル不変**。`deprecation_concern` の変更は OpenTelemetry span 属性の付与で、`Deprecation` / `Sunset` ヘッダの形は不変。ActivityPub の完全性証明（`object_integrity_proof` / `multibase`）・FASP・annual_report は連合内部 / server 専用。
+- **フォーク固有のオペ変更なし**: nginx / rc.d / モロヘイヤ連携（`X-Mulukhiya-Purpose` の map 等）に差分なし。[#121](https://github.com/pooza/capsicum/issues/121) の経路（4.6.5 で開通済み）は 4.7.0 でも維持されている。
+
+実測（2026-08-21）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.0`。⚠ **モロヘイヤは 3 台とも 5.33.0 のままで、#121 のブロッカー（5.34.0 未リリース）は 4.7.0 適用では解消していない。**
 
 ## 関連
 

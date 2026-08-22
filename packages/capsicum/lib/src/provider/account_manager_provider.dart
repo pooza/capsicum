@@ -15,6 +15,7 @@ import '../model/account_key.dart';
 import '../model/offline_account.dart';
 import '../service/account_storage.dart';
 import '../service/background_notification_service.dart';
+import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
@@ -258,6 +259,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 投稿を残さないよう捨てる。contextKey が一致しなければ使われない作りだが、
     // 端末上に残す理由も無い。
     await TimelineCache.clear();
+    // 書きかけの自動保存スロットも捨てる (#964)。放っておくと孤児キーが溜まり、
+    // 同じ `@user@host` で入り直したときに前の持ち主の書きかけが出てくる。
+    await ComposeDraftStore.clearForAccount(account.key.toStorageKey());
 
     final remaining = state.accounts
         .where((a) => a.key != account.key)
@@ -542,6 +546,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 引き戻し）になるため、オフライン保持して hasSession を保つ。
     final transientOffline = <AccountKey>[];
 
+    // secret が消えたアカウント (#967)。従来は skip して一覧から丸ごと消して
+    // いたが、ホスト名とユーザー名は索引に残っているので「未接続」として並べ、
+    // ログインし直せば戻せる形にする。設定のインポート (#857) がトークンを
+    // 持ち込まない設計なので、インポート直後は必ずこの状態になる。
+    final secretMissing = <AccountKey>[];
+
     // secret を読み出せたアカウントだけを probe 対象に集める。順序は
     // getAccountKeys（＝MRU）を保持し、後段の一括反映でこの並びを使う。
     final entries = <({String keyStr, Map<String, String> secrets})>[];
@@ -570,8 +580,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         // 設計通り (再ログインを促す) だが、例外を投げないため従来は Sentry に
         // 一切出ず、規模・頻度・プラットフォーム傾向が観測できなかった (#704)。
         // 例外経路 (`_reportRestoreOnce`) と区別できる軽量メッセージを 1 度だけ送る。
+        //
+        // ⚠ **一覧からは消さない** (#967)。索引に host/username は残っているので
+        // 「未接続」として並べ、タップでログインへ送る。AccountKey が parse
+        // できない破損 key だけは表現を作れないので従来どおり skip。
         _reportNullSecretSkipOnce(keyStr);
-        skippedCount++;
+        final key = _tryParseStorageKey(keyStr);
+        if (key != null) {
+          secretMissing.add(key);
+        } else {
+          skippedCount++;
+        }
         continue;
       }
       entries.add((keyStr: keyStr, secrets: secrets));
@@ -614,6 +633,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // これで hasSession が true になり /server へ引き戻されなくなる。
     offline.addAll(transientOffline.map((key) => OfflineAccount(key: key)));
 
+    // secret が消えたアカウントは「未接続」として並べる (#967)。⚠ **これは
+    // 背景リトライの対象にしない**。トークンが無いので probe を組み立てられず、
+    // 回しても永久に失敗し続ける。復帰はログインし直すユーザー操作だけ。
+    offline.addAll(
+      secretMissing.map((key) => OfflineAccount.secretMissing(key: key)),
+    );
+
     if (restored.isNotEmpty || offline.isNotEmpty) {
       // MRU 順を保ったまま一括反映する。current は先頭（＝MRU 先頭）。splash 中は
       // 通常 state は空だが、万一別経路が先に追加したアカウントがあれば温存する。
@@ -646,7 +672,9 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 続ける」と画面に出る。前者だけでループを起こしていたため、**全アカウントが
     // Keychain ロックで落ちた起動では定期ループが 1 本も回らず**、画面の文言と
     // 実際の挙動が食い違っていた。
-    if (offline.isNotEmpty) {
+    // ⚠ **`recoverableByRetry` で絞る** (#967)。secret 消失分は待っても戻らない
+    // ので、それしか無い起動でループを起こすと永久に空回りする。
+    if (offline.any((o) => o.recoverableByRetry)) {
       // 起動を待たせないよう、再試行はバックグラウンドへ逃がす（splash は
       // restoreSessions 完走として先へ進み、復帰したアカウントは後から現れる）。
       unawaited(_runOfflineRetryLoop());
@@ -849,6 +877,47 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     state = state.copyWith(offlineAccounts: updated);
   }
 
+  /// 設定バックアップの取り込みで索引へ足したアカウントを、**再起動を待たずに**
+  /// 「未接続」として一覧へ出す (#1001)。
+  ///
+  /// ⚠ **これが無いと「n 件のアカウントを追加しました」が嘘になる。**索引
+  /// （`capsicum_account_keys_v2`）は [restoreSessions] が起動時に 1 度だけ
+  /// 読むので、実行中に足しても次の起動まで画面に出ない。
+  ///
+  /// ⚠ **[restoreSessions] を呼び直さない。**あちらは全アカウントを probe し直す
+  /// 起動経路で、取り込みのたびに走らせるには重い。足したぶんだけを
+  /// `OfflineAccount.secretMissing` として積む（トークンが無いので probe は
+  /// そもそも組み立てられない）。
+  ///
+  /// 既にオンライン / オフラインで居るアカウントは触らない（取り込みは
+  /// **マージ**であって置き換えではない）。
+  void addDisconnectedAccounts(Iterable<AccountKey> keys) {
+    final known = {
+      ...state.accounts.map((a) => a.key),
+      ...state.offlineAccounts.map((o) => o.key),
+    };
+    final added = keys
+        .where(known.add)
+        .map((key) => OfflineAccount.secretMissing(key: key))
+        .toList();
+    if (added.isEmpty) return;
+
+    state = state.copyWith(
+      offlineAccounts: [...state.offlineAccounts, ...added],
+    );
+  }
+
+  /// オフライン保持中のアカウントを「未接続」へ落とす (#967)。到達不能を待って
+  /// いる間に secret が消えた場合に使う。⚠ **一覧からは消さない**——消すと
+  /// #792 で直した「サーバーごと存在しないように見える」に戻る。
+  void _markOfflineSecretMissing(AccountKey key) {
+    final idx = state.offlineAccounts.indexWhere((o) => o.key == key);
+    if (idx < 0) return;
+    final updated = [...state.offlineAccounts];
+    updated[idx] = OfflineAccount.secretMissing(key: key);
+    state = state.copyWith(offlineAccounts: updated);
+  }
+
   /// オフライン保持したアカウントを、回線 / サーバー / Keychain の復帰を待って
   /// バックグラウンドで再試行し続ける (#730 / #792 / #938 / #974)。
   ///
@@ -882,21 +951,44 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     _offlineRetryLoopRunning = true;
     try {
       var attempt = 0;
-      while (state.offlineAccounts.isNotEmpty && !_disposed) {
+      // ⚠ **`_disposed` を先に見る** (#982)。`state` は dispose 済みの Notifier で
+      // 読むと StateError を投げるので、評価順が逆だと打ち切りの周回で落ちる。
+      // prod では provider がアプリ寿命なので実害は薄いが、テストと将来の
+      // autoDispose 化で効く。
+      // ⚠ **継続条件も `recoverableByRetry` で絞る (#1011)。**起動判定 (#967) と
+      // probe 対象だけを絞っていたため、到達不能分が復帰 / 降格して**未接続だけ
+      // が残る**と、probe 0 件のループがプロセスの終わりまで空回りしていた
+      // （起動判定のコメントが警告している状態に、別経路で到達できていた）。
+      while (!_disposed &&
+          state.offlineAccounts.any((o) => o.recoverableByRetry)) {
         final delay = offlineRetryDelay(attempt);
-        attempt++;
         await Future<void>.delayed(delay);
         if (_disposed) return;
 
         // 手動再試行（ボタン / resume）が走っている最中は no-op で返る。同じ
         // 仕事なので取りこぼしにはならず、次の周回で拾う。
-        await retryOfflineRestores();
+        //
+        // ⚠ **その周回では `attempt` を進めない** (#982)。進めてしまうと、
+        // 「1 度も probe していない周回」だけで ramp-up を消費でき、下の marker が
+        // **52 秒待たずに**上がる（resume を連打した直後が実際にその形になる）。
+        // marker は「ramp-up を使い切っても戻らなかった」ことの記録なので、
+        // 実際に試した回数で数える。
+        final probed = await retryOfflineRestores();
+        if (!probed) continue;
+        attempt++;
+        // await をまたいだので改めて見る。
+        if (_disposed) return;
 
         // ramp-up を使い切った時点＝**52 秒以内には戻らなかった**という観測
         // 上の節目。#792 はここで打ち切っていたが、#938 で継続へ変えたので
         // 「打ち切り」ではなく marker として 1 度だけ記録する。per-process
         // dedup があるので、以降の周回では二重に上がらない。
-        final remaining = state.offlineAccounts;
+        // ⚠ **marker の母数も同じ絞り (#1011)。**未接続は「待っても戻らない」
+        // ので、「ramp-up を使い切っても到達不能」の観測に混ぜると #792 / #938
+        // の指標が汚れる。
+        final remaining = state.offlineAccounts
+            .where((o) => o.recoverableByRetry)
+            .toList(growable: false);
         if (attempt == kOfflineRetryRampUp.length && remaining.isNotEmpty) {
           debugPrint(
             'capsicum: restoreSessions: ${remaining.length} account(s) still '
@@ -920,7 +1012,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// オフライン中はアプリを閉じていることも多いので、この契機がいちばん効く。
   /// 復元済み / オフライン無しなら何もしない。
   void refreshOfflineRestoresOnResume() {
-    if (state.offlineAccounts.isEmpty) return;
+    // 未接続しか無ければ probe する相手が居ない (#1011)。
+    if (!state.offlineAccounts.any((o) => o.recoverableByRetry)) return;
     unawaited(retryOfflineRestores());
   }
 
@@ -951,11 +1044,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 進行中の呼び出しがあれば no-op。#938 でユーザー操作以外（復帰）からも
   /// 叩くようになったので、連続した resume やボタン連打で同じ probe が
   /// 積み上がらないようにする。
-  Future<void> retryOfflineRestores() async {
-    if (_manualRetryRunning) return;
+  ///
+  /// **実際に再試行を走らせたら true**、進行中の呼び出しがあって no-op で
+  /// 返したら false。⚠ 背景ループ ([_runOfflineRetryLoop]) が ramp-up の
+  /// 消費をこの戻り値で判断するので、意味を変えない (#982)。
+  Future<bool> retryOfflineRestores() async {
+    if (_manualRetryRunning) return false;
     _manualRetryRunning = true;
     try {
       await _retryOfflineRestoresNow();
+      return true;
     } finally {
       _manualRetryRunning = false;
     }
@@ -966,7 +1064,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> _retryOfflineRestoresNow() async {
     final storage = ref.read(accountStorageProvider);
     // 反復中に state.offlineAccounts が変化するのでスナップショットを取る。
-    final targets = [...state.offlineAccounts];
+    // ⚠ **secret 消失分は対象外** (#967)。トークンが無いので probe を組み立て
+    // られず、回しても必ず失敗する。ここで弾かないと「再試行中…」の表示が
+    // 永久に点滅し、復帰しないのに待たせることになる。
+    final targets = [
+      ...state.offlineAccounts.where((o) => o.recoverableByRetry),
+    ];
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();
       if (state.accounts.any((a) => a.key == offline.key)) {
@@ -985,8 +1088,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         continue;
       }
       if (secrets == null) {
-        // secret が消えていれば復元不能。drop + 観測。
-        _dropOfflineByKeyStr(keyStr);
+        // 待っている間に secret が消えた。⚠ **drop せず「未接続」へ落とす**
+        // (#967)。一覧から消すと「サーバーごと存在しないように」見えるのは
+        // #792 で直したのと同じ問題で、原因が到達不能から secret 消失へ
+        // 変わっただけ。背景リトライの対象からは外れる。
+        _markOfflineSecretMissing(offline.key);
         _reportNullSecretSkipOnce(keyStr);
         continue;
       }

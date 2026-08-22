@@ -46,7 +46,12 @@ void main() {
     expect(state.hasSession, isTrue, reason: '/server へ引き戻さない');
   });
 
-  test('secret が本当に無い（null）起動は従来どおり skip する', () async {
+  /// #967 で挙動が変わった。以前は skip して一覧から丸ごと消していたが、索引に
+  /// host/username は残っているので「未接続」として並べ、接続し直せば戻せる形に
+  /// した。設定のインポート (#857) はアクセストークンを持ち込まない設計なので、
+  /// **インポート直後は必ずこの状態になる** — ここで消すと、インポートしたはずの
+  /// アカウントが 1 件も見えない。
+  test('secret が本当に無い（null）起動は「未接続」として一覧に残す', () async {
     final storage = _MockStorage();
     when(() => storage.getAccountKeys()).thenAnswer((_) async => [keyStr]);
     when(() => storage.getSecrets(keyStr)).thenAnswer((_) async => null);
@@ -61,8 +66,22 @@ void main() {
         .restoreSessions();
     final state = container.read(accountManagerProvider);
 
-    expect(skipped, 1);
-    expect(state.offlineAccounts, isEmpty);
-    expect(state.hasSession, isFalse, reason: '本当の欠落は再ログインへ');
+    expect(skipped, 0, reason: '消さないので skip には数えない');
+    expect(state.offlineAccounts.map((o) => o.key), [key]);
+    expect(
+      state.offlineAccounts.single.recoverableByRetry,
+      isFalse,
+      reason: 'トークンが無いので背景リトライでは戻らない',
+    );
+    expect(
+      state.offlineAccounts.single.retrying,
+      isFalse,
+      reason: 'probe を組み立てられないので「再試行中」はありえない',
+    );
+    expect(
+      state.hasSession,
+      isTrue,
+      reason: '/server へ引き戻すと、未接続の一覧そのものが見えなくなる',
+    );
   });
 }

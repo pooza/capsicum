@@ -266,6 +266,10 @@ class _SimplePostBarState extends ConsumerState<SimplePostBar>
         onSelected: busy ? null : _submit,
       ),
       const MenuGroupSeparator(),
+      // ⚠ **投稿画面と違い、ここは 1 項目にまとめたまま** (#982 で確認した意図的な
+      // 差)。投稿画面は #971 でタブごとに 3 項目へ分けたが、簡易投稿バーは 1 行
+      // 投稿のためのコンパクトな面で、メニューも 5 項目しかない。込み入った編集は
+      // 下の「詳細な$postLabel画面…」へ抜ける導線に寄せる。
       MenuActionEntry(
         label: '絵文字・劇中ワード…',
         icon: Icons.add_reaction_outlined,

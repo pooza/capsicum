@@ -1,9 +1,8 @@
-import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../provider/account_manager_provider.dart';
 import '../../provider/bookmark_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../util/op_error.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -40,10 +39,8 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final adapter = ref.watch(currentAdapterProvider);
-    final isMisskey = adapter is ReactionSupport;
-    final title = isMisskey ? 'お気に入り' : 'ブックマーク';
-    final emptyMessage = isMisskey ? 'お気に入りはありません' : 'ブックマークはありません';
+    final title = ref.watch(bookmarkLabelProvider);
+    final emptyMessage = '$titleはありません';
     final bookmarks = ref.watch(bookmarkProvider);
 
     return Scaffold(

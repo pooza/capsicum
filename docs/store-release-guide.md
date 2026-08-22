@@ -202,6 +202,26 @@ end
 
 ## 4. リリース手順（毎回）
 
+### 4.-1 リリース前ゲート: capsicum-relay の残件（2026-08-22 追加・必須）
+
+**ビルドに入る前に、relay の同名マイルストーンが残 0 であることを確認する。**capsicum 側の Issue だけを見てリリース工程に入らない。
+
+```sh
+gh issue list --repo pooza/capsicum-relay --milestone vX.YY --state open
+curl -s https://relay.capsicum.shrieker.net/health   # revision が origin/main の HEAD と一致するか
+```
+
+残っている場合、**次の 2 つのどちらかを必ず選ぶ**。無言でリリースに進まない。
+
+1. **消化する** — relay 側を実装・デプロイし、`/health` の revision が `origin/main` の HEAD と一致することまで確認する
+2. **明示的に繰り下げる** — 残 Issue を**次の同名マイルストーンへ移し**、capsicum 側 description の `## relay` 節を更新する（移送先と理由を書く）。マイルストーンを外して未割り当てに戻さない
+
+⚠ **先送りそのものは構わないが、進捗管理の外で起きてはならない。** 過去に何度か「relay 側を残したまま本体だけリリースした」ことがあり、**気づかないまま置き去りになった**のが問題（deferred なのか forgotten なのかが後から区別できない）。2 を選んだ時点で次の枠に載るので、次リリースで必ず視界に入る。
+
+⚠ **relay に実装が入っているのにデプロイしていない状態でリリースしない。** relay は tag / GitHub Release を持たないため、デプロイし忘れても GitHub 上のどこにも「未出荷」と出ない。判定は `/health` の revision 1 回で済む（relay#37）。
+
+規約の背景と `## relay` 節の書式は `docs/milestone-transition.md` §3-2、同期時の点検は `docs/sync-procedure.md` ステップ 5。
+
 ### 4.0 リリース前レビュー
 
 各マイルストーンの Issue が消化済みになった後、ビルドに入る前に実施する。**単一のセキュリティレビューだけでは実用上の問題が取りこぼされる**ため、以下 5 観点を独立したサブエージェントで並列に走らせ、指摘を合流させる。
@@ -617,6 +637,39 @@ app=get.call("apps?filter[bundleId]=jp.co.b-shock.capsicum")["data"].first["id"]
 '
 ```
 
+#### Microsoft Store の公開確認（displaycatalog、認証不要）
+
+Windows は Partner Center から pooza が手動 publish するため、Claude 側からは**認定が通って実際に差し替わったか**だけを外形で見る。ストアの公開カタログ API が認証なしで現行パッケージを返す（Store ID `9NP2GR7M2W6P` は[ストアページ](https://apps.microsoft.com/detail/9np2gr7m2w6p)の URL と同じ公開値）。
+
+```sh
+curl -s "https://displaycatalog.mp.microsoft.com/v7.0/products/9NP2GR7M2W6P?languages=ja-jp&market=JP" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['Product']['DisplaySkuAvailabilities'][0]['Sku']['Properties']['Packages'][0]['PackageFullName'])"
+```
+
+`9AFBB08E.capsicum_<version>.<build>.0_x64__8ekzzj58251a2` が返る。**提出直後はまだ前バージョンを返す**ので、ここが新しい版に変わって初めて公開完了と判定する（例: v1.58 なら `1.58.171.0`）。
+
+#### Google Play production トラックの確認
+
+`fastlane release` が意図したビルドを昇格したかは Play API で実測する（§4.2 の versionCode 衝突事故対策）。ASC と同じく service-account JWT を作り、`edits` を開いて `tracks/production` を読む。認証は `~/.config/capsicum/google-play-service-account.json`。
+
+```sh
+ruby -e '
+require "json"; require "jwt"; require "net/http"; require "uri"
+sa=JSON.parse(File.read(File.expand_path("~/.config/capsicum/google-play-service-account.json")))
+key=OpenSSL::PKey::RSA.new(sa["private_key"]); now=Time.now.to_i
+jwt=JWT.encode({iss:sa["client_email"],scope:"https://www.googleapis.com/auth/androidpublisher",aud:"https://oauth2.googleapis.com/token",iat:now,exp:now+3600},key,"RS256")
+tok=JSON.parse(Net::HTTP.post_form(URI("https://oauth2.googleapis.com/token"),{"grant_type"=>"urn:ietf:params:oauth:grant-type:jwt-bearer","assertion"=>jwt}).body)["access_token"]
+pkg="net.shrieker.capsicum"
+call=->(m,p){u=URI("https://androidpublisher.googleapis.com/androidpublisher/v3/applications/#{pkg}/#{p}");r=m.new(u);r["Authorization"]="Bearer #{tok}";r["Content-Length"]="0" if m==Net::HTTP::Post;JSON.parse(Net::HTTP.start(u.host,u.port,use_ssl:true){|h|h.request(r)}.body)}
+eid=call.call(Net::HTTP::Post,"edits")["id"]
+call.call(Net::HTTP::Get,"edits/#{eid}/tracks/production")["releases"].each{|r| puts "production: versionCodes=#{r["versionCodes"]} status=#{r["status"]} name=#{r["name"]}"}
+'
+```
+
+`status=completed` かつ `versionCodes` がそのリリースの build 番号なら製品版公開済み。⚠ **`edits` を開くだけなら Play 側に副作用は無い**（commit しなければ破棄される）。
+
+> ⚠️ **darwin では `ruby` を叩く前に rbenv shims を PATH 先頭に置く**（非対話 shell だと macOS 同梱 2.6 や壊れた MacPorts に落ち、`jwt` gem が見つからず「確認できない」と誤認する）。`export PATH="$HOME/.rbenv/shims:$PATH"` してから `ruby -v` が 3.x であることを確かめる。
+
 ### 4.5 Linux 配布（v1.24〜）
 
 Linux は fastlane を使わず GitHub Actions の Ubuntu runner ジョブ ([.github/workflows/linux-release.yml](../.github/workflows/linux-release.yml)) でビルドする。配布形態は AppImage 単独（Flathub は [#604](https://github.com/pooza/capsicum/issues/604) で 2026-05-29 に断念、経緯は CLAUDE.md デスクトップ対応節を参照）。
@@ -852,7 +905,7 @@ dart run msix:create  # 未署名で生成 (開発者モード ON の Windows �
 
 #### E. 環境・互換の確認
 
-- Mastodon / Misskey の現行バージョンを fork pull で確認する（sync-procedure §8）。メジャー / マイナーが上がっていれば API トリアージ（[mastodon-46-capsicum-triage.md](mastodon-46-capsicum-triage.md) / [misskey-capsicum-api-watch.md](misskey-capsicum-api-watch.md)）の要否を判断する。
+- Mastodon / Misskey の現行バージョンを fork pull で確認する（sync-procedure §8）。メジャー / マイナーが上がっていれば API トリアージ（[mastodon-capsicum-api-watch.md](mastodon-capsicum-api-watch.md) / [misskey-capsicum-api-watch.md](misskey-capsicum-api-watch.md)）の要否を判断する。
 
 ## 5. 配布方針
 

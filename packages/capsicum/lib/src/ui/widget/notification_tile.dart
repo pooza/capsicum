@@ -229,7 +229,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
-    final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+    final bookmarkLabel = ref.read(bookmarkLabelProvider);
 
     showModalBottomSheet(
       context: context,

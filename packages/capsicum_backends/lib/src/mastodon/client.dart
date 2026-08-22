@@ -684,6 +684,35 @@ class MastodonClient {
     );
   }
 
+  /// PUT /api/v1/statuses/:id — 投稿済みメディアの説明（ALT）を書き換える
+  /// (#121)。
+  ///
+  /// ⚠ **モロヘイヤ経由でしか呼んではいけない。**Mastodon の
+  /// `UpdateStatusService` は「送らなかったパラメータ」を現状維持ではなく
+  /// **空で更新**として扱う（`update_options` がハッシュリテラルなので値が
+  /// nil でも `key?` が true になる）。素直に `media_attributes` だけ送ると、
+  /// ALT が反映されないうえ **投稿から添付が全部外れ、CW と閲覧注意も消える**
+  /// （mulukhiya#4589）。
+  ///
+  /// モロヘイヤ 5.34.0 以降はこの PUT を受けると `/source` と `fetch_status`
+  /// から `status` / `spoiler_text` / `sensitive` / `media_ids` を補完して
+  /// 上流へ送り直す。**つまり現状維持の責任はモロヘイヤ側にあり、capsicum は
+  /// 変更したい `media_attributes` だけを送る。**
+  ///
+  /// `X-Mulukhiya-Purpose: media_update` は必須。nginx 前段の
+  /// `$status_put_backend` map が Purpose の無い外部 PUT を **405** で弾く
+  /// （mulukhiya#4474）ため、付けないと本体の編集要求として拒否される。
+  Future<void> updateStatusMediaAttributes(
+    String statusId, {
+    required List<Map<String, dynamic>> mediaAttributes,
+  }) async {
+    await dio.put(
+      '/api/v1/statuses/$statusId',
+      data: {'media_attributes': mediaAttributes},
+      options: Options(headers: const {'X-Mulukhiya-Purpose': 'media_update'}),
+    );
+  }
+
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,

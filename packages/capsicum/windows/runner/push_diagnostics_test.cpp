@@ -187,6 +187,48 @@ int main() {
           "bgtask.announcement_no_body は正常系で上書きされない");
   }
 
+  // 9c) 起動中のお知らせ push の観測コード (#997)。bg task は Cancel されるので
+  //     in-process が唯一の経路になる。分類の規律は 9b と同じで、**接頭辞だけ
+  //     `wns.` に分ける**（bgtask の母数を濁さないため）。
+  {
+    // 表示成功は正常系。
+    std::string a =
+        BuildPushDiagnosticJson("", "bgtask.decrypt_failed", "a.test", 10);
+    std::string b =
+        BuildPushDiagnosticJson(a, "wns.announcement_shown", "b.test", 20);
+    PushDiagnostic d;
+    ParsePushDiagnosticJson(b, &d);
+    Check(d.code == "bgtask.decrypt_failed" && d.at_ms == 10 && d.count == 2,
+          "wns.announcement_shown は正常系（異常系を上書きしない）");
+
+    // WebSocket 経路が先に出したので抑止した = 通常運転なので正常系。
+    // ⚠ ここが異常系に分類されると、streaming が生きている**平常時の端末**が
+    // 毎回 warning を上げ続けることになる（最も普通の結末なので）。
+    std::string c =
+        BuildPushDiagnosticJson("", "bgtask.no_keys", "c.test", 30);
+    std::string e =
+        BuildPushDiagnosticJson(c, "wns.announcement_deduped", "e.test", 40);
+    PushDiagnostic f;
+    ParsePushDiagnosticJson(e, &f);
+    Check(f.code == "bgtask.no_keys" && f.at_ms == 30 && f.count == 2,
+          "wns.announcement_deduped は正常系（異常系を上書きしない）");
+
+    // 表示失敗・本文欠落・エンベロープ不正は異常系。
+    for (const char* code :
+         {"wns.announcement_show_failed", "wns.announcement_no_body",
+          "wns.announcement_bad_payload"}) {
+      std::string g = BuildPushDiagnosticJson("", code, "g.test", 50);
+      std::string h =
+          BuildPushDiagnosticJson(g, "wns.announcement_shown", "", 60);
+      PushDiagnostic i;
+      ParsePushDiagnosticJson(h, &i);
+      const std::string label =
+          std::string(code) + " は正常系で上書きされない";
+      Check(i.code == code && i.at_ms == 50 && i.host == "g.test",
+            label.c_str());
+    }
+  }
+
   // 10) 観測レコードの host は `username@host` の host 部分のみ（username は
   //     載せない、#800）。
   {

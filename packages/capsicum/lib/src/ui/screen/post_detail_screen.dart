@@ -117,24 +117,38 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     onActionCompleted: _reload,
   );
 
-  /// 選択中の投稿に対してアクションを起こす。⚠ 判定は
-  /// [PostActionAvailability] を通す。メニュー項目の出し分けと実行側で条件が
-  /// 割れると、無効に見えるのに走る / その逆が起きる。
-  void _withSelected(void Function(PostActionAvailability a) action) {
+  /// 選択中の投稿に対してアクションを起こす。
+  ///
+  /// ⚠ **判定は [PostActionAvailability] を通す。** メニュー項目の出し分けと
+  /// 実行側で条件が割れると、無効に見えるのに走る / その逆が起きる。
+  ///
+  /// ⚠ **[allowed] を必須の引数にしてあるのは、その保証をコードで持たせるため**
+  /// (#982)。以前はこの doc が「通す」と名乗っているだけで、実行側は
+  /// `canBoost` / `canReply` / `canQuote` を見ずに走っていた。いまはメニューが
+  /// `onSelected: null` で無効化しているので到達不能だが、**ショートカット等の
+  /// 別入口が付いた瞬間に顕在化する**形だった。
+  void _withSelected(
+    bool Function(PostActionAvailability a) allowed,
+    void Function(PostActionAvailability a) action,
+  ) {
     final selected = _selectedPost;
     if (selected == null) return;
-    action(PostActionAvailability.of(ref, selected));
+    final availability = PostActionAvailability.of(ref, selected);
+    if (!allowed(availability)) return;
+    action(availability);
   }
 
   void _replyToSelected() => _withSelected(
+    (a) => a.canReply,
     (a) => context.push('/compose', extra: {'replyTo': a.targetPost}),
   );
 
   void _quoteSelected() => _withSelected(
+    (a) => a.canQuote,
     (a) => context.push('/compose', extra: {'quoteTo': a.targetPost}),
   );
 
-  void _boostSelected() => _withSelected((a) {
+  void _boostSelected() => _withSelected((a) => a.canBoost, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     // 公開範囲を選ぶ chip はシート側の作り込みなので、メニューからは既定
@@ -145,7 +159,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _unboostSelected() => _withSelected((a) {
+  void _unboostSelected() => _withSelected((a) => a.canUnrepeat, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
     _runner().unrepeat(
@@ -157,7 +171,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _favoriteSelected() => _withSelected((a) {
+  void _favoriteSelected() => _withSelected((a) => a.canFavorite, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! FavoriteSupport) return;
     _runner().run(
@@ -166,7 +180,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     );
   });
 
-  void _bookmarkSelected() => _withSelected((a) {
+  void _bookmarkSelected() => _withSelected((a) => a.canBookmark, (a) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! BookmarkSupport) return;
     _runner().run(
@@ -181,6 +195,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
     // 長いスレッドでのみジャンプ導線を出す（1 件だけならスクロール不要）。
     final showJump = (threadFuture.asData?.value.length ?? 0) > 1;
     final selected = _selectedPost;
+    final menuAdapter = ref.watch(currentAdapterProvider);
 
     return ScreenMenu(
       label: 'スレッド',
@@ -196,20 +211,31 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
         ),
         const MenuGroupSeparator(),
         // 選択中の投稿への操作 (#943)。未選択なら全項目が無効で並ぶ。
-        ...buildPostActionMenuEntries(
-          boostLabel: ref.watch(reblogLabelProvider),
-          bookmarkLabel: ref.watch(currentAdapterProvider) is ReactionSupport
-              ? 'お気に入り'
-              : 'ブックマーク',
-          availability: selected == null
-              ? null
-              : PostActionAvailability.of(ref, selected),
-          onReply: _replyToSelected,
-          onQuote: _quoteSelected,
-          onBoost: _boostSelected,
-          onUnboost: _unboostSelected,
-          onFavorite: _favoriteSelected,
-          onBookmark: _bookmarkSelected,
+        //
+        // ⚠ **スレッド自体の操作と同じ階層に並べない** (#980)。操作対象は
+        // スレッドではなく「いま ↑ ↓ で指している投稿」なので、1 段下げないと
+        // 何に対する操作なのかが読み取れない（実際に「出し方がわからない」
+        // 状態になった）。見出しの「投稿」は [postLabelProvider] 由来で、
+        // モロヘイヤが名乗れば「現在のキュア！」等になる。
+        MenuSubmenuEntry(
+          label: '現在の${ref.watch(postLabelProvider)}',
+          children: buildPostActionMenuEntries(
+            boostLabel: ref.watch(reblogLabelProvider),
+            bookmarkLabel: ref.watch(bookmarkLabelProvider),
+            // 概念の有無は**選択ではなくアダプタ**で決まる (#980)。read でなく
+            // watch なのは、アカウント切り替えで項目の有無が変わるため。
+            supportsFavorite: menuAdapter is FavoriteSupport,
+            supportsBookmark: menuAdapter is BookmarkSupport,
+            availability: selected == null
+                ? null
+                : PostActionAvailability.of(ref, selected),
+            onReply: _replyToSelected,
+            onQuote: _quoteSelected,
+            onBoost: _boostSelected,
+            onUnboost: _unboostSelected,
+            onFavorite: _favoriteSelected,
+            onBookmark: _bookmarkSelected,
+          ),
         ),
       ],
       child: _buildScaffold(context, threadFuture, showJump: showJump),

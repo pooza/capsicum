@@ -1,16 +1,24 @@
-/// 設定のバックアップ（書き出し / 読み込み）(#857)。
+/// 設定のバックアップ（書き出し / 読み込み）(#857 / #1001)。
 ///
-/// **対象は設定だけで、アカウントは含まない。**アクセストークンを平文 YAML に
-/// 並べると、ファイル 1 つの流出で全アカウントが乗っ取られるため。インポート後に
-/// アカウントを「未接続」として復元する話は #967 に分離した。
+/// **アクセストークンは含まない。**平文 YAML に並べると、ファイル 1 つの流出で
+/// 全アカウントが乗っ取られるため。⚠ **だからこそ「再接続」が要る** — 移行先へ
+/// 持っていくのは**アカウント索引（host + username）だけ**で、トークンの無い
+/// アカウントは「未接続」として一覧に並び、ログインし直すとトークンが再設定
+/// されて復帰する（#967）。索引と再接続で 1 つの筋書きなので、片方だけでは
+/// 「スマホと PC でアカウントを同期する」は成立しない。
 ///
-/// **端末固有の値も書かない**（[deviceLocalKeys]）。「書くがインポート時に無視」は、
+/// **端末固有の値は書かない**（[deviceLocalKeys]）。「書くがインポート時に無視」は、
 /// ファイルに載っているのに反映されない混乱を生むので採らない。#952 で
 /// 「その端末だけの値を複製すると壊れる」ことを実証したのと同型の判断。
 library;
 
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yaml/yaml.dart';
+
+import '../model/account_key.dart';
+import 'account_storage.dart';
 
 /// ファイル形式の版。読み込み側は未知の版を弾く。
 const settingsBackupFormatVersion = 1;
@@ -135,7 +143,11 @@ const accountScopedKeys = <String>{
 
 /// 読み込み結果。
 class SettingsImportResult {
-  const SettingsImportResult({required this.applied, required this.skipped});
+  const SettingsImportResult({
+    required this.applied,
+    required this.skipped,
+    this.addedAccountKeys = const [],
+  });
 
   /// 実際に書き込んだ設定のキー。
   final List<String> applied;
@@ -143,6 +155,14 @@ class SettingsImportResult {
   /// ファイルにあったが取り込まなかったキーと理由。端末固有値・未知のキー・
   /// 型違いをここへ集め、画面で「何を無視したか」を出せるようにする。
   final Map<String, String> skipped;
+
+  /// 索引へ新しく足したアカウントの storage key (#1001)。**トークンは入って
+  /// いない**ので、これらは「未接続」として一覧に並ぶ（#967）。
+  ///
+  /// ⚠ **件数だけでなく key を返す。**呼び出し側が実行中の一覧へ反映する
+  /// （[AccountManagerNotifier.addDisconnectedAccounts]）ために要る。件数だけだと
+  /// 「追加しました」と言いながら次の起動まで画面に出ない。
+  final List<String> addedAccountKeys;
 }
 
 /// 読み込めないファイルを渡されたときに投げる。
@@ -157,6 +177,64 @@ class SettingsBackupFormatException implements Exception {
 
 /// 現在の設定を YAML にする (#857)。
 ///
+/// バックアップの `accounts:` に載せるアカウント索引を読む (#1001)。
+///
+/// 値は `AccountKey.toStorageKey()`（`mastodon://user@host`）の JSON 配列で、
+/// **host + username だけを持つ非秘匿値**（`AccountStorage` の doc 参照。だから
+/// SharedPreferences に置いている）。⚠ **secret は載せない。**平文 YAML に
+/// トークンが並ぶと、ファイル 1 つの流出で全アカウントが乗っ取られる（#857 で
+/// 確定した方針）。移行先ではトークンが無いので「未接続」として並び、ログイン
+/// し直すと復帰する（#967）。
+List<String> readAccountKeysForBackup(SharedPreferences prefs) {
+  final encoded = prefs.getString(AccountStorage.accountListKey);
+  if (encoded == null) return const [];
+  try {
+    final decoded = jsonDecode(encoded);
+    if (decoded is! List) return const [];
+    return decoded.whereType<String>().where(_isParsableAccountKey).toList();
+  } catch (_) {
+    // 索引の JSON 破損。書き出し側で拾っても直せないので黙って空にする
+    // （AccountStorage.getAccountKeys も同じ扱い）。
+    return const [];
+  }
+}
+
+/// storage key を**正規形**に直す。読めなければ null (#1001)。
+///
+/// ⚠ **正規化せずに保存すると同じアカウントが 2 行に割れる**（Codex P2 /
+/// PR #1002）。手で編集したバックアップに `mastodon://alice@example.com/` のような
+/// 非正規形が入っていると、parse は通るのに `toStorageKey()` とは別文字列なので、
+/// 接続し直した後に `saveAccount` が正規形を**別のアカウントとして**足す。次の
+/// 起動で「トークンのある行」と「未接続の行」が同じアカウントに対して並ぶ。
+/// ⚠ **host / username の欠けは parse では落ちない（Codex P2 / PR #1002）。**
+/// `AccountKey.fromStorageKey` は `Uri.parse` に乗っているだけなので、
+/// `mastodon://alice` は host=`alice` / username=`` として通り、正規形は
+/// `mastodon://@alice` になる。そのまま索引へ入れると、**復帰できない未接続の行**
+/// を作ったうえで「アカウントを追加しました」と報告してしまう。両方が揃って
+/// いることを確かめる。
+String? _canonicalAccountKey(String key) {
+  try {
+    final parsed = AccountKey.fromStorageKey(key);
+    if (parsed.host.isEmpty || parsed.username.isEmpty) return null;
+
+    return parsed.toStorageKey();
+  } catch (_) {
+    return null;
+  }
+}
+
+bool _isParsableAccountKey(String key) => _canonicalAccountKey(key) != null;
+
+void _writeAccounts(StringBuffer buffer, SharedPreferences prefs) {
+  final keys = readAccountKeysForBackup(prefs);
+  if (keys.isEmpty) return;
+
+  buffer.writeln('accounts:');
+  for (final key in keys) {
+    buffer.writeln('  - ${_yamlString(key)}');
+  }
+}
+
 /// 未設定（既定値のまま）のキーは**書かない**。既定値を焼き込むと、後で既定が
 /// 変わったときに古い既定値が復活してしまう。
 String buildSettingsBackupYaml(
@@ -166,11 +244,14 @@ String buildSettingsBackupYaml(
 }) {
   final buffer = StringBuffer()
     ..writeln('# capsicum の設定バックアップ')
-    ..writeln('# アカウント・認証情報は含まれません。')
+    ..writeln('# アカウントの一覧（サーバーとユーザー名）を含みます。')
+    ..writeln('# パスワードとアクセストークンは含まれません。')
     ..writeln('version: $settingsBackupFormatVersion')
     ..writeln('app_version: ${_yamlString(appVersion)}')
-    ..writeln('exported_at: ${_yamlString(exportedAt)}')
-    ..writeln('settings:');
+    ..writeln('exported_at: ${_yamlString(exportedAt)}');
+
+  _writeAccounts(buffer, prefs);
+  buffer.writeln('settings:');
 
   var wrote = false;
   for (final setting in exportableSettings) {
@@ -238,6 +319,11 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   final byKey = {for (final s in exportableSettings) s.key: s};
   final applied = <String>[];
   final skipped = <String, String>{};
+  final addedAccountKeys = await _mergeAccounts(
+    prefs,
+    parsed['accounts'],
+    skipped,
+  );
 
   for (final entry in settings.nodes.entries) {
     final key = entry.key.toString();
@@ -262,7 +348,78 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     }
     applied.add(key);
   }
-  return SettingsImportResult(applied: applied, skipped: skipped);
+  return SettingsImportResult(
+    applied: applied,
+    skipped: skipped,
+    addedAccountKeys: addedAccountKeys,
+  );
+}
+
+/// バックアップの `accounts:` を索引へ**マージ**する (#1001)。返り値は新しく
+/// 足したアカウントの storage key。
+///
+/// ⚠ **既存のアカウントを消さない。**移行先に既にアカウントが居ることがあり、
+/// 置き換えると「読み込んだら手元のアカウントが消えた」になる。既にある key は
+/// 何もしない（重複させない）。
+///
+/// ⚠ **secret は触らない。**索引だけが増えるので、足したアカウントは
+/// 「未接続」として並ぶ（#967）。ログインし直すとトークンが入って復帰する。
+///
+/// 壊れた要素は黙って捨てず [skipped] に理由を積む。ファイル全体を捨てないのは
+/// 設定側と同じ方針。
+Future<List<String>> _mergeAccounts(
+  SharedPreferences prefs,
+  Object? node,
+  Map<String, String> skipped,
+) async {
+  if (node == null) return const [];
+  if (node is! YamlList) {
+    skipped['accounts'] = 'アカウントの一覧が読めませんでした';
+    return const [];
+  }
+
+  final existing = readAccountKeysForBackup(prefs);
+  final merged = [...existing];
+  // ⚠ **突き合わせは正規形どうしで (#1011)。**取り込む側は正規形なのに、索引側は
+  // 生のまま（`readAccountKeysForBackup` は parse できるかを見るだけ）だったので、
+  // 索引に非正規形が入っている端末では `contains` が外れて**同じアカウントが 2 行
+  // に割れる**。ホストを大文字混じりで打って作ったアカウントで踏む。
+  // ⚠ **索引そのものは直さない。**`secret_<key>` は生の key で引くので、ここで
+  // 書き換えるとトークンとの対応が切れる。比較用の集合だけ正規形にする。
+  final canonical = existing
+      .map(_canonicalAccountKey)
+      .whereType<String>()
+      .toSet();
+  final added = <String>[];
+  var invalid = 0;
+  for (final entry in node) {
+    // ⚠ **正規形にしてから入れる。**非正規形のまま保存すると、接続し直した後に
+    // 同じアカウントが 2 行（トークンあり / 未接続）に割れる。
+    final key = entry is String ? _canonicalAccountKey(entry) : null;
+    if (key == null) {
+      invalid++;
+      continue;
+    }
+    if (!canonical.add(key)) continue;
+    merged.add(key);
+    added.add(key);
+  }
+  if (invalid > 0) {
+    skipped['accounts'] = '$invalid 件のアカウントを読み取れませんでした';
+  }
+  if (added.isEmpty) return const [];
+
+  // ⚠ setString は失敗しても throw せず false を返す（AccountStorage と同じ罠）。
+  // 失敗を成功として報告すると「読み込んだのに増えていない」が無言になる。
+  final ok = await prefs.setString(
+    AccountStorage.accountListKey,
+    jsonEncode(merged),
+  );
+  if (!ok) {
+    skipped['accounts'] = 'アカウントの一覧を保存できませんでした';
+    return const [];
+  }
+  return added;
 }
 
 Object? _readValue(SharedPreferences prefs, BackupSetting setting) =>

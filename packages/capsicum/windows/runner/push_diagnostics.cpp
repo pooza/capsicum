@@ -24,13 +24,19 @@ std::string JsonQuote(const std::string& s) {
 // （単一スロットゆえ、異常系が後続の正常系イベントに飲まれて Sentry の warning が
 // 消えるのを防ぐ）。Dart 側 _flushWnsPushDiagnostics の benign 判定と揃えること。
 //
-// ⚠ `bgtask.shown` / `bgtask.announcement_shown` は**表示に成功したときだけ**
-// 記録される (#957 / #978)。表示失敗は `bgtask.show_failed` /
-// `bgtask.announcement_show_failed` / `wns.show_failed` で、いずれもここに
-// 含めない（＝異常系として温存され warning で上がる）。
+// ⚠ `bgtask.shown` / `bgtask.announcement_shown` / `wns.announcement_shown` は
+// **表示に成功したときだけ**記録される (#957 / #978 / #997)。表示失敗は
+// `bgtask.show_failed` / `bgtask.announcement_show_failed` / `wns.show_failed` /
+// `wns.announcement_show_failed` で、いずれもここに含めない（＝異常系として
+// 温存され warning で上がる）。
+//
+// `wns.announcement_deduped` は「WebSocket 経路が先に出したので抑止した」＝
+// 通常運転なので正常系に含める (#997)。
 bool IsBenignCode(const std::string& code) {
   return code == "bgtask.shown" || code == "bgtask.announcement_shown" ||
-         code == "bgtask.not_encrypted" || code == "bgtask.not_raw";
+         code == "bgtask.not_encrypted" || code == "bgtask.not_raw" ||
+         code == "wns.announcement_shown" ||
+         code == "wns.announcement_deduped";
 }
 
 // 自前で生成した flat オブジェクト（値は文字列 or 数値）を解く最小パーサ。

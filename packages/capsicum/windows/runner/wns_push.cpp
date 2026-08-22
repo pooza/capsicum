@@ -143,18 +143,20 @@ void NotifyPresented(const std::string& key) {
   if (callback) callback(key);
 }
 
-// raw 通知 1 通を復号してトースト表示する。失敗（非暗号化通知・鍵不在・復号
-// 失敗）は黙って捨てる。title / body はサーバーが生成・ローカライズ済み。
-void DisplayRawNotification(const std::string& content) {
-  capsicum::PushDisplay display;
-  // アカウント別 reblog/post ラベル（リノート / リキュア！等）を LocalState の
-  // push_labels.json から引く (#770)。無ければ既定（ブースト / 投稿）に倒れる。
-  const std::string labels = ReadPushLabelsJson();
-  if (!capsicum::HandleWnsRawPayload(
-          content, capsicum::DefaultSecureStorageDatPath(), &display, nullptr,
-          labels)) {
-    return;
-  }
+// トーストを 1 通出すまでの結末。観測コードを撃ち分けるために区別する。
+enum class ToastOutcome {
+  // WebSocket 経路 (#569) が先に同じ通知を出していた。抑止は正常動作。
+  kSuppressed,
+  kShown,
+  kShowFailed,
+};
+
+// dedup 判定 → トースト表示 → claim までを 1 本にまとめる。
+//
+// ⚠ **暗号化通知とお知らせで別々に書かない** (#997)。同じ形の写しが 2 つ並ぶと
+// 片方だけ dedup を通し忘れる（#943 / #960 が繰り返し戒めている母数の欠け）。
+// 呼び出し側の違いは「どの観測コードを書くか」だけに閉じる。
+ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
   // 起動中は WebSocket 経路 (#569) が同じ通知を先に出していることがある。
   // #933 は両経路のトースト Tag を揃えて OS に畳ませる方式だったが、**実機で
   // 畳まれないことが確認された** (#945)。Tag が畳めても 2 通目のトースト自体は
@@ -174,7 +176,7 @@ void DisplayRawNotification(const std::string& content) {
                 : std::string();
   if (dedupable &&
       capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
-    return;
+    return ToastOutcome::kSuppressed;
   }
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
   // 安定ハッシュ）のまま残す。dedup を取りこぼしたときの二段目の受け皿として、
@@ -187,6 +189,106 @@ void DisplayRawNotification(const std::string& content) {
           display.title, display.body, /*launch_arg=*/"",
           capsicum::NotificationTagFor(display.account,
                                        display.notification_id))) {
+    // 表示できなかったので dedup レジストリには claim しない（MarkShown /
+    // NotifyPresented を通さず返す）。ここで claim すると、WebSocket 経路まで
+    // 抑止されて**通知が 1 通も出なくなる**。
+    return ToastOutcome::kShowFailed;
+  }
+  if (dedupable) {
+    capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
+    NotifyPresented(dedup_key);
+  }
+  return ToastOutcome::kShown;
+}
+
+// TryBuildAnnouncementDisplay の error 文字列を観測コードへ写す (#997)。
+// "not an announcement" は暗号化経路へ回るだけなのでここには来ない。
+//
+// ⚠ **`bgtask.` 系と同じコードに合流させない。**「`bgtask.*` が無ければ bg task
+// 未起動」というトリアージ規則 (push_diagnostics.h) は bg task の母数の上で
+// 成り立っており、bg task を Cancel して走る in-process の件数を混ぜると濁る。
+// 既存の `wns.show_failed` に倣って `wns.` 系で撃つ。
+std::string AnnouncementDiagnosticCodeForError(const std::string& error) {
+  // announcement_body が空。⚠ **原因を relay の版だと断定しない** (#982)。
+  // 本文が空文字のお知らせ（画像だけ・装飾だけ）でも同じコードになる。
+  if (error == "missing announcement body") {
+    return "wns.announcement_no_body";
+  }
+  // invalid envelope / missing account。
+  return "wns.announcement_bad_payload";
+}
+
+// 無暗号化のお知らせ push (#978) を起動中に表示する (#997)。announcement で
+// なければ false を返し、呼び出し側が暗号化経路へ回す。
+//
+// **起動中の受信ハンドラは bg task を `args.Cancel(true)` で止めている**ので、
+// ここが唯一の処理経路になる。#978 までは `HandleWnsRawPayload`（暗号化専用）
+// しか呼んでおらず、お知らせは表示も観測もされずに捨てられていた。
+//
+// ⚠ **「WebSocket 経路 (#569) が出すから in-process は表示不要」ではない。**
+// streaming が落ちている間はお知らせが 1 通も出なくなる。まさにその保険として
+// WNS 経路がある。二重表示は [ShowDedupedToast] の dedup が防ぐ（WebSocket 側と
+// 同じ `announcement:<id>` キーで claim し合う）。
+bool HandleAnnouncementContent(const std::string& content) {
+  capsicum::PushDisplay announcement;
+  std::string error;
+  if (!capsicum::TryBuildAnnouncementDisplay(content, &announcement, &error)) {
+    if (error == "not an announcement") {
+      return false;  // 暗号化通知。復号経路へ。
+    }
+    // announcement を名乗っているのに表示材料が足りない。暗号化経路へ回しても
+    // "not an encrypted notification" になるだけで理由が消えるので、ここで
+    // 専用コードとして残す。
+    capsicum::RecordPushDiagnostic(
+        AnnouncementDiagnosticCodeForError(error),
+        capsicum::PushDiagnosticHostFromAccount(announcement.account));
+    return true;
+  }
+  const std::string host =
+      capsicum::PushDiagnosticHostFromAccount(announcement.account);
+  switch (ShowDedupedToast(announcement)) {
+    case ToastOutcome::kShown:
+      capsicum::RecordPushDiagnostic("wns.announcement_shown", host);
+      break;
+    case ToastOutcome::kShowFailed:
+      capsicum::RecordPushDiagnostic("wns.announcement_show_failed", host);
+      break;
+    case ToastOutcome::kSuppressed:
+      // WebSocket 経路が先に出した通常運転。⚠ **ここも記録する。** 無記録だと
+      // 「お知らせが出ない」報告に対して *WNS raw push がそもそも端末へ届いて
+      // いたのか* が分からず、relay / WNS / streaming のどこを見るかが決まらない
+      // （#997 の「観測が空白」はこの穴も含む）。正常系なので info 扱い。
+      capsicum::RecordPushDiagnostic("wns.announcement_deduped", host);
+      break;
+  }
+  return true;
+}
+
+// raw 通知 1 通を表示する。お知らせ (#978・無暗号化) を先に見て、それ以外を
+// 暗号化通知として復号する。**判定順は bg task (push_background_task.cpp) と
+// 同じ**に保つ — 片方だけ順序を変えると、観測コードの意味が経路ごとにずれる。
+//
+// ⚠ **暗号化側は観測の粒度をお知らせと揃えていない。意図的な非対称。**
+// 復号失敗（鍵不在等）も dedup による抑止も、従来どおり無記録で捨てる。
+// #997 の範囲がお知らせに閉じているからだけでなく、**件数の桁が違う**ため:
+// 通知 push は 1 日に何十通も来るので、抑止や `no push keys`（ログアウト直後の
+// アカウント宛など定常的に出る）を毎回書くと単一スロットの代表イベントがそれで
+// 埋まり、拾いたい異常が埋もれる。お知らせは月に数通なので書いてよい。
+// 揃えたくなったら、まず単一スロットをやめる設計から始めること。
+void DisplayRawNotification(const std::string& content) {
+  if (HandleAnnouncementContent(content)) {
+    return;
+  }
+  capsicum::PushDisplay display;
+  // アカウント別 reblog/post ラベル（リノート / リキュア！等）を LocalState の
+  // push_labels.json から引く (#770)。無ければ既定（ブースト / 投稿）に倒れる。
+  const std::string labels = ReadPushLabelsJson();
+  if (!capsicum::HandleWnsRawPayload(
+          content, capsicum::DefaultSecureStorageDatPath(), &display, nullptr,
+          labels)) {
+    return;
+  }
+  if (ShowDedupedToast(display) == ToastOutcome::kShowFailed) {
     // 復号までは通ったのに表示できなかった。無記録だと**無言で落ちる**ため、
     // bg task と同じ LocalState スロットへ観測を残す (#957)。ここが空白だと
     // 「WNS は届いているのに通知が出ない」の切り分けが手掛かり無しになる。
@@ -194,16 +296,7 @@ void DisplayRawNotification(const std::string& content) {
     capsicum::RecordPushDiagnostic(
         "wns.show_failed",
         capsicum::PushDiagnosticHostFromAccount(display.account));
-    // 表示できなかったので dedup レジストリには claim しない（MarkShown /
-    // NotifyPresented を通さず return する）。ここで claim すると、WebSocket
-    // 経路まで抑止されて**通知が 1 通も出なくなる**。
-    return;
   }
-  if (!dedupable) {
-    return;
-  }
-  capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
-  NotifyPresented(dedup_key);
 }
 
 }  // namespace

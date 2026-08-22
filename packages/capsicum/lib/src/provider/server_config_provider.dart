@@ -79,6 +79,20 @@ final reblogLabelProvider = Provider<String>((ref) {
   return adapter is ReactionSupport ? 'リノート' : 'ブースト';
 });
 
+/// The label to use for "bookmark" actions.
+///
+/// ⚠ **Misskey の「お気に入り」は意味的に Mastodon のブックマーク相当**で、
+/// Mastodon の「お気に入り」(`FavoriteSupport`) とは別機能（docs/CLAUDE.md の
+/// 機能マッピング）。ラベルだけ `ReactionSupport` の有無で切り替える。
+///
+/// この三項式は 7 箇所へ写されていて、[postLabelProvider] /
+/// [reblogLabelProvider] / [favouriteLabelProvider] と同型なのに **bookmark
+/// だけ provider が無かった** (#982)。
+final bookmarkLabelProvider = Provider<String>((ref) {
+  final adapter = ref.watch(currentAdapterProvider);
+  return adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+});
+
 /// The label to use for "favourite/reaction" actions.
 final favouriteLabelProvider = Provider<String>((ref) {
   final adapter = ref.watch(currentAdapterProvider);

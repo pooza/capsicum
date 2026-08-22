@@ -68,17 +68,42 @@ int main() {
   CheckTrue(!registry.WasShown(""), "空キーは記録しない");
   CheckEqSize(registry.SizeForTesting(), 0, "空キーで件数が増えない");
 
-  // 上限を超えたら全消しして再び貯め直す。取りこぼしても「二重に出る」だけで、
-  // 通知を落とすより安全な側に倒す方針。
+  // 上限を超えたら**最古から 1 件ずつ押し出す**（#995）。
+  //
+  // ⚠ **全消しに戻すと壊れる。** このレジストリは「もう出したか」の記録ではなく
+  // 表示を抑止するかどうかを決める判定そのものなので、全消しの直後に遅れて
+  // 届いた通知は「未出」と判定されて表示され、防いでいる二重表示が復活する。
+  // Dart `BoundedKeySet` (#960) / macOS `BoundedKeySet` (#983) と同じ挙動。
+  constexpr size_t kMax = capsicum::NotificationDedupRegistry::kMaxKeys;
   registry.Reset();
-  for (size_t i = 0; i < capsicum::NotificationDedupRegistry::kMaxKeys; ++i) {
+  for (size_t i = 0; i < kMax; ++i) {
     registry.MarkShown("k" + std::to_string(i));
   }
-  CheckEqSize(registry.SizeForTesting(),
-              capsicum::NotificationDedupRegistry::kMaxKeys, "上限まで貯まる");
+  CheckEqSize(registry.SizeForTesting(), kMax, "上限まで貯まる");
+  CheckEqSize(registry.DroppedForTesting(), 0, "上限ちょうどでは押し出さない");
+  CheckTrue(registry.WasShown("k0"), "上限ちょうどなら最古も残る");
+
   registry.MarkShown("overflow");
-  CheckEqSize(registry.SizeForTesting(), 1, "上限超過で全消ししてから入れ直す");
-  CheckTrue(registry.WasShown("overflow"), "全消し後も直近のキーは残る");
+  CheckEqSize(registry.SizeForTesting(), kMax, "上限超過でも件数は上限のまま");
+  CheckEqSize(registry.DroppedForTesting(), 1, "押し出したのは 1 件だけ");
+  CheckTrue(!registry.WasShown("k0"), "最古の 1 件が押し出される");
+  CheckTrue(registry.WasShown("k1"), "2 番目に古いキーは残る");
+  CheckTrue(registry.WasShown("k" + std::to_string(kMax - 1)),
+            "直前まで覚えていたキーは残る");
+  CheckTrue(registry.WasShown("overflow"), "新しく入れたキーは残る");
+
+  // ⚠ **LRU ではなく FIFO。** 既出キーを再び MarkShown しても押し出し順は
+  // 動かさない。Dart の `LinkedHashSet` が再挿入で位置を変えないのに合わせる。
+  // 片方だけ LRU にすると「同じキーなのに経路ごとに覚えている期間が違う」になる。
+  registry.Reset();
+  for (size_t i = 0; i < kMax; ++i) {
+    registry.MarkShown("k" + std::to_string(i));
+  }
+  registry.MarkShown("k0");
+  CheckEqSize(registry.SizeForTesting(), kMax, "既出キーの再登録で件数は増えない");
+  registry.MarkShown("overflow");
+  CheckTrue(!registry.WasShown("k0"),
+            "既出キーを触っても押し出し順は変わらない (LRU にしない)");
 
   // WNS 受信は MTA ワーカー、Dart からの addEmitted は UI スレッドで走るため、
   // 別スレッドから同時に叩かれる。データ競合で落ちないこと。
@@ -101,6 +126,7 @@ int main() {
 
   registry.Reset();
   CheckEqSize(registry.SizeForTesting(), 0, "Reset で空になる");
+  CheckEqSize(registry.DroppedForTesting(), 0, "Reset で押し出し件数も戻る");
 
   if (g_failures == 0) {
     std::printf("All NotificationDedup tests passed\n");

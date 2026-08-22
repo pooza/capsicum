@@ -16,6 +16,16 @@ String formatAbsoluteTime(DateTime time) {
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }
 
+/// 時刻だけの表示（`12:34`、端末ローカルタイムゾーン）(#964)。
+///
+/// 投稿フォームの「自動保存 12:34」用。日付を出さないのは、自動保存が今この
+/// セッションの出来事で、日付まで出すと情報量に対して行が長すぎるため。
+String formatTimeOfDay(DateTime time) {
+  final local = time.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
+}
+
 /// 相対時刻表示（`3分前` 等）。`time` は UTC である前提。
 String formatRelativeTime(DateTime time) {
   final diff = DateTime.now().toUtc().difference(time);

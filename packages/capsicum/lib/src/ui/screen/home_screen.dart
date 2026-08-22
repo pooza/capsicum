@@ -1438,12 +1438,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               // 一覧へ残す。タップ / 再試行アイコンで即時再試行し、復帰すれば通常
               // アカウントへ昇格。サーバーがドメインごと消えて戻る見込みが無い
               // 場合はゴミ箱で端末から削除できる。
+              // 未接続（secret 消失）と到達不能（オフライン）は**復帰手段が
+              // 違う** (#967)。前者は待っても戻らないのでログインへ送り、
+              // 「再試行」ボタンも出さない。後者は従来どおり再試行。
               if (accountState.offlineAccounts.isNotEmpty)
                 ...accountState.offlineAccounts.map((offline) {
                   final disabledColor = Theme.of(context).disabledColor;
+                  final needsLogin = !offline.recoverableByRetry;
+                  void reconnect() {
+                    dismiss();
+                    // ログイン先のサーバーを埋めた状態で開く。ユーザーが
+                    // ホスト名を打ち直さずに済む。
+                    context.push('/server?host=${offline.key.host}');
+                  }
+
                   return ListTile(
                     leading: Icon(
-                      Icons.person_off_outlined,
+                      needsLogin ? Icons.link_off : Icons.person_off_outlined,
                       color: disabledColor,
                     ),
                     title: Text(
@@ -1453,22 +1464,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       style: TextStyle(color: disabledColor),
                     ),
                     subtitle: Text(
-                      offline.retrying ? '接続できません（再試行中…）' : '接続できません（自動再試行中）',
+                      needsLogin
+                          ? '未接続（タップで接続し直す）'
+                          : offline.retrying
+                          ? '接続できません（再試行中…）'
+                          : '接続できません（自動再試行中）',
                       style: TextStyle(color: disabledColor),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.refresh, color: disabledColor),
-                          tooltip: '再試行',
-                          onPressed: () {
-                            ref
-                                .read(accountManagerProvider.notifier)
-                                .retryOfflineRestores();
-                            dismiss();
-                          },
-                        ),
+                        // 未接続に「再試行」は出さない。押しても必ず失敗する。
+                        if (!needsLogin)
+                          IconButton(
+                            icon: Icon(Icons.refresh, color: disabledColor),
+                            tooltip: '再試行',
+                            onPressed: () {
+                              ref
+                                  .read(accountManagerProvider.notifier)
+                                  .retryOfflineRestores();
+                              dismiss();
+                            },
+                          ),
+                        if (needsLogin)
+                          IconButton(
+                            icon: Icon(Icons.login, color: disabledColor),
+                            tooltip: '接続し直す',
+                            onPressed: reconnect,
+                          ),
                         IconButton(
                           icon: Icon(
                             Icons.delete_outline,
@@ -1484,6 +1507,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ],
                     ),
                     onTap: () {
+                      if (needsLogin) {
+                        reconnect();
+                        return;
+                      }
                       ref
                           .read(accountManagerProvider.notifier)
                           .retryOfflineRestores();
@@ -1882,10 +1909,14 @@ class _OfflineHomeScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(offlineAccountsProvider);
     final anyRetrying = offline.any((o) => o.retrying);
+    // 到達不能が 1 件も無い＝全部が「未接続」(#967)。設定のインポート直後
+    // （#857 はトークンを持ち込まない）はこの状態になる。自動で戻る見込みが
+    // 無いので、待たせる文言を出さずログインへ促す。
+    final allNeedLogin = offline.every((o) => !o.recoverableByRetry);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('接続できません'),
+        title: Text(allNeedLogin ? '未接続のアカウント' : '接続できません'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Center(
@@ -1896,13 +1927,17 @@ class _OfflineHomeScaffold extends ConsumerWidget {
             padding: const EdgeInsets.all(24),
             children: [
               Icon(
-                Icons.cloud_off,
+                allNeedLogin ? Icons.link_off : Icons.cloud_off,
                 size: 64,
                 color: Theme.of(context).colorScheme.outline,
               ),
               const SizedBox(height: 16),
               Text(
-                anyRetrying ? '接続中…' : '接続できません',
+                allNeedLogin
+                    ? '接続し直してください'
+                    : anyRetrying
+                    ? '接続中…'
+                    : '接続できません',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
@@ -1917,17 +1952,27 @@ class _OfflineHomeScaffold extends ConsumerWidget {
               // #938 で打ち切りを外し、この画面が出ている間は 60 秒間隔で回り
               // 続ける + フォアグラウンド復帰でも即座に試すようにしたので、
               // 文言と実装が一致した。**再び上限を入れるならここも戻すこと。**
-              const Text(
-                '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-                '可能性があります。アカウントは保持したまま自動で再試行を'
-                '続けるので、接続が回復すればタイムラインへ戻ります。',
+              Text(
+                allNeedLogin
+                    // 待っても戻らないことを明示する。「自動で再試行」と書くと
+                    // 何もせず待たせることになる (#967)。
+                    ? 'ログイン情報が見つかりません。端末の復元・データ削除・'
+                          '設定のインポートのあとに起こります。アカウントの一覧は'
+                          '残っているので、接続し直せば元に戻ります。'
+                    : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                          '可能性があります。アカウントは保持したまま自動で再試行を'
+                          '続けるので、接続が回復すればタイムラインへ戻ります。',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
               for (final o in offline)
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.person_off_outlined),
+                    leading: Icon(
+                      o.recoverableByRetry
+                          ? Icons.person_off_outlined
+                          : Icons.link_off,
+                    ),
                     title: Text(
                       o.handle,
                       maxLines: 1,
@@ -1936,7 +1981,16 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     // #938 で `retrying` は「この瞬間 probe が走っている」に
                     // 変わった。合間は「接続を待っています」＝自動再試行は
                     // 続いている（「接続できません」だと終わったように読める）。
-                    subtitle: Text(o.retrying ? '再試行中…' : '接続を待っています'),
+                    subtitle: Text(
+                      !o.recoverableByRetry
+                          ? '未接続（タップで接続し直す）'
+                          : o.retrying
+                          ? '再試行中…'
+                          : '接続を待っています',
+                    ),
+                    onTap: o.recoverableByRetry
+                        ? null
+                        : () => context.push('/server?host=${o.key.host}'),
                     trailing: IconButton(
                       // 削除操作は delete_outline に統一する (#828)。logout は
                       // 実ログアウト (ドロワー) と紛れるため使わない。

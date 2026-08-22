@@ -33,6 +33,7 @@ import 'emoji_action_sheet.dart';
 import 'reaction_picker_sheet.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
+import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 import '../../util/exception_scrub.dart';
@@ -1071,6 +1072,88 @@ class _PostTileState extends ConsumerState<PostTile> {
     boostLabel: boostLabel,
   );
 
+  /// シートを閉じた後に本体を呼ぶ (#996)。
+  ///
+  /// ⚠ **シートは `showModalBottomSheet` で開くので、この [PostTile] の dispose を
+  /// 生き延びる。** 開いている間に背後の TL が更新されてタイルが捨てられると、
+  /// 項目の処理にある `ref.read` / `context.push` が同期的に StateError を投げる。
+  /// しかもその多くは API 呼び出しより**前**にあるため、**操作が送信されないまま
+  /// 成功も失敗も出ずに消える**（Sentry CAPSICUM-4R）。
+  ///
+  /// #990 では `_showEmojiPicker` 1 経路にだけ `mounted` 判定を足したが、同じ
+  /// シートから呼ばれる残り 6 経路が素通りしていた。母数はメソッド単位ではなく
+  /// **「シートの項目全部」**なので、[_sheetItem] を通す形に寄せてある。
+  ///
+  /// [messenger] はシートを開く前に捕まえたものなので、タイルが死んでいても使える。
+  void _dispatchFromSheet(
+    ScaffoldMessengerState messenger,
+    VoidCallback onSelected,
+  ) {
+    if (mounted) {
+      onSelected();
+      return;
+    }
+    // ⚠ **黙って捨てない。** これまでは StateError が unhandled で上がるだけで、
+    // ユーザーには「押したのに何も起きない」としか見えなかった。
+    messenger.showSnackBar(
+      const SnackBar(content: Text('タイムラインが更新されたため、この投稿への操作を実行できませんでした')),
+    );
+    unawaited(
+      Sentry.captureMessage(
+        'post_tile.action_sheet.tile_disposed',
+        level: SentryLevel.warning,
+        withScope: (scope) => scope.setTag('phase', 'post_action'),
+      ),
+    );
+  }
+
+  /// アクションシートの項目を組む (#996)。
+  ///
+  /// ⚠ **項目を素の [ListTile] で足さない。** ここを通せば「シートを閉じる →
+  /// [_dispatchFromSheet] で `mounted` を見る」が必ず挟まる。理由は
+  /// [_dispatchFromSheet] の doc。
+  Widget _sheetItem({
+    required BuildContext sheetContext,
+    required ScaffoldMessengerState messenger,
+    required Widget leading,
+    required Widget title,
+    required VoidCallback onSelected,
+    Widget? subtitle,
+  }) => ListTile(
+    leading: leading,
+    title: title,
+    subtitle: subtitle,
+    onTap: () {
+      Navigator.pop(sheetContext);
+      _dispatchFromSheet(messenger, onSelected);
+    },
+  );
+
+  /// チャンネル内へのリノート (#895)。ピッカーを挟むので単独のメソッドにしてある。
+  Future<void> _repeatToChannel(
+    ScaffoldMessengerState messenger,
+    BackendAdapter adapter,
+    Post targetPost,
+    String boostLabel,
+  ) async {
+    final channel = await pickFollowedChannel(
+      context,
+      ref,
+      title: 'チャンネルに$boostLabel',
+    );
+    // ピッカーを開いている間にタイルが捨てられていることがある
+    // （_runAction 内の ref.read が落ちる / #665 と同型）。
+    if (channel == null || !mounted) return;
+    await _runVoidAction(
+      messenger,
+      () => (adapter as ChannelSupport).repeatPostToChannel(
+        targetPost.id,
+        channelId: channel.id,
+      ),
+      '「${channel.name}」に$boostLabelしました',
+    );
+  }
+
   void _showActionMenu(BuildContext context) {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
@@ -1085,7 +1168,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     final canUnrepeat = isOwnRenote || targetPost.reblogged;
     final messenger = ScaffoldMessenger.of(context);
     final boostLabel = ref.read(reblogLabelProvider);
-    final bookmarkLabel = adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク';
+    final bookmarkLabel = ref.read(bookmarkLabelProvider);
     // メニューを開いた時点の locale を確定させておく。BottomSheet の rebuild 時に
     // 外側 PostTile の context が deactivate 済みだと Localizations.localeOf が
     // null check で落ちるため、ここで一度だけ解決して閉包に取り込む（#659）。
@@ -1094,303 +1177,277 @@ class _PostTileState extends ConsumerState<PostTile> {
       targetPost.content ?? '',
       isHtml: targetPost.isHtml,
     );
+    final canRetag = _canRetag(targetPost);
+    final hasNowPlayingTag = _hasNowPlayingTag(targetPost);
+    final hasMulukhiya = ref.read(currentMulukhiyaProvider) != null;
+    final canBoostToOtherAccount =
+        (targetPost.scope == PostScope.public ||
+            targetPost.scope == PostScope.unlisted) &&
+        targetPost.url != null &&
+        hasOtherAccounts(ref);
 
     showModalBottomSheet(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.reply),
-                title: const Text('リプライ'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  context.push('/compose', extra: {'replyTo': targetPost});
-                },
-              ),
-              if (targetPost.quotable)
-                ListTile(
-                  leading: const Icon(Icons.format_quote),
-                  title: const Text('引用'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    context.push('/compose', extra: {'quoteTo': targetPost});
-                  },
+      builder: (sheetContext) {
+        // ⚠ **`sheetContext` で解決する。** タイルの context はシートが開いている
+        // 間に defunct になりうる（#659 の locale と同型）。
+        final errorColor = Theme.of(sheetContext).colorScheme.error;
+        Widget item({
+          required Widget leading,
+          required Widget title,
+          required VoidCallback onSelected,
+          Widget? subtitle,
+        }) => _sheetItem(
+          sheetContext: sheetContext,
+          messenger: messenger,
+          leading: leading,
+          title: title,
+          subtitle: subtitle,
+          onSelected: onSelected,
+        );
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                item(
+                  leading: const Icon(Icons.reply),
+                  title: const Text('リプライ'),
+                  onSelected: () =>
+                      context.push('/compose', extra: {'replyTo': targetPost}),
                 ),
-              if (adapter is FavoriteSupport)
-                ListTile(
-                  leading: const Icon(Icons.star_outline),
-                  title: const Text('お気に入り'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _runAction(
+                if (targetPost.quotable)
+                  item(
+                    leading: const Icon(Icons.format_quote),
+                    title: const Text('引用'),
+                    onSelected: () => context.push(
+                      '/compose',
+                      extra: {'quoteTo': targetPost},
+                    ),
+                  ),
+                if (adapter is FavoriteSupport)
+                  item(
+                    leading: const Icon(Icons.star_outline),
+                    title: const Text('お気に入り'),
+                    onSelected: () => _runAction(
                       messenger,
                       () => (adapter as FavoriteSupport).favoritePost(
                         targetPost.id,
                       ),
                       'お気に入りに追加しました',
-                    );
-                  },
-                ),
-              if (adapter is ReactionSupport)
-                ListTile(
-                  leading: const Icon(Icons.add_reaction_outlined),
-                  title: const Text('リアクション'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _showEmojiPicker(context);
-                  },
-                ),
-              if (targetPost.scope == PostScope.public ||
-                  targetPost.scope == PostScope.unlisted)
-                ListTile(
-                  leading: const Icon(Icons.repeat),
-                  title: Text(boostLabel),
-                  subtitle: boostableScopes(targetPost.scope).isNotEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Wrap(
-                            spacing: 8,
-                            children: boostableScopes(targetPost.scope).map((
-                              scope,
-                            ) {
-                              final display = postScopeDisplay(scope, adapter);
-                              return ActionChip(
-                                avatar: Icon(display.icon, size: 16),
-                                label: Text(display.label),
-                                onPressed: () {
-                                  Navigator.pop(sheetContext);
-                                  _runAction(
-                                    messenger,
-                                    () => adapter.repeatPost(
-                                      targetPost.id,
-                                      visibility: scope,
-                                    ),
-                                    '$boostLabelしました（${display.label}）',
-                                  );
-                                },
-                              );
-                            }).toList(),
-                          ),
-                        )
-                      : null,
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _runAction(
+                    ),
+                  ),
+                if (adapter is ReactionSupport)
+                  item(
+                    leading: const Icon(Icons.add_reaction_outlined),
+                    title: const Text('リアクション'),
+                    onSelected: () => _showEmojiPicker(context),
+                  ),
+                if (targetPost.scope == PostScope.public ||
+                    targetPost.scope == PostScope.unlisted)
+                  item(
+                    leading: const Icon(Icons.repeat),
+                    title: Text(boostLabel),
+                    subtitle: boostableScopes(targetPost.scope).isNotEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 8,
+                              children: boostableScopes(targetPost.scope).map((
+                                scope,
+                              ) {
+                                final display = postScopeDisplay(
+                                  scope,
+                                  adapter,
+                                );
+                                return ActionChip(
+                                  avatar: Icon(display.icon, size: 16),
+                                  label: Text(display.label),
+                                  onPressed: () {
+                                    Navigator.pop(sheetContext);
+                                    // ⚠ chip は ListTile の外なので [_sheetItem] を
+                                    // 通らない。ガードを手で挟む (#996)。
+                                    _dispatchFromSheet(
+                                      messenger,
+                                      () => _runAction(
+                                        messenger,
+                                        () => adapter.repeatPost(
+                                          targetPost.id,
+                                          visibility: scope,
+                                        ),
+                                        '$boostLabelしました（${display.label}）',
+                                      ),
+                                    );
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          )
+                        : null,
+                    onSelected: () => _runAction(
                       messenger,
                       () => adapter.repeatPost(targetPost.id),
                       '$boostLabelしました',
-                    );
-                  },
-                ),
-              // チャンネル内へのリノート (#895)。通常のリノートはチャンネル外に
-              // 出るため、チャンネルへ流したいときはこちらを選ぶ。滅多に使わない
-              // 操作なので、既定（＝上の項目）はチャンネル指定なしのまま。
-              if (adapter is ChannelSupport &&
-                  (targetPost.scope == PostScope.public ||
-                      targetPost.scope == PostScope.unlisted))
-                ListTile(
-                  leading: const Icon(Icons.forum),
-                  title: Text('チャンネルに$boostLabel'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    final channel = await pickFollowedChannel(
-                      context,
-                      ref,
-                      title: 'チャンネルに$boostLabel',
-                    );
-                    // ピッカーを開いている間にタイルが捨てられていることがある
-                    // （_runAction 内の ref.read が落ちる / #665 と同型）。
-                    if (channel == null || !mounted) return;
-                    _runVoidAction(
-                      messenger,
-                      () => (adapter as ChannelSupport).repeatPostToChannel(
-                        targetPost.id,
-                        channelId: channel.id,
+                    ),
+                  ),
+                // チャンネル内へのリノート (#895)。通常のリノートはチャンネル外に
+                // 出るため、チャンネルへ流したいときはこちらを選ぶ。滅多に使わない
+                // 操作なので、既定（＝上の項目）はチャンネル指定なしのまま。
+                if (adapter is ChannelSupport &&
+                    (targetPost.scope == PostScope.public ||
+                        targetPost.scope == PostScope.unlisted))
+                  item(
+                    leading: const Icon(Icons.forum),
+                    title: Text('チャンネルに$boostLabel'),
+                    onSelected: () => unawaited(
+                      _repeatToChannel(
+                        messenger,
+                        adapter,
+                        targetPost,
+                        boostLabel,
                       ),
-                      '「${channel.name}」に$boostLabelしました',
-                    );
-                  },
-                ),
-              if ((targetPost.scope == PostScope.public ||
-                      targetPost.scope == PostScope.unlisted) &&
-                  targetPost.url != null &&
-                  hasOtherAccounts(ref))
-                ListTile(
-                  leading: const Icon(Icons.repeat),
-                  title: Text('別アカウントで$boostLabel'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    showCrossAccountBoostPicker(
+                    ),
+                  ),
+                if (canBoostToOtherAccount)
+                  item(
+                    leading: const Icon(Icons.repeat),
+                    title: Text('別アカウントで$boostLabel'),
+                    onSelected: () => showCrossAccountBoostPicker(
                       context: context,
                       ref: ref,
                       targetPost: targetPost,
-                    );
-                  },
-                ),
-              if (canUnrepeat)
-                ListTile(
-                  leading: const Icon(Icons.repeat_on),
-                  title: Text('$boostLabelを取り消す'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _unrepeat(
+                    ),
+                  ),
+                if (canUnrepeat)
+                  item(
+                    leading: const Icon(Icons.repeat_on),
+                    title: Text('$boostLabelを取り消す'),
+                    onSelected: () => _unrepeat(
                       messenger,
                       adapter,
                       targetPost,
                       isOwnRenote,
                       boostLabel,
-                    );
-                  },
-                ),
-              if (adapter is BookmarkSupport)
-                ListTile(
-                  leading: const Icon(Icons.bookmark_outline),
-                  title: Text(bookmarkLabel),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _runAction(
+                    ),
+                  ),
+                if (adapter is BookmarkSupport)
+                  item(
+                    leading: const Icon(Icons.bookmark_outline),
+                    title: Text(bookmarkLabel),
+                    onSelected: () => _runAction(
                       messenger,
                       () => (adapter as BookmarkSupport).bookmarkPost(
                         targetPost.id,
                       ),
                       '$bookmarkLabelに追加しました',
-                    );
-                  },
-                ),
-              if (targetPost.url != null)
-                ListTile(
-                  leading: const Icon(Icons.link),
-                  title: const Text('URL をコピー'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    Clipboard.setData(ClipboardData(text: targetPost.url!));
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('URL をコピーしました')),
-                    );
-                  },
-                ),
-              if (postHashtags.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.tag),
-                  title: const Text('全ハッシュタグをコピー'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    Clipboard.setData(
-                      ClipboardData(
-                        text: postHashtags.map((t) => '#$t').join(' '),
-                      ),
-                    );
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('ハッシュタグをコピーしました')),
-                    );
-                  },
-                ),
-              if (adapter is TranslationSupport &&
-                  (adapter is! MastodonAdapter ||
-                      adapter.isTranslationAvailable) &&
-                  targetPost.scope != PostScope.direct &&
-                  post.reblog == null &&
-                  targetPost.language != locale.languageCode)
-                ListTile(
-                  leading: const Icon(Icons.translate),
-                  title: const Text('翻訳'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _translatePost(targetPost);
-                  },
-                ),
-              if (!isOwn && adapter is ReportSupport)
-                ListTile(
-                  leading: const Icon(Icons.flag_outlined),
-                  title: const Text('通報'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _confirmReport(context, targetPost);
-                  },
-                ),
-              if (isOwn && adapter is PinSupport) ...[
-                const Divider(),
-                ListTile(
-                  leading: Icon(
-                    targetPost.pinned
-                        ? Icons.push_pin
-                        : Icons.push_pin_outlined,
+                    ),
                   ),
-                  title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    final messenger = ScaffoldMessenger.of(context);
-                    final pinAdapter = adapter as PinSupport;
-                    if (targetPost.pinned) {
-                      _runAction(
-                        messenger,
-                        () => pinAdapter.unpinPost(targetPost.id),
-                        'ピン留めを解除しました',
+                if (targetPost.url != null)
+                  item(
+                    leading: const Icon(Icons.link),
+                    title: const Text('URL をコピー'),
+                    onSelected: () {
+                      Clipboard.setData(ClipboardData(text: targetPost.url!));
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('URL をコピーしました')),
                       );
-                    } else {
-                      _runAction(
-                        messenger,
-                        () => pinAdapter.pinPost(targetPost.id),
-                        'ピン留めしました',
+                    },
+                  ),
+                if (postHashtags.isNotEmpty)
+                  item(
+                    leading: const Icon(Icons.tag),
+                    title: const Text('全ハッシュタグをコピー'),
+                    onSelected: () {
+                      Clipboard.setData(
+                        ClipboardData(
+                          text: postHashtags.map((t) => '#$t').join(' '),
+                        ),
                       );
-                    }
-                  },
-                ),
-              ],
-              if (isOwn) ...[
-                const Divider(),
-                if (ref.read(currentMulukhiyaProvider) != null) ...[
-                  if (_canRetag(targetPost))
-                    ListTile(
-                      leading: const Icon(Icons.sell_outlined),
-                      title: const Text('削除してタグづけ'),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _showRetagSheet(context, targetPost);
-                      },
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('ハッシュタグをコピーしました')),
+                      );
+                    },
+                  ),
+                if (adapter is TranslationSupport &&
+                    (adapter is! MastodonAdapter ||
+                        adapter.isTranslationAvailable) &&
+                    targetPost.scope != PostScope.direct &&
+                    post.reblog == null &&
+                    targetPost.language != locale.languageCode)
+                  item(
+                    leading: const Icon(Icons.translate),
+                    title: const Text('翻訳'),
+                    onSelected: () => unawaited(_translatePost(targetPost)),
+                  ),
+                if (!isOwn && adapter is ReportSupport)
+                  item(
+                    leading: const Icon(Icons.flag_outlined),
+                    title: const Text('通報'),
+                    onSelected: () =>
+                        unawaited(_confirmReport(context, targetPost)),
+                  ),
+                if (isOwn && adapter is PinSupport) ...[
+                  const Divider(),
+                  item(
+                    leading: Icon(
+                      targetPost.pinned
+                          ? Icons.push_pin
+                          : Icons.push_pin_outlined,
                     ),
-                  if (_hasNowPlayingTag(targetPost))
-                    ListTile(
-                      leading: const Icon(Icons.music_off_outlined),
-                      title: const Text('NowPlaying を削除'),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _confirmDeleteNowPlaying(context, targetPost);
-                      },
-                    ),
+                    title: Text(targetPost.pinned ? 'ピン留め解除' : 'ピン留め'),
+                    onSelected: () {
+                      final pinAdapter = adapter as PinSupport;
+                      if (targetPost.pinned) {
+                        _runAction(
+                          messenger,
+                          () => pinAdapter.unpinPost(targetPost.id),
+                          'ピン留めを解除しました',
+                        );
+                      } else {
+                        _runAction(
+                          messenger,
+                          () => pinAdapter.pinPost(targetPost.id),
+                          'ピン留めしました',
+                        );
+                      }
+                    },
+                  ),
                 ],
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined),
-                  title: const Text('削除して再編集'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _confirmDeleteAndRedraft(context, targetPost);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(
-                    Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.error,
+                if (isOwn) ...[
+                  const Divider(),
+                  if (hasMulukhiya) ...[
+                    if (canRetag)
+                      item(
+                        leading: const Icon(Icons.sell_outlined),
+                        title: const Text('削除してタグづけ'),
+                        onSelected: () => _showRetagSheet(context, targetPost),
+                      ),
+                    if (hasNowPlayingTag)
+                      item(
+                        leading: const Icon(Icons.music_off_outlined),
+                        title: const Text('NowPlaying を削除'),
+                        onSelected: () =>
+                            _confirmDeleteNowPlaying(context, targetPost),
+                      ),
+                  ],
+                  item(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('削除して再編集'),
+                    onSelected: () =>
+                        _confirmDeleteAndRedraft(context, targetPost),
                   ),
-                  title: Text(
-                    '削除',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  item(
+                    leading: Icon(Icons.delete_outline, color: errorColor),
+                    title: Text('削除', style: TextStyle(color: errorColor)),
+                    onSelected: () => _confirmDelete(context, targetPost),
                   ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _confirmDelete(context, targetPost);
-                  },
-                ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1427,12 +1484,18 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 呼び出しが API 呼び出しより**前**にあるため、**操作が送信されないまま
     // 成功も失敗も出ずに消える**。
     final timeline = readVisibleTimelines(ref);
+    // ⚠ **ラベルも同じ理由で開く前に確定させる (#1009)。** ダイアログのボタンは
+    // シートの項目タップ (#996) より**さらに後**に押されるので、`ref.read` を
+    // `onPressed` に置くと dispose 済みで投げる。しかも投げるのは
+    // `deletePost` より前で、CAPSICUM-4R と同じ「送信されないまま成功も失敗も
+    // 出ない」形になる。
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('${ref.read(postLabelProvider)}を削除'),
-        content: Text('この${ref.read(postLabelProvider)}を削除しますか？この操作は取り消せません。'),
+        title: Text('$postLabelを削除'),
+        content: Text('この$postLabelを削除しますか？この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1446,11 +1509,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                 timeline.removePost(targetPost.id);
                 if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              // ⚠ **タイルの context から取らない (#659)。**ダイアログが再ビルド
+              // される（キーボード開閉・回転・テーマ変更）と、dispose 済みの
+              // Element を辿って落ちる。
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1458,54 +1526,35 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
-  void _confirmReport(BuildContext context, Post targetPost) {
+  Future<void> _confirmReport(BuildContext context, Post targetPost) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ReportSupport) return;
     final messenger = ScaffoldMessenger.of(context);
-    final commentController = TextEditingController();
+    // 理由は [_confirmDelete] の同名コメント (#1009)。文面はダイアログを開く前に
+    // 組む（builder の中で `ref` を読むと、キーボードの開閉で再ビルドされたとき
+    // に dispose 済みで投げる）。
+    final postLabel = ref.read(postLabelProvider);
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('通報'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('この${ref.read(postLabelProvider)}をサーバー管理者に通報しますか？'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: commentController,
-              decoration: const InputDecoration(
-                hintText: '理由（任意）',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              final comment = commentController.text.trim();
-              _runVoidAction(
-                messenger,
-                () => (adapter as ReportSupport).reportPost(
-                  targetPost.id,
-                  targetPost.author.id,
-                  comment: comment.isNotEmpty ? comment : null,
-                ),
-                '通報しました',
-              );
-            },
-            child: const Text('通報'),
-          ),
-        ],
+    // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
+    // Mastodon の `POST /api/v1/reports` は account_id が必須・status_ids が
+    // 任意、Misskey の `report-abuse` に至っては投稿を渡す口が無い。
+    // 「投稿だけが通報された」と読める文面にしない。
+    final comment = await showReportCommentDialog(
+      context,
+      message:
+          'この$postLabelを添えて '
+          '@${targetPost.author.username} をサーバー管理者に通報しますか？',
+    );
+    if (comment == null) return;
+
+    await _runVoidAction(
+      messenger,
+      () => (adapter as ReportSupport).reportPost(
+        targetPost.id,
+        targetPost.author.id,
+        comment: comment.isNotEmpty ? comment : null,
       ),
+      '通報しました',
     );
   }
 
@@ -1514,16 +1563,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
-    // 理由は [_confirmDelete] の同名コメント (#990)。
+    // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
     final timeline = readVisibleTimelines(ref);
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('削除して再編集'),
-        content: Text(
-          '${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。',
-        ),
+        content: Text('$postLabelを削除し、内容を再編集します。この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1540,11 +1588,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除して再編集',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1592,6 +1642,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     // ⚠ アクションシートの項目から呼ばれる経路がある (#990 followup)。シートを
     // 開いている間にこのタイルが dispose されていると、下の `ref.read` が同期的に
     // 投げて**ピッカーがそもそも開かない**（unhandled で Sentry にも乗る）。
+    //
+    // シート経由は [_dispatchFromSheet] でも止まる (#996) が、この判定は残す。
+    // #990 の時点でここだけに入れて残り 6 経路を取りこぼしたので、**ガードは
+    // 呼ばれる側にも置いておく**（呼び出し口が増えても一緒に移動する）。
     if (!mounted) return;
     final account = ref.read(currentAccountProvider);
     final adapter = account?.adapter;
@@ -1763,6 +1817,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // `updateStatusTags` より**前**にあるので、投げると**タグづけが送信されない
     // まま無言で消える**。タグ管理は capsicum の根幹機能 (docs/CLAUDE.md)。
     final timeline = readVisibleTimelines(ref);
+    // ラベルも同じ理由で開く前に確定させる (#1009)。builder の中に置くと、
+    // 入力欄でキーボードが開いた再ビルドのときに dispose 済みで投げる。
+    final postLabel = ref.read(postLabelProvider);
 
     showModalBottomSheet(
       context: context,
@@ -1771,7 +1828,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
         adapter: adapter!,
-        postLabel: ref.read(postLabelProvider),
+        postLabel: postLabel,
         onSubmit: (tags) async {
           try {
             final raw = await mulukhiya.updateStatusTags(

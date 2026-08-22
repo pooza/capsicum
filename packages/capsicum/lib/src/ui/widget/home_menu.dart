@@ -141,7 +141,7 @@ List<HomeNavItem> buildHomeNavItems(
         onSelected: () => act(() => context.push('/notifications/all')),
       ),
     HomeNavItem(
-      title: adapter is ReactionSupport ? 'お気に入り' : 'ブックマーク',
+      title: ref.read(bookmarkLabelProvider),
       icon: Icons.bookmark_outline,
       onSelected: () => act(() => context.push('/bookmarks')),
     ),

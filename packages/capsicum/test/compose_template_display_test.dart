@@ -20,10 +20,10 @@ void main() {
   );
 
   group('composeTemplateBodyPreview', () {
-    test('空本文は (本文なし)', () {
-      expect(composeTemplateBodyPreview(t('')), '(本文なし)');
-      expect(composeTemplateBodyPreview(t('   ')), '(本文なし)');
-      expect(composeTemplateBodyPreview(t('\n\n')), '(本文なし)');
+    test('空本文は（本文なし）。括弧は下書き側と揃えて全角 (#982)', () {
+      expect(composeTemplateBodyPreview(t('')), '（本文なし）');
+      expect(composeTemplateBodyPreview(t('   ')), '（本文なし）');
+      expect(composeTemplateBodyPreview(t('\n\n')), '（本文なし）');
     });
 
     test('改行はスペースに畳んで 1 行にする', () {

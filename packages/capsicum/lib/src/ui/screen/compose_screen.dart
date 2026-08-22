@@ -36,6 +36,7 @@ import '../util/draft_display.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
@@ -44,6 +45,7 @@ import '../util/compose_template_display.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
+import '../widget/quick_chooser_sheet.dart';
 import '../widget/screen_menu.dart';
 import 'annict_record_screen.dart';
 import 'drive_picker_screen.dart';
@@ -123,6 +125,17 @@ enum _AttachmentMenuAction { preview, crop, addOverlay, editDescription }
 
 /// 添付 1 件ぶんのメニューコールバック束 (#941)。デスクトップメニューは添付ごとに
 /// サブメニューを出すので、index を捕まえた 4 本を組にして持ち回る。
+///
+/// ⚠ **他のメニュー切り出しが `VoidCallback` を直に並べるなかで、ここだけ束を
+/// class にしているのは意図的** (#982 で確認)。理由は 2 つ:
+///
+/// - **添付の数だけ組が要る。** 呼び出し側は `_attachmentCallbacks` という
+///   `Map<int, AttachmentMenuCallbacks>` にキャッシュしており、同じ index には
+///   毎回同じインスタンスを返す。#835 の値等価（打鍵のたびにメニューバーを
+///   作り直さない）が成立するのは、束ごと使い回しているため。4 本を引数で
+///   並べる形にすると、キャッシュ側で 4-tuple 相当を自前で持つことになる
+/// - 他の切り出し（スレッド / ドライブ）は**画面に 1 組しかない**ので、直に
+///   並べても同じ問題が起きない
 class AttachmentMenuCallbacks {
   const AttachmentMenuCallbacks({
     required this.preview,
@@ -399,7 +412,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   bool _draftAutoSave = false;
   // ローカル自動保存の永続化 (#966)。「破棄したあとは書き戻さない」判定を
   // 含めてストア側が持つ。
-  final _draftStore = ComposeDraftStore();
+  //
+  // ⚠ **スロットはアカウント別** (#964)。単一グローバルスロットだと、A アカウント
+  // で書きかけた本文が B アカウントの新規投稿画面に出てくる。`late` なのは、
+  // アカウントが決まる `initState` 以降でしか key を作れないため。
+  late final ComposeDraftStore _draftStore;
+
+  /// 最後に自動保存できた時刻 (#964)。null は「まだ保存していない」。
+  /// 「保存されているタイミングがわかりづらい」という報告への回答で、
+  /// 入力欄の下に「自動保存 12:34」として常時出す。
+  DateTime? _draftSavedAt;
+
+  /// 保存の失敗をこの画面で 1 度でも伝えたか (#1011)。自動保存は打鍵のたびに
+  /// 走るので、同じ snackbar を出し続けない。
+  bool _draftSaveFailureNotified = false;
+
+  /// 進行中の取消の消去 (Codex P2 / PR #1013)。[_saveDraft] はこれを待ってから
+  /// 書く。**保存と消去が並行に走ると、消去が保存直後の本文を消す。**
+  Future<void>? _draftClearing;
+
+  /// 復元した下書きを画面に書き戻したか (#964)。true の間だけ「前回の入力を
+  /// 復元しました／取消」のバナーを出す。**復元されたことも伝わっていない**
+  /// のが「わかりづらい」のもう半分の原因だった。
+  bool _draftRestoredNotice = false;
+
+  /// 「取消」で戻すための、復元前の状態 (#964)。復元は新規 compose のたびに
+  /// 黙って本文を書き戻すので、意図しない復元を 1 タップで捨てられるようにする。
+  ComposeDraft? _draftBeforeRestore;
+
+  /// 入力停止から自動保存までの猶予 (#964)。「離れたとき」(#966) だけだと
+  /// アプリの強制終了で取りこぼす。長すぎると保存前に落ち、短すぎると打鍵の
+  /// たびに書くので、体感で「少し止まったら」の 3 秒にした。
+  static const _draftDebounce = Duration(seconds: 3);
+  Timer? _draftDebounceTimer;
   // 復元 (#966) が完了したか。initState の `_restoreDraft` は非同期で、
   // SharedPreferences のロード前に画面を閉じると、離脱時保存 (#966) が空文字を
   // 書いて保存済み下書きを消しうる。復元完了まで保存を保留してこの窓を塞ぐ
@@ -481,6 +526,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   @override
   void initState() {
     super.initState();
+    // スロットはアカウント別 (#964)。アカウント未確定（起動直後等）のときは
+    // null を渡し、旧グローバルスロットのまま振る舞う。
+    _draftStore = ComposeDraftStore(
+      accountKey: ref.read(currentAccountProvider)?.key.toStorageKey(),
+    );
     if (ref.read(currentMulukhiyaProvider)?.wordSuggestEnabled == true) {
       // 劇中ワード辞書を事前充填し、本文インライン補完の初回打鍵で取得待ちが
       // 出ないようにする (#687)。best-effort。
@@ -637,6 +687,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // cancel しないと、IME 確定前の前回 query が 300ms 後に発火して古い
     // 候補を出してしまう race が残る。
     _mentionDebounce?.cancel();
+
+    // 入力停止からのデバウンス保存 (#964)。⚠ **IME の early return より前に
+    // 置く。** 変換中も打鍵は続いているので、ここで再スケジュールしないと
+    // 「長い変換の途中で落ちたら全部消える」が残る。保存自体は `_saveDraft` が
+    // 入口で条件（fresh compose / 復元済み）を見るので、ここでは無条件でよい。
+    _scheduleDraftSave();
 
     // IME 変換中は setState を抑制（rebuild が EditableText の composition / selection を
     // 巻き戻す Flutter 上流症例の触媒になるため。#463 / #54 同型）
@@ -921,6 +977,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _mentionDebounce?.cancel();
+    // 離脱時保存 (#966) は PopScope が同期的に走らせるので、ここで発火待ちの
+    // タイマーを残す意味は無い。放置すると dispose 済みの controller を読んで
+    // 落ちる (#964)。
+    _draftDebounceTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _cwController.dispose();
@@ -952,6 +1012,81 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 「前回の入力を復元しました／取消」のバナー (#964)。
+  ///
+  /// SnackBar でなくインライン表示にしたのは、復元は**画面を開いた瞬間の状態**
+  /// であって一過性の通知ではないため。消えたあとに「これは前回の続きだったか」
+  /// を確かめる手段が無くなる。取消したら復元前へ戻し、バナーも畳む。
+  Widget _buildRestoredBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      color: scheme.secondaryContainer,
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      child: Row(
+        children: [
+          Icon(Icons.history, size: 16, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '前回の入力を復元しました',
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+          TextButton(onPressed: _undoDraftRestore, child: const Text('取消')),
+        ],
+      ),
+    );
+  }
+
+  /// 復元を取り消して、開いた直後の状態へ戻す (#964)。
+  ///
+  /// ⚠ **保存スロットも消す。** 戻したのに次に開いてまた同じものが復元されると、
+  /// 「取消」が効いていないように見える。
+  ///
+  /// ⚠ **ただし自動保存は止めない (#1008)。** 他の [_clearDraft] 呼び出しは直後に
+  /// 画面を閉じるが、取消だけはこの画面に留まる。破棄済みにすると、取消のあとに
+  /// 書いた本文が保存されないまま失われる。
+  void _undoDraftRestore() {
+    final before = _draftBeforeRestore;
+    _draftDebounceTimer?.cancel();
+    _controller.text = before?.text ?? '';
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+    _cwController.text = before?.cwText ?? '';
+    setState(() {
+      _cwEnabled = before?.cwEnabled ?? false;
+      if (before?.scope != null) _scope = before!.scope!;
+      _sensitiveEnabled = before?.sensitive ?? false;
+      _localOnly = before?.localOnly ?? false;
+      _draftRestoredNotice = false;
+      _draftSavedAt = null;
+    });
+    // ⚠ **消去の完了を握っておく (Codex P2 / PR #1013)。**取消の直後に背面化
+    // / 離脱すると、ライフサイクルと PopScope の保存がこの消去と**並行**に走る。
+    // 消去は世代を進めてから全キーを消すので、間に入った保存の本文をそのまま
+    // 消しうる。[_saveDraft] は最初にこれを待って直列化する。
+    _draftClearing = _clearDraft(discard: false);
+    unawaited(_draftClearing);
+  }
+
+  /// 入力停止から [_draftDebounce] 後に自動保存する (#964)。打鍵のたびに
+  /// 呼ばれ、そのつど先送りされる。
+  ///
+  /// 「離れたとき」(#966) だけでは、アプリが強制終了された分を取りこぼす。
+  void _scheduleDraftSave() {
+    if (!_draftAutoSave) return;
+    _draftDebounceTimer?.cancel();
+    _draftDebounceTimer = Timer(_draftDebounce, () {
+      // タイマー発火は dispose を生き延びうる。`_saveDraft` は controller を
+      // 読むので、破棄済みなら触らない。
+      if (mounted) unawaited(_saveDraft());
+    });
+  }
+
   /// Persist the current draft text and CW state to SharedPreferences.
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
@@ -960,14 +1095,66 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
     // (#966) ではこの直後に State が dispose され、`_controller` も dispose
     // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
-    await _draftStore.save(
-      ComposeDraft(
-        text: _controller.text,
-        cwText: _cwController.text,
-        cwEnabled: _cwEnabled,
-        attachmentCount: _attachments.length,
-      ),
+    // ⚠ **消去待ちより前で取る (Codex P2 / PR #1013)。**待ってから読むと、
+    // 離脱時保存が「待っている間に dispose された」で捨てられる — それが唯一の
+    // 保存機会なので、取消のあとに書いた本文がそのまま消える。
+    final draft = ComposeDraft(
+      text: _controller.text,
+      cwText: _cwController.text,
+      cwEnabled: _cwEnabled,
+      attachmentCount: _attachments.length,
+      // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
+      // 気づかず広い範囲へ投げる事故になる。
+      scope: _scope,
+      sensitive: _sensitiveEnabled,
+      localOnly: _localOnly,
     );
+
+    // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
+    // 全キー削除がいま保存した本文を消す。⚠ **消去の失敗はここで報告しない** —
+    // 保存の失敗として出すと原因を取り違える。⚠ **dispose 済みでも続ける** —
+    // 控えた値はもう手元にあるので、書き切ることが離脱時保存の役目。
+    final clearing = _draftClearing;
+    if (clearing != null) {
+      try {
+        await clearing;
+      } catch (_) {
+        // 消去できていなくても、この後の保存は独立に試みる。
+      }
+    }
+
+    final DateTime? savedAt;
+    try {
+      savedAt = await _draftStore.save(draft, now: DateTime.now());
+    } catch (e, st) {
+      // ⚠ **握り潰さない (#1011)。**保存が投げると本文を失うのに、投げっぱなしの
+      // 呼び出し（ライフサイクル / PopScope / debounce）なので未処理の非同期
+      // エラーとして Sentry に出るだけで、画面には何も出ていなかった。復元側
+      // ([_restoreDraft]) は最初から catch している。
+      reportOpFailure(
+        tagKey: 'compose.op',
+        operation: 'draft_save',
+        error: e,
+        stackTrace: st,
+      );
+      if (mounted) {
+        // ⚠ **表示も下ろす (#1011 / Codex P2)。**「自動保存 12:34」を残すと、
+        // 直近の本文まで保存されているように読める。
+        setState(() => _draftSavedAt = null);
+        // 打鍵のたびに走るので、1 画面 1 回だけ伝える。
+        if (!_draftSaveFailureNotified) {
+          _draftSaveFailureNotified = true;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('下書きを保存できませんでした')));
+        }
+      }
+      return;
+    }
+    // 世代ガード (#969) や破棄済みの no-op では null（書き込みの拒否はここには
+    // 来ない — 上の catch で扱う）。表示を更新すると「保存された」と嘘をつくので、
+    // 返ってきたときだけ反映する (#964)。
+    if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
   }
 
   /// Restore a previously saved draft into the controllers.
@@ -989,6 +1176,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 保存済みが無い（saved == null）場合も基準世代は確定しているので解禁する。
     _draftRestored = true;
     if (!mounted || saved == null) return;
+
+    // 「取消」で戻せるよう、書き戻す前の状態を控える (#964)。復元は新規 compose
+    // のたびに黙って走るので、意図しない復元を 1 タップで捨てられるようにする。
+    _draftBeforeRestore = ComposeDraft(
+      text: _controller.text,
+      cwText: _cwController.text,
+      cwEnabled: _cwEnabled,
+      scope: _scope,
+      sensitive: _sensitiveEnabled,
+      localOnly: _localOnly,
+    );
+
     if (saved.hasText) {
       _controller.text = saved.text;
       _controller.selection = TextSelection.collapsed(
@@ -998,9 +1197,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (saved.cwText.isNotEmpty) {
       _cwController.text = saved.cwText;
     }
-    if (saved.cwEnabled) {
-      setState(() => _cwEnabled = true);
-    }
+    setState(() {
+      if (saved!.cwEnabled) _cwEnabled = true;
+      // 設定値も戻す (#964)。⚠ **scope が null なら触らない** — 旧スロット由来
+      // （保存していなかった頃）で、既定値やアカウントの defaultScope を上書き
+      // してしまう。
+      if (saved.scope != null) _scope = saved.scope!;
+      _sensitiveEnabled = saved.sensitive;
+      _localOnly = saved.localOnly;
+      _draftSavedAt = saved.savedAt;
+      // 復元したこと自体を伝える (#964)。「復元されたことも伝わっていない」が
+      // 「わかりづらい」のもう半分の原因だった。
+      _draftRestoredNotice = true;
+    });
     // 添付を持ったまま離れた場合、本文だけが戻ってくる (#966)。黙って戻すと
     // 「保存された」と思って添付を失うので、復元したときだけ明示する。本文が
     // 空で何も復元していないなら、伝えることがないので出さない。
@@ -1018,7 +1227,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   /// Remove any persisted draft (called after a successful post).
-  Future<void> _clearDraft() => _draftStore.clear();
+  /// [discard] は「以降の自動保存も止めるか」。既定 true で画面を閉じる経路向け
+  /// （[ComposeDraftStore.clear] の doc を参照）。取消だけ false (#1008)。
+  ///
+  /// 永続化できなかったぶんは観測に残す (Codex P2 / PR #1013)。ユーザーには
+  /// 出さない — **この時点では実害が無い**（消えていないだけ）で、次に開いた
+  /// ときに古い下書きが復元されて初めて見える。投稿直後にも通る経路なので、
+  /// ここで snackbar を出すと「投稿は成功しているのに失敗したように読める」。
+  Future<void> _clearDraft({bool discard = true}) async {
+    final persisted = await _draftStore.clear(discard: discard);
+    if (persisted) return;
+    reportOpFailure(
+      tagKey: 'compose.op',
+      operation: 'draft_clear',
+      error: const ComposeDraftSaveException(
+        'shared preferences rejected clear',
+      ),
+      stackTrace: StackTrace.current,
+    );
+  }
 
   void _initReplyMentions(Post replyTo) {
     final currentUser = ref.read(currentAccountProvider)?.user;
@@ -1373,7 +1600,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 説明 (ALT) と閲覧注意フラグは引き継ぐ。トリミング結果は一時ディレクトリに
   /// 書き出し、元のフォーマット (拡張子) と MIME タイプを維持する。
   Future<void> _cropImage(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final original = entry.file;
     if (original == null) return;
 
@@ -1420,7 +1648,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// スタンプ (#883) を重ねて書き出し、結果で元の添付を差し替える。説明 (ALT)
   /// と閲覧注意フラグは引き継ぐ。
   Future<void> _addOverlay(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final original = entry.file;
     if (original == null) return;
 
@@ -1717,7 +1946,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   Future<void> _editDescription(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final descController = TextEditingController(text: entry.description);
     final result = await showDialog<String>(
       context: context,
@@ -1776,7 +2006,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ローカル画像のみ。動画等プレビュー・編集できないエントリでは「説明 (ALT)」
   /// のみ表示する。削除はサムネ右上の × に残す（クイック操作）。
   Future<void> _showAttachmentMenu(int index) async {
-    final entry = _attachments[index];
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
     final croppable = _isCroppableImage(entry);
     final previewable = _attachmentImageProvider(entry) != null;
     final action = await showModalBottomSheet<_AttachmentMenuAction>(
@@ -1836,7 +2067,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 添付画像を原寸で確認するフルスクリーンビューアを開く (#660 / #769)。編集
   /// メニューの「拡大して確認」から呼ぶ。閲覧専用（編集操作はメニュー側）。
   Future<void> _openAttachmentViewer(int index) async {
-    final provider = _attachmentImageProvider(_attachments[index]);
+    final entry = _attachmentAt(index);
+    if (entry == null) return;
+    final provider = _attachmentImageProvider(entry);
     if (provider == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -2686,6 +2919,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 受け取る形なので、位置で持つのが素直。
   final Map<int, AttachmentMenuCallbacks> _attachmentCallbacks = {};
 
+  /// 添付を index で引く。範囲外なら null (#982)。
+  ///
+  /// ⚠ **素で `_attachments[index]` を引かない。** #941 でデスクトップメニューが
+  /// 添付ごとのサブメニューを持ち、コールバックを `_attachmentCallbacks` に
+  /// **index をキーにキャッシュ**するようになった。それまでは「タップした
+  /// サムネの index しか入口が無い」という構造的な安全があったが、キャッシュ
+  /// された束はメニューが開いている間に添付が減っても残るので、**削除した直後の
+  /// 古い項目を叩くと RangeError** になる。
+  ///
+  /// 落とすのは正しい（指している添付がもう無い）が、**黙って落とすと
+  /// 「メニューを押したのに何も起きない」になる**ので観測は残す。
+  _MediaEntry? _attachmentAt(int index) {
+    if (index < 0 || index >= _attachments.length) {
+      debugPrint(
+        'capsicum: compose: attachment index out of range '
+        '($index / ${_attachments.length})',
+      );
+      unawaited(
+        Sentry.captureMessage(
+          'compose.attachment_index_out_of_range',
+          level: SentryLevel.warning,
+          withScope: (scope) => scope.setTag('phase', 'compose_attachment'),
+        ),
+      );
+      return null;
+    }
+    return _attachments[index];
+  }
+
   AttachmentMenuCallbacks _callbacksForAttachment(int index) =>
       _attachmentCallbacks.putIfAbsent(
         index,
@@ -3067,6 +3329,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 絵文字ピッカーはタブごとに項目を分ける (#971)。1 項目にまとめると、
       // 開いてからタブを選び直す 2 手が常に要る。**出す条件はピッカー側のタブ
       // 生成条件と同じ**にし、開いても存在しないタブへは案内しない。
+      //
+      // ⚠ **簡易投稿バーは分けず「絵文字・劇中ワード…」1 項目のまま**で、粒度が
+      // 画面で割れている。これは意図的 (#982 で確認)。`showInsertPickerSheet` は
+      // `initialTab` を取るので分けること自体は可能だが、簡易投稿バーは 1 行投稿の
+      // ためのコンパクトな面で、メニューも 5 項目しかない。そこへ 2 項目足すより、
+      // 込み入った編集は「詳細な投稿画面…」へ抜ける導線に寄せる方が筋が通る。
       if (adapter is CustomEmojiSupport)
         MenuActionEntry(
           label: 'カスタム絵文字…',
@@ -3359,6 +3627,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ),
+                // 復元したことの告知 (#964)。黙って本文を書き戻すと、目の前の
+                // 文字列が「前回の続き」なのか判別できない。1 タップで取り消せる。
+                if (_draftRestoredNotice) _buildRestoredBanner(context),
                 Expanded(
                   child: Stack(
                     children: [
@@ -3422,6 +3693,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                     ],
                   ),
                 ),
+                // 「保存されているタイミングがわかりづらい」への回答 (#964)。
+                // 自動保存は無音なので、最後に保存できた時刻を常時出す。
+                if (_draftAutoSave && _draftSavedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8, bottom: 2),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_mentionSuggestions.isNotEmpty)
                   SizedBox(
                     height: 48,
@@ -4128,73 +4417,37 @@ class _TemplateSheetState extends State<_TemplateSheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              '投稿テンプレート',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+  Widget build(BuildContext context) => QuickChooserSheet(
+    title: '投稿テンプレート',
+    loading: _loading,
+    error: _error,
+    emptyMessage: 'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
+    items: [
+      for (final t in _templates ?? const <ComposeTemplate>[])
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: Text(t.name),
+          subtitle: Text(
+            composeTemplateBodyPreview(t),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            )
-          else if (_error != null)
-            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
-          else ...[
-            if ((_templates ?? const []).isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'テンプレートがありません。\n本文を入力し、メニューの「テンプレートとして保存」から作成できます。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              )
-            else
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final t in _templates!)
-                      ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(t.name),
-                        subtitle: Text(
-                          composeTemplateBodyPreview(t),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: t.cw != null
-                            ? const Icon(Icons.warning_amber, size: 18)
-                            : null,
-                        onTap: () => widget.onSelect(t),
-                      ),
-                  ],
-                ),
-              ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('テンプレートを管理'),
-              onTap: widget.onManage,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+          trailing: t.cw != null
+              ? const Icon(Icons.warning_amber, size: 18)
+              : null,
+          onTap: () => widget.onSelect(t),
+        ),
+    ],
+    footer: ListTile(
+      leading: const Icon(Icons.settings_outlined),
+      title: const Text('テンプレートを管理'),
+      onTap: widget.onManage,
+    ),
+  );
 }
 
-/// サーバー下書きのクイックチューザ (#963)。`_TemplateSheet` を写したもの。
+/// サーバー下書きのクイックチューザ (#963)。外枠は [QuickChooserSheet] と共有する
+/// （#982 で `_TemplateSheet` からの丸写しを解消した）。
 ///
 /// **全件を出す**（素の下書きだけに絞らない）。同じ「下書き」なのに画面によって
 /// 件数が違うのは分かりにくく、Misskey の 10 件上限に当たったときの切り分けにも
@@ -4253,59 +4506,32 @@ class _DraftSheetState extends State<_DraftSheet> {
   @override
   Widget build(BuildContext context) {
     final drafts = _drafts ?? const <Draft>[];
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              // 件数は上限（Misskey は 10 件）に当たったときの手掛かり。読み込み前
-              // と失敗時は数を名乗らない。
-              _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
-              style: Theme.of(context).textTheme.titleMedium,
+    return QuickChooserSheet(
+      // 件数は「上限に当たったか」の手掛かり。読み込み前と失敗時は数を名乗らない。
+      //
+      // ⚠ **この数は上限診断としては既定値の範囲でしか効かない** (#982)。
+      // Misskey の `notes/drafts/list` は `limit` の既定が 30 で、capsicum は
+      // 明示していない（`getNoteDrafts`）。サーバーが `noteDraftLimit` を 30 超へ
+      // 引き上げていると、上限に当たる前にこの数が 30 で頭打ちになる。
+      // 既定 10 の範囲では実害なし。
+      title: _loading || _error != null ? '下書き' : '下書き（${drafts.length} 件）',
+      loading: _loading,
+      error: _error,
+      // `/drafts` と同文言。
+      emptyMessage: '下書きはありません',
+      items: [
+        for (final d in drafts)
+          ListTile(
+            leading: const Icon(Icons.edit_note),
+            title: Text(
+              draftBodyPreview(d),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+            subtitle: Text(draftSubtitle(d)),
+            onTap: () => widget.onSelect(d),
           ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            )
-          else if (_error != null)
-            Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
-          else if (drafts.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                // `/drafts` と同文言。
-                '下書きはありません',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final d in drafts)
-                    ListTile(
-                      leading: const Icon(Icons.edit_note),
-                      title: Text(
-                        draftBodyPreview(d),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(draftSubtitle(d)),
-                      onTap: () => widget.onSelect(d),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }

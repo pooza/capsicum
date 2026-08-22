@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart';
@@ -17,6 +18,7 @@ import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
+import '../util/attachment_description_edit.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 
@@ -108,45 +110,56 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     super.dispose();
   }
 
+  /// ALT 編集の導線を出すか。
+  ///
+  /// ⚠ **Mastodon はモロヘイヤ導入済みサーバーに限る** (#121)。Mastodon には
+  /// 投稿済み添付の説明だけを変える API が無く、投稿の更新 API を使うしかない。
+  /// その API は「送らなかったパラメータ」を現状維持ではなく**空で更新**として
+  /// 扱うため、素で呼ぶと **添付が全部外れ CW と閲覧注意も消える**
+  /// （mulukhiya#4589）。現状維持すべき値を補完するのはモロヘイヤ 5.34.0 以降の
+  /// 役目なので、**モロヘイヤが `features.media_update` を名乗らない環境では
+  /// 導線ごと出さない**（#999 / mulukhiya#4636）。
+  ///
+  /// 判定を UI 層に置いているのは、アダプタからモロヘイヤの有無が見えないため
+  /// （`MulukhiyaService` は `Account` が持つアプリ層の資産）。`TranslationSupport`
+  /// を `adapter is! MastodonAdapter || adapter.isTranslationAvailable` で
+  /// 出し分けている `post_tile` と同じ形。
+  ///
+  /// Misskey は `drive/files/update` が投稿済みでも効くので無条件で出す。
   bool get _canEdit {
-    if (widget.postAuthorId == null || widget.postId == null) return false;
     final currentUser = ref.read(currentAccountProvider)?.user;
-    if (currentUser == null) return false;
     final adapter = ref.read(currentAdapterProvider);
-    return currentUser.id == widget.postAuthorId &&
-        adapter is MediaUpdateSupport;
+    final mulukhiya = ref.read(currentMulukhiyaProvider);
+    return canEditAttachmentDescription(
+      supportsMediaUpdate: adapter is MediaUpdateSupport,
+      needsMulukhiya: adapter is MastodonAdapter,
+      hasMulukhiya: mulukhiya != null,
+      // ⚠ **フラグで見る (#999 / mulukhiya#4636)。**版番号では判定できない —
+      // 5.33.0 は補完せず投稿を壊し、5.34.0 は補完するが上流 PUT が 405 で失敗
+      // する。動く構成かどうかはモロヘイヤの ginseng ピン次第で、外からは
+      // `package.version` で区別できない。フラグを出さないサーバーでは出さない。
+      mulukhiyaHandlesMediaUpdate: mulukhiya?.mediaUpdateEnabled ?? false,
+      isOwnPost: currentUser != null && currentUser.id == widget.postAuthorId,
+      hasPostContext: widget.postAuthorId != null && widget.postId != null,
+    );
   }
 
   Future<void> _editDescription() async {
-    final attachment = _attachments[_currentIndex];
-    final controller = TextEditingController(
-      text: attachment.description ?? '',
-    );
+    // ⚠ **添付と位置は開く前に確定させる (#1011)。**書き戻し先を「その時点の
+    // `_currentIndex`」にすると、保存中にページを送っただけで**別の添付の枠へ
+    // 上書き**してしまう（同じ画像が 2 枚並ぶ形で呼び出し側にも渡る）。
+    final index = _currentIndex;
+    final attachment = _attachments[index];
 
+    // controller はダイアログ自身に持たせる (Codex P2 / PR #1013)。`showDialog`
+    // の Future は**閉じるアニメーションの完了より前に**解決するので、呼び出し側
+    // で await の直後に破棄すると、まだツリーに残っている `TextField` が
+    // 破棄済み controller に触れる（autofocus でキーボードが開いていると、
+    // 閉じる途中のフォーカス更新で踏む）。
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('メディアの説明を編集'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: '説明を入力…',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _DescriptionEditDialog(initialText: attachment.description ?? ''),
     );
 
     if (result == null || !mounted) return;
@@ -161,22 +174,33 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         result,
         postId: widget.postId!,
       );
-      setState(() {
-        _attachments[_currentIndex] = Attachment(
-          id: attachment.id,
-          type: attachment.type,
-          url: attachment.url,
-          previewUrl: attachment.previewUrl,
-          description: result,
-        );
-        _modified = true;
-      });
+      // ⚠ **`setState` にも mounted を見る (#1011)。**破棄済みだと下の catch へ
+      // 落ちて、**サーバー側は成功しているのに失敗扱い**になる。
       if (mounted) {
+        setState(() {
+          _attachments[index] = Attachment(
+            id: attachment.id,
+            type: attachment.type,
+            url: attachment.url,
+            previewUrl: attachment.previewUrl,
+            description: result,
+          );
+          _modified = true;
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('説明を更新しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // 同ファイルの他の操作と同じく件数を残す (#1011)。⚠ **フラグが true でも
+      // 失敗する窓が残っている** — 上流の PUT が 405 / 500 で落ちる構成があり
+      // （mulukhiya#4621）、ユーザーには理由不明の 1 行しか出ない。
+      reportOpFailure(
+        tagKey: 'media.op',
+        operation: 'alt_edit',
+        error: e,
+        stackTrace: st,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -516,6 +540,54 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 /// 横ドラッグを掴んでしまい、「画像の上でしか反応しない／ドラッグだと渋い」
 /// 感触の一因になっていた）。ズーム中のみ pan を有効化し、併せて
 /// [onZoomChanged] で親にズーム状態を通知して PageView のスワイプを止める。
+/// 投稿済みメディアの説明 (ALT) を編集するダイアログ (#121)。
+///
+/// ⚠ **controller の寿命をルートに合わせるために StatefulWidget にしている**
+/// (Codex P2 / PR #1013)。`showDialog` の Future は閉じるアニメーションの完了
+/// より前に解決するため、呼び出し側で破棄すると早すぎる。
+class _DescriptionEditDialog extends StatefulWidget {
+  const _DescriptionEditDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_DescriptionEditDialog> createState() => _DescriptionEditDialogState();
+}
+
+class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
+  late final _controller = TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('メディアの説明を編集'),
+    content: TextField(
+      controller: _controller,
+      maxLines: 4,
+      decoration: const InputDecoration(
+        hintText: '説明を入力…',
+        border: OutlineInputBorder(),
+      ),
+      autofocus: true,
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('キャンセル'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _controller.text),
+        child: const Text('保存'),
+      ),
+    ],
+  );
+}
+
 class _ZoomableImagePage extends StatefulWidget {
   final Widget child;
   final ValueChanged<bool> onZoomChanged;

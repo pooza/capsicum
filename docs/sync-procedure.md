@@ -57,6 +57,14 @@
 - クローズ済みマイルストーンの残 Issue が 0 であることを確認する
 - リリース直後の同期では、open マイルストーンの description が実態と乖離していないかも確認する。GitHub Milestones が正本（CLAUDE.md に複写しない方針）のため、description が空・古い場合は同期内で `gh api -X PATCH repos/pooza/capsicum/milestones/{number} -f description="..."` で整える。最低限、(a) 大更新の単独配置か否か、(b) 主な含有 Issue、(c) 並走条件 を 1〜3 行で書く
 - **capsicum-relay の同名マイルストーンにも同じ集計・description 点検を行う**（`repos/pooza/capsicum-relay/milestones`）
+- **open マイルストーン全件について、description に `## relay` 節があることを確認する**（2026-08-22 義務化・書式と必須である理由は `docs/milestone-transition.md` §3-2「必須: capsicum 側 description の `## relay` 節」）。**節が無ければその場で足す。**「なし」と書いてある枠は、relay 側に同名枠が実在しないことを API で照合してから通す（`なし` のまま stale 化した実績があり、v1.59 で relay 3 件が進捗報告から丸ごと落ちた）
+
+  ```sh
+  # relay 節の有無を一覧で確認
+  gh api repos/pooza/capsicum/milestones --jq '.[] | "\(.title)\trelay節=\(if (.description | test("(?m)^## relay")) then "有" else "無" end)"'
+  # 実態（relay 側の枠と件数）
+  gh api repos/pooza/capsicum-relay/milestones --jq '.[] | "\(.title) open=\(.open_issues) closed=\(.closed_issues)"'
+  ```
 
 ### relay を同列に扱う
 
@@ -102,7 +110,7 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
   - Mastodon: `cd ~/repos/mastodon && git pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
   - Misskey: `cd ~/repos/misskey && git pull --ff-only` → `package.json` の `version`
-  - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-46-capsicum-triage.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
+  - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 
 ## 9. MEMORY.md の更新
 

@@ -446,6 +446,26 @@ powercfg /S SCHEME_CURRENT
 - 実機接続時は Parallels Desktop を終了させること（Parallels が USB デバイスを横取りするため）
 - iOS アップデート後にデベロッパモードがリセットされることがある → 設定 → プライバシーとセキュリティ → デベロッパモード で再有効化
 
+### iOS シミュレータで書き出したファイルを Mac から読む
+
+共有シート経由でファイルを書き出す機能（設定のバックアップ #972 など）の検証で使う。⚠ **共有シートの「コピー」は macOS の Finder には貼れない。**載せているのはテキストではなく**ファイル**で、iOS のファイル用ペーストボードは Finder と繋がっていないため（シミュレータのクリップボード同期もテキスト用）。中身を Mac で確認したいときはコンテナを直接読む。
+
+```sh
+xcrun simctl list devices booted
+xcrun simctl get_app_container <UDID> jp.co.b-shock.capsicum.debug data
+```
+
+- `<container>/Library/Caches/…` … **アプリが共有前に書いた実体**（`path_provider` の `getTemporaryDirectory` は iOS では Caches に落ちる）
+- `<device>/data/Containers/Shared/AppGroup/<id>/File Provider Storage/…` … ファイル.app の「このiPhone内」へ保存した先。同名保存は iOS が `foo 2.yaml` と自動採番する
+
+⚠ **Mac 側へコピーするときは宛先の存在を確かめ、日時入りの別名にする。**既定のファイル名のままデスクトップへ `cp` すると、過去の書き出し（macOS 版で作ったものなど）を黙って上書きしうる。**上書きすると inode が残るため birth time が古いままになり、「これは本当に今コピーしたものか」が後から判別できなくなる**（2026-08-22 に実際に踏んだ）。
+
+⚠ **設定バックアップの YAML にはプラットフォームを示す項目が無い**（`version` / `app_version` / `exported_at` / `settings` のみ）ので、ファイル単体では iOS 由来か macOS 由来かを判別できない。出所を確かめるには上記パスから取るか、**端末側で設定を 1 つ変えて再書き出しし、値と `exported_at` が追随することを見る**。
+
+### シミュレータで確認できないこと
+
+- **iCloud Drive / Google Drive を挟んだ PC との往復** … シミュレータには App Store が無く Drive アプリを入れられない。iCloud はサインイン UI こそ出るが 2FA の確認コードが信頼済みデバイスへ飛び、iCloud Drive の同期も実質動かない。**外部保存先の確認は実機で行う**
+
 ## Android エミュレータ環境
 
 - `ANDROID_SDK_ROOT` / `JAVA_HOME` を設定し、`$ANDROID_SDK_ROOT/emulator/emulator -avd <AVD>` でエミュレータを起動（arm64 AVD を使用）

@@ -13,18 +13,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// error として Sentry (CAPSICUM-3G) に計上してしまう。
 ///
 /// 404 以外の失敗 (500 等) は依然として rethrow することも固定する。
+///
+/// ⚠ 以前ここに #948 の `relayBaseUrl` 既定値アサートが同居していたが、ファイル名と
+/// 中身が一致していなかったので `push_relay_base_url_test.dart` へ移した (#982)。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  // #948: debug ビルドの既定向け先は staging。テストは debug モードで走るため、
-  // RELAY_BASE_URL 上書き無しなら staging を指すことを固定する（prod に戻ると
-  // debug 端末トークン=APNs サンドボックスと prod relay が食い違い 401 になる）。
-  test('debug の既定リレー向け先は staging (#948)', () {
-    expect(
-      PushRelayClient.relayBaseUrl,
-      'https://st.relay.capsicum.shrieker.net',
-    );
-  });
 
   test('404 は冪等な成功として飲み込む (投げない)', () async {
     final client = PushRelayClient()

@@ -11,6 +11,27 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
+/// ファイルの保存先を OS の保存ダイアログで選べるプラットフォームか
+/// (#972)。`file_selector` の `getSaveLocation` が実装されているのは
+/// デスクトップ 3 OS だけで、`file_selector_ios` / `file_selector_android` は
+/// どちらも `openFile` しか持たず、保存側は platform interface の既定に落ちて
+/// `UnimplementedError` を投げる。false のプラットフォームは OS の共有シート
+/// （`share_plus`）へ渡して保存先をユーザーに委ねる。
+///
+/// 読み込み側（`openFile`）は 5 OS すべてで実装されているので、この分岐は
+/// **書き出しにしか要らない**。UI 層に `Platform.isX` を直書きしない設計指針
+/// （#650）に従い機能名で公開する。
+bool get supportsFileSaveDialog => isDesktop;
+
+/// ファイル選択の絞り込みを Uniform Type Identifier で指定するプラットフォーム
+/// か (#972)。**iOS だけ** `XTypeGroup.uniformTypeIdentifiers` を要求し、空だと
+/// `openFile` が `ArgumentError` を投げる（拡張子だけでは選べない）。
+///
+/// 他 OS は `extensions` / `mimeTypes` を見て UTI を無視するが、macOS だけは
+/// **3 フィールドを和で解釈する**。そのため iOS 向けの広い UTI を常時載せると
+/// macOS の絞り込みまで緩む。分岐が要るのはこのため。
+bool get fileTypeFilterNeedsUti => !kIsWeb && Platform.isIOS;
+
 /// カラー絵文字 fallback (#861) が意味を持ち、その調整トグルを設定に出す
 /// プラットフォームか。Linux のみ true。Linux では `Noto Color Emoji` を
 /// fontFamilyFallback に足すと同フォントが ASCII 数字 `0-9` `#` `*`・空白まで

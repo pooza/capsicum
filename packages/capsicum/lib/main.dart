@@ -581,10 +581,11 @@ Future<void> _flushPushFailureRecord() async {
 /// は正常系なので info、それ以外（鍵不在・復号失敗・表示失敗・例外等）は
 /// warning。エラーは握りつぶす（観測機構が本体を落とさない）。
 ///
-/// **`bgtask.` で始まらないコードもここに来る** (#957)。起動中の in-process
-/// 受信（runner の wns_push.cpp）が同じスロットへ書く `wns.show_failed` が
-/// それで、書き手は bg task ではないがメッセージ接頭辞は `push.wns_bgtask:` の
-/// まま揃えている（fingerprint は code 別に割れるので混ざらない）。
+/// **`bgtask.` で始まらないコードもここに来る** (#957 / #997)。起動中の
+/// in-process 受信（runner の wns_push.cpp）が同じスロットへ書く
+/// `wns.show_failed` と `wns.announcement_*` がそれで、書き手は bg task では
+/// ないがメッセージ接頭辞は `push.wns_bgtask:` のまま揃えている（fingerprint は
+/// code 別に割れるので混ざらない）。
 Future<void> _flushWnsPushDiagnostics() async {
   try {
     final raw = await WnsService.consumePushDiagnostics();
@@ -598,16 +599,21 @@ Future<void> _flushWnsPushDiagnostics() async {
     final host = decoded['host'];
     final atMs = decoded['at_ms'];
 
-    // 正常系（表示成功・暗号化通知でない・raw 以外で起動）は info、異常系は
-    // warning。ネイティブ push_diagnostics.cpp の IsBenignCode と揃えること。
-    // ⚠ bgtask.shown / bgtask.announcement_shown は**表示に成功したときだけ**
-    // 記録される (#957 / #978)。表示失敗 (bgtask.show_failed /
-    // bgtask.announcement_show_failed / wns.show_failed) はここに入れない。
+    // 正常系（表示成功・dedup による抑止・暗号化通知でない・raw 以外で起動）は
+    // info、異常系は warning。ネイティブ push_diagnostics.cpp の IsBenignCode と
+    // 揃えること。
+    // ⚠ bgtask.shown / bgtask.announcement_shown / wns.announcement_shown は
+    // **表示に成功したときだけ**記録される (#957 / #978 / #997)。表示失敗
+    // (bgtask.show_failed / bgtask.announcement_show_failed / wns.show_failed /
+    // wns.announcement_show_failed) はここに入れない。
     const benign = {
       'bgtask.shown',
       'bgtask.announcement_shown',
       'bgtask.not_encrypted',
       'bgtask.not_raw',
+      'wns.announcement_shown',
+      // WebSocket 経路 (#569) が先に出したので抑止した = 通常運転 (#997)。
+      'wns.announcement_deduped',
     };
     final level = benign.contains(code)
         ? SentryLevel.info
