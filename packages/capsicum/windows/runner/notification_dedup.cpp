@@ -1,5 +1,9 @@
 #include "notification_dedup.h"
 
+#include <windows.h>
+
+#include <cstdio>
+
 namespace capsicum {
 
 NotificationDedupRegistry& NotificationDedupRegistry::Instance() {
@@ -11,10 +15,19 @@ NotificationDedupRegistry& NotificationDedupRegistry::Instance() {
 void NotificationDedupRegistry::MarkShown(const std::string& key) {
   if (key.empty()) return;
   std::lock_guard<std::mutex> lock(mutex_);
-  if (keys_.size() >= kMaxKeys) {
-    keys_.clear();
+  if (!keys_.insert(key).second) {
+    // 既出。⚠ 順序は動かさない（LRU ではなく FIFO）。
+    return;
   }
-  keys_.insert(key);
+  order_.push_back(key);
+  size_t evicted = 0;
+  while (order_.size() > kMaxKeys) {
+    keys_.erase(order_.front());
+    order_.pop_front();
+    ++dropped_;
+    ++evicted;
+  }
+  if (evicted > 0) LogFirstEvictionLocked(evicted);
 }
 
 bool NotificationDedupRegistry::WasShown(const std::string& key) {
@@ -26,11 +39,31 @@ bool NotificationDedupRegistry::WasShown(const std::string& key) {
 void NotificationDedupRegistry::Reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   keys_.clear();
+  order_.clear();
+  dropped_ = 0;
+  eviction_logged_ = false;
 }
 
 size_t NotificationDedupRegistry::SizeForTesting() {
   std::lock_guard<std::mutex> lock(mutex_);
   return keys_.size();
+}
+
+size_t NotificationDedupRegistry::DroppedForTesting() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return dropped_;
+}
+
+void NotificationDedupRegistry::LogFirstEvictionLocked(size_t evicted) {
+  if (eviction_logged_) return;
+  eviction_logged_ = true;
+  char buf[192];
+  // 書式は macOS (NSLog) / Dart (debugPrint) の同種ログに合わせる。
+  std::snprintf(buf, sizeof(buf),
+                "capsicum: push.desktop: dedup \"shown\" evicted %zu oldest "
+                "(size=%zu/%zu, total_dropped=%zu)\n",
+                evicted, order_.size(), kMaxKeys, dropped_);
+  OutputDebugStringA(buf);
 }
 
 }  // namespace capsicum

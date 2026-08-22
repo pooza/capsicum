@@ -2,6 +2,7 @@
 #define RUNNER_NOTIFICATION_DEDUP_H_
 
 #include <cstddef>
+#include <deque>
 #include <mutex>
 #include <set>
 #include <string>
@@ -34,18 +35,17 @@ namespace capsicum {
 // 競合しない。
 class NotificationDedupRegistry {
  public:
-  // 保持するキーの上限。超えたら全消しする。
+  // 保持するキーの上限。超えたぶんは**最古から 1 件ずつ押し出す**（FIFO）。
   //
-  // ⚠ **この「全消し」は Dart (#960) と macOS (#983) では既に FIFO 追い出しへ
-  // 置き換えられており、ここだけ未追随。** 下の「取りこぼしても二重に出るだけ」
-  // という理由づけも、#983 が macOS 側で否定したもの: このレジストリは
-  // 「もう出したか」の記録ではなく **表示を抑止するかどうかを決める判定そのもの**
-  // なので、全消しの直後に遅れて届いた通知は「未出」と判定されて表示され、
-  // 防いでいるはずの二重表示が復活する。500 件は実況運用のセッションで到達しうる。
+  // ⚠ **全消しにしてはいけない** (#995)。Dart (#960) / macOS (#983) と同じ理由:
+  // このレジストリは「もう出したか」の記録ではなく **表示を抑止するかどうかを
+  // 決める判定そのもの**なので、全消しの直後に遅れて届いた通知は「未出」と
+  // 判定されて表示され、防いでいるはずの二重表示が復活する。500 件は実況運用の
+  // セッションで到達しうる。
   //
-  // ⚠ **正本が食い違っている状態なので、ここを読んで macOS 側へ「全消しでよい」と
-  // 逆輸入しないこと。** 追随は Windows 実機ゲートのため pooza/capsicum#995 へ
-  // 分離した（`std::set` は挿入順を持たないので `std::deque` の併走が要る）。
+  // ⚠ **LRU ではなく FIFO。** 既出キーを再び MarkShown しても順序は動かさない。
+  // Dart の `LinkedHashSet` / Swift 版 `BoundedKeySet` と意味を揃えるためで、
+  // 片方だけ LRU にすると「同じキーなのに経路ごとに覚えている期間が違う」になる。
   static constexpr size_t kMaxKeys = 500;
 
   static NotificationDedupRegistry& Instance();
@@ -62,11 +62,35 @@ class NotificationDedupRegistry {
   // テスト用。保持しているキー数。
   size_t SizeForTesting();
 
+  // テスト用。上限超過で押し出した累計件数。
+  size_t DroppedForTesting();
+
  private:
   NotificationDedupRegistry() = default;
 
+  // 押し出しの観測。⚠ **プロセスにつき 1 回しか出さない。** 一度あふれた後は
+  // 通知が来るたびにあふれ続けるので、件数ぶん出すと同じ事実がログを埋める
+  // （Dart 側 [BoundedKeySet] が Sentry 送出を 1 回に絞っているのと同じ判断）。
+  //
+  // ⚠ **これは OutputDebugString であってユーザー端末からは回収できない。**
+  // 本番で「上限に達したか」を知る経路は Dart 側の `push.dedup.evicted`
+  // （`DesktopNotificationDispatcher` の 500 件集合が同じ通知で埋まるので
+  // ほぼ同時にあふれる）。ここを Sentry に繋ぎ直す必要は無い。
+  //
+  // ⚠ mutex_ を保持したまま呼ぶ。
+  void LogFirstEvictionLocked(size_t evicted);
+
   std::mutex mutex_;
   std::set<std::string> keys_;
+
+  // 挿入順。keys_ と常に同じ要素を持つ。先頭が最古。
+  std::deque<std::string> order_;
+
+  // 上限超過で押し出した累計件数（観測用）。
+  size_t dropped_ = 0;
+
+  // LogFirstEvictionLocked を既に出したか。
+  bool eviction_logged_ = false;
 };
 
 }  // namespace capsicum
