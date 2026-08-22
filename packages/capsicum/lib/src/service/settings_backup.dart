@@ -206,9 +206,18 @@ List<String> readAccountKeysForBackup(SharedPreferences prefs) {
 /// 非正規形が入っていると、parse は通るのに `toStorageKey()` とは別文字列なので、
 /// 接続し直した後に `saveAccount` が正規形を**別のアカウントとして**足す。次の
 /// 起動で「トークンのある行」と「未接続の行」が同じアカウントに対して並ぶ。
+/// ⚠ **host / username の欠けは parse では落ちない（Codex P2 / PR #1002）。**
+/// `AccountKey.fromStorageKey` は `Uri.parse` に乗っているだけなので、
+/// `mastodon://alice` は host=`alice` / username=`` として通り、正規形は
+/// `mastodon://@alice` になる。そのまま索引へ入れると、**復帰できない未接続の行**
+/// を作ったうえで「アカウントを追加しました」と報告してしまう。両方が揃って
+/// いることを確かめる。
 String? _canonicalAccountKey(String key) {
   try {
-    return AccountKey.fromStorageKey(key).toStorageKey();
+    final parsed = AccountKey.fromStorageKey(key);
+    if (parsed.host.isEmpty || parsed.username.isEmpty) return null;
+
+    return parsed.toStorageKey();
   } catch (_) {
     return null;
   }
