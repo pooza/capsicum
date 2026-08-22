@@ -1092,8 +1092,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
   Future<void> _saveDraft() async {
     if (!_draftAutoSave || !_draftRestored) return;
-    // 取消の消去と直列化する。⚠ **消去の失敗はここで報告しない** — 保存の
-    // 失敗として出すと原因を取り違える。
+    // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
+    // (#966) ではこの直後に State が dispose され、`_controller` も dispose
+    // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
+    // ⚠ **消去待ちより前で取る (Codex P2 / PR #1013)。**待ってから読むと、
+    // 離脱時保存が「待っている間に dispose された」で捨てられる — それが唯一の
+    // 保存機会なので、取消のあとに書いた本文がそのまま消える。
+    final draft = ComposeDraft(
+      text: _controller.text,
+      cwText: _cwController.text,
+      cwEnabled: _cwEnabled,
+      attachmentCount: _attachments.length,
+      // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
+      // 気づかず広い範囲へ投げる事故になる。
+      scope: _scope,
+      sensitive: _sensitiveEnabled,
+      localOnly: _localOnly,
+    );
+
+    // 取消の消去と直列化する (Codex P2 / PR #1013)。並行に走ると、消去の
+    // 全キー削除がいま保存した本文を消す。⚠ **消去の失敗はここで報告しない** —
+    // 保存の失敗として出すと原因を取り違える。⚠ **dispose 済みでも続ける** —
+    // 控えた値はもう手元にあるので、書き切ることが離脱時保存の役目。
     final clearing = _draftClearing;
     if (clearing != null) {
       try {
@@ -1101,27 +1121,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       } catch (_) {
         // 消去できていなくても、この後の保存は独立に試みる。
       }
-      if (!mounted) return;
     }
-    // **ストアへ渡す値は await をまたぐ前に確定させる。** 画面を離れる経路
-    // (#966) ではこの直後に State が dispose され、`_controller` も dispose
-    // 済みになる。await の後で読むと破棄済み ChangeNotifier に触れて落ちる。
+
     final DateTime? savedAt;
     try {
-      savedAt = await _draftStore.save(
-        ComposeDraft(
-          text: _controller.text,
-          cwText: _cwController.text,
-          cwEnabled: _cwEnabled,
-          attachmentCount: _attachments.length,
-          // 設定値も保存する (#964)。本文だけ戻して公開範囲が既定に戻ると、
-          // 気づかず広い範囲へ投げる事故になる。
-          scope: _scope,
-          sensitive: _sensitiveEnabled,
-          localOnly: _localOnly,
-        ),
-        now: DateTime.now(),
-      );
+      savedAt = await _draftStore.save(draft, now: DateTime.now());
     } catch (e, st) {
       // ⚠ **握り潰さない (#1011)。**保存が投げると本文を失うのに、投げっぱなしの
       // 呼び出し（ライフサイクル / PopScope / debounce）なので未処理の非同期
