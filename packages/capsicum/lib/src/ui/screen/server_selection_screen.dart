@@ -15,6 +15,7 @@ import '../../service/settings_backup.dart';
 import '../../platform/platform_info.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../util/settings_backup_apply.dart';
 import '../util/settings_backup_file_type.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
@@ -73,6 +74,11 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
       final prefs = await SharedPreferences.getInstance();
       final result = await applySettingsBackupYaml(prefs, text);
       if (!mounted) return;
+      // ⚠ **ここでも反映する（Codex P2 / PR #1002）。**索引と prefs を書いた
+      // だけでは、テーマ / 文字サイズは main.dart が読んだ古い値のままだし、
+      // 取り込んだアカウントも次の起動まで一覧に出ない。ログイン後の経路と
+      // 同じヘルパーを通す。
+      applyImportedSettingsBackup(ref, result);
 
       final hosts = <String>[];
       for (final raw in result.addedAccountKeys) {

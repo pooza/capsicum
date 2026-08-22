@@ -199,14 +199,22 @@ List<String> readAccountKeysForBackup(SharedPreferences prefs) {
   }
 }
 
-bool _isParsableAccountKey(String key) {
+/// storage key を**正規形**に直す。読めなければ null (#1001)。
+///
+/// ⚠ **正規化せずに保存すると同じアカウントが 2 行に割れる**（Codex P2 /
+/// PR #1002）。手で編集したバックアップに `mastodon://alice@example.com/` のような
+/// 非正規形が入っていると、parse は通るのに `toStorageKey()` とは別文字列なので、
+/// 接続し直した後に `saveAccount` が正規形を**別のアカウントとして**足す。次の
+/// 起動で「トークンのある行」と「未接続の行」が同じアカウントに対して並ぶ。
+String? _canonicalAccountKey(String key) {
   try {
-    AccountKey.fromStorageKey(key);
-    return true;
+    return AccountKey.fromStorageKey(key).toStorageKey();
   } catch (_) {
-    return false;
+    return null;
   }
 }
+
+bool _isParsableAccountKey(String key) => _canonicalAccountKey(key) != null;
 
 void _writeAccounts(StringBuffer buffer, SharedPreferences prefs) {
   final keys = readAccountKeysForBackup(prefs);
@@ -366,8 +374,10 @@ Future<List<String>> _mergeAccounts(
   final added = <String>[];
   var invalid = 0;
   for (final entry in node) {
-    final key = entry is String ? entry : null;
-    if (key == null || !_isParsableAccountKey(key)) {
+    // ⚠ **正規形にしてから入れる。**非正規形のまま保存すると、接続し直した後に
+    // 同じアカウントが 2 行（トークンあり / 未接続）に割れる。
+    final key = entry is String ? _canonicalAccountKey(entry) : null;
+    if (key == null) {
       invalid++;
       continue;
     }
