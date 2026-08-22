@@ -40,6 +40,23 @@ class ComposeDraft {
   bool get hasText => text.isNotEmpty;
 }
 
+/// 下書きの書き込みが拒まれた (#1011)。
+///
+/// `SharedPreferences` の setter は失敗しても投げず false を返すので、ここで
+/// 例外へ翻訳する。**意図的な no-op（破棄済み・世代ズレ）と同じ null にしない**
+/// ため — 呼び出し側が区別できないと、失敗が観測も通知もされないまま古い保存
+/// 時刻が表示に残る（Codex P2 / PR #1013）。
+///
+/// ⚠ **メッセージに本文を載せない。** Sentry へ出る。
+class ComposeDraftSaveException implements Exception {
+  const ComposeDraftSaveException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ComposeDraftSaveException: $message';
+}
+
 /// 投稿フォームのローカル自動保存の永続化 (#966 / #964)。
 ///
 /// UI から切り離してあるのは、「破棄したあとは書き戻さない」という副作用の順序
@@ -115,9 +132,13 @@ class ComposeDraftStore {
   /// さらに、**別インスタンスが [clear] してスロットの世代が進んでいたら**書き
   /// 戻さない (#969)。
   ///
-  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。no-op だった場合と
-  /// **書き込みに失敗した場合**は null (#1011)。⚠ **時刻は呼び出し側が渡す** — `DateTime.now()` を内部で呼ぶと
-  /// テストで固定できない。
+  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。**意図的な no-op**
+  /// （破棄済み・世代ズレ）では null。⚠ **時刻は呼び出し側が渡す** —
+  /// `DateTime.now()` を内部で呼ぶとテストで固定できない。
+  ///
+  /// ⚠ **書き込みが拒まれたら [ComposeDraftSaveException] を投げる (#1011)。**
+  /// null と混ぜると、呼び出し側が「意図した no-op」と区別できず、失敗が観測も
+  /// 通知もされないまま**古い保存時刻が表示に残る**（Codex P2 / PR #1013）。
   Future<DateTime?> save(ComposeDraft draft, {required DateTime now}) async {
     if (_discarded) return null;
     final prefs = await SharedPreferences.getInstance();
@@ -129,6 +150,7 @@ class ComposeDraftStore {
     // ⚠ **書けたかどうかを見る (#1011)。**`setString` 等は失敗しても throw せず
     // false を返す。捨てていたため、**書けていないのに画面へ「自動保存 12:34」**
     // が出ていた。ユーザーはそれを信じてアプリを終了し、本文を失う。
+    // 拒否は下で例外へ翻訳する（意図的な no-op と同じ null にしない）。
     var ok = true;
     ok = await prefs.setString(_k(textKey), draft.text) && ok;
     ok = await prefs.setString(_k(cwTextKey), draft.cwText) && ok;
@@ -145,7 +167,12 @@ class ComposeDraftStore {
     }
     // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
     _syncedGeneration = current;
-    return ok ? now : null;
+    if (!ok) {
+      throw const ComposeDraftSaveException(
+        'shared preferences rejected write',
+      );
+    }
+    return now;
   }
 
   /// 保存済みの入力を読む。何も保存されていなければ null。

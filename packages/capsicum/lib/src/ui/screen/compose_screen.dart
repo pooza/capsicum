@@ -1113,17 +1113,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         error: e,
         stackTrace: st,
       );
-      // 打鍵のたびに走るので、1 画面 1 回だけ伝える。
-      if (mounted && !_draftSaveFailureNotified) {
-        _draftSaveFailureNotified = true;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('下書きを保存できませんでした')));
+      if (mounted) {
+        // ⚠ **表示も下ろす (#1011 / Codex P2)。**「自動保存 12:34」を残すと、
+        // 直近の本文まで保存されているように読める。
+        setState(() => _draftSavedAt = null);
+        // 打鍵のたびに走るので、1 画面 1 回だけ伝える。
+        if (!_draftSaveFailureNotified) {
+          _draftSaveFailureNotified = true;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('下書きを保存できませんでした')));
+        }
       }
       return;
     }
-    // 世代ガード (#969)・破棄済み・書き込み失敗 (#1011) では null。表示を更新
-    // すると「保存された」と嘘をつくので、返ってきたときだけ反映する (#964)。
+    // 世代ガード (#969) や破棄済みの no-op では null（書き込みの拒否はここには
+    // 来ない — 上の catch で扱う）。表示を更新すると「保存された」と嘘をつくので、
+    // 返ってきたときだけ反映する (#964)。
     if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
   }
 
