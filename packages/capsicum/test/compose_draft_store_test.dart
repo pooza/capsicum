@@ -143,6 +143,58 @@ void main() {
 
       expect((await ComposeDraftStore().restore())!.text, '単発保存');
     });
+
+    /// #1008: 復元の「取消」だけは画面に留まったまま消す。破棄済みにすると、
+    /// `late final` のストアを持つその画面の自動保存が二度と効かず、取消の
+    /// あとに書いた本文が黙って失われる。
+    test('REGRESSION: clear(discard: false) のあとも、その画面の保存は効く', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: '前回の書きかけ'),
+        now: fixedNow,
+      );
+
+      // 画面が開いて復元 → 「取消」。
+      final screen = ComposeDraftStore();
+      expect((await screen.restore())!.text, '前回の書きかけ');
+      await screen.clear(discard: false);
+
+      expect(screen.discarded, isFalse);
+      expect(await ComposeDraftStore().restore(), isNull);
+
+      // 取消のあとに書いた本文は、同じインスタンスから保存できる。
+      final savedAt = await screen.save(
+        const ComposeDraft(text: '取消のあとに書いた本文'),
+        now: fixedNow,
+      );
+
+      expect(savedAt, fixedNow);
+      expect(
+        (await ComposeDraftStore().restore())!.text,
+        '取消のあとに書いた本文',
+      );
+    });
+
+    test('#1008: 取消でも世代は進む（別画面の古い書き戻しは止めたまま）', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: '共有の下書き'),
+        now: fixedNow,
+      );
+
+      final a = ComposeDraftStore();
+      final b = ComposeDraftStore();
+      expect((await a.restore())!.text, '共有の下書き');
+      expect((await b.restore())!.text, '共有の下書き');
+
+      // B が取消（画面は開いたまま）。
+      await b.clear(discard: false);
+
+      // A の離脱時保存は stale なので書き戻さない (#969)。
+      expect(
+        await a.save(const ComposeDraft(text: '共有の下書き'), now: fixedNow),
+        isNull,
+      );
+      expect(await ComposeDraftStore().restore(), isNull);
+    });
   });
 
   group('保存範囲の拡張 (#964)', () {

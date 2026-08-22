@@ -198,13 +198,22 @@ class ComposeDraftStore {
   ///
   /// 世代を進めるので、重ねて開いている別画面の [save]（古い本文の書き戻し）が
   /// 以降無効になる (#969)。世代印そのものは残す。
-  Future<void> clear() async {
-    _discarded = true;
+  ///
+  /// [discard] は「**このインスタンスの以降の保存も止めるか**」。既定の true は
+  /// 投稿成功・サーバー下書き保存向けで、どちらも直後に画面を閉じる。
+  ///
+  /// ⚠ **画面に留まったまま消す経路は false で呼ぶ (#1008)。**復元の「取消」が
+  /// これで、true のままだと [discarded] を戻す手段が無く、`late final` の
+  /// ストアを持つその画面の自動保存が**二度と効かない**（取消のあとに書いた
+  /// 本文が黙って失われる）。
+  Future<void> clear({bool discard = true}) async {
+    if (discard) _discarded = true;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(
-      _k(generationKey),
-      (prefs.getInt(_k(generationKey)) ?? 0) + 1,
-    );
+    final next = (prefs.getInt(_k(generationKey)) ?? 0) + 1;
+    await prefs.setInt(_k(generationKey), next);
+    // 世代を進めた当人なので、自分の印も進める。放っておくと世代ガード (#969)
+    // が**自分自身の**以降の保存を stale と見て捨てる。
+    if (!discard) _syncedGeneration = next;
     await _removeAll(prefs, _k);
   }
 

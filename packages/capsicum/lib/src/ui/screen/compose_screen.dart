@@ -1037,6 +1037,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   ///
   /// ⚠ **保存スロットも消す。** 戻したのに次に開いてまた同じものが復元されると、
   /// 「取消」が効いていないように見える。
+  ///
+  /// ⚠ **ただし自動保存は止めない (#1008)。** 他の [_clearDraft] 呼び出しは直後に
+  /// 画面を閉じるが、取消だけはこの画面に留まる。破棄済みにすると、取消のあとに
+  /// 書いた本文が保存されないまま失われる。
   void _undoDraftRestore() {
     final before = _draftBeforeRestore;
     _draftDebounceTimer?.cancel();
@@ -1053,7 +1057,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       _draftRestoredNotice = false;
       _draftSavedAt = null;
     });
-    unawaited(_clearDraft());
+    unawaited(_clearDraft(discard: false));
   }
 
   /// 入力停止から [_draftDebounce] 後に自動保存する (#964)。打鍵のたびに
@@ -1167,7 +1171,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   }
 
   /// Remove any persisted draft (called after a successful post).
-  Future<void> _clearDraft() => _draftStore.clear();
+  /// [discard] は「以降の自動保存も止めるか」。既定 true で画面を閉じる経路向け
+  /// （[ComposeDraftStore.clear] の doc を参照）。取消だけ false (#1008)。
+  Future<void> _clearDraft({bool discard = true}) =>
+      _draftStore.clear(discard: discard);
 
   void _initReplyMentions(Post replyTo) {
     final currentUser = ref.read(currentAccountProvider)?.user;
