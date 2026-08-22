@@ -168,10 +168,7 @@ void main() {
       );
 
       expect(savedAt, fixedNow);
-      expect(
-        (await ComposeDraftStore().restore())!.text,
-        '取消のあとに書いた本文',
-      );
+      expect((await ComposeDraftStore().restore())!.text, '取消のあとに書いた本文');
     });
 
     test('#1008: 取消でも世代は進む（別画面の古い書き戻しは止めたまま）', () async {
