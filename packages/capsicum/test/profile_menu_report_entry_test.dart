@@ -39,7 +39,12 @@ void main() {
     );
   });
 
-  test('通報ダイアログの TextEditingController が dispose される', () {
+  /// controller の寿命は #998 から追っている検査。**持ち主が変わった**
+  /// (Codex P2 / PR #1013) ので、見るものも変える — 画面が持って `finally` で
+  /// 捨てる形は、`showDialog` の Future が閉じるアニメーションの完了より前に
+  /// 解決するせいで**破棄が早すぎる**（まだツリーに居る `TextField` が破棄済み
+  /// controller に触れる）。ダイアログ自身に持たせるのが正で、画面側は持たない。
+  test('通報ダイアログの controller を画面が持たない', () {
     final lines = source().split('\n');
     final start = lines.indexWhere(
       (l) => l.trimRight() == '  Future<void> _confirmAndReportUser() async {',
@@ -55,13 +60,18 @@ void main() {
 
     expect(
       body,
-      contains('TextEditingController()'),
-      reason: '抽出が実装とずれている。理由の入力欄が見当たらない',
+      contains('showReportCommentDialog('),
+      reason:
+          '共通の通報ダイアログを通していない。理由の入力欄と controller の'
+          '寿命はダイアログ側が持つ (#1013)',
     );
     expect(
       body,
-      contains('commentController.dispose()'),
-      reason: 'キャンセルで閉じたときに controller が漏れる',
+      isNot(contains('TextEditingController(')),
+      reason:
+          '画面が controller を持っている。閉じるアニメーションの途中で'
+          '破棄すると、まだツリーに残っている TextField が破棄済み controller に'
+          '触れる (#1013)',
     );
   });
 }

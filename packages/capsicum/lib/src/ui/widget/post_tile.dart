@@ -33,6 +33,7 @@ import 'emoji_action_sheet.dart';
 import 'reaction_picker_sheet.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
+import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
 import 'emoji_text.dart';
 import '../../util/exception_scrub.dart';
@@ -1383,7 +1384,8 @@ class _PostTileState extends ConsumerState<PostTile> {
                   item(
                     leading: const Icon(Icons.flag_outlined),
                     title: const Text('通報'),
-                    onSelected: () => _confirmReport(context, targetPost),
+                    onSelected: () =>
+                        unawaited(_confirmReport(context, targetPost)),
                   ),
                 if (isOwn && adapter is PinSupport) ...[
                   const Divider(),
@@ -1482,12 +1484,18 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 呼び出しが API 呼び出しより**前**にあるため、**操作が送信されないまま
     // 成功も失敗も出ずに消える**。
     final timeline = readVisibleTimelines(ref);
+    // ⚠ **ラベルも同じ理由で開く前に確定させる (#1009)。** ダイアログのボタンは
+    // シートの項目タップ (#996) より**さらに後**に押されるので、`ref.read` を
+    // `onPressed` に置くと dispose 済みで投げる。しかも投げるのは
+    // `deletePost` より前で、CAPSICUM-4R と同じ「送信されないまま成功も失敗も
+    // 出ない」形になる。
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('${ref.read(postLabelProvider)}を削除'),
-        content: Text('この${ref.read(postLabelProvider)}を削除しますか？この操作は取り消せません。'),
+        title: Text('$postLabelを削除'),
+        content: Text('この$postLabelを削除しますか？この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1501,11 +1509,16 @@ class _PostTileState extends ConsumerState<PostTile> {
                 timeline.removePost(targetPost.id);
                 if (mounted) setState(() => _deletedPostId = targetPost.id);
                 if (context.mounted) _popIfInThread(context);
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              // ⚠ **タイルの context から取らない (#659)。**ダイアログが再ビルド
+              // される（キーボード開閉・回転・テーマ変更）と、dispose 済みの
+              // Element を辿って落ちる。
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1513,61 +1526,35 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
-  void _confirmReport(BuildContext context, Post targetPost) {
+  Future<void> _confirmReport(BuildContext context, Post targetPost) async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ReportSupport) return;
     final messenger = ScaffoldMessenger.of(context);
-    final commentController = TextEditingController();
+    // 理由は [_confirmDelete] の同名コメント (#1009)。文面はダイアログを開く前に
+    // 組む（builder の中で `ref` を読むと、キーボードの開閉で再ビルドされたとき
+    // に dispose 済みで投げる）。
+    final postLabel = ref.read(postLabelProvider);
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('通報'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
-            // Mastodon の `POST /api/v1/reports` は account_id が必須・
-            // status_ids が任意、Misskey の `report-abuse` に至っては投稿を
-            // 渡す口が無い。「投稿だけが通報された」と読める文面にしない。
-            Text(
-              'この${ref.read(postLabelProvider)}を添えて '
-              '@${targetPost.author.username} をサーバー管理者に通報しますか？',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: commentController,
-              decoration: const InputDecoration(
-                hintText: '理由（任意）',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              final comment = commentController.text.trim();
-              _runVoidAction(
-                messenger,
-                () => (adapter as ReportSupport).reportPost(
-                  targetPost.id,
-                  targetPost.author.id,
-                  comment: comment.isNotEmpty ? comment : null,
-                ),
-                '通報しました',
-              );
-            },
-            child: const Text('通報'),
-          ),
-        ],
+    // 通報の宛先はアカウントで、投稿は証拠として添えるもの (#998)。
+    // Mastodon の `POST /api/v1/reports` は account_id が必須・status_ids が
+    // 任意、Misskey の `report-abuse` に至っては投稿を渡す口が無い。
+    // 「投稿だけが通報された」と読める文面にしない。
+    final comment = await showReportCommentDialog(
+      context,
+      message:
+          'この$postLabelを添えて '
+          '@${targetPost.author.username} をサーバー管理者に通報しますか？',
+    );
+    if (comment == null) return;
+
+    await _runVoidAction(
+      messenger,
+      () => (adapter as ReportSupport).reportPost(
+        targetPost.id,
+        targetPost.author.id,
+        comment: comment.isNotEmpty ? comment : null,
       ),
+      '通報しました',
     );
   }
 
@@ -1576,16 +1563,15 @@ class _PostTileState extends ConsumerState<PostTile> {
     if (adapter == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
-    // 理由は [_confirmDelete] の同名コメント (#990)。
+    // 理由は [_confirmDelete] の同名コメント (#990 / #1009)。
     final timeline = readVisibleTimelines(ref);
+    final postLabel = ref.read(postLabelProvider);
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('削除して再編集'),
-        content: Text(
-          '${ref.read(postLabelProvider)}を削除し、内容を再編集します。この操作は取り消せません。',
-        ),
+        content: Text('$postLabelを削除し、内容を再編集します。この操作は取り消せません。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1602,11 +1588,13 @@ class _PostTileState extends ConsumerState<PostTile> {
                 if (mounted) {
                   router.push('/compose', extra: {'redraft': targetPost});
                 }
-              }, '${ref.read(postLabelProvider)}を削除しました');
+              }, '$postLabelを削除しました');
             },
             child: Text(
               '削除して再編集',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -1829,6 +1817,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // `updateStatusTags` より**前**にあるので、投げると**タグづけが送信されない
     // まま無言で消える**。タグ管理は capsicum の根幹機能 (docs/CLAUDE.md)。
     final timeline = readVisibleTimelines(ref);
+    // ラベルも同じ理由で開く前に確定させる (#1009)。builder の中に置くと、
+    // 入力欄でキーボードが開いた再ビルドのときに dispose 済みで投げる。
+    final postLabel = ref.read(postLabelProvider);
 
     showModalBottomSheet(
       context: context,
@@ -1837,7 +1828,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         initialTags: parsed.trailingTags,
         mulukhiya: mulukhiya,
         adapter: adapter!,
-        postLabel: ref.read(postLabelProvider),
+        postLabel: postLabel,
         onSubmit: (tags) async {
           try {
             final raw = await mulukhiya.updateStatusTags(

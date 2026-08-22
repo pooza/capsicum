@@ -2,6 +2,35 @@ import 'package:capsicum/src/service/compose_draft_store.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+
+/// 世代印の書き込みだけを拒む prefs (Codex P2 / PR #1013)。スロットの世代が
+/// 据え置かれるのに、インスタンス側の印だけ進むと何が起きるかを見る。
+class _GenerationRejectingStore extends InMemorySharedPreferencesStore {
+  _GenerationRejectingStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key.contains(ComposeDraftStore.generationKey)) return false;
+    return super.setValue(valueType, key, value);
+  }
+}
+
+/// 書き込みを拒む prefs (#1011)。`SharedPreferences` の setter は失敗しても
+/// 投げず **false を返す**ので、この形でしか再現できない（端末が容量いっぱい・
+/// ストレージが壊れている・プラグイン側が落ちている、等）。
+class _RejectingStore extends InMemorySharedPreferencesStore {
+  _RejectingStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    // 世代印だけは通す（clear の副作用まで潰すと検査の意図がぼやける）。
+    if (key.contains(ComposeDraftStore.generationKey)) {
+      return super.setValue(valueType, key, value);
+    }
+    return false;
+  }
+}
 
 /// #966: 投稿フォームのローカル自動保存。保存範囲の拡張とアカウント別スロットは
 /// #964 で足した（[ComposeDraftStore.accountKey]）。
@@ -142,6 +171,111 @@ void main() {
       await store.save(const ComposeDraft(text: '単発保存'), now: fixedNow);
 
       expect((await ComposeDraftStore().restore())!.text, '単発保存');
+    });
+
+    /// #1011 (Codex P2 / PR #1013): 書き込みの拒否を、意図的な no-op と同じ
+    /// null で返してはいけない。区別できないと呼び出し側が失敗を観測も通知も
+    /// できず、**古い「自動保存 12:34」が表示に残ったまま本文を失う**。
+    test('REGRESSION: 書き込みを拒まれたら投げる（no-op の null と混ぜない）', () async {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = _RejectingStore();
+
+      final store = ComposeDraftStore();
+
+      await expectLater(
+        store.save(const ComposeDraft(text: '書けない本文'), now: fixedNow),
+        throwsA(isA<ComposeDraftSaveException>()),
+      );
+      // 破棄印は立てない（次の打鍵で再挑戦できる）。
+      expect(store.discarded, isFalse);
+    });
+
+    /// Codex P2 (PR #1013): 世代印の永続化が拒まれた取消。
+    ///
+    /// ⚠ **「書けたときだけ印を進める」ではこの検査が落ちる。** `SharedPreferences`
+    /// は setter の結果に関わらずプロセス内のキャッシュを先に更新するので、拒否
+    /// されてもこのプロセスの `getInt` は新しい世代を返す。印を据え置くと以降の
+    /// [ComposeDraftStore.save] が毎回「世代ズレ」の no-op になり、**#1008 と
+    /// 同じ症状が別経路で戻る**（しかも no-op なので失敗としても出ない）。
+    /// 永続化の失敗は [ComposeDraftStore.clear] の戻り値で伝える。
+    test('REGRESSION: 世代を書けなかった取消でも、以降の保存は効く', () async {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = _GenerationRejectingStore();
+
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '前回の書きかけ'), now: fixedNow);
+      await store.restore();
+
+      expect(
+        await store.clear(discard: false),
+        isFalse,
+        reason: '永続化できなかったことは戻り値で伝える',
+      );
+
+      expect(
+        await store.save(
+          const ComposeDraft(text: '取消のあとに書いた本文'),
+          now: fixedNow,
+        ),
+        fixedNow,
+      );
+      expect((await ComposeDraftStore().restore())!.text, '取消のあとに書いた本文');
+    });
+
+    test('書き込みが通る環境では clear は true を返す', () async {
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '本文'), now: fixedNow);
+
+      expect(await store.clear(), isTrue);
+    });
+
+    /// #1008: 復元の「取消」だけは画面に留まったまま消す。破棄済みにすると、
+    /// `late final` のストアを持つその画面の自動保存が二度と効かず、取消の
+    /// あとに書いた本文が黙って失われる。
+    test('REGRESSION: clear(discard: false) のあとも、その画面の保存は効く', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: '前回の書きかけ'),
+        now: fixedNow,
+      );
+
+      // 画面が開いて復元 → 「取消」。
+      final screen = ComposeDraftStore();
+      expect((await screen.restore())!.text, '前回の書きかけ');
+      await screen.clear(discard: false);
+
+      expect(screen.discarded, isFalse);
+      expect(await ComposeDraftStore().restore(), isNull);
+
+      // 取消のあとに書いた本文は、同じインスタンスから保存できる。
+      final savedAt = await screen.save(
+        const ComposeDraft(text: '取消のあとに書いた本文'),
+        now: fixedNow,
+      );
+
+      expect(savedAt, fixedNow);
+      expect((await ComposeDraftStore().restore())!.text, '取消のあとに書いた本文');
+    });
+
+    test('#1008: 取消でも世代は進む（別画面の古い書き戻しは止めたまま）', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: '共有の下書き'),
+        now: fixedNow,
+      );
+
+      final a = ComposeDraftStore();
+      final b = ComposeDraftStore();
+      expect((await a.restore())!.text, '共有の下書き');
+      expect((await b.restore())!.text, '共有の下書き');
+
+      // B が取消（画面は開いたまま）。
+      await b.clear(discard: false);
+
+      // A の離脱時保存は stale なので書き戻さない (#969)。
+      expect(
+        await a.save(const ComposeDraft(text: '共有の下書き'), now: fixedNow),
+        isNull,
+      );
+      expect(await ComposeDraftStore().restore(), isNull);
     });
   });
 

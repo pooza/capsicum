@@ -78,4 +78,59 @@ void main() {
           '$guards 箇所しかない。ガードの無い経路が残っている (#996)',
     );
   });
+
+  /// #1009: 母数はシートの項目だけではない。**そこから開くダイアログ / 二次
+  /// シートの中身**も同じ穴を持つ。項目タップの時点では生きていても、確認
+  /// ダイアログのボタンはさらに後に押されるし、builder は入力欄のキーボード
+  /// 開閉でも再び走る。その中で `ref` や タイルの `context` に触ると、
+  /// dispose 済みで StateError を投げ、**API 呼び出しの前に落ちる**＝ #996 と
+  /// まったく同じ「操作が無言で消える」形になる。
+  ///
+  /// 実際 #996 の修正では `timeline` だけ開く前に巻き上げ、`postLabelProvider`
+  /// が `onPressed` に残っていた。ガードの母数を「開いたあとに走るコード全部」
+  /// へ広げてここで固定する。
+  test('ダイアログ / シートの中で ref や タイルの context に触っていない', () {
+    final lines = File(
+      'lib/src/ui/widget/post_tile.dart',
+    ).readAsStringSync().split('\n');
+
+    final openings = <int>[];
+    final violations = <String>[];
+    for (var i = 0; i < lines.length; i++) {
+      if (!lines[i].contains('showDialog(') &&
+          !lines[i].contains('showModalBottomSheet(')) {
+        continue;
+      }
+      openings.add(i + 1);
+      // 開く呼び出しから、メソッド定義と同じインデントの閉じ括弧まで。
+      var end = i + 1;
+      while (end < lines.length && lines[end] != '  }') {
+        end++;
+      }
+      for (var j = i; j < end; j++) {
+        final line = lines[j];
+        if (line.contains('ref.read(') ||
+            line.contains('ref.watch(') ||
+            line.contains('Theme.of(context)')) {
+          violations.add('${j + 1}: ${line.trim()}');
+        }
+      }
+      i = end;
+    }
+
+    // 抽出が壊れて空になると検査が素通りするので、まず母数を確かめる。
+    expect(
+      openings.length,
+      greaterThanOrEqualTo(6),
+      reason: 'ダイアログ / シートを拾えていない。抽出が実装とずれた可能性がある',
+    );
+    expect(
+      violations,
+      isEmpty,
+      reason:
+          'ダイアログ / シートを開いたあとに走るコードで ref かタイルの context に'
+          '触っている。開く前に値を確定させ、Theme は dialogContext から取ること'
+          ' (#1009)',
+    );
+  });
 }

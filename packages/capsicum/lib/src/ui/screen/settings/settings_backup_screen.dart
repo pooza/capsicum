@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -127,28 +126,9 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
     final file = await openFile(acceptedTypeGroups: [_typeGroup]);
     if (file == null || !mounted) return; // キャンセル
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('設定を読み込む'),
-        content: const Text(
-          'この端末の設定が、ファイルの内容で上書きされます。\n'
-          'ファイルに入っているアカウントは一覧へ追加されます'
-          '（この端末の既存のアカウントは消えません）。よろしいですか？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('読み込む'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    // 確認・skip の記録・但し書きはログイン前の経路と共通 (#1010)。
+    final confirmed = await confirmSettingsBackupImport(context);
+    if (!confirmed || !mounted) return;
 
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -165,7 +145,7 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
       // 設定とアカウントの反映は共通ヘルパーへ寄せてある（ログイン前の経路と
       // 割れないようにするため・Codex P2 / PR #1002）。
       applyImportedSettingsBackup(ref, result);
-      _reportImportSkips(result);
+      reportSettingsBackupImportSkips(result);
       messenger.showSnackBar(SnackBar(content: Text(_importSummary(result))));
     } on SettingsBackupFormatException catch (e, st) {
       // 不正 YAML / 版違い / 設定ファイルでない、の失敗率を観測する (#968)。
@@ -197,32 +177,6 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
     }
   }
 
-  /// 取り込まなかったキーの内訳を Sentry へ残す (#968)。
-  ///
-  /// 画面には件数しか出ず記録も残らないため、版をまたいで互換が崩れても（未知の
-  /// キー・型違い・範囲外が増えても）気付けなかった。**キー名と理由だけ**を載せ、
-  /// **値は載せない**（テンプレート履歴・フォント名などが入るため）。失敗ではなく
-  /// 分布観測なので captureMessage（info）で、fingerprint は 1 本に集約する。
-  void _reportImportSkips(SettingsImportResult result) {
-    if (result.skipped.isEmpty) return;
-    try {
-      Sentry.captureMessage(
-        'settings_backup: import skipped ${result.skipped.length} keys',
-        level: SentryLevel.info,
-        withScope: (scope) {
-          scope.setTag('settings_backup.op', 'import_skip');
-          // key -> 理由。値は含めない（result.skipped は key→理由 の対応）。
-          scope.setContexts('settings_backup_skipped', {
-            for (final entry in result.skipped.entries) entry.key: entry.value,
-          });
-          scope.fingerprint = ['settings_backup.op', 'import_skip'];
-        },
-      );
-    } catch (_) {
-      // Sentry 失敗で UI を止めない。
-    }
-  }
-
   String _importSummary(SettingsImportResult result) {
     if (result.applied.isEmpty &&
         result.skipped.isEmpty &&
@@ -238,14 +192,10 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
         '（未接続。ログインし直すと使えます）',
       );
     }
-    if (result.skipped.isNotEmpty) {
-      buffer.write('（${result.skipped.length} 件は取り込みませんでした）');
-    }
+    buffer.write(settingsBackupSkippedNote(result));
     return buffer.toString();
   }
 
-  /// 取り込んだ値を画面へ反映する (#857)。
-  ///
   @override
   Widget build(BuildContext context) {
     return Scaffold(

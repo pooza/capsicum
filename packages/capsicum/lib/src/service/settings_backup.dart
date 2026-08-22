@@ -380,6 +380,16 @@ Future<List<String>> _mergeAccounts(
 
   final existing = readAccountKeysForBackup(prefs);
   final merged = [...existing];
+  // ⚠ **突き合わせは正規形どうしで (#1011)。**取り込む側は正規形なのに、索引側は
+  // 生のまま（`readAccountKeysForBackup` は parse できるかを見るだけ）だったので、
+  // 索引に非正規形が入っている端末では `contains` が外れて**同じアカウントが 2 行
+  // に割れる**。ホストを大文字混じりで打って作ったアカウントで踏む。
+  // ⚠ **索引そのものは直さない。**`secret_<key>` は生の key で引くので、ここで
+  // 書き換えるとトークンとの対応が切れる。比較用の集合だけ正規形にする。
+  final canonical = existing
+      .map(_canonicalAccountKey)
+      .whereType<String>()
+      .toSet();
   final added = <String>[];
   var invalid = 0;
   for (final entry in node) {
@@ -390,7 +400,7 @@ Future<List<String>> _mergeAccounts(
       invalid++;
       continue;
     }
-    if (merged.contains(key)) continue;
+    if (!canonical.add(key)) continue;
     merged.add(key);
     added.add(key);
   }

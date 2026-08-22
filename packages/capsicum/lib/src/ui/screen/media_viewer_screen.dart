@@ -145,35 +145,21 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
   }
 
   Future<void> _editDescription() async {
-    final attachment = _attachments[_currentIndex];
-    final controller = TextEditingController(
-      text: attachment.description ?? '',
-    );
+    // ⚠ **添付と位置は開く前に確定させる (#1011)。**書き戻し先を「その時点の
+    // `_currentIndex`」にすると、保存中にページを送っただけで**別の添付の枠へ
+    // 上書き**してしまう（同じ画像が 2 枚並ぶ形で呼び出し側にも渡る）。
+    final index = _currentIndex;
+    final attachment = _attachments[index];
 
+    // controller はダイアログ自身に持たせる (Codex P2 / PR #1013)。`showDialog`
+    // の Future は**閉じるアニメーションの完了より前に**解決するので、呼び出し側
+    // で await の直後に破棄すると、まだツリーに残っている `TextField` が
+    // 破棄済み controller に触れる（autofocus でキーボードが開いていると、
+    // 閉じる途中のフォーカス更新で踏む）。
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('メディアの説明を編集'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: '説明を入力…',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _DescriptionEditDialog(initialText: attachment.description ?? ''),
     );
 
     if (result == null || !mounted) return;
@@ -188,22 +174,33 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         result,
         postId: widget.postId!,
       );
-      setState(() {
-        _attachments[_currentIndex] = Attachment(
-          id: attachment.id,
-          type: attachment.type,
-          url: attachment.url,
-          previewUrl: attachment.previewUrl,
-          description: result,
-        );
-        _modified = true;
-      });
+      // ⚠ **`setState` にも mounted を見る (#1011)。**破棄済みだと下の catch へ
+      // 落ちて、**サーバー側は成功しているのに失敗扱い**になる。
       if (mounted) {
+        setState(() {
+          _attachments[index] = Attachment(
+            id: attachment.id,
+            type: attachment.type,
+            url: attachment.url,
+            previewUrl: attachment.previewUrl,
+            description: result,
+          );
+          _modified = true;
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('説明を更新しました')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // 同ファイルの他の操作と同じく件数を残す (#1011)。⚠ **フラグが true でも
+      // 失敗する窓が残っている** — 上流の PUT が 405 / 500 で落ちる構成があり
+      // （mulukhiya#4621）、ユーザーには理由不明の 1 行しか出ない。
+      reportOpFailure(
+        tagKey: 'media.op',
+        operation: 'alt_edit',
+        error: e,
+        stackTrace: st,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -543,6 +540,54 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 /// 横ドラッグを掴んでしまい、「画像の上でしか反応しない／ドラッグだと渋い」
 /// 感触の一因になっていた）。ズーム中のみ pan を有効化し、併せて
 /// [onZoomChanged] で親にズーム状態を通知して PageView のスワイプを止める。
+/// 投稿済みメディアの説明 (ALT) を編集するダイアログ (#121)。
+///
+/// ⚠ **controller の寿命をルートに合わせるために StatefulWidget にしている**
+/// (Codex P2 / PR #1013)。`showDialog` の Future は閉じるアニメーションの完了
+/// より前に解決するため、呼び出し側で破棄すると早すぎる。
+class _DescriptionEditDialog extends StatefulWidget {
+  const _DescriptionEditDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_DescriptionEditDialog> createState() => _DescriptionEditDialogState();
+}
+
+class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
+  late final _controller = TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('メディアの説明を編集'),
+    content: TextField(
+      controller: _controller,
+      maxLines: 4,
+      decoration: const InputDecoration(
+        hintText: '説明を入力…',
+        border: OutlineInputBorder(),
+      ),
+      autofocus: true,
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('キャンセル'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _controller.text),
+        child: const Text('保存'),
+      ),
+    ],
+  );
+}
+
 class _ZoomableImagePage extends StatefulWidget {
   final Widget child;
   final ValueChanged<bool> onZoomChanged;

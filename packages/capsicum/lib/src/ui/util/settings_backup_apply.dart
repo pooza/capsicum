@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../model/account_key.dart';
 import '../../provider/account_manager_provider.dart';
@@ -40,3 +42,72 @@ void applyImportedSettingsBackup(WidgetRef ref, SettingsImportResult result) {
   }
   ref.read(accountManagerProvider.notifier).addDisconnectedAccounts(keys);
 }
+
+/// 取り込みの前に必ず挟む確認 (#1010)。
+///
+/// ⚠ **ログイン前の経路でも要る。** `/server` は新しい端末だけの画面ではなく、
+/// ドロワーの「アカウントを追加」と未接続アカウントの「接続し直す」からも開く。
+/// つまり**設定を持っている端末**からも取り込みボタンを押せる。上書きを元に
+/// 戻す手段は無いので、確認も反映（[applyImportedSettingsBackup]）と同じく
+/// 両画面で共通にする。
+Future<bool> confirmSettingsBackupImport(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('設定を読み込む'),
+      content: const Text(
+        'この端末の設定が、ファイルの内容で上書きされます。\n'
+        'ファイルに入っているアカウントは一覧へ追加されます'
+        '（この端末の既存のアカウントは消えません）。よろしいですか？',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('読み込む'),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+/// 取り込まなかったキーの内訳を Sentry へ残す (#968)。
+///
+/// 画面には件数しか出ず記録も残らないため、版をまたいで互換が崩れても（未知の
+/// キー・型違い・範囲外が増えても）気付けなかった。**キー名と理由だけ**を載せ、
+/// **値は載せない**（テンプレート履歴・フォント名などが入るため）。失敗ではなく
+/// 分布観測なので captureMessage（info）で、fingerprint は 1 本に集約する。
+///
+/// ⚠ **こちらも両画面で共通** (#1010)。移行の主経路はログイン前なので、そこで
+/// 観測が落ちていると分布がログイン後の再取り込みに偏る。
+void reportSettingsBackupImportSkips(SettingsImportResult result) {
+  if (result.skipped.isEmpty) return;
+  try {
+    Sentry.captureMessage(
+      'settings_backup: import skipped ${result.skipped.length} keys',
+      level: SentryLevel.info,
+      withScope: (scope) {
+        scope.setTag('settings_backup.op', 'import_skip');
+        // key -> 理由。値は含めない（result.skipped は key→理由 の対応）。
+        scope.setContexts('settings_backup_skipped', {
+          for (final entry in result.skipped.entries) entry.key: entry.value,
+        });
+        scope.fingerprint = ['settings_backup.op', 'import_skip'];
+      },
+    );
+  } catch (_) {
+    // Sentry 失敗で UI を止めない。
+  }
+}
+
+/// 取り込めなかった件数の但し書き。何も落ちていなければ空文字 (#1010)。
+///
+/// ⚠ **成功メッセージに必ず添える。** 索引の保存に失敗すると `skipped` にだけ
+/// 記録されて `addedAccountKeys` は空になるので、これが無いと「設定を読み込み
+/// ました」だけが出て**部分失敗が無言になる**。
+String settingsBackupSkippedNote(SettingsImportResult result) =>
+    result.skipped.isEmpty ? '' : '（${result.skipped.length} 件は取り込みませんでした）';

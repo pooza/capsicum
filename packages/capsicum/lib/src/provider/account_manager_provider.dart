@@ -955,7 +955,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // 読むと StateError を投げるので、評価順が逆だと打ち切りの周回で落ちる。
       // prod では provider がアプリ寿命なので実害は薄いが、テストと将来の
       // autoDispose 化で効く。
-      while (!_disposed && state.offlineAccounts.isNotEmpty) {
+      // ⚠ **継続条件も `recoverableByRetry` で絞る (#1011)。**起動判定 (#967) と
+      // probe 対象だけを絞っていたため、到達不能分が復帰 / 降格して**未接続だけ
+      // が残る**と、probe 0 件のループがプロセスの終わりまで空回りしていた
+      // （起動判定のコメントが警告している状態に、別経路で到達できていた）。
+      while (!_disposed &&
+          state.offlineAccounts.any((o) => o.recoverableByRetry)) {
         final delay = offlineRetryDelay(attempt);
         await Future<void>.delayed(delay);
         if (_disposed) return;
@@ -978,7 +983,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         // 上の節目。#792 はここで打ち切っていたが、#938 で継続へ変えたので
         // 「打ち切り」ではなく marker として 1 度だけ記録する。per-process
         // dedup があるので、以降の周回では二重に上がらない。
-        final remaining = state.offlineAccounts;
+        // ⚠ **marker の母数も同じ絞り (#1011)。**未接続は「待っても戻らない」
+        // ので、「ramp-up を使い切っても到達不能」の観測に混ぜると #792 / #938
+        // の指標が汚れる。
+        final remaining = state.offlineAccounts
+            .where((o) => o.recoverableByRetry)
+            .toList(growable: false);
         if (attempt == kOfflineRetryRampUp.length && remaining.isNotEmpty) {
           debugPrint(
             'capsicum: restoreSessions: ${remaining.length} account(s) still '
@@ -1002,7 +1012,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// オフライン中はアプリを閉じていることも多いので、この契機がいちばん効く。
   /// 復元済み / オフライン無しなら何もしない。
   void refreshOfflineRestoresOnResume() {
-    if (state.offlineAccounts.isEmpty) return;
+    // 未接続しか無ければ probe する相手が居ない (#1011)。
+    if (!state.offlineAccounts.any((o) => o.recoverableByRetry)) return;
     unawaited(retryOfflineRestores());
   }
 

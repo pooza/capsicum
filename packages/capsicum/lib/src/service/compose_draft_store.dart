@@ -40,6 +40,23 @@ class ComposeDraft {
   bool get hasText => text.isNotEmpty;
 }
 
+/// 下書きの書き込みが拒まれた (#1011)。
+///
+/// `SharedPreferences` の setter は失敗しても投げず false を返すので、ここで
+/// 例外へ翻訳する。**意図的な no-op（破棄済み・世代ズレ）と同じ null にしない**
+/// ため — 呼び出し側が区別できないと、失敗が観測も通知もされないまま古い保存
+/// 時刻が表示に残る（Codex P2 / PR #1013）。
+///
+/// ⚠ **メッセージに本文を載せない。** Sentry へ出る。
+class ComposeDraftSaveException implements Exception {
+  const ComposeDraftSaveException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ComposeDraftSaveException: $message';
+}
+
 /// 投稿フォームのローカル自動保存の永続化 (#966 / #964)。
 ///
 /// UI から切り離してあるのは、「破棄したあとは書き戻さない」という副作用の順序
@@ -115,9 +132,13 @@ class ComposeDraftStore {
   /// さらに、**別インスタンスが [clear] してスロットの世代が進んでいたら**書き
   /// 戻さない (#969)。
   ///
-  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。no-op だった場合は
-  /// null。⚠ **時刻は呼び出し側が渡す** — `DateTime.now()` を内部で呼ぶと
-  /// テストで固定できない。
+  /// 保存した時刻を返す（画面の「自動保存 12:34」に使う）。**意図的な no-op**
+  /// （破棄済み・世代ズレ）では null。⚠ **時刻は呼び出し側が渡す** —
+  /// `DateTime.now()` を内部で呼ぶとテストで固定できない。
+  ///
+  /// ⚠ **書き込みが拒まれたら [ComposeDraftSaveException] を投げる (#1011)。**
+  /// null と混ぜると、呼び出し側が「意図した no-op」と区別できず、失敗が観測も
+  /// 通知もされないまま**古い保存時刻が表示に残る**（Codex P2 / PR #1013）。
   Future<DateTime?> save(ComposeDraft draft, {required DateTime now}) async {
     if (_discarded) return null;
     final prefs = await SharedPreferences.getInstance();
@@ -126,19 +147,31 @@ class ComposeDraftStore {
     // 進めていたら、こちらの書き戻しは stale なので捨てる。まだ同期していない
     // （null）場合は現世代を採用して通常どおり保存する。
     if (_syncedGeneration != null && _syncedGeneration != current) return null;
-    await prefs.setString(_k(textKey), draft.text);
-    await prefs.setString(_k(cwTextKey), draft.cwText);
-    await prefs.setBool(_k(cwEnabledKey), draft.cwEnabled);
-    await prefs.setInt(_k(attachmentCountKey), draft.attachmentCount);
-    await prefs.setBool(_k(sensitiveKey), draft.sensitive);
-    await prefs.setBool(_k(localOnlyKey), draft.localOnly);
-    await prefs.setString(_k(savedAtKey), now.toIso8601String());
+    // ⚠ **書けたかどうかを見る (#1011)。**`setString` 等は失敗しても throw せず
+    // false を返す。捨てていたため、**書けていないのに画面へ「自動保存 12:34」**
+    // が出ていた。ユーザーはそれを信じてアプリを終了し、本文を失う。
+    // 拒否は下で例外へ翻訳する（意図的な no-op と同じ null にしない）。
+    var ok = true;
+    ok = await prefs.setString(_k(textKey), draft.text) && ok;
+    ok = await prefs.setString(_k(cwTextKey), draft.cwText) && ok;
+    ok = await prefs.setBool(_k(cwEnabledKey), draft.cwEnabled) && ok;
+    ok =
+        await prefs.setInt(_k(attachmentCountKey), draft.attachmentCount) && ok;
+    ok = await prefs.setBool(_k(sensitiveKey), draft.sensitive) && ok;
+    ok = await prefs.setBool(_k(localOnlyKey), draft.localOnly) && ok;
+    ok = await prefs.setString(_k(savedAtKey), now.toIso8601String()) && ok;
     if (draft.scope != null) {
-      await prefs.setString(_k(scopeKey), draft.scope!.name);
+      ok = await prefs.setString(_k(scopeKey), draft.scope!.name) && ok;
     } else {
       await prefs.remove(_k(scopeKey));
     }
+    // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
     _syncedGeneration = current;
+    if (!ok) {
+      throw const ComposeDraftSaveException(
+        'shared preferences rejected write',
+      );
+    }
     return now;
   }
 
@@ -198,14 +231,39 @@ class ComposeDraftStore {
   ///
   /// 世代を進めるので、重ねて開いている別画面の [save]（古い本文の書き戻し）が
   /// 以降無効になる (#969)。世代印そのものは残す。
-  Future<void> clear() async {
-    _discarded = true;
+  ///
+  /// [discard] は「**このインスタンスの以降の保存も止めるか**」。既定の true は
+  /// 投稿成功・サーバー下書き保存向けで、どちらも直後に画面を閉じる。
+  ///
+  /// ⚠ **画面に留まったまま消す経路は false で呼ぶ (#1008)。**復元の「取消」が
+  /// これで、true のままだと [discarded] を戻す手段が無く、`late final` の
+  /// ストアを持つその画面の自動保存が**二度と効かない**（取消のあとに書いた
+  /// 本文が黙って失われる）。
+  /// 完全に永続化できたかを返す。false は「拒まれた書き込みがある」＝ **次の
+  /// 起動で消したはずの本文が戻りうる**という意味 (Codex P2 / PR #1013)。
+  /// 呼び出し側は観測に残す。投げないのは、投稿成功の直後にも通る経路で、
+  /// ここで投げると**投稿は通っているのに失敗と伝える**ことになるため。
+  Future<bool> clear({bool discard = true}) async {
+    if (discard) _discarded = true;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(
-      _k(generationKey),
-      (prefs.getInt(_k(generationKey)) ?? 0) + 1,
-    );
-    await _removeAll(prefs, _k);
+    final next = (prefs.getInt(_k(generationKey)) ?? 0) + 1;
+    final advanced = await prefs.setInt(_k(generationKey), next);
+    // 世代を進めた当人なので、自分の印も進める。放っておくと世代ガード (#969)
+    // が**自分自身の**以降の保存を stale と見て捨てる。
+    //
+    // ⚠ **書き込みが拒まれても進める。**`SharedPreferences` は setter の結果に
+    // 関わらず**プロセス内のキャッシュを先に更新する**（`_setValue` は
+    // `_preferenceCache[key] = value` してからストアを呼ぶ）ので、拒否されても
+    // このプロセスの `getInt` は新しい世代を返す。ここで印を据え置くと、以降の
+    // [save] が毎回「世代ズレ」の no-op になり、**取消のあとの本文が黙って
+    // 保存されない**（#1008 と同じ症状が別経路で戻る）。永続化の失敗は戻り値で
+    // 伝える。
+    if (!discard) _syncedGeneration = next;
+    var removed = true;
+    for (final base in _allKeys) {
+      removed = await prefs.remove(_k(base)) && removed;
+    }
+    return advanced && removed;
   }
 
   /// アカウント削除時にそのスロットを掃除する (#964)。放っておくと孤児キーが

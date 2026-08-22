@@ -365,6 +365,28 @@ void _accountIndexTests() {
       );
     });
 
+    /// #1011: 索引側が非正規形のときの突き合わせ。ファイル内の重複（下のテスト）
+    /// は塞いでいたが、**既にこの端末の索引に入っている key** は生のまま比較して
+    /// いたので、`contains` が外れて同じアカウントが 2 行（トークンあり / 未接続）
+    /// に割れる。ホストを大文字混じりで打って作ったアカウントで踏む。
+    test('索引側が非正規形でも、同じアカウントは足さない', () async {
+      final prefs = await prefsWith({
+        accountListKey: '["mastodon://alice@Mstdn.Example"]',
+      });
+
+      final result = await applySettingsBackupYaml(
+        prefs,
+        yamlWithAccounts([alice]),
+      );
+
+      expect(result.addedAccountKeys, isEmpty);
+      expect(
+        prefs.getString(accountListKey),
+        '["mastodon://alice@Mstdn.Example"]',
+        reason: '索引そのものは書き換えない（secret_<key> は生の key で引く）',
+      );
+    });
+
     test('正規形と非正規形が両方あっても 1 件にまとめる', () async {
       final prefs = await prefsWith({});
 
