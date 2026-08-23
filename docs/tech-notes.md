@@ -238,6 +238,18 @@ CMake Error at flutter/ephemeral/.plugin_symlinks/media_kit_libs_windows_video/w
 
 Linux 側は `libmpv-dev` を apt で入れるので、この経路は Windows 固有。**2 回続けて落ちたら一過性ではない**ので、media_kit の配布元（GitHub Releases）側か runner のネットワークを疑う。
 
+### Windows ネイティブを触ったときの検証手順（#995 / #997 で確立）
+
+⚠ **`develop` の CI では C++ が 1 行もコンパイルされない**（`analyze.yml` は Dart のみ）。`windows-release.yml` は native テスト **8 本すべて**をビルド・実行するが、**tag ビルドのときだけ**走る。そして **`wns_push.cpp` はどのテストにも含まれず、フルビルドでしか通らない**。つまり `windows/runner/**` を触った変更は、**実機で回すまで一度もコンパイルされないまま develop に入りうる**。
+
+Windows 実機（[プラットフォームゲート](CLAUDE.md)の x64 端末）では次を回す:
+
+1. **native テスト 8 本** — `vcvars64.bat` を call してから `cl /nologo /EHsc /std:c++17 <name>_test.cpp <name>.cpp`。⚠ **`notification_tag_test` だけ `/utf-8` が要る**。⚠ **cmd から exe を叩くときは `".\name.exe"` と書く**（cwd を PATH 探索しない）
+2. **`cd packages/capsicum && flutter build windows --debug`** — **`wns_push.cpp` に触ったらこれが唯一のゲート**（約 5 分）。`firebase_app` の `LNK4099` 警告は既存ノイズ
+3. `dart format --set-exit-if-changed .` / `dart analyze --fatal-infos` / `flutter test`。⚠ **`flutter build` 後の format は `packages/capsicum/build/` 配下の生成 Dart を拾うが gitignore 済みなので無視してよい**
+
+⚠ **単一スロットの push 観測にコードを足すときは 2 箇所を同時に直す。** `windows/runner/push_diagnostics.cpp` の `IsBenignCode` と `packages/capsicum/lib/main.dart` の `benign` 集合は必ず揃える。片方だけだと、正常系のはずのコードが平常時の端末から毎回 warning で上がる（#997 の `wns.announcement_deduped` がその形だった）。⚠ **この一致を守る自動テストは無い**（コメントで揃えろと書いてあるだけ・[#1012](https://github.com/pooza/capsicum/issues/1012) に起票済み）。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定
