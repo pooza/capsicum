@@ -158,10 +158,21 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
   // 挙動になる (#956)。上の dedupable と同じ前提で、別々に判断していない。
   // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
   // ため、ここでは付けない。
-  if (!capsicum::ShowRawToast(
-          display.title, display.body, /*launch_arg=*/"",
-          capsicum::NotificationTagFor(display.account,
-                                       display.notification_id))) {
+  // ⚠⚠ **claim を取った側が出しきる責任を負う (v1.60 レビュー)。**#1014 で
+  // 判定を TryClaim へ前倒ししたぶん、**同じキーの他受信は既に「抑止」で
+  // 帰っている**。ここで諦めて ReleaseClaim しても、戻ってくる相手はもう
+  // 居ないので**トーストが 1 通も出ない**。このレジストリは
+  // 「取りこぼすなら二重表示の側へ倒す」設計（notification_dedup.h）なので、
+  // この経路だけ「消える側」へ倒れるのは筋が通らない。1 回だけ出し直す。
+  //
+  // ⚠ **これでも窓は閉じきらない。**2 回とも失敗すれば結局出ない。完全に
+  // 塞ぐには抑止側を待たせる必要があり、そこまでの複雑さは持ち込まない。
+  auto show = [&] {
+    return capsicum::ShowRawToast(
+        display.title, display.body, /*launch_arg=*/"",
+        capsicum::NotificationTagFor(display.account, display.notification_id));
+  };
+  if (!show() && !show()) {
     // 表示できなかったので取った claim を返す。⚠ **握りつぶすと WebSocket
     // 経路まで抑止されて通知が 1 通も出なくなる**（#1014 で claim を前倒しに
     // したぶん、この巻き戻しが必須になった）。NotifyPresented も通さない。

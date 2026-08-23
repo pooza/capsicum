@@ -583,7 +583,14 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
       // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
       // 画面には「更新に失敗しました」しか出ない。根拠は
       // [InputLimits.attachmentDescription]。
+      //
+      // ⚠⚠ **切り詰めてはいけない。**Mastodon の ALT 上限は 1 万字なので、
+      // Web UI で書いた 512 超の ALT が普通に存在する。素の `maxLength` は
+      // `LengthLimitingTextInputFormatter` を通すので、**開いて 1 文字打った
+      // 瞬間に 512 字へ切り詰められ、本人の ALT が消える**。数えるだけにして
+      // 判断はユーザーへ返す（#121 の導線が出た瞬間に踏む・v1.60 レビュー）。
       maxLength: InputLimits.attachmentDescription,
+      maxLengthEnforcement: MaxLengthEnforcement.none,
     ),
     actions: [
       TextButton(

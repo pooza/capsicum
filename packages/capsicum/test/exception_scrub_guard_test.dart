@@ -550,10 +550,10 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          'sentry_flutter の DebugPrintIntegration は build mode で分岐せず'
-          '登録される。breadcrumb の message は _scrubBreadcrumb（data しか'
-          '見ない）を通らないので、debugLogException / _logDevException を'
-          '使うこと\n${offenders.join('\n')}',
+          'sentry_flutter の DebugPrintIntegration は release と profile で'
+          'debugPrint を差し替える。breadcrumb の message は _scrubBreadcrumb'
+          '（data しか見ない）を通らないので、debugLogException / '
+          '_logDevException を使うこと\n${offenders.join('\n')}',
     );
   });
 

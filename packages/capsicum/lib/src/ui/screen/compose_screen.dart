@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
@@ -1180,7 +1181,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 返ってきたときだけ反映する (#964)。
     if (!mounted) return;
     if (savedAt != null) {
-      setState(() => _draftSavedAt = savedAt);
+      // ⚠ **停止表示も一緒に解く (v1.60 レビュー)。**`_draftSuperseded` を
+      // latch したままにすると、この画面の「取消」で保存が復活したあとも
+      // 赤字の「自動保存は停止中」を出し続ける（保存できているのに「されて
+      // いない」と言う形で、#1012 が直した食い違いの逆向き）。
+      setState(() {
+        _draftSavedAt = savedAt;
+        _draftSuperseded = false;
+      });
       return;
     }
     // ⚠ **世代ガードで弾かれたら表示を下ろす (#1012)。**別の画面がこのスロット
@@ -2001,6 +2009,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             hintText: '画像の説明を入力（ALT テキスト）',
             border: OutlineInputBorder(),
           ),
+          // ⚠ **ALT を最初に書くのはここ (#1012 の当て先漏れ)。**上限を当てたのは
+          // 投稿**済み**メディアの編集 2 画面だけで、主経路のこちらが素通しだった。
+          // Misskey は ALT をアップロード時の `comment` で受け、512 超は
+          // `drive/files/create` が 400 で断る。添付が落ちると**投稿そのものが
+          // 失敗**し、画面には「投稿に失敗しました」しか出ない。
+          //
+          // ⚠ **切らずに数えるだけにする。**Mastodon の上限は 1 万字なので、
+          // 512 で切ると Mastodon 利用者の ALT を黙って削ることになる。超過は
+          // 赤字のカウンタで見せ、判断はユーザーへ返す。
+          maxLength: InputLimits.attachmentDescription,
+          maxLengthEnforcement: MaxLengthEnforcement.none,
         ),
         actions: [
           TextButton(

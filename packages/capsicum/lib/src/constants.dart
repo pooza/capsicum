@@ -131,14 +131,27 @@ class AppConstants {
 ///
 /// ⚠ **Mastodon と Misskey の小さいほうに合わせる。**アダプタごとに出し分けると
 /// ダイアログが backend を知る必要が出る（今はどちらの画面も知らない）。上限に
-/// 余裕がある側で数百文字ぶん短くなるだけで、実害はない。
+/// 余裕がある側で数百文字ぶん短くなるだけ。
+///
+/// ⚠⚠ **値は稼働中のサーバー実装で確かめること。**#1012 で入れた初版は
+/// `reportComment` に**画像 ALT の定数を取り違えて**書いており、どちらの
+/// サーバーの制約でもない値で 488 文字ぶん余計に切っていた（v1.60 の
+/// リリース前レビューで検出）。フォークは `~/repos/mastodon` /
+/// `~/repos/misskey` にあり、これが本番で動いているものそのもの。
 class InputLimits {
-  /// 通報の理由。Misskey `report-abuse` の `comment` が 512、Mastodon の
-  /// `Report#comment` が 1000。
-  static const reportComment = 512;
+  /// 通報の理由。Misskey `users/report-abuse` の `comment` は **2048**
+  /// (`report-abuse.ts`)、Mastodon の `Report::COMMENT_SIZE_LIMIT` は
+  /// **1000** (`app/models/report.rb`)。小さいほうを採る。
+  static const reportComment = 1000;
 
-  /// メディアの説明（ALT）。Misskey `drive/files/update` の `comment` が 512、
-  /// Mastodon の `media_attachments.description` はこれより長い。
+  /// メディアの説明（ALT）。Misskey は `DB_MAX_IMAGE_COMMENT_LENGTH` = **512**
+  /// (`const.ts`)、Mastodon は `MAX_DESCRIPTION_LENGTH` = **10000**。
+  ///
+  /// ⚠ **既存の ALT を切り詰める用途に使わない。**Mastodon 側は 1 万字まで
+  /// 許すので、Web UI で書いた 512 超の ALT が普通に存在する。編集ダイアログで
+  /// `maxLength` を素で当てると**最初の 1 打鍵で切り詰められ、本人の ALT が
+  /// 消える**。入力欄では [MaxLengthEnforcement.none] で「数えるが切らない」
+  /// 形にすること（#121 の導線が出た瞬間に踏む）。
   static const attachmentDescription = 512;
 }
 

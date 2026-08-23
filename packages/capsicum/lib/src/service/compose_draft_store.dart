@@ -139,9 +139,13 @@ class ComposeDraftStore {
 
   /// **別のインスタンスがこのスロットを [clear] した**あとかどうか (#1012)。
   ///
-  /// [save] の世代ガードが一度でも弾いたら true になり、以降ずっと true。
-  /// `_syncedGeneration` を更新しない設計（＝二度と書き戻さない）なので、
-  /// **ズレは恒久**で、この画面の自動保存はもう働かない。
+  /// [save] の世代ガードが弾いたら true になる。
+  ///
+  /// ⚠ **恒久ではない (v1.60 レビュー)。**初版の doc は「ズレは恒久」と書いて
+  /// いたが、この画面自身の「取消」(`clear(discard: false)`) は世代を進めて
+  /// **自分の印も合わせる**ので、そこから保存は復活する。latch したままにすると
+  /// **保存できているのに「自動保存は停止中」を出し続ける**という、#1012 が
+  /// 直そうとした食い違いの逆向きが残る。[save] が書き戻せたら false へ戻す。
   ///
   /// ⚠ **[discarded] と混ぜない。**どちらも [save] が null を返すが、意味が
   /// 正反対:
@@ -209,7 +213,19 @@ class ComposeDraftStore {
       await prefs.remove(_k(scopeKey));
     }
     // 世代印は書き込みの成否と別（このスロットに触った事実は変わらない）。
-    _syncedGeneration = current;
+    //
+    // ⚠⚠ **await をまたいだ間に [clear] が進めた印を巻き戻さない (v1.60 レビュー)。**
+    // 上の 8 回の書き込みは platform channel 往復なので、その最中に同じ画面の
+    // 「取消」(`clear(discard: false)`) が走ると、あちらは `_syncedGeneration`
+    // を N+1 へ進める。ここで無条件に `current`(= N) を代入すると印が巻き戻り、
+    // **以降の save が毎回「世代ズレ」で捨てられて、その画面の自動保存が恒久的に
+    // 死ぬ**（#1008 が塞いだ「取消のあとの本文が黙って消える」が別経路で戻る）。
+    final synced = _syncedGeneration;
+    if (synced == null || synced <= current) {
+      _syncedGeneration = current;
+      // 書き戻せた＝この画面はまだ現役。停止表示を解く（下の [superseded] 参照）。
+      _superseded = false;
+    }
     if (!ok) {
       throw const ComposeDraftSaveException(
         'shared preferences rejected write',

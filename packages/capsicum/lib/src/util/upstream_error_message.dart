@@ -188,7 +188,8 @@ String _localizeMastodonError(String text) {
   // そのまま使う**（決め打ちすると上限を変えたサーバーで嘘になる）。
   final tooLong = _mastodonTextTooLong.firstMatch(text);
   if (tooLong != null) {
-    return '本文が長すぎます（上限 ${tooLong.group(1)} 文字）';
+    final max = tooLong.group(1) ?? tooLong.group(2);
+    return '本文が長すぎます（上限 $max 文字）';
   }
   for (final entry in _mastodonErrorPhrases.entries) {
     if (text.contains(entry.key)) return entry.value;
@@ -196,8 +197,23 @@ String _localizeMastodonError(String text) {
   return text;
 }
 
+/// 本文の長さ超過。
+///
+/// ⚠⚠ **Rails 既定の `is too long (maximum is N characters)` ではない。**
+/// Mastodon は `StatusLengthValidator` で専用の I18n キー
+/// (`statuses.over_character_limit` = `character limit of %{max} exceeded`) を
+/// 使うため、実際に返るのは
+/// `Validation failed: Text character limit of 3000 exceeded`。
+///
+/// #976 の初版は Rails 既定形を書いており、**一度も発火しない**まま出荷される
+/// ところだった。テストがコード側で組み立てた架空の文字列を assert していたので
+/// 緑のまま通っていた（v1.60 のリリース前レビューで検出）。**上流の文面は
+/// フォーク (`~/repos/mastodon`) で確かめること。**
+///
+/// 通報コメント等の ActiveRecord 既定メッセージは Rails 形で出るので、そちらも
+/// 拾えるよう両方を受ける。
 final _mastodonTextTooLong = RegExp(
-  r'Text is too long \(maximum is (\d+) characters\)',
+  r'character limit of (\d+) exceeded|is too long \(maximum is (\d+) characters\)',
 );
 
 /// 素通しでは意味が取りにくい定型句だけを訳す。

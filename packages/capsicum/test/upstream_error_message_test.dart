@@ -152,14 +152,20 @@ void main() {
   /// 多数派の環境ほど英語が出る。Misskey 側は `error.code` を丁寧に日本語化
   /// しているのに、こちらだけ英語のまま流していた。
   group('Mastodon 形（#976）', () {
+    /// ⚠⚠ **文面は Mastodon 本体からそのまま持ってくること。**
+    /// 初版はここでコード側と同じ Rails 既定形（`is too long (maximum is N
+    /// characters)`）を組み立てて assert していたため、**実機では一度も発火
+    /// しないのにテストは緑**という状態だった（v1.60 のリリース前レビューで検出）。
+    ///
+    /// 本文長超過は `StatusLengthValidator` が専用の I18n キーを使う:
+    /// `app/validators/status_length_validator.rb` →
+    /// `statuses.over_character_limit` = `character limit of %{max} exceeded`。
     test('本文の長さ超過は日本語にし、上限値は文面から拾う', () {
       // ⚠ 数字を決め打ちしない。上限はサーバー設定で変わる。
       expect(
         upstreamErrorMessage(
           _dioError({
-            'error':
-                'Validation failed: Text is too long '
-                '(maximum is 500 characters)',
+            'error': 'Validation failed: Text character limit of 500 exceeded',
           }),
         ),
         '本文が長すぎます（上限 500 文字）',
@@ -167,12 +173,25 @@ void main() {
       expect(
         upstreamErrorMessage(
           _dioError({
-            'error':
-                'Validation failed: Text is too long '
-                '(maximum is 3000 characters)',
+            'error': 'Validation failed: Text character limit of 3000 exceeded',
           }),
         ),
         '本文が長すぎます（上限 3000 文字）',
+      );
+    });
+
+    /// ActiveRecord 既定形も受ける。通報コメント等はこちらで返る
+    /// （`Comment is too long (maximum is 1000 characters)`）。
+    test('Rails 既定形の長さ超過も拾う', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Comment is too long '
+                '(maximum is 1000 characters)',
+          }),
+        ),
+        '本文が長すぎます（上限 1000 文字）',
       );
     });
 
