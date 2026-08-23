@@ -114,12 +114,34 @@ void main() {
     return out;
   }
 
+  /// 名前の直後 [from] から、任意の型引数リストを読み飛ばして `(` の index を
+  /// 返す。`(` に行き着かなければ -1。
+  ///
+  /// ⚠ **宣言と呼び出しの両方で要る（#1020・Codex P2 の 5 巡目）。**宣言側だけ
+  /// `<…>` を読み飛ばすようにすると、`log<T>` は sink として見つかるのに
+  /// **`log<Object>('failed: $e')` という呼び出しが見えない**という、いちばん
+  /// たちの悪い形（検査は動いているのに素通り）になる。
+  int parenAfter(String source, int from) {
+    var i = from + RegExp(r'^\s*').firstMatch(source.substring(from))!.end;
+    if (i < source.length && source[i] == '<') {
+      final generics = matchBracket(source, i, '<', '>');
+      if (generics < 0) return -1;
+      i =
+          generics +
+          1 +
+          RegExp(r'^\s*').firstMatch(source.substring(generics + 1))!.end;
+    }
+    if (i >= source.length || source[i] != '(') return -1;
+    return i;
+  }
+
   /// 呼び出しごとに `(引数リスト, 呼び出しの開始 index)` を返す。
   List<(String, int)> callsOf(String source, String name) {
     final out = <(String, int)>[];
-    final pattern = RegExp('(?<![A-Za-z0-9_])$name\\s*\\(');
+    final pattern = RegExp('(?<![A-Za-z0-9_])$name(?![A-Za-z0-9_])');
     for (final m in pattern.allMatches(source)) {
-      final open = source.indexOf('(', m.start);
+      final open = parenAfter(source, m.end);
+      if (open < 0) continue;
       final close = matchParen(source, open);
       if (close < 0) continue;
       out.add((source.substring(open + 1, close), m.start));
@@ -160,15 +182,8 @@ void main() {
     ).allMatches(source)) {
       final name = m.group(1)!;
       if (notDeclarations.contains(name)) continue;
-      var open = m.end - 1;
-      if (source[open] == '<') {
-        // 型引数リストを読み飛ばす。`<` で始まらない比較式には入らない。
-        final generics = matchBracket(source, open, '<', '>');
-        if (generics < 0) continue;
-        final gap = RegExp(r'^\s*').firstMatch(source.substring(generics + 1))!;
-        open = generics + 1 + gap.end;
-        if (open >= source.length || source[open] != '(') continue;
-      }
+      final open = parenAfter(source, m.end - 1);
+      if (open < 0) continue;
       final close = matchParen(source, open);
       if (close < 0) continue;
       // 引数リストの後ろ。`async` / `async*` / `sync*` は読み飛ばす。
@@ -422,15 +437,15 @@ void main() {
     return sinks;
   }
 
-  test('ログ経路に捕捉した例外を埋めない（scrub 済みを渡す）', () {
-    final files = dartFiles();
-    final sources = {
-      for (final f in files) relativePath(f): f.readAsStringSync(),
-    };
+  /// `パス → ソース` から違反を数え上げる。
+  ///
+  /// ⚠ **合成ソースで丸ごと動かせる形にしておくこと（#1020・Codex P2 の 5 巡目）。**
+  /// 部品ごとの検査しか持っていなかったため、「ラッパーは見つかるのに、その
+  /// **呼び出し**が見えない」という穴を自分のテストで踏めなかった。
+  List<String> offendersIn(Map<String, String> sources) {
     // ⚠ **sink の数え上げは全ファイルを見てから。**呼び出し側のソースだけでは
     // 別ファイルで宣言された転送ラッパーが見えない。
     final sinks = breadcrumbSinks(sources.values);
-
     final offenders = <String>[];
     for (final MapEntry(key: path, value: source) in sources.entries) {
       if (allowedFiles.contains(path)) continue;
@@ -443,6 +458,13 @@ void main() {
         }
       }
     }
+    return offenders;
+  }
+
+  test('ログ経路に捕捉した例外を埋めない（scrub 済みを渡す）', () {
+    final offenders = offendersIn({
+      for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
+    });
     expect(
       offenders,
       isEmpty,
@@ -533,6 +555,43 @@ void main() {
 
     const bounded = 'void logM<T extends Object>(String m) { debugPrint(m); }';
     expect(breadcrumbSinks([bounded]), contains('logM'));
+  });
+
+  /// ⚠⚠ **見つけただけでは足りない（#1020・Codex P2 の 5 巡目）。**宣言側だけ
+  /// `<…>` を読み飛ばすようにすると、`logQ` は sink として**見つかるのに**
+  /// `logQ<Object>('failed: $e')` という**呼び出しが見えない**。検査は動いて
+  /// いるのに素通りする、いちばんたちの悪い形になる。
+  ///
+  /// 4 巡目の検査が「検出」しか見ておらず、**呼び出しを一度も通していなかった**
+  /// ことが穴を残した。ここは通しで動かす。
+  test('総称型の呼び出しも見える（型引数つきの実呼び出し）', () {
+    expect(
+      offendersIn({
+        'a.dart': 'void logQ<T>(String m) => debugPrint(m);',
+        'b.dart': "void run() { logQ<Object>('failed: \$e'); }",
+      }),
+      isNotEmpty,
+      reason: '型引数が挟まるだけで見えなくなってはいけない',
+    );
+  });
+
+  /// 通しで動かす最小の筋書き。**部品ごとの検査だけにしない**ための土台。
+  test('別ファイルのラッパー越しの生例外を、通しで捕まえる', () {
+    expect(
+      offendersIn({
+        'a.dart': 'void logR(String m) { debugPrint(m); }',
+        'b.dart': "void run() { logR('failed: \$e'); }",
+      }),
+      isNotEmpty,
+    );
+    expect(
+      offendersIn({
+        'a.dart': 'void logS(String m) { debugPrint(m); }',
+        'b.dart': "void run() { logS('failed: \${scrubException(e)}'); }",
+      }),
+      isEmpty,
+      reason: 'scrub 済みまで落としては、直しようが無くなる',
+    );
   });
 
   /// ⚠ **`String` 引数への加工は転送（#1020・Codex P2 の 4 巡目）。**
