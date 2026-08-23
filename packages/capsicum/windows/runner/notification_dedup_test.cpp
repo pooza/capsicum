@@ -8,6 +8,7 @@
 // ビルド & 実行（VS Developer 環境）:
 //   cl /EHsc /std:c++17 notification_dedup_test.cpp notification_dedup.cpp
 
+#include <atomic>
 #include <cstdio>
 #include <string>
 #include <thread>
@@ -104,6 +105,66 @@ int main() {
   registry.MarkShown("overflow");
   CheckTrue(!registry.WasShown("k0"),
             "既出キーを触っても押し出し順は変わらない (LRU にしない)");
+
+  // 表示権の原子的な取得 (#1014)。
+  //
+  // ⚠ **「WasShown で見てから MarkShown する」に戻すと、この節が守っている
+  // ものが丸ごと消える。** 判定と記録が別々のロックになり、同じお知らせが
+  // 同時に届くと両方が「未表示」を観測して両方がトーストを出す。
+  registry.Reset();
+  CheckTrue(registry.TryClaim("acct@example.test|claim"),
+            "未表示なら表示権を取れる");
+  CheckTrue(!registry.TryClaim("acct@example.test|claim"),
+            "2 回目は表示権を取れない");
+  CheckTrue(registry.WasShown("acct@example.test|claim"),
+            "表示権を取ると表示済みになる");
+
+  // 空キーは記録せず素通し。呼び出し側の `dedupable` が本来のガードで、
+  // ここは保険（通知 ID が無いものは dedup を通さない = 最悪二重に出るだけ）。
+  registry.Reset();
+  CheckTrue(registry.TryClaim(""), "空キーは素通しする");
+  CheckTrue(registry.TryClaim(""), "空キーは何度でも素通しする");
+  CheckEqSize(registry.SizeForTesting(), 0, "空キーの claim で件数が増えない");
+
+  // トーストを出せなかったときの巻き戻し。⚠ **claim を握ったままにすると
+  // WebSocket 経路まで抑止され、その通知が 1 通も出なくなる。**
+  registry.Reset();
+  CheckTrue(registry.TryClaim("acct@example.test|rollback"), "claim できる");
+  registry.ReleaseClaim("acct@example.test|rollback");
+  CheckTrue(!registry.WasShown("acct@example.test|rollback"),
+            "巻き戻すと未表示に戻る");
+  CheckEqSize(registry.SizeForTesting(), 0, "巻き戻すと件数も戻る");
+  CheckTrue(registry.TryClaim("acct@example.test|rollback"),
+            "巻き戻した後はもう一度 claim できる");
+
+  // 巻き戻しは順序列にも効く。ここが漏れると order_ に幽霊が残り、
+  // 上限の押し出しが keys_ に無いキーを消そうとして件数が狂う。
+  registry.Reset();
+  registry.MarkShown("first");
+  registry.TryClaim("second");
+  registry.ReleaseClaim("second");
+  registry.MarkShown("third");
+  CheckEqSize(registry.SizeForTesting(), 2, "巻き戻したキーは順序列にも残らない");
+
+  registry.ReleaseClaim("never-claimed");
+  CheckEqSize(registry.SizeForTesting(), 2, "取っていない claim の返却は無害");
+
+  // **本題**: 同じキーを同時に claim しても勝者は 1 つだけ。これが崩れると
+  // 二重表示 + 通知音の重複になる（Windows は Tag が一致しても畳まない・#945）。
+  registry.Reset();
+  {
+    std::atomic<int> winners{0};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 8; ++t) {
+      threads.emplace_back([&registry, &winners]() {
+        if (registry.TryClaim("acct@example.test|race")) ++winners;
+      });
+    }
+    for (auto& thread : threads) thread.join();
+    CheckEqSize(static_cast<size_t>(winners.load()), 1,
+                "同じキーを同時に claim しても勝者は 1 つ");
+  }
+  CheckEqSize(registry.SizeForTesting(), 1, "勝者のぶんだけ記録される");
 
   // WNS 受信は MTA ワーカー、Dart からの addEmitted は UI スレッドで走るため、
   // 別スレッドから同時に叩かれる。データ競合で落ちないこと。

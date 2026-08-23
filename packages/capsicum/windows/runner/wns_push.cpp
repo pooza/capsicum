@@ -174,8 +174,13 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
       dedupable ? capsicum::NotificationTagKey(display.account,
                                                display.notification_id)
                 : std::string();
+  // ⚠ **判定と記録を分けない** (#1014)。以前は「WasShown で見る → 出す →
+  // MarkShown で記録する」の 3 段だったが、判定と記録が別々のロックなので
+  // **同じお知らせが同時に届くと両方が「未表示」を観測して両方が出す**。
+  // お知らせ (#978) は relay が WNS と WebSocket の双方へ流すため、まさに
+  // この形で並行する。claim を取れなかった側は出さない。
   if (dedupable &&
-      capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
+      !capsicum::NotificationDedupRegistry::Instance().TryClaim(dedup_key)) {
     return ToastOutcome::kSuppressed;
   }
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
@@ -189,15 +194,15 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
           display.title, display.body, /*launch_arg=*/"",
           capsicum::NotificationTagFor(display.account,
                                        display.notification_id))) {
-    // 表示できなかったので dedup レジストリには claim しない（MarkShown /
-    // NotifyPresented を通さず返す）。ここで claim すると、WebSocket 経路まで
-    // 抑止されて**通知が 1 通も出なくなる**。
+    // 表示できなかったので取った claim を返す。⚠ **握りつぶすと WebSocket
+    // 経路まで抑止されて通知が 1 通も出なくなる**（#1014 で claim を前倒しに
+    // したぶん、この巻き戻しが必須になった）。NotifyPresented も通さない。
+    if (dedupable) {
+      capsicum::NotificationDedupRegistry::Instance().ReleaseClaim(dedup_key);
+    }
     return ToastOutcome::kShowFailed;
   }
-  if (dedupable) {
-    capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
-    NotifyPresented(dedup_key);
-  }
+  if (dedupable) NotifyPresented(dedup_key);
   return ToastOutcome::kShown;
 }
 
