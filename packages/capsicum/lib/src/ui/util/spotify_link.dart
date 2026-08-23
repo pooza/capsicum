@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../url_helper.dart';
+import 'launch_url_toast.dart';
 
 /// Spotify OAuth 連携フロー (確認 → ブラウザ認可 → コード入力 → トークン交換)
 /// (#570)。Annict 連携 ([runAnnictLinkFlow]) と同じ「サーバー保管型 OAuth」UX。
@@ -40,12 +41,15 @@ Future<bool> runSpotifyLinkFlow(BuildContext context, WidgetRef ref) async {
   try {
     final oauthUri = await mulukhiya.getSpotifyOAuthUri();
     final uri = Uri.parse(oauthUri);
-    if (!await launchUrlSafely(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('ブラウザを開けませんでした')));
-      }
+    if (!context.mounted) return false;
+    // 失敗時の SnackBar は共通ヘルパーへ寄せた (#976)。⚠ **ヘルパーは入口で
+    // messenger を捕まえるので、ここで mounted を見てから渡す**（OAuth URI の
+    // 取得を挟んでいるため、この時点で画面が消えていることがある）。
+    if (!await launchUrlOrToast(
+      context,
+      uri,
+      mode: LaunchMode.externalApplication,
+    )) {
       return false;
     }
     if (!context.mounted) return false;
