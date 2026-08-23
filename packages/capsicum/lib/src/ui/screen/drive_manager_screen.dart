@@ -612,9 +612,12 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       file.description ?? '',
       '画像の説明',
       // ⚠ **client で止める (#1012)。**超えるとサーバーが断り、画面には
-      // 「操作に失敗しました」しか出ない。根拠は
-      // [InputLimits.attachmentDescription]。
-      maxLength: InputLimits.attachmentDescription,
+      // 「操作に失敗しました」しか出ない。
+      //
+      // ここはドライブ＝Misskey 専用の画面（下で `adapter is! DriveSupport` を
+      // 弾く）なので 512 が実際の上限。この欄だけは切り詰めてよい（Mastodon の
+      // 1 万字を削る心配が無い）。
+      maxLength: InputLimits.attachmentDescriptionFor(isMastodon: false),
     );
     if (newAlt == null) return;
     try {

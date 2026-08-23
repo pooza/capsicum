@@ -460,10 +460,15 @@ class AccountStorage {
       if (await _storage.containsKey(key: key)) {
         await _storage.delete(key: key);
         if (await _storage.containsKey(key: key)) {
+          // ⚠ **メッセージに $key を入れない。**`secret_<accountKey>` は
+          // `username@host` そのもの。識別は host + ハッシュ化 username の
+          // scope タグで足りる（#1020 で `stale_on_import` を直したとき、
+          // **同じファイルのこちらを取りこぼしていた**）。
           _reportOnce(
             'secret:$accountKey:delete_no_op',
-            StateError('secure_storage delete returned non-op for $key'),
+            StateError('secure_storage delete returned non-op'),
             StackTrace.current,
+            accountKey: accountKey,
           );
         }
       }

@@ -129,17 +129,39 @@ class AppConstants {
 /// Mastodon / Misskey とも 400 / 422 で断るが、本文は画面に出していないので
 /// ユーザーには理由が分からず、書いた文章もそのまま失われる。
 ///
-/// ⚠ **Mastodon と Misskey の小さいほうに合わせる。**アダプタごとに出し分けると
-/// ダイアログが backend を知る必要が出る（今はどちらの画面も知らない）。上限に
-/// 余裕がある側で数百文字ぶん短くなるだけで、実害はない。
+/// ⚠ **Mastodon と Misskey の小さいほうに合わせる。**ただし**切り詰めない欄では
+/// 通用しない** — 上限に余裕がある側の入力を黙って削るか、余裕の無い側で超過を
+/// 通してサーバーに断らせるかの二択になる。その欄はサーバーごとの実値を採る
+/// （[InputLimits.attachmentDescriptionFor]）。
+///
+/// ⚠⚠ **値は稼働中のサーバー実装で確かめること。**#1012 で入れた初版は
+/// `reportComment` に**画像 ALT の定数を取り違えて**書いており、どちらの
+/// サーバーの制約でもない値で 488 文字ぶん余計に切っていた（v1.60 の
+/// リリース前レビューで検出）。フォークは `~/repos/mastodon` /
+/// `~/repos/misskey` にあり、これが本番で動いているものそのもの。
 class InputLimits {
-  /// 通報の理由。Misskey `report-abuse` の `comment` が 512、Mastodon の
-  /// `Report#comment` が 1000。
-  static const reportComment = 512;
+  /// 通報の理由。Misskey `users/report-abuse` の `comment` は **2048**
+  /// (`report-abuse.ts`)、Mastodon の `Report::COMMENT_SIZE_LIMIT` は
+  /// **1000** (`app/models/report.rb`)。小さいほうを採る。
+  static const reportComment = 1000;
 
-  /// メディアの説明（ALT）。Misskey `drive/files/update` の `comment` が 512、
-  /// Mastodon の `media_attachments.description` はこれより長い。
-  static const attachmentDescription = 512;
+  /// メディアの説明（ALT）。Misskey は `DB_MAX_IMAGE_COMMENT_LENGTH` = **512**
+  /// (`const.ts`)、Mastodon は `MAX_DESCRIPTION_LENGTH` = **10000**。
+  ///
+  /// ⚠ **既存の ALT を切り詰める用途に使わない。**Mastodon 側は 1 万字まで
+  /// 許すので、Web UI で書いた 512 超の ALT が普通に存在する。編集ダイアログで
+  /// `maxLength` を素で当てると**最初の 1 打鍵で切り詰められ、本人の ALT が
+  /// 消える**。入力欄では [MaxLengthEnforcement.none] で「数えるが切らない」
+  /// 形にし、超過している間は確定ボタンを塞ぐ（#121 の導線が出た瞬間に踏む）。
+  ///
+  /// ⚠⚠ **小さいほうに寄せるのは、切らないことと両立しない（Codex P2 /
+  /// PR #1023）。**初版は「アダプタごとに出し分けるとダイアログが backend を
+  /// 知る必要が出る」として 512 に寄せたが、切らない方針にした結果
+  /// **Misskey で 512 超を入力して保存でき、400 で落ちる**形になっていた。
+  /// 上限そのものをサーバーに合わせる（呼び出し側は `currentAdapterProvider`
+  /// を既に読んでいる）。
+  static int attachmentDescriptionFor({required bool isMastodon}) =>
+      isMastodon ? 10000 : 512;
 }
 
 /// 投稿アクションの失敗報告で使う phase タグ (#976)。

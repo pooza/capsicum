@@ -186,9 +186,15 @@ String? _mastodonErrorText(Object error) {
 String _localizeMastodonError(String text) {
   // 本文の長さ超過。上限値はサーバー設定で変わるので、**数字は文面から拾って
   // そのまま使う**（決め打ちすると上限を変えたサーバーで嘘になる）。
-  final tooLong = _mastodonTextTooLong.firstMatch(text);
-  if (tooLong != null) {
-    return '本文が長すぎます（上限 ${tooLong.group(1)} 文字）';
+  final statusTooLong = _mastodonStatusTooLong.firstMatch(text);
+  if (statusTooLong != null) {
+    return '本文が長すぎます（上限 ${statusTooLong.group(1)} 文字）';
+  }
+  final fieldTooLong = _mastodonFieldTooLong.firstMatch(text);
+  if (fieldTooLong != null) {
+    final label = _mastodonFieldLabels[fieldTooLong.group(1)];
+    final max = fieldTooLong.group(2);
+    return label == null ? '入力が長すぎます（上限 $max 文字）' : '$labelが長すぎます（上限 $max 文字）';
   }
   for (final entry in _mastodonErrorPhrases.entries) {
     if (text.contains(entry.key)) return entry.value;
@@ -196,9 +202,42 @@ String _localizeMastodonError(String text) {
   return text;
 }
 
-final _mastodonTextTooLong = RegExp(
-  r'Text is too long \(maximum is (\d+) characters\)',
+/// 本文（投稿テキスト）の長さ超過。
+///
+/// ⚠⚠ **Rails 既定の `is too long (maximum is N characters)` ではない。**
+/// Mastodon は `StatusLengthValidator` で専用の I18n キー
+/// (`statuses.over_character_limit` = `character limit of %{max} exceeded`) を
+/// 使うため、実際に返るのは
+/// `Validation failed: Text character limit of 3000 exceeded`。
+///
+/// #976 の初版は Rails 既定形を書いており、**一度も発火しない**まま出荷される
+/// ところだった。テストがコード側で組み立てた架空の文字列を assert していたので
+/// 緑のまま通っていた（v1.60 のリリース前レビューで検出）。**上流の文面は
+/// フォーク (`~/repos/mastodon`) で確かめること。**
+///
+/// この I18n キーを引くのは `status_length_validator.rb` の `:text` だけなので、
+/// 当たったら本文と言い切ってよい。
+final _mastodonStatusTooLong = RegExp(r'character limit of (\d+) exceeded');
+
+/// ActiveRecord 既定形の長さ超過。**フィールド名まで見る。**
+///
+/// ⚠ **フィールドを見ずに「本文」と訳してはいけない（Codex P2 / PR #1023）。**
+/// この形で返るのは通報コメント (`Report::COMMENT_SIZE_LIMIT`)・ユーザーメモ・
+/// 招待コメント・メディアの説明・アバターの説明などで、**本文だけは上の専用
+/// キーを使うので絶対にここへ来ない**。それでも初版は両方を 1 本の正規表現で
+/// 受けて一律「本文が長すぎます」と訳しており、テストが
+/// `Comment is too long` → 「本文が長すぎます」を**正解として固定していた**。
+///
+/// 素性の分かっているものだけ名前を付け、それ以外は field 中立に倒す。ここに
+/// 無いフィールドを勝手に名指しすると、また同じ誤訳になる。
+final _mastodonFieldTooLong = RegExp(
+  r'([A-Za-z][A-Za-z ]*?) is too long \(maximum is (\d+) characters\)',
 );
+
+const _mastodonFieldLabels = <String, String>{
+  'Comment': 'コメント',
+  'Description': '説明',
+};
 
 /// 素通しでは意味が取りにくい定型句だけを訳す。
 ///

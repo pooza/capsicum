@@ -178,5 +178,22 @@ final Set<String> _knownBackupKeys = {
 /// ⚠ **成功メッセージに必ず添える。** 索引の保存に失敗すると `skipped` にだけ
 /// 記録されて `addedAccountKeys` は空になるので、これが無いと「設定を読み込み
 /// ました」だけが出て**部分失敗が無言になる**。
-String settingsBackupSkippedNote(SettingsImportResult result) =>
-    result.skipped.isEmpty ? '' : '（${result.skipped.length} 件は取り込みませんでした）';
+///
+/// ⚠⚠ **アカウントだけは理由の本文を出す（v1.60 リリース前レビュー）。**
+/// `_mergeAccounts` は「取り込めなかったことは理由つきで返し、ユーザーには
+/// 『ログインし直す』という手が残る」と宣言して理由を組み立てているのに、
+/// **どちらの画面もその値を読んでいなかった**。#621 の非 op delete を踏んだ
+/// 端末では移行の主経路（ログイン前の取り込み）でアカウントが 1 件も入らず、
+/// それでも画面には「1 件は取り込みませんでした」としか出ない。
+///
+/// 出すのは `accounts` の理由のみ。設定キー側は「端末固有だから飛ばした」等の
+/// 正常系が大半で、全部並べると本当に困る 1 行が埋もれる。理由の文字列は
+/// いずれも定数＋件数で、ファイル由来の値は入らない。
+String settingsBackupSkippedNote(SettingsImportResult result) {
+  if (result.skipped.isEmpty) return '';
+  final accounts = result.skipped['accounts'];
+  final others = result.skipped.length - (accounts == null ? 0 : 1);
+  if (accounts == null) return '（$others 件は取り込みませんでした）';
+  final tail = others > 0 ? '。ほか $others 件も取り込みませんでした' : '';
+  return '（$accounts$tail）';
+}

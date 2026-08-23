@@ -238,14 +238,18 @@ class PostActionRunner {
     debugLogException('PostActionRunner.$label failed', e);
     // scrub 済みの表現は type / status / path までで、失敗の理由（Mastodon の
     // `{"error": "..."}`）が落ちる。手元で原因を追うにはこれが要るので、
-    // Sentry が動いていないときに限って生の body を出す。
+    // debug ビルドに限って生の body を出す。
     //
-    // ⚠ **`kDebugMode` だけでは足りない。**sentry_flutter の
-    // DebugPrintIntegration は build mode で分岐せず登録されるので、DSN を
-    // 渡した debug ビルドでは breadcrumb になる（debug に DSN を渡さないのは
-    // 運用の約束であって、仕組みではない）。`isEnabled` で仕組みの側に寄せる。
-    if (kDebugMode && !Sentry.isEnabled && e is DioException) {
-      // scrub-guard: allow — Sentry 無効時のみ。上のとおり経路が閉じている
+    // ⚠ **`kDebugMode` で足りる。**sentry_flutter の `DebugPrintIntegration`
+    // は **debug では早期 return して `debugPrint` を差し替えない**
+    // (`debug_print_integration.dart` の `if (isDebug || !enablePrintBreadcrumbs)
+    // return;`)。差し替わるのは release と profile。
+    //
+    // ⚠⚠ **登録されること（`integrations.add`）と、差し替えることは別。**
+    // v1.60 のレビューで、登録箇所だけを見て「build mode で分岐しない」と
+    // 誤読していたのを正した。integration の本体まで読むこと。
+    if (kDebugMode && e is DioException) {
+      // scrub-guard: allow — debug 限定。この build mode では breadcrumb 化しない
       debugPrint('Response body: ${e.response?.data}');
     }
     unawaited(

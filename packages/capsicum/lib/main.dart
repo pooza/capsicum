@@ -96,8 +96,9 @@ void _logDev(String message) {
 /// [_logDev] の例外版。**捕捉した例外は必ずこちらへ流すこと** (#975)。
 ///
 /// `_logDev` は release では no-op だが **profile では debugPrint に流れる**。
-/// sentry_flutter の `DebugPrintIntegration` は build mode で分岐せず登録される
-/// ので、DSN 付きビルドでは breadcrumb になる。breadcrumb の `message` は
+/// sentry_flutter の `DebugPrintIntegration` が `debugPrint` を差し替えるのは
+/// **release と profile**（debug では早期 return する）なので、profile ビルドの
+/// この経路がそのまま breadcrumb になる。breadcrumb の `message` は
 /// [_scrubBreadcrumb]（`data` しか見ない）を通らないため、生の例外を埋めると
 /// DioException の URL がそのまま Sentry に載る。
 void _logDevException(String context, Object error, [StackTrace? stackTrace]) {
