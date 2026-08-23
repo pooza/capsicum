@@ -1998,6 +1998,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final entry = _attachmentAt(index);
     if (entry == null) return;
     final descController = TextEditingController(text: entry.description);
+    // ⚠ **上限はサーバーごとに違う（Codex P2 / PR #1023）。**切らない欄なので、
+    // 小さいほうへ寄せた値を当てると Misskey で超過を通すか Mastodon の入力を
+    // 削るかのどちらかになる。
+    final maxDescription = InputLimits.attachmentDescriptionFor(
+      isMastodon: ref.read(currentAdapterProvider) is MastodonAdapter,
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -2017,8 +2023,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           //
           // ⚠ **切らずに数えるだけにする。**Mastodon の上限は 1 万字なので、
           // 512 で切ると Mastodon 利用者の ALT を黙って削ることになる。超過は
-          // 赤字のカウンタで見せ、判断はユーザーへ返す。
-          maxLength: InputLimits.attachmentDescription,
+          // 赤字のカウンタで見せ、OK ボタンを塞いで判断はユーザーへ返す。
+          maxLength: maxDescription,
           maxLengthEnforcement: MaxLengthEnforcement.none,
         ),
         actions: [
@@ -2026,9 +2032,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('キャンセル'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, descController.text),
-            child: const Text('OK'),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: descController,
+            builder: (context, value, _) => TextButton(
+              onPressed: value.text.characters.length > maxDescription
+                  ? null
+                  : () => Navigator.pop(dialogContext, value.text),
+              child: const Text('OK'),
+            ),
           ),
         ],
       ),

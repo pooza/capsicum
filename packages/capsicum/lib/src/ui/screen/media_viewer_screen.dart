@@ -157,10 +157,17 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
     // で await の直後に破棄すると、まだツリーに残っている `TextField` が
     // 破棄済み controller に触れる（autofocus でキーボードが開いていると、
     // 閉じる途中のフォーカス更新で踏む）。
+    // ⚠ **上限はサーバーごとに違う（Codex P2 / PR #1023）。**ダイアログは切らない
+    // ので、小さいほうへ寄せた値を渡すと Misskey で超過を通してしまう。
+    final editingAdapter = ref.read(currentAdapterProvider);
     final result = await showDialog<String>(
       context: context,
-      builder: (_) =>
-          _DescriptionEditDialog(initialText: attachment.description ?? ''),
+      builder: (_) => _DescriptionEditDialog(
+        initialText: attachment.description ?? '',
+        maxLength: InputLimits.attachmentDescriptionFor(
+          isMastodon: editingAdapter is MastodonAdapter,
+        ),
+      ),
     );
 
     if (result == null || !mounted) return;
@@ -552,9 +559,15 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 /// (Codex P2 / PR #1013)。`showDialog` の Future は閉じるアニメーションの完了
 /// より前に解決するため、呼び出し側で破棄すると早すぎる。
 class _DescriptionEditDialog extends StatefulWidget {
-  const _DescriptionEditDialog({required this.initialText});
+  const _DescriptionEditDialog({
+    required this.initialText,
+    required this.maxLength,
+  });
 
   final String initialText;
+
+  /// 接続中のサーバーの ALT 上限。[InputLimits.attachmentDescriptionFor]。
+  final int maxLength;
 
   @override
   State<_DescriptionEditDialog> createState() => _DescriptionEditDialogState();
@@ -581,15 +594,18 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
       ),
       autofocus: true,
       // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
-      // 画面には「更新に失敗しました」しか出ない。根拠は
-      // [InputLimits.attachmentDescription]。
+      // 画面には「更新に失敗しました」しか出ない。
       //
       // ⚠⚠ **切り詰めてはいけない。**Mastodon の ALT 上限は 1 万字なので、
       // Web UI で書いた 512 超の ALT が普通に存在する。素の `maxLength` は
       // `LengthLimitingTextInputFormatter` を通すので、**開いて 1 文字打った
-      // 瞬間に 512 字へ切り詰められ、本人の ALT が消える**。数えるだけにして
-      // 判断はユーザーへ返す（#121 の導線が出た瞬間に踏む・v1.60 レビュー）。
-      maxLength: InputLimits.attachmentDescription,
+      // 瞬間に切り詰められ、本人の ALT が消える**。数えるだけにして判断は
+      // ユーザーへ返す（#121 の導線が出た瞬間に踏む・v1.60 レビュー）。
+      //
+      // ⚠⚠ **切らないなら、上限はサーバーの実値でなければならない**
+      // （Codex P2 / PR #1023）。小さいほうへ寄せたまま切るのをやめると、
+      // **Misskey で 512 超を入力して保存でき 400 で落ちる**。
+      maxLength: widget.maxLength,
       maxLengthEnforcement: MaxLengthEnforcement.none,
     ),
     actions: [
@@ -597,9 +613,15 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
         onPressed: () => Navigator.pop(context),
         child: const Text('キャンセル'),
       ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, _controller.text),
-        child: const Text('保存'),
+      // 超過している間は保存させない。切らずに止める側の対。
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _controller,
+        builder: (context, value, _) => FilledButton(
+          onPressed: value.text.characters.length > widget.maxLength
+              ? null
+              : () => Navigator.pop(context, value.text),
+          child: const Text('保存'),
+        ),
       ),
     ],
   );

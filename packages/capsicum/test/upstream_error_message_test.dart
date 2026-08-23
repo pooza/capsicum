@@ -182,7 +182,12 @@ void main() {
 
     /// ActiveRecord 既定形も受ける。通報コメント等はこちらで返る
     /// （`Comment is too long (maximum is 1000 characters)`）。
-    test('Rails 既定形の長さ超過も拾う', () {
+    ///
+    /// ⚠⚠ **フィールド名を無視して「本文」と訳さない（Codex P2 / PR #1023）。**
+    /// 初版は 2 つの形を 1 本の正規表現で受けて一律「本文が長すぎます」に
+    /// していて、**このテストがその誤訳を正解として固定していた**。本文
+    /// (`:text`) は専用の I18n キーを使うので、この形では絶対に返らない。
+    test('Rails 既定形はフィールド名で訳し分ける', () {
       expect(
         upstreamErrorMessage(
           _dioError({
@@ -191,7 +196,32 @@ void main() {
                 '(maximum is 1000 characters)',
           }),
         ),
-        '本文が長すぎます（上限 1000 文字）',
+        'コメントが長すぎます（上限 1000 文字）',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Description is too long '
+                '(maximum is 10000 characters)',
+          }),
+        ),
+        '説明が長すぎます（上限 10000 文字）',
+      );
+    });
+
+    /// 知らないフィールドは名指ししない。`Avatar description` のように上流が
+    /// 増やしうるので、当てずっぽうの名前を出すより中立の方が安全。
+    test('素性の分からないフィールドは field 中立に倒す', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Avatar description is too long '
+                '(maximum is 150 characters)',
+          }),
+        ),
+        '入力が長すぎます（上限 150 文字）',
       );
     });
 
