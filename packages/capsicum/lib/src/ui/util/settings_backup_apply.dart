@@ -1,3 +1,4 @@
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -41,6 +42,30 @@ void applyImportedSettingsBackup(WidgetRef ref, SettingsImportResult result) {
     }
   }
   ref.read(accountManagerProvider.notifier).addDisconnectedAccounts(keys);
+}
+
+/// 選ばれたファイルを、上限を確かめてから読む (#1012)。
+///
+/// ⚠ **`readAsString` を直に呼ばない。**取り込み口は「YAML を選ぶ」導線だが、
+/// iOS の UTI は `public.data` なので**任意のファイルを選べる**（Android も
+/// mimeTypes の絞り込みは提供側次第）。動画を選ばれると、内容を見る前に
+/// 端末のメモリへ丸ごと載る。
+///
+/// ⚠ **両方の取り込み口から呼ぶこと。**設定画面（ログイン後）とサーバー選択画面
+/// （ログイン前）があり、片方だけ守ると守られていない側が残る（#996 が繰り返し
+/// 踏んだ「母数の取りこぼし」）。
+///
+/// 大きすぎるファイルは [SettingsBackupFormatException] にする。ユーザーの選択
+/// ミスであって障害ではないので、呼び出し側の format 用 catch（件数だけ数える）
+/// へ落として error レベルの観測にしない。
+Future<String> readSettingsBackupFile(XFile file) async {
+  final length = await file.length();
+  if (length > maxSettingsBackupBytes) {
+    throw const SettingsBackupFormatException(
+      '設定のバックアップにしてはファイルが大きすぎます。選んだファイルを確認してください',
+    );
+  }
+  return file.readAsString();
 }
 
 /// 取り込みの前に必ず挟む確認 (#1010)。
@@ -92,10 +117,10 @@ void reportSettingsBackupImportSkips(SettingsImportResult result) {
       level: SentryLevel.info,
       withScope: (scope) {
         scope.setTag('settings_backup.op', 'import_skip');
-        // key -> 理由。値は含めない（result.skipped は key→理由 の対応）。
-        scope.setContexts('settings_backup_skipped', {
-          for (final entry in result.skipped.entries) entry.key: entry.value,
-        });
+        scope.setContexts(
+          'settings_backup_skipped',
+          redactSkippedKeysForReport(result.skipped),
+        );
         scope.fingerprint = ['settings_backup.op', 'import_skip'];
       },
     );
@@ -103,6 +128,50 @@ void reportSettingsBackupImportSkips(SettingsImportResult result) {
     // Sentry 失敗で UI を止めない。
   }
 }
+
+/// Sentry へ載せてよい形に落とす (#1012)。
+///
+/// ⚠ **「値は載せない」だけでは足りなかった。**未知のキーは YAML の
+/// マッピングキーそのもの（＝ファイル由来の任意文字列）で、手編集された
+/// バックアップならユーザーが書いた何でも入りうる。doc は「値は含めない」と
+/// 宣言していたのに、**キー名の側から素通し**していた。
+///
+/// 知っているキー（[exportableSettings] / [deviceLocalKeys] /
+/// [accountScopedKeys] と `accounts`）はそのまま出す — 素性が分かっている
+/// 定数で、どの設定が落ちたかを知るのがこの観測の目的。それ以外は
+/// `(unknown)` に丸めて**件数だけ**残す。
+///
+/// ⚠ **件数にも上限を置く。**壊れたファイルは未知キーを大量に持ちうるので、
+/// context が肥大して Sentry 側で切り捨てられると全部見えなくなる。
+@visibleForTesting
+Map<String, Object> redactSkippedKeysForReport(Map<String, String> skipped) {
+  const maxReported = 30;
+  final known = <String, String>{};
+  var unknown = 0;
+  for (final entry in skipped.entries) {
+    if (!_knownBackupKeys.contains(entry.key)) {
+      unknown++;
+      continue;
+    }
+    if (known.length >= maxReported) continue;
+    known[entry.key] = entry.value;
+  }
+  return {
+    ...known,
+    if (unknown > 0) '(unknown)': unknown,
+    if (skipped.length > known.length + unknown)
+      '(truncated)': skipped.length - known.length - unknown,
+  };
+}
+
+/// 素性の分かっているキー。ここに無いものは名前ごと伏せる。
+final Set<String> _knownBackupKeys = {
+  for (final setting in exportableSettings) setting.key,
+  ...deviceLocalKeys,
+  ...accountScopedKeys,
+  // アカウント索引の取り込み結果 (#1001)。理由は定数文字列。
+  'accounts',
+};
 
 /// 取り込めなかった件数の但し書き。何も落ちていなければ空文字 (#1010)。
 ///

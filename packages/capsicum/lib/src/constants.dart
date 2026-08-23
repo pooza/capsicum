@@ -123,6 +123,25 @@ class AppConstants {
   static const emojiFallbackTextScale = 0.7;
 }
 
+/// サーバーが受け付ける入力長の上限 (#1012)。
+///
+/// ⚠ **client 側で止めないと「失敗しました」の 1 行しか出ない。**超過すると
+/// Mastodon / Misskey とも 400 / 422 で断るが、本文は画面に出していないので
+/// ユーザーには理由が分からず、書いた文章もそのまま失われる。
+///
+/// ⚠ **Mastodon と Misskey の小さいほうに合わせる。**アダプタごとに出し分けると
+/// ダイアログが backend を知る必要が出る（今はどちらの画面も知らない）。上限に
+/// 余裕がある側で数百文字ぶん短くなるだけで、実害はない。
+class InputLimits {
+  /// 通報の理由。Misskey `report-abuse` の `comment` が 512、Mastodon の
+  /// `Report#comment` が 1000。
+  static const reportComment = 512;
+
+  /// メディアの説明（ALT）。Misskey `drive/files/update` の `comment` が 512、
+  /// Mastodon の `media_attachments.description` はこれより長い。
+  static const attachmentDescription = 512;
+}
+
 /// Windows MSIX 配布で使う識別子（#423 / #554）。
 ///
 /// **これらは `pubspec.yaml` の `msix_config` と完全一致が必須**で、ずれると

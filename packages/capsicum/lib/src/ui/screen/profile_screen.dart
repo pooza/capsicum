@@ -1500,7 +1500,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('ブロック'),
-        content: Text('@${widget.user.username} をブロックしますか？'),
+        content: Text('@${userAcct(widget.user)} をブロックしますか？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1542,7 +1542,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     // controller に触れる。文面以外は投稿の通報と同じなので widget ごと共通。
     final comment = await showReportCommentDialog(
       context,
-      message: '@${widget.user.username} をサーバー管理者に通報しますか？',
+      message: '@${userAcct(widget.user)} をサーバー管理者に通報しますか？',
     );
     if (comment == null) return;
 

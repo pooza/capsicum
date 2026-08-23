@@ -35,6 +35,7 @@ import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
+import 'src/service/push_diagnostic_codes.dart';
 import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
@@ -600,22 +601,11 @@ Future<void> _flushWnsPushDiagnostics() async {
     final atMs = decoded['at_ms'];
 
     // 正常系（表示成功・dedup による抑止・暗号化通知でない・raw 以外で起動）は
-    // info、異常系は warning。ネイティブ push_diagnostics.cpp の IsBenignCode と
-    // 揃えること。
-    // ⚠ bgtask.shown / bgtask.announcement_shown / wns.announcement_shown は
-    // **表示に成功したときだけ**記録される (#957 / #978 / #997)。表示失敗
-    // (bgtask.show_failed / bgtask.announcement_show_failed / wns.show_failed /
-    // wns.announcement_show_failed) はここに入れない。
-    const benign = {
-      'bgtask.shown',
-      'bgtask.announcement_shown',
-      'bgtask.not_encrypted',
-      'bgtask.not_raw',
-      'wns.announcement_shown',
-      // WebSocket 経路 (#569) が先に出したので抑止した = 通常運転 (#997)。
-      'wns.announcement_deduped',
-    };
-    final level = benign.contains(code)
+    // info、異常系は warning。⚠ **集合の正本は
+    // [wnsBenignDiagnosticCodes]**（ネイティブ `push_diagnostics.cpp` の
+    // `IsBenignCode` との一致は `wns_benign_codes_parity_test.dart` が守る・
+    // #1012）。ここへ直接リテラルを書き足さないこと。
+    final level = wnsBenignDiagnosticCodes.contains(code)
         ? SentryLevel.info
         : SentryLevel.warning;
 

@@ -28,6 +28,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
+import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
 import 'emoji_action_sheet.dart';
 import 'reaction_picker_sheet.dart';
@@ -1543,7 +1544,10 @@ class _PostTileState extends ConsumerState<PostTile> {
       context,
       message:
           'この$postLabelを添えて '
-          '@${targetPost.author.username} をサーバー管理者に通報しますか？',
+          // ⚠ **bare username を出さない (#1012)。**リモートユーザーだと
+          // 「@alice」としか出ず、同名の別サーバーのユーザーと区別が付かない
+          // まま通報させることになる。組み立ての正本は [userAcct]。
+          '@${userAcct(targetPost.author)} をサーバー管理者に通報しますか？',
     );
     if (comment == null) return;
 

@@ -1202,9 +1202,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       } catch (_) {
         parsed = null;
       }
+      // ⚠ **warning ではなく info (#1012)。**#1001 で「トークンを持たない索引」を
+      // 取り込むのが**正規の移行手順**になったため、移行直後の端末では
+      // **未ログインのアカウント数ぶん毎起動ここへ来る**。設計どおりの状態を
+      // warning で上げ続けると、本当に異常な `null_secret`（再インストール・
+      // Keystore リセット等）が母数に埋もれる。
+      //
+      // ⚠ **文言も直す。**#967 以降は skip していない — 一覧から消さず
+      // 「未接続」として並べ、タップでログインへ送る。
       Sentry.captureMessage(
-        'account_restore: secret missing (null path), account skipped',
-        level: SentryLevel.warning,
+        'account_restore: secret missing (null path), kept as disconnected',
+        level: SentryLevel.info,
         withScope: (scope) {
           scope.setTag('account_restore.path', 'null_secret');
           if (parsed != null) {

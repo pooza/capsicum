@@ -23,6 +23,21 @@ import 'account_storage.dart';
 /// ファイル形式の版。読み込み側は未知の版を弾く。
 const settingsBackupFormatVersion = 1;
 
+/// 読み込むファイルの上限バイト数 (#1012)。
+///
+/// 実際の書き出しは数 KB で、アカウントを 100 件持っていても 10KB に届かない。
+/// **「手で編集して壊したファイル」は通し、「別のファイルを選んだ」を弾く**線
+/// として 1MiB を置く。ここを通さないと `readAsString` が端末のメモリを埋める。
+const maxSettingsBackupBytes = 1024 * 1024;
+
+/// 索引へ取り込むアカウントの上限 (#1012)。
+///
+/// プリセット 5 + 手元のサーバーを足しても 2 桁に届かない。手編集や別ファイルで
+/// 巨大な `accounts:` が来たときに、SharedPreferences の索引を膨らませない。
+/// ⚠ **超えたら黙って切り詰めず、丸ごと取り込まない**（どれが落ちたか分からない
+/// 索引を作るより、理由を出して何もしないほうがユーザーは次の手を選べる）。
+const maxBackupAccounts = 200;
+
 /// 設定値の型。SharedPreferences の格納型に対応する。
 enum BackupValueType { boolean, number, text, textList }
 
@@ -175,8 +190,6 @@ class SettingsBackupFormatException implements Exception {
   String toString() => message;
 }
 
-/// 現在の設定を YAML にする (#857)。
-///
 /// バックアップの `accounts:` に載せるアカウント索引を読む (#1001)。
 ///
 /// 値は `AccountKey.toStorageKey()`（`mastodon://user@host`）の JSON 配列で、
@@ -288,15 +301,27 @@ String buildSettingsBackupYaml(
 ///
 /// **知らないキー・型違い・端末固有キーは飛ばして続行する。**1 つの不整合で
 /// 全体を捨てると、版をまたいだバックアップが丸ごと使えなくなる。
+///
+/// [accountStorage] は索引へ書き戻す key の残骸 secret を消すためだけに使う
+/// （[AccountStorage.purgeStaleSecrets]）。省略時は実物を使う — **取り込み口が
+/// 設定画面とログイン前の 2 つある**ので、呼び出し側に任せると片方だけ守られる
+/// （#996 が繰り返し踏んだ「母数の取りこぼし」）。
 Future<SettingsImportResult> applySettingsBackupYaml(
   SharedPreferences prefs,
-  String yamlText,
-) async {
+  String yamlText, {
+  AccountStorage? accountStorage,
+}) async {
   final Object? parsed;
   try {
     parsed = loadYaml(yamlText);
   } on Exception catch (e) {
     throw SettingsBackupFormatException('ファイルを読み込めませんでした: $e');
+  } on StackOverflowError {
+    // ⚠ **`Error` なので `on Exception` を素通りする (#1012)。**深くネストした
+    // YAML（`[[[[...]]]]`）で再帰下降パーサが刺さる。素通りすると呼び出し側の
+    // 汎用 catch へ落ち、ユーザーの選択ミスが error レベルの観測になる。
+    // ⚠ alias 爆弾は展開しない（`package:yaml` がノードを共有するため・実測済み）。
+    throw const SettingsBackupFormatException('ファイルの構造が深すぎて読み込めませんでした');
   }
   if (parsed is! YamlMap) {
     throw const SettingsBackupFormatException('設定のバックアップファイルではありません');
@@ -323,6 +348,7 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     prefs,
     parsed['accounts'],
     skipped,
+    accountStorage ?? AccountStorage(),
   );
 
   for (final entry in settings.nodes.entries) {
@@ -362,8 +388,15 @@ Future<SettingsImportResult> applySettingsBackupYaml(
 /// 置き換えると「読み込んだら手元のアカウントが消えた」になる。既にある key は
 /// 何もしない（重複させない）。
 ///
-/// ⚠ **secret は触らない。**索引だけが増えるので、足したアカウントは
+/// ⚠ **secret は増やさない。**索引だけが増えるので、足したアカウントは
 /// 「未接続」として並ぶ（#967）。ログインし直すとトークンが入って復帰する。
+///
+/// ⚠⚠ **ただし「触らない」では不変条件が成り立たない (#1012)。**
+/// [AccountStorage.removeAccount] は secret の delete に失敗しても索引を消すの
+/// で、削除前のバックアップを取り込むと**索引だけが復活して残骸トークンと再会
+/// する**。次回起動の `restoreSessions` がそれで probe に成功し、削除したはずの
+/// アカウントが完全ログイン状態で戻る。書き戻す key の残骸は
+/// [AccountStorage.purgeStaleSecrets] で必ず消す。
 ///
 /// 壊れた要素は黙って捨てず [skipped] に理由を積む。ファイル全体を捨てないのは
 /// 設定側と同じ方針。
@@ -371,10 +404,15 @@ Future<List<String>> _mergeAccounts(
   SharedPreferences prefs,
   Object? node,
   Map<String, String> skipped,
+  AccountStorage accountStorage,
 ) async {
   if (node == null) return const [];
   if (node is! YamlList) {
     skipped['accounts'] = 'アカウントの一覧が読めませんでした';
+    return const [];
+  }
+  if (node.length > maxBackupAccounts) {
+    skipped['accounts'] = 'アカウントの一覧が多すぎます（$maxBackupAccounts 件まで）。取り込みませんでした';
     return const [];
   }
 
@@ -404,9 +442,30 @@ Future<List<String>> _mergeAccounts(
     merged.add(key);
     added.add(key);
   }
-  if (invalid > 0) {
-    skipped['accounts'] = '$invalid 件のアカウントを読み取れませんでした';
+  final reasons = <String>[if (invalid > 0) '$invalid 件のアカウントを読み取れませんでした'];
+  if (added.isEmpty) {
+    if (reasons.isNotEmpty) skipped['accounts'] = reasons.join(' / ');
+    return const [];
   }
+
+  // ⚠ **索引を書く前に残骸を消す (#1012)。** 順序を逆にすると、purge が落ちた
+  // 瞬間に「索引はあるが残骸トークンも生きている」状態が残る。
+  //
+  // ⚠⚠ **消しきれなかったアカウントは書き戻さない。** #621 の非 op delete は
+  // まさにここで空振りするので、構わず索引を書くと**この修正が塞ごうとして
+  // いる状態がそのまま完成する**。取り込めなかったことは理由つきで返し、
+  // ユーザーには「ログインし直す」という手が残る（索引が無くても
+  // 「アカウントを追加」から入れる）。
+  final unresolved = (await accountStorage.purgeStaleSecrets(added)).toSet();
+  if (unresolved.isNotEmpty) {
+    added.removeWhere(unresolved.contains);
+    merged.removeWhere(unresolved.contains);
+    reasons.add(
+      '${unresolved.length} 件のアカウントは、この端末に古い認証情報が残っている'
+      'ため取り込みませんでした',
+    );
+  }
+  if (reasons.isNotEmpty) skipped['accounts'] = reasons.join(' / ');
   if (added.isEmpty) return const [];
 
   // ⚠ setString は失敗しても throw せず false を返す（AccountStorage と同じ罠）。

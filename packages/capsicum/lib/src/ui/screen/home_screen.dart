@@ -26,6 +26,7 @@ import '../../util/startup_trace.dart';
 import '../util/about_dialog.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
+import '../util/offline_account_display.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
@@ -1449,7 +1450,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     dismiss();
                     // ログイン先のサーバーを埋めた状態で開く。ユーザーが
                     // ホスト名を打ち直さずに済む。
-                    context.push('/server?host=${offline.key.host}');
+                    context.push(reconnectRouteFor(offline.key));
                   }
 
                   return ListTile(
@@ -1465,7 +1466,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     subtitle: Text(
                       needsLogin
-                          ? '未接続（タップで接続し直す）'
+                          ? disconnectedAccountSubtitle
                           : offline.retrying
                           ? '接続できません（再試行中…）'
                           : '接続できません（自動再試行中）',
@@ -1983,14 +1984,14 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     // 続いている（「接続できません」だと終わったように読める）。
                     subtitle: Text(
                       !o.recoverableByRetry
-                          ? '未接続（タップで接続し直す）'
+                          ? disconnectedAccountSubtitle
                           : o.retrying
                           ? '再試行中…'
                           : '接続を待っています',
                     ),
                     onTap: o.recoverableByRetry
                         ? null
-                        : () => context.push('/server?host=${o.key.host}'),
+                        : () => context.push(reconnectRouteFor(o.key)),
                     trailing: IconButton(
                       // 削除操作は delete_outline に統一する (#828)。logout は
                       // 実ログアウト (ドロワー) と紛れるため使わない。

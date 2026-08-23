@@ -141,6 +141,54 @@ void main() {
       expect(await ComposeDraftStore().restore(), isNull);
     });
 
+    /// #1012: 世代ガードで弾かれたことを、呼び出し側が**知れる**こと。
+    ///
+    /// ⚠ **`_syncedGeneration` を進めない設計なので、ズレは恒久。**黙って null
+    /// を返すだけだと、画面は「自動保存 12:34」を出したまま固まり、その後に
+    /// 書いた本文まで保存されているように読める（#964 の主目的が保存タイミング
+    /// の可視化である以上、表示が実態と食い違うと効果が反転する）。
+    test('#1012: 別画面に片づけられたら superseded が立つ', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: 'hello'),
+        now: fixedNow,
+      );
+
+      final a = ComposeDraftStore();
+      final b = ComposeDraftStore();
+      await a.restore();
+      await b.restore();
+      expect(a.superseded, isFalse, reason: 'まだ誰も片づけていない');
+
+      await b.clear();
+      expect(
+        await a.save(const ComposeDraft(text: 'hello'), now: fixedNow),
+        isNull,
+      );
+
+      expect(a.superseded, isTrue);
+      expect(a.discarded, isFalse, reason: 'discarded は「この画面が投稿し終えた」で、意味が正反対');
+      // 恒久であることまで見る。ここが false に戻ると「1 回だけ表示を下ろして
+      // また嘘の時刻に戻る」というより悪い挙動になる。
+      expect(
+        await a.save(const ComposeDraft(text: 'hello'), now: fixedNow),
+        isNull,
+      );
+      expect(a.superseded, isTrue);
+    });
+
+    test('#1012: 自分で clear した画面は superseded にしない', () async {
+      final store = ComposeDraftStore();
+      await store.restore();
+      await store.clear();
+
+      expect(
+        await store.save(const ComposeDraft(text: 'x'), now: fixedNow),
+        isNull,
+      );
+      expect(store.superseded, isFalse, reason: '投稿直後は画面が閉じるので、停止を知らせる相手が居ない');
+      expect(store.discarded, isTrue);
+    });
+
     test('#969: clear 後に新しい画面が restore→save すれば自動保存は復活する', () async {
       await ComposeDraftStore().save(
         const ComposeDraft(text: '投稿した本文'),

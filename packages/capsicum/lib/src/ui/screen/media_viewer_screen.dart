@@ -16,11 +16,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
+import '../../constants.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
-import '../util/attachment_description_edit.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
+import '../util/attachment_description_edit.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
 /// プロキシ token を含みうる）を落として host + path のみに切り詰める。
@@ -178,12 +179,17 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       // 落ちて、**サーバー側は成功しているのに失敗扱い**になる。
       if (mounted) {
         setState(() {
+          // ⚠ **description 以外は元の値をそのまま運ぶ (#1012)。**`name`
+          // （Misskey のドライブファイル名）を落としていたため、ALT を編集した
+          // 直後だけファイル名が消えていた。今は表示に使っていないので実害は
+          // 無いが、フィールドが増えるたびに同じ取りこぼしが起きる形だった。
           _attachments[index] = Attachment(
             id: attachment.id,
             type: attachment.type,
             url: attachment.url,
             previewUrl: attachment.previewUrl,
             description: result,
+            name: attachment.name,
           );
           _modified = true;
         });
@@ -574,6 +580,10 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
         border: OutlineInputBorder(),
       ),
       autofocus: true,
+      // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
+      // 画面には「更新に失敗しました」しか出ない。根拠は
+      // [InputLimits.attachmentDescription]。
+      maxLength: InputLimits.attachmentDescription,
     ),
     actions: [
       TextButton(
