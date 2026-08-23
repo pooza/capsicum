@@ -221,11 +221,22 @@ class ComposeDraftStore {
     // **以降の save が毎回「世代ズレ」で捨てられて、その画面の自動保存が恒久的に
     // 死ぬ**（#1008 が塞いだ「取消のあとの本文が黙って消える」が別経路で戻る）。
     final synced = _syncedGeneration;
-    if (synced == null || synced <= current) {
-      _syncedGeneration = current;
-      // 書き戻せた＝この画面はまだ現役。停止表示を解く（下の [superseded] 参照）。
-      _superseded = false;
+    if (synced != null && synced > current) {
+      // ⚠⚠ **巻き戻さないだけでは足りない (Codex P2 / PR #1023)。**上の 8 回の
+      // 書き込みと `clear` の削除は**互いに割り込む**ので、こちらの値が削除の
+      // 後に着地しうる。印だけ守って抜けると:
+      //
+      // - **取消したはずの本文がスロットに残り**、次の restore で戻ってくる
+      // - `now` を返すので、画面が消えたデータに対して「自動保存 12:34」を出す
+      //
+      // 書いたものを片づけて no-op として返す。`_allKeys` に世代印は含まれない
+      // ので、取消が進めた世代はそのまま残る（この画面の以降の保存は効く）。
+      await _removeAll(prefs, _k);
+      return null;
     }
+    _syncedGeneration = current;
+    // 書き戻せた＝この画面はまだ現役。停止表示を解く（下の [superseded] 参照）。
+    _superseded = false;
     if (!ok) {
       throw const ComposeDraftSaveException(
         'shared preferences rejected write',

@@ -298,8 +298,25 @@ void main() {
         now: fixedNow,
       );
       final clearing = store.clear(discard: false);
-      await Future.wait([saving, clearing]);
+      final [savedAt, _] = await Future.wait([saving, clearing]);
 
+      // ⚠⚠ **storage を見るのは、次の save で上書きする前 (Codex P2 / PR #1023)。**
+      // 初版はここで先に「取消のあとに書いた本文」を保存してから中身を見ており、
+      // **競合で残った本文が上書きされて観測できなかった**。印の巻き戻りだけを
+      // 見て、データの復活を見逃す形になっていた。
+      //
+      // ⚠ **この 1 本目は現状 discriminate しない。**mock の割り込み順序では
+      // `clear` の削除が `save` の書き込みより後に着地するので、修正が無くても
+      // null になる。実機で順序が逆になったときのためのガードであって、証明では
+      // ない（実際に修正の有無を分けるのは下の `savedAt` のほう）。
+      expect(
+        await ComposeDraftStore().restore(),
+        isNull,
+        reason: '取消したのに、競合した save の本文がスロットへ残ってはいけない',
+      );
+      expect(savedAt, isNull, reason: '消えたデータに対して「自動保存 hh:mm」を出す時刻を返してはいけない');
+
+      // 印が巻き戻っていないので、取消のあとの入力はふつうに保存できる。
       expect(
         await store.save(
           const ComposeDraft(text: '取消のあとに書いた本文'),
