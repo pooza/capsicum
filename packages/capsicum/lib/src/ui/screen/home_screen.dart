@@ -2002,14 +2002,22 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                   ),
                 ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => ref
-                    .read(accountManagerProvider.notifier)
-                    .retryOfflineRestores(),
-                icon: const Icon(Icons.refresh),
-                label: const Text('今すぐ再試行'),
-              ),
-              const SizedBox(height: 8),
+              // ⚠ **全件が「未接続」のときは再試行を出さない** (#1014)。
+              // [AccountManager.retryOfflineRestores] の対象は #1001 以降
+              // `secretMissing` を明示的に除外するので、**まさにこの状態で
+              // 押しても黙って何も起きない**。上の説明文も「待っても戻らない」
+              // と言っており、押せるボタンがあること自体が矛盾していた。
+              // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
+              if (!allNeedLogin) ...[
+                FilledButton.icon(
+                  onPressed: () => ref
+                      .read(accountManagerProvider.notifier)
+                      .retryOfflineRestores(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('今すぐ再試行'),
+                ),
+                const SizedBox(height: 8),
+              ],
               OutlinedButton.icon(
                 onPressed: () => context.push('/server'),
                 icon: const Icon(Icons.person_add),
