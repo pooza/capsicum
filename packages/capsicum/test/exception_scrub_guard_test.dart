@@ -82,6 +82,62 @@ void main() {
 
   int matchParen(String s, int open) => matchBracket(s, open, '(', ')');
 
+  /// コメントを**同じ長さの空白**へ潰す。改行は残すので index も行番号もずれない。
+  ///
+  /// ⚠ **括弧の対応付けはコメントを読んではいけない（#1020・Codex P2 の 6 巡目）。**
+  /// 本体に `// payload は {'key': value} の形` のような行があると、[matchBracket]
+  /// がその `}` を数えて**本体がそこで終わったことになる**。以降の
+  /// `debugPrint(message)` が本体の外に出るので、そのラッパーは sink から漏れ、
+  /// `log('failed: $e')` が緑のまま通る。
+  ///
+  /// 潰しておくと**コメントアウトされたコードを違反として数えない**副次効果もある
+  /// （`// debugPrint('$e')` は実行されないので、直せと言われても困る）。
+  String maskComments(String source) {
+    final out = StringBuffer();
+    String? quote;
+    for (var i = 0; i < source.length; i++) {
+      final c = source[i];
+      if (quote != null) {
+        out.write(c);
+        if (c == r'\' && i + 1 < source.length) {
+          out.write(source[i + 1]);
+          i++;
+        } else if (c == quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (c == "'" || c == '"') {
+        quote = c;
+        out.write(c);
+        continue;
+      }
+      if (c == '/' && i + 1 < source.length && source[i + 1] == '/') {
+        while (i < source.length && source[i] != '\n') {
+          out.write(' ');
+          i++;
+        }
+        if (i < source.length) out.write('\n');
+        continue;
+      }
+      if (c == '/' && i + 1 < source.length && source[i + 1] == '*') {
+        while (i < source.length &&
+            !(source[i] == '*' &&
+                i + 1 < source.length &&
+                source[i + 1] == '/')) {
+          out.write(source[i] == '\n' ? '\n' : ' ');
+          i++;
+        }
+        // 閉じの `*/` ぶん。
+        if (i < source.length) out.write('  ');
+        i++;
+        continue;
+      }
+      out.write(c);
+    }
+    return out.toString();
+  }
+
   /// 引数リストを top-level のカンマで割る。
   List<String> splitArgs(String args) {
     final out = <String>[];
@@ -288,11 +344,13 @@ void main() {
     for (final file in dartFiles()) {
       final path = relativePath(file);
       if (allowedFiles.contains(path)) continue;
-      final source = file.readAsStringSync();
+      final original = file.readAsStringSync();
+      // コメント内の括弧を数えないよう潰してから見る（長さは変わらない）。
+      final source = maskComments(original);
       for (final (args, start) in callsOf(source, 'captureException')) {
         final first = splitArgs(args).firstOrNull;
         if (first == null || first.isEmpty) continue;
-        if (isMarked(source, start)) continue;
+        if (isMarked(original, start)) continue;
         // scrub 済み / その場で作った合成エラー（`StateError('...')` 等）は可。
         if (first.startsWith('scrubException(')) continue;
         // 直前で `final scrubbed = scrubException(e);` と控えた変数も可。
@@ -415,7 +473,7 @@ void main() {
   /// 「生の例外を埋めていないか」を見るだけで、それは元々満たすべき条件。
   Set<String> breadcrumbSinks(Iterable<String> sources) {
     final sinks = {'debugPrint'};
-    final pending = candidatesIn(sources);
+    final pending = candidatesIn(sources.map(maskComments));
     var added = true;
     // 転送が数珠つなぎになることがある（`_logDevException` → `_logDev` →
     // `debugPrint`）。増えなくなるまで回す。
@@ -443,17 +501,24 @@ void main() {
   /// 部品ごとの検査しか持っていなかったため、「ラッパーは見つかるのに、その
   /// **呼び出し**が見えない」という穴を自分のテストで踏めなかった。
   List<String> offendersIn(Map<String, String> sources) {
+    // ⚠ **コメントを潰してから構文を見る。**潰さないと本体の終わりを取り違える。
+    // 長さは変わらないので index は元ソースとそのまま対応する。
+    final masked = {
+      for (final MapEntry(key: p, value: s) in sources.entries)
+        p: maskComments(s),
+    };
     // ⚠ **sink の数え上げは全ファイルを見てから。**呼び出し側のソースだけでは
     // 別ファイルで宣言された転送ラッパーが見えない。
-    final sinks = breadcrumbSinks(sources.values);
+    final sinks = breadcrumbSinks(masked.values);
     final offenders = <String>[];
-    for (final MapEntry(key: path, value: source) in sources.entries) {
+    for (final MapEntry(key: path, value: source) in masked.entries) {
       if (allowedFiles.contains(path)) continue;
       for (final sink in sinks) {
         for (final (args, start) in callsOf(source, sink)) {
           final unsafe = unsafeInterpolations(args);
           if (unsafe.isEmpty) continue;
-          if (isMarked(source, start)) continue;
+          // ⚠ 見逃し指示は**コメント**なので、こちらは潰す前のソースを見る。
+          if (isMarked(sources[path]!, start)) continue;
           offenders.add('$path: $sink → ${unsafe.join(' / ')}');
         }
       }
@@ -572,6 +637,37 @@ void main() {
       }),
       isNotEmpty,
       reason: '型引数が挟まるだけで見えなくなってはいけない',
+    );
+  });
+
+  /// ⚠ **コメント内の括弧（#1020・Codex P2 の 6 巡目）。**本体に `}` を含む
+  /// コメントがあると、括弧の対応付けが**そこで本体が終わった**と読む。以降の
+  /// `debugPrint` が本体の外に出るので、そのラッパーは sink から漏れる。
+  test('コメント内の括弧で本体を切らない', () {
+    const withComment =
+        'void logT(String m) {\n'
+        "  // payload は {'key': value} の形\n"
+        '  debugPrint(m);\n'
+        '}';
+    expect(breadcrumbSinks([withComment]), contains('logT'));
+
+    expect(
+      offendersIn({
+        'a.dart': withComment,
+        'b.dart': "void run() { logT('failed: \$e'); }",
+      }),
+      isNotEmpty,
+    );
+  });
+
+  /// 潰した副次効果。コメントアウトされたコードは実行されないので、違反として
+  /// 数えても直しようが無い。
+  test('コメントアウトされた呼び出しは違反にしない', () {
+    expect(
+      offendersIn({
+        'a.dart': "void run() {\n  // debugPrint('failed: \$e');\n}",
+      }),
+      isEmpty,
     );
   });
 
