@@ -5,8 +5,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'notification_dedup_channel.dart';
 import 'bounded_key_set.dart';
+import 'notification_dedup_channel.dart';
 import 'push_message_dispatcher.dart';
 import 'web_push_decryptor.dart';
 

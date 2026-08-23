@@ -40,7 +40,6 @@ class AccountStorage {
   /// （`mastodon://user@host`）の JSON 配列で、**host + username だけを持つ
   /// 非秘匿値**（secret は secure storage 側）。
   static const accountListKey = 'capsicum_account_keys_v2';
-  static const _accountListKey = accountListKey;
   // _v1 は #643 の初版で導入したが、当時の migration / write が旧 item を
   // accessibility 取りこぼしで救えておらず（後述）空振りでフラグだけ立てて
   // いた。修正版を全員に再実行させるため _v2 に上げる (内部ベータ
@@ -218,7 +217,7 @@ class AccountStorage {
   /// copies it over so existing users don't lose their account list.
   Future<List<String>> getAccountKeys() async {
     final prefs = await _prefs();
-    final encoded = prefs.getString(_accountListKey);
+    final encoded = prefs.getString(accountListKey);
     if (encoded != null) {
       try {
         return List<String>.from(jsonDecode(encoded) as List);
@@ -227,7 +226,7 @@ class AccountStorage {
         // して前進する（Sentry には出さない。secure_storage ほどの信号
         // 価値がないため）。
         debugLogException('capsicum: failed to parse account keys', e);
-        await prefs.remove(_accountListKey);
+        await prefs.remove(accountListKey);
         return [];
       }
     }
@@ -560,9 +559,9 @@ class AccountStorage {
     // SharedPreferences.setString は失敗時に `false` を返す（throw しない）。
     // 戻り値を無視すると失敗が成功扱いになり、legacy 移行側で legacy を
     // delete → 全アカウントインデックス永久消失、となる（Codex 指摘）。
-    final ok = await prefs.setString(_accountListKey, jsonEncode(keys));
+    final ok = await prefs.setString(accountListKey, jsonEncode(keys));
     if (!ok) {
-      throw StateError('prefs.setString returned false for $_accountListKey');
+      throw StateError('prefs.setString returned false for $accountListKey');
     }
   }
 

@@ -190,8 +190,6 @@ class SettingsBackupFormatException implements Exception {
   String toString() => message;
 }
 
-/// 現在の設定を YAML にする (#857)。
-///
 /// バックアップの `accounts:` に載せるアカウント索引を読む (#1001)。
 ///
 /// 値は `AccountKey.toStorageKey()`（`mastodon://user@host`）の JSON 配列で、
