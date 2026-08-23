@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../util/exception_scrub.dart';
@@ -119,7 +120,7 @@ class PostActionRunner {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
   }) async {
     final timeline = _timeline;
     try {

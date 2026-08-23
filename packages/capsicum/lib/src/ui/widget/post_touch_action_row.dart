@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -291,7 +292,7 @@ class PostTouchActionRow extends ConsumerWidget {
     BackendAdapter adapter,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
   }) => _runner(
     ref,

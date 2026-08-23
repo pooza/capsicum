@@ -1043,7 +1043,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.id,
         () => reactionAdapter.removeReaction(targetPost.id, emoji),
         'リアクションを取り消しました',
-        phase: 'reaction_remove',
+        phase: ReactionPhase.remove,
       );
     } else {
       _runReactionAction(
@@ -1704,7 +1704,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,

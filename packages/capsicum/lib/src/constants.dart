@@ -142,6 +142,38 @@ class InputLimits {
   static const attachmentDescription = 512;
 }
 
+/// 投稿アクションの失敗報告で使う phase タグ (#976)。
+///
+/// ⚠ **既定値をファイルごとに直書きしない。**#924 で phase を引数化したものの、
+/// `post_actions` / `post_tile` / `notification_tile` / `post_touch_action_row`
+/// の 4 ファイルが同じリテラルを既定値として抱えたままだった。タグ名を直すと
+/// Sentry 上で新旧が混在するので、綴りは 1 箇所で持つ。
+class ReactionPhase {
+  static const add = 'reaction_add';
+  static const remove = 'reaction_remove';
+}
+
+/// スタンプ素材（画像オーバーレイ）の受け入れ上限 (#953-2)。
+///
+/// ⚠ **`k` 付きトップレベル定数はこのファイルへ集める (#976)。**これらだけ
+/// `service/sticker_source.dart` に置かれていて、置き場の規約から外れていた。
+class StickerLimits {
+  /// 受け入れるレスポンスボディの上限バイト数。
+  ///
+  /// 素材の供給元はサーバー由来の任意 URL（`CustomEmoji.url`）で、**サイズを
+  /// こちらで保証できない**。プリセット 3 サーバーの実データで最大が 1MB 弱
+  /// （アニメーション webp）なので、桁 1 つぶんの余裕を見て 8MB。カスタム絵文字
+  /// は一覧に並べて使うものなので、これを超える素材は運用上そもそも成立しない。
+  static const maxBytes = 8 * 1024 * 1024;
+
+  /// デコードする最大高さ（px）。
+  ///
+  /// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
+  /// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
+  /// その 1/2 を上限にしておけば拡大しても粗が出ない。
+  static const maxDecodeHeight = 2048;
+}
+
 /// Windows MSIX 配布で使う識別子（#423 / #554）。
 ///
 /// **これらは `pubspec.yaml` の `msix_config` と完全一致が必須**で、ずれると

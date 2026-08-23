@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -462,7 +463,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,
