@@ -346,6 +346,72 @@ class AccountStorage {
     await _writeIndex(list);
   }
 
+  /// 索引へ**書き戻す**前に、その key の secret が残骸として残っていれば消す
+  /// (#1012)。
+  ///
+  /// ⚠ **[removeAccount] は secret の delete に失敗しても索引を消す。**
+  /// [_deleteSecretWithObservability] は例外を握って観測に回すだけで、Linux
+  /// libsecret の非 op delete（#621・`delete_no_op` として計装済み）でも
+  /// 索引側は消える。索引から消えている間は誰も参照しないので無害だが、
+  /// **削除前に取った設定バックアップを取り込むと索引だけが復活する**
+  /// （`settings_backup.dart` の `_mergeAccounts` は secure storage を見ずに
+  /// key を書き戻す）。すると次回起動の `restoreSessions` が残骸トークンを
+  /// 読んで probe に成功し、**削除したはずのアカウントが完全ログイン状態で
+  /// 戻る**。取り込み直後の UI は #967 に従って「未接続」と言うので、表示と
+  /// 実態も食い違う。
+  ///
+  /// 「取り込んだアカウントはトークンを持たない」は #1001 が宣言している
+  /// 不変条件なので、**宣言する側で本当に成り立たせる**。
+  ///
+  /// ⚠ **plugin 未登録は黙って諦める。** register race (#488) と、secure
+  /// storage を差し替えていないテストの両方がここに来る。消せなかったぶんは
+  /// 「元の状態のまま」＝この関数を入れる前と同じなので、観測を汚してまで
+  /// 報告する価値が無い。
+  ///
+  /// 戻り値は **消しきれなかった** key。#621 の非 op delete はまさにここで
+  /// 空振りするので、呼び出し側は**そのアカウントを索引へ書き戻してはいけない**
+  /// （書くと「索引あり + 残骸トークンあり」という、この関数が塞ごうとしている
+  /// 状態がそのまま完成する）。
+  Future<List<String>> purgeStaleSecrets(Iterable<String> accountKeys) async {
+    final unresolved = <String>[];
+    for (final accountKey in accountKeys) {
+      final key = 'secret_$accountKey';
+      bool stale;
+      try {
+        stale = await _storage.containsKey(key: key);
+      } on MissingPluginException {
+        return unresolved;
+      } catch (e, st) {
+        debugLogException(
+          'capsicum: stale secret probe failed for $accountKey',
+          e,
+        );
+        _reportOnce('secret:$accountKey:purge_probe', e, st);
+        // 読めない＝残骸の有無が分からない。**分からないときは書き戻さない**
+        // 側へ倒す（誤って復活させる代償のほうが大きい）。
+        unresolved.add(accountKey);
+        continue;
+      }
+      if (!stale) continue;
+      // ここに来たら **#621 の非 op delete が実際に起きていた証跡**。索引から
+      // 消えたアカウントの secret が生き残っていたということなので、握らずに
+      // 残す（この経路以外では観測できない）。
+      _reportOnce(
+        'secret:$accountKey:stale_on_import',
+        StateError('stale secret survived account removal for $key'),
+        StackTrace.current,
+      );
+      await _deleteSecretWithObservability(accountKey);
+      try {
+        if (await _storage.containsKey(key: key)) unresolved.add(accountKey);
+      } catch (_) {
+        // 確認できないなら消えたと見なさない。
+        unresolved.add(accountKey);
+      }
+    }
+    return unresolved;
+  }
+
   /// `_storage.delete` の例外を握り潰さず観測し、delete 後に残骸が残れば
   /// 1 度だけ再 delete を試みる (#621)。flutter_secure_storage_linux が
   /// key に `:` / `/` / `@` を含む URL 形式で delete を non-op で帰す挙動

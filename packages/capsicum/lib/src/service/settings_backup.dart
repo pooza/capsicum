@@ -288,10 +288,16 @@ String buildSettingsBackupYaml(
 ///
 /// **知らないキー・型違い・端末固有キーは飛ばして続行する。**1 つの不整合で
 /// 全体を捨てると、版をまたいだバックアップが丸ごと使えなくなる。
+///
+/// [accountStorage] は索引へ書き戻す key の残骸 secret を消すためだけに使う
+/// （[AccountStorage.purgeStaleSecrets]）。省略時は実物を使う — **取り込み口が
+/// 設定画面とログイン前の 2 つある**ので、呼び出し側に任せると片方だけ守られる
+/// （#996 が繰り返し踏んだ「母数の取りこぼし」）。
 Future<SettingsImportResult> applySettingsBackupYaml(
   SharedPreferences prefs,
-  String yamlText,
-) async {
+  String yamlText, {
+  AccountStorage? accountStorage,
+}) async {
   final Object? parsed;
   try {
     parsed = loadYaml(yamlText);
@@ -323,6 +329,7 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     prefs,
     parsed['accounts'],
     skipped,
+    accountStorage ?? AccountStorage(),
   );
 
   for (final entry in settings.nodes.entries) {
@@ -362,8 +369,15 @@ Future<SettingsImportResult> applySettingsBackupYaml(
 /// 置き換えると「読み込んだら手元のアカウントが消えた」になる。既にある key は
 /// 何もしない（重複させない）。
 ///
-/// ⚠ **secret は触らない。**索引だけが増えるので、足したアカウントは
+/// ⚠ **secret は増やさない。**索引だけが増えるので、足したアカウントは
 /// 「未接続」として並ぶ（#967）。ログインし直すとトークンが入って復帰する。
+///
+/// ⚠⚠ **ただし「触らない」では不変条件が成り立たない (#1012)。**
+/// [AccountStorage.removeAccount] は secret の delete に失敗しても索引を消すの
+/// で、削除前のバックアップを取り込むと**索引だけが復活して残骸トークンと再会
+/// する**。次回起動の `restoreSessions` がそれで probe に成功し、削除したはずの
+/// アカウントが完全ログイン状態で戻る。書き戻す key の残骸は
+/// [AccountStorage.purgeStaleSecrets] で必ず消す。
 ///
 /// 壊れた要素は黙って捨てず [skipped] に理由を積む。ファイル全体を捨てないのは
 /// 設定側と同じ方針。
@@ -371,6 +385,7 @@ Future<List<String>> _mergeAccounts(
   SharedPreferences prefs,
   Object? node,
   Map<String, String> skipped,
+  AccountStorage accountStorage,
 ) async {
   if (node == null) return const [];
   if (node is! YamlList) {
@@ -404,9 +419,30 @@ Future<List<String>> _mergeAccounts(
     merged.add(key);
     added.add(key);
   }
-  if (invalid > 0) {
-    skipped['accounts'] = '$invalid 件のアカウントを読み取れませんでした';
+  final reasons = <String>[if (invalid > 0) '$invalid 件のアカウントを読み取れませんでした'];
+  if (added.isEmpty) {
+    if (reasons.isNotEmpty) skipped['accounts'] = reasons.join(' / ');
+    return const [];
   }
+
+  // ⚠ **索引を書く前に残骸を消す (#1012)。** 順序を逆にすると、purge が落ちた
+  // 瞬間に「索引はあるが残骸トークンも生きている」状態が残る。
+  //
+  // ⚠⚠ **消しきれなかったアカウントは書き戻さない。** #621 の非 op delete は
+  // まさにここで空振りするので、構わず索引を書くと**この修正が塞ごうとして
+  // いる状態がそのまま完成する**。取り込めなかったことは理由つきで返し、
+  // ユーザーには「ログインし直す」という手が残る（索引が無くても
+  // 「アカウントを追加」から入れる）。
+  final unresolved = (await accountStorage.purgeStaleSecrets(added)).toSet();
+  if (unresolved.isNotEmpty) {
+    added.removeWhere(unresolved.contains);
+    merged.removeWhere(unresolved.contains);
+    reasons.add(
+      '${unresolved.length} 件のアカウントは、この端末に古い認証情報が残っている'
+      'ため取り込みませんでした',
+    );
+  }
+  if (reasons.isNotEmpty) skipped['accounts'] = reasons.join(' / ');
   if (added.isEmpty) return const [];
 
   // ⚠ setString は失敗しても throw せず false を返す（AccountStorage と同じ罠）。
