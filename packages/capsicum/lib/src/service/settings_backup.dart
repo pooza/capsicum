@@ -23,6 +23,21 @@ import 'account_storage.dart';
 /// ファイル形式の版。読み込み側は未知の版を弾く。
 const settingsBackupFormatVersion = 1;
 
+/// 読み込むファイルの上限バイト数 (#1012)。
+///
+/// 実際の書き出しは数 KB で、アカウントを 100 件持っていても 10KB に届かない。
+/// **「手で編集して壊したファイル」は通し、「別のファイルを選んだ」を弾く**線
+/// として 1MiB を置く。ここを通さないと `readAsString` が端末のメモリを埋める。
+const maxSettingsBackupBytes = 1024 * 1024;
+
+/// 索引へ取り込むアカウントの上限 (#1012)。
+///
+/// プリセット 5 + 手元のサーバーを足しても 2 桁に届かない。手編集や別ファイルで
+/// 巨大な `accounts:` が来たときに、SharedPreferences の索引を膨らませない。
+/// ⚠ **超えたら黙って切り詰めず、丸ごと取り込まない**（どれが落ちたか分からない
+/// 索引を作るより、理由を出して何もしないほうがユーザーは次の手を選べる）。
+const maxBackupAccounts = 200;
+
 /// 設定値の型。SharedPreferences の格納型に対応する。
 enum BackupValueType { boolean, number, text, textList }
 
@@ -303,6 +318,12 @@ Future<SettingsImportResult> applySettingsBackupYaml(
     parsed = loadYaml(yamlText);
   } on Exception catch (e) {
     throw SettingsBackupFormatException('ファイルを読み込めませんでした: $e');
+  } on StackOverflowError {
+    // ⚠ **`Error` なので `on Exception` を素通りする (#1012)。**深くネストした
+    // YAML（`[[[[...]]]]`）で再帰下降パーサが刺さる。素通りすると呼び出し側の
+    // 汎用 catch へ落ち、ユーザーの選択ミスが error レベルの観測になる。
+    // ⚠ alias 爆弾は展開しない（`package:yaml` がノードを共有するため・実測済み）。
+    throw const SettingsBackupFormatException('ファイルの構造が深すぎて読み込めませんでした');
   }
   if (parsed is! YamlMap) {
     throw const SettingsBackupFormatException('設定のバックアップファイルではありません');
@@ -390,6 +411,10 @@ Future<List<String>> _mergeAccounts(
   if (node == null) return const [];
   if (node is! YamlList) {
     skipped['accounts'] = 'アカウントの一覧が読めませんでした';
+    return const [];
+  }
+  if (node.length > maxBackupAccounts) {
+    skipped['accounts'] = 'アカウントの一覧が多すぎます（$maxBackupAccounts 件まで）。取り込みませんでした';
     return const [];
   }
 

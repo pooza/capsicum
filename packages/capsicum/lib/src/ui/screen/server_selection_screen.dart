@@ -76,7 +76,9 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     try {
       // 設定画面側と同じ読み方に揃える (#1010)。`XFile` の抽象を剥がすと、
       // path を持たない実装が来たときにこちらだけ壊れる。
-      final text = await file.readAsString();
+      // ⚠ **上限の確認も共通ヘルパー経由で (#1012)。**iOS の UTI は
+      // `public.data` なので任意のファイルを選べる。
+      final text = await readSettingsBackupFile(file);
       final prefs = await SharedPreferences.getInstance();
       final result = await applySettingsBackupYaml(prefs, text);
       if (!mounted) return;
