@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/is_cat_provider.dart';
+import '../../util/exception_scrub.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
-import '../../util/exception_scrub.dart';
 
 enum UserListType { followers, following, favouritedBy, rebloggedBy }
 

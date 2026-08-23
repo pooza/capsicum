@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode;
@@ -14,34 +15,33 @@ import 'package:media_kit/media_kit.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:capsicum_core/capsicum_core.dart';
-
 import 'src/constants.dart';
 import 'src/model/account.dart';
 import 'src/platform/paths.dart';
+import 'src/platform/platform_info.dart';
 import 'src/provider/account_manager_provider.dart';
 import 'src/provider/preferences_provider.dart';
 import 'src/provider/server_config_provider.dart';
 import 'src/provider/timeline_provider.dart';
 import 'src/router.dart';
-import 'src/platform/platform_info.dart';
 import 'src/service/about_menu_service.dart';
 import 'src/service/account_storage.dart';
-import 'src/service/desktop_notification_dispatcher.dart';
-import 'src/service/launch_at_login_service.dart';
-import 'src/service/resident_mode_service.dart';
 import 'src/service/apns_service.dart';
-import 'src/util/exception_scrub.dart';
+import 'src/service/desktop_notification_dispatcher.dart';
 import 'src/service/fcm_service.dart';
+import 'src/service/launch_at_login_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
+import 'src/service/push_diagnostic_codes.dart';
 import 'src/service/push_failure_recorder.dart';
 import 'src/service/push_key_store.dart';
 import 'src/service/push_message_dispatcher.dart';
+import 'src/service/resident_mode_service.dart';
 import 'src/service/share_intent_service.dart';
 import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/util/exception_scrub.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
@@ -93,6 +93,23 @@ void _logDev(String message) {
   if (!kReleaseMode) debugPrint(message);
 }
 
+/// [_logDev] の例外版。**捕捉した例外は必ずこちらへ流すこと** (#975)。
+///
+/// `_logDev` は release では no-op だが **profile では debugPrint に流れる**。
+/// sentry_flutter の `DebugPrintIntegration` が `debugPrint` を差し替えるのは
+/// **release と profile**（debug では早期 return する）なので、profile ビルドの
+/// この経路がそのまま breadcrumb になる。breadcrumb の `message` は
+/// [_scrubBreadcrumb]（`data` しか見ない）を通らないため、生の例外を埋めると
+/// DioException の URL がそのまま Sentry に載る。
+void _logDevException(String context, Object error, [StackTrace? stackTrace]) {
+  final scrubbed = scrubException(error);
+  _logDev(
+    stackTrace == null
+        ? '$context: $scrubbed'
+        : '$context: $scrubbed\n$stackTrace',
+  );
+}
+
 /// [_logDev] の StackTrace 版。
 void _logDevStack(StackTrace stackTrace) {
   if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
@@ -133,7 +150,7 @@ Future<void> main() async {
   try {
     await PushKeyStore.migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    _logDev('PushKeyStore migration failed: $e\n$st');
+    _logDevException('PushKeyStore migration failed', e, st);
   }
 
   // アカウント secret / client credentials も v1.30 以前は旧 Keychain
@@ -145,7 +162,7 @@ Future<void> main() async {
   try {
     await AccountStorage().migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    _logDev('AccountStorage migration failed: $e\n$st');
+    _logDevException('AccountStorage migration failed', e, st);
   }
 
   // 起動キャッシュ (#890) の保存先を Application Support からキャッシュ領域へ
@@ -198,7 +215,7 @@ Future<void> main() async {
     try {
       sentryNativeDbPath = await resolveSentryNativeDatabasePath();
     } catch (e, st) {
-      _logDev('resolveSentryNativeDatabasePath failed: $e\n$st');
+      _logDevException('resolveSentryNativeDatabasePath failed', e, st);
     }
     await SentryFlutter.init((options) {
       options.dsn = dsn;
@@ -454,7 +471,7 @@ void _startApp() {
   // Sentry が自前で設定済なので ??= で上書きを避ける。
   FlutterError.onError ??= FlutterError.presentError;
   PlatformDispatcher.instance.onError ??= (e, st) {
-    _logDev('Uncaught: $e\n$st');
+    _logDevException('Uncaught', e, st);
     return true;
   };
 
@@ -600,22 +617,11 @@ Future<void> _flushWnsPushDiagnostics() async {
     final atMs = decoded['at_ms'];
 
     // 正常系（表示成功・dedup による抑止・暗号化通知でない・raw 以外で起動）は
-    // info、異常系は warning。ネイティブ push_diagnostics.cpp の IsBenignCode と
-    // 揃えること。
-    // ⚠ bgtask.shown / bgtask.announcement_shown / wns.announcement_shown は
-    // **表示に成功したときだけ**記録される (#957 / #978 / #997)。表示失敗
-    // (bgtask.show_failed / bgtask.announcement_show_failed / wns.show_failed /
-    // wns.announcement_show_failed) はここに入れない。
-    const benign = {
-      'bgtask.shown',
-      'bgtask.announcement_shown',
-      'bgtask.not_encrypted',
-      'bgtask.not_raw',
-      'wns.announcement_shown',
-      // WebSocket 経路 (#569) が先に出したので抑止した = 通常運転 (#997)。
-      'wns.announcement_deduped',
-    };
-    final level = benign.contains(code)
+    // info、異常系は warning。⚠ **集合の正本は
+    // [wnsBenignDiagnosticCodes]**（ネイティブ `push_diagnostics.cpp` の
+    // `IsBenignCode` との一致は `wns_benign_codes_parity_test.dart` が守る・
+    // #1012）。ここへ直接リテラルを書き足さないこと。
+    final level = wnsBenignDiagnosticCodes.contains(code)
         ? SentryLevel.info
         : SentryLevel.warning;
 
@@ -832,7 +838,7 @@ void _routeToChatThread(
     } catch (e, st) {
       // user 解決失敗 (削除済み・通信エラー等) は通知タブにフォールバック。
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('notification.routing', 'chat.user_resolve_failed');
@@ -1166,9 +1172,9 @@ Future<void> _initFirebase() async {
     });
     _logDev('capsicum: push.onMessage listener registered');
   } catch (e, st) {
-    _logDev('capsicum: Firebase initialization failed: $e');
+    _logDevException('capsicum: Firebase initialization failed', e);
     Sentry.captureException(
-      e,
+      scrubException(e),
       stackTrace: st,
       withScope: (scope) {
         scope.setTag('service', 'firebase_init');

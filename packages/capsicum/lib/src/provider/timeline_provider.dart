@@ -1824,7 +1824,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
         try {
           final failedMaxId = current.posts.lastOrNull?.id;
           Sentry.captureException(
-            e,
+            scrubException(e),
             stackTrace: st,
             hint: Hint.withMap({
               'maxId': failedMaxId ?? 'null',

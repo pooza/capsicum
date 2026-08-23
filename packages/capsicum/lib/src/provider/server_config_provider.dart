@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/server_metadata_cache.dart';
-import 'account_manager_provider.dart';
-import 'preferences_provider.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
+import 'account_manager_provider.dart';
+import 'preferences_provider.dart';
 
 /// Host → theme color map from mulukhiya services (logged-in servers only).
 final hostThemeColorProvider = Provider<Map<String, Color>>((ref) {
@@ -239,7 +239,7 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
       // 化してしまう (#609 false positive)。AsyncError として伝播させて
       // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
       debugLogException('getEmojis failed', e);
-      Sentry.captureException(e, stackTrace: st);
+      Sentry.captureException(scrubException(e), stackTrace: st);
       rethrow;
     }
   }

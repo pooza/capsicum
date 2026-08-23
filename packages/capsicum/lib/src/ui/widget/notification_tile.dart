@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -14,15 +15,15 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
-import '../util/visible_timeline.dart';
-import '../util/relative_time.dart';
 import '../util/post_scope_display.dart';
+import '../util/relative_time.dart';
+import '../util/visible_timeline.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
-import 'reaction_picker_sheet.dart';
 import 'emoji_text.dart';
 import 'post_touch_action_row.dart';
+import 'reaction_picker_sheet.dart';
 import 'user_avatar.dart';
 
 class NotificationTile extends ConsumerStatefulWidget {
@@ -462,7 +463,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,

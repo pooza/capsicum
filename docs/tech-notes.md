@@ -238,6 +238,37 @@ CMake Error at flutter/ephemeral/.plugin_symlinks/media_kit_libs_windows_video/w
 
 Linux 側は `libmpv-dev` を apt で入れるので、この経路は Windows 固有。**2 回続けて落ちたら一過性ではない**ので、media_kit の配布元（GitHub Releases）側か runner のネットワークを疑う。
 
+### Windows ネイティブを触ったときの検証手順（#995 / #997 で確立）
+
+⚠ **`develop` の CI では C++ が 1 行もコンパイルされない**（`analyze.yml` は Dart のみ）。`windows-release.yml` は native テスト **8 本すべて**をビルド・実行するが、**tag ビルドのときだけ**走る。そして **`wns_push.cpp` はどのテストにも含まれず、フルビルドでしか通らない**。つまり `windows/runner/**` を触った変更は、**実機で回すまで一度もコンパイルされないまま develop に入りうる**。
+
+Windows 実機（[プラットフォームゲート](CLAUDE.md)の x64 端末）では次を回す:
+
+1. **native テスト 8 本** — `vcvars64.bat` を call してから `cl /nologo /EHsc /std:c++17 <name>_test.cpp <name>.cpp`。⚠ **`notification_tag_test` だけ `/utf-8` が要る**。⚠ **cmd から exe を叩くときは `".\name.exe"` と書く**（cwd を PATH 探索しない）
+2. **`cd packages/capsicum && flutter build windows --debug`** — **`wns_push.cpp` に触ったらこれが唯一のゲート**（約 5 分）。`firebase_app` の `LNK4099` 警告は既存ノイズ
+3. `dart format --set-exit-if-changed .` / `dart analyze --fatal-infos` / `flutter test`。⚠ **`flutter build` 後の format は `packages/capsicum/build/` 配下の生成 Dart を拾うが gitignore 済みなので無視してよい**
+
+⚠ **単一スロットの push 観測にコードを足すときは 2 箇所を同時に直す。** `windows/runner/push_diagnostics.cpp` の `IsBenignCode` と `packages/capsicum/lib/main.dart` の `benign` 集合は必ず揃える。片方だけだと、正常系のはずのコードが平常時の端末から毎回 warning で上がる（#997 の `wns.announcement_deduped` がその形だった）。⚠ **この一致を守る自動テストは無い**（コメントで揃えろと書いてあるだけ・[#1012](https://github.com/pooza/capsicum/issues/1012) に起票済み）。
+
+### native テストの大半は macOS でも走る（`windows.h` の最小シム・#1014）
+
+上の「実機で回すまで一度もコンパイルされない」は **`wns_push.cpp` のような WinRT 依存のファイルに限った話**。`notification_dedup` のような**純粋なロジック**は Win32 API をほとんど使っておらず、`windows.h` を 1 ファイルで代替すれば macOS の clang でそのままビルド・実行できる。**Windows 端末が空くのを待たずにロジックの誤りを潰せる**ので、実機は「本当に WinRT が要る検証」だけに使う。
+
+```sh
+mkdir -p /tmp/winshim && cat > /tmp/winshim/windows.h <<'EOF'
+#pragma once
+#include <cstdio>
+inline void OutputDebugStringA(const char* s) { std::fputs(s, stderr); }
+EOF
+cd packages/capsicum/windows/runner
+clang++ -std=c++17 -I/tmp/winshim -o /tmp/dedup_test \
+  notification_dedup_test.cpp notification_dedup.cpp && /tmp/dedup_test
+```
+
+⚠ **シムで通ったことは「Windows でビルドできる」の保証にならない。** MSVC は clang より緩い / 厳しい箇所がそれぞれあり、`/utf-8` の要否（`notification_tag_test`）のような MSVC 固有の問題は素通りする。**実機の手順 1〜2 を省略してよいわけではなく、実機へ持ち込む前に落とせるものを落とすための手**。
+
+⚠ **シムに関数を足したくなったら、それはもう「純粋なロジック」ではない。** 対象ファイルが Win32 / WinRT へ依存し始めた合図なので、シムを厚くするのではなく実機ビルドへ回す。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定
@@ -249,6 +280,18 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 ### メディア ALT（description）は 2 ステップで送る
 
 `POST /api/v1/media` の multipart リクエストに `description` を同梱しても、サーバー実装によっては保存されないことがある（モロヘイヤ経由で発生を確認済み、原因未特定）。WebUI と同じく、アップロード後に `PUT /api/v1/media/:id` で別途 `description` を設定する 2 ステップ方式を採用している。
+
+### 投稿済み ALT の編集は dev24 の `~/alt_try.sh` で試す（#121）
+
+⚠ **Mastodon の Web UI からは試せない。**Web UI は `X-Mulukhiya-Purpose` を付けないため、nginx 前段の `$status_put_backend` map が **405** で弾く（mulukhiya#4474）。「Web で編集できるのに capsicum でできない」ではなく、**Web からは元々できない**。
+
+検証用の一式が dev24（美食丼ステージング / st2.mstdn.b-shock.org）の `mastodon` ホームに置いてある。**repo からは辿れないので、ここに場所を書いておく。**
+
+- `~/alt_try.sh <新しい ALT>` — capsicum と同じ経路（PUT `/api/v1/statuses/:id` + `X-Mulukhiya-Purpose: media_update` + `media_attributes` だけの body）で投げ、応答から ALT / 添付数 / CW / 閲覧注意 / 本文を並べて出す
+- `~/.alt_try_token` — 実行用のアクセストークン
+- `~/.alt_try_ids` — 1 行目が status id、2 行目が media id
+
+⚠ **見るべきは HTTP 200 ではなく「送っていない項目が残ったか」。**この API は送らなかったパラメータを現状維持ではなく**空で更新**として扱うため、モロヘイヤの補完が効いていないと 200 のまま**添付が全部外れて CW と閲覧注意も消える**（mulukhiya#4589）。出力の「添付 = N 件 / CW / 閲覧注意」がその確認欄。
 
 ### プロフィール編集の初期値
 

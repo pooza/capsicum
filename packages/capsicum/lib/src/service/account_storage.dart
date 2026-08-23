@@ -7,7 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../model/account_key.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
 /// (#959)。
@@ -40,7 +43,6 @@ class AccountStorage {
   /// （`mastodon://user@host`）の JSON 配列で、**host + username だけを持つ
   /// 非秘匿値**（secret は secure storage 側）。
   static const accountListKey = 'capsicum_account_keys_v2';
-  static const _accountListKey = accountListKey;
   // _v1 は #643 の初版で導入したが、当時の migration / write が旧 item を
   // accessibility 取りこぼしで救えておらず（後述）空振りでフラグだけ立てて
   // いた。修正版を全員に再実行させるため _v2 に上げる (内部ベータ
@@ -117,8 +119,9 @@ class AccountStorage {
       // plugin register race が retry 後も解消しないケース。同じ race で
       // delete も失敗するため、ここでは観測のみ行い secret は残す。
       // 次回起動で再試行される。
-      debugPrint(
-        'capsicum: plugin register race persisted for $accountKey: $e',
+      debugLogException(
+        'capsicum: plugin register race persisted for $accountKey',
+        e,
       );
       _reportOnce('secret:$accountKey', e, st);
       // secret は消していないので transient。ログアウト扱いにしない (#959)。
@@ -130,8 +133,9 @@ class AccountStorage {
       // 画面ロック解除前にアプリが起動した場合などで観測される
       // (CAPSICUM-1M, #531)。
       if (_isKeychainTransient(e)) {
-        debugPrint(
-          'capsicum: keychain transient for $accountKey (code=${e.code}): $e',
+        debugLogException(
+          'capsicum: keychain transient for $accountKey (code=${e.code})',
+          e,
         );
         _reportOnce('secret:$accountKey:transient', e, st, code: e.code);
         // secret は残っている。解錠後の再試行で読めるので transient (#959)。
@@ -145,9 +149,10 @@ class AccountStorage {
       // が secret を上書きするので無害）。-25308 のような明示 transient コードが
       // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
       if (Platform.isAndroid) {
-        debugPrint(
+        debugLogException(
           'capsicum: android keystore read error for $accountKey, '
-          'keeping secret (code=${e.code}): $e',
+          'keeping secret (code=${e.code})',
+          e,
         );
         _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
@@ -161,8 +166,9 @@ class AccountStorage {
       // BadPaddingException etc. may bypass PlatformException wrapping
       // after app reinstall (encryption key regenerated). Android では上と同様、
       // 一過性の Keystore 失敗で破壊しないよう delete を見送る (#730 / #731)。
-      debugPrint(
-        'capsicum: unexpected error reading secrets for $accountKey: $e',
+      debugLogException(
+        'capsicum: unexpected error reading secrets for $accountKey',
+        e,
       );
       if (Platform.isAndroid) {
         _reportOnce('secret:$accountKey:android_keystore', e, st);
@@ -218,7 +224,7 @@ class AccountStorage {
   /// copies it over so existing users don't lose their account list.
   Future<List<String>> getAccountKeys() async {
     final prefs = await _prefs();
-    final encoded = prefs.getString(_accountListKey);
+    final encoded = prefs.getString(accountListKey);
     if (encoded != null) {
       try {
         return List<String>.from(jsonDecode(encoded) as List);
@@ -227,7 +233,7 @@ class AccountStorage {
         // して前進する（Sentry には出さない。secure_storage ほどの信号
         // 価値がないため）。
         debugLogException('capsicum: failed to parse account keys', e);
-        await prefs.remove(_accountListKey);
+        await prefs.remove(accountListKey);
         return [];
       }
     }
@@ -322,8 +328,9 @@ class AccountStorage {
     } on PlatformException catch (e, st) {
       // ロック中 (-25308) 等で readAll / write が失敗しても起動は止めない。
       // flag を立てないので次回起動で再試行される。
-      debugPrint(
-        'capsicum: account storage accessibility migration failed: $e',
+      debugLogException(
+        'capsicum: account storage accessibility migration failed',
+        e,
       );
       _reportOnce('accessibility_migration', e, st);
     }
@@ -346,6 +353,89 @@ class AccountStorage {
     await _writeIndex(list);
   }
 
+  /// 索引へ**書き戻す**前に、その key の secret が残骸として残っていれば消す
+  /// (#1012)。
+  ///
+  /// ⚠ **[removeAccount] は secret の delete に失敗しても索引を消す。**
+  /// [_deleteSecretWithObservability] は例外を握って観測に回すだけで、Linux
+  /// libsecret の非 op delete（#621・`delete_no_op` として計装済み）でも
+  /// 索引側は消える。索引から消えている間は誰も参照しないので無害だが、
+  /// **削除前に取った設定バックアップを取り込むと索引だけが復活する**
+  /// （`settings_backup.dart` の `_mergeAccounts` は secure storage を見ずに
+  /// key を書き戻す）。すると次回起動の `restoreSessions` が残骸トークンを
+  /// 読んで probe に成功し、**削除したはずのアカウントが完全ログイン状態で
+  /// 戻る**。取り込み直後の UI は #967 に従って「未接続」と言うので、表示と
+  /// 実態も食い違う。
+  ///
+  /// 「取り込んだアカウントはトークンを持たない」は #1001 が宣言している
+  /// 不変条件なので、**宣言する側で本当に成り立たせる**。
+  ///
+  /// 戻り値は **確認しきれなかった / 消しきれなかった** key。#621 の非 op
+  /// delete はまさにここで空振りするので、呼び出し側は**そのアカウントを索引へ
+  /// 書き戻してはいけない**（書くと「索引あり + 残骸トークンあり」という、この
+  /// 関数が塞ごうとしている状態がそのまま完成する）。
+  ///
+  /// ⚠⚠ **plugin 未登録でも「安全」と答えない (#1020)。** register race (#488)
+  /// と、secure storage を差し替えていないテストの両方がここに来る。以前は
+  /// **その場で打ち切って「残りは全部きれい」と答えていた**が、これは
+  /// **fail-open** で、呼び出し側が未調査のアカウントをまとめて索引へ書く。
+  /// 削除時の delete が no-op だったアカウントはトークンが生きているので、
+  /// **次回起動で完全ログイン状態のまま復活する**。
+  ///
+  /// 消せなかったぶんが「元の状態のまま」で済んだのは #1012 より前の話で、
+  /// **今は呼び出し側の契約が「返らなかった key は書き戻してよい」に変わって
+  /// いる**。分からないものは分からないと返す。
+  Future<List<String>> purgeStaleSecrets(Iterable<String> accountKeys) async {
+    final unresolved = <String>[];
+    final remaining = [...accountKeys];
+    while (remaining.isNotEmpty) {
+      final accountKey = remaining.removeAt(0);
+      final key = 'secret_$accountKey';
+      bool stale;
+      try {
+        stale = await _storage.containsKey(key: key);
+      } on MissingPluginException {
+        // secure storage 自体が居ない。残りを試しても同じ例外になるだけなので
+        // 打ち切るが、**未調査ぶんは「きれい」ではなく「未解決」として返す**。
+        unresolved
+          ..add(accountKey)
+          ..addAll(remaining);
+        return unresolved;
+      } catch (e, st) {
+        debugLogException(
+          'capsicum: stale secret probe failed for $accountKey',
+          e,
+        );
+        _reportOnce('secret:$accountKey:purge_probe', e, st);
+        // 読めない＝残骸の有無が分からない。**分からないときは書き戻さない**
+        // 側へ倒す（誤って復活させる代償のほうが大きい）。
+        unresolved.add(accountKey);
+        continue;
+      }
+      if (!stale) continue;
+      // ここに来たら **#621 の非 op delete が実際に起きていた証跡**。索引から
+      // 消えたアカウントの secret が生き残っていたということなので、握らずに
+      // 残す（この経路以外では観測できない）。
+      // ⚠ **メッセージに $key を入れない (#1020)。**`secret_<accountKey>` は
+      // `username@host` そのもので、`exceptions[].value` は必ず送られる。
+      // 識別は host + ハッシュ化 username の scope タグで足りる。
+      _reportOnce(
+        'secret:$accountKey:stale_on_import',
+        StateError('stale secret survived account removal'),
+        StackTrace.current,
+        accountKey: accountKey,
+      );
+      await _deleteSecretWithObservability(accountKey);
+      try {
+        if (await _storage.containsKey(key: key)) unresolved.add(accountKey);
+      } catch (_) {
+        // 確認できないなら消えたと見なさない。
+        unresolved.add(accountKey);
+      }
+    }
+    return unresolved;
+  }
+
   /// `_storage.delete` の例外を握り潰さず観測し、delete 後に残骸が残れば
   /// 1 度だけ再 delete を試みる (#621)。flutter_secure_storage_linux が
   /// key に `:` / `/` / `@` を含む URL 形式で delete を non-op で帰す挙動
@@ -357,8 +447,9 @@ class AccountStorage {
     try {
       await _storage.delete(key: key);
     } on MissingPluginException catch (e, st) {
-      debugPrint(
-        'capsicum: plugin register race on delete for $accountKey: $e',
+      debugLogException(
+        'capsicum: plugin register race on delete for $accountKey',
+        e,
       );
       _reportOnce('secret:$accountKey:delete', e, st);
     } on PlatformException catch (e, st) {
@@ -369,10 +460,15 @@ class AccountStorage {
       if (await _storage.containsKey(key: key)) {
         await _storage.delete(key: key);
         if (await _storage.containsKey(key: key)) {
+          // ⚠ **メッセージに $key を入れない。**`secret_<accountKey>` は
+          // `username@host` そのもの。識別は host + ハッシュ化 username の
+          // scope タグで足りる（#1020 で `stale_on_import` を直したとき、
+          // **同じファイルのこちらを取りこぼしていた**）。
           _reportOnce(
             'secret:$accountKey:delete_no_op',
-            StateError('secure_storage delete returned non-op for $key'),
+            StateError('secure_storage delete returned non-op'),
             StackTrace.current,
+            accountKey: accountKey,
           );
         }
       }
@@ -494,9 +590,9 @@ class AccountStorage {
     // SharedPreferences.setString は失敗時に `false` を返す（throw しない）。
     // 戻り値を無視すると失敗が成功扱いになり、legacy 移行側で legacy を
     // delete → 全アカウントインデックス永久消失、となる（Codex 指摘）。
-    final ok = await prefs.setString(_accountListKey, jsonEncode(keys));
+    final ok = await prefs.setString(accountListKey, jsonEncode(keys));
     if (!ok) {
-      throw StateError('prefs.setString returned false for $_accountListKey');
+      throw StateError('prefs.setString returned false for $accountListKey');
     }
   }
 
@@ -507,21 +603,52 @@ class AccountStorage {
   /// race）と permanent（再インストールで鍵再生成）が同じ stage に集約されて
   /// dedup で片方しか届かないことがあるため、code を dedup キーと scope タグの
   /// 両方に載せて切り分けられるようにする (#731 の根因切り分け)。
+  ///
+  /// ⚠ **[stage] は dedup 専用で Sentry へは送らない。**呼び出し側が
+  /// `'secret:$accountKey:...'` の形で組み立てているので、送ると username が
+  /// 出る。アカウントを識別したいときは [accountKey] を渡すこと — host と
+  /// **ハッシュ化した username** を scope タグに載せる (#500 と同じ扱い)。
+  ///
+  /// ⚠⚠ **[error] のメッセージに accountKey を入れないこと。**`exceptions[].value`
+  /// は breadcrumb と違って必ず送られ、`main.dart` の `_scrubEvent` は `data`
+  /// しか見ない (#975)。ストレージキーは `username@host` そのものなので、
+  /// 埋めた時点で Sentry に出る。
   static void _reportOnce(
     String stage,
     Object error,
     StackTrace st, {
     String? code,
+    String? accountKey,
   }) {
     final key = '$stage:${error.runtimeType}${code != null ? ':$code' : ''}';
     if (!_reportedErrors.add(key)) return;
+    AccountKey? parsed;
+    if (accountKey != null) {
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        // legacy / 破損 key。tag を諦めて報告自体は残す (#524 と同じ判断)。
+        parsed = null;
+      }
+    }
     try {
       Sentry.captureException(
-        error,
+        scrubException(error),
         stackTrace: st,
-        withScope: code != null
-            ? (scope) => scope.setTag('secret.code', code)
-            : null,
+        withScope: (code == null && accountKey == null)
+            ? null
+            : (scope) {
+                if (code != null) scope.setTag('secret.code', code);
+                if (parsed != null) {
+                  scope.setTag('secret.host', parsed.host);
+                  scope.setTag(
+                    'secret.user_hash',
+                    hashForSentryTag(parsed.username),
+                  );
+                } else if (accountKey != null) {
+                  scope.setTag('secret.key_parse', 'failed');
+                }
+              },
       );
     } catch (_) {
       // Sentry 未初期化 / 失敗でも本筋（secret 読み取り）を止めない。

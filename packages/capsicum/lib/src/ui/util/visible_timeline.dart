@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:capsicum_core/capsicum_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/channel_provider.dart';
@@ -10,6 +9,7 @@ import '../../provider/list_provider.dart';
 import '../../provider/tab_selection_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../service/timeline_cache.dart';
+import '../../util/exception_scrub.dart';
 import '../widget/content_parser.dart';
 
 /// 投稿の削除・再投稿・差し替えを「いま画面に出ている TL」へ反映するための
@@ -195,7 +195,10 @@ VisibleTimelineMutator readVisibleTimelinesOrDetached(WidgetRef ref) {
   try {
     return readVisibleTimelines(ref);
   } on StateError catch (e) {
-    debugPrint('capsicum: visible timeline unavailable (widget disposed): $e');
+    debugLogException(
+      'capsicum: visible timeline unavailable (widget disposed)',
+      e,
+    );
     return VisibleTimelineMutator.detached;
   }
 }

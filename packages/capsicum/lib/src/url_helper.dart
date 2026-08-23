@@ -1,8 +1,8 @@
-export 'package:url_launcher/url_launcher.dart' show LaunchMode;
-
 import 'dart:io' show Platform;
 
 import 'package:url_launcher/url_launcher.dart';
+
+export 'package:url_launcher/url_launcher.dart' show LaunchMode;
 
 /// HTTP/HTTPS スキームを検証してから URL を開く。
 ///

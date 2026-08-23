@@ -49,53 +49,21 @@ std::mutex& PushKeysSyncMutex() {
   return m;
 }
 
+// ⚠ **パス組み立てと読み出しは local_state_files.h の共有実装へ寄せた
+// (#976)。**同じ手続きが push_background_task.cpp / push_diagnostics_store.cpp
+// と合わせて 3 箇所に写っていた。ファイル名を 1 箇所へ集めた (#764) 趣旨は、
+// **writer と reader が別々に持つと片方だけ直したときに黙って壊れる**ことを
+// 避けるためなので、その周りの手続きが割れているのでは意味が薄い。
+
 // LocalState の push_keys.json 絶対パス。LocalFolder 解決失敗時は空文字列。
 std::wstring PushKeysJsonPath() {
-  try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
-           capsicum::kLocalStateKeysetFile;
-  } catch (...) {
-    return std::wstring();
-  }
-}
-
-// LocalState の push_labels.json 絶対パス (#770)。LocalFolder 解決失敗時は空文字列。
-std::wstring PushLabelsJsonPath() {
-  try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
-           capsicum::kLocalStatePushLabelsFile;
-  } catch (...) {
-    return std::wstring();
-  }
+  return capsicum::LocalStateFilePath(capsicum::kLocalStateKeysetFile);
 }
 
 // push_labels.json 内容を読む（in-process 受信のラベル解決用、#770）。不在・空・
 // 失敗時は空文字列を返し、呼び出し側は既定ラベルにフォールバックする。
 std::string ReadPushLabelsJson() {
-  try {
-    const std::wstring path = PushLabelsJsonPath();
-    if (path.empty()) {
-      return std::string();
-    }
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) {
-      return std::string();
-    }
-    std::streamoff size = f.tellg();
-    if (size <= 0) {
-      return std::string();
-    }
-    std::string out(static_cast<size_t>(size), '\0');
-    f.seekg(0);
-    f.read(out.data(), static_cast<std::streamsize>(size));
-    return out;
-  } catch (...) {
-    return std::string();
-  }
+  return capsicum::ReadLocalStateFileUtf8(capsicum::kLocalStatePushLabelsFile);
 }
 
 // アプリ完全終了中の WNS raw 受信用バックグラウンドタスクを 1 度だけ登録する
@@ -174,8 +142,13 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
       dedupable ? capsicum::NotificationTagKey(display.account,
                                                display.notification_id)
                 : std::string();
+  // ⚠ **判定と記録を分けない** (#1014)。以前は「WasShown で見る → 出す →
+  // MarkShown で記録する」の 3 段だったが、判定と記録が別々のロックなので
+  // **同じお知らせが同時に届くと両方が「未表示」を観測して両方が出す**。
+  // お知らせ (#978) は relay が WNS と WebSocket の双方へ流すため、まさに
+  // この形で並行する。claim を取れなかった側は出さない。
   if (dedupable &&
-      capsicum::NotificationDedupRegistry::Instance().WasShown(dedup_key)) {
+      !capsicum::NotificationDedupRegistry::Instance().TryClaim(dedup_key)) {
     return ToastOutcome::kSuppressed;
   }
   // tag は #569 WebSocket 経路と同じ導出（`username@host|notificationId` の
@@ -185,16 +158,33 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
   // 挙動になる (#956)。上の dedupable と同じ前提で、別々に判断していない。
   // タップ遷移 (launch_arg) はフェーズ C で COM アクティベータと一緒に配線する
   // ため、ここでは付けない。
-  if (!capsicum::ShowRawToast(
-          display.title, display.body, /*launch_arg=*/"",
-          capsicum::NotificationTagFor(display.account,
-                                       display.notification_id))) {
-    // 表示できなかったので dedup レジストリには claim しない（MarkShown /
-    // NotifyPresented を通さず返す）。ここで claim すると、WebSocket 経路まで
-    // 抑止されて**通知が 1 通も出なくなる**。
+  // ⚠⚠ **claim を取った側が出しきる責任を負う (v1.60 レビュー)。**#1014 で
+  // 判定を TryClaim へ前倒ししたぶん、**同じキーの他受信は既に「抑止」で
+  // 帰っている**。ここで諦めて ReleaseClaim しても、戻ってくる相手はもう
+  // 居ないので**トーストが 1 通も出ない**。このレジストリは
+  // 「取りこぼすなら二重表示の側へ倒す」設計（notification_dedup.h）なので、
+  // この経路だけ「消える側」へ倒れるのは筋が通らない。1 回だけ出し直す。
+  //
+  // ⚠ **これでも窓は閉じきらない。**2 回とも失敗すれば結局出ない。完全に
+  // 塞ぐには抑止側を待たせる必要があり、そこまでの複雑さは持ち込まない。
+  auto show = [&] {
+    return capsicum::ShowRawToast(
+        display.title, display.body, /*launch_arg=*/"",
+        capsicum::NotificationTagFor(display.account, display.notification_id));
+  };
+  if (!show() && !show()) {
+    // 表示できなかったので取った claim を返す。⚠ **握りつぶすと WebSocket
+    // 経路まで抑止されて通知が 1 通も出なくなる**（#1014 で claim を前倒しに
+    // したぶん、この巻き戻しが必須になった）。NotifyPresented も通さない。
+    if (dedupable) {
+      capsicum::NotificationDedupRegistry::Instance().ReleaseClaim(dedup_key);
+    }
     return ToastOutcome::kShowFailed;
   }
   if (dedupable) {
+    // 予約を「表示済み」へ昇格させる。以降このキーは ReleaseClaim で取り消せ
+    // なくなる（#1015 Codex P2 — 予約と表示済みを区別する理由は
+    // notification_dedup.h の ReleaseClaim の注記）。
     capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
     NotifyPresented(dedup_key);
   }
@@ -343,7 +333,8 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
   static std::mutex labels_mutex;
   std::lock_guard<std::mutex> guard(labels_mutex);
   try {
-    const std::wstring path = PushLabelsJsonPath();
+    const std::wstring path =
+        capsicum::LocalStateFilePath(capsicum::kLocalStatePushLabelsFile);
     if (path.empty()) {
       return;  // LocalFolder 解決不可。次の機会に再同期される。
     }
@@ -447,26 +438,16 @@ bool ConsumePushDiagnosticsJson(std::string* out_json) {
   }
   out_json->clear();
   try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    std::wstring path = std::wstring(folder.c_str(), folder.size()) + L"\\" +
-                        capsicum::kLocalStateDiagFile;
-    {
-      std::ifstream f(path, std::ios::binary | std::ios::ate);
-      if (!f) {
-        return false;  // レコード無し。
-      }
-      std::streamoff size = f.tellg();
-      if (size <= 0) {
-        f.close();
-        _wremove(path.c_str());
-        return false;
-      }
-      out_json->resize(static_cast<size_t>(size));
-      f.seekg(0);
-      f.read(out_json->data(), static_cast<std::streamsize>(size));
+    // パス組み立てと読み出しは共有実装へ (#976)。⚠ **消すのはこちらの責務**
+    // （読んだら消す = 二重送信の防止）なので、パスは別に持つ。
+    const std::wstring path =
+        capsicum::LocalStateFilePath(capsicum::kLocalStateDiagFile);
+    if (path.empty()) {
+      return false;  // 非 MSIX 起動。
     }
-    // 二重送信を避けるため読み出したら消す。
+    *out_json = capsicum::ReadFileUtf8(path);
+    // 二重送信を避けるため読み出したら消す。⚠ **空でも消す** — 0 バイトの
+    // 残骸を置いておくと、次回起動でも同じ判定を繰り返す。
     _wremove(path.c_str());
     return !out_json->empty();
   } catch (...) {

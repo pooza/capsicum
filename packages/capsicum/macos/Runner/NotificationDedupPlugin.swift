@@ -4,8 +4,11 @@ import UserNotifications
 
 /// 上限に達したら**最古から押し出す**キー集合 (#983)。
 ///
-/// Dart 側 `desktop_notification_dispatcher.dart` の `_BoundedKeySet` と同じ
-/// 意味を持たせる。Swift の `Set` は挿入順を保たないので、順序は配列で別に持つ。
+/// Dart 側 `service/bounded_key_set.dart` の `BoundedKeySet` と同じ意味を
+/// 持たせる。Swift の `Set` は挿入順を保たないので、順序は配列で別に持つ。
+/// ⚠ **参照先は #982 で移設済み** — `desktop_notification_dispatcher.dart` の
+/// `_BoundedKeySet` はもう無い（Windows 側の doc は追随済みで、ここだけ
+/// 取り残されていた・#1012）。
 ///
 /// ## なぜ全消しではいけないか
 ///

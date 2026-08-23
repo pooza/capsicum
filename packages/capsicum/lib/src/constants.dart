@@ -123,6 +123,79 @@ class AppConstants {
   static const emojiFallbackTextScale = 0.7;
 }
 
+/// サーバーが受け付ける入力長の上限 (#1012)。
+///
+/// ⚠ **client 側で止めないと「失敗しました」の 1 行しか出ない。**超過すると
+/// Mastodon / Misskey とも 400 / 422 で断るが、本文は画面に出していないので
+/// ユーザーには理由が分からず、書いた文章もそのまま失われる。
+///
+/// ⚠ **Mastodon と Misskey の小さいほうに合わせる。**ただし**切り詰めない欄では
+/// 通用しない** — 上限に余裕がある側の入力を黙って削るか、余裕の無い側で超過を
+/// 通してサーバーに断らせるかの二択になる。その欄はサーバーごとの実値を採る
+/// （[InputLimits.attachmentDescriptionFor]）。
+///
+/// ⚠⚠ **値は稼働中のサーバー実装で確かめること。**#1012 で入れた初版は
+/// `reportComment` に**画像 ALT の定数を取り違えて**書いており、どちらの
+/// サーバーの制約でもない値で 488 文字ぶん余計に切っていた（v1.60 の
+/// リリース前レビューで検出）。フォークは `~/repos/mastodon` /
+/// `~/repos/misskey` にあり、これが本番で動いているものそのもの。
+class InputLimits {
+  /// 通報の理由。Misskey `users/report-abuse` の `comment` は **2048**
+  /// (`report-abuse.ts`)、Mastodon の `Report::COMMENT_SIZE_LIMIT` は
+  /// **1000** (`app/models/report.rb`)。小さいほうを採る。
+  static const reportComment = 1000;
+
+  /// メディアの説明（ALT）。Misskey は `DB_MAX_IMAGE_COMMENT_LENGTH` = **512**
+  /// (`const.ts`)、Mastodon は `MAX_DESCRIPTION_LENGTH` = **10000**。
+  ///
+  /// ⚠ **既存の ALT を切り詰める用途に使わない。**Mastodon 側は 1 万字まで
+  /// 許すので、Web UI で書いた 512 超の ALT が普通に存在する。編集ダイアログで
+  /// `maxLength` を素で当てると**最初の 1 打鍵で切り詰められ、本人の ALT が
+  /// 消える**。入力欄では [MaxLengthEnforcement.none] で「数えるが切らない」
+  /// 形にし、超過している間は確定ボタンを塞ぐ（#121 の導線が出た瞬間に踏む）。
+  ///
+  /// ⚠⚠ **小さいほうに寄せるのは、切らないことと両立しない（Codex P2 /
+  /// PR #1023）。**初版は「アダプタごとに出し分けるとダイアログが backend を
+  /// 知る必要が出る」として 512 に寄せたが、切らない方針にした結果
+  /// **Misskey で 512 超を入力して保存でき、400 で落ちる**形になっていた。
+  /// 上限そのものをサーバーに合わせる（呼び出し側は `currentAdapterProvider`
+  /// を既に読んでいる）。
+  static int attachmentDescriptionFor({required bool isMastodon}) =>
+      isMastodon ? 10000 : 512;
+}
+
+/// 投稿アクションの失敗報告で使う phase タグ (#976)。
+///
+/// ⚠ **既定値をファイルごとに直書きしない。**#924 で phase を引数化したものの、
+/// `post_actions` / `post_tile` / `notification_tile` / `post_touch_action_row`
+/// の 4 ファイルが同じリテラルを既定値として抱えたままだった。タグ名を直すと
+/// Sentry 上で新旧が混在するので、綴りは 1 箇所で持つ。
+class ReactionPhase {
+  static const add = 'reaction_add';
+  static const remove = 'reaction_remove';
+}
+
+/// スタンプ素材（画像オーバーレイ）の受け入れ上限 (#953-2)。
+///
+/// ⚠ **`k` 付きトップレベル定数はこのファイルへ集める (#976)。**これらだけ
+/// `service/sticker_source.dart` に置かれていて、置き場の規約から外れていた。
+class StickerLimits {
+  /// 受け入れるレスポンスボディの上限バイト数。
+  ///
+  /// 素材の供給元はサーバー由来の任意 URL（`CustomEmoji.url`）で、**サイズを
+  /// こちらで保証できない**。プリセット 3 サーバーの実データで最大が 1MB 弱
+  /// （アニメーション webp）なので、桁 1 つぶんの余裕を見て 8MB。カスタム絵文字
+  /// は一覧に並べて使うものなので、これを超える素材は運用上そもそも成立しない。
+  static const maxBytes = 8 * 1024 * 1024;
+
+  /// デコードする最大高さ（px）。
+  ///
+  /// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
+  /// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
+  /// その 1/2 を上限にしておけば拡大しても粗が出ない。
+  static const maxDecodeHeight = 2048;
+}
+
 /// Windows MSIX 配布で使う識別子（#423 / #554）。
 ///
 /// **これらは `pubspec.yaml` の `msix_config` と完全一致が必須**で、ずれると

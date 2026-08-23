@@ -34,8 +34,16 @@ import 'misskey_api_error.dart';
 /// - **既知の Misskey コードだけを日本語に訳す。** 未知コードで Misskey の英語
 ///   `message`（`"Some files are not found."` 等）へ倒すことはしない。日本語の
 ///   汎用文言より不親切になるため。コード自体は Sentry のタグへ回して観測する。
-/// - **Mastodon の文字列はそのまま出す。** あちらの `error` は人間向けの散文で、
-///   クライアントに見せる前提のもの。ただし機械的な残骸・巨大ボディは弾く。
+/// - **Mastodon は定型句だけ訳し、残りは英語のまま出す** (#976)。あちらの
+///   `error` は人間向けの散文で、クライアントに見せる前提のもの。ただし
+///   **プリセット 5 サーバーのうち 3 つが Mastodon** なので、素通しにすると
+///   多数派の環境ほど英語が出る。実際に踏む定型句
+///   （[_mastodonErrorPhrases]）だけ日本語へ寄せ、それ以外は英語のまま出す。
+///   ⚠ これは取りこぼしではなく**意図した非対称**（Misskey の未知は
+///   `SOME_ERROR_CODE` という機械語だが、Mastodon の未知は曲がりなりにも
+///   文章になっている）。機械的な残骸・巨大ボディは従来どおり弾く。
+/// - **`errors`（複数形・配列）も見る** (#976)。モロヘイヤ独自 API の
+///   バリデーション失敗はこの形で返る。
 String? upstreamErrorMessage(Object error) {
   final code = misskeyApiErrorCode(error);
   if (code != null) {
@@ -127,15 +135,122 @@ const _misskeyErrorReasons = <String, String>{
 };
 
 /// Mastodon 形（`error` が文字列）の理由。提示に耐えない残骸は null にする。
+///
+/// ⚠ **`errors`（複数形・配列）も見る (#976)。**モロヘイヤ独自 API の
+/// バリデーション失敗は `{"errors":["タグは 10 個までです", ...]}` で返る
+/// （予約投稿のタグ更新 `PUT /mulukhiya/api/scheduled_status/:id/tags` 等）。
+/// `error` しか見ていなかったため、**その画面の主要な失敗ケースには #886 が
+/// 効いていなかった**。
 String? _mastodonErrorText(Object error) {
   if (error is! DioException) return null;
   final data = error.response?.data;
   if (data is! Map) return null;
+
   final text = data['error'];
-  if (text is! String) return null;
-  final trimmed = text.trim();
-  return _looksPresentable(trimmed) ? trimmed : null;
+  if (text is String) {
+    final trimmed = text.trim();
+    if (!_looksPresentable(trimmed)) return null;
+    return _localizeMastodonError(trimmed);
+  }
+
+  final errors = data['errors'];
+  if (errors is List) {
+    // 要素は文字列想定。Rails 流儀で `{field: [msg]}` が来る実装もあるので、
+    // 文字列以外は黙って捨てる（部分的にでも理由が出るほうがよい）。
+    final joined = errors
+        .whereType<String>()
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    if (joined.isEmpty) return null;
+    // ⚠ **全部つながない。**SnackBar に載る長さに収める。件数が多いときは
+    // 先頭だけ出して「ほか N 件」を添える。
+    final list = joined.toList();
+    final head = list.first;
+    final combined = list.length == 1 ? head : '$head（ほか ${list.length - 1} 件）';
+    return _looksPresentable(combined) ? combined : null;
+  }
+  return null;
 }
+
+/// Mastodon がよく返す英語の `error` を日本語へ寄せる (#976)。
+///
+/// ⚠ **プリセット 5 サーバーのうち 3 つが Mastodon**なので、素通しすると
+/// **多数派の環境ほど英語が出る**。Misskey 側は `error.code` を丁寧に日本語化
+/// しているのに、こちらだけ英語のまま流していた。
+///
+/// ⚠ **未知の文言は英語のまま出す。**これは上の「方針」で意図的に決めた挙動
+/// （Mastodon の `error` は人間向けの散文で、クライアントに見せる前提）。
+/// Misskey の未知コードを落とす扱いとは非対称だが、あちらは `SOME_ERROR_CODE`
+/// という機械語なのに対し、こちらは曲がりなりにも文章になっている。
+/// **「英語が出るのは承知の上」**であって、取りこぼしではない。
+String _localizeMastodonError(String text) {
+  // 本文の長さ超過。上限値はサーバー設定で変わるので、**数字は文面から拾って
+  // そのまま使う**（決め打ちすると上限を変えたサーバーで嘘になる）。
+  final statusTooLong = _mastodonStatusTooLong.firstMatch(text);
+  if (statusTooLong != null) {
+    return '本文が長すぎます（上限 ${statusTooLong.group(1)} 文字）';
+  }
+  final fieldTooLong = _mastodonFieldTooLong.firstMatch(text);
+  if (fieldTooLong != null) {
+    final label = _mastodonFieldLabels[fieldTooLong.group(1)];
+    final max = fieldTooLong.group(2);
+    return label == null ? '入力が長すぎます（上限 $max 文字）' : '$labelが長すぎます（上限 $max 文字）';
+  }
+  for (final entry in _mastodonErrorPhrases.entries) {
+    if (text.contains(entry.key)) return entry.value;
+  }
+  return text;
+}
+
+/// 本文（投稿テキスト）の長さ超過。
+///
+/// ⚠⚠ **Rails 既定の `is too long (maximum is N characters)` ではない。**
+/// Mastodon は `StatusLengthValidator` で専用の I18n キー
+/// (`statuses.over_character_limit` = `character limit of %{max} exceeded`) を
+/// 使うため、実際に返るのは
+/// `Validation failed: Text character limit of 3000 exceeded`。
+///
+/// #976 の初版は Rails 既定形を書いており、**一度も発火しない**まま出荷される
+/// ところだった。テストがコード側で組み立てた架空の文字列を assert していたので
+/// 緑のまま通っていた（v1.60 のリリース前レビューで検出）。**上流の文面は
+/// フォーク (`~/repos/mastodon`) で確かめること。**
+///
+/// この I18n キーを引くのは `status_length_validator.rb` の `:text` だけなので、
+/// 当たったら本文と言い切ってよい。
+final _mastodonStatusTooLong = RegExp(r'character limit of (\d+) exceeded');
+
+/// ActiveRecord 既定形の長さ超過。**フィールド名まで見る。**
+///
+/// ⚠ **フィールドを見ずに「本文」と訳してはいけない（Codex P2 / PR #1023）。**
+/// この形で返るのは通報コメント (`Report::COMMENT_SIZE_LIMIT`)・ユーザーメモ・
+/// 招待コメント・メディアの説明・アバターの説明などで、**本文だけは上の専用
+/// キーを使うので絶対にここへ来ない**。それでも初版は両方を 1 本の正規表現で
+/// 受けて一律「本文が長すぎます」と訳しており、テストが
+/// `Comment is too long` → 「本文が長すぎます」を**正解として固定していた**。
+///
+/// 素性の分かっているものだけ名前を付け、それ以外は field 中立に倒す。ここに
+/// 無いフィールドを勝手に名指しすると、また同じ誤訳になる。
+final _mastodonFieldTooLong = RegExp(
+  r'([A-Za-z][A-Za-z ]*?) is too long \(maximum is (\d+) characters\)',
+);
+
+const _mastodonFieldLabels = <String, String>{
+  'Comment': 'コメント',
+  'Description': '説明',
+};
+
+/// 素通しでは意味が取りにくい定型句だけを訳す。
+///
+/// ⚠ **網羅しない。**上流の文面は版で変わるので、増やすのは「実際に踏んだ」
+/// ものに限る。ここに無ければ英語のまま出るだけで壊れない。
+const _mastodonErrorPhrases = <String, String>{
+  "Text can't be blank": '本文が空です',
+  'Record not found': '対象が見つかりません。削除された可能性があります',
+  'This action is not allowed': 'この操作は許可されていません',
+  'The access token is invalid': 'ログイン情報が無効です。ログインし直してください',
+  'The access token was revoked': 'ログイン情報が失効しています。ログインし直してください',
+  'Your login is currently disabled': 'このアカウントは現在利用できません',
+};
 
 /// そのまま画面に出してよい文字列か。
 ///

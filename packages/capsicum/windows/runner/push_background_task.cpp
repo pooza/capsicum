@@ -29,7 +29,6 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 #include <winrt/Windows.Storage.h>
 
-#include <fstream>
 #include <string>
 #include <string_view>
 
@@ -55,44 +54,16 @@ constexpr wchar_t kRuntimeClassName[] = L"CapsicumPushTask.PushBackgroundTask";
 // ローミング %APPDATA% の flutter_secure_storage.dat を読めず DPAPI 復号も
 // できないため、パッケージ専有で両者からアクセスできる ApplicationData の
 // LocalFolder 経由で鍵を受け取る。
-std::wstring LocalStateFilePath(const wchar_t* name) {
-  winrt::hstring folder =
-      winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-  return std::wstring(folder.c_str(), folder.size()) + L"\\" + name;
-}
-
-std::string ReadFileUtf8(const std::wstring& path) {
-  std::ifstream f(path, std::ios::binary | std::ios::ate);
-  if (!f) {
-    return std::string();
-  }
-  std::streamoff size = f.tellg();
-  if (size <= 0) {
-    return std::string();
-  }
-  std::string out(static_cast<size_t>(size), '\0');
-  f.seekg(0);
-  f.read(out.data(), static_cast<std::streamsize>(size));
-  return out;
-}
-
+// パス組み立てと読み出しは local_state_files.h の共有実装へ寄せた (#976)。
 std::string ReadLocalStateKeysetJson() {
-  try {
-    return ReadFileUtf8(LocalStateFilePath(capsicum::kLocalStateKeysetFile));
-  } catch (...) {
-    return std::string();
-  }
+  return capsicum::ReadLocalStateFileUtf8(capsicum::kLocalStateKeysetFile);
 }
 
 // FullTrust 本体（Dart 由来）が書いた push_labels.json を読む (#770)。アカウント別
 // の reblog/post 表示ラベル。不在・失敗時は空文字列で、トースト側が既定ラベル
 // （ブースト / 投稿）にフォールバックする（ラベル欠落は表示を止めない）。
 std::string ReadLocalStateLabelsJson() {
-  try {
-    return ReadFileUtf8(LocalStateFilePath(capsicum::kLocalStatePushLabelsFile));
-  } catch (...) {
-    return std::string();
-  }
+  return capsicum::ReadLocalStateFileUtf8(capsicum::kLocalStatePushLabelsFile);
 }
 
 // bg task の観測コードを LocalState の単一スロットへ記録する (#474 フェーズ C)。

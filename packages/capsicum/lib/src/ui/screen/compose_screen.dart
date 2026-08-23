@@ -1,12 +1,11 @@
-import 'dart:io';
-
 import 'dart:async';
+import 'dart:io';
 
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:dio/dio.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,10 +13,10 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../platform/now_playing/now_playing_provider.dart';
 import '../../provider/account_manager_provider.dart';
-import '../widget/content_parser.dart';
 import '../../provider/channel_provider.dart';
 import '../../provider/instance_provider.dart';
 import '../../provider/platform_providers.dart';
@@ -32,6 +31,8 @@ import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
 import '../../util/upstream_error_message.dart';
+import '../util/annict_link.dart';
+import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
@@ -40,8 +41,7 @@ import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
-import '../util/annict_link.dart';
-import '../util/compose_template_display.dart';
+import '../widget/content_parser.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
 import '../widget/insert_picker_sheet.dart';
@@ -426,6 +426,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 保存の失敗をこの画面で 1 度でも伝えたか (#1011)。自動保存は打鍵のたびに
   /// 走るので、同じ snackbar を出し続けない。
   bool _draftSaveFailureNotified = false;
+
+  /// 別の画面がこの下書きスロットを片づけたか (#1012)。
+  ///
+  /// 同じアカウントで compose を 2 枚開き、片方が投稿すると `clear` でスロット
+  /// の世代が進む。#969 の設計上こちらの画面は**二度と書き戻さない**ので、
+  /// 「自動保存 12:34」を出したままにすると、書き続けている本文まで保存されて
+  /// いるように読める。true の間は時刻の代わりに停止していることを出す。
+  bool _draftSuperseded = false;
 
   /// 進行中の取消の消去 (Codex P2 / PR #1013)。[_saveDraft] はこれを待ってから
   /// 書く。**保存と消去が並行に走ると、消去が保存直後の本文を消す。**
@@ -1087,6 +1095,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     });
   }
 
+  /// 予約済みの自動保存を取り消す (#1012)。
+  ///
+  /// 投稿 / サーバー下書き保存の**入口**で呼ぶ。どちらも最後に [_clearDraft]
+  /// で下書きを片づけるが、**通信が debounce の 3 秒を超えると、その最中に
+  /// 予約済みのタイマーが発火して [_saveDraft] が走る**。消去と保存が重なる形
+  /// なので、どちらが後になるかで「投稿したのに下書きが残る」になりうる。
+  ///
+  /// ⚠ **現状の実害は追えた範囲では無い。**`shared_preferences` のチャンネルは
+  /// FIFO で、[_saveDraft] は入口で `_discarded` を見て no-op になる。ただし
+  /// **入口でしか見ていない**（判定のあとに await が並ぶ）ので、順序の入れ替え
+  /// に弱い。入口で 1 行消しておくのが安く、[_clearDraft] と競う経路そのものを
+  /// 作らずに済む。
+  void _cancelPendingDraftSave() {
+    _draftDebounceTimer?.cancel();
+    _draftDebounceTimer = null;
+  }
+
   /// Persist the current draft text and CW state to SharedPreferences.
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
@@ -1154,7 +1179,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 世代ガード (#969) や破棄済みの no-op では null（書き込みの拒否はここには
     // 来ない — 上の catch で扱う）。表示を更新すると「保存された」と嘘をつくので、
     // 返ってきたときだけ反映する (#964)。
-    if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
+    if (!mounted) return;
+    if (savedAt != null) {
+      // ⚠ **停止表示も一緒に解く (v1.60 レビュー)。**`_draftSuperseded` を
+      // latch したままにすると、この画面の「取消」で保存が復活したあとも
+      // 赤字の「自動保存は停止中」を出し続ける（保存できているのに「されて
+      // いない」と言う形で、#1012 が直した食い違いの逆向き）。
+      setState(() {
+        _draftSavedAt = savedAt;
+        _draftSuperseded = false;
+      });
+      return;
+    }
+    // ⚠ **世代ガードで弾かれたら表示を下ろす (#1012)。**別の画面がこのスロット
+    // を片づけたので、こちらの自動保存は**もう二度と働かない**。「自動保存
+    // 12:34」を残すと、書き続けている本文まで保存されているように読める
+    // （#1011 が書き込み拒否で同じ判断をしたのと同型）。
+    //
+    // 破棄済み (`discarded`) では何もしない。あちらは**この画面が**投稿し終えた
+    // 直後で、画面がそのまま閉じるため実害が無い。
+    if (_draftStore.superseded && !_draftSuperseded) {
+      setState(() {
+        _draftSuperseded = true;
+        _draftSavedAt = null;
+      });
+    }
   }
 
   /// Restore a previously saved draft into the controllers.
@@ -1609,7 +1658,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       bytes = await original.readAsBytes();
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1657,7 +1706,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       bytes = await original.readAsBytes();
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1713,7 +1762,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       await out.writeAsBytes(bytes, flush: true);
       return XFile(path, mimeType: 'image/png', name: pngName);
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       return null;
     }
   }
@@ -1949,6 +1998,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final entry = _attachmentAt(index);
     if (entry == null) return;
     final descController = TextEditingController(text: entry.description);
+    // ⚠ **上限はサーバーごとに違う（Codex P2 / PR #1023）。**切らない欄なので、
+    // 小さいほうへ寄せた値を当てると Misskey で超過を通すか Mastodon の入力を
+    // 削るかのどちらかになる。
+    final maxDescription = InputLimits.attachmentDescriptionFor(
+      isMastodon: ref.read(currentAdapterProvider) is MastodonAdapter,
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1960,15 +2015,31 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             hintText: '画像の説明を入力（ALT テキスト）',
             border: OutlineInputBorder(),
           ),
+          // ⚠ **ALT を最初に書くのはここ (#1012 の当て先漏れ)。**上限を当てたのは
+          // 投稿**済み**メディアの編集 2 画面だけで、主経路のこちらが素通しだった。
+          // Misskey は ALT をアップロード時の `comment` で受け、512 超は
+          // `drive/files/create` が 400 で断る。添付が落ちると**投稿そのものが
+          // 失敗**し、画面には「投稿に失敗しました」しか出ない。
+          //
+          // ⚠ **切らずに数えるだけにする。**Mastodon の上限は 1 万字なので、
+          // 512 で切ると Mastodon 利用者の ALT を黙って削ることになる。超過は
+          // 赤字のカウンタで見せ、OK ボタンを塞いで判断はユーザーへ返す。
+          maxLength: maxDescription,
+          maxLengthEnforcement: MaxLengthEnforcement.none,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('キャンセル'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, descController.text),
-            child: const Text('OK'),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: descController,
+            builder: (context, value, _) => TextButton(
+              onPressed: value.text.characters.length > maxDescription
+                  ? null
+                  : () => Navigator.pop(dialogContext, value.text),
+              child: const Text('OK'),
+            ),
           ),
         ],
       ),
@@ -2984,6 +3055,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // ため is! では promote されない。ScheduleSupport と同様に明示 cast で使う。
     if (adapter == null || adapter is! DraftSupport) return;
 
+    // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
+    // 理由は [_submitInternal] の同じ位置のコメント。
+    _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
       final mediaIds = await Future.wait(
@@ -3047,6 +3121,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         }
       }
     } catch (e, st) {
+      // 失敗したら自動保存を張り直す (Codex P2 / PR #1017)。理由は
+      // [_submitInternal] の同じ位置のコメント。
+      _scheduleDraftSave();
       if (mounted) {
         setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3130,6 +3207,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
+    // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
+    // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
+    // 引き返したときに**予約済みの保存が消えたまま戻らない**。次の打鍵まで
+    // タイマーが張り直されないので、その間にアプリが落ちると前回保存以降の
+    // 入力を失う。取り消すのは「通信を始める＝最後に _clearDraft へ向かう」
+    // と決まった時点だけにし、失敗して戻る経路では張り直す。
+    _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
       // Upload local attachments / reuse drive file IDs.
@@ -3227,13 +3311,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         }
       }
     } catch (e, st) {
+      // ⚠ **失敗したら自動保存を張り直す (Codex P2 / PR #1017)。**投稿に失敗
+      // した画面はそのまま残り、ユーザーは書き足して投稿し直せる。取り消した
+      // ままだと次の打鍵までタイマーが戻らず、その間にアプリが落ちると入力を
+      // 失う。⚠ **`mounted` の判定より前に置く** — 下の分岐は早期 return する
+      // ので、後ろに置くと一部の経路で張り直されない。
+      _scheduleDraftSave();
       if (!mounted) return;
       if (widget.redraft != null) {
         // 元投稿は既に削除されている。本文をクリップボードに保全し、
         // 再投稿手段をユーザーに提示する (#393)。
         await Clipboard.setData(ClipboardData(text: _controller.text));
         await Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           withScope: (scope) => scope.setTag('phase', 'redraft_resend_failed'),
         );
@@ -3695,18 +3785,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                 ),
                 // 「保存されているタイミングがわかりづらい」への回答 (#964)。
                 // 自動保存は無音なので、最後に保存できた時刻を常時出す。
-                if (_draftAutoSave && _draftSavedAt != null)
+                //
+                // ⚠ **止まったら止まったと言う (#1012)。**別の画面がスロットを
+                // 片づけると #969 の世代ガードでこの画面は二度と保存できない。
+                // 時刻を残すと「保存されている」と読めるので、注意色で停止を出す。
+                if (_draftAutoSave &&
+                    (_draftSuperseded || _draftSavedAt != null))
                   Padding(
                     padding: const EdgeInsets.only(right: 8, bottom: 2),
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
+                        _draftSuperseded
+                            ? '自動保存は停止中（別の画面で下書きが片づけられました）'
+                            : '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                          color: _draftSuperseded
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.7),
                         ),
                       ),
                     ),

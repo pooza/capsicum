@@ -10,10 +10,10 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../constants.dart';
 import '../model/account.dart';
 import '../preset_servers.dart';
+import '../util/exception_scrub.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
-import '../util/exception_scrub.dart';
 import 'fcm_service.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
@@ -282,8 +282,10 @@ class PushRegistrationService {
       // 本筋は止めない (relay 障害で push 全体を失敗にする筋ではない)。
       await AnnouncementSubscriptionService.autoEnableIfDefault(account);
     } catch (e, st) {
-      debugPrint(
-        'capsicum: push.registration: failed for ${account.key.host}: $e\n$st',
+      debugLogException(
+        'capsicum: push.registration: failed for ${account.key.host}',
+        e,
+        st,
       );
       // NB: 登録フェーズの失敗では relay row を触らない。
       //
@@ -411,8 +413,9 @@ class PushRegistrationService {
           );
         }
       } catch (e, st) {
-        debugPrint(
-          'capsicum: push.registration: adapter unsubscribe failed: $e',
+        debugLogException(
+          'capsicum: push.registration: adapter unsubscribe failed',
+          e,
         );
         _reportUnregisterFailure(e, st, account.key.host, 'adapter');
       }
@@ -465,9 +468,10 @@ class PushRegistrationService {
         final id = await PushKeyStore.getRelayId(a.key.toStorageKey());
         if (id != null) ids.add(id);
       } catch (e) {
-        debugPrint(
+        debugLogException(
           'capsicum: push.registration: relay id read failed for '
-          '${a.key.toStorageKey()}: $e',
+          '${a.key.toStorageKey()}',
+          e,
         );
       }
     }

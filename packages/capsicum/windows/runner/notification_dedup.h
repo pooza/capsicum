@@ -50,11 +50,53 @@ class NotificationDedupRegistry {
 
   static NotificationDedupRegistry& Instance();
 
-  // このキーの通知を表示したものとして記録する。
+  // このキーの通知を**実際に表示した**ものとして記録する。
+  //
+  // WebSocket 経路 (#569) が「もう出した」と事後に伝えてくる `addEmitted`
+  // （flutter_window.cpp）と、WNS 経路が表示に成功したときの確定に使う。
+  // **表示する前の判定には使わない** — 判定が要る側は [TryClaim] を使うこと。
+  //
+  // ⚠ **[TryClaim] の予約を「表示済み」へ昇格させる働きがある。**昇格した
+  // キーは [ReleaseClaim] で取り消せなくなる（下の注記を参照）。
   void MarkShown(const std::string& key);
 
   // このキーの通知が既にどちらかの経路で表示されているか。
+  //
+  // ⚠ **表示するかどうかの判定に使わない。** 「見てから出して記録する」は
+  // check-then-act であり、[TryClaim] の注記どおり同時受信で二重表示になる。
+  // 残してあるのは観測とテストのため。
   bool WasShown(const std::string& key);
+
+  // このキーの表示権を**原子的に**取る (#1014)。未表示なら記録して true、
+  // 既に表示済み（＝他経路が先に取った）なら何もせず false。
+  //
+  // ⚠ **`WasShown` → 表示 → `MarkShown` の 3 段に分けてはいけない。** 判定と
+  // 記録が別々のロックになるため、同じキーが同時に届くと**両方が「未表示」を
+  // 観測してから両方が記録する**。Windows は Tag が一致していても実機で
+  // トーストを畳まない (#945) ので、この race はそのまま二重表示になり、
+  // しかも 2 通目の通知音は Tag 方式でも消せない。
+  //
+  // ⚠ 空キーは記録せず true を返す（＝素通し）。「通知 ID が取れないものは
+  // dedup を通さない」判断は呼び出し側の `dedupable` にあり、ここは保険。
+  bool TryClaim(const std::string& key);
+
+  // [TryClaim] で取った**予約**を返す。トーストを出せなかったときの巻き戻し用。
+  //
+  // ⚠ **claim したまま失敗を握りつぶさないこと。** 記録が残ると WebSocket
+  // 経路 (#569) まで抑止され、**その通知が 1 通も出なくなる**。
+  //
+  // ⚠⚠ **[MarkShown] 済みのキーは消さない** (#1015 Codex P2)。claim を取って
+  // から `ShowRawToast` が返るまでの間に、WebSocket 経路が同じ通知を独立に
+  // 表示して `addEmitted` を撃つことがある。予約と表示済みを区別せずに
+  // 巻き戻すと**他経路が「出した」と言った記録まで消える**ので、あとから
+  // 届いた同じ通知が「未出」と判定されて二重表示が復活する。予約のままの
+  // キーだけを取り消す。
+  //
+  // ⚠ claim の際に上限超過で押し出した最古のキーは戻らない。押し出しは
+  // 「もう一度出るかもしれない」向きの劣化にとどまる（このレジストリ全体が
+  // 「取りこぼすなら二重表示の側へ倒す」設計）ので、表示失敗という稀な経路の
+  // ために順序を復元する複雑さは持ち込まない。
+  void ReleaseClaim(const std::string& key);
 
   // テスト用。プロセス内シングルトンの状態を捨てる。
   void Reset();
@@ -67,6 +109,15 @@ class NotificationDedupRegistry {
 
  private:
   NotificationDedupRegistry() = default;
+
+  // [TryClaim] の本体。⚠ **mutex_ を保持したまま呼ぶ。**
+  //
+  // ⚠ **[MarkShown] が「予約を取る」と「表示済みへ昇格させる」を 1 つの
+  // 排他区間で行うために切り出している** (#1015 Codex P2)。
+  // 公開 API の [TryClaim] を経由すると解錠を挟むので、その隙間に
+  // [ReleaseClaim] が入って予約を消し、**昇格が空振りしたまま他経路の
+  // トーストだけが表示される**（後続の同じ通知が未出と判定されて二重になる）。
+  bool TryClaimLocked(const std::string& key);
 
   // 押し出しの観測。⚠ **プロセスにつき 1 回しか出さない。** 一度あふれた後は
   // 通知が来るたびにあふれ続けるので、件数ぶん出すと同じ事実がログを埋める
@@ -81,7 +132,15 @@ class NotificationDedupRegistry {
   void LogFirstEvictionLocked(size_t evicted);
 
   std::mutex mutex_;
+
+  // 予約済み **または** 表示済みのキー。[WasShown] / [TryClaim] の判定はこちら
+  // を見る（予約の時点で他経路を抑止するのが目的なので、両者を区別しない）。
   std::set<std::string> keys_;
+
+  // そのうち**実際に表示された**キー (#1015 Codex P2)。[ReleaseClaim] が
+  // 巻き戻してよいのは「keys_ にあって shown_ に無い」＝予約のままのものだけ。
+  // ⚠ **keys_ の部分集合として保つ**（押し出し / Reset で一緒に消すこと）。
+  std::set<std::string> shown_;
 
   // 挿入順。keys_ と常に同じ要素を持つ。先頭が最古。
   std::deque<std::string> order_;

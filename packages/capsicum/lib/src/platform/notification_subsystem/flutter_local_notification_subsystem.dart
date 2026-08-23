@@ -2,8 +2,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
-import 'notification_subsystem.dart';
 import '../../util/exception_scrub.dart';
+import 'notification_subsystem.dart';
 
 /// 全プラットフォーム共通の flutter_local_notifications ベース実装。
 ///
@@ -84,7 +84,7 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       // 失敗が UI を巻き込まないよう更に try で包む。
       try {
         await Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           hint: Hint.withMap({'subsystem': 'notification'}),
         );

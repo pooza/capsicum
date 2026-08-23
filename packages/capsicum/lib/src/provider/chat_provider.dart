@@ -4,8 +4,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import '../util/exception_scrub.dart';
 import '../service/sentry_op_failure.dart';
+import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 
@@ -42,9 +42,12 @@ final chatMessageStreamProvider = Provider.autoDispose<Stream<ChatMessage>?>((
         Breadcrumb(
           category: 'chat.stream.parse',
           level: SentryLevel.warning,
-          message: e.toString().length > 200
-              ? '${e.toString().substring(0, 200)}…'
-              : e.toString(),
+          // 例外型のみ。`jsonDecode` の FormatException.toString() は
+          // **パース対象のフレーム断片＝チャット本文**を持つ。breadcrumb の
+          // message は _scrubBreadcrumb（relay URL しか見ない）を通らないので
+          // ここに載せると DM がそのまま Sentry に出る。timeline_provider の
+          // 同じ経路と揃える。詳細は下の captureException(scrubException(e))。
+          message: e.runtimeType.toString(),
         ),
       );
       final now = DateTime.now();
@@ -226,9 +229,9 @@ final chatRoomMessageStreamProvider = Provider.autoDispose
             Breadcrumb(
               category: 'chat.room.stream.parse',
               level: SentryLevel.warning,
-              message: e.toString().length > 200
-                  ? '${e.toString().substring(0, 200)}…'
-                  : e.toString(),
+              // 例外型のみ。理由は streamChatMessages 側と同じ（FormatException
+              // がチャット本文の断片を持つ）。
+              message: e.runtimeType.toString(),
             ),
           );
           final now = DateTime.now();

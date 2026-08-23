@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:dbus/dbus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -164,8 +163,9 @@ class ResidentModeService with WindowListener, TrayListener {
     try {
       await _residentChannel.invokeMethod<void>('setDockIconHidden', hidden);
     } catch (e) {
-      debugPrint(
-        'capsicum: resident_mode: setDockIconHidden($hidden) failed: $e',
+      debugLogException(
+        'capsicum: resident_mode: setDockIconHidden($hidden) failed',
+        e,
       );
     }
   }

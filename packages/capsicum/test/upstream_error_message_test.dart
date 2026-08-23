@@ -146,6 +146,165 @@ void main() {
     });
   });
 
+  /// #976: Mastodon 側の英語素通しと、モロヘイヤ独自 API の `errors` 配列。
+  ///
+  /// ⚠ **プリセット 5 サーバーのうち 3 つが Mastodon**なので、素通しにすると
+  /// 多数派の環境ほど英語が出る。Misskey 側は `error.code` を丁寧に日本語化
+  /// しているのに、こちらだけ英語のまま流していた。
+  group('Mastodon 形（#976）', () {
+    /// ⚠⚠ **文面は Mastodon 本体からそのまま持ってくること。**
+    /// 初版はここでコード側と同じ Rails 既定形（`is too long (maximum is N
+    /// characters)`）を組み立てて assert していたため、**実機では一度も発火
+    /// しないのにテストは緑**という状態だった（v1.60 のリリース前レビューで検出）。
+    ///
+    /// 本文長超過は `StatusLengthValidator` が専用の I18n キーを使う:
+    /// `app/validators/status_length_validator.rb` →
+    /// `statuses.over_character_limit` = `character limit of %{max} exceeded`。
+    test('本文の長さ超過は日本語にし、上限値は文面から拾う', () {
+      // ⚠ 数字を決め打ちしない。上限はサーバー設定で変わる。
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error': 'Validation failed: Text character limit of 500 exceeded',
+          }),
+        ),
+        '本文が長すぎます（上限 500 文字）',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error': 'Validation failed: Text character limit of 3000 exceeded',
+          }),
+        ),
+        '本文が長すぎます（上限 3000 文字）',
+      );
+    });
+
+    /// ActiveRecord 既定形も受ける。通報コメント等はこちらで返る
+    /// （`Comment is too long (maximum is 1000 characters)`）。
+    ///
+    /// ⚠⚠ **フィールド名を無視して「本文」と訳さない（Codex P2 / PR #1023）。**
+    /// 初版は 2 つの形を 1 本の正規表現で受けて一律「本文が長すぎます」に
+    /// していて、**このテストがその誤訳を正解として固定していた**。本文
+    /// (`:text`) は専用の I18n キーを使うので、この形では絶対に返らない。
+    test('Rails 既定形はフィールド名で訳し分ける', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Comment is too long '
+                '(maximum is 1000 characters)',
+          }),
+        ),
+        'コメントが長すぎます（上限 1000 文字）',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Description is too long '
+                '(maximum is 10000 characters)',
+          }),
+        ),
+        '説明が長すぎます（上限 10000 文字）',
+      );
+    });
+
+    /// 知らないフィールドは名指ししない。`Avatar description` のように上流が
+    /// 増やしうるので、当てずっぽうの名前を出すより中立の方が安全。
+    test('素性の分からないフィールドは field 中立に倒す', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Avatar description is too long '
+                '(maximum is 150 characters)',
+          }),
+        ),
+        '入力が長すぎます（上限 150 文字）',
+      );
+    });
+
+    test('定型句は日本語にする', () {
+      expect(
+        upstreamErrorMessage(_dioError({'error': 'Record not found'})),
+        '対象が見つかりません。削除された可能性があります',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({'error': 'The access token is invalid'}),
+        ),
+        'ログイン情報が無効です。ログインし直してください',
+      );
+    });
+
+    // ⚠ **未知の英語は落とさず出す。**意図した非対称（Misskey の未知は
+    // `SOME_ERROR_CODE` という機械語だが、こちらは文章になっている）。
+    test('未知の文言は英語のまま出す', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({'error': 'Something unexpected happened upstream'}),
+        ),
+        'Something unexpected happened upstream',
+      );
+    });
+
+    // モロヘイヤ独自 API のバリデーション失敗はこの形。`error` しか見て
+    // いなかったため、予約投稿のタグ更新の主要な失敗ケースに #886 が効いて
+    // いなかった。
+    test('errors（複数形・配列）も理由として拾う', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['タグは 10 個までです'],
+          }, status: 422),
+        ),
+        'タグは 10 個までです',
+      );
+    });
+
+    test('errors が複数なら先頭 + 件数に畳む', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['タグは 10 個までです', 'タグに使えない文字が含まれています'],
+          }, status: 422),
+        ),
+        'タグは 10 個までです（ほか 1 件）',
+      );
+    });
+
+    test('errors が文字列でなければ拾わない', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': [
+              {'tags': 'too many'},
+            ],
+          }, status: 422),
+        ),
+        isNull,
+      );
+      expect(
+        upstreamErrorMessage(_dioError({'errors': <String>[]}, status: 422)),
+        isNull,
+      );
+    });
+
+    // ⚠ 残骸の判定は `errors` 側にも効かせる。長すぎる / 複数行は SnackBar に
+    // 載らないうえ、HTML 断片や stack trace の混入が疑われる。
+    test('errors でも提示に耐えないものは落とす', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['a' * 300],
+          }, status: 422),
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('収録コードはすべて非空の理由を返す', () {
     // 表の typo（値が空・キーの重複でつぶれる）を機械的に弾く。
     for (final code in const [

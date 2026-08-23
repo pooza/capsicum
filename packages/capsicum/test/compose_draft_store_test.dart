@@ -141,6 +141,56 @@ void main() {
       expect(await ComposeDraftStore().restore(), isNull);
     });
 
+    /// #1012: 世代ガードで弾かれたことを、呼び出し側が**知れる**こと。
+    ///
+    /// ⚠ **`_syncedGeneration` を進めない設計なので、ズレは恒久。**黙って null
+    /// を返すだけだと、画面は「自動保存 12:34」を出したまま固まり、その後に
+    /// 書いた本文まで保存されているように読める（#964 の主目的が保存タイミング
+    /// の可視化である以上、表示が実態と食い違うと効果が反転する）。
+    test('#1012: 別画面に片づけられたら superseded が立つ', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: 'hello'),
+        now: fixedNow,
+      );
+
+      final a = ComposeDraftStore();
+      final b = ComposeDraftStore();
+      await a.restore();
+      await b.restore();
+      expect(a.superseded, isFalse, reason: 'まだ誰も片づけていない');
+
+      await b.clear();
+      expect(
+        await a.save(const ComposeDraft(text: 'hello'), now: fixedNow),
+        isNull,
+      );
+
+      expect(a.superseded, isTrue);
+      expect(a.discarded, isFalse, reason: 'discarded は「この画面が投稿し終えた」で、意味が正反対');
+      // 弾かれ続ける限り立ったままであることを見る。ここが false に戻ると
+      // 「1 回だけ表示を下ろしてまた嘘の時刻に戻る」というより悪い挙動になる。
+      // ⚠ **下りる条件は「保存が通ったとき」だけ**（v1.60 レビュー）。この画面
+      // 自身の取消で復活する経路は下の REGRESSION が見る。
+      expect(
+        await a.save(const ComposeDraft(text: 'hello'), now: fixedNow),
+        isNull,
+      );
+      expect(a.superseded, isTrue);
+    });
+
+    test('#1012: 自分で clear した画面は superseded にしない', () async {
+      final store = ComposeDraftStore();
+      await store.restore();
+      await store.clear();
+
+      expect(
+        await store.save(const ComposeDraft(text: 'x'), now: fixedNow),
+        isNull,
+      );
+      expect(store.superseded, isFalse, reason: '投稿直後は画面が閉じるので、停止を知らせる相手が居ない');
+      expect(store.discarded, isTrue);
+    });
+
     test('#969: clear 後に新しい画面が restore→save すれば自動保存は復活する', () async {
       await ComposeDraftStore().save(
         const ComposeDraft(text: '投稿した本文'),
@@ -227,6 +277,118 @@ void main() {
       await store.save(const ComposeDraft(text: '本文'), now: fixedNow);
 
       expect(await store.clear(), isTrue);
+    });
+
+    /// v1.60 リリース前レビュー: **in-flight の `save` が、取消の進めた世代印を
+    /// 巻き戻す**。
+    ///
+    /// `save` の書き込みは 8 回の platform channel 往復で、その最中に同じ画面の
+    /// 「取消」が走りうる（デバウンス発火後はタイマー cancel が効かない）。
+    /// `save` が最後に無条件で古い世代を代入すると、以降の保存が毎回「世代ズレ」
+    /// で捨てられ、**その画面の自動保存が恒久的に死ぬ**。#1008 が塞いだ症状が
+    /// また別経路で戻る形。
+    test('REGRESSION: 取消と競合した保存は、世代印を巻き戻さない', () async {
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '前回の書きかけ'), now: fixedNow);
+      await store.restore();
+
+      // save を待たずに取消を差し込む（await しないので、直列化が無ければ
+      // 両者が同時に進む）。
+      final saving = store.save(
+        const ComposeDraft(text: '保存中の本文'),
+        now: fixedNow,
+      );
+      final clearing = store.clear(discard: false);
+      await Future.wait([saving, clearing]);
+
+      // ⚠⚠ **storage を見るのは、次の save で上書きする前 (Codex P2 / PR #1023)。**
+      // 初版はここで先に「取消のあとに書いた本文」を保存してから中身を見ており、
+      // **競合で残った本文が上書きされて観測できなかった**。印の巻き戻りだけを
+      // 見て、データの復活を見逃す形になっていた。
+      expect(
+        await ComposeDraftStore().restore(),
+        isNull,
+        reason: '取消したのに、競合した save の本文がスロットへ残ってはいけない',
+      );
+
+      // 印が巻き戻っていないので、取消のあとの入力はふつうに保存できる。
+      expect(
+        await store.save(
+          const ComposeDraft(text: '取消のあとに書いた本文'),
+          now: fixedNow,
+        ),
+        fixedNow,
+        reason: '印が巻き戻っていると、ここが no-op の null になる',
+      );
+      expect(store.superseded, isFalse);
+      expect((await ComposeDraftStore().restore())!.text, '取消のあとに書いた本文');
+    });
+
+    /// v1.60 リリース PR の Codex P2: **追い越された save が、新しい save の
+    /// 本文を道連れにする**。
+    ///
+    /// 「割り込みを検出して自分の書き込みを片づける」形（#1023 の初版）だと、
+    /// 片づけの時点で**もっと新しい save が着地している**ことがある。スロットは
+    /// 1 枠なので一括削除がそれごと消し、画面は新しい保存の「自動保存 hh:mm」を
+    /// 出したまま、再起動すると何も戻らない。
+    ///
+    /// 検出して直すのではなく、[ComposeDraftStore] の中で直列化して**重ならない
+    /// ようにする**。
+    test('REGRESSION: 取消のあとに保存した本文を、古い save が消さない', () async {
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '前回の書きかけ'), now: fixedNow);
+      await store.restore();
+
+      // 3 つとも await せずに積む。直列化が無いと 1 番目が 3 番目を消す。
+      final stale = store.save(
+        const ComposeDraft(text: '取消される前の本文'),
+        now: fixedNow,
+      );
+      final cancelling = store.clear(discard: false);
+      final fresh = store.save(
+        const ComposeDraft(text: '取消のあとに書き直した本文'),
+        now: fixedNow,
+      );
+      await Future.wait([stale, cancelling, fresh]);
+
+      expect(
+        (await ComposeDraftStore().restore())?.text,
+        '取消のあとに書き直した本文',
+        reason: '古い save の後始末が、新しい save の本文まで消してはいけない',
+      );
+      expect(await fresh, fixedNow, reason: '画面に出す時刻と中身が食い違ってはいけない');
+      expect(store.superseded, isFalse);
+    });
+
+    /// v1.60 リリース前レビュー: `superseded` は **latch しない**。
+    ///
+    /// 初版の doc は「ズレは恒久」と書いていたが、その画面自身の取消は世代を
+    /// 進めて印も合わせるので保存は復活する。latch したままだと、画面は
+    /// **保存できているのに「自動保存は停止中」を出し続ける**。
+    test('REGRESSION: 取消で保存が復活したら superseded は下りる', () async {
+      await ComposeDraftStore().save(
+        const ComposeDraft(text: '前回の書きかけ'),
+        now: fixedNow,
+      );
+      final screen = ComposeDraftStore();
+      await screen.restore();
+
+      // 別画面が片づけて世代が進む → この画面は停止状態になる。
+      await ComposeDraftStore().clear();
+      expect(
+        await screen.save(const ComposeDraft(text: 'x'), now: fixedNow),
+        isNull,
+      );
+      expect(screen.superseded, isTrue);
+
+      // 自分の取消で世代を進め直すと保存は効く。表示も戻さないと嘘になる。
+      await screen.clear(discard: false);
+
+      expect(
+        await screen.save(const ComposeDraft(text: '復活後の本文'), now: fixedNow),
+        fixedNow,
+      );
+      expect(screen.superseded, isFalse);
     });
 
     /// #1008: 復元の「取消」だけは画面に留まったまま消す。破棄済みにすると、

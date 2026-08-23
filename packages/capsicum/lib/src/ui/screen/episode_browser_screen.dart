@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../provider/account_manager_provider.dart';
+import '../../util/exception_scrub.dart';
 import '../util/annict_link.dart';
 import 'annict_record_screen.dart';
 import 'annict_review_screen.dart';
-import '../../util/exception_scrub.dart';
 
 /// エピソード行の操作メニュー (#593)。`ListTile.trailing` にアイコンを並べると
 /// スマホ縦持ちで窮屈になるため PopupMenuButton に集約する。

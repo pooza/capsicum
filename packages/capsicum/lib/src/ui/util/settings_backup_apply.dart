@@ -1,3 +1,4 @@
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -41,6 +42,30 @@ void applyImportedSettingsBackup(WidgetRef ref, SettingsImportResult result) {
     }
   }
   ref.read(accountManagerProvider.notifier).addDisconnectedAccounts(keys);
+}
+
+/// 選ばれたファイルを、上限を確かめてから読む (#1012)。
+///
+/// ⚠ **`readAsString` を直に呼ばない。**取り込み口は「YAML を選ぶ」導線だが、
+/// iOS の UTI は `public.data` なので**任意のファイルを選べる**（Android も
+/// mimeTypes の絞り込みは提供側次第）。動画を選ばれると、内容を見る前に
+/// 端末のメモリへ丸ごと載る。
+///
+/// ⚠ **両方の取り込み口から呼ぶこと。**設定画面（ログイン後）とサーバー選択画面
+/// （ログイン前）があり、片方だけ守ると守られていない側が残る（#996 が繰り返し
+/// 踏んだ「母数の取りこぼし」）。
+///
+/// 大きすぎるファイルは [SettingsBackupFormatException] にする。ユーザーの選択
+/// ミスであって障害ではないので、呼び出し側の format 用 catch（件数だけ数える）
+/// へ落として error レベルの観測にしない。
+Future<String> readSettingsBackupFile(XFile file) async {
+  final length = await file.length();
+  if (length > maxSettingsBackupBytes) {
+    throw const SettingsBackupFormatException(
+      '設定のバックアップにしてはファイルが大きすぎます。選んだファイルを確認してください',
+    );
+  }
+  return file.readAsString();
 }
 
 /// 取り込みの前に必ず挟む確認 (#1010)。
@@ -92,10 +117,10 @@ void reportSettingsBackupImportSkips(SettingsImportResult result) {
       level: SentryLevel.info,
       withScope: (scope) {
         scope.setTag('settings_backup.op', 'import_skip');
-        // key -> 理由。値は含めない（result.skipped は key→理由 の対応）。
-        scope.setContexts('settings_backup_skipped', {
-          for (final entry in result.skipped.entries) entry.key: entry.value,
-        });
+        scope.setContexts(
+          'settings_backup_skipped',
+          redactSkippedKeysForReport(result.skipped),
+        );
         scope.fingerprint = ['settings_backup.op', 'import_skip'];
       },
     );
@@ -104,10 +129,71 @@ void reportSettingsBackupImportSkips(SettingsImportResult result) {
   }
 }
 
+/// Sentry へ載せてよい形に落とす (#1012)。
+///
+/// ⚠ **「値は載せない」だけでは足りなかった。**未知のキーは YAML の
+/// マッピングキーそのもの（＝ファイル由来の任意文字列）で、手編集された
+/// バックアップならユーザーが書いた何でも入りうる。doc は「値は含めない」と
+/// 宣言していたのに、**キー名の側から素通し**していた。
+///
+/// 知っているキー（[exportableSettings] / [deviceLocalKeys] /
+/// [accountScopedKeys] と `accounts`）はそのまま出す — 素性が分かっている
+/// 定数で、どの設定が落ちたかを知るのがこの観測の目的。それ以外は
+/// `(unknown)` に丸めて**件数だけ**残す。
+///
+/// ⚠ **件数にも上限を置く。**壊れたファイルは未知キーを大量に持ちうるので、
+/// context が肥大して Sentry 側で切り捨てられると全部見えなくなる。
+@visibleForTesting
+Map<String, Object> redactSkippedKeysForReport(Map<String, String> skipped) {
+  const maxReported = 30;
+  final known = <String, String>{};
+  var unknown = 0;
+  for (final entry in skipped.entries) {
+    if (!_knownBackupKeys.contains(entry.key)) {
+      unknown++;
+      continue;
+    }
+    if (known.length >= maxReported) continue;
+    known[entry.key] = entry.value;
+  }
+  return {
+    ...known,
+    if (unknown > 0) '(unknown)': unknown,
+    if (skipped.length > known.length + unknown)
+      '(truncated)': skipped.length - known.length - unknown,
+  };
+}
+
+/// 素性の分かっているキー。ここに無いものは名前ごと伏せる。
+final Set<String> _knownBackupKeys = {
+  for (final setting in exportableSettings) setting.key,
+  ...deviceLocalKeys,
+  ...accountScopedKeys,
+  // アカウント索引の取り込み結果 (#1001)。理由は定数文字列。
+  'accounts',
+};
+
 /// 取り込めなかった件数の但し書き。何も落ちていなければ空文字 (#1010)。
 ///
 /// ⚠ **成功メッセージに必ず添える。** 索引の保存に失敗すると `skipped` にだけ
 /// 記録されて `addedAccountKeys` は空になるので、これが無いと「設定を読み込み
 /// ました」だけが出て**部分失敗が無言になる**。
-String settingsBackupSkippedNote(SettingsImportResult result) =>
-    result.skipped.isEmpty ? '' : '（${result.skipped.length} 件は取り込みませんでした）';
+///
+/// ⚠⚠ **アカウントだけは理由の本文を出す（v1.60 リリース前レビュー）。**
+/// `_mergeAccounts` は「取り込めなかったことは理由つきで返し、ユーザーには
+/// 『ログインし直す』という手が残る」と宣言して理由を組み立てているのに、
+/// **どちらの画面もその値を読んでいなかった**。#621 の非 op delete を踏んだ
+/// 端末では移行の主経路（ログイン前の取り込み）でアカウントが 1 件も入らず、
+/// それでも画面には「1 件は取り込みませんでした」としか出ない。
+///
+/// 出すのは `accounts` の理由のみ。設定キー側は「端末固有だから飛ばした」等の
+/// 正常系が大半で、全部並べると本当に困る 1 行が埋もれる。理由の文字列は
+/// いずれも定数＋件数で、ファイル由来の値は入らない。
+String settingsBackupSkippedNote(SettingsImportResult result) {
+  if (result.skipped.isEmpty) return '';
+  final accounts = result.skipped['accounts'];
+  final others = result.skipped.length - (accounts == null ? 0 : 1);
+  if (accounts == null) return '（$others 件は取り込みませんでした）';
+  final tail = others > 0 ? '。ほか $others 件も取り込みませんでした' : '';
+  return '（$accounts$tail）';
+}

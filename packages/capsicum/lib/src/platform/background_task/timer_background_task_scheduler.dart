@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../util/exception_scrub.dart';
 import 'background_task_scheduler.dart';
 
 /// macOS / Linux / Windows 向け実装。Dart の [Timer.periodic] を使った
@@ -50,12 +51,14 @@ class TimerBackgroundTaskScheduler
       } catch (e, st) {
         // スケジューラは次回 interval まで待たせ、ここで例外を握って
         // タスクを止めない。観測層で taskId 単位にグループしておく。
-        debugPrint(
-          'capsicum: background_task: callback failed (taskId=$taskId): $e\n$st',
+        debugLogException(
+          'capsicum: background_task: callback failed (taskId=$taskId)',
+          e,
+          st,
         );
         try {
           await Sentry.captureException(
-            e,
+            scrubException(e),
             stackTrace: st,
             withScope: (scope) {
               scope.setTag('background_task.id', taskId);

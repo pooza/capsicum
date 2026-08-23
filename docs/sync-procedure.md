@@ -84,7 +84,8 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
   1. **未返信** → 指摘内容を確認し、対応が必要か判断。必要なら Issue 起票
   2. **返信済みだがリアクション未付与** → 修正コミットの存在を確認し、+1 リアクションを付与
   3. **返信済み・リアクション済み** → 完了。報告不要
-- 判定方法: `gh api repos/pooza/capsicum/pulls/{number}/comments --jq` で全コメントを取得し、Codex コメントの `id` に対する `in_reply_to_id` を持つ返信の有無、および Codex コメントへのリアクション（`reactions`）を確認する
+- 判定方法: `gh api repos/pooza/capsicum/pulls/{number}/comments --jq` で全コメントを取得し、Codex コメントの `id` に対する `in_reply_to_id` を持つ返信の有無、および Codex コメントへのリアクション（`reactions`）を確認する。⚠ **返信は line comment の返信ではなく issue comment（`gh api repos/pooza/capsicum/issues/{number}/comments`）として書かれていることが多い**ので、`in_reply_to_id` が空でも「未返信」と即断しない。両方を見る
+- ⚠ **リリース PR に付いた Codex の line comment は、リリース前レビューのまとめ Issue に入らない。** レビュー 5 観点のまとめ（#982 / #1012 等）は「レビューを回した結果」の受け皿であって、そのあとに立てるリリース PR へ Codex が付ける指摘は**別系統**。2026-08-23 の同期で、v1.59 のリリース PR #1003 の 3 件が未返信・未起票のまま出荷されていたのを検出した（→ #1014）。**リリース直後の同期では、リリース PR の line comment を明示的に数える**
 
 ## 7. Sentry の新規イシュー確認
 

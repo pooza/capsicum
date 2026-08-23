@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../constants.dart';
 import '../../../provider/supporter_purchase_provider.dart';
 import '../../../provider/supporter_status_provider.dart';
-import '../../../url_helper.dart';
+import '../../util/launch_url_toast.dart';
 
 /// capsicum サポーター（投げ銭）画面 (#428 段 3)。
 ///
@@ -68,7 +68,11 @@ class SupporterScreen extends ConsumerWidget {
             leading: const Icon(Icons.gavel_outlined),
             title: const Text('特定商取引法に基づく表記'),
             trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => launchUrlSafely(AppConstants.tokushohoUrl),
+            // ⚠ **この画面で唯一 fire-and-forget だった (#976)。**同じ画面の
+            // Patreon / Liberapay は #924 で失敗時 SnackBar へ移したのに、
+            // ここだけ直呼びのままで、**IAP 画面で法定表示に到達できない失敗が
+            // 無音**になっていた。
+            onTap: () => _openSupportLink(context, AppConstants.tokushohoUrl),
           ),
         ],
       ),
@@ -186,15 +190,11 @@ class SupporterScreen extends ConsumerWidget {
   }
 
   /// Web の支援先を外部ブラウザで開く。起動に失敗したら黙って捨てず SnackBar で
-  /// 知らせる (#924)。annict_link / spotify_link の「戻り値 false を見て SnackBar」
-  /// と同型に寄せ、fire-and-forget を残さない。
-  Future<void> _openSupportLink(BuildContext context, Uri url) async {
-    if (!await launchUrlSafely(url)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('ブラウザを開けませんでした')));
-      }
-    }
-  }
+  /// 知らせる (#924)。
+  ///
+  /// ⚠ **失敗の扱いは [launchUrlOrToast] に寄せた (#976)。**同じ SnackBar
+  /// ブロックが 4 箇所に写っていたうえ、ここだけ `launchUrl` の
+  /// `PlatformException`（ハンドラ不在の端末）を受けていなかった。
+  Future<void> _openSupportLink(BuildContext context, Uri url) =>
+      launchUrlOrToast(context, url);
 }

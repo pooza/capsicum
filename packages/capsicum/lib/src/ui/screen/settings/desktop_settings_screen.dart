@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -112,7 +114,8 @@ class _ComposeFontSetting extends ConsumerStatefulWidget {
       _ComposeFontSettingState();
 }
 
-class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting> {
+class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting>
+    with WidgetsBindingObserver {
   late final TextEditingController _controller;
 
   @override
@@ -121,10 +124,34 @@ class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting> {
     _controller = TextEditingController(
       text: ref.read(composeFontFamilyProvider),
     );
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// ⚠⚠ **アプリ終了は `dispose` では拾えない (#1022)。**Flutter は**終了時に
+  /// ウィジェットツリーを dispose しない**ので、この画面を開いたまま終了すると
+  /// 下の `dispose` は走らない。#976 で `dispose` に flush を置いたときの doc は
+  /// 「アプリ終了で失われる」を動機として挙げながら、**その経路を塞げていなかった**。
+  ///
+  /// 下書き自動保存 (#964・`compose_screen`) と同じ形で、resumed 以外への遷移で
+  /// 確定させる。デスクトップのウィンドウを閉じる経路も inactive / hidden を通る。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) return;
+    unawaited(ref.read(composeFontFamilyProvider.notifier).flushPendingWrite());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // ⚠ **保留中の書き込みを確定させてから離れる (#976)。**こちらが塞ぐのは
+    // **画面を閉じる / 別画面へ移る**経路。最後の打鍵から 400ms 以内に離れると、
+    // デバウンス前の入力がそのまま失われる（#927-2 でデバウンスを入れる前は
+    // 即時書き込みだった）。アプリ終了は上の [didChangeAppLifecycleState] が受ける。
+    //
+    // ⚠ **`ref` は dispose 後に触れないので、ここで読んでから投げる。**
+    // 書き込み自体は Notifier 側（この画面より長生き）が完走させる。
+    unawaited(ref.read(composeFontFamilyProvider.notifier).flushPendingWrite());
     _controller.dispose();
     super.dispose();
   }

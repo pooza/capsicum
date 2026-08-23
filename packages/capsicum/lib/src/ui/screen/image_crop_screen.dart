@@ -6,6 +6,8 @@ import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../util/exception_scrub.dart';
+
 /// 添付画像をトリミング・回転する全画面エディタ (#577 / #647 / #662)。
 ///
 /// crop_your_image は platform channel を持たない純 Flutter 実装のため、
@@ -63,7 +65,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       if (!mounted) return;
       setState(() => _normalizedImage = data.buffer.asUint8List());
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -154,7 +156,7 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       });
       _controller.image = bytes;
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (!mounted) return;
       setState(() => _rotating = false);
       ScaffoldMessenger.of(

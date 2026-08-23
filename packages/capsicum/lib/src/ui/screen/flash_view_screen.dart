@@ -10,19 +10,19 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_play_result.dart';
 import '../../service/tco_resolver.dart';
-import '../flash/flash_result_digest.dart';
+import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/oauth_scope_error.dart';
+import '../flash/flash_result_digest.dart';
 import '../flash/flash_runtime.dart';
 import '../flash/flash_view.dart';
 import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
-import '../../url_helper.dart';
 import '../util/hashtag_actions.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
-import '../../util/exception_scrub.dart';
 
 /// Misskey Flash（UI 表記は **Play**）の詳細画面 (#830)。
 ///

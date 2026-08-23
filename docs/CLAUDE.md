@@ -186,9 +186,28 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 3. CI（`dart format`・`dart analyze`）が通ることを確認してからマージ
 4. `main` でタグを打ちリリース
 
+### Codex レビューの回し方（open PR）
+
+⚠ **追加コミットではレビューは発火しない。**`@codex review` を PR コメントに書いた時だけ走る（初回は PR 作成 / ready 化で自動）。**rebase / force-push で SHA が変わったときも打ち直す**。
+
+巡回は次の形で止める（2026-08-23 決定）:
+
+| | 対応 |
+| --- | --- |
+| 初回レビュー | PR 作成時に自動で走る |
+| **P1** | 直して `@codex review` で再依頼 |
+| **P2** | **直すだけ。再依頼しない** |
+| **マージ直前** | severity を問わず **1 回だけ**再依頼（その PR で最後） |
+
+⚠ **締めの 1 回を省かない。**これが無いと「**自分の修正が入れた欠陥を誰も見ない**」経路が残る。#1017 では P2 の修正そのものが退行（`_cancelPendingDraftSave` の移動で自動保存が永久停止）で、次の巡回で見つかった。#1021 では 4 巡目の修正が 5 巡目の穴を作った（宣言側だけ型引数を読み飛ばし、呼び出し側を放置）。
+
+これで **1 PR あたり最大 2 回**に収まる。青天井にしないのは、#1021 が 6 巡かかった一方で**実コードの違反は初回で出尽くしており**、以降は検査そのものの網の細かさを上げる作業だったため（費用対効果が落ちる）。
+
+各コメントは**返信 + 👍 の両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。判定手順は [sync-procedure.md](sync-procedure.md) の Codex セクションを参照。
+
 ### PR マージ後の確認事項
 
-Codex（`chatgpt-codex-connector[bot]`）のレビューコメントを確認し、未対応なら修正・返信・+1 リアクションをつける。**返信とリアクションの両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。詳細な判定手順は [sync-procedure.md](sync-procedure.md) の Codex セクションを参照。
+⚠ **マージ後にも指摘が付く。**上の締めの 1 回で拾いきれなかったぶんは、同期手順の Codex セクションで回収する。リリース PR の line comment は別系統なので明示的に数える。
 
 ## ディレクトリ構成
 
@@ -311,9 +330,9 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.58.0**（2026-08-18 タグ、build 171、pubspec 1.58.0+171、リリース PR [#985](https://github.com/pooza/capsicum/pull/985)、merge `23d79a19`）。**大更新なし — 小粒・急ぎの早出し枠**。⚠ もともとこの枠の主題は「設定バックアップ・自動保存」だったが、ユーザー報告（1 件）から起票した不具合 3 件を早く出すため枠の役割を差し替え、**主題は v1.59 へ送った**（起票から出荷まで 1 日）。公開状況（2026-08-19 実測・ASC API 個別確認）: **Android 製品版公開済み**（production track の versionCode 171 が `completed`）/ **iOS App Store 公開済み**（1.58.0 `READY_FOR_SALE`）/ **macOS Mac App Store 公開済み**（1.58.0 `READY_FOR_SALE`）/ **Windows Microsoft Store 公開済み**（pooza 手動 publish。displaycatalog で `9AFBB08E.capsicum_1.58.171.0_x64` を確認）/ **Linux AppImage + Windows MSIX** は [GitHub Release v1.58.0](https://github.com/pooza/capsicum/releases/tag/v1.58.0) で publish 済み（Latest）。**全 5 プラットフォーム公開完了**。マイルストーン [#72](https://github.com/pooza/capsicum/milestone/72) は close 済み。消化（8 件）: [#981](https://github.com/pooza/capsicum/issues/981) お知らせ push が macOS / Windows の実機に届くことを実お知らせで確認 / [#983](https://github.com/pooza/capsicum/issues/983) macOS: 通知 dedup の既出キーが上限超過で全消しになる / [#984](https://github.com/pooza/capsicum/issues/984) ドライブ: 複数選択中も「上の階層へ」が動く / [#986](https://github.com/pooza/capsicum/issues/986) 番組表: 放送日を持たない枠の「毎日」表記をやめる / [#987](https://github.com/pooza/capsicum/issues/987) GitHub Actions 課金の約 9 割が draft リリース PR の空ビルド（月 $50 規模）/ [#988](https://github.com/pooza/capsicum/issues/988) カスタム絵文字が起動時の一過性失敗で AsyncError のまま固着 / [#989](https://github.com/pooza/capsicum/issues/989) 起動直後 150ms の probe 失敗でアカウントが一斉オフラインへ落ちる / [#990](https://github.com/pooza/capsicum/issues/990) リアクション確定時に dispose 済みだと無言で失われる。**relay v1.58**（[Milestone #9](https://github.com/pooza/capsicum-relay/milestone/9)・1 件、close 済み）: relay#47 401 が無音で halt され認証失敗の切り分けができない。**relay の残り 3 件は急ぎでないため v1.59 枠へ丸ごと移送した**（本体のリリースを待たせる理由が無いという pooza 判断）。
+最新リリース: **v1.59.0**（2026-08-22 タグ、build 172、pubspec 1.59.0+172、リリース PR [#1003](https://github.com/pooza/capsicum/pull/1003)、merge `78a7b8f7`）。**大更新 1 件 — 設定バックアップ・自動保存の枠**（v1.58 が小粒・急ぎの早出しへ差し替わった際に主題ごと移ってきた枠）。公開状況（2026-08-23 実測）: **全 5 プラットフォーム公開済み** — Android 製品版（production track の versionCode 172 が `completed`）/ iOS `READY_FOR_SALE` / macOS `READY_FOR_SALE`（ASC API で実測）/ Windows は Microsoft Store の公開カタログが `9AFBB08E.capsicum_1.59.172.0_x64__8ekzzj58251a2` を返す（＝認定を通って差し替わり済み）/ **Linux AppImage + Windows MSIX** は [GitHub Release v1.59.0](https://github.com/pooza/capsicum/releases/tag/v1.59.0) で publish 済み。消化（17 件）: [#964](https://github.com/pooza/capsicum/issues/964) 投稿自動保存の改善（**この枠の大更新**）/ [#967](https://github.com/pooza/capsicum/issues/967) インポート後のアカウントを「未接続」として並べる / [#972](https://github.com/pooza/capsicum/issues/972) 設定バックアップのモバイル対応 / [#980](https://github.com/pooza/capsicum/issues/980) スレッドメニューの投稿操作をサブメニューへ / [#982](https://github.com/pooza/capsicum/issues/982) v1.57 レビュー緑まとめ 18 項目 / [#994](https://github.com/pooza/capsicum/issues/994) macOS debug のプッシュ登録が完了していない / [#995](https://github.com/pooza/capsicum/issues/995) Windows: 通知 dedup の全消し（実機ゲート）/ [#996](https://github.com/pooza/capsicum/issues/996) アクションメニューの項目が dispose 済みで無言消失 / [#997](https://github.com/pooza/capsicum/issues/997) Windows: 起動中のお知らせ raw push が捨てられる（実機ゲート）/ [#998](https://github.com/pooza/capsicum/issues/998) プロフィールからの通報導線 / [#999](https://github.com/pooza/capsicum/issues/999) ALT 編集の導線がモロヘイヤ 5.33.0 でも出て投稿を壊す（出荷ゲート）/ [#1001](https://github.com/pooza/capsicum/issues/1001) バックアップにアカウント索引を含める / [#1005](https://github.com/pooza/capsicum/issues/1005) Misskey で ALT を空にできない / [#1008](https://github.com/pooza/capsicum/issues/1008)・[#1009](https://github.com/pooza/capsicum/issues/1009)・[#1010](https://github.com/pooza/capsicum/issues/1010)・[#1011](https://github.com/pooza/capsicum/issues/1011) リリース前レビューの指摘。⚠ **[#121](https://github.com/pooza/capsicum/issues/121)（Mastodon の ALT 編集）は client 実装が入っているが v1.60 へ移送**した — モロヘイヤが `features.media_update` を名乗るまで導線が出ないため、**リリースノートにも書いていない**。⚠ **モロヘイヤ側の版が上がるだけでは復活しない**: `/about` が `media_update: true` を返す条件は (1) `ginseng-fediverse` 1.8.30 以上（mulukhiya#4621・5.35.0 の主軸）と (2) **各サーバーの `local.yaml` に `/mastodon/capabilities/media_update: true` を書く opt-in**（nginx の map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため fail-closed の既定が `false`）の**両方**。デプロイ手順に (2) が要る（Mastodon 3 台が対象・Misskey は常に false）。フラグ自体は mulukhiya#4636 で着地済み（2026-08-23・develop）。⚠ **経路そのものは 2026-08-23 に dev24 で実測済み**（[#121 のコメント](https://github.com/pooza/capsicum/issues/121#issuecomment-5385116241)）— 5.35.0（開発中）+ フラグ true の状態で PUT が 200 を返し、**ALT だけが変わって `media_ids` / `spoiler_text` / `sensitive` / `status` は現状維持**された。この curl は method / `X-Mulukhiya-Purpose` / body の 3 点が `MastodonClient.updateStatusMediaAttributes` と一致するので、GUI の代用ではなく実リクエストの検証。**残るのは 5.35.0 の公開待ちであって capsicum の作業待ちではない**。**relay v1.59**（[Milestone #10](https://github.com/pooza/capsicum-relay/milestone/10)・3 件、全件 close 済み）: relay#44 お知らせ配信の結末を観測に残す（C 案）/ relay#45 お知らせ APNs に `capsicum_notification_id` / relay#29 systemd unit の二重管理解消（chubo2#187 で flauros も cookbook 管理下へ）。prod / staging とも `b9ce14c` で HEAD 一致を実測。
 
-**リリース前レビューは 1 巡**（5 観点で 9 件を追加修正、`94d82bdb`）。⚠ **うち 5 件はその日に自分が入れた／見落としたもの**で、教訓が 3 つ残った: (1) **同一セッション内で判断軸がぶれる** — `isImmediateConnectFailure` で「時間を使った失敗は対象外」と決めながら、絵文字の retry では timeout を対象に含めて 4 分スピナーの退行を作った。**同じ日に書いた 2 箇所でも軸を突き合わせる**。(2) **「4 経路すべてに入れた」と報告した直後、同じファイルに 5 箇所見落としていた** — `PostActionRunner` を通る経路だけ数えていた。**「全部やった」と言う前に母数の定義を疑う**。(3) **Codex は 5 観点と重複せず補完する** — `disposed` 判定の穴（打ち切り側が素通り）は Codex だけが指摘し、並行性観点は同じ箇所を見ていながら「中断口が無い」までだった（`f26a738c` で消化）。**両方回す価値がある**。
+**リリース前レビューは 1 巡**（5 観点・赤 3 + 黄 5 を [PR #1013](https://github.com/pooza/capsicum/pull/1013) で消化）。⚠ **赤 3 件はすべてこの枠で新しく入れた面から出た** — #964 の取消経路で自動保存が永久停止 / #996 で寄せた母数の外にあった確認ダイアログの `ref.read` / #1001 で足したログイン前の取り込み口に確認ダイアログが無い。**大更新の枠でレビューを飛ばさない根拠がまた 1 つ増えた**。⚠ **Codex は 4 巡**かかった（修正が新しい面を作るたび、その差分へ的確な指摘が来る）。**うち 1 件は提案どおりに直すと悪化する**ので採らなかった — `SharedPreferences` は setter の結果に関わらずプロセス内キャッシュを先に更新するため、「世代印は書き込み成功時だけ進める」と以降の保存が毎回 no-op になる（判断の根拠は PR コメントと `compose_draft_store_test.dart` の検査コメントに記録）。残りは [#1012](https://github.com/pooza/capsicum/issues/1012) で v1.60 へ送った。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 

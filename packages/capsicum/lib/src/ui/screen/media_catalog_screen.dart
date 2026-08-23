@@ -3,10 +3,11 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../url_helper.dart';
+
 import '../../provider/account_manager_provider.dart';
-import '../widget/emoji_text.dart';
+import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../widget/emoji_text.dart';
 
 class MediaCatalogScreen extends ConsumerStatefulWidget {
   const MediaCatalogScreen({super.key});

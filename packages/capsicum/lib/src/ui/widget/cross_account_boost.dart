@@ -8,6 +8,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../util/exception_scrub.dart';
 import '../util/post_action_error.dart';
 import 'emoji_text.dart';
 import 'server_badge.dart';
@@ -144,7 +145,7 @@ Future<void> _boostWithAccount(
     // 「別垢ブーストが通らない」という報告の裏取りができない。
     unawaited(
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) => scope.setTag('phase', 'post_action'),
       ),

@@ -21,9 +21,9 @@ import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
+import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
-import '../util/exception_scrub.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -150,9 +150,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       try {
         await adapter.detectTimelineAvailability();
       } catch (e) {
-        debugPrint(
+        debugLogException(
           'capsicum: addAccount: detectTimelineAvailability failed for '
-          '${account.key.toStorageKey()}: $e',
+          '${account.key.toStorageKey()}',
+          e,
         );
       }
     }
@@ -729,9 +730,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // させる。auth 失効（401/403）や secret 系・不明は従来通り skip + 観測。
       final outcome = classifyRestoreFailure(e);
       if (outcome == RestoreOutcome.retriable) {
-        debugPrint(
+        debugLogException(
           'capsicum: restoreSessions: transient failure for $keyStr, '
-          'kept offline and will retry in background: $e',
+          'kept offline and will retry in background',
+          e,
         );
         return (account: null, outcome: RestoreOutcome.retriable);
       }
@@ -780,9 +782,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final userFuture = adapter.getMyself();
     final timelineFuture = adapter is MastodonAdapter
         ? adapter.detectTimelineAvailability().catchError((Object e) {
-            debugPrint(
+            debugLogException(
               'capsicum: restoreSessions: detectTimelineAvailability '
-              'failed for $keyStr: $e',
+              'failed for $keyStr',
+              e,
             );
           })
         : Future<void>.value();
@@ -1111,6 +1114,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
   /// オフライン保持中のアカウントをユーザー操作で一覧から削除する (#792)。
   /// secret も storage から消す（＝明示ログアウト相当）。
+  ///
+  /// ⚠ **[logout] と同じ後始末を漏らさないこと** (#1014)。この経路は
+  /// 「到達不能になったアカウント」と「#967 で未接続として並ぶ取り込み
+  /// アカウント」にとっての logout そのもので、ユーザーから見た意味は
+  /// 完全に同じ。片方にだけ掃除を足すと、**削除したはずのアカウントの
+  /// 痕跡が残る**。
   Future<void> removeOfflineAccount(AccountKey key) async {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1118,6 +1127,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // contextKey が一致しなければ使われない作りだが、消したアカウントの投稿を
     // 端末に残す理由が無い点は logout と変わらない。
     await TimelineCache.clear();
+    // 書きかけの自動保存スロットも捨てる (#964 / #1014)。オフライン化する前に
+    // 自動保存した本文が残っていると、**削除したあとで同じ `@user@host` へ
+    // 入り直したときに消したはずの下書きが復活する**。
+    await ComposeDraftStore.clearForAccount(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }
@@ -1150,7 +1163,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         parsed = null;
       }
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           // null 経路 (`_reportNullSecretSkipOnce`) と区別するための経路タグ。
@@ -1192,9 +1205,17 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       } catch (_) {
         parsed = null;
       }
+      // ⚠ **warning ではなく info (#1012)。**#1001 で「トークンを持たない索引」を
+      // 取り込むのが**正規の移行手順**になったため、移行直後の端末では
+      // **未ログインのアカウント数ぶん毎起動ここへ来る**。設計どおりの状態を
+      // warning で上げ続けると、本当に異常な `null_secret`（再インストール・
+      // Keystore リセット等）が母数に埋もれる。
+      //
+      // ⚠ **文言も直す。**#967 以降は skip していない — 一覧から消さず
+      // 「未接続」として並べ、タップでログインへ送る。
       Sentry.captureMessage(
-        'account_restore: secret missing (null path), account skipped',
-        level: SentryLevel.warning,
+        'account_restore: secret missing (null path), kept as disconnected',
+        level: SentryLevel.info,
         withScope: (scope) {
           scope.setTag('account_restore.path', 'null_secret');
           if (parsed != null) {

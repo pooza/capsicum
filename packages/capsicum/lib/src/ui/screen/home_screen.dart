@@ -8,10 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+
 import '../../../main.dart' show appLaunchStopwatch;
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../model/offline_account.dart';
-import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../../provider/hashtag_provider.dart';
@@ -21,22 +22,23 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/tab_selection_provider.dart';
-import '../../constants.dart';
-import '../../util/startup_trace.dart';
-import '../util/about_dialog.dart';
-import '../util/keyboard_list_navigation.dart';
-import '../util/mouse_drag_scroll_behavior.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
 import '../../service/update_checker.dart';
-import '../widget/home_menu.dart';
+import '../../url_helper.dart';
+import '../../util/startup_trace.dart';
+import '../util/about_dialog.dart';
+import '../util/keyboard_list_navigation.dart';
+import '../util/mouse_drag_scroll_behavior.dart';
+import '../util/offline_account_display.dart';
 import '../widget/emoji_text.dart';
-import '../widget/server_badge.dart';
-import '../widget/user_avatar.dart';
+import '../widget/home_menu.dart';
 import '../widget/post_tile.dart';
+import '../widget/server_badge.dart';
 import '../widget/simple_post_bar.dart';
 import '../widget/tab_management_sheet.dart';
+import '../widget/user_avatar.dart';
 import 'announcement_screen.dart';
 import 'channel_timeline_screen.dart';
 import 'notification_screen.dart';
@@ -1449,7 +1451,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     dismiss();
                     // ログイン先のサーバーを埋めた状態で開く。ユーザーが
                     // ホスト名を打ち直さずに済む。
-                    context.push('/server?host=${offline.key.host}');
+                    context.push(reconnectRouteFor(offline.key));
                   }
 
                   return ListTile(
@@ -1465,7 +1467,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     subtitle: Text(
                       needsLogin
-                          ? '未接続（タップで接続し直す）'
+                          ? disconnectedAccountSubtitle
                           : offline.retrying
                           ? '接続できません（再試行中…）'
                           : '接続できません（自動再試行中）',
@@ -1983,14 +1985,14 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                     // 続いている（「接続できません」だと終わったように読める）。
                     subtitle: Text(
                       !o.recoverableByRetry
-                          ? '未接続（タップで接続し直す）'
+                          ? disconnectedAccountSubtitle
                           : o.retrying
                           ? '再試行中…'
                           : '接続を待っています',
                     ),
                     onTap: o.recoverableByRetry
                         ? null
-                        : () => context.push('/server?host=${o.key.host}'),
+                        : () => context.push(reconnectRouteFor(o.key)),
                     trailing: IconButton(
                       // 削除操作は delete_outline に統一する (#828)。logout は
                       // 実ログアウト (ドロワー) と紛れるため使わない。
@@ -2002,14 +2004,22 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                   ),
                 ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => ref
-                    .read(accountManagerProvider.notifier)
-                    .retryOfflineRestores(),
-                icon: const Icon(Icons.refresh),
-                label: const Text('今すぐ再試行'),
-              ),
-              const SizedBox(height: 8),
+              // ⚠ **全件が「未接続」のときは再試行を出さない** (#1014)。
+              // [AccountManager.retryOfflineRestores] の対象は #1001 以降
+              // `secretMissing` を明示的に除外するので、**まさにこの状態で
+              // 押しても黙って何も起きない**。上の説明文も「待っても戻らない」
+              // と言っており、押せるボタンがあること自体が矛盾していた。
+              // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
+              if (!allNeedLogin) ...[
+                FilledButton.icon(
+                  onPressed: () => ref
+                      .read(accountManagerProvider.notifier)
+                      .retryOfflineRestores(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('今すぐ再試行'),
+                ),
+                const SizedBox(height: 8),
+              ],
               OutlinedButton.icon(
                 onPressed: () => context.push('/server'),
                 icon: const Icon(Icons.person_add),

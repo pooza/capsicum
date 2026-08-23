@@ -134,6 +134,17 @@ abstract class PersistedNotifier<T> extends Notifier<T> {
   /// build() → [_load] の往復中にユーザーが編集したか。
   bool _userEdited = false;
 
+  /// 「ユーザーが編集した」と記録する (#976)。
+  ///
+  /// ⚠ **サブクラスは [_userEdited] へ直接代入しないこと。**ライブラリ private
+  /// なので同一ファイルにいる間だけ通り、**Notifier を別ファイルへ切り出した
+  /// 瞬間に黙って壊れる**（コンパイルエラーではなく「保存値の到着で編集が
+  /// 巻き戻る」という実行時の挙動として出る）。
+  ///
+  /// 使うのは [persist] を通せない経路だけ。通常の保存は [persist] を使う。
+  @protected
+  void markUserEdited() => _userEdited = true;
+
   @override
   T build() {
     _userEdited = false;
@@ -153,11 +164,37 @@ abstract class PersistedNotifier<T> extends Notifier<T> {
   /// この値を上書きしない。**等値でも記録する**のは、既定へ戻す編集（例: 空欄化）を
   /// 保存値の到着で巻き戻さないため (#892)。
   Future<void> persist(T value) async {
-    _userEdited = true;
+    markUserEdited();
     final normalized = normalize(value);
     state = normalized;
     final prefs = await SharedPreferences.getInstance();
     await writeSaved(prefs, normalized);
+  }
+
+  /// [persist] のうち**書き込みだけ**を遅らせたいサブクラス向け (#976)。
+  ///
+  /// 編集フラグ・[normalize]・state の更新はここで済ませ、書き込む値を返す。
+  /// デバウンスする側は返り値をタイマーへ渡し、発火時に [writePersisted] を
+  /// 呼ぶ。
+  ///
+  /// ⚠ **基底を素通りする経路を作らないための入口。**
+  /// `ComposeFontFamilyNotifier` は書き込みを遅らせるために `_userEdited` へ
+  /// 直接代入し、`writeSaved` も直接呼んでいた。基底が持っている
+  /// 「編集フラグ + normalize + state + 書き込み」の並びをそこだけ再実装して
+  /// いたので、[normalize] を足しても片方だけ効かない形だった。
+  @protected
+  T beginPersist(T value) {
+    markUserEdited();
+    final normalized = normalize(value);
+    state = normalized;
+    return normalized;
+  }
+
+  /// [beginPersist] が返した値を実際に書き込む (#976)。
+  @protected
+  Future<void> writePersisted(T value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await writeSaved(prefs, value);
   }
 }
 
@@ -900,21 +937,47 @@ class ComposeFontFamilyNotifier extends PersistedNotifier<String> {
   /// state は即時更新するが、`prefs` への書き込みは 400ms デバウンスして連続打鍵で
   /// 叩き続けないようにする。編集済みフラグは等値判定より前に立て、既定へ戻す
   /// （空欄化）編集も保存値の到着で巻き戻さない (#892)。
+  ///
+  /// ⚠ **基底の [beginPersist] を通す (#976)。**以前は `_userEdited` へ直接
+  /// 代入し `writeSaved` も直接呼んでいたため、基底の「編集フラグ + normalize
+  /// + state + 書き込み」の並びを**このクラスだけ再実装**していた。
   Future<void> setFontFamily(String value) async {
-    final trimmed = value.trim();
-    _userEdited = true;
-    state = trimmed;
+    final pending = beginPersist(value.trim());
     _writeDebounce?.cancel();
     _writeDebounce = Timer(
       const Duration(milliseconds: 400),
-      () => unawaited(_flush(trimmed)),
+      () => unawaited(_flush(pending)),
     );
   }
 
-  Future<void> _flush(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await writeSaved(prefs, value);
+  /// 保留中の書き込みを今すぐ確定する (#976)。
+  ///
+  /// この Notifier は autoDispose ではないので `ref.onDispose` は当てにできない。
+  /// 最後の打鍵から 400ms 以内に画面を離れる / アプリが背面へ回ると、デバウンス
+  /// 前の入力がそのまま失われる（デバウンスを入れる前は即時書き込みだったので、
+  /// #927-2 が持ち込んだ退行）。保留が無ければ何もしない。
+  ///
+  /// ⚠ **呼ぶ場所は 2 つ要る (#1022)。**設定画面の `dispose` **だけでは足りない**:
+  ///
+  /// - `dispose` … 画面を閉じる / 別画面へ移る経路をカバーする
+  /// - `didChangeAppLifecycleState` の resumed 以外 … **アプリ終了をカバーする**。
+  ///   ⚠ Flutter は**終了時にウィジェットツリーを dispose しない**ので、設定画面を
+  ///   開いたまま終了すると `dispose` は走らない
+  ///
+  /// ⚠⚠ **それでも「必ず書ける」保証ではない。**`detached` の後に非同期の書き込みが
+  /// 完走する保証はなく、プロセスの強制終了（クラッシュ / kill）は当然拾えない。
+  /// ここは**取りこぼす窓を実用上ゼロに近づける**話で、確実性が要る値なら
+  /// デバウンス自体をやめる判断になる。フォントファミリ名は打鍵のたびに
+  /// SharedPreferences へ書く価値が無いのでデバウンスを残している。
+  Future<void> flushPendingWrite() async {
+    final timer = _writeDebounce;
+    if (timer == null || !timer.isActive) return;
+    timer.cancel();
+    _writeDebounce = null;
+    await _flush(state);
   }
+
+  Future<void> _flush(String value) => writePersisted(value);
 }
 
 /// App-wide theme mode (light / dark / system).
@@ -1423,7 +1486,7 @@ class ConfirmBeforePostNotifier extends PersistedNotifier<bool> {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getBool(_confirmBeforePostKey) ?? false;
     // 確定値を読んだので、遅れて解決する _load に上書きされないよう記録する。
-    _userEdited = true;
+    markUserEdited();
     state = value;
     return value;
   }
