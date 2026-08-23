@@ -9,20 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants.dart';
 import '../ui/widget/sticker_picker_sheet.dart';
 
-/// スタンプ素材として受け入れるレスポンスボディの上限 (#953-2)。
-///
-/// 素材の供給元はサーバー由来の任意 URL（`CustomEmoji.url`）で、**サイズを
-/// こちらで保証できない**。プリセット 3 サーバーの実データで最大が 1MB 弱
-/// （アニメーション webp）なので、桁 1 つぶんの余裕を見て 8MB。カスタム絵文字は
-/// 一覧に並べて使うものなので、これを超える素材は運用上そもそも成立しない。
-const kMaxStickerBytes = 8 * 1024 * 1024;
-
-/// スタンプ素材をデコードする最大高さ（px、#953-2）。
-///
-/// スタンプは元画像の高さに対する比率（既定 0.2）で描かれるので、素材が元画像
-/// より高精細でも使い道がない。書き出し先はプリセット上限の 4K 級を想定し、
-/// その 1/2 を上限にしておけば拡大しても粗が出ない。
-const kMaxStickerDecodeHeight = 2048;
+/// 受け入れ上限の正本は [StickerLimits]（`constants.dart`）へ移した (#976)。
+/// `k` 付きトップレベル定数の置き場をそちらへ集約しているため。
 
 /// 画像オーバーレイに載せるスタンプ素材の調達経路 (#883)。
 ///
@@ -62,8 +50,8 @@ class StickerSource {
   /// ⚠ **タイムアウトだけでは巨大ボディを止められない** (#953-2)。
   /// `receiveTimeout` は dio 仕様上「受信バイトイベントの間隔」なので、5 秒未満の
   /// 間隔で細く流れ続ける数百 MB のボディは打ち切られない。素材はサーバー由来の
-  /// 任意 URL（`CustomEmoji.url`）なので、**総バイト数（[kMaxStickerBytes]）と
-  /// デコード後の寸法（[kMaxStickerDecodeHeight]）の両方に上限を張る**。
+  /// 任意 URL（`CustomEmoji.url`）なので、**総バイト数（[StickerLimits.maxBytes]）と
+  /// デコード後の寸法（[StickerLimits.maxDecodeHeight]）の両方に上限を張る**。
   Future<ui.Image> load(String url) => _loadFromNetwork(url);
 
   Future<ui.Image> _loadFromNetwork(String url) async {
@@ -89,7 +77,7 @@ class StickerSource {
             cancelToken: cancelToken,
             options: Options(responseType: ResponseType.bytes),
             onReceiveProgress: (received, total) {
-              if (received <= kMaxStickerBytes || oversized) return;
+              if (received <= StickerLimits.maxBytes || oversized) return;
               oversized = true;
               cancelToken.cancel('sticker body too large');
             },
@@ -102,7 +90,7 @@ class StickerSource {
     // から返る）。chunked で申告と実体がずれる場合の保険として残している。
     final contentLength = response.headers.value(Headers.contentLengthHeader);
     final declared = contentLength == null ? null : int.tryParse(contentLength);
-    if (declared != null && declared > kMaxStickerBytes) {
+    if (declared != null && declared > StickerLimits.maxBytes) {
       throw const FormatException('sticker body too large');
     }
     final bytes = response.data;
@@ -111,7 +99,7 @@ class StickerSource {
     }
     // onReceiveProgress が呼ばれない実装（レスポンス全体を一括で渡す adapter）
     // でも取りこぼさないよう、手元に来た実体でもう一度確かめる。
-    if (bytes.length > kMaxStickerBytes) {
+    if (bytes.length > StickerLimits.maxBytes) {
       throw const FormatException('sticker body too large');
     }
     // `targetHeight` を渡してデコード段で縮める。渡さないと 8000x8000 の PNG が
@@ -120,7 +108,7 @@ class StickerSource {
     // 幅は指定しない（アスペクト比が保たれる）。
     final codec = await ui.instantiateImageCodec(
       Uint8List.fromList(bytes),
-      targetHeight: kMaxStickerDecodeHeight,
+      targetHeight: StickerLimits.maxDecodeHeight,
       allowUpscaling: false,
     );
     try {

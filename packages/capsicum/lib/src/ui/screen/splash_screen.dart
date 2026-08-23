@@ -5,11 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../main.dart'
     show appLaunchStopwatch, firebaseReady, pendingSharedText, shareIntentReady;
-import '../../util/startup_trace.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
-import 'eula_screen.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/startup_trace.dart';
+import 'eula_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});

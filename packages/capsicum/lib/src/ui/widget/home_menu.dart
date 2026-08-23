@@ -4,8 +4,8 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
+
 import '../../model/account.dart';
-import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/hashtag_provider.dart';
 import '../../provider/list_provider.dart';
@@ -13,6 +13,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_purchase_provider.dart';
 import '../../provider/timeline_provider.dart';
+import '../../url_helper.dart';
 import '../util/about_dialog.dart';
 import '../util/post_scope_display.dart';
 import 'desktop_menu_model.dart';

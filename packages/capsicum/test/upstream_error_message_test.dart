@@ -146,6 +146,116 @@ void main() {
     });
   });
 
+  /// #976: Mastodon 側の英語素通しと、モロヘイヤ独自 API の `errors` 配列。
+  ///
+  /// ⚠ **プリセット 5 サーバーのうち 3 つが Mastodon**なので、素通しにすると
+  /// 多数派の環境ほど英語が出る。Misskey 側は `error.code` を丁寧に日本語化
+  /// しているのに、こちらだけ英語のまま流していた。
+  group('Mastodon 形（#976）', () {
+    test('本文の長さ超過は日本語にし、上限値は文面から拾う', () {
+      // ⚠ 数字を決め打ちしない。上限はサーバー設定で変わる。
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Text is too long '
+                '(maximum is 500 characters)',
+          }),
+        ),
+        '本文が長すぎます（上限 500 文字）',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'error':
+                'Validation failed: Text is too long '
+                '(maximum is 3000 characters)',
+          }),
+        ),
+        '本文が長すぎます（上限 3000 文字）',
+      );
+    });
+
+    test('定型句は日本語にする', () {
+      expect(
+        upstreamErrorMessage(_dioError({'error': 'Record not found'})),
+        '対象が見つかりません。削除された可能性があります',
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError({'error': 'The access token is invalid'}),
+        ),
+        'ログイン情報が無効です。ログインし直してください',
+      );
+    });
+
+    // ⚠ **未知の英語は落とさず出す。**意図した非対称（Misskey の未知は
+    // `SOME_ERROR_CODE` という機械語だが、こちらは文章になっている）。
+    test('未知の文言は英語のまま出す', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({'error': 'Something unexpected happened upstream'}),
+        ),
+        'Something unexpected happened upstream',
+      );
+    });
+
+    // モロヘイヤ独自 API のバリデーション失敗はこの形。`error` しか見て
+    // いなかったため、予約投稿のタグ更新の主要な失敗ケースに #886 が効いて
+    // いなかった。
+    test('errors（複数形・配列）も理由として拾う', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['タグは 10 個までです'],
+          }, status: 422),
+        ),
+        'タグは 10 個までです',
+      );
+    });
+
+    test('errors が複数なら先頭 + 件数に畳む', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['タグは 10 個までです', 'タグに使えない文字が含まれています'],
+          }, status: 422),
+        ),
+        'タグは 10 個までです（ほか 1 件）',
+      );
+    });
+
+    test('errors が文字列でなければ拾わない', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': [
+              {'tags': 'too many'},
+            ],
+          }, status: 422),
+        ),
+        isNull,
+      );
+      expect(
+        upstreamErrorMessage(_dioError({'errors': <String>[]}, status: 422)),
+        isNull,
+      );
+    });
+
+    // ⚠ 残骸の判定は `errors` 側にも効かせる。長すぎる / 複数行は SnackBar に
+    // 載らないうえ、HTML 断片や stack trace の混入が疑われる。
+    test('errors でも提示に耐えないものは落とす', () {
+      expect(
+        upstreamErrorMessage(
+          _dioError({
+            'errors': ['a' * 300],
+          }, status: 422),
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('収録コードはすべて非空の理由を返す', () {
     // 表の typo（値が空・キーの重複でつぶれる）を機械的に弾く。
     for (final code in const [

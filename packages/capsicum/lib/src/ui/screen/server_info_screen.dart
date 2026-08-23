@@ -1,10 +1,11 @@
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:capsicum_core/capsicum_core.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html_unescape/html_unescape.dart';
+
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_info_provider.dart';
 import '../../provider/server_version_provider.dart';

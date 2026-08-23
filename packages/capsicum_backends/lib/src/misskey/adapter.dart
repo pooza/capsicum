@@ -1,10 +1,10 @@
 import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
 import 'package:uuid/uuid.dart';
-
-import 'dart:developer' as developer;
 
 import 'chat_room_streaming.dart';
 import 'chat_streaming.dart';

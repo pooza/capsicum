@@ -1,9 +1,9 @@
 import 'dart:math';
 
-import 'package:dio/dio.dart';
-import 'package:test/test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:capsicum_backends/src/rate_limit_interceptor.dart';
+import 'package:dio/dio.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:test/test.dart';
 
 class _FixedRandom extends Mock implements Random {
   @override

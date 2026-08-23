@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../constants.dart';
-import '../../url_helper.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../provider/preferences_provider.dart';
@@ -13,19 +13,20 @@ import '../../provider/server_config_provider.dart';
 import '../../provider/supporter_status_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
+import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
-import '../widget/server_badge.dart';
+import '../util/relative_time.dart';
+import '../util/user_acct.dart';
+import '../util/visible_timeline.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/page_card.dart';
 import '../widget/post_tile.dart';
 import '../widget/report_comment_dialog.dart';
+import '../widget/server_badge.dart';
 import '../widget/user_avatar.dart';
-import '../util/user_acct.dart';
-import '../util/relative_time.dart';
-import '../util/visible_timeline.dart';
-import '../../util/exception_scrub.dart';
 
 /// プロフィール画面のタブ種別。表示するタブ集合は adapter のケーパビリティと
 /// Mastodon 4.6 の show_media 設定（#732）で動的に決まるため、位置インデックスの

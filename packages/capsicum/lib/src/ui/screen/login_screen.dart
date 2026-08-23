@@ -11,7 +11,6 @@ import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../constants.dart';
-import '../../url_helper.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../platform/loopback_oauth_bind.dart';
@@ -19,8 +18,10 @@ import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
 import '../../service/account_storage.dart';
+import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
+import '../util/launch_url_toast.dart';
 import '../widget/content_parser.dart';
 
 /// OAuth コールバック受信後にシステムブラウザへ表示する完了ページ (#654)。
@@ -1059,19 +1060,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       'scope': extra['scopes']!,
                                       'force_login': 'true',
                                     });
-                                final launched = await launchUrlSafely(
+                                // 失敗時の SnackBar は共通ヘルパーへ寄せた
+                                // (#976)。
+                                await launchUrlOrToast(
+                                  dialogContext,
                                   oobUrl,
                                   mode: LaunchMode.externalApplication,
                                 );
-                                if (!launched && dialogContext.mounted) {
-                                  ScaffoldMessenger.of(
-                                    dialogContext,
-                                  ).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('ブラウザを開けませんでした'),
-                                    ),
-                                  );
-                                }
                               },
                               icon: const Icon(Icons.open_in_browser),
                               label: const Text('ブラウザで認証コードを取得'),

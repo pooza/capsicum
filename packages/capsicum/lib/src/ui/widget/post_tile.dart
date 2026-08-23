@@ -13,31 +13,31 @@ import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
 import '../../platform/platform_info.dart';
-import '../../url_helper.dart';
-import '../util/post_action_error.dart';
-import '../util/post_actions.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
-import 'content_parser.dart';
-import 'cross_account_boost.dart';
-import '../../provider/server_config_provider.dart';
+import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
+import '../util/post_action_error.dart';
+import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
 import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
+import 'content_parser.dart';
+import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
-import 'reaction_picker_sheet.dart';
+import 'emoji_text.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'post_touch_action_row.dart';
+import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
-import 'emoji_text.dart';
-import '../../util/exception_scrub.dart';
 
 String _stripHtml(String html) => stripHtml(html);
 
@@ -1043,7 +1043,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         targetPost.id,
         () => reactionAdapter.removeReaction(targetPost.id, emoji),
         'リアクションを取り消しました',
-        phase: 'reaction_remove',
+        phase: ReactionPhase.remove,
       );
     } else {
       _runReactionAction(
@@ -1704,7 +1704,7 @@ class _PostTileState extends ConsumerState<PostTile> {
     String postId,
     Future<void> Function() action,
     String successMessage, {
-    String phase = 'reaction_add',
+    String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
   }) => _runner(
     messenger,

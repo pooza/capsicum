@@ -181,11 +181,18 @@ class TimelineCache {
   /// **生の例外文字列は載せない**（このファイルには投稿本文が入っており、
   /// `FormatException.toString()` 等が断片を抱えるため）。経路と例外型だけを
   /// タグにして 1 issue へ集約する。
-  static bool _ioFailureReported = false;
+  /// 報告済みの op。⚠ **bool 1 つにしない (#976)。**
+  ///
+  /// 以前は「プロセスにつき 1 回」だったため、**`load` の失敗が先に起きると
+  /// `save` の失敗が恒久的にマスクされていた**。しかも `load` の catch は
+  /// このファイル自身のコメントが「この経路が実際にいちばん踏まれる」と書いて
+  /// いる壊れファイルの `jsonDecode` 失敗で、日常的に先着する。#958 の動機
+  /// だった「ディスク満杯・サンドボックス拒否で先出しが黙って無効化される」を
+  /// 観測するために入れた計装が、いちばん見たい経路だけ見えない形だった。
+  static final Set<String> _reportedIoFailureOps = {};
 
   static void _reportIoFailureOnce(String op, Object e) {
-    if (_ioFailureReported) return;
-    _ioFailureReported = true;
+    if (!_reportedIoFailureOps.add(op)) return;
     unawaited(
       Sentry.captureMessage(
         'timeline_cache.io_failure',
@@ -193,7 +200,11 @@ class TimelineCache {
         withScope: (scope) {
           scope.setTag('cache.op', op);
           scope.setTag('cache.error', e.runtimeType.toString());
-          scope.fingerprint = ['timeline_cache.io_failure'];
+          // ⚠ **op も fingerprint に入れる (#976)。**1 本に集約すると、
+          // 先着した `load` の issue へ `save` の失敗が混ざり、issue の
+          // タイトル・件数からは `save` が起きていることが読めない
+          // （`push.wns_bgtask` が code ごとに割っているのと同じ判断）。
+          scope.fingerprint = ['timeline_cache.io_failure', op];
         },
       ),
     );

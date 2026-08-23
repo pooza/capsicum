@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:capsicum_core/capsicum_core.dart';
 import 'package:capsicum_backends/src/mastodon/notification_streaming.dart';
+import 'package:capsicum_core/capsicum_core.dart';
 import 'package:test/test.dart';
 
 Map<String, dynamic> _account() => {

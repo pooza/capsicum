@@ -1,18 +1,18 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
-
-import '../../constants.dart';
-import '../../url_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import '../util/fediverse_link.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
-import '../../util/exception_scrub.dart';
 
 enum _QueryType { account, hashtag, url, fulltext }
 

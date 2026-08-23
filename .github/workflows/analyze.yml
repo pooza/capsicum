@@ -75,20 +75,59 @@ jobs:
           fi
 
           lock_changed=false
-          companion_changed=false
           while IFS= read -r f; do
             case "$f" in
               pubspec.lock|*/pubspec.lock) lock_changed=true ;;
-              pubspec.yaml|*/pubspec.yaml) companion_changed=true ;;
-              .github/workflows/*.yml|.github/workflows/*.yaml) companion_changed=true ;;
             esac
           done <<< "$files"
 
           if [ "$lock_changed" != true ]; then
             echo "pubspec.lock unchanged; ok"; exit 0
           fi
+
+          # 随伴の判定は**ファイル名一致ではなく実変更の中身**で行う (#976)。
+          # 「pubspec.yaml か workflow のどれかが変わっていれば随伴」だと、
+          # バージョンだけの bump や無関係な CI ジョブ編集でも lock の単独更新を
+          # 通してしまい、このガードが素通りする（PR #973 の Codex P2）。
+          #
+          # 変更行だけを取る（-U0 + ヘッダ行 `+++` / `---` を除く）。grep は
+          # 不一致で 1 を返すので、`set -e` に巻き込まれないよう `|| true`。
+          changed_lines() {
+            if [ "$EVENT" = "pull_request" ]; then
+              git diff -U0 "$PR_BASE"..."$PR_HEAD" -- "$@"
+            else
+              git diff -U0 "$PUSH_BEFORE" "$GITHUB_SHA" -- "$@"
+            fi | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true
+          }
+
+          companion_changed=false
+
+          # pubspec.yaml: `version:` 行**だけ**の変更はバンプであって依存の変更
+          # ではない。それ以外の行が動いていれば依存セクションが触られたと見なす
+          # （dependencies / dev_dependencies / dependency_overrides / SDK 制約は
+          # すべてここに落ちる）。
+          pubspec_lines="$(changed_lines 'pubspec.yaml' '*/pubspec.yaml')"
+          if [ -n "$pubspec_lines" ]; then
+            non_version="$(printf '%s\n' "$pubspec_lines" | grep -vE '^[+-]version:' || true)"
+            if [ -n "$non_version" ]; then
+              companion_changed=true
+              echo "pubspec.yaml dependency lines changed"
+            else
+              echo "pubspec.yaml changed but only the version bump line"
+            fi
+          fi
+
+          # workflow: 実際に `flutter-version:` の行が動いたときだけ随伴と見なす。
+          if [ "$companion_changed" != true ]; then
+            wf_lines="$(changed_lines '.github/workflows')"
+            if printf '%s\n' "$wf_lines" | grep -qE '^[+-][[:space:]]*flutter-version:'; then
+              companion_changed=true
+              echo "workflow flutter-version pin changed"
+            fi
+          fi
+
           if [ "$companion_changed" = true ]; then
-            echo "pubspec.lock changed together with pubspec.yaml / workflow pin; ok"
+            echo "pubspec.lock changed together with a real dependency / pin change; ok"
             exit 0
           fi
           if printf '%s' "$msgs" | grep -qiE 'chore\(deps\)|\[pubspec-lock\]'; then

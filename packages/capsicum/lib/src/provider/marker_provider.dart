@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'account_manager_provider.dart';
 import '../util/exception_scrub.dart';
+import 'account_manager_provider.dart';
 
 /// Fetches markers from the server (Mastodon only).
 final markersProvider = FutureProvider.autoDispose<MarkerSet?>((ref) async {

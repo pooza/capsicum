@@ -49,53 +49,21 @@ std::mutex& PushKeysSyncMutex() {
   return m;
 }
 
+// ⚠ **パス組み立てと読み出しは local_state_files.h の共有実装へ寄せた
+// (#976)。**同じ手続きが push_background_task.cpp / push_diagnostics_store.cpp
+// と合わせて 3 箇所に写っていた。ファイル名を 1 箇所へ集めた (#764) 趣旨は、
+// **writer と reader が別々に持つと片方だけ直したときに黙って壊れる**ことを
+// 避けるためなので、その周りの手続きが割れているのでは意味が薄い。
+
 // LocalState の push_keys.json 絶対パス。LocalFolder 解決失敗時は空文字列。
 std::wstring PushKeysJsonPath() {
-  try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
-           capsicum::kLocalStateKeysetFile;
-  } catch (...) {
-    return std::wstring();
-  }
-}
-
-// LocalState の push_labels.json 絶対パス (#770)。LocalFolder 解決失敗時は空文字列。
-std::wstring PushLabelsJsonPath() {
-  try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    return std::wstring(folder.c_str(), folder.size()) + L"\\" +
-           capsicum::kLocalStatePushLabelsFile;
-  } catch (...) {
-    return std::wstring();
-  }
+  return capsicum::LocalStateFilePath(capsicum::kLocalStateKeysetFile);
 }
 
 // push_labels.json 内容を読む（in-process 受信のラベル解決用、#770）。不在・空・
 // 失敗時は空文字列を返し、呼び出し側は既定ラベルにフォールバックする。
 std::string ReadPushLabelsJson() {
-  try {
-    const std::wstring path = PushLabelsJsonPath();
-    if (path.empty()) {
-      return std::string();
-    }
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) {
-      return std::string();
-    }
-    std::streamoff size = f.tellg();
-    if (size <= 0) {
-      return std::string();
-    }
-    std::string out(static_cast<size_t>(size), '\0');
-    f.seekg(0);
-    f.read(out.data(), static_cast<std::streamsize>(size));
-    return out;
-  } catch (...) {
-    return std::string();
-  }
+  return capsicum::ReadLocalStateFileUtf8(capsicum::kLocalStatePushLabelsFile);
 }
 
 // アプリ完全終了中の WNS raw 受信用バックグラウンドタスクを 1 度だけ登録する
@@ -354,7 +322,8 @@ void SyncWnsPushLabelsToLocalState(const std::string& labels_json) {
   static std::mutex labels_mutex;
   std::lock_guard<std::mutex> guard(labels_mutex);
   try {
-    const std::wstring path = PushLabelsJsonPath();
+    const std::wstring path =
+        capsicum::LocalStateFilePath(capsicum::kLocalStatePushLabelsFile);
     if (path.empty()) {
       return;  // LocalFolder 解決不可。次の機会に再同期される。
     }
@@ -458,26 +427,16 @@ bool ConsumePushDiagnosticsJson(std::string* out_json) {
   }
   out_json->clear();
   try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    std::wstring path = std::wstring(folder.c_str(), folder.size()) + L"\\" +
-                        capsicum::kLocalStateDiagFile;
-    {
-      std::ifstream f(path, std::ios::binary | std::ios::ate);
-      if (!f) {
-        return false;  // レコード無し。
-      }
-      std::streamoff size = f.tellg();
-      if (size <= 0) {
-        f.close();
-        _wremove(path.c_str());
-        return false;
-      }
-      out_json->resize(static_cast<size_t>(size));
-      f.seekg(0);
-      f.read(out_json->data(), static_cast<std::streamsize>(size));
+    // パス組み立てと読み出しは共有実装へ (#976)。⚠ **消すのはこちらの責務**
+    // （読んだら消す = 二重送信の防止）なので、パスは別に持つ。
+    const std::wstring path =
+        capsicum::LocalStateFilePath(capsicum::kLocalStateDiagFile);
+    if (path.empty()) {
+      return false;  // 非 MSIX 起動。
     }
-    // 二重送信を避けるため読み出したら消す。
+    *out_json = capsicum::ReadFileUtf8(path);
+    // 二重送信を避けるため読み出したら消す。⚠ **空でも消す** — 0 バイトの
+    // 残骸を置いておくと、次回起動でも同じ判定を繰り返す。
     _wremove(path.c_str());
     return !out_json->empty();
   } catch (...) {

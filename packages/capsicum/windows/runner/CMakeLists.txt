@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "smtc_now_playing.cpp"
   "windows_store_iap.cpp"
   "wns_push.cpp"
+  "local_state_files.cpp"
   "notification_dedup.cpp"
   "notification_tag.cpp"
   "notification_type_label.cpp"
@@ -88,6 +89,7 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_library(capsicum_push_task SHARED
   "push_background_task.cpp"
   "push_background_task.def"
+  "local_state_files.cpp"
   "notification_tag.cpp"
   "notification_type_label.cpp"
   "push_diagnostics.cpp"

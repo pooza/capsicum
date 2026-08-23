@@ -31,6 +31,10 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
+    # 相対 import の並び順を守る (#976)。#926 が `exception_scrub.dart` を 15
+    # ファイルでブロック末尾に追記してアルファベット順を崩したのを機に有効化。
+    # フォーマッタは並べ替えないので、lint で止めないと静かに崩れ続ける。
+    directives_ordering: true
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 

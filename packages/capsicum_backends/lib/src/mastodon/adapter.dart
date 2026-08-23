@@ -1,10 +1,9 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:fediverse_objects/fediverse_objects.dart';
-
-import 'dart:developer' as developer;
 
 import 'client.dart';
 import 'extensions.dart';

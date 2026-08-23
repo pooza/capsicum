@@ -2,9 +2,6 @@
 
 #include <windows.h>
 
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Storage.h>
-
 #include <cstdint>
 #include <fstream>
 #include <mutex>
@@ -41,30 +38,14 @@ int64_t NowUnixMs() {
   return static_cast<int64_t>(u.QuadPart / 10000ULL) - 11644473600000LL;
 }
 
-std::string ReadFileUtf8(const std::wstring& path) {
-  std::ifstream f(path, std::ios::binary | std::ios::ate);
-  if (!f) {
-    return std::string();
-  }
-  std::streamoff size = f.tellg();
-  if (size <= 0) {
-    return std::string();
-  }
-  std::string out(static_cast<size_t>(size), '\0');
-  f.seekg(0);
-  f.read(out.data(), static_cast<std::streamsize>(size));
-  return out;
-}
-
 }  // namespace
 
 void RecordPushDiagnostic(const std::string& code, const std::string& host) {
   std::lock_guard<std::mutex> guard(RecordMutex());
   try {
-    winrt::hstring folder =
-        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path();
-    const std::wstring path = std::wstring(folder.c_str(), folder.size()) +
-                              L"\\" + kLocalStateDiagFile;
+    // パス組み立てと読み出しは local_state_files.h の共有実装 (#976)。
+    const std::wstring path = LocalStateFilePath(kLocalStateDiagFile);
+    if (path.empty()) return;  // 非 MSIX 起動。観測は諦める。
     const std::string prev = ReadFileUtf8(path);
     const std::string next =
         BuildPushDiagnosticJson(prev, code, host, NowUnixMs());

@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'section_header.dart';
-
 import '../../provider/account_manager_provider.dart';
 import '../../provider/push_registration_status_provider.dart';
 import '../../service/push_registration_service.dart';
 import '../../service/push_registration_status.dart';
+import 'section_header.dart';
 
 /// プッシュ通知登録状態の表示文言・色・アイコンを返す共通ロジック。
 /// 設定 → プッシュ通知画面とサーバー情報 / プロフィールの
