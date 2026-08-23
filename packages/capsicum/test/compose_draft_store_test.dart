@@ -292,29 +292,24 @@ void main() {
       await store.save(const ComposeDraft(text: '前回の書きかけ'), now: fixedNow);
       await store.restore();
 
-      // save を待たずに取消を差し込む（await しないので両者が同時に進む）。
+      // save を待たずに取消を差し込む（await しないので、直列化が無ければ
+      // 両者が同時に進む）。
       final saving = store.save(
         const ComposeDraft(text: '保存中の本文'),
         now: fixedNow,
       );
       final clearing = store.clear(discard: false);
-      final [savedAt, _] = await Future.wait([saving, clearing]);
+      await Future.wait([saving, clearing]);
 
       // ⚠⚠ **storage を見るのは、次の save で上書きする前 (Codex P2 / PR #1023)。**
       // 初版はここで先に「取消のあとに書いた本文」を保存してから中身を見ており、
       // **競合で残った本文が上書きされて観測できなかった**。印の巻き戻りだけを
       // 見て、データの復活を見逃す形になっていた。
-      //
-      // ⚠ **この 1 本目は現状 discriminate しない。**mock の割り込み順序では
-      // `clear` の削除が `save` の書き込みより後に着地するので、修正が無くても
-      // null になる。実機で順序が逆になったときのためのガードであって、証明では
-      // ない（実際に修正の有無を分けるのは下の `savedAt` のほう）。
       expect(
         await ComposeDraftStore().restore(),
         isNull,
         reason: '取消したのに、競合した save の本文がスロットへ残ってはいけない',
       );
-      expect(savedAt, isNull, reason: '消えたデータに対して「自動保存 hh:mm」を出す時刻を返してはいけない');
 
       // 印が巻き戻っていないので、取消のあとの入力はふつうに保存できる。
       expect(
@@ -327,6 +322,42 @@ void main() {
       );
       expect(store.superseded, isFalse);
       expect((await ComposeDraftStore().restore())!.text, '取消のあとに書いた本文');
+    });
+
+    /// v1.60 リリース PR の Codex P2: **追い越された save が、新しい save の
+    /// 本文を道連れにする**。
+    ///
+    /// 「割り込みを検出して自分の書き込みを片づける」形（#1023 の初版）だと、
+    /// 片づけの時点で**もっと新しい save が着地している**ことがある。スロットは
+    /// 1 枠なので一括削除がそれごと消し、画面は新しい保存の「自動保存 hh:mm」を
+    /// 出したまま、再起動すると何も戻らない。
+    ///
+    /// 検出して直すのではなく、[ComposeDraftStore] の中で直列化して**重ならない
+    /// ようにする**。
+    test('REGRESSION: 取消のあとに保存した本文を、古い save が消さない', () async {
+      final store = ComposeDraftStore();
+      await store.save(const ComposeDraft(text: '前回の書きかけ'), now: fixedNow);
+      await store.restore();
+
+      // 3 つとも await せずに積む。直列化が無いと 1 番目が 3 番目を消す。
+      final stale = store.save(
+        const ComposeDraft(text: '取消される前の本文'),
+        now: fixedNow,
+      );
+      final cancelling = store.clear(discard: false);
+      final fresh = store.save(
+        const ComposeDraft(text: '取消のあとに書き直した本文'),
+        now: fixedNow,
+      );
+      await Future.wait([stale, cancelling, fresh]);
+
+      expect(
+        (await ComposeDraftStore().restore())?.text,
+        '取消のあとに書き直した本文',
+        reason: '古い save の後始末が、新しい save の本文まで消してはいけない',
+      );
+      expect(await fresh, fixedNow, reason: '画面に出す時刻と中身が食い違ってはいけない');
+      expect(store.superseded, isFalse);
     });
 
     /// v1.60 リリース前レビュー: `superseded` は **latch しない**。
