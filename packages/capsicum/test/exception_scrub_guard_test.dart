@@ -148,14 +148,27 @@ void main() {
 
   /// ソース中の関数 / メソッド宣言を `(名前, 仮引数, 本体の開始, 本体の終了)`
   /// で返す。本体は `{ … }` と `=> …;` の両方に対応する。
+  ///
+  /// ⚠ **総称型の宣言を落とさない（#1020・Codex P2 の 4 巡目）。**
+  /// `void log<T>(String message)` は名前と `(` の間に型引数が挟まるので、
+  /// 素朴に「識別子 + `(`」で探すと**宣言ごと見えなくなる**。見えない関数は
+  /// sink に数えられず、`log<Object>('failed: $e')` が緑のまま通る。
   List<(String, String, int, int)> declarationsOf(String source) {
     final out = <(String, String, int, int)>[];
     for (final m in RegExp(
-      r'([A-Za-z_][A-Za-z0-9_]*)\s*\(',
+      r'([A-Za-z_][A-Za-z0-9_]*)\s*[(<]',
     ).allMatches(source)) {
       final name = m.group(1)!;
       if (notDeclarations.contains(name)) continue;
-      final open = source.indexOf('(', m.start);
+      var open = m.end - 1;
+      if (source[open] == '<') {
+        // 型引数リストを読み飛ばす。`<` で始まらない比較式には入らない。
+        final generics = matchBracket(source, open, '<', '>');
+        if (generics < 0) continue;
+        final gap = RegExp(r'^\s*').firstMatch(source.substring(generics + 1))!;
+        open = generics + 1 + gap.end;
+        if (open >= source.length || source[open] != '(') continue;
+      }
       final close = matchParen(source, open);
       if (close < 0) continue;
       // 引数リストの後ろ。`async` / `async*` / `sync*` は読み飛ばす。
@@ -309,15 +322,20 @@ void main() {
     return out;
   }
 
-  /// [expr] が [params] のいずれかを**値として丸ごと**参照しているか。
+  /// [expr] が [params] のいずれかを参照しているか。
   ///
   /// 素の `m`・補間の `$m` / `${m}`・三項の `… : m` をまとめて拾う。
   ///
-  /// ⚠ **前後に `.` が付く形は拾わない。**`${account.key.host}` のように中身を
-  /// 取り出す形は呼び出し側の組み立てなので、転送とみなさない。危ないのは
-  /// 受け取った文字列を**そのまま**流す形。
+  /// ⚠ **`m.trim()` のような加工も転送とみなす（#1020・Codex P2 の 4 巡目）。**
+  /// [params] は **`String` の仮引数だけ**なので、そこから生えるメソッドは
+  /// 構造体のフィールド取り出しとは違い、**中身の文字列をそのまま持っている**。
+  /// `trim()` しても例外文は消えない。`m.length` のように文字列を持たない結果も
+  /// 拾ってしまうが、**緩い側の誤りは害が無い**（その関数の呼び出し側で
+  /// 「生の例外を埋めていないか」を見るだけ）。
+  ///
+  /// ⚠ **前に `.` が付く形は拾わない。**`other.message` は同名の別物。
   bool referencesAny(String expr, Iterable<String> params) => params.any(
-    (p) => RegExp('(?<![A-Za-z0-9_.])$p(?![A-Za-z0-9_.])').hasMatch(expr),
+    (p) => RegExp('(?<![A-Za-z0-9_.])$p(?![A-Za-z0-9_])').hasMatch(expr),
   );
 
   /// 名前付き引数の `名前:` 部分。⚠ 三項演算子の `:` を誤認しないよう、
@@ -507,14 +525,45 @@ void main() {
     expect(breadcrumbSinks([declaration, callerOnly]), contains('sharedLog'));
   });
 
+  /// ⚠ **総称型の宣言（#1020・Codex P2 の 4 巡目）。**名前と `(` の間に型引数が
+  /// 挟まると、素朴な「識別子 + `(`」の照合では**宣言ごと見えなくなる**。
+  test('総称型のラッパーも見つける', () {
+    const generic = 'void logL<T>(String m) => debugPrint(m);';
+    expect(breadcrumbSinks([generic]), contains('logL'));
+
+    const bounded = 'void logM<T extends Object>(String m) { debugPrint(m); }';
+    expect(breadcrumbSinks([bounded]), contains('logM'));
+  });
+
+  /// ⚠ **`String` 引数への加工は転送（#1020・Codex P2 の 4 巡目）。**
+  /// `trim()` しても例外文は消えない。候補は `String` の仮引数だけなので、
+  /// そこから生えるメソッドは構造体のフィールド取り出しとは別物。
+  test('String 引数を加工して渡す形も転送とみなす', () {
+    const trimmed = 'void logN(String m) => debugPrint(m.trim());';
+    expect(breadcrumbSinks([trimmed]), contains('logN'));
+
+    const sliced =
+        "void logO(String m) => debugPrint('x: \${m.substring(0)}');";
+    expect(breadcrumbSinks([sliced]), contains('logO'));
+  });
+
   /// 転送の判定が呼び出し側まで広がらないこと。ここが緩いと、**ただ引数を
   /// ログに書いているだけの関数が全部 sink になって**、検査の意味が薄れる。
-  test('中身を取り出す形は転送とみなさない', () {
+  ///
+  /// ⚠ **効いているのは「`String` の仮引数だけを候補にする」ほう。**
+  /// `.` の有無ではない（`String` 引数の `.trim()` は上のとおり転送とみなす）。
+  test('String 以外の引数はそもそも候補にしない', () {
     const callSite =
         'void save(Account account) {\n'
         "  debugPrint('failed for \${account.key.host}');\n"
         '}';
     expect(breadcrumbSinks([callSite]), isNot(contains('save')));
+  });
+
+  /// 同名の別物を拾わない。`other.message` は引数 `message` ではない。
+  test('前に `.` が付く同名は拾わない', () {
+    const other = 'void logP(String message) { debugPrint(config.message); }';
+    expect(breadcrumbSinks([other]), isNot(contains('logP')));
   });
 
   /// 検査そのものが空振りしていないことを見る。**ここが 0 だと、上の 2 つは
