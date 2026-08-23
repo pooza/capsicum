@@ -952,11 +952,23 @@ class ComposeFontFamilyNotifier extends PersistedNotifier<String> {
 
   /// 保留中の書き込みを今すぐ確定する (#976)。
   ///
-  /// ⚠ **設定画面の `dispose` から呼ぶこと。**この Notifier は autoDispose
-  /// ではないので、**通常のアプリ終了では `ref.onDispose` が走らない**。
-  /// 最後の打鍵から 400ms 以内にアプリを終了すると、デバウンス前の入力が
-  /// そのまま失われる（デバウンスを入れる前は即時書き込みだったので、
+  /// この Notifier は autoDispose ではないので `ref.onDispose` は当てにできない。
+  /// 最後の打鍵から 400ms 以内に画面を離れる / アプリが背面へ回ると、デバウンス
+  /// 前の入力がそのまま失われる（デバウンスを入れる前は即時書き込みだったので、
   /// #927-2 が持ち込んだ退行）。保留が無ければ何もしない。
+  ///
+  /// ⚠ **呼ぶ場所は 2 つ要る (#1022)。**設定画面の `dispose` **だけでは足りない**:
+  ///
+  /// - `dispose` … 画面を閉じる / 別画面へ移る経路をカバーする
+  /// - `didChangeAppLifecycleState` の resumed 以外 … **アプリ終了をカバーする**。
+  ///   ⚠ Flutter は**終了時にウィジェットツリーを dispose しない**ので、設定画面を
+  ///   開いたまま終了すると `dispose` は走らない
+  ///
+  /// ⚠⚠ **それでも「必ず書ける」保証ではない。**`detached` の後に非同期の書き込みが
+  /// 完走する保証はなく、プロセスの強制終了（クラッシュ / kill）は当然拾えない。
+  /// ここは**取りこぼす窓を実用上ゼロに近づける**話で、確実性が要る値なら
+  /// デバウンス自体をやめる判断になる。フォントファミリ名は打鍵のたびに
+  /// SharedPreferences へ書く価値が無いのでデバウンスを残している。
   Future<void> flushPendingWrite() async {
     final timer = _writeDebounce;
     if (timer == null || !timer.isActive) return;
