@@ -494,16 +494,23 @@ Object? _readValue(SharedPreferences prefs, BackupSetting setting) =>
 
 /// 書き込めたら null。書き込まなかったときは [SettingsImportResult.skipped] へ
 /// 載せる理由を返す。
+///
+/// ⚠ **setter の戻り値を捨てない（v1.60 リリース前レビュー）。**`SharedPreferences`
+/// の setter は失敗しても throw せず `false` を返す。捨てると `applied` に積まれ、
+/// 画面には「N 件の設定を読み込みました」が出るのに再起動すると元のまま、という
+/// 無言の部分失敗になる。同じ罠を [_mergeAccounts] は潰してあるのに、設定本体
+/// だけが素通しだった。
 Future<String?> _writeValue(
   SharedPreferences prefs,
   BackupSetting setting,
   Object? value,
 ) async {
   const typeMismatch = '値の形式が設定と合いません';
+  const writeFailed = '設定を保存できませんでした';
   switch (setting.type) {
     case BackupValueType.boolean:
       if (value is! bool) return typeMismatch;
-      await prefs.setBool(setting.key, value);
+      if (!await prefs.setBool(setting.key, value)) return writeFailed;
     case BackupValueType.number:
       // YAML の `1` は int になる。整数で書かれた倍率を弾かない。
       if (value is! num) return typeMismatch;
@@ -516,16 +523,17 @@ Future<String?> _writeValue(
       if ((min != null && number < min) || (max != null && number > max)) {
         return '設定できる範囲（$min〜$max）を外れています';
       }
-      await prefs.setDouble(setting.key, number);
+      if (!await prefs.setDouble(setting.key, number)) return writeFailed;
     case BackupValueType.text:
       if (value is! String) return typeMismatch;
-      await prefs.setString(setting.key, value);
+      if (!await prefs.setString(setting.key, value)) return writeFailed;
     case BackupValueType.textList:
       if (value is! List) return typeMismatch;
       if (value.any((e) => e is! String)) return typeMismatch;
-      await prefs.setStringList(setting.key, [
+      final ok = await prefs.setStringList(setting.key, [
         for (final e in value) e as String,
       ]);
+      if (!ok) return writeFailed;
   }
   return null;
 }

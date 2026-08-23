@@ -329,9 +329,33 @@ void main() {
     r'\b(message|data|body|uri|path|toString|requestOptions)\b',
   );
 
+  /// 補間ではなく**引数として直に**渡す形（`Breadcrumb(message: e.toString())`）。
+  ///
+  /// ⚠ **`$` 補間だけを見ていると素通りする（v1.60 リリース前レビュー）。**
+  /// `chat_provider` が捕まったのは三項演算子の中にたまたま `${...}` が
+  /// あったからで、`message: e.toString()` と素直に書かれていたら
+  /// [interpolationStart] は一度も当たらなかった。
+  ///
+  /// 丸ごとの `e` は**採らない**。`debugLogException(context, e)` のように
+  /// scrub を行う側へ渡す正しい形と区別できないため。危ないと言い切れるのは
+  /// [unsafeMembers] を引くメンバーアクセスだけ。
+  final bareMemberAccess = RegExp(
+    r'(?<![A-Za-z0-9_.$])(e|err|error|ex|exception)\.',
+  );
+
+  /// メンバーアクセスの連なりが危ないか。
+  ///
+  /// ⚠ **`runtimeType` を通った先は型名しか出ない。**`e.runtimeType.toString()`
+  /// は breadcrumb に載せる**正しい**形なので、`toString` に反応して弾いては
+  /// いけない（この除外が無いと timeline_provider / chat_provider /
+  /// desktop_notification_dispatcher の正しい実装が軒並み違反になる）。
+  bool unsafeChain(String chain) =>
+      !chain.startsWith('runtimeType') && unsafeMembers.hasMatch(chain);
+
   /// [args] の中の危ない補間を返す。
   List<String> unsafeInterpolations(String args) {
     final found = <String>[];
+    final chainAfter = RegExp(r'^[A-Za-z0-9_.?\[\]]*');
     for (final m in interpolationStart.allMatches(args)) {
       final after = args.substring(m.end);
       if (!after.startsWith('.') && !after.startsWith('?.')) {
@@ -340,9 +364,14 @@ void main() {
         continue;
       }
       // メンバーアクセス。補間の終端（`}` か、識別子・`.`・`?` の切れ目）まで見る。
-      final chainMatch = RegExp(r'^[A-Za-z0-9_.?\[\]]*').firstMatch(after)!;
-      final chain = chainMatch.group(0)!;
-      if (unsafeMembers.hasMatch(chain)) found.add('${m.group(0)}$chain');
+      final chain = chainAfter.firstMatch(after)!.group(0)!;
+      if (unsafeChain(chain.replaceFirst(RegExp(r'^\??\.'), ''))) {
+        found.add('${m.group(0)}$chain');
+      }
+    }
+    for (final m in bareMemberAccess.allMatches(args)) {
+      final chain = chainAfter.firstMatch(args.substring(m.end))!.group(0)!;
+      if (unsafeChain(chain)) found.add('${m.group(0)}$chain');
     }
     return found;
   }
@@ -487,8 +516,16 @@ void main() {
   ///
   /// 検出が緩くて無関係な関数を拾っても害は無い。その関数の呼び出し側でも
   /// 「生の例外を埋めていないか」を見るだけで、それは元々満たすべき条件。
+  ///
+  /// ⚠⚠ **根は `debugPrint` だけではない（v1.60 リリース前レビュー）。**この検査
+  /// が動機に挙げているのは「breadcrumb の message は `_scrubBreadcrumb` を
+  /// 通らない」ことなのに、根が `debugPrint` 固定だったため **`Breadcrumb` を
+  /// 直接組み立てる経路を一度も見ていなかった**。`chat_provider` の
+  /// `onParseError` が `jsonDecode` の FormatException を `message:` に素で
+  /// 載せており（＝チャット本文が Sentry へ）、検査は緑のままだった。
+  /// breadcrumb を作る本人を根に入れる。
   Set<String> breadcrumbSinks(Iterable<String> sources) {
-    final sinks = {'debugPrint'};
+    final sinks = {'debugPrint', 'Breadcrumb'};
     final pending = candidatesIn(sources.map(maskComments));
     var added = true;
     // 転送が数珠つなぎになることがある（`_logDevException` → `_logDev` →
@@ -673,6 +710,38 @@ void main() {
         'b.dart': "void run() { logT('failed: \$e'); }",
       }),
       isNotEmpty,
+    );
+  });
+
+  /// ⚠⚠ **breadcrumb を直接組み立てる経路（v1.60 リリース前レビュー）。**この
+  /// 検査の動機は「`Breadcrumb.message` は `_scrubBreadcrumb` を通らない」こと
+  /// なのに、sink の根が `debugPrint` だけだったため **`Breadcrumb(message: '$e')`
+  /// を一度も見ていなかった**。`debugPrint` を併用しない限り視野に入らず、
+  /// `chat_provider` の parse 失敗（＝チャット本文を持つ FormatException）が
+  /// 素通しのまま緑だった。
+  test('Breadcrumb を直接組み立てる経路も検査する', () {
+    expect(
+      offendersIn({
+        'a.dart':
+            'void watch() {\n'
+            '  Sentry.addBreadcrumb(\n'
+            "    Breadcrumb(category: 'x', message: e.toString()),\n"
+            '  );\n'
+            '}',
+      }),
+      isNotEmpty,
+      reason: 'debugPrint を経由しない breadcrumb が見えないままだった',
+    );
+
+    // 型名だけを載せる正しい形は通す。
+    expect(
+      offendersIn({
+        'a.dart':
+            'void watch() {\n'
+            "  Sentry.addBreadcrumb(Breadcrumb(message: e.runtimeType.toString()));\n"
+            '}',
+      }),
+      isEmpty,
     );
   });
 

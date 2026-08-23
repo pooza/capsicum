@@ -349,6 +349,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await socket.close();
       return null;
     } on SocketException catch (e) {
+      // SocketException の OS メッセージは「Address already in use」等の固定文で、
+      // 上流の生データを持たない（#859 と同じ判断）。ポート占有の切り分けに要る。
+      // scrub-guard: allow
       _logLoginStep(
         'oauth_port.occupied',
         data: {
