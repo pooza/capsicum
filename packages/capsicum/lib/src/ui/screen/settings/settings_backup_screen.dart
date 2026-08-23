@@ -67,7 +67,12 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
         await File(location.path).writeAsString(yaml);
         messenger.showSnackBar(const SnackBar(content: Text('設定を書き出しました')));
       } else {
-        await _shareExport(yaml);
+        // ⚠ **messenger を渡す (#1012)。**`_shareExport` の中で
+        // `ScaffoldMessenger.of(context)` を引くと、ここまでの await の後に
+        // context を触ることになる（別関数なので `use_build_context_synchronously`
+        // が拾わない）。共有シートのアンカーだけは RenderBox が要るので、
+        // あちらで mounted を見てから取る。
+        await _shareExport(yaml, messenger);
       }
     } catch (e, st) {
       // 新規のファイル I/O 機能なので本番の失敗率（権限 / 容量等）を観測する
@@ -94,14 +99,21 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
   /// ⚠ **一時ファイルは消さない。** 共有シートは受け取り側アプリが実ファイルを
   /// 非同期に読むため、`share` の完了を待って削除すると読み取り前に消えうる。
   /// 置き場が一時ディレクトリなので OS がいずれ回収する。
-  Future<void> _shareExport(String yaml) async {
-    final messenger = ScaffoldMessenger.of(context);
+  Future<void> _shareExport(
+    String yaml,
+    ScaffoldMessengerState messenger,
+  ) async {
     // iPad の共有シートは popover なのでアンカーが要る（無いと iOS 側が例外を
-    // 投げる）。await をまたぐ前に取る。
-    final box = context.findRenderObject() as RenderBox?;
-    final origin = box == null
-        ? null
-        : box.localToGlobal(Offset.zero) & box.size;
+    // 投げる）。⚠ **呼び出し元の await をまたいで来ている**ので、context を
+    // 触る前に mounted を見る (#1012)。アンカーが無くても share 自体は動く
+    // （iPad で位置が中央に寄るだけ）ので、取れなければ諦めて続ける。
+    final Rect? origin;
+    if (mounted) {
+      final box = context.findRenderObject() as RenderBox?;
+      origin = box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    } else {
+      origin = null;
+    }
 
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/$_fileName');
@@ -123,17 +135,20 @@ class _SettingsBackupScreenState extends ConsumerState<SettingsBackupScreen> {
 
   Future<void> _import() async {
     if (_busy) return;
-    final file = await openFile(acceptedTypeGroups: [_typeGroup]);
-    if (file == null || !mounted) return; // キャンセル
-
-    // 確認・skip の記録・但し書きはログイン前の経路と共通 (#1010)。
-    final confirmed = await confirmSettingsBackupImport(context);
-    if (!confirmed || !mounted) return;
-
+    // ⚠ **ファイルピッカーより前に立てる (#1012)。**あとで立てると、ピッカーと
+    // 確認ダイアログが出ている間ずっと `_busy` が false のままで、モバイルの
+    // 連打でピッカーが 2 枚開く。ボタンの `enabled: !_busy` もその間は効かない。
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final text = await file.readAsString();
+      final file = await openFile(acceptedTypeGroups: [_typeGroup]);
+      if (file == null || !mounted) return; // キャンセル
+
+      // 確認・skip の記録・但し書きはログイン前の経路と共通 (#1010)。
+      final confirmed = await confirmSettingsBackupImport(context);
+      if (!confirmed || !mounted) return;
+
+      final text = await readSettingsBackupFile(file);
       final prefs = await SharedPreferences.getInstance();
       final result = await applySettingsBackupYaml(prefs, text);
       // ref を触る前に mounted を見る (#955)。読み込み中に画面を離れると
