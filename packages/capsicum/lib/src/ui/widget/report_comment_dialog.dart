@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../constants.dart';
+
 /// 通報の確認ダイアログ (#998)。理由を任意で添えられる。
 ///
 /// 返すのは入力された理由（空文字もありうる）で、キャンセルは null。
@@ -51,6 +53,10 @@ class _ReportCommentDialogState extends State<_ReportCommentDialog> {
             border: OutlineInputBorder(),
           ),
           maxLines: 3,
+          // ⚠ **client で止める (#1012)。**超えるとサーバーが 400 / 422 で断り、
+          // 画面には「通報に失敗しました」しか出ないので、理由も分からず書いた
+          // 文章も失われる。上限の根拠は [InputLimits.reportComment]。
+          maxLength: InputLimits.reportComment,
         ),
       ],
     ),
