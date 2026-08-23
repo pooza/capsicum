@@ -15,10 +15,15 @@ NotificationDedupRegistry& NotificationDedupRegistry::Instance() {
 
 void NotificationDedupRegistry::MarkShown(const std::string& key) {
   if (key.empty()) return;
-  // まず席を確保する。⚠ **本体を写して 2 つ並べない** — 上限の押し出しと
-  // FIFO 順序の扱いが片方だけ直る事故になる。
-  TryClaim(key);
+  // ⚠⚠ **席の確保と昇格を 1 つの排他区間でやる** (#1015 Codex P2)。公開 API の
+  // TryClaim を経由すると間で解錠されるので、その隙間に ReleaseClaim が入って
+  // 予約が消え、下の在籍確認が空振りして shown_ を立てられない。**トースト
+  // 自体は表示済みなのに記録が残らず**、あとから届いた同じ通知が未出と判定
+  // されて二重表示になる。
   std::lock_guard<std::mutex> lock(mutex_);
+  // ⚠ **本体を写して 2 つ並べない** — 上限の押し出しと FIFO 順序の扱いが
+  // 片方だけ直る事故になる。
+  TryClaimLocked(key);
   // ⚠ **押し出された直後なら shown_ にも入れない。** keys_ の部分集合という
   // 不変条件が崩れると、あとで押し出しても shown_ に残り続けて漏れる。
   if (keys_.find(key) == keys_.end()) return;
@@ -28,6 +33,10 @@ void NotificationDedupRegistry::MarkShown(const std::string& key) {
 bool NotificationDedupRegistry::TryClaim(const std::string& key) {
   if (key.empty()) return true;
   std::lock_guard<std::mutex> lock(mutex_);
+  return TryClaimLocked(key);
+}
+
+bool NotificationDedupRegistry::TryClaimLocked(const std::string& key) {
   if (!keys_.insert(key).second) {
     // 既出＝他経路が先に取った。⚠ 順序は動かさない（LRU ではなく FIFO）。
     return false;

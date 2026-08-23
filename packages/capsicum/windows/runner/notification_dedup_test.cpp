@@ -182,6 +182,63 @@ int main() {
   CheckTrue(!registry.WasShown("shown-then-evicted"),
             "押し出し後に取り直した予約は巻き戻る (shown_ の残骸が無い)");
 
+  // ⚠⚠ **昇格は claim の取得と同じ排他区間で起きること** (#1015 Codex P2)。
+  //
+  // WNS が claim を持ったままトーストに失敗し、その最中に WebSocket 経路が
+  // addEmitted を撃つ、という並びを繰り返す。昇格が 2 回に分かれてロックを
+  // 落としていると、その隙間に ReleaseClaim が予約を消し、**トーストは表示
+  // されたのに記録が残らない**。あとから届いた同じ通知が未出と判定されて
+  // 二重表示になる。
+  //
+  // MarkShown が完了した以上、そのキーは以降ずっと「表示済み」でなければ
+  // ならない（ReleaseClaim は昇格済みを取り消さない）。
+  //
+  // 昇格が成功していれば、以降 `TryClaim` は false を返し `ReleaseClaim` も
+  // `shown_` を見て何もしないので、**回し続けてもキーは残り続ける**。
+  // 逆に昇格を取りこぼすと、その後の `ReleaseClaim` が予約ごと消すので、
+  // 最後に `WasShown` が false になる。
+  //
+  // ⚠⚠ **これは「証明」ではなく回帰の網。** 壊れた実装（`TryClaim` の解錠を
+  // 挟む 2 段ロック）に対して、この形でも **macOS / clang では一度も当たら
+  // なかった**（1 回ずつ同時に放つ形で 2 万回、回し続ける形で 80 万回とも
+  // lost=0）。窓が数ナノ秒しかなく、解錠した側がそのまま再取得してしまう。
+  //
+  // **検査そのものが機能することは、窓を人為的に広げて確認した** — 壊れた
+  // 実装の解錠直後に `std::this_thread::yield()` を 1 行入れると 400 回中
+  // 22 回落ちる。つまりここが緑でも「並びが安全だ」とは言えず、**排他区間が
+  // 1 つであることはコードを読んで守る**（`MarkShown` が公開 API の
+  // `TryClaim` ではなく `TryClaimLocked` を呼んでいるか）。この検査は、
+  // 将来もっと露出の大きい壊し方をしたときの受け皿。
+  {
+    const std::string key = "acct@example.test|promote";
+    int lost = 0;
+    for (int round = 0; round < 400; ++round) {
+      registry.Reset();
+      std::atomic<bool> go{false};
+      std::thread releaser([&registry, &key, &go]() {
+        while (!go.load(std::memory_order_acquire)) {
+        }
+        // WNS: 予約を取ってはトーストに失敗して返す、を繰り返す。
+        for (int i = 0; i < 2000; ++i) {
+          registry.TryClaim(key);
+          registry.ReleaseClaim(key);
+        }
+      });
+      std::thread marker([&registry, &key, &go]() {
+        while (!go.load(std::memory_order_acquire)) {
+        }
+        // WebSocket: 実際にトーストを出したので記録する（1 回だけ）。
+        registry.MarkShown(key);
+      });
+      go.store(true, std::memory_order_release);
+      releaser.join();
+      marker.join();
+      if (!registry.WasShown(key)) ++lost;
+    }
+    CheckEqSize(static_cast<size_t>(lost), 0,
+                "表示した記録が claim の巻き戻しで消えない");
+  }
+
   // **本題**: 同じキーを同時に claim しても勝者は 1 つだけ。これが崩れると
   // 二重表示 + 通知音の重複になる（Windows は Tag が一致しても畳まない・#945）。
   registry.Reset();

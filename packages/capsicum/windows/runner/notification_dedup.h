@@ -110,6 +110,15 @@ class NotificationDedupRegistry {
  private:
   NotificationDedupRegistry() = default;
 
+  // [TryClaim] の本体。⚠ **mutex_ を保持したまま呼ぶ。**
+  //
+  // ⚠ **[MarkShown] が「予約を取る」と「表示済みへ昇格させる」を 1 つの
+  // 排他区間で行うために切り出している** (#1015 Codex P2)。
+  // 公開 API の [TryClaim] を経由すると解錠を挟むので、その隙間に
+  // [ReleaseClaim] が入って予約を消し、**昇格が空振りしたまま他経路の
+  // トーストだけが表示される**（後続の同じ通知が未出と判定されて二重になる）。
+  bool TryClaimLocked(const std::string& key);
+
   // 押し出しの観測。⚠ **プロセスにつき 1 回しか出さない。** 一度あふれた後は
   // 通知が来るたびにあふれ続けるので、件数ぶん出すと同じ事実がログを埋める
   // （Dart 側 [BoundedKeySet] が Sentry 送出を 1 回に絞っているのと同じ判断）。
