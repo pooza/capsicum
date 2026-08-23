@@ -121,16 +121,27 @@ void main() {
         continue;
       }
       if (c == '/' && i + 1 < source.length && source[i + 1] == '*') {
-        while (i < source.length &&
-            !(source[i] == '*' &&
-                i + 1 < source.length &&
-                source[i + 1] == '/')) {
+        // ⚠ **Dart のブロックコメントは入れ子にできる。**最初の `*/` で止めると
+        // 外側の残りがコードとして読まれ、そこに `}` があれば本体が切れる。
+        var depth = 0;
+        while (i < source.length) {
+          final open =
+              source[i] == '/' && i + 1 < source.length && source[i + 1] == '*';
+          final close =
+              source[i] == '*' && i + 1 < source.length && source[i + 1] == '/';
+          if (open) depth++;
+          if (close) depth--;
+          if (open || close) {
+            out.write('  ');
+            i += 2;
+            if (close && depth == 0) break;
+            continue;
+          }
           out.write(source[i] == '\n' ? '\n' : ' ');
           i++;
         }
-        // 閉じの `*/` ぶん。
-        if (i < source.length) out.write('  ');
-        i++;
+        // 外側の for が i++ するので 1 戻す。
+        i--;
         continue;
       }
       out.write(c);
@@ -370,8 +381,13 @@ void main() {
   });
 
   /// `String` の仮引数 1 つぶん。
+  ///
+  /// ⚠ **注釈を読み飛ばす。**`@Tag() String message` のように仮引数へ
+  /// メタデータが付くと、`^` 固定の照合は `@` を見て外れ、**そのラッパーが
+  /// 黙って検査対象から消える**。
   final stringParamDecl = RegExp(
-    r'^\s*(?:required\s+)?String\??\s+([a-z_][A-Za-z0-9_]*)',
+    r'^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^()]*\))?\s*)*'
+    r'(?:required\s+)?String\??\s+([a-z_][A-Za-z0-9_]*)',
   );
 
   /// 仮引数リストから `String` の引数名を取り出す。
@@ -658,6 +674,29 @@ void main() {
       }),
       isNotEmpty,
     );
+  });
+
+  /// ⚠ **Dart のブロックコメントは入れ子にできる。**最初の `*/` で止めると
+  /// 外側の残りがコードとして読まれ、そこに `}` があれば本体が切れる。
+  test('入れ子のブロックコメントで本体を切らない', () {
+    const nested =
+        'void logU(String m) {\n'
+        '  /* outer /* inner */ } */\n'
+        '  debugPrint(m);\n'
+        '}';
+    expect(breadcrumbSinks([nested]), contains('logU'));
+  });
+
+  /// ⚠ **仮引数の注釈。**`@Tag() String message` は `^` 固定の照合が `@` を見て
+  /// 外れ、引数名が取れず**そのラッパーが黙って消える**。
+  test('注釈つきの String 引数も拾う', () {
+    const annotated =
+        'void logV(@Tag() String message) => debugPrint(message);';
+    expect(breadcrumbSinks([annotated]), contains('logV'));
+
+    const namedAnnotated =
+        'void logW({@Tag required String m}) => debugPrint(m);';
+    expect(breadcrumbSinks([namedAnnotated]), contains('logW'));
   });
 
   /// 潰した副次効果。コメントアウトされたコードは実行されないので、違反として
