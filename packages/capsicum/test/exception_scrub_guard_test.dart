@@ -309,12 +309,38 @@ void main() {
     return out;
   }
 
-  /// [args] の中で、[params] のいずれかを**丸ごと**補間しているか。
+  /// [expr] が [params] のいずれかを**値として丸ごと**参照しているか。
   ///
-  /// `${account.key.host}` のように中身を取り出す形は呼び出し側の組み立てなので
-  /// 転送とみなさない。危ないのは受け取った文字列をそのまま流す形。
-  bool forwardsAny(String args, Iterable<String> params) =>
-      params.any((p) => RegExp('\\\$\\{?$p(?![A-Za-z0-9_.])').hasMatch(args));
+  /// 素の `m`・補間の `$m` / `${m}`・三項の `… : m` をまとめて拾う。
+  ///
+  /// ⚠ **前後に `.` が付く形は拾わない。**`${account.key.host}` のように中身を
+  /// 取り出す形は呼び出し側の組み立てなので、転送とみなさない。危ないのは
+  /// 受け取った文字列を**そのまま**流す形。
+  bool referencesAny(String expr, Iterable<String> params) => params.any(
+    (p) => RegExp('(?<![A-Za-z0-9_.])$p(?![A-Za-z0-9_.])').hasMatch(expr),
+  );
+
+  /// 名前付き引数の `名前:` 部分。⚠ 三項演算子の `:` を誤認しないよう、
+  /// **識別子 + `:` が先頭に来る**ことを見る。
+  final namedArgLabel = RegExp(r'^[a-z_][A-Za-z0-9_]*\s*:\s*');
+
+  /// [args]（呼び出しの引数リスト）が [params] のどれかを転送しているか。
+  ///
+  /// ⚠ **引数リスト全体と引数名を比べない（#1020・Codex P2 の 3 巡目）。**
+  /// `debugPrint(message, wrapWidth: 100)` のように**他の引数と並ぶ**と、
+  /// 全体の文字列は引数名と一致しないので転送とみなされず、**そのラッパーが
+  /// sink から漏れる**。1 つずつ割って見る。
+  ///
+  /// 名前付き引数は**値の側**を見る（`debugPrint(m, wrapWidth: n)` の `m`、
+  /// `log(message: m)` の `m`）。
+  bool forwardsTo(String args, Set<String> params) =>
+      splitArgs(args).any((arg) {
+        final label = namedArgLabel.firstMatch(arg);
+        return referencesAny(
+          label == null ? arg : arg.substring(label.end),
+          params,
+        );
+      });
 
   /// [sources] 全体から転送候補（`String` を受け取る関数）を集める。
   List<({String name, Set<String> params, String body})> candidatesIn(
@@ -364,11 +390,10 @@ void main() {
       added = false;
       pending.removeWhere((c) {
         final forwards = sinks.any(
-          (sink) => callsOf(c.body, sink).any(
-            (call) =>
-                c.params.contains(call.$1.trim()) ||
-                forwardsAny(call.$1, c.params),
-          ),
+          (sink) => callsOf(
+            c.body,
+            sink,
+          ).any((call) => forwardsTo(call.$1, c.params)),
         );
         if (!forwards) return false;
         sinks.add(c.name);
@@ -446,6 +471,25 @@ void main() {
         'void logG(int n, {String? a, required String b}) '
         '=> debugPrint(b);';
     expect(breadcrumbSinks([mixed]), contains('logG'));
+  });
+
+  /// ⚠ **他の引数と並ぶ形（#1020・Codex P2 の 3 巡目）。**引数リスト全体と
+  /// 引数名を比べていると、`debugPrint(m, wrapWidth: 100)` は一致せず
+  /// **そのラッパーが sink から漏れる**。1 つずつ割って見る。
+  test('他の引数と並んでいても転送とみなす', () {
+    const positional = 'void logH(String m) => debugPrint(m, wrapWidth: 100);';
+    expect(breadcrumbSinks([positional]), contains('logH'));
+
+    // 名前付き引数は値の側を見る。
+    const named =
+        'void logI(String m) => debugPrint(m, wrapWidth: 100);\n'
+        'void logJ(String m) { logI(m); }';
+    expect(breadcrumbSinks([named]), containsAll(['logI', 'logJ']));
+
+    // ⚠ 三項演算子の `:` を名前付き引数と読み違えない。
+    const ternary =
+        "void logK(String m) => debugPrint(m.isEmpty ? 'none' : m);";
+    expect(breadcrumbSinks([ternary]), contains('logK'));
   });
 
   /// ⚠⚠ **別ファイルで宣言されたラッパー（#1020・Codex P2 の 2 巡目）。**
