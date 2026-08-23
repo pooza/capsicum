@@ -202,7 +202,13 @@ ToastOutcome ShowDedupedToast(const capsicum::PushDisplay& display) {
     }
     return ToastOutcome::kShowFailed;
   }
-  if (dedupable) NotifyPresented(dedup_key);
+  if (dedupable) {
+    // 予約を「表示済み」へ昇格させる。以降このキーは ReleaseClaim で取り消せ
+    // なくなる（#1015 Codex P2 — 予約と表示済みを区別する理由は
+    // notification_dedup.h の ReleaseClaim の注記）。
+    capsicum::NotificationDedupRegistry::Instance().MarkShown(dedup_key);
+    NotifyPresented(dedup_key);
+  }
   return ToastOutcome::kShown;
 }
 

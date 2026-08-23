@@ -14,9 +14,15 @@ NotificationDedupRegistry& NotificationDedupRegistry::Instance() {
 }
 
 void NotificationDedupRegistry::MarkShown(const std::string& key) {
-  // 「記録する」は「表示権を取って結果を捨てる」と同じ。⚠ **本体を写して 2 つ
-  // 並べない** — 上限の押し出しと FIFO 順序の扱いが片方だけ直る事故になる。
+  if (key.empty()) return;
+  // まず席を確保する。⚠ **本体を写して 2 つ並べない** — 上限の押し出しと
+  // FIFO 順序の扱いが片方だけ直る事故になる。
   TryClaim(key);
+  std::lock_guard<std::mutex> lock(mutex_);
+  // ⚠ **押し出された直後なら shown_ にも入れない。** keys_ の部分集合という
+  // 不変条件が崩れると、あとで押し出しても shown_ に残り続けて漏れる。
+  if (keys_.find(key) == keys_.end()) return;
+  shown_.insert(key);
 }
 
 bool NotificationDedupRegistry::TryClaim(const std::string& key) {
@@ -30,6 +36,7 @@ bool NotificationDedupRegistry::TryClaim(const std::string& key) {
   size_t evicted = 0;
   while (order_.size() > kMaxKeys) {
     keys_.erase(order_.front());
+    shown_.erase(order_.front());
     order_.pop_front();
     ++dropped_;
     ++evicted;
@@ -41,6 +48,11 @@ bool NotificationDedupRegistry::TryClaim(const std::string& key) {
 void NotificationDedupRegistry::ReleaseClaim(const std::string& key) {
   if (key.empty()) return;
   std::lock_guard<std::mutex> lock(mutex_);
+  // ⚠ **他経路が実際に表示していたら取り消さない** (#1015 Codex P2)。claim を
+  // 取ってから ShowRawToast が返るまでの間に WebSocket 経路 (#569) が同じ通知
+  // を出して addEmitted を撃つことがある。そこで消すと「出した」という記録が
+  // 消え、あとから届いた同じ通知が未出と判定されて二重表示が復活する。
+  if (shown_.find(key) != shown_.end()) return;
   if (keys_.erase(key) == 0) return;
   const auto it = std::find(order_.begin(), order_.end(), key);
   if (it != order_.end()) order_.erase(it);
@@ -55,6 +67,7 @@ bool NotificationDedupRegistry::WasShown(const std::string& key) {
 void NotificationDedupRegistry::Reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   keys_.clear();
+  shown_.clear();
   order_.clear();
   dropped_ = 0;
   eviction_logged_ = false;

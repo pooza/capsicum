@@ -149,6 +149,39 @@ int main() {
   registry.ReleaseClaim("never-claimed");
   CheckEqSize(registry.SizeForTesting(), 2, "取っていない claim の返却は無害");
 
+  // ⚠ **他経路が実際に表示していたら巻き戻さない** (#1015 Codex P2)。
+  // WNS が claim を取ってから ShowRawToast が返るまでの間に、WebSocket 経路が
+  // 同じ通知を出して addEmitted を撃つことがある。予約と表示済みを区別せずに
+  // 消すと「出した」という記録まで消え、あとから届いた同じ通知が未出と判定
+  // されて二重表示が復活する。
+  registry.Reset();
+  CheckTrue(registry.TryClaim("acct@example.test|both"), "WNS が予約する");
+  registry.MarkShown("acct@example.test|both");  // WebSocket 経路が実際に表示。
+  registry.ReleaseClaim("acct@example.test|both");  // WNS の表示は失敗した。
+  CheckTrue(registry.WasShown("acct@example.test|both"),
+            "表示済みへ昇格したキーは巻き戻らない");
+
+  // 逆に、誰も表示していない予約はこれまでどおり取り消せる。
+  registry.Reset();
+  registry.TryClaim("acct@example.test|only-claimed");
+  registry.ReleaseClaim("acct@example.test|only-claimed");
+  CheckTrue(!registry.WasShown("acct@example.test|only-claimed"),
+            "予約のままのキーは巻き戻る");
+
+  // 押し出しは shown_ も道連れにする。残すと keys_ の部分集合という不変条件が
+  // 崩れ、押し出したキーを二度と巻き戻せなくなる。
+  registry.Reset();
+  registry.MarkShown("shown-then-evicted");
+  for (size_t i = 0; i < kMax; ++i) {
+    registry.MarkShown("e" + std::to_string(i));
+  }
+  CheckTrue(!registry.WasShown("shown-then-evicted"),
+            "表示済みでも上限超過なら押し出される");
+  registry.TryClaim("shown-then-evicted");
+  registry.ReleaseClaim("shown-then-evicted");
+  CheckTrue(!registry.WasShown("shown-then-evicted"),
+            "押し出し後に取り直した予約は巻き戻る (shown_ の残骸が無い)");
+
   // **本題**: 同じキーを同時に claim しても勝者は 1 つだけ。これが崩れると
   // 二重表示 + 通知音の重複になる（Windows は Tag が一致しても畳まない・#945）。
   registry.Reset();
