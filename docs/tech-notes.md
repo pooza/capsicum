@@ -281,6 +281,18 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 
 `POST /api/v1/media` の multipart リクエストに `description` を同梱しても、サーバー実装によっては保存されないことがある（モロヘイヤ経由で発生を確認済み、原因未特定）。WebUI と同じく、アップロード後に `PUT /api/v1/media/:id` で別途 `description` を設定する 2 ステップ方式を採用している。
 
+### 投稿済み ALT の編集は dev24 の `~/alt_try.sh` で試す（#121）
+
+⚠ **Mastodon の Web UI からは試せない。**Web UI は `X-Mulukhiya-Purpose` を付けないため、nginx 前段の `$status_put_backend` map が **405** で弾く（mulukhiya#4474）。「Web で編集できるのに capsicum でできない」ではなく、**Web からは元々できない**。
+
+検証用の一式が dev24（美食丼ステージング / st2.mstdn.b-shock.org）の `mastodon` ホームに置いてある。**repo からは辿れないので、ここに場所を書いておく。**
+
+- `~/alt_try.sh <新しい ALT>` — capsicum と同じ経路（PUT `/api/v1/statuses/:id` + `X-Mulukhiya-Purpose: media_update` + `media_attributes` だけの body）で投げ、応答から ALT / 添付数 / CW / 閲覧注意 / 本文を並べて出す
+- `~/.alt_try_token` — 実行用のアクセストークン
+- `~/.alt_try_ids` — 1 行目が status id、2 行目が media id
+
+⚠ **見るべきは HTTP 200 ではなく「送っていない項目が残ったか」。**この API は送らなかったパラメータを現状維持ではなく**空で更新**として扱うため、モロヘイヤの補完が効いていないと 200 のまま**添付が全部外れて CW と閲覧注意も消える**（mulukhiya#4589）。出力の「添付 = N 件 / CW / 閲覧注意」がその確認欄。
+
 ### プロフィール編集の初期値
 
 `GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。
