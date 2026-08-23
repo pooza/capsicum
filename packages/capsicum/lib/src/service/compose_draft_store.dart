@@ -117,9 +117,30 @@ class ComposeDraftStore {
 
   bool _discarded = false;
   int? _syncedGeneration;
+  bool _superseded = false;
 
   /// [clear] を通ったあとかどうか。
   bool get discarded => _discarded;
+
+  /// **別のインスタンスがこのスロットを [clear] した**あとかどうか (#1012)。
+  ///
+  /// [save] の世代ガードが一度でも弾いたら true になり、以降ずっと true。
+  /// `_syncedGeneration` を更新しない設計（＝二度と書き戻さない）なので、
+  /// **ズレは恒久**で、この画面の自動保存はもう働かない。
+  ///
+  /// ⚠ **[discarded] と混ぜない。**どちらも [save] が null を返すが、意味が
+  /// 正反対:
+  ///
+  /// - [discarded] — **この画面が**投稿 / サーバー下書き保存を終えた。直後に
+  ///   画面が閉じるので、保存されないことに実害は無い
+  /// - [superseded] — **別の画面が**片づけた。こちらの画面はまだ開いていて、
+  ///   ユーザーは書き続けられる。**なのに保存されない**
+  ///
+  /// 呼び出し側はこれを見て「自動保存 hh:mm」を下ろすこと。残すと、**書けて
+  /// いないのに最後に成功した時刻が出たまま固まる**（#964 の主目的が
+  /// 「保存タイミングの可視化」である以上、表示が実態と食い違うと効果が反転
+  /// する）。#1011 が書き込み拒否で同じ判断をしたのと同型。
+  bool get superseded => _superseded;
 
   String _k(String base) => accountKey == null ? base : '${base}_$accountKey';
 
@@ -146,7 +167,14 @@ class ComposeDraftStore {
     // 一度でも同期していて（restore/save 済み）、その後に別画面が clear で世代を
     // 進めていたら、こちらの書き戻しは stale なので捨てる。まだ同期していない
     // （null）場合は現世代を採用して通常どおり保存する。
-    if (_syncedGeneration != null && _syncedGeneration != current) return null;
+    if (_syncedGeneration != null && _syncedGeneration != current) {
+      // ⚠ **恒久的にズレたことを覚える (#1012)。**`_syncedGeneration` を現世代へ
+      // 進めない設計なので、一度ここへ来た画面は二度と保存できない。黙って
+      // null を返すだけだと、呼び出し側は「保存できた最後の時刻」を出したまま
+      // 固まる。
+      _superseded = true;
+      return null;
+    }
     // ⚠ **書けたかどうかを見る (#1011)。**`setString` 等は失敗しても throw せず
     // false を返す。捨てていたため、**書けていないのに画面へ「自動保存 12:34」**
     // が出ていた。ユーザーはそれを信じてアプリを終了し、本文を失う。

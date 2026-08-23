@@ -427,6 +427,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 走るので、同じ snackbar を出し続けない。
   bool _draftSaveFailureNotified = false;
 
+  /// 別の画面がこの下書きスロットを片づけたか (#1012)。
+  ///
+  /// 同じアカウントで compose を 2 枚開き、片方が投稿すると `clear` でスロット
+  /// の世代が進む。#969 の設計上こちらの画面は**二度と書き戻さない**ので、
+  /// 「自動保存 12:34」を出したままにすると、書き続けている本文まで保存されて
+  /// いるように読める。true の間は時刻の代わりに停止していることを出す。
+  bool _draftSuperseded = false;
+
   /// 進行中の取消の消去 (Codex P2 / PR #1013)。[_saveDraft] はこれを待ってから
   /// 書く。**保存と消去が並行に走ると、消去が保存直後の本文を消す。**
   Future<void>? _draftClearing;
@@ -1087,6 +1095,23 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     });
   }
 
+  /// 予約済みの自動保存を取り消す (#1012)。
+  ///
+  /// 投稿 / サーバー下書き保存の**入口**で呼ぶ。どちらも最後に [_clearDraft]
+  /// で下書きを片づけるが、**通信が debounce の 3 秒を超えると、その最中に
+  /// 予約済みのタイマーが発火して [_saveDraft] が走る**。消去と保存が重なる形
+  /// なので、どちらが後になるかで「投稿したのに下書きが残る」になりうる。
+  ///
+  /// ⚠ **現状の実害は追えた範囲では無い。**`shared_preferences` のチャンネルは
+  /// FIFO で、[_saveDraft] は入口で `_discarded` を見て no-op になる。ただし
+  /// **入口でしか見ていない**（判定のあとに await が並ぶ）ので、順序の入れ替え
+  /// に弱い。入口で 1 行消しておくのが安く、[_clearDraft] と競う経路そのものを
+  /// 作らずに済む。
+  void _cancelPendingDraftSave() {
+    _draftDebounceTimer?.cancel();
+    _draftDebounceTimer = null;
+  }
+
   /// Persist the current draft text and CW state to SharedPreferences.
   ///
   /// No-op for reply / quote / redraft / shared / initial-text sessions.
@@ -1154,7 +1179,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // 世代ガード (#969) や破棄済みの no-op では null（書き込みの拒否はここには
     // 来ない — 上の catch で扱う）。表示を更新すると「保存された」と嘘をつくので、
     // 返ってきたときだけ反映する (#964)。
-    if (savedAt != null && mounted) setState(() => _draftSavedAt = savedAt);
+    if (!mounted) return;
+    if (savedAt != null) {
+      setState(() => _draftSavedAt = savedAt);
+      return;
+    }
+    // ⚠ **世代ガードで弾かれたら表示を下ろす (#1012)。**別の画面がこのスロット
+    // を片づけたので、こちらの自動保存は**もう二度と働かない**。「自動保存
+    // 12:34」を残すと、書き続けている本文まで保存されているように読める
+    // （#1011 が書き込み拒否で同じ判断をしたのと同型）。
+    //
+    // 破棄済み (`discarded`) では何もしない。あちらは**この画面が**投稿し終えた
+    // 直後で、画面がそのまま閉じるため実害が無い。
+    if (_draftStore.superseded && !_draftSuperseded) {
+      setState(() {
+        _draftSuperseded = true;
+        _draftSavedAt = null;
+      });
+    }
   }
 
   /// Restore a previously saved draft into the controllers.
@@ -2978,6 +3020,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _saveServerDraft() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
+    _cancelPendingDraftSave();
 
     final adapter = ref.read(currentAdapterProvider);
     // DraftSupport は mixin で DecentralizedBackendAdapter の subtype ではない
@@ -3090,6 +3133,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
+    _cancelPendingDraftSave();
 
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
@@ -3695,18 +3739,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                 ),
                 // 「保存されているタイミングがわかりづらい」への回答 (#964)。
                 // 自動保存は無音なので、最後に保存できた時刻を常時出す。
-                if (_draftAutoSave && _draftSavedAt != null)
+                //
+                // ⚠ **止まったら止まったと言う (#1012)。**別の画面がスロットを
+                // 片づけると #969 の世代ガードでこの画面は二度と保存できない。
+                // 時刻を残すと「保存されている」と読めるので、注意色で停止を出す。
+                if (_draftAutoSave &&
+                    (_draftSuperseded || _draftSavedAt != null))
                   Padding(
                     padding: const EdgeInsets.only(right: 8, bottom: 2),
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
+                        _draftSuperseded
+                            ? '自動保存は停止中（別の画面で下書きが片づけられました）'
+                            : '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                          color: _draftSuperseded
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.7),
                         ),
                       ),
                     ),
