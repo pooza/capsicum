@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../ui/util/notification_type_display.dart';
+import '../util/exception_scrub.dart';
 import 'notification_init.dart';
 import 'push_failure_recorder.dart';
 import 'push_key_store.dart';
@@ -339,7 +340,11 @@ class PushMessageDispatcher {
       }
       return null;
     } catch (e) {
-      _trace('parse failed: $e');
+      // ⚠ **生の $e を入れない (#1020)。**ここは**復号済み**のプッシュ本文を
+      // parse している最中で、FormatException は `source`（＝投稿本文の断片）
+      // を toString に含む。[_trace] は debugPrint と breadcrumb の両方へ流す
+      // ので、埋めると DM やフォロワー限定投稿の中身が Sentry に出る。
+      _trace('parse failed: ${scrubException(e)}');
       return null;
     }
   }

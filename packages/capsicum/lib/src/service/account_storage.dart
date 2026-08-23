@@ -7,7 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../model/account_key.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
 /// (#959)。
@@ -367,23 +370,36 @@ class AccountStorage {
   /// 「取り込んだアカウントはトークンを持たない」は #1001 が宣言している
   /// 不変条件なので、**宣言する側で本当に成り立たせる**。
   ///
-  /// ⚠ **plugin 未登録は黙って諦める。** register race (#488) と、secure
-  /// storage を差し替えていないテストの両方がここに来る。消せなかったぶんは
-  /// 「元の状態のまま」＝この関数を入れる前と同じなので、観測を汚してまで
-  /// 報告する価値が無い。
+  /// 戻り値は **確認しきれなかった / 消しきれなかった** key。#621 の非 op
+  /// delete はまさにここで空振りするので、呼び出し側は**そのアカウントを索引へ
+  /// 書き戻してはいけない**（書くと「索引あり + 残骸トークンあり」という、この
+  /// 関数が塞ごうとしている状態がそのまま完成する）。
   ///
-  /// 戻り値は **消しきれなかった** key。#621 の非 op delete はまさにここで
-  /// 空振りするので、呼び出し側は**そのアカウントを索引へ書き戻してはいけない**
-  /// （書くと「索引あり + 残骸トークンあり」という、この関数が塞ごうとしている
-  /// 状態がそのまま完成する）。
+  /// ⚠⚠ **plugin 未登録でも「安全」と答えない (#1020)。** register race (#488)
+  /// と、secure storage を差し替えていないテストの両方がここに来る。以前は
+  /// **その場で打ち切って「残りは全部きれい」と答えていた**が、これは
+  /// **fail-open** で、呼び出し側が未調査のアカウントをまとめて索引へ書く。
+  /// 削除時の delete が no-op だったアカウントはトークンが生きているので、
+  /// **次回起動で完全ログイン状態のまま復活する**。
+  ///
+  /// 消せなかったぶんが「元の状態のまま」で済んだのは #1012 より前の話で、
+  /// **今は呼び出し側の契約が「返らなかった key は書き戻してよい」に変わって
+  /// いる**。分からないものは分からないと返す。
   Future<List<String>> purgeStaleSecrets(Iterable<String> accountKeys) async {
     final unresolved = <String>[];
-    for (final accountKey in accountKeys) {
+    final remaining = [...accountKeys];
+    while (remaining.isNotEmpty) {
+      final accountKey = remaining.removeAt(0);
       final key = 'secret_$accountKey';
       bool stale;
       try {
         stale = await _storage.containsKey(key: key);
       } on MissingPluginException {
+        // secure storage 自体が居ない。残りを試しても同じ例外になるだけなので
+        // 打ち切るが、**未調査ぶんは「きれい」ではなく「未解決」として返す**。
+        unresolved
+          ..add(accountKey)
+          ..addAll(remaining);
         return unresolved;
       } catch (e, st) {
         debugLogException(
@@ -400,10 +416,14 @@ class AccountStorage {
       // ここに来たら **#621 の非 op delete が実際に起きていた証跡**。索引から
       // 消えたアカウントの secret が生き残っていたということなので、握らずに
       // 残す（この経路以外では観測できない）。
+      // ⚠ **メッセージに $key を入れない (#1020)。**`secret_<accountKey>` は
+      // `username@host` そのもので、`exceptions[].value` は必ず送られる。
+      // 識別は host + ハッシュ化 username の scope タグで足りる。
       _reportOnce(
         'secret:$accountKey:stale_on_import',
-        StateError('stale secret survived account removal for $key'),
+        StateError('stale secret survived account removal'),
         StackTrace.current,
+        accountKey: accountKey,
       );
       await _deleteSecretWithObservability(accountKey);
       try {
@@ -578,21 +598,52 @@ class AccountStorage {
   /// race）と permanent（再インストールで鍵再生成）が同じ stage に集約されて
   /// dedup で片方しか届かないことがあるため、code を dedup キーと scope タグの
   /// 両方に載せて切り分けられるようにする (#731 の根因切り分け)。
+  ///
+  /// ⚠ **[stage] は dedup 専用で Sentry へは送らない。**呼び出し側が
+  /// `'secret:$accountKey:...'` の形で組み立てているので、送ると username が
+  /// 出る。アカウントを識別したいときは [accountKey] を渡すこと — host と
+  /// **ハッシュ化した username** を scope タグに載せる (#500 と同じ扱い)。
+  ///
+  /// ⚠⚠ **[error] のメッセージに accountKey を入れないこと。**`exceptions[].value`
+  /// は breadcrumb と違って必ず送られ、`main.dart` の `_scrubEvent` は `data`
+  /// しか見ない (#975)。ストレージキーは `username@host` そのものなので、
+  /// 埋めた時点で Sentry に出る。
   static void _reportOnce(
     String stage,
     Object error,
     StackTrace st, {
     String? code,
+    String? accountKey,
   }) {
     final key = '$stage:${error.runtimeType}${code != null ? ':$code' : ''}';
     if (!_reportedErrors.add(key)) return;
+    AccountKey? parsed;
+    if (accountKey != null) {
+      try {
+        parsed = AccountKey.fromStorageKey(accountKey);
+      } catch (_) {
+        // legacy / 破損 key。tag を諦めて報告自体は残す (#524 と同じ判断)。
+        parsed = null;
+      }
+    }
     try {
       Sentry.captureException(
         scrubException(error),
         stackTrace: st,
-        withScope: code != null
-            ? (scope) => scope.setTag('secret.code', code)
-            : null,
+        withScope: (code == null && accountKey == null)
+            ? null
+            : (scope) {
+                if (code != null) scope.setTag('secret.code', code);
+                if (parsed != null) {
+                  scope.setTag('secret.host', parsed.host);
+                  scope.setTag(
+                    'secret.user_hash',
+                    hashForSentryTag(parsed.username),
+                  );
+                } else if (accountKey != null) {
+                  scope.setTag('secret.key_parse', 'failed');
+                }
+              },
       );
     } catch (_) {
       // Sentry 未初期化 / 失敗でも本筋（secret 読み取り）を止めない。
