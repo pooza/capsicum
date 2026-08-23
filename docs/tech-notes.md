@@ -250,6 +250,25 @@ Windows 実機（[プラットフォームゲート](CLAUDE.md)の x64 端末）
 
 ⚠ **単一スロットの push 観測にコードを足すときは 2 箇所を同時に直す。** `windows/runner/push_diagnostics.cpp` の `IsBenignCode` と `packages/capsicum/lib/main.dart` の `benign` 集合は必ず揃える。片方だけだと、正常系のはずのコードが平常時の端末から毎回 warning で上がる（#997 の `wns.announcement_deduped` がその形だった）。⚠ **この一致を守る自動テストは無い**（コメントで揃えろと書いてあるだけ・[#1012](https://github.com/pooza/capsicum/issues/1012) に起票済み）。
 
+### native テストの大半は macOS でも走る（`windows.h` の最小シム・#1014）
+
+上の「実機で回すまで一度もコンパイルされない」は **`wns_push.cpp` のような WinRT 依存のファイルに限った話**。`notification_dedup` のような**純粋なロジック**は Win32 API をほとんど使っておらず、`windows.h` を 1 ファイルで代替すれば macOS の clang でそのままビルド・実行できる。**Windows 端末が空くのを待たずにロジックの誤りを潰せる**ので、実機は「本当に WinRT が要る検証」だけに使う。
+
+```sh
+mkdir -p /tmp/winshim && cat > /tmp/winshim/windows.h <<'EOF'
+#pragma once
+#include <cstdio>
+inline void OutputDebugStringA(const char* s) { std::fputs(s, stderr); }
+EOF
+cd packages/capsicum/windows/runner
+clang++ -std=c++17 -I/tmp/winshim -o /tmp/dedup_test \
+  notification_dedup_test.cpp notification_dedup.cpp && /tmp/dedup_test
+```
+
+⚠ **シムで通ったことは「Windows でビルドできる」の保証にならない。** MSVC は clang より緩い / 厳しい箇所がそれぞれあり、`/utf-8` の要否（`notification_tag_test`）のような MSVC 固有の問題は素通りする。**実機の手順 1〜2 を省略してよいわけではなく、実機へ持ち込む前に落とせるものを落とすための手**。
+
+⚠ **シムに関数を足したくなったら、それはもう「純粋なロジック」ではない。** 対象ファイルが Win32 / WinRT へ依存し始めた合図なので、シムを厚くするのではなく実機ビルドへ回す。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定
