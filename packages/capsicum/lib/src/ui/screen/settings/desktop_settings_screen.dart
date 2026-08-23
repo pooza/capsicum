@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -125,6 +127,15 @@ class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting> {
 
   @override
   void dispose() {
+    // ⚠ **保留中の書き込みを確定させてから離れる (#976)。**
+    // `ComposeFontFamilyNotifier` は autoDispose ではないので、**通常のアプリ
+    // 終了では `ref.onDispose` が走らない**。最後の打鍵から 400ms 以内に
+    // 終了すると、デバウンス前の入力がそのまま失われる（#927-2 でデバウンスを
+    // 入れる前は即時書き込みだった）。
+    //
+    // ⚠ **`ref` は dispose 後に触れないので、ここで読んでから投げる。**
+    // 書き込み自体は Notifier 側（この画面より長生き）が完走させる。
+    unawaited(ref.read(composeFontFamilyProvider.notifier).flushPendingWrite());
     _controller.dispose();
     super.dispose();
   }
