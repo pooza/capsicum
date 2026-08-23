@@ -3020,13 +3020,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _saveServerDraft() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
-    _cancelPendingDraftSave();
 
     final adapter = ref.read(currentAdapterProvider);
     // DraftSupport は mixin で DecentralizedBackendAdapter の subtype ではない
     // ため is! では promote されない。ScheduleSupport と同様に明示 cast で使う。
     if (adapter == null || adapter is! DraftSupport) return;
 
+    // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
+    // 理由は [_submitInternal] の同じ位置のコメント。
+    _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
       final mediaIds = await Future.wait(
@@ -3090,6 +3092,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         }
       }
     } catch (e, st) {
+      // 失敗したら自動保存を張り直す (Codex P2 / PR #1017)。理由は
+      // [_submitInternal] の同じ位置のコメント。
+      _scheduleDraftSave();
       if (mounted) {
         setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3133,7 +3138,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _submitInternal() async {
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
-    _cancelPendingDraftSave();
 
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
@@ -3174,6 +3178,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
 
+    // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
+    // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
+    // 引き返したときに**予約済みの保存が消えたまま戻らない**。次の打鍵まで
+    // タイマーが張り直されないので、その間にアプリが落ちると前回保存以降の
+    // 入力を失う。取り消すのは「通信を始める＝最後に _clearDraft へ向かう」
+    // と決まった時点だけにし、失敗して戻る経路では張り直す。
+    _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
       // Upload local attachments / reuse drive file IDs.
@@ -3271,6 +3282,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         }
       }
     } catch (e, st) {
+      // ⚠ **失敗したら自動保存を張り直す (Codex P2 / PR #1017)。**投稿に失敗
+      // した画面はそのまま残り、ユーザーは書き足して投稿し直せる。取り消した
+      // ままだと次の打鍵までタイマーが戻らず、その間にアプリが落ちると入力を
+      // 失う。⚠ **`mounted` の判定より前に置く** — 下の分岐は早期 return する
+      // ので、後ろに置くと一部の経路で張り直されない。
+      _scheduleDraftSave();
       if (!mounted) return;
       if (widget.redraft != null) {
         // 元投稿は既に削除されている。本文をクリップボードに保全し、
