@@ -4,8 +4,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import '../util/exception_scrub.dart';
 import '../service/sentry_op_failure.dart';
+import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart';
 

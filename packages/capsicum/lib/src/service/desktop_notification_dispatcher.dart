@@ -16,8 +16,8 @@ import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
-import 'delivered_push_cleaner.dart';
 import 'bounded_key_set.dart';
+import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
 import 'notification_tag.dart';
 

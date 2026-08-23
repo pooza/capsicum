@@ -2,12 +2,12 @@ import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/provider/hashtag_provider.dart';
 import 'package:capsicum/src/provider/list_provider.dart';
 import 'package:capsicum/src/ui/util/visible_timeline.dart';
+import 'package:capsicum/src/util/shared_preferences_cache.dart';
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:capsicum/src/util/shared_preferences_cache.dart';
 
 /// #887: 削除 / 再投稿の結果が「いま表示している TL」に反映されること。
 ///

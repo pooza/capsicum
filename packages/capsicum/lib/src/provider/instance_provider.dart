@@ -2,8 +2,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import 'account_manager_provider.dart';
 import '../util/exception_scrub.dart';
+import 'account_manager_provider.dart';
 
 /// 現在アカウントのサーバー [Instance]。最大ファイルサイズ等の事前バリデーション
 /// 用に compose 系画面から参照する。

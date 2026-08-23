@@ -28,3 +28,10 @@ include: package:lints/recommended.yaml
 
 # For additional information about configuring this file, see
 # https://dart.dev/guides/language/analysis-options
+
+# 相対 import の並び順を守る (#976)。#926 が `exception_scrub.dart` を
+# 15 ファイルでブロック末尾に追記してアルファベット順を崩したのを機に有効化。
+# フォーマッタは並べ替えないので、lint で止めないと静かに崩れ続ける。
+linter:
+  rules:
+    - directives_ordering

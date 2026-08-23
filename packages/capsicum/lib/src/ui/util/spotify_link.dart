@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
-import '../../util/exception_scrub.dart';
 import '../../url_helper.dart';
+import '../../util/exception_scrub.dart';
 import 'launch_url_toast.dart';
 
 /// Spotify OAuth 連携フロー (確認 → ブラウザ認可 → コード入力 → トークン交換)

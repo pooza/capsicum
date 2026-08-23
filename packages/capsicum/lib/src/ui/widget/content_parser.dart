@@ -4,11 +4,11 @@ import 'dart:ui' show ImageFilter;
 import 'package:capsicum_core/capsicum_core.dart' show nyaize;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:html_unescape/html_unescape.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
 import 'mfm_animation.dart';
-import 'package:html_unescape/html_unescape.dart';
 
 final _unescape = HtmlUnescape();
 
