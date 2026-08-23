@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
 import '../util/drive_error.dart';
@@ -571,8 +572,9 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
   Future<String?> _showTextInputDialog(
     String title,
     String initialValue,
-    String hint,
-  ) async {
+    String hint, {
+    int? maxLength,
+  }) async {
     return showDialog<String>(
       context: context,
       builder: (context) {
@@ -583,6 +585,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             controller: controller,
             autofocus: true,
             decoration: InputDecoration(hintText: hint),
+            maxLength: maxLength,
           ),
           actions: [
             TextButton(
@@ -608,14 +611,28 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
       'ALT テキスト',
       file.description ?? '',
       '画像の説明',
+      // ⚠ **client で止める (#1012)。**超えるとサーバーが断り、画面には
+      // 「操作に失敗しました」しか出ない。根拠は
+      // [InputLimits.attachmentDescription]。
+      maxLength: InputLimits.attachmentDescription,
     );
     if (newAlt == null) return;
     try {
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is! DriveSupport) return;
-      // Use MisskeyClient.updateDriveFile with comment parameter
       final misskeyAdapter = adapter as dynamic;
-      await misskeyAdapter.client.updateDriveFile(file.id, comment: newAlt);
+      if (newAlt.isEmpty) {
+        // ⚠ **消去は空文字ではなく明示的な null (#1005 / #1012)。**
+        // `updateDriveFile` は null をキーごと省略するので、空文字のまま渡すと
+        // body が `{fileId}` だけになり Misskey 側で更新対象が空になって 500。
+        // 仮に通っても省略は「変更なし」なので ALT を消せない。
+        // ⚠ **投稿側 (`MisskeyAdapter.updateAttachmentDescription`) は #1005 で
+        // 分けたのに、ここだけ空文字のままだった。**消去の表現が null と `''`
+        // の 2 種類に割れていたので、client の消去用メソッドへ寄せる。
+        await misskeyAdapter.client.clearDriveFileComment(file.id);
+      } else {
+        await misskeyAdapter.client.updateDriveFile(file.id, comment: newAlt);
+      }
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .updateFileDescription(file.id, newAlt);
