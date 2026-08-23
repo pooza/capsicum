@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -134,6 +136,39 @@ class ComposeDraftStore {
   int? _syncedGeneration;
   bool _superseded = false;
 
+  /// [save] / [clear] / [restore] を**このインスタンスの中で直列化する**
+  /// (Codex P2 / PR #1016)。
+  ///
+  /// ⚠⚠ **「割り込みを検出して後始末する」設計は破綻する。**それぞれが
+  /// `SharedPreferences` への往復を何度も挟むので、片方の書き込みがもう片方の
+  /// 削除の合間に着地しうる。v1.60 のリリース前レビューでこれを見つけ、
+  /// 「取消に追い越された save は自分の書き込みを消す」形で塞いだが、**その
+  /// 片づけ自体が次の破壊を作った**:
+  ///
+  /// 1. save#1 が走行中
+  /// 2. 取消 (`clear(discard: false)`) が世代を進めて完走
+  /// 3. ユーザーが書き直し、save#2 が**新しい本文を保存して完了**
+  /// 4. そこへ save#1 が追いつき、`_removeAll` が**save#2 のぶんごと消す**
+  ///
+  /// 画面は save#2 の「自動保存 hh:mm」を出したまま、再起動すると何も戻らない。
+  ///
+  /// 検出して直すのではなく**重ならないようにする**。順番に流せば、どの操作も
+  /// 「直前の操作が終わった状態」だけを見ればよくなり、上の分岐そのものが
+  /// 起きなくなる。
+  Future<void> _queue = Future<void>.value();
+
+  /// [body] を、このインスタンスの直前の操作が終わってから実行する。
+  Future<T> _serialized<T>(Future<T> Function() body) {
+    final previous = _queue;
+    final done = Completer<void>();
+    _queue = done.future;
+    // ⚠ 前の操作が投げても列を止めない（[save] は書き込み拒否で投げる）。
+    return previous
+        .catchError((_) {})
+        .then((_) => body())
+        .whenComplete(done.complete);
+  }
+
   /// [clear] を通ったあとかどうか。
   bool get discarded => _discarded;
 
@@ -179,7 +214,10 @@ class ComposeDraftStore {
   /// ⚠ **書き込みが拒まれたら [ComposeDraftSaveException] を投げる (#1011)。**
   /// null と混ぜると、呼び出し側が「意図した no-op」と区別できず、失敗が観測も
   /// 通知もされないまま**古い保存時刻が表示に残る**（Codex P2 / PR #1013）。
-  Future<DateTime?> save(ComposeDraft draft, {required DateTime now}) async {
+  Future<DateTime?> save(ComposeDraft draft, {required DateTime now}) =>
+      _serialized(() => _save(draft, now: now));
+
+  Future<DateTime?> _save(ComposeDraft draft, {required DateTime now}) async {
     if (_discarded) return null;
     final prefs = await SharedPreferences.getInstance();
     final current = prefs.getInt(_k(generationKey)) ?? 0;
@@ -222,16 +260,16 @@ class ComposeDraftStore {
     // 死ぬ**（#1008 が塞いだ「取消のあとの本文が黙って消える」が別経路で戻る）。
     final synced = _syncedGeneration;
     if (synced != null && synced > current) {
-      // ⚠⚠ **巻き戻さないだけでは足りない (Codex P2 / PR #1023)。**上の 8 回の
-      // 書き込みと `clear` の削除は**互いに割り込む**ので、こちらの値が削除の
-      // 後に着地しうる。印だけ守って抜けると:
+      // ⚠ **[_serialized] があるので、同一インスタンスの `clear` に追い越される
+      // ことはない。**ここへ来るのは `restore` が別インスタンスの進めた世代を
+      // 読み込んだ場合など。印を巻き戻さず、成功時刻も返さない。
       //
-      // - **取消したはずの本文がスロットに残り**、次の restore で戻ってくる
-      // - `now` を返すので、画面が消えたデータに対して「自動保存 12:34」を出す
-      //
-      // 書いたものを片づけて no-op として返す。`_allKeys` に世代印は含まれない
-      // ので、取消が進めた世代はそのまま残る（この画面の以降の保存は効く）。
-      await _removeAll(prefs, _k);
+      // ⚠⚠ **ここで書いたものを消してはいけない (Codex P2 / PR #1016)。**
+      // v1.60 のリリース前レビューでは「追い越された save は自分の書き込みを
+      // 片づける」形にしたが、その時点で**もっと新しい save が着地している
+      // 可能性**があり、スロットを一括削除するとそれごと消える。画面は新しい
+      // 保存の「自動保存 hh:mm」を出したまま、再起動すると何も戻らない。
+      // 掃除は世代を進めた当人（[clear]）の仕事。
       return null;
     }
     _syncedGeneration = current;
@@ -249,7 +287,9 @@ class ComposeDraftStore {
   ///
   /// アカウント別スロットが空で旧グローバルスロットに中身があれば、**このアカ
   /// ウントへ引き取る** (#964)。移行は 1 度きり（旧キーを消すため）。
-  Future<ComposeDraft?> restore() async {
+  Future<ComposeDraft?> restore() => _serialized(_restore);
+
+  Future<ComposeDraft?> _restore() async {
     final prefs = await SharedPreferences.getInstance();
     _syncedGeneration = prefs.getInt(_k(generationKey)) ?? 0;
 
@@ -258,7 +298,10 @@ class ComposeDraftStore {
       final legacy = _read(prefs, (k) => k);
       if (legacy != null) {
         await _removeAll(prefs, (k) => k);
-        await save(legacy, now: legacy.savedAt ?? DateTime.now());
+        // ⚠ **公開 [save] を呼ばない (Codex P2 / PR #1016)。**直列化を入れた
+        // ので、列の中から公開 API を呼ぶと**自分が持っている順番を待って
+        // デッドロックする**。内部呼び出しは private 側へ向ける。
+        await _save(legacy, now: legacy.savedAt ?? DateTime.now());
         draft = legacy;
       }
     }
@@ -313,7 +356,10 @@ class ComposeDraftStore {
   /// 起動で消したはずの本文が戻りうる**という意味 (Codex P2 / PR #1013)。
   /// 呼び出し側は観測に残す。投げないのは、投稿成功の直後にも通る経路で、
   /// ここで投げると**投稿は通っているのに失敗と伝える**ことになるため。
-  Future<bool> clear({bool discard = true}) async {
+  Future<bool> clear({bool discard = true}) =>
+      _serialized(() => _clear(discard: discard));
+
+  Future<bool> _clear({required bool discard}) async {
     if (discard) _discarded = true;
     final prefs = await SharedPreferences.getInstance();
     final next = (prefs.getInt(_k(generationKey)) ?? 0) + 1;
