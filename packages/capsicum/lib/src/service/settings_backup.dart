@@ -460,9 +460,12 @@ Future<List<String>> _mergeAccounts(
   if (unresolved.isNotEmpty) {
     added.removeWhere(unresolved.contains);
     merged.removeWhere(unresolved.contains);
+    // ⚠ **「残っている」と言い切らない (#1020)。**secure storage を確認でき
+    // なかったぶんもここへ来る（plugin 未登録＝register race）。断定すると、
+    // 実際には残骸が無い端末で「古い認証情報が残っている」と嘘を伝える。
     reasons.add(
       '${unresolved.length} 件のアカウントは、この端末に古い認証情報が残っている'
-      'ため取り込みませんでした',
+      'か確認できなかったため取り込みませんでした',
     );
   }
   if (reasons.isNotEmpty) skipped['accounts'] = reasons.join(' / ');

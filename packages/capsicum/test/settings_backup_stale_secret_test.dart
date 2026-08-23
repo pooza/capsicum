@@ -182,9 +182,15 @@ settings: {}
     );
   });
 
-  // plugin が居ない環境では諦めて素通しする。消せなかったぶんは「元のまま」で、
-  // この関数を入れる前と同じ状態にしかならない。
-  test('plugin 未登録なら取り込みを止めない', () async {
+  /// ⚠⚠ **この検査は #1012 で逆向きに書かれていた**（「plugin 未登録なら取り込み
+  /// を止めない」）。「消せなかったぶんは元のまま」という理屈だったが、**#1012 で
+  /// 呼び出し側の契約が「返らなかった key は書き戻してよい」に変わっていた**ので、
+  /// 素通しは「未調査のアカウントを全部索引へ書く」= fail-open になっていた
+  /// （#1020・Codex P1）。
+  ///
+  /// 削除時の delete が no-op だったアカウント（#621）はトークンが生きているので、
+  /// **次回起動で完全ログイン状態のまま復活する**。まさにこの関数が塞ぐはずの状態。
+  test('plugin 未登録なら「きれい」と答えず、1 件も書き戻さない', () async {
     final prefs = await prefsWith({});
 
     final result = await applySettingsBackupYaml(
@@ -193,6 +199,34 @@ settings: {}
       accountStorage: AccountStorage(_MissingPluginStorage()),
     );
 
-    expect(result.addedAccountKeys, [alice]);
+    expect(result.addedAccountKeys, isEmpty);
+    expect(
+      prefs.getString(AccountStorage.accountListKey),
+      isNot(contains(alice)),
+      reason: '残骸の有無を確認できていないので、索引へ書いてはいけない',
+    );
+    expect(
+      result.skipped['accounts'],
+      isNotNull,
+      reason: '黙って落とさず、取り込めなかった理由をユーザーへ返す',
+    );
+  });
+
+  /// 未調査ぶんを取りこぼさないこと。**最初の 1 件で打ち切って返す**実装なので、
+  /// ここが緩いと 2 件目以降が「きれい」として索引へ入る。
+  test('plugin 未登録なら、まだ調べていないアカウントも書き戻さない', () async {
+    const bob = 'mastodon://bob@mstdn.example';
+    final prefs = await prefsWith({});
+
+    final result = await applySettingsBackupYaml(
+      prefs,
+      yamlWith([alice, bob]),
+      accountStorage: AccountStorage(_MissingPluginStorage()),
+    );
+
+    expect(result.addedAccountKeys, isEmpty);
+    final index = prefs.getString(AccountStorage.accountListKey);
+    expect(index, isNot(contains(alice)));
+    expect(index, isNot(contains(bob)));
   });
 }

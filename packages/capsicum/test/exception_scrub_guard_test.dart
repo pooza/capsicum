@@ -50,11 +50,11 @@ void main() {
             .where((f) => !f.path.endsWith('.freezed.dart')),
   ];
 
-  /// [open]（`(` の位置）に対応する閉じ括弧の index。見つからなければ -1。
+  /// [open]（[openChar] の位置）に対応する閉じ括弧の index。見つからなければ -1。
   ///
   /// 文字列リテラルの中の括弧は数えない。⚠ **ここを雑にすると、`'('` を含む
   /// 文言で検査全体が静かに壊れる**（見逃しても誰も気づかない）。
-  int matchParen(String s, int open) {
+  int matchBracket(String s, int open, String openChar, String closeChar) {
     var depth = 0;
     String? quote;
     for (var i = open; i < s.length; i++) {
@@ -71,14 +71,16 @@ void main() {
         quote = c;
         continue;
       }
-      if (c == '(') depth++;
-      if (c == ')') {
+      if (c == openChar) depth++;
+      if (c == closeChar) {
         depth--;
         if (depth == 0) return i;
       }
     }
     return -1;
   }
+
+  int matchParen(String s, int open) => matchBracket(s, open, '(', ')');
 
   /// 引数リストを top-level のカンマで割る。
   List<String> splitArgs(String args) {
@@ -121,6 +123,74 @@ void main() {
       final close = matchParen(source, open);
       if (close < 0) continue;
       out.add((source.substring(open + 1, close), m.start));
+    }
+    return out;
+  }
+
+  /// 関数宣言に見えるが違うもの。`if (…) {` は `名前(…) {` と同じ形。
+  const notDeclarations = <String>{
+    'if',
+    'for',
+    'while',
+    'switch',
+    'catch',
+    'return',
+    'do',
+    'else',
+    'assert',
+    'await',
+    'yield',
+    'set',
+    'get',
+    'on',
+    'when',
+  };
+
+  /// ソース中の関数 / メソッド宣言を `(名前, 仮引数, 本体の開始, 本体の終了)`
+  /// で返す。本体は `{ … }` と `=> …;` の両方に対応する。
+  List<(String, String, int, int)> declarationsOf(String source) {
+    final out = <(String, String, int, int)>[];
+    for (final m in RegExp(
+      r'([A-Za-z_][A-Za-z0-9_]*)\s*\(',
+    ).allMatches(source)) {
+      final name = m.group(1)!;
+      if (notDeclarations.contains(name)) continue;
+      final open = source.indexOf('(', m.start);
+      final close = matchParen(source, open);
+      if (close < 0) continue;
+      // 引数リストの後ろ。`async` / `async*` / `sync*` は読み飛ばす。
+      final after = RegExp(
+        r'^\s*(?:async\*?|sync\*)?\s*',
+      ).firstMatch(source.substring(close + 1))!;
+      var i = close + 1 + after.end;
+      if (i >= source.length) continue;
+      if (source[i] == '{') {
+        final end = matchBracket(source, i, '{', '}');
+        if (end < 0) continue;
+        out.add((name, source.substring(open + 1, close), i, end));
+      } else if (source.startsWith('=>', i)) {
+        // arrow 本体は文末まで。文字列中の `;` を終端にしないよう順に見る。
+        String? quote;
+        for (var j = i; j < source.length; j++) {
+          final c = source[j];
+          if (quote != null) {
+            if (c == r'\') {
+              j++;
+            } else if (c == quote) {
+              quote = null;
+            }
+            continue;
+          }
+          if (c == "'" || c == '"') {
+            quote = c;
+            continue;
+          }
+          if (c == ';') {
+            out.add((name, source.substring(open + 1, close), i, j));
+            break;
+          }
+        }
+      }
     }
     return out;
   }
@@ -213,11 +283,68 @@ void main() {
     );
   });
 
-  /// breadcrumb になりうるログ経路。⚠ **`debugPrint` だけでは足りない** —
-  /// `main.dart` の `_logDev` のような**薄いラッパー**を経由すると、名前だけ
-  /// 見ている検査はすり抜ける（#975 の再発はここから起きた）。ラッパーが
-  /// 増えていないことは下の「ラッパーが増えていない」テストで担保する。
-  const breadcrumbSinks = <String>['debugPrint', '_logDev'];
+  /// `String` の**仮引数**の名前。転送の判定に使う。
+  ///
+  /// 引数リスト内の宣言だけを拾うため、直前が `(` / `,` / `{` であることを見る
+  /// （ローカル変数の `String foo = ...` を拾わない）。
+  final stringParamDecl = RegExp(
+    r'^\s*(?:required\s+)?String\??\s+([a-z_][A-Za-z0-9_]*)',
+  );
+
+  /// [args] の中で、[params] のいずれかを**丸ごと**補間しているか。
+  ///
+  /// `${account.key.host}` のように中身を取り出す形は呼び出し側の組み立てなので
+  /// 転送とみなさない。危ないのは受け取った文字列をそのまま流す形。
+  bool forwardsAny(String args, Iterable<String> params) =>
+      params.any((p) => RegExp('\\\$\\{?$p(?![A-Za-z0-9_.])').hasMatch(args));
+
+  /// breadcrumb になりうるログ経路を**ソースから数え上げる**。
+  ///
+  /// ⚠ **`debugPrint` だけでは足りない。**`main.dart` の `_logDev` のような
+  /// 薄いラッパーを経由すると、名前だけ見ている検査はすり抜ける（#975 の
+  /// 再発はここから起きた）。
+  ///
+  /// ⚠⚠ **手で一覧を持つのもだめ（#1020・Codex P2）。**一覧に足し忘れた関数は
+  /// 検査から消えるだけで、何も言わずに緑になる。**転送している関数を毎回
+  /// ソースから見つけ直す**ので、足し忘れという状態が存在しない。
+  ///
+  /// 転送とみなす形は 2 つ:
+  ///
+  /// 1. `debugPrint(message)` — 受け取った値をそのまま流す
+  /// 2. `debugPrint('prefix: $message')` — **リテラルで始まるのに転送している**。
+  ///    第 1 引数がリテラルかどうかだけ見ていると素通りし、後から
+  ///    `log('$e')` と書かれても検査は全部緑のままになる
+  ///
+  /// 検出が緩くて無関係な関数を拾っても害は無い。その関数の呼び出し側でも
+  /// 「生の例外を埋めていないか」を見るだけで、それは元々満たすべき条件。
+  Set<String> breadcrumbSinksIn(String source) {
+    final sinks = {'debugPrint'};
+    var added = true;
+    // 転送が数珠つなぎになることがある（`_logDevException` → `_logDev` →
+    // `debugPrint`）。増えなくなるまで回す。
+    while (added) {
+      added = false;
+      for (final (name, params, bodyStart, bodyEnd) in declarationsOf(source)) {
+        if (sinks.contains(name)) continue;
+        final names = splitArgs(params)
+            .map((p) => stringParamDecl.firstMatch(p)?.group(1))
+            .whereType<String>()
+            .toSet();
+        if (names.isEmpty) continue;
+        final body = source.substring(bodyStart, bodyEnd);
+        final forwards = sinks.any(
+          (sink) => callsOf(
+            body,
+            sink,
+          ).any((c) => names.contains(c.$1.trim()) || forwardsAny(c.$1, names)),
+        );
+        if (!forwards) continue;
+        sinks.add(name);
+        added = true;
+      }
+    }
+    return sinks;
+  }
 
   test('ログ経路に捕捉した例外を埋めない（scrub 済みを渡す）', () {
     final offenders = <String>[];
@@ -225,7 +352,7 @@ void main() {
       final path = relativePath(file);
       if (allowedFiles.contains(path)) continue;
       final source = file.readAsStringSync();
-      for (final sink in breadcrumbSinks) {
+      for (final sink in breadcrumbSinksIn(source)) {
         for (final (args, start) in callsOf(source, sink)) {
           final unsafe = unsafeInterpolations(args);
           if (unsafe.isEmpty) continue;
@@ -245,40 +372,33 @@ void main() {
     );
   });
 
-  /// [breadcrumbSinks] の網羅性を守る。**新しいラッパーが増えると、上の検査は
-  /// 何も言わずに素通りする**（#975 の取りこぼしの正体がこれ）。
-  ///
-  /// 判定は「`debugPrint` に**文字列リテラル以外**を渡しているか」。素の
-  /// `debugPrint('...')` は呼び出し側なので通し、`debugPrint(message)` の形＝
-  /// 受け取った値をそのまま流す関数＝ラッパーだけを拾う。
-  test('debugPrint のラッパーが増えていない', () {
-    /// 既知のラッパー。**増やすときは [breadcrumbSinks] にも足すこと。**
-    const known = <String>{
-      // scrubException を通してから流す、推奨の経路。
-      'lib/src/util/exception_scrub.dart',
-      // release で no-op にする `_logDev` / `_logDevException`。
-      'lib/main.dart',
-    };
-    final wrappers = <String>[];
-    for (final file in dartFiles()) {
-      final path = relativePath(file);
-      if (known.contains(path)) continue;
-      final source = file.readAsStringSync();
-      for (final (args, _) in callsOf(source, 'debugPrint')) {
-        final first = splitArgs(args).firstOrNull;
-        if (first == null || first.isEmpty) continue;
-        if (first.startsWith("'") || first.startsWith('"')) continue;
-        wrappers.add('$path: debugPrint($first)');
-      }
-    }
-    expect(
-      wrappers,
-      isEmpty,
-      reason:
-          'debugPrint を包む関数を足したら breadcrumbSinks にも追加すること。'
-          '足さないと、そのラッパー越しの生例外を検査が見逃す\n'
-          '${wrappers.join('\n')}',
-    );
+  /// ラッパー検出が実際に効くこと。**ここが緩いと、上の検査は debugPrint の
+  /// 直呼びしか見なくなる**（#975 の取りこぼしの正体がこれ）。
+  test('debugPrint へ値を転送する関数を見つける', () {
+    // 1. そのまま流す形。
+    const passthrough = 'void logA(String message) { debugPrint(message); }';
+    expect(breadcrumbSinksIn(passthrough), contains('logA'));
+
+    // 2. リテラルに埋めて流す形。⚠ **第 1 引数がリテラルかどうかだけ見ていると
+    //    ここを素通りする**（#1020・Codex P2）。
+    const prefixed = "void logB(String m) => debugPrint('prefix: \$m');";
+    expect(breadcrumbSinksIn(prefixed), contains('logB'));
+
+    // 3. 数珠つなぎ。`logD` → `logC` → debugPrint。
+    const chained =
+        'void logC(String m) { debugPrint(m); }\n'
+        "void logD(String m) { logC('x: \$m'); }";
+    expect(breadcrumbSinksIn(chained), containsAll(['logC', 'logD']));
+  });
+
+  /// 転送の判定が呼び出し側まで広がらないこと。ここが緩いと、**ただ引数を
+  /// ログに書いているだけの関数が全部 sink になって**、検査の意味が薄れる。
+  test('中身を取り出す形は転送とみなさない', () {
+    const callSite =
+        'void save(Account account) {\n'
+        "  debugPrint('failed for \${account.key.host}');\n"
+        '}';
+    expect(breadcrumbSinksIn(callSite), isNot(contains('save')));
   });
 
   /// 検査そのものが空振りしていないことを見る。**ここが 0 だと、上の 2 つは

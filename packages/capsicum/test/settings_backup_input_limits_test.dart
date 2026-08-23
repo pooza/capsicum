@@ -4,6 +4,7 @@ import 'package:capsicum/src/service/account_storage.dart';
 import 'package:capsicum/src/service/settings_backup.dart';
 import 'package:capsicum/src/ui/util/settings_backup_apply.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -95,9 +96,14 @@ void main() {
     test('上限ちょうどは取り込む', () async {
       final prefs = await emptyPrefs();
 
+      // ⚠ **secure storage を渡すこと。**渡さないと plugin 未登録で
+      // `purgeStaleSecrets` が「確認できなかった」を返し、#1020 の fail-closed
+      // で 1 件も入らない。この検査の主題は件数の上限なので、残骸は無い状態を
+      // 与える。
       final result = await applySettingsBackupYaml(
         prefs,
         yamlWithAccounts(maxBackupAccounts),
+        accountStorage: AccountStorage(_NoSecretsStorage()),
       );
 
       expect(result.addedAccountKeys, hasLength(maxBackupAccounts));
@@ -147,4 +153,20 @@ void main() {
       expect(redactSkippedKeysForReport({}), isEmpty);
     });
   });
+}
+
+/// 残骸トークンが 1 つも無い secure storage。`purgeStaleSecrets` を素通りさせる
+/// ためだけの器で、残骸の扱いそのものは `settings_backup_stale_secret_test.dart`
+/// が見る。
+class _NoSecretsStorage extends FlutterSecureStorage {
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => false;
 }

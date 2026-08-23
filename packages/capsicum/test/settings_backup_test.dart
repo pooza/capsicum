@@ -1,4 +1,6 @@
+import 'package:capsicum/src/service/account_storage.dart';
 import 'package:capsicum/src/service/settings_backup.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -278,13 +280,22 @@ void _accountIndexTests() {
       '  font_scale: 1.2',
     ].join('\n');
 
+    /// ⚠ **secure storage を渡すこと (#1020)。**渡さないと plugin 未登録で
+    /// `purgeStaleSecrets` が「確認できなかった」を返し、fail-closed で
+    /// **1 件も索引に入らない**。この group の主題は索引のマージなので、
+    /// 残骸が無い状態を与える。残骸そのものの扱いは
+    /// `settings_backup_stale_secret_test.dart` が見る。
+    Future<SettingsImportResult> apply(SharedPreferences prefs, String yaml) =>
+        applySettingsBackupYaml(
+          prefs,
+          yaml,
+          accountStorage: AccountStorage(_NoSecretsStorage()),
+        );
+
     test('索引へ足し、件数を返す', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
-        prefs,
-        yamlWithAccounts([alice, bob]),
-      );
+      final result = await apply(prefs, yamlWithAccounts([alice, bob]));
 
       expect(result.addedAccountKeys.length, 2);
       expect(prefs.getString(accountListKey), contains(alice));
@@ -296,10 +307,7 @@ void _accountIndexTests() {
     test('既にあるアカウントを消さず、重複も作らない', () async {
       final prefs = await prefsWith({accountListKey: '["$alice"]'});
 
-      final result = await applySettingsBackupYaml(
-        prefs,
-        yamlWithAccounts([alice, bob]),
-      );
+      final result = await apply(prefs, yamlWithAccounts([alice, bob]));
 
       expect(result.addedAccountKeys.length, 1, reason: 'bob だけが増える');
       final saved = prefs.getString(accountListKey)!;
@@ -312,7 +320,7 @@ void _accountIndexTests() {
     test('secret を作らない（未接続として並ぶ状態にする）', () async {
       final prefs = await prefsWith({});
 
-      await applySettingsBackupYaml(prefs, yamlWithAccounts([alice]));
+      await apply(prefs, yamlWithAccounts([alice]));
 
       expect(prefs.getKeys().where((k) => k.startsWith('secret_')), isEmpty);
     });
@@ -334,7 +342,7 @@ void _accountIndexTests() {
     test('読めない要素は理由を残して飛ばす', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
+      final result = await apply(
         prefs,
         'version: 1\naccounts:\n  - "壊れている"\n  - "$alice"\nsettings:\n'
         '  font_scale: 1.2\n',
@@ -352,7 +360,7 @@ void _accountIndexTests() {
     test('非正規形の key は正規形にして保存する', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
+      final result = await apply(
         prefs,
         yamlWithAccounts(['mastodon://alice@mstdn.example/']),
       );
@@ -374,10 +382,7 @@ void _accountIndexTests() {
         accountListKey: '["mastodon://alice@Mstdn.Example"]',
       });
 
-      final result = await applySettingsBackupYaml(
-        prefs,
-        yamlWithAccounts([alice]),
-      );
+      final result = await apply(prefs, yamlWithAccounts([alice]));
 
       expect(result.addedAccountKeys, isEmpty);
       expect(
@@ -390,7 +395,7 @@ void _accountIndexTests() {
     test('正規形と非正規形が両方あっても 1 件にまとめる', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
+      final result = await apply(
         prefs,
         yamlWithAccounts([alice, 'mastodon://alice@mstdn.example/']),
       );
@@ -406,7 +411,7 @@ void _accountIndexTests() {
     test('username / host が欠けた key は取り込まない', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
+      final result = await apply(
         prefs,
         yamlWithAccounts(['mastodon://alice', 'mastodon://@mstdn.example']),
       );
@@ -419,7 +424,7 @@ void _accountIndexTests() {
     test('accounts: が一覧でなければ理由を残して続行する', () async {
       final prefs = await prefsWith({});
 
-      final result = await applySettingsBackupYaml(
+      final result = await apply(
         prefs,
         'version: 1\naccounts: "alice"\nsettings:\n  font_scale: 1.2\n',
       );
@@ -429,4 +434,20 @@ void _accountIndexTests() {
       expect(result.applied, contains('font_scale'));
     });
   });
+}
+
+/// 残骸トークンが 1 つも無い secure storage。`purgeStaleSecrets` を素通りさせる
+/// ためだけの器で、残骸の扱いそのものは `settings_backup_stale_secret_test.dart`
+/// が見る。
+class _NoSecretsStorage extends FlutterSecureStorage {
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => false;
 }
