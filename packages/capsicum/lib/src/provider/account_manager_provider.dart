@@ -1111,6 +1111,12 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
 
   /// オフライン保持中のアカウントをユーザー操作で一覧から削除する (#792)。
   /// secret も storage から消す（＝明示ログアウト相当）。
+  ///
+  /// ⚠ **[logout] と同じ後始末を漏らさないこと** (#1014)。この経路は
+  /// 「到達不能になったアカウント」と「#967 で未接続として並ぶ取り込み
+  /// アカウント」にとっての logout そのもので、ユーザーから見た意味は
+  /// 完全に同じ。片方にだけ掃除を足すと、**削除したはずのアカウントの
+  /// 痕跡が残る**。
   Future<void> removeOfflineAccount(AccountKey key) async {
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1118,6 +1124,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // contextKey が一致しなければ使われない作りだが、消したアカウントの投稿を
     // 端末に残す理由が無い点は logout と変わらない。
     await TimelineCache.clear();
+    // 書きかけの自動保存スロットも捨てる (#964 / #1014)。オフライン化する前に
+    // 自動保存した本文が残っていると、**削除したあとで同じ `@user@host` へ
+    // 入り直したときに消したはずの下書きが復活する**。
+    await ComposeDraftStore.clearForAccount(key.toStorageKey());
     _removeOffline(key);
     await _syncWindowsPushLabels();
   }
