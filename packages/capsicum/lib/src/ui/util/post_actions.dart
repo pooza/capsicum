@@ -235,12 +235,21 @@ class PostActionRunner {
     required String phase,
   }) {
     debugLogException('PostActionRunner.$label failed', e);
-    if (kDebugMode && e is DioException) {
+    // scrub 済みの表現は type / status / path までで、失敗の理由（Mastodon の
+    // `{"error": "..."}`）が落ちる。手元で原因を追うにはこれが要るので、
+    // Sentry が動いていないときに限って生の body を出す。
+    //
+    // ⚠ **`kDebugMode` だけでは足りない。**sentry_flutter の
+    // DebugPrintIntegration は build mode で分岐せず登録されるので、DSN を
+    // 渡した debug ビルドでは breadcrumb になる（debug に DSN を渡さないのは
+    // 運用の約束であって、仕組みではない）。`isEnabled` で仕組みの側に寄せる。
+    if (kDebugMode && !Sentry.isEnabled && e is DioException) {
+      // scrub-guard: allow — Sentry 無効時のみ。上のとおり経路が閉じている
       debugPrint('Response body: ${e.response?.data}');
     }
     unawaited(
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) => scope.setTag('phase', phase),
       ),

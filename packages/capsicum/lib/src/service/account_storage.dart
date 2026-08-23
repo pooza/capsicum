@@ -116,8 +116,9 @@ class AccountStorage {
       // plugin register race が retry 後も解消しないケース。同じ race で
       // delete も失敗するため、ここでは観測のみ行い secret は残す。
       // 次回起動で再試行される。
-      debugPrint(
-        'capsicum: plugin register race persisted for $accountKey: $e',
+      debugLogException(
+        'capsicum: plugin register race persisted for $accountKey',
+        e,
       );
       _reportOnce('secret:$accountKey', e, st);
       // secret は消していないので transient。ログアウト扱いにしない (#959)。
@@ -129,8 +130,9 @@ class AccountStorage {
       // 画面ロック解除前にアプリが起動した場合などで観測される
       // (CAPSICUM-1M, #531)。
       if (_isKeychainTransient(e)) {
-        debugPrint(
-          'capsicum: keychain transient for $accountKey (code=${e.code}): $e',
+        debugLogException(
+          'capsicum: keychain transient for $accountKey (code=${e.code})',
+          e,
         );
         _reportOnce('secret:$accountKey:transient', e, st, code: e.code);
         // secret は残っている。解錠後の再試行で読めるので transient (#959)。
@@ -144,9 +146,10 @@ class AccountStorage {
       // が secret を上書きするので無害）。-25308 のような明示 transient コードが
       // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
       if (Platform.isAndroid) {
-        debugPrint(
+        debugLogException(
           'capsicum: android keystore read error for $accountKey, '
-          'keeping secret (code=${e.code}): $e',
+          'keeping secret (code=${e.code})',
+          e,
         );
         _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
@@ -160,8 +163,9 @@ class AccountStorage {
       // BadPaddingException etc. may bypass PlatformException wrapping
       // after app reinstall (encryption key regenerated). Android では上と同様、
       // 一過性の Keystore 失敗で破壊しないよう delete を見送る (#730 / #731)。
-      debugPrint(
-        'capsicum: unexpected error reading secrets for $accountKey: $e',
+      debugLogException(
+        'capsicum: unexpected error reading secrets for $accountKey',
+        e,
       );
       if (Platform.isAndroid) {
         _reportOnce('secret:$accountKey:android_keystore', e, st);
@@ -321,8 +325,9 @@ class AccountStorage {
     } on PlatformException catch (e, st) {
       // ロック中 (-25308) 等で readAll / write が失敗しても起動は止めない。
       // flag を立てないので次回起動で再試行される。
-      debugPrint(
-        'capsicum: account storage accessibility migration failed: $e',
+      debugLogException(
+        'capsicum: account storage accessibility migration failed',
+        e,
       );
       _reportOnce('accessibility_migration', e, st);
     }
@@ -422,8 +427,9 @@ class AccountStorage {
     try {
       await _storage.delete(key: key);
     } on MissingPluginException catch (e, st) {
-      debugPrint(
-        'capsicum: plugin register race on delete for $accountKey: $e',
+      debugLogException(
+        'capsicum: plugin register race on delete for $accountKey',
+        e,
       );
       _reportOnce('secret:$accountKey:delete', e, st);
     } on PlatformException catch (e, st) {
@@ -582,7 +588,7 @@ class AccountStorage {
     if (!_reportedErrors.add(key)) return;
     try {
       Sentry.captureException(
-        error,
+        scrubException(error),
         stackTrace: st,
         withScope: code != null
             ? (scope) => scope.setTag('secret.code', code)

@@ -21,9 +21,9 @@ import '../service/push_registration_service.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
+import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
-import '../util/exception_scrub.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -150,9 +150,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       try {
         await adapter.detectTimelineAvailability();
       } catch (e) {
-        debugPrint(
+        debugLogException(
           'capsicum: addAccount: detectTimelineAvailability failed for '
-          '${account.key.toStorageKey()}: $e',
+          '${account.key.toStorageKey()}',
+          e,
         );
       }
     }
@@ -729,9 +730,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // させる。auth 失効（401/403）や secret 系・不明は従来通り skip + 観測。
       final outcome = classifyRestoreFailure(e);
       if (outcome == RestoreOutcome.retriable) {
-        debugPrint(
+        debugLogException(
           'capsicum: restoreSessions: transient failure for $keyStr, '
-          'kept offline and will retry in background: $e',
+          'kept offline and will retry in background',
+          e,
         );
         return (account: null, outcome: RestoreOutcome.retriable);
       }
@@ -780,9 +782,10 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final userFuture = adapter.getMyself();
     final timelineFuture = adapter is MastodonAdapter
         ? adapter.detectTimelineAvailability().catchError((Object e) {
-            debugPrint(
+            debugLogException(
               'capsicum: restoreSessions: detectTimelineAvailability '
-              'failed for $keyStr: $e',
+              'failed for $keyStr',
+              e,
             );
           })
         : Future<void>.value();
@@ -1160,7 +1163,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         parsed = null;
       }
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           // null 経路 (`_reportNullSecretSkipOnce`) と区別するための経路タグ。

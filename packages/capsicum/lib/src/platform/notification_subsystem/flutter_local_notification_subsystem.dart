@@ -84,7 +84,7 @@ class FlutterLocalNotificationSubsystem implements NotificationSubsystem {
       // 失敗が UI を巻き込まないよう更に try で包む。
       try {
         await Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           hint: Hint.withMap({'subsystem': 'notification'}),
         );

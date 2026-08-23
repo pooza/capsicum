@@ -31,7 +31,6 @@ import 'src/service/desktop_notification_dispatcher.dart';
 import 'src/service/launch_at_login_service.dart';
 import 'src/service/resident_mode_service.dart';
 import 'src/service/apns_service.dart';
-import 'src/util/exception_scrub.dart';
 import 'src/service/fcm_service.dart';
 import 'src/service/notification_init.dart';
 import 'src/service/notification_label_cache.dart';
@@ -43,6 +42,7 @@ import 'src/service/share_intent_service.dart';
 import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/util/exception_scrub.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
 import 'src/util/shared_preferences_cache.dart';
@@ -94,6 +94,22 @@ void _logDev(String message) {
   if (!kReleaseMode) debugPrint(message);
 }
 
+/// [_logDev] の例外版。**捕捉した例外は必ずこちらへ流すこと** (#975)。
+///
+/// `_logDev` は release では no-op だが **profile では debugPrint に流れる**。
+/// sentry_flutter の `DebugPrintIntegration` は build mode で分岐せず登録される
+/// ので、DSN 付きビルドでは breadcrumb になる。breadcrumb の `message` は
+/// [_scrubBreadcrumb]（`data` しか見ない）を通らないため、生の例外を埋めると
+/// DioException の URL がそのまま Sentry に載る。
+void _logDevException(String context, Object error, [StackTrace? stackTrace]) {
+  final scrubbed = scrubException(error);
+  _logDev(
+    stackTrace == null
+        ? '$context: $scrubbed'
+        : '$context: $scrubbed\n$stackTrace',
+  );
+}
+
 /// [_logDev] の StackTrace 版。
 void _logDevStack(StackTrace stackTrace) {
   if (!kReleaseMode) debugPrintStack(stackTrace: stackTrace);
@@ -134,7 +150,7 @@ Future<void> main() async {
   try {
     await PushKeyStore.migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    _logDev('PushKeyStore migration failed: $e\n$st');
+    _logDevException('PushKeyStore migration failed', e, st);
   }
 
   // アカウント secret / client credentials も v1.30 以前は旧 Keychain
@@ -146,7 +162,7 @@ Future<void> main() async {
   try {
     await AccountStorage().migrateAccessibilityIfNeeded();
   } catch (e, st) {
-    _logDev('AccountStorage migration failed: $e\n$st');
+    _logDevException('AccountStorage migration failed', e, st);
   }
 
   // 起動キャッシュ (#890) の保存先を Application Support からキャッシュ領域へ
@@ -199,7 +215,7 @@ Future<void> main() async {
     try {
       sentryNativeDbPath = await resolveSentryNativeDatabasePath();
     } catch (e, st) {
-      _logDev('resolveSentryNativeDatabasePath failed: $e\n$st');
+      _logDevException('resolveSentryNativeDatabasePath failed', e, st);
     }
     await SentryFlutter.init((options) {
       options.dsn = dsn;
@@ -455,7 +471,7 @@ void _startApp() {
   // Sentry が自前で設定済なので ??= で上書きを避ける。
   FlutterError.onError ??= FlutterError.presentError;
   PlatformDispatcher.instance.onError ??= (e, st) {
-    _logDev('Uncaught: $e\n$st');
+    _logDevException('Uncaught', e, st);
     return true;
   };
 
@@ -822,7 +838,7 @@ void _routeToChatThread(
     } catch (e, st) {
       // user 解決失敗 (削除済み・通信エラー等) は通知タブにフォールバック。
       Sentry.captureException(
-        e,
+        scrubException(e),
         stackTrace: st,
         withScope: (scope) {
           scope.setTag('notification.routing', 'chat.user_resolve_failed');
@@ -1156,9 +1172,9 @@ Future<void> _initFirebase() async {
     });
     _logDev('capsicum: push.onMessage listener registered');
   } catch (e, st) {
-    _logDev('capsicum: Firebase initialization failed: $e');
+    _logDevException('capsicum: Firebase initialization failed', e);
     Sentry.captureException(
-      e,
+      scrubException(e),
       stackTrace: st,
       withScope: (scope) {
         scope.setTag('service', 'firebase_init');

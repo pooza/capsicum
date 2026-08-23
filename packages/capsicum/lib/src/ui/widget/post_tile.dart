@@ -1785,7 +1785,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                   .catchError((Object e, StackTrace st) {
                     unawaited(
                       Sentry.captureException(
-                        e,
+                        scrubException(e),
                         stackTrace: st,
                         withScope: (scope) =>
                             scope.setTag('phase', 'post_action'),
@@ -1856,7 +1856,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           } catch (e, st) {
             unawaited(
               Sentry.captureException(
-                e,
+                scrubException(e),
                 stackTrace: st,
                 withScope: (scope) => scope.setTag('phase', 'post_action'),
               ),
