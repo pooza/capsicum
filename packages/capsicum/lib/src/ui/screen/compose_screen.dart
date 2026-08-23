@@ -1651,7 +1651,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       bytes = await original.readAsBytes();
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1699,7 +1699,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       bytes = await original.readAsBytes();
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1755,7 +1755,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       await out.writeAsBytes(bytes, flush: true);
       return XFile(path, mimeType: 'image/png', name: pngName);
     } catch (e, st) {
-      await Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(scrubException(e), stackTrace: st);
       return null;
     }
   }
@@ -3294,7 +3294,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         // 再投稿手段をユーザーに提示する (#393)。
         await Clipboard.setData(ClipboardData(text: _controller.text));
         await Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           withScope: (scope) => scope.setTag('phase', 'redraft_resend_failed'),
         );

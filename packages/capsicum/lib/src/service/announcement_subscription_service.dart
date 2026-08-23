@@ -127,9 +127,10 @@ class AnnouncementSubscriptionService {
       await enable(account);
     } catch (e) {
       // enable 内で Sentry 報告済み。本筋は止めない。
-      debugPrint(
+      debugLogException(
         'capsicum: announcement_subscription: auto-enable skipped for '
-        '${account.key.host}: $e',
+        '${account.key.host}',
+        e,
       );
     }
   }
@@ -229,8 +230,9 @@ class AnnouncementSubscriptionService {
     String host, {
     required String phase,
   }) {
-    debugPrint(
-      'capsicum: announcement_subscription: $phase failed for $host: $e',
+    debugLogException(
+      'capsicum: announcement_subscription: $phase failed for $host',
+      e,
     );
     Sentry.captureException(
       scrubException(e),

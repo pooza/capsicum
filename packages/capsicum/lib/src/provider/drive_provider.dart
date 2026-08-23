@@ -2,6 +2,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../util/exception_scrub.dart';
 import 'account_manager_provider.dart';
 import 'timeline_provider.dart' show loadMoreMaxRetries, loadMoreRetryDelay;
 
@@ -95,7 +96,7 @@ class DriveContentsNotifier
     } catch (e, st) {
       try {
         Sentry.captureException(
-          e,
+          scrubException(e),
           stackTrace: st,
           hint: Hint.withMap({'folderId': arg ?? 'root'}),
         );
@@ -240,7 +241,7 @@ class DriveContentsNotifier
         try {
           final failedMaxId = current.files.lastOrNull?.id;
           Sentry.captureException(
-            e,
+            scrubException(e),
             stackTrace: st,
             hint: Hint.withMap({
               'folderId': arg ?? 'root',

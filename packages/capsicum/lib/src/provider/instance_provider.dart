@@ -22,7 +22,7 @@ final currentInstanceProvider = FutureProvider<Instance?>((ref) async {
     return await adapter.getInstance();
   } catch (e, st) {
     debugLogException('getInstance failed', e);
-    Sentry.captureException(e, stackTrace: st);
+    Sentry.captureException(scrubException(e), stackTrace: st);
     return null;
   }
 });

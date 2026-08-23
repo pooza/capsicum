@@ -239,7 +239,7 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
       // 化してしまう (#609 false positive)。AsyncError として伝播させて
       // consumer の `valueOrNull == null` 判定で警告抑制経路に揃える。
       debugLogException('getEmojis failed', e);
-      Sentry.captureException(e, stackTrace: st);
+      Sentry.captureException(scrubException(e), stackTrace: st);
       rethrow;
     }
   }
