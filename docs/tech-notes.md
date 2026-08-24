@@ -293,6 +293,15 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 
 ⚠ **見るべきは HTTP 200 ではなく「送っていない項目が残ったか」。**この API は送らなかったパラメータを現状維持ではなく**空で更新**として扱うため、モロヘイヤの補完が効いていないと 200 のまま**添付が全部外れて CW と閲覧注意も消える**（mulukhiya#4589）。出力の「添付 = N 件 / CW / 閲覧注意」がその確認欄。
 
+### ALT 編集の導線が出る条件は版番号ではなく 2 つの and（#121）
+
+client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/about` の `config.features.media_update` が `true` のときだけ出る（fail-closed）。このフラグが立つには**両方**が要る:
+
+1. モロヘイヤが刺している **`ginseng-fediverse` 1.8.30 以上**（mulukhiya#4621。モロヘイヤ 5.35.0 の主軸）
+2. **各サーバーの `local.yaml` に `/mastodon/capabilities/media_update: true`** を書く opt-in（既定 `false`）
+
+⚠ **モロヘイヤの版が上がるだけでは復活しない。**2 が既定 false なのは、nginx の `$status_put_backend` map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため。⚠ **`package.version` からは 1 を区別できない**ので、版番号で判定せず必ずフラグを見る（`attachment_description_edit.dart` の doc も同じことを書いている）。デプロイ時は Mastodon 3 台に 2 の追記が要る（Misskey は常に false）。
+
 ### プロフィール編集の初期値
 
 `GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。
