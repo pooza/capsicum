@@ -271,6 +271,17 @@ capsicum/
   - 改善要求（中〜大規模）→ 空いている先のマイルストーンに送る
   進行中のリリースを遅らせないバランスを取りつつ、ユーザーの声には必ず何かしらの形で応える
 
+### 大玉の進め方（棚卸し → 分類 → 設計書 → 起票）
+
+v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し 3 本（[#991](https://github.com/pooza/capsicum/issues/991) WebUI 差分 / [#992](https://github.com/pooza/capsicum/issues/992) サーバー保存設定 / [#993](https://github.com/pooza/capsicum/issues/993) 未使用 API）の回し方（2026-08-25 合意）。
+
+1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。
+2. **分類は 3 分岐にする** — 「1.x で処理」「2.0 以降」に加えて **「拾わない」を必ず明示し、理由を書く**。棚卸しの母数には方針として実装しないもの（英語対応しない / 投稿の更新しない / Fedibird 低優先 / per-server 対応しない 等）が必ず混じるので、**黙って落とすと次の棚卸しで同じものが再浮上する**。
+3. **成果物は `docs/` の計画書 1 本にまとめ、Issue 化は分類が確定してから。**先に起票すると、マイルストーン未定のまま滞留する [#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) の形になる。確定後に **1.x 行きだけを稼働中の枠へ、2.0 行きは v2.0 に据え置き**で起票する。
+4. **超大玉は設計書を先に書く。**複数 Issue に分解されることが確実なもの（[#720](https://github.com/pooza/capsicum/issues/720) デッキ UI / [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー）は、Issue に割る前に `docs/` へ設計書を置く。⚠ **[#884](https://github.com/pooza/capsicum/issues/884)（画像編集のレイヤ管理）は対象外** — 投稿フォーム内で閉じるので Issue 本文で足り、設計書にすると逆に重くなる。
+
+設計書の型は既存の 6 本（[archive/push-relay-plan.md](archive/push-relay-plan.md) / [archive/desktop-notification-design.md](archive/desktop-notification-design.md) ほか）に倣い、**`## 決定済み事項` と `## 未決事項` を分ける**。未決を明示的に置けるので「全部決まるまで完成しない」状態で止まらない。⚠ **設計書の効用は分解だけではない** — desktop-notification-design では書いた結果 #476 が不要と判明して close できた。**Issue から始めるとこれができない**。
+
 ### コミットの分割方針
 
 コミットはなるべく Issue ごとに分ける。レビュー・revert・cherry-pick の粒度を保つため。同じファイルに複数 Issue の変更が混在して分離できない場合のみ、まとめてよい。
