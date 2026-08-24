@@ -221,6 +221,7 @@ capsicum/
     dev-environment.md    # 開発マシン・検証端末・Sentry 環境
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
     flutter-upstream-watch.md  # Flutter 上流バグの追跡（月初に手動で chase・資格情報の満了チェックも相乗り）
+    api-gap-inventory.md  # 棚卸し: API にあって capsicum が使っていない機能（#993 の成果物・1.x / 2.0 / 拾わない の分類）
     mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
