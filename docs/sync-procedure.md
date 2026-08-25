@@ -2,6 +2,22 @@
 
 会話の最初に「進捗を同期してください」等の指示があった場合、以下の手順を実行する。
 
+## 0. コマンドの書き方（許可確認を出さないための約束）
+
+⚠ **同期はほぼ定形作業なので、許可確認 0 回で完走できる書き方に揃える。**2026-08-25 の同期で 10 回以上の確認を出して指摘を受けた。原因は allowlist の穴ではなく**コマンドの形**だったので、ここに規約として置く。
+
+| やらない | 代わりに |
+| --- | --- |
+| `python3 -c` / `perl -e` で JSON を捌く | **`jq`**。インタプリタは任意コード実行になるので allowlist に載せない方針で、載る見込みもない |
+| シェルの `for` ループで複数対象を回す | **1 対象 1 ツール呼び出しにして並列に投げる**。ループは丸ごと未知のコマンド扱いになる。並列のほうが速い |
+| 他リポジトリへ `cd` してから `git` | **`git -C <path> fetch` / `log` / `pull` / `status` / `tag`**。この 5 つは許可済み |
+| `curl -sL` / `curl -sX` のように短縮を連結 | **`curl -s -L` / `curl -s -X`**。allowlist は `curl -s ` の後ろに空白を要求する |
+| `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
+
+`curl` の出力から本文を抜くときは `jq -r` で必要なフィールドだけ取り出す（HTML タグを落としたいだけなら `sed 's/<[^>]*>//g'`）。
+
+例外は**動画・画像の検証**（`ffmpeg` でのフレーム抽出等）。これは定形ではないので確認が出てよい。
+
 ## 1. プロジェクトガイドの読み込み
 
 - `docs/CLAUDE.md` を読む（プロジェクトのルール・構造・履歴の正本）
@@ -91,26 +107,26 @@ capsicum-relay の Issue・マイルストーンは、**capsicum 本体と同じ
 
 - `sentry-cli --auth-token <調査用トークン> issues list -p capsicum` で未解決イシューを確認（トークンは `~/.sentryclirc` から取得: `awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'`）
 - 同じトークンで `sentry-cli --auth-token <調査用トークン> issues list -p capsicum-relay` も確認（capsicum-relay#10 で 2026-05-28 から計装開始。Phase A 段階では smoke test 起点で、Phase B 以降で APNs/FCM/socket_loop の本格計装が乗る）
-- 各イシューの過去コメント（対応経緯）を確認する: `curl -sH "Authorization: Bearer $TOKEN" https://sentry.io/api/0/issues/{issue_id}/comments/ | python3 -m json.tool`
+- 各イシューの過去コメント（対応経緯）を確認する: `curl -sH "Authorization: Bearer <調査用トークン>" https://sentry.io/api/0/issues/{issue_id}/comments/ | jq -r '.[] | .data.text'`
 - 新規・未解決のイシューがあれば内容を確認し、対応が必要か判断する（対応が必要なら GitHub Issue を起票。capsicum-relay 側のイシューは pooza/capsicum-relay リポに起票）
 - 判断結果や対応経緯はコメントとして記録する: `curl -sX POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"text":"コメント内容"}' https://sentry.io/api/0/issues/{issue_id}/comments/`
-- `$TOKEN` は `~/.sentryclirc` の `[auth]` セクションから取得する（capsicum では `.sentryclirc` がデプロイ用トークンで占有されているため、`awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'` で調査用トークンを別途取得する）
+- 調査用トークンは `~/.sentryclirc` の `[auth]` セクションから取得する（capsicum では `.sentryclirc` がデプロイ用トークンで占有されているため別枠）。⚠ **`TOKEN=$(...)` の変数代入から始めない**（§0）。`awk '/\[auth\]/{getline; print}' ~/.sentryclirc | sed 's/token=//'` を**単独で 1 回**実行して値を得て、以降のコマンドへ直接埋める
 - resolved 済みのイシューは報告不要
 
 ## 8. 関連リポジトリの同期確認
 
-- **mulukhiya-toot-proxy**: `cd ~/repos/mulukhiya-toot-proxy && git fetch origin` + `git log HEAD..origin/develop --oneline` でリモートとの差分を確認。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
-- **chubo2**: `cd ~/repos/chubo2 && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
-- **capsicum-relay**: `cd ~/repos/capsicum-relay && git fetch origin` + `git log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
+- **mulukhiya-toot-proxy**: `git -C ~/repos/mulukhiya-toot-proxy fetch origin` + `git -C ~/repos/mulukhiya-toot-proxy log HEAD..origin/develop --oneline` でリモートとの差分を確認（`cd` しない理由は §0）。`docs/capsicum-requirements.md` や `docs/api.md` に変更があれば capsicum 側への影響を判断
+- **chubo2**: `git -C ~/repos/chubo2 fetch origin` + `git -C ~/repos/chubo2 log HEAD..origin/main --oneline` で差分を確認。`docs/infra-note.md` に変更があれば MEMORY.md のインフラセクションに反映が必要か判断
+- **capsicum-relay**: `git -C ~/repos/capsicum-relay fetch origin` + `git -C ~/repos/capsicum-relay log HEAD..origin/main --oneline` で差分を確認。Issue / PR は `gh issue list --repo pooza/capsicum-relay --state open --limit 30` / `gh pr list --repo pooza/capsicum-relay --state open` で確認（dependabot PR + security alert もここで拾う、`gh api repos/pooza/capsicum-relay/dependabot/alerts --jq '.[] | select(.state == "open") | "\(.security_advisory.severity) \(.dependency.package.name) fix=\(.security_vulnerability.first_patched_version.identifier)"'`）。リレーサーバーのデプロイ管理は Claude 担当（**接続先ホスト・SSH ユーザー・具体的な SSH コマンド列はメモリ `feedback_capsicum_relay_deploy_delegation` が正本**。ホスト構成・デプロイ手順の共有正本は chubo2 の `docs/infra-note.md`）、main 進行がありサーバー側の HEAD が遅れていたら SSH デプロイ（pull → 依存更新 → サービス再起動 → `/health` 確認）まで一連で実行。**稼働中の SHA は SSH せずに `/health` で分かる**（relay#37、v1.57 で出荷）ので、デプロイ要否の判定はこれ 1 回で済ませる:
 
   ```sh
-  curl -s https://relay.capsicum.shrieker.net/health | python3 -m json.tool   # revision が origin/main の HEAD と一致するか
+  curl -s https://relay.capsicum.shrieker.net/health | jq -r .revision   # origin/main の HEAD と一致するか
   ```
 
   ⚠ 返るのは**稼働中プロセス**の revision なので、docs / テストだけの commit を main へ入れた回は**意図的に遅れる**（本番再起動は in-memory の `/metrics` counter をゼロに戻すため、サーバー挙動が変わらない commit で再起動しない）。不一致を見つけたら `git log <revision>..origin/main` で中身を見て、コードに触っていなければデプロイ不要と判断する。
 - **Mastodon / Misskey の現行バージョン確認**: 自前サーバーのソフトウェアは pooza フォークがリリース追従しているため、ローカルの fork を pull すれば現行バージョンを正確に確認できる（推測しない）。
-  - Mastodon: `cd ~/repos/mastodon && git pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
-  - Misskey: `cd ~/repos/misskey && git pull --ff-only` → `package.json` の `version`
+  - Mastodon: `git -C ~/repos/mastodon pull --ff-only` → `lib/mastodon/version.rb` の major/minor/patch（または `git -C ~/repos/mastodon tag --sort=-creatordate | head` で `vX.Y.Z-bshockdon`）
+  - Misskey: `git -C ~/repos/misskey pull --ff-only` → `package.json` の `version`（`jq -r .version ~/repos/misskey/package.json`）
   - 前回同期からメジャー/マイナーが上がっていれば、API 変更トリアージ（`docs/mastodon-capsicum-api-watch.md` / `docs/misskey-capsicum-api-watch.md`）の要否を判断し、メモリの「対応方針」系（例 `project_mastodon_46_posture`）の版表記を更新する
 
 ## 9. MEMORY.md の更新
