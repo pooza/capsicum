@@ -307,8 +307,12 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 
 client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/about` の `config.features.media_update` が `true` のときだけ出る（fail-closed）。このフラグが立つには**両方**が要る:
 
+✅ **2026-08-25 時点では両方とも成立済み**で、Mastodon 3 台は `true` を返す（Misskey 2 台は設計どおり `false`）。以下は条件の説明であって「出ない」の記録ではない。
+
 1. モロヘイヤが刺している **`ginseng-fediverse` 1.8.30 以上**（mulukhiya#4621。モロヘイヤ 5.35.0 の主軸）
 2. **各サーバーの `local.yaml` に `/mastodon/capabilities/media_update: true`** を書く opt-in（既定 `false`）
+
+⚠ **5.35.0 の `/about` は同名フラグを 2 箇所に持つ。**`.config.features.media_update` と `.config.capabilities.media_update` の両方が返るが、**capsicum が読んでいるのは `features` の側**（`mulukhiya/service.dart` の `about()`）。切り分けで curl を叩くときにパスを取り違えない。
 
 ⚠ **モロヘイヤの版が上がるだけでは復活しない。**2 が既定 false なのは、nginx の `$status_put_backend` map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため。⚠ **`package.version` からは 1 を区別できない**ので、版番号で判定せず必ずフラグを見る（`attachment_description_edit.dart` の doc も同じことを書いている）。デプロイ時は Mastodon 3 台に 2 の追記が要る（Misskey は常に false）。
 
