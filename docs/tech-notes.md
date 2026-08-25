@@ -32,6 +32,18 @@
 
 アバター読み込み失敗時（Misskey proxy の 404 等）にバツ印のプレースホルダが出てしまう。`errorBuilder` で必ずフォールバック UI を用意する。
 
+### テキストに流し込む画像は `height` だけ指定しない — デコード前の幅は 0 になる（#1032）
+
+`RenderImage._sizeForConstraints` は `_image == null` のあいだ `constraints.smallest` を返す。`height` だけ渡して `width` を渡さない `Image` は、**デコードが済むまで幅 0** で置かれ、済んだ瞬間に実寸へ跳ねる。
+
+固定サイズの箱（アバター・リアクションチップ等）なら見た目が一瞬変わるだけで済むが、**`WidgetSpan` として `Text.rich` に流し込んでいる場合は行の折り返し位置＝行数が変わり、そのタイル全体の高さが変わる**。タイムラインの `RenderSliverList` はビューポート外の高さを dead reckoning で持っているため、上へ戻って破棄済みタイルを作り直したときに実測が想定と食い違うと `SliverGeometry.scrollOffsetCorrection` が出る。補正は `pixels` を動かすので、フリングの慣性中だと**スクロール位置が跳ねる**（iOS の `BouncingScrollPhysics` だと特に派手）。
+
+⚠ **`ImageCache` に載っているあいだは表面化しない。**既定は 1000 枚 / 100 MiB（`painting/image_cache.dart`）で、実況中は 1 画面あたりのカスタム絵文字が多く、下へ送るほど回転して一度見た画像が落ちる。「戻るときだけ起きる」「絵文字が多い TL だけ起きる」という報告の形になる。
+
+対策は**寸法を先に知って `width` を渡す**こと。Mastodon の `/api/v1/custom_emojis` も Misskey の `/api/emojis` も寸法を返さないので、初回デコード時のアスペクト比を自前で覚える（`ui/widget/inline_custom_emoji.dart` の `EmojiAspectRatioCache`）。⚠ **`maxWidth` で cap を置く形にしてはいけない**（#858 で横長絵文字が細い帯に潰れた）。渡すのは実寸そのもので、頭打ちは従来どおり `RenderParagraph` の `maxWidth` に委ねる。
+
+⚠ 寸法を覗くために `ImageStream` を購読したままにすると、その画像が `ImageCache` の live 扱いになって追い出されなくなる。**比が取れたら listener を外す。**
+
 ### PostTile の iPad オーバーフロー問題
 
 `Row + Expanded` 構成は iPad の広い画面で `RenderFlex overflow` を原因不明のまま起こすことがある。`Stack + Padding(left: 52) + Positioned` で回避した（v0.3.0）。同様の問題を見たら同じ方針で。
