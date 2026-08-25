@@ -34,6 +34,7 @@ import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show pickFollowedChannel;
+import 'inline_custom_emoji.dart';
 import 'post_touch_action_row.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
@@ -2532,25 +2533,27 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
               if (widget.emojiUrl != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
-                  child: ConstrainedBox(
-                    // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
-                    // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
-                    // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
-                    // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
-                    constraints: BoxConstraints(
-                      maxHeight: emojiSize,
-                      maxWidth: emojiSize * 3,
-                    ),
-                    child: Image.network(
-                      widget.emojiUrl!,
-                      height: emojiSize,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => Text(
-                        widget.reactionKey,
-                        style: TextStyle(
-                          fontSize:
-                              emojiSize * AppConstants.emojiFallbackTextScale,
-                        ),
+                  // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
+                  // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
+                  // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
+                  // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
+                  //
+                  // ⚠ **デコード前の幅を予約するのは本文以上に重要** (#1032)。
+                  // チップは `_ReactionChips` の `Wrap` に並ぶので、幅が 0 のまま
+                  // レイアウトされると少ない行数に詰まり、デコード後に**行ごと**
+                  // 増えてタイルの高さが飛ぶ。本文の折り返し 1 行より変動が大きい。
+                  // アスペクト比のキャッシュは本文と共有なので、本文で一度出た
+                  // 絵文字はチップでも初回から正しい幅になる。
+                  child: InlineCustomEmoji(
+                    url: widget.emojiUrl!,
+                    shortcode: widget.reactionKey,
+                    size: emojiSize,
+                    maxWidthFactor: 3,
+                    fallback: Text(
+                      widget.reactionKey,
+                      style: TextStyle(
+                        fontSize:
+                            emojiSize * AppConstants.emojiFallbackTextScale,
                       ),
                     ),
                   ),

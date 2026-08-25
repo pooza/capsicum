@@ -149,6 +149,59 @@ void main() {
         reason: '幅の予約は Image 側で行う。ConstrainedBox に cap を戻すと横長絵文字が潰れる',
       );
     });
+
+    testWidgets('リアクションチップ用に幅 cap を課せる (#924)', (tester) async {
+      final cache = EmojiAspectRatioCache()..record(url, 9.85);
+
+      await tester.pumpWidget(
+        wrap(
+          InlineCustomEmoji(
+            url: url,
+            shortcode: 'banner',
+            size: 20,
+            maxWidthFactor: 3,
+            cache: cache,
+          ),
+        ),
+      );
+
+      final box = tester.widget<ConstrainedBox>(
+        find
+            .ancestor(
+              of: find.byType(Image),
+              matching: find.byType(ConstrainedBox),
+            )
+            .first,
+      );
+      expect(
+        box.constraints.maxWidth,
+        60.0,
+        reason: 'チップは肥大化防止で 3 倍 cap を維持する。本文 (cap 無し) と別方針',
+      );
+      expect(
+        emojiImage(tester).width,
+        20.0 * 9.85,
+        reason: '予約幅は実寸のまま渡し、頭打ちは ConstrainedBox の enforce に任せる',
+      );
+    });
+
+    testWidgets('フォールバックを差し替えられる', (tester) async {
+      await tester.pumpWidget(
+        wrap(
+          const InlineCustomEmoji(
+            url: url,
+            shortcode: 'banner',
+            size: 20,
+            fallback: Text('生キー'),
+          ),
+        ),
+      );
+      // テスト環境の Image.network は 400 を返して errorBuilder に落ちる。
+      await tester.pump();
+
+      expect(find.text('生キー'), findsOneWidget);
+      expect(find.text(':banner:'), findsNothing);
+    });
   });
 
   group('呼び出し側の 2 経路', () {

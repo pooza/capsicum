@@ -84,6 +84,8 @@ class InlineCustomEmoji extends StatefulWidget {
     required this.url,
     required this.shortcode,
     required this.size,
+    this.maxWidthFactor,
+    this.fallback,
     this.cache,
   });
 
@@ -92,6 +94,21 @@ class InlineCustomEmoji extends StatefulWidget {
 
   /// 画像を出せなかったときに生テキストで見せるショートコード（`:` は含まない）。
   final String shortcode;
+
+  /// 幅の上限を「高さの N 倍」で課す。null なら上限なし。
+  ///
+  /// ⚠ **本文（`content_parser` / `emoji_text`）では必ず null にする** — 固定 cap を
+  /// 置くと 3:1 を超える横長絵文字が `BoxFit.contain` で細い帯に潰れる (#858)。
+  /// 一方**リアクションチップは 3 倍 cap を意図的に維持する** (#924)。撤廃すると
+  /// チップが横に伸びて行が崩れるため、方針が本文と異なる。
+  final double? maxWidthFactor;
+
+  /// 画像を出せなかったときの差し替え。null なら `:shortcode:` を出す。
+  ///
+  /// リアクションチップは `:shortcode:` ではなく生のリアクションキーを、
+  /// チップに収まる倍率（[AppConstants.emojiFallbackTextScale]）で出すため、
+  /// 呼び出し側から渡せるようにしてある。
+  final Widget? fallback;
 
   /// 絵文字の表示高さ。`emojiSizeProvider` の値に、MFM の `$[x2]` 等による
   /// 倍率を掛けたもの (#844)。
@@ -196,11 +213,18 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
   @override
   Widget build(BuildContext context) {
     final ratio = _ratio;
+    final maxWidthFactor = widget.maxWidthFactor;
     return ConstrainedBox(
-      // 幅に固定の cap を置かない (#858)。`WidgetSpan` の子には
+      // 既定では幅に固定の cap を置かない (#858)。`WidgetSpan` の子には
       // `RenderParagraph` が `BoxConstraints(maxWidth: 段落の利用可能幅)` を渡す
-      // ため、幅の頭打ちはそちらが担う。ここで課すのは maxHeight だけ。
-      constraints: BoxConstraints(maxHeight: widget.size),
+      // ため、幅の頭打ちはそちらが担う。cap を課すのは [maxWidthFactor] を
+      // 渡された場合（＝リアクションチップ・#924）だけ。
+      constraints: BoxConstraints(
+        maxHeight: widget.size,
+        maxWidth: maxWidthFactor == null
+            ? double.infinity
+            : widget.size * maxWidthFactor,
+      ),
       child: Image(
         image: _provider,
         height: widget.size,
@@ -222,6 +246,7 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
         // (`_ImageState.build` が RawImage ごと差し替える)。フォールバックの
         // 文字サイズは従来どおり据え置き。
         errorBuilder: (_, _, _) =>
+            widget.fallback ??
             Text(':${widget.shortcode}:', style: const TextStyle(fontSize: 14)),
       ),
     );
