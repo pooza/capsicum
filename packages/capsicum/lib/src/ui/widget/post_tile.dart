@@ -19,7 +19,6 @@ import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
-import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
@@ -36,6 +35,7 @@ import 'emoji_text.dart';
 import 'home_menu.dart' show pickFollowedChannel;
 import 'inline_custom_emoji.dart';
 import 'post_touch_action_row.dart';
+import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
@@ -209,7 +209,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       for (final card in cards)
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: _PreviewCardWidget(card: card),
+          child: PreviewCardWidget(card: card),
         ),
     ];
   }
@@ -3209,89 +3209,6 @@ class _QuoteStateCard extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PreviewCardWidget extends ConsumerWidget {
-  final PreviewCard card;
-
-  const _PreviewCardWidget({required this.card});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(previewCardModeProvider);
-    if (mode == PreviewCardMode.hide) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: () {
-        final uri = Uri.tryParse(card.url);
-        // プレビューカードのリンクも本文中 URL と同様に、対応する専用アプリが
-        // あればそちらで開く（YouTube 等・モバイルのみ・#755）。
-        if (uri != null) launchInPreferredApp(uri);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (card.imageUrl != null)
-              mode == PreviewCardMode.blur
-                  ? ClipRect(
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                        child: Image.network(
-                          card.imageUrl!,
-                          width: double.infinity,
-                          height: 160,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    )
-                  : Image.network(
-                      card.imageUrl!,
-                      width: double.infinity,
-                      height: 160,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    card.title,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (card.description != null &&
-                      card.description!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      card.description!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
