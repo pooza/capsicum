@@ -66,6 +66,131 @@ void main() {
         throwsA(isA<SettingsBackupFormatException>()),
       );
     });
+
+    /// #1025: 捕まえるのが遅すぎた。⚠ **例外に「する」だけでは足りない** —
+    /// `StackOverflowError` に到達するまでメイン isolate が同期的に回り続け、
+    /// 実測で最大 65 秒無反応になっていた（Android は ANR、iOS はウォッチドッグ
+    /// の射程）。**弾くのが速いこと**まで含めて固定する。
+    ///
+    /// ⚠ 時間で測る検査なので閾値は緩く取る。CI の遅いマシンでも、パースまで
+    /// 落ちていれば桁が違う（同じ深さで 65 秒）ので取り違えようがない。
+    test('深いファイルはパースへ入る前に、即座に弾く', () async {
+      final prefs = await emptyPrefs();
+      const depth = 200000;
+      final bomb = '${'[' * depth}${']' * depth}';
+
+      final sw = Stopwatch()..start();
+      await expectLater(
+        applySettingsBackupYaml(prefs, 'version: 1\nsettings: $bomb\n'),
+        throwsA(isA<SettingsBackupFormatException>()),
+      );
+      sw.stop();
+
+      expect(
+        sw.elapsedMilliseconds,
+        lessThan(2000),
+        reason:
+            'パースへ入っている。深さ 200,000 は実測 65 秒で、その間 UI は'
+            '固まったままになる (#1025)',
+      );
+    });
+
+    group('入れ子の深さの門番 (#1025)', () {
+      String flow(int depth) => '${'[' * depth}${']' * depth}';
+
+      // ⚠ **自分が書き出したファイルを自分で弾かないこと。**門番を足すときに
+      // 一番やりやすい壊し方なので、実物の書き出しを通して往復で確かめる。
+      test('自分が書き出したファイルは通す', () async {
+        final prefs = await emptyPrefs();
+        final exported = buildSettingsBackupYaml(
+          prefs,
+          appVersion: '1.61.0+174',
+          exportedAt: '2026-08-27T00:00:00Z',
+        );
+
+        expect(exceedsSettingsBackupNestingDepth(exported), isFalse);
+      });
+
+      test('手編集で多少入れ子になっていても通す', () {
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            'version: 1\nsettings:\n  a: [1, 2, [3]]\naccounts:\n  - x\n',
+          ),
+          isFalse,
+        );
+      });
+
+      test('上限ちょうどは通し、1 段超えたら弾く', () {
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            flow(maxSettingsBackupNestingDepth),
+          ),
+          isFalse,
+        );
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            flow(maxSettingsBackupNestingDepth + 1),
+          ),
+          isTrue,
+        );
+      });
+
+      test('閉じたぶんは戻る（横に並べても深さにならない）', () {
+        // `[] [] [] ...` を上限より多く並べても、同時に開いているのは 1 段。
+        final wide = List.filled(
+          maxSettingsBackupNestingDepth * 4,
+          '[]',
+        ).join();
+        expect(exceedsSettingsBackupNestingDepth(wide), isFalse);
+      });
+
+      // ⚠ ここを飛ばさないと、本文に `[` を含む設定値（投稿テンプレート等）が
+      // 深さに数えられ、**正しいファイルを誤って弾く**。
+      test('引用符の中の括弧は数えない', () {
+        final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            'version: 1\nsettings:\n  a: "$inside"\n',
+          ),
+          isFalse,
+        );
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            "version: 1\nsettings:\n  a: '$inside'\n",
+          ),
+          isFalse,
+        );
+      });
+
+      test('二重引用符の中のエスケープを読み飛ばす', () {
+        final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+        expect(
+          exceedsSettingsBackupNestingDepth(
+            r'a: "\" '
+            '$inside'
+            r'"',
+          ),
+          isFalse,
+          reason: r'\" を閉じ引用符と誤読すると、以降の括弧を数えてしまう',
+        );
+      });
+
+      test("単一引用符の '' エスケープを読み飛ばす", () {
+        final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+        expect(
+          exceedsSettingsBackupNestingDepth("a: 'it''s $inside'"),
+          isFalse,
+        );
+      });
+
+      test('コメントの中の括弧は数えない', () {
+        final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+        expect(
+          exceedsSettingsBackupNestingDepth('# $inside\nversion: 1\n'),
+          isFalse,
+        );
+      });
+    });
   });
 
   group('アカウント件数の上限', () {
