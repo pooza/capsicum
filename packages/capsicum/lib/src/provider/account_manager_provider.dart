@@ -252,7 +252,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> logout(Account account) async {
     // プッシュ通知登録解除（ベストエフォート）。
     PushRegistrationService.unregisterAccount(account);
-    await NotificationLabelCache.remove(_notificationLabelKey(account));
+    await NotificationLabelCache.remove(_notificationLabelKey(account.key));
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(account.key.toStorageKey());
@@ -405,11 +405,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     ]);
   }
 
-  /// [Account] を `username@host` 形式に直す。capsicum-relay が push payload
+  /// [AccountKey] を `username@host` 形式に直す。capsicum-relay が push payload
   /// に載せる `account` 文字列・[NotificationLabelCache] のキー・通知ルート
   /// 解決用と全経路で同一フォーマットを使う。
-  static String _notificationLabelKey(Account account) =>
-      '${account.key.username}@${account.key.host}';
+  ///
+  /// ⚠ **[Account] ではなく [AccountKey] を受ける**（#1024）。掃除が要る経路の
+  /// うち [removeOfflineAccount] は昇格できなかったアカウントを相手にするので
+  /// [Account] を持っていない。[Account] 前提にしていたせいで、あちらだけ
+  /// ラベルの掃除が漏れていた。
+  static String _notificationLabelKey(AccountKey key) =>
+      '${key.username}@${key.host}';
 
   /// [Account] から「ブースト/リノート/リキュア！」「投稿」ラベルを解決し、
   /// FCM バックグラウンド isolate / iOS NSE からも参照できるよう永続化する。
@@ -421,7 +426,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   Future<void> _persistNotificationLabels(Account account) async {
     final labels = _resolveNotificationLabels(account);
     await NotificationLabelCache.save(
-      _notificationLabelKey(account),
+      _notificationLabelKey(account.key),
       reblogLabel: labels.reblog,
       postLabel: labels.post,
     );
@@ -453,7 +458,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final map = <String, String>{};
     for (final account in state.accounts) {
       final labels = _resolveNotificationLabels(account);
-      map[_notificationLabelKey(account)] = jsonEncode({
+      map[_notificationLabelKey(account.key)] = jsonEncode({
         'reblog': labels.reblog,
         'post': labels.post,
       });
@@ -1121,6 +1126,15 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 完全に同じ。片方にだけ掃除を足すと、**削除したはずのアカウントの
   /// 痕跡が残る**。
   Future<void> removeOfflineAccount(AccountKey key) async {
+    // 端末に残る push の痕跡を消す (#1024)。⚠ **上流の購読解除は行えない** —
+    // 未接続アカウントは adapter もアクセストークンも持たないので、SNS 側へ
+    // unsubscribe を投げようがない。[logout] との差はここだけで、端末側の
+    // 掃除は同じものを共有している。
+    await PushRegistrationService.forgetAccountLocally(key);
+    // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ `@user@host` へ
+    // 入り直したときに古いラベルを引きうる。
+    await NotificationLabelCache.remove(_notificationLabelKey(key));
+
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
     // 明示ログアウト相当なので、TL キャッシュ (#890) も [logout] と同じく捨てる。
