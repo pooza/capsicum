@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../../platform/platform_info.dart';
 import '../../../provider/preferences_provider.dart';
@@ -115,17 +116,42 @@ class _ComposeFontSetting extends ConsumerStatefulWidget {
 }
 
 class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, WindowListener {
   late final TextEditingController _controller;
+
+  /// ⚠⚠ **`dispose` から `ref` は触れない。**riverpod の
+  /// `ConsumerStatefulElement.unmount()` は `Element.unmount()`（`mounted` を
+  /// false にする）を**先に**走らせてから `State.dispose()` を呼ぶ。そのため
+  /// `dispose` の中の `ref.read` は `_assertNotDisposed` に当たって必ず
+  /// `StateError: Cannot use "ref" after the widget was disposed.` になる。
+  ///
+  /// ⚠ **#976 で `dispose` に置いた flush は、これのせいで一度も効いていなかった。**
+  /// 例外は framework に飲まれて画面は壊れないうえ、当時のテストは
+  /// **ソース文字列を pin していただけ**だったので緑のまま通っていた
+  /// （#1026 で実経路の widget test に置き換えて発覚）。
+  ///
+  /// notifier を初回に掴んでおけば `dispose` からでも安全に呼べる。
+  /// [composeFontFamilyProvider] は autoDispose でも family でもないので、
+  /// インスタンスは [ProviderScope] の寿命と同じ。
+  late final ComposeFontFamilyNotifier _fontNotifier;
 
   @override
   void initState() {
     super.initState();
+    _fontNotifier = ref.read(composeFontFamilyProvider.notifier);
     _controller = TextEditingController(
       text: ref.read(composeFontFamilyProvider),
     );
     WidgetsBinding.instance.addObserver(this);
+    // デスクトップのウィンドウを閉じる経路 (#1026)。モバイルには window_manager
+    // の native plugin が無いので登録しない（`addListener` 自体は純 Dart だが、
+    // 呼ばれようが無いリスナを提げておく理由も無い）。
+    if (isDesktop) windowManager.addListener(this);
   }
+
+  /// 保留中の書き込みを確定させる。**呼ぶ経路が 3 つある**ので、1 箇所へまとめて
+  /// おく（[dispose] / [didChangeAppLifecycleState] / [onWindowClose]）。
+  void _flush() => unawaited(_fontNotifier.flushPendingWrite());
 
   /// ⚠⚠ **アプリ終了は `dispose` では拾えない (#1022)。**Flutter は**終了時に
   /// ウィジェットツリーを dispose しない**ので、この画面を開いたまま終了すると
@@ -133,25 +159,48 @@ class _ComposeFontSettingState extends ConsumerState<_ComposeFontSetting>
   /// 「アプリ終了で失われる」を動機として挙げながら、**その経路を塞げていなかった**。
   ///
   /// 下書き自動保存 (#964・`compose_screen`) と同じ形で、resumed 以外への遷移で
-  /// 確定させる。デスクトップのウィンドウを閉じる経路も inactive / hidden を通る。
+  /// 確定させる。**これが受けるのはモバイルの終了**。
+  ///
+  /// ⚠ **デスクトップの × はここを通るとは限らない (#1026)。**それは
+  /// [onWindowClose] が受ける。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) return;
-    unawaited(ref.read(composeFontFamilyProvider.notifier).flushPendingWrite());
+    _flush();
   }
+
+  /// デスクトップ (macOS / Linux / Windows) でウィンドウの × を押した経路 (#1026)。
+  ///
+  /// ⚠ **[didChangeAppLifecycleState] では代用できない。**この経路は
+  /// `window_manager` の native 側から来るもので、`AppLifecycleState.detached`
+  /// が確実に届く保証がない。設定画面を開いたままフォント名を打ち、400ms 以内に
+  /// ウィンドウを閉じると入力が失われていた。
+  ///
+  /// ⚠ **3 OS 同時に効く。**`window_manager` のイベントはプラットフォーム差を
+  /// 吸収済みなので、ここに置けば分岐は要らない。
+  ///
+  /// ⚠⚠ **「必ず書ける」保証ではない。**`WindowStateService.onWindowClose` と
+  /// 同じく `setPreventClose` を使わない軽量実装なので、OS がプロセスを畳むまでの
+  /// 間に非同期の書き込みが完走する保証はない。**取りこぼす窓を実用上ゼロに
+  /// 近づける**話であって、確実性が要る値ならデバウンス自体をやめる判断になる。
+  @override
+  void onWindowClose() => _flush();
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (isDesktop) windowManager.removeListener(this);
     // ⚠ **保留中の書き込みを確定させてから離れる (#976)。**こちらが塞ぐのは
     // **画面を閉じる / 別画面へ移る**経路。最後の打鍵から 400ms 以内に離れると、
     // デバウンス前の入力がそのまま失われる（#927-2 でデバウンスを入れる前は
-    // 即時書き込みだった）。アプリ終了は上の [didChangeAppLifecycleState] が受ける。
+    // 即時書き込みだった）。モバイルの終了は [didChangeAppLifecycleState] が、
+    // デスクトップのウィンドウを閉じる経路は [onWindowClose] が受ける。
     //
-    // ⚠ **`ref` は dispose 後に触れないので、ここで読んでから投げる。**
+    // ⚠ **`ref` ではなく [_fontNotifier] を使う。**理由はそちらの doc を参照
+    // （ここで `ref.read` を書くと StateError になり、flush が黙って落ちる）。
     // 書き込み自体は Notifier 側（この画面より長生き）が完走させる。
-    unawaited(ref.read(composeFontFamilyProvider.notifier).flushPendingWrite());
+    _flush();
     _controller.dispose();
     super.dispose();
   }

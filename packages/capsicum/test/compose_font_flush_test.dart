@@ -70,52 +70,27 @@ void main() {
     });
   });
 
-  /// 呼び出し側の配線。⚠ **widget test にできない** — `_ComposeFontSetting` は
-  /// private で、デスクトップ設定画面を丸ごと pump しないと到達しない。
-  /// `alt_edit_gate_source_test.dart` と同じく**ソースで固定する**。
+  /// 呼び出し側の配線は [compose_font_flush_routes_test.dart] へ移した (#1026)。
   ///
-  /// ⚠⚠ **2 つ揃っていることに意味がある。**片方だけでも「flush を呼んでいる」
-  /// ようには見えるが、塞げる窓が違う。#976 は `dispose` だけで「アプリ終了」を
-  /// 塞いだつもりになっていた。
-  group('設定画面の配線', () {
-    String source() => File(
-      'lib/src/ui/screen/settings/desktop_settings_screen.dart',
-    ).readAsStringSync();
-
-    test('画面を離れる経路（dispose）で確定する', () {
-      expect(
-        source(),
-        contains(
-          'void dispose() {\n'
-          '    WidgetsBinding.instance.removeObserver(this);\n'
-          '    //',
-        ),
-        reason: 'observer を外し忘れると、破棄後の画面が flush を呼び続ける',
-      );
-      expect(source(), contains('_controller.dispose();'));
-    });
-
-    test('アプリ終了の経路（lifecycle）でも確定する', () {
-      expect(
-        source(),
-        contains('void didChangeAppLifecycleState(AppLifecycleState state)'),
-        reason:
-            'Flutter は終了時にウィジェットツリーを dispose しないので、'
-            'dispose だけでは設定画面を開いたままの終了を塞げない',
-      );
-      expect(
-        source(),
-        contains('if (state == AppLifecycleState.resumed) return;'),
-        reason: 'resumed 以外はすべて離脱とみなす（#964 の下書き保存と同じ形）',
-      );
-    });
-
-    test('flush の呼び出しが 2 経路ある', () {
-      expect(
-        'flushPendingWrite()'.allMatches(source()).length,
-        2,
-        reason: 'dispose と didChangeAppLifecycleState の 2 つ',
-      );
-    });
+  /// ⚠⚠ **ここにあったソース pin は、検査になっていなかった。**「`dispose` と
+  /// いう文字列がファイルにある」ことしか見ておらず、**呼び出しが届くか・
+  /// 保留中の値が実際に書かれるか**は一切見ていない。実害も出ていて、
+  /// `dispose` の中の `ref.read` は riverpod の `_assertNotDisposed` に当たって
+  /// **必ず StateError になる**（`unmount()` が `mounted` を false にしてから
+  /// `dispose()` を呼ぶ）。つまり **#976 の dispose flush は一度も効いて
+  /// いなかった**のに、この group は緑で通り続けていた。
+  ///
+  /// widget test を諦めた理由は「`_ComposeFontSetting` が private」だったが、
+  /// **それを載せている `DesktopSettingsScreen` は public** なので、画面ごと
+  /// pump すれば実物に到達できる。
+  ///
+  /// ⚠ **ソースを pin する検査を書くときは、「実物を動かせない理由」を疑うこと。**
+  /// 動かせるのに諦めると、この形の空振りになる。
+  test('配線の検査は実経路の widget test が持つ (#1026)', () {
+    expect(
+      File('test/compose_font_flush_routes_test.dart').existsSync(),
+      isTrue,
+      reason: 'ここから移した検査の実体。消すなら配線の検査ごと引き取ること',
+    );
   });
 }
