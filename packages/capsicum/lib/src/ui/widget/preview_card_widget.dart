@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/preferences_provider.dart';
-import '../../url_helper.dart';
+import '../util/fediverse_link.dart';
 
 /// 本文中の URL に付くプレビューカード（OGP）。
 ///
@@ -75,12 +75,13 @@ class PreviewCardWidget extends ConsumerWidget {
 
     final theme = Theme.of(context);
     return GestureDetector(
-      onTap: () {
-        final uri = Uri.tryParse(card.url);
-        // プレビューカードのリンクも本文中 URL と同様に、対応する専用アプリが
-        // あればそちらで開く（YouTube 等・モバイルのみ・#755）。
-        if (uri != null) launchInPreferredApp(uri);
-      },
+      // ⚠ **ブラウザへ直接送らない（#1030）。**本文中の URL と同じ
+      // [openFediverseLink] に通す。カードが指す先は外部サイトとは限らず、
+      // 自ホストの Misskey Play (#830) や fediverse の投稿 / アカウント
+      // (#820) のこともある。直接 `launchInPreferredApp` を呼んでいたため、
+      // Play を指すカードが**アプリ内の Play 画面ではなく WebUI で開いて**
+      // いた。リンクのルーティングはアプリ内のどこでも同じであること。
+      onTap: () => openFediverseLink(context, ref, card.url),
       child: Container(
         // ⚠ 幅を明示する（#1033）。`Column` の幅は子の最大幅で決まるので、
         // これが無いと横幅を広げているのが `Image.network` だけになり、
