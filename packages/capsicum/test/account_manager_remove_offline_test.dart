@@ -5,11 +5,15 @@ import 'package:capsicum/src/model/offline_account.dart';
 import 'package:capsicum/src/provider/account_manager_provider.dart';
 import 'package:capsicum/src/service/account_storage.dart';
 import 'package:capsicum/src/service/compose_draft_store.dart';
+import 'package:capsicum/src/service/notification_label_cache.dart';
 import 'package:capsicum/src/service/timeline_cache.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 /// #1014: `removeOfflineAccount` を [AccountManagerNotifier.logout] と同じ
 /// 後始末に揃える。
@@ -34,6 +38,8 @@ class _FakeAccountStorage extends AccountStorage {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   const alice = AccountKey(
     type: BackendType.mastodon,
     host: 'mstdn.example',
@@ -52,6 +58,14 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    // [NotificationLabelCache] は SharedPreferencesAsync 側（iOS / macOS では
+    // App Group の suite）を使うので、legacy の mock とは別に挿す。
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    // `removeOfflineAccount` は push 鍵も消す (#1024)。実体が無いと
+    // MissingPluginException が内部の catch に落ち、テスト出力が例外ログで
+    // 埋まる（TL キャッシュに実ディレクトリを与えているのと同じ理由）。
+    FlutterSecureStorage.setMockInitialValues({});
     storage = _FakeAccountStorage();
     // `removeOfflineAccount` は TL キャッシュ (#890) も消す。実体を与えないと
     // path_provider が無くて内部の catch に落ち、テスト出力が例外ログで埋まる
@@ -135,6 +149,68 @@ void main() {
       container.read(accountManagerProvider).offlineAccounts.single.key,
       bob,
     );
+  });
+
+  // #1024: 真上の doc が「[logout] と同じ後始末を漏らさないこと」と宣言して
+  // いるのに、通知ラベルの表示名キャッシュだけ `logout` にしか無かった。
+  // ⚠ 消し忘れると、同じ `@user@host` へ入り直したときに**古いラベル**を引く
+  // （ラベルは push の payload 整形に使われ、バックグラウンド isolate / NSE /
+  // Windows の bg task からも読まれる）。
+  test('削除したアカウントの通知ラベルは残らない', () async {
+    const labelKey = 'alice@mstdn.example';
+    await NotificationLabelCache.save(
+      labelKey,
+      reblogLabel: 'リキュア！',
+      postLabel: 'とうこう',
+    );
+    // 前提の確認。保存できていないと、このあとの expect は何も見ていない。
+    expect(await NotificationLabelCache.readReblog(labelKey), 'リキュア！');
+
+    final container = containerWith(
+      const AccountManagerState(
+        offlineAccounts: [OfflineAccount.secretMissing(key: alice)],
+      ),
+    );
+
+    await container
+        .read(accountManagerProvider.notifier)
+        .removeOfflineAccount(alice);
+
+    expect(
+      await NotificationLabelCache.readReblog(labelKey),
+      'ブースト',
+      reason: '保存が消えて既定値に戻る。残ると入り直したときに古いラベルを引く',
+    );
+    expect(await NotificationLabelCache.readPost(labelKey), '投稿');
+  });
+
+  // ラベルのキーは `username@host`。掃除の巻き添えでよそのアカウントの
+  // ラベルを消すと、そちらの通知だけ既定文言に戻る。
+  test('残したアカウントの通知ラベルは巻き添えにしない', () async {
+    await NotificationLabelCache.save(
+      'bob@misskey.example',
+      reblogLabel: 'リノート',
+      postLabel: 'ノート',
+    );
+
+    final container = containerWith(
+      const AccountManagerState(
+        offlineAccounts: [
+          OfflineAccount.secretMissing(key: alice),
+          OfflineAccount(key: bob),
+        ],
+      ),
+    );
+
+    await container
+        .read(accountManagerProvider.notifier)
+        .removeOfflineAccount(alice);
+
+    expect(
+      await NotificationLabelCache.readReblog('bob@misskey.example'),
+      'リノート',
+    );
+    expect(await NotificationLabelCache.readPost('bob@misskey.example'), 'ノート');
   });
 
   // 到達不能 (#792) と未接続 (#967) で扱いを変えない。どちらもユーザーが

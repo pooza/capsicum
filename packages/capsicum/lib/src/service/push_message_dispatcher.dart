@@ -8,6 +8,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../ui/util/notification_type_display.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'notification_init.dart';
 import 'push_failure_recorder.dart';
 import 'push_key_store.dart';
@@ -171,7 +172,7 @@ class PushMessageDispatcher {
 
     final keys = await findKeys(account);
     if (keys == null) {
-      _trace('no push keys for $account');
+      _trace('no push keys for ${sentrySafeAccountKey(account)}');
       await PushFailureRecorder.record(
         PushFailureRecorder.codeNoKeys,
         host: host,

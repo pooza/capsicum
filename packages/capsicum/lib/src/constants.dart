@@ -170,7 +170,20 @@ class InputLimits {
 /// `post_actions` / `post_tile` / `notification_tile` / `post_touch_action_row`
 /// の 4 ファイルが同じリテラルを既定値として抱えたままだった。タグ名を直すと
 /// Sentry 上で新旧が混在するので、綴りは 1 箇所で持つ。
+///
+/// ⚠⚠ **`phase` は「操作の種類」を表す軸で、導線は名乗らない。**同じ操作が
+/// アクションシート・タッチ操作行・通知タイルの 3 導線から実行されるため、
+/// 導線名（`touch_action` 等）を値にすると**同じ失敗が別系列に散って母数が
+/// 取れなくなる**。規約の正本は `describePostActionError` の doc。
+///
+/// ⚠ **[post] も含めてここで持つ (#1027-D)。**リアクションの 2 つだけを
+/// 定数化して `'post_action'` は 7 箇所へ直書きのままだった（`post_tile` ×3 /
+/// `cross_account_boost` / `post_actions` ×3）。**部分的な集約はいちばん
+/// 悪い** — 「定数がある」と見えるので、次に足す人は直書き側を真似する。
 class ReactionPhase {
+  /// 投稿アクション（お気に入り / ブースト / ブックマーク / ピン留め /
+  /// 取り消し / タグ変更 / 別垢ブースト等）。
+  static const post = 'post_action';
   static const add = 'reaction_add';
   static const remove = 'reaction_remove';
 }

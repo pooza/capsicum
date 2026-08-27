@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
+import '../../util/user_acct.dart';
 import '../util/op_error.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
@@ -68,9 +69,7 @@ class ChatRoomMembersScreen extends ConsumerWidget {
                       final displayName = user.displayName?.isNotEmpty == true
                           ? user.displayName!
                           : user.username;
-                      final handle = user.host != null
-                          ? '@${user.username}@${user.host}'
-                          : '@${user.username}';
+                      final handle = '@${userAcct(user)}';
                       final isThisOwner = user.id == room.ownerId;
                       return ListTile(
                         leading: UserAvatar(user: user, size: 40),

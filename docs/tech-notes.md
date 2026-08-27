@@ -32,6 +32,18 @@
 
 アバター読み込み失敗時（Misskey proxy の 404 等）にバツ印のプレースホルダが出てしまう。`errorBuilder` で必ずフォールバック UI を用意する。
 
+### テキストに流し込む画像は `height` だけ指定しない — デコード前の幅は 0 になる（#1032）
+
+`RenderImage._sizeForConstraints` は `_image == null` のあいだ `constraints.smallest` を返す。`height` だけ渡して `width` を渡さない `Image` は、**デコードが済むまで幅 0** で置かれ、済んだ瞬間に実寸へ跳ねる。
+
+固定サイズの箱（アバター・リアクションチップ等）なら見た目が一瞬変わるだけで済むが、**`WidgetSpan` として `Text.rich` に流し込んでいる場合は行の折り返し位置＝行数が変わり、そのタイル全体の高さが変わる**。タイムラインの `RenderSliverList` はビューポート外の高さを dead reckoning で持っているため、上へ戻って破棄済みタイルを作り直したときに実測が想定と食い違うと `SliverGeometry.scrollOffsetCorrection` が出る。補正は `pixels` を動かすので、フリングの慣性中だと**スクロール位置が跳ねる**（iOS の `BouncingScrollPhysics` だと特に派手）。
+
+⚠ **`ImageCache` に載っているあいだは表面化しない。**既定は 1000 枚 / 100 MiB（`painting/image_cache.dart`）で、実況中は 1 画面あたりのカスタム絵文字が多く、下へ送るほど回転して一度見た画像が落ちる。「戻るときだけ起きる」「絵文字が多い TL だけ起きる」という報告の形になる。
+
+対策は**寸法を先に知って `width` を渡す**こと。Mastodon の `/api/v1/custom_emojis` も Misskey の `/api/emojis` も寸法を返さないので、初回デコード時のアスペクト比を自前で覚える（`ui/widget/inline_custom_emoji.dart` の `EmojiAspectRatioCache`）。⚠ **`maxWidth` で cap を置く形にしてはいけない**（#858 で横長絵文字が細い帯に潰れた）。渡すのは実寸そのもので、頭打ちは従来どおり `RenderParagraph` の `maxWidth` に委ねる。
+
+⚠ 寸法を覗くために `ImageStream` を購読したままにすると、その画像が `ImageCache` の live 扱いになって追い出されなくなる。**比が取れたら listener を外す。**
+
 ### PostTile の iPad オーバーフロー問題
 
 `Row + Expanded` 構成は iPad の広い画面で `RenderFlex overflow` を原因不明のまま起こすことがある。`Stack + Padding(left: 52) + Positioned` で回避した（v0.3.0）。同様の問題を見たら同じ方針で。
@@ -269,6 +281,16 @@ clang++ -std=c++17 -I/tmp/winshim -o /tmp/dedup_test \
 
 ⚠ **シムに関数を足したくなったら、それはもう「純粋なロジック」ではない。** 対象ファイルが Win32 / WinRT へ依存し始めた合図なので、シムを厚くするのではなく実機ビルドへ回す。
 
+### `.ps1` に日本語を書くと無音で構文エラーになる（PowerShell 5.1）
+
+Windows 機で `.ps1` を書いて `powershell.exe -File` で実行するとき、**BOM 無し UTF-8 の日本語が含まれると PowerShell 5.1 が ANSI (CP932) として読み**、文字列リテラルが壊れて `The string is missing the terminator: ".` で落ちる。
+
+⚠ **失敗が無音になる。**`Start-Process -Verb RunAs -Wait` で昇格実行すると、パースエラーは昇格した子プロセス側で起きるため親からは成功に見える（`-WindowStyle Hidden` なら画面にも出ない）。ログの 1 行目すら書かれないので、**「UAC が承認されていない」と誤診しやすい**。
+
+⚠ **静的な検査は通ってしまう。**`[System.Management.Automation.PSParser]::Tokenize()` に `[IO.File]::ReadAllText()` の結果を渡す形だと、.NET が UTF-8 を自動判別するので再現しない。切り分けは**非昇格で 1 回 `powershell.exe -File` を走らせて exit code と stderr を見る**のが速い。
+
+回避は **スクリプト本体を ASCII のみで書く**（コメントも英語）。日本語が要るなら UTF-8 **BOM 付き**で保存する。1 行で済むならファイルを経由せず直接渡せば影響を受けない。
+
 ## NodeInfo / Probing
 
 ### rel URL の判定
@@ -281,17 +303,30 @@ NodeInfo の rel URL は `http://nodeinfo.diaspora.software/ns/schema/2.0` 形�
 
 `POST /api/v1/media` の multipart リクエストに `description` を同梱しても、サーバー実装によっては保存されないことがある（モロヘイヤ経由で発生を確認済み、原因未特定）。WebUI と同じく、アップロード後に `PUT /api/v1/media/:id` で別途 `description` を設定する 2 ステップ方式を採用している。
 
-### 投稿済み ALT の編集は dev24 の `~/alt_try.sh` で試す（#121）
+### 投稿済み ALT の編集は美食丼ステージングの `~/alt_try.sh` で試す（#121）
 
 ⚠ **Mastodon の Web UI からは試せない。**Web UI は `X-Mulukhiya-Purpose` を付けないため、nginx 前段の `$status_put_backend` map が **405** で弾く（mulukhiya#4474）。「Web で編集できるのに capsicum でできない」ではなく、**Web からは元々できない**。
 
-検証用の一式が dev24（美食丼ステージング / st2.mstdn.b-shock.org）の `mastodon` ホームに置いてある。**repo からは辿れないので、ここに場所を書いておく。**
+検証用の一式が**美食丼ステージング**（`st2.mstdn.b-shock.org`）の `mastodon` ホームに置いてある。**repo からは辿れないので、ここに場所を書いておく**（SSH の接続先ホスト名は chubo2 `docs/infra-servers.md` が正本）。
 
 - `~/alt_try.sh <新しい ALT>` — capsicum と同じ経路（PUT `/api/v1/statuses/:id` + `X-Mulukhiya-Purpose: media_update` + `media_attributes` だけの body）で投げ、応答から ALT / 添付数 / CW / 閲覧注意 / 本文を並べて出す
 - `~/.alt_try_token` — 実行用のアクセストークン
 - `~/.alt_try_ids` — 1 行目が status id、2 行目が media id
 
 ⚠ **見るべきは HTTP 200 ではなく「送っていない項目が残ったか」。**この API は送らなかったパラメータを現状維持ではなく**空で更新**として扱うため、モロヘイヤの補完が効いていないと 200 のまま**添付が全部外れて CW と閲覧注意も消える**（mulukhiya#4589）。出力の「添付 = N 件 / CW / 閲覧注意」がその確認欄。
+
+### ALT 編集の導線が出る条件は版番号ではなく 2 つの and（#121）
+
+client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/about` の `config.features.media_update` が `true` のときだけ出る（fail-closed）。このフラグが立つには**両方**が要る:
+
+✅ **2026-08-25 時点では両方とも成立済み**で、Mastodon 3 台は `true` を返す（Misskey 2 台は設計どおり `false`）。以下は条件の説明であって「出ない」の記録ではない。
+
+1. モロヘイヤが刺している **`ginseng-fediverse` 1.8.30 以上**（mulukhiya#4621。モロヘイヤ 5.35.0 の主軸）
+2. **各サーバーの `local.yaml` に `/mastodon/capabilities/media_update: true`** を書く opt-in（既定 `false`）
+
+⚠ **5.35.0 の `/about` は同名フラグを 2 箇所に持つ。**`.config.features.media_update` と `.config.capabilities.media_update` の両方が返るが、**capsicum が読んでいるのは `features` の側**（`mulukhiya/service.dart` の `about()`）。切り分けで curl を叩くときにパスを取り違えない。
+
+⚠ **モロヘイヤの版が上がるだけでは復活しない。**2 が既定 false なのは、nginx の `$status_put_backend` map が 3 要素キーへ是正済みかをモロヘイヤ側から観測できないため。⚠ **`package.version` からは 1 を区別できない**ので、版番号で判定せず必ずフラグを見る（`attachment_description_edit.dart` の doc も同じことを書いている）。デプロイ時は Mastodon 3 台に 2 の追記が要る（Misskey は常に false）。
 
 ### プロフィール編集の初期値
 
@@ -330,6 +365,22 @@ Misskey upstream は [GHSA-7pxq-6xx9-xpgm](https://github.com/misskey-dev/misske
 [MisskeyAdapter.subscribePush](../packages/capsicum_backends/lib/src/misskey/adapter.dart) はこの 400 を [PushRegistrationNotSupportedException](../packages/capsicum_core/lib/src/social/interfaces/push_subscription_support.dart) に詰め替え、[PushRegistrationService](../packages/capsicum/lib/src/service/push_registration_service.dart) 側は Sentry への送信をスキップする（再試行しても成功しない仕様制約で、ノイズになるため）。リレー登録のロールバックは通常ルートで実施する。
 
 自前サーバー（ダイスキー等）向けの回避策としては、モロヘイヤにプロキシエンドポイントを生やす or フォークでガードを緩める等の選択肢がある（[#352](https://github.com/pooza/capsicum/issues/352) の follow-up 参照）。
+
+### Play（スロット系）の出目に関する 3 つの現象を混同しない（#896 / #898）
+
+「Play の出目がおかしい」の報告は**別物が 3 つ**あり、混ぜて再調査すると必ず迷子になる。⚠ **`String.hashCode` は JIT・AOT・別プロセスで不変**なので、「プロセスごとに乱数がランダム化される」という説明は**誤り**。ここは何度も疑われるが決着済み。
+
+| # | 現象 | 正体 | 扱い |
+| --- | --- | --- | --- |
+| 1 | **Web と出目が違う** | engine の忠実度。capsicum の `Math:gen_rng` は `dart:math` の `Random(seed.hashCode)`、Misskey 側は seedrandom（RC4 系） | [#896](https://github.com/pooza/capsicum/issues/896)・優先度低。**シードを固定しても一致しない**が、seedrandom 互換化なら原理的には一致可能 |
+| 2 | **同じ日でも朝と夕で変わる** | **絵文字インベントリ依存の仕様**（下記） | [#898](https://github.com/pooza/capsicum/issues/898) で決着。**再調査不要** |
+| 3 | **特定キャラが出やすい** | Play スクリプト（ユーザースクリプト）側の seed / 選択バイアス | **作者側の話で capsicum の対象外**。engine の初手分布は実測で有意な偏りなし |
+
+2 の機序: スロット系スクリプトのプール構築が `CUSTOM_EMOJIS.filter(cat).map(@(e){random(0 100000)})` の形をしており、**対象カテゴリの絵文字 1 個につきシード付き乱数を 1 回消費する**。したがって件数・順序が変われば PRNG の位置がズレて出目が全変化する（**±1 絵文字で別結果**を実測）。トリガーは**対象カテゴリの非 ignore 絵文字の add / remove / rename だけ**（他カテゴリの追加は `.filter` で落ちるので無影響）。
+
+Web で問題にならないのは、Misskey フロントが絵文字リストを IndexedDB に persist して `fetchCustomEmojis` を throttle しており**プールが凍結される**ため。capsicum は `/api/emojis` をコールドスタートごとに引き直すので、インベントリ変化を即拾う（モバイルは cold start が多く表面化しやすい）。⚠ **凍結すると Web と挙動が変わる**ので、同日変動は仕様として扱う。
+
+⚠ **1 で照合すべき Misskey 側の実装は 1.2.1 ではなく 0.19.0。**Misskey は Play の宣言バージョンで legacy 判定して `@syuilo/aiscript-0-19-0` を動的 import する。capsicum は `/// @1.0.0` 以上を実行せずブラウザへ逃がす（#881 の gate）ので、**capsicum が実行する Play の Web 側実行系は常に 0.19.0** になる。現行 1.2.1 の `CryptoGen` / chacha20 は capsicum が実行しない領域の話。
 
 ## モロヘイヤ API
 

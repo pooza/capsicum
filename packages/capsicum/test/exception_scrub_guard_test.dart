@@ -325,8 +325,20 @@ void main() {
   final interpolationStart = RegExp(
     r'\$\{?(e|err|error|ex|exception)(?![A-Za-z0-9_])',
   );
+
+  /// ⚠ **`response` / `details` / `osError` を落とさない (#1027-A4)。**
+  ///
+  /// - `${e.response}` は `Response.toString()` が**ボディ全体**を返す
+  /// - `${e.details}` は `PlatformException` / `IAPError` のネイティブ内部情報
+  /// - `${e.osError}` は `SocketException` の OS エラーで、ホスト名と
+  ///   ポートを含む
+  ///
+  /// ⚠ **`statusCode` は通る**（`response` の後ろに続いても、鎖全体に
+  /// `response` が現れるので弾かれる点は承知のうえ）。素性だけ欲しいときは
+  /// `e.response?.statusCode` ではなく [scrubException] を通すこと。
   final unsafeMembers = RegExp(
-    r'\b(message|data|body|uri|path|toString|requestOptions)\b',
+    r'\b(message|data|body|uri|path|toString|requestOptions'
+    r'|response|details|osError)\b',
   );
 
   /// 補間ではなく**引数として直に**渡す形（`Breadcrumb(message: e.toString())`）。
@@ -349,8 +361,22 @@ void main() {
   /// は breadcrumb に載せる**正しい**形なので、`toString` に反応して弾いては
   /// いけない（この除外が無いと timeline_provider / chat_provider /
   /// desktop_notification_dispatcher の正しい実装が軒並み違反になる）。
-  bool unsafeChain(String chain) =>
-      !chain.startsWith('runtimeType') && unsafeMembers.hasMatch(chain);
+  /// 素性しか出さないと分かっている鎖。**通した理由を必ず書くこと。**
+  ///
+  /// ⚠ **`response` を丸ごと安全扱いにしない (#1027-A4)。**危ないのは
+  /// `Response.toString()`（ボディ全体）であって、そこから 1 つ引いた
+  /// `statusCode` は数値。**鎖の終端まで見て、この形ちょうどのときだけ**通す。
+  final safeChains = <RegExp>[
+    // dio の HTTP ステータス。数値しか出ない。
+    RegExp(r'^response\??\.statusCode$'),
+  ];
+
+  bool unsafeChain(String chain) {
+    // 型名しか出ない。`e.runtimeType.toString()` は breadcrumb に載せる正しい形。
+    if (chain.startsWith('runtimeType')) return false;
+    if (safeChains.any((r) => r.hasMatch(chain))) return false;
+    return unsafeMembers.hasMatch(chain);
+  }
 
   /// [args] の中の危ない補間を返す。
   List<String> unsafeInterpolations(String args) {
@@ -379,6 +405,153 @@ void main() {
   String relativePath(File f) =>
       f.path.replaceFirst('${Directory.current.path}/', '');
 
+  /// ログ経路に載せてはいけないアカウント識別子 (#1027-A3 / B)。
+  ///
+  /// ⚠⚠ **この検査は例外しか見ていなかった。**動機に挙げているのは
+  /// 「breadcrumb の message は `_scrubBreadcrumb` を通らない」ことなのに、
+  /// [interpolationStart] は `e` / `error` 系の識別子しか対象にしていない。
+  /// **`'... for $accountKey'` は例外ですらないので一度も引っかからなかった**。
+  /// #1020 で `account_storage.dart` の 1 行を直したときも、同じファイルの
+  /// 隣の行や `push_message_dispatcher.dart:174` は残っていた。
+  ///
+  /// 載っていた実体は `mastodon://user@host`（storage key）や
+  /// `username@host`。**host は残してよい**（プリセットかどうかで優先度を
+  /// 切る運用があり、素性が分からないとトリアージできない）ので、
+  /// 潰すのは username 側だけ。`sentrySafeAccount` を通すこと。
+  final accountIdentifiers = <({RegExp pattern, String what})>[
+    (
+      pattern: RegExp(r'\.toStorageKey\(\)'),
+      what: 'toStorageKey() （mastodon://user@host そのもの）',
+    ),
+    (
+      // `$accountKey` / `${accountKey}` / `$keyStr` / `${storageKey}`
+      //
+      // ⚠ **変数名を列挙しない。**以前は `(accountKey|keyStr|storageKey)` の
+      // 完全一致だったため、`$accountStorageKey` がどれにも当たらず素通しに
+      // なっていた（`announcement_subscription_service.dart` の 2 箇所が実際に
+      // 漏れており、v1.61 のリリース前レビューで検出）。**列挙は必ず取りこぼす**
+      // ので、接尾辞で見て前置きは何でも許す形にする。
+      // ⚠ **`sentrySafe…` 自身を拾わないこと。**`${sentrySafeAccountKey(k)}`
+      // は接尾辞 `AccountKey` に当たってしまう＝**正しい直し方をした箇所だけが
+      // 違反として出る**ので、先頭で除外する。
+      pattern: RegExp(
+        r'\$\{?(?!sentrySafe)[A-Za-z0-9_]*'
+        r'(?:[Ss]torageKey|[Aa]ccountKey|keyStr)(?![A-Za-z0-9_])',
+      ),
+      what: 'storage key の補間',
+    ),
+    (
+      // ⚠ **`$account` を丸ごと埋める形 (#1027-B)。**この名前の変数は
+      // `Account` か storage key 文字列で、後者だと `mastodon://user@host`
+      // がそのまま出る。`push_message_dispatcher.dart:174` が実際にこれで、
+      // **同じファイルの 14 行下は #1020 で直っていたのに残っていた**。
+      //
+      // ⚠ **`.` が続く形は除く。**`${account.key.host}` は host だけなので可。
+      // 危ないのは「丸ごと」だけ。
+      pattern: RegExp(r'\$\{?account(?![A-Za-z0-9_.])'),
+      what: 'account を丸ごと補間',
+    ),
+    (
+      // `${account.key.username}` / `${a.key.username}` / `$username`
+      pattern: RegExp(r'\$\{?[A-Za-z0-9_.?]*\busername\b'),
+      what: 'username の補間',
+    ),
+  ];
+
+  /// [args] に含まれるアカウント識別子を返す。
+  List<String> accountLeaks(String args) => [
+    for (final id in accountIdentifiers)
+      if (id.pattern.hasMatch(args)) id.what,
+  ];
+
+  /// `captureMessage` の `params:` に載せてよい形 (#1027-A5)。
+  ///
+  /// ⚠⚠ **`params` は `logentry.params` として実際に送信される。**`hint` が
+  /// `beforeSend` へ渡るだけで送られないのとは違う。にもかかわらず、この検査は
+  /// `captureMessage` を一度も見ていなかった。`conversion_skip_report` /
+  /// `timeline_provider` が `[item.id, item.error]` を渡しており、`item.error` は
+  /// adapter が作る `'$e'`（＝ FormatException の source ＝**投稿本文**）だった。
+  ///
+  /// 通すのは **ID とリテラルだけ**。denylist ではなく allowlist にするのは、
+  /// 「危ない名前」を数え上げる形だと**次に増えた名前が黙って通る**ため。
+  /// 素性を丸めた値を載せたいときは [marker] で個別に抜ける（理由が残る）。
+  final safeParamEntry = RegExp(
+    // 文字列 / 数値リテラル
+    r'''^(?:'[^']*'|"[^"]*"|[0-9]+)$'''
+    // `item.id` / `postId` / `x?.id` のような ID
+    r'''|^[A-Za-z_][A-Za-z0-9_]*(?:\??\.[A-Za-z_][A-Za-z0-9_]*)*'''
+    r'''(?<=[Ii]d|ID)$''',
+  );
+
+  test('captureMessage の params に ID とリテラル以外を載せない (#1027-A5)', () {
+    final offenders = <String>[];
+    for (final file in dartFiles()) {
+      final path = relativePath(file);
+      if (allowedFiles.contains(path)) continue;
+      final original = file.readAsStringSync();
+      final source = maskComments(original);
+      for (final (args, start) in callsOf(source, 'captureMessage')) {
+        if (isMarked(original, start)) continue;
+        for (final arg in splitArgs(args)) {
+          if (!arg.startsWith('params:')) continue;
+          final list = arg.substring('params:'.length).trim();
+          final inner = list
+              .replaceFirst(RegExp(r'^\[\s*'), '')
+              .replaceFirst(RegExp(r'\s*\]$'), '');
+          for (final entry in splitArgs(inner)) {
+            if (entry.isEmpty) continue;
+            if (safeParamEntry.hasMatch(entry)) continue;
+            offenders.add('$path: captureMessage(params: [… $entry …])');
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'params は logentry.params として実際に送信される（hint と違う）。'
+          'ID とリテラル以外を載せないこと。素性へ丸めた値なら '
+          '`// $marker: <理由>` で個別に抜ける\n${offenders.join('\n')}',
+    );
+  });
+
+  /// ⚠ **検査そのものが効いていることを、合成ソースで確かめる。**
+  /// 上の検査はリポジトリが綺麗になった時点で「常に緑」になるので、
+  /// **判定ロジックが壊れても気づけない**。
+  group('params の判定 (#1027-A5)', () {
+    bool safe(String entry) => safeParamEntry.hasMatch(entry);
+
+    test('ID とリテラルは通す', () {
+      expect(safe('post.id'), isTrue);
+      expect(safe('item?.id'), isTrue);
+      expect(safe('notificationId'), isTrue);
+      expect(safe('maxId'), isTrue);
+      expect(safe("'fixed'"), isTrue);
+      expect(safe('42'), isTrue);
+    });
+
+    test('それ以外は弾く', () {
+      expect(safe('post.error'), isFalse);
+      expect(safe('e.toString()'), isFalse);
+      expect(safe('body'), isFalse);
+      // ⚠ **`id` を含むだけでは通さない。**終端が id であること。
+      expect(safe('post.identity'), isFalse);
+      expect(safe('idle'), isFalse);
+    });
+  });
+
+  /// ⚠ **`response` を丸ごと安全扱いにしていないこと (#1027-A4)。**
+  test('response の鎖は終端まで見る', () {
+    expect(unsafeChain('response?.statusCode'), isFalse, reason: '数値だけ');
+    expect(unsafeChain('response.statusCode'), isFalse);
+    expect(unsafeChain('response'), isTrue, reason: 'toString はボディ全体');
+    expect(unsafeChain('response?.data'), isTrue);
+    expect(unsafeChain('details'), isTrue, reason: 'ネイティブの内部情報');
+    expect(unsafeChain('osError'), isTrue, reason: 'ホスト名とポート');
+    expect(unsafeChain('runtimeType.toString()'), isFalse);
+  });
+
   test('captureException には scrub 済みの例外だけを渡す', () {
     final offenders = <String>[];
     for (final file in dartFiles()) {
@@ -396,7 +569,27 @@ void main() {
         // 直前で `final scrubbed = scrubException(e);` と控えた変数も可。
         // ⚠ **名前だけで信じる**ので、`scrubbed` を別の意味に使わないこと。
         if (RegExp(r'^scrubbed[A-Za-z0-9_]*$').hasMatch(first)) continue;
-        if (RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) continue;
+        // その場で作った合成エラー（`StateError('...')` 等）。
+        //
+        // ⚠⚠ **無条件に通してはいけない (#1027-A2)。**免除していたのは
+        // 「型名 + `(`」の形だけで、**中身を一度も見ていなかった**。
+        // `StateError('$accountKey が読めません: $e')` のように**中に PII や
+        // 生の例外を組み込んだ合成エラー**は、素の `e` を渡すより悪い
+        // （`exceptions[].value` は breadcrumb と違って必ず送られる）。
+        if (RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) {
+          final open = first.indexOf('(');
+          final close = matchParen(first, open);
+          final inner = close < 0 ? first : first.substring(open + 1, close);
+          final leaks = [
+            ...unsafeInterpolations(inner),
+            ...accountLeaks(inner),
+          ];
+          if (leaks.isEmpty) continue;
+          offenders.add(
+            '$path: captureException($first) → ${leaks.join(' / ')}',
+          );
+          continue;
+        }
         offenders.add('$path: captureException($first, ...)');
       }
     }
@@ -553,6 +746,365 @@ void main() {
   /// ⚠ **合成ソースで丸ごと動かせる形にしておくこと（#1020・Codex P2 の 5 巡目）。**
   /// 部品ごとの検査しか持っていなかったため、「ラッパーは見つかるのに、その
   /// **呼び出し**が見えない」という穴を自分のテストで踏めなかった。
+  /// ログ用のラッパーらしい名前か (#1027-A3)。
+  ///
+  /// ⚠⚠ **アカウント識別子の検査では [breadcrumbSinks] をそのまま使えない。**
+  /// あちらは「String を受け取って debugPrint へ転送する関数」を**緩めに**
+  /// 拾う。例外の検査ではそれで害が無い（生の例外を受け取る関数はどこであれ
+  /// 怪しい）が、こちらでは違う — **storage key を storage API へ渡すのは
+  /// 正しい用途**なのに、`saveAccount` / `removeAccount` /
+  /// `PushRelayClient.register` が「sink」に数えられて全部違反になる。
+  /// 実際 24 件のうち 6 件がこの形だった。
+  ///
+  /// そこで名前でふるいにかける。⚠ **手で一覧を持つのとは違う** — 一覧なら
+  /// 足し忘れた関数が黙って検査から消えるが、ここは fixpoint で見つけた集合を
+  /// 絞るだけなので、**新しいログラッパーも名前が合えば自動で入る**。
+  ///
+  /// ⚠ 名前が合わないログラッパー（`note()` 等）は漏れる。下の
+  /// 「既知のラッパーを取りこぼしていない」でそこを押さえる。
+  final logLikeName = RegExp(
+    r'log|print|trace|breadcrumb|report|debug',
+    caseSensitive: false,
+  );
+
+  Set<String> accountSinks(Iterable<String> masked) => breadcrumbSinks(
+    masked,
+  ).where((s) => s == 'Breadcrumb' || logLikeName.hasMatch(s)).toSet();
+
+  /// `Sentry.captureException` へ**到達する**関数を数え上げる (#1027-A1)。
+  ///
+  /// ⚠⚠ **例外側は直接呼び出ししか見ていなかった。**breadcrumb 側は fixpoint で
+  /// ラッパーを辿るのに、こちらは `captureException(` の呼び出しだけを見ていた
+  /// ので、`reportOpFailure` / `_reportOnce` を経由すると**検査の視野から
+  /// 消えていた**。
+  ///
+  /// これが効くのは、ラッパーが内部で `scrubException` を通していても
+  /// **他の引数が素通しになる**ため。`reportOpFailure` の `tags` は
+  /// `Map<String, String>` がそのまま Sentry のタグになるので、
+  /// `tags: {'detail': '$e'}` と書けば生の例外が送られる。
+  ///
+  /// ⚠⚠ **「本体が sink を呼んでいる」だけで sink と見なしてはいけない。**
+  /// [callsOf] / [declarationsOf] は**名前でしか照合しない**ので、`update` の
+  /// ような一般的なメソッド名が 1 つ混ざると fixpoint が爆発する。実際、
+  /// 無関係な `PushRegistrationStatusStore.update`（UI 状態の保管庫）まで
+  /// sink になり、`errorMessage: e.message` が違反として挙がった。
+  ///
+  /// breadcrumb 側と同じく**自分の引数を転送していること**を要求する。例外は
+  /// `Object` / `dynamic` / `〜Exception` / `〜Error` 型で受けるので、String
+  /// 前提の [stringParamNames] とは別に集める。
+  final errorParamDecl = RegExp(
+    r'^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^()]*\))?\s*)*'
+    r'(?:required\s+)?'
+    r'(?:Object|dynamic|[A-Za-z0-9_]*(?:Exception|Error))\??\s+'
+    r'([a-z_][A-Za-z0-9_]*)',
+  );
+
+  Set<String> errorParamNames(String params) {
+    final out = <String>{};
+    for (final group in splitArgs(params)) {
+      final inner = group
+          .replaceFirst(RegExp(r'^[{\[]\s*'), '')
+          .replaceFirst(RegExp(r'\s*[}\]]$'), '');
+      for (final p in splitArgs(inner)) {
+        final m = errorParamDecl.firstMatch(p);
+        if (m != null) out.add(m.group(1)!);
+      }
+    }
+    return out;
+  }
+
+  Set<String> exceptionSinks(Iterable<String> masked) {
+    final sinks = {'captureException'};
+    final pending = [
+      for (final source in masked)
+        for (final (name, params, bodyStart, bodyEnd) in declarationsOf(source))
+          if (errorParamNames(params) case final names when names.isNotEmpty)
+            (
+              name: name,
+              params: names,
+              body: source.substring(bodyStart, bodyEnd),
+            ),
+    ];
+    var added = true;
+    while (added) {
+      added = false;
+      pending.removeWhere((c) {
+        final forwards = sinks.any(
+          (sink) => callsOf(
+            c.body,
+            sink,
+          ).any((call) => forwardsTo(call.$1, c.params)),
+        );
+        if (!forwards) return false;
+        sinks.add(c.name);
+        added = true;
+        return true;
+      });
+    }
+    return sinks;
+  }
+
+  /// ⚠ **合成エラーの免除は無条件ではない (#1027-A2)。**免除していたのは
+  /// 「型名 + `(`」の形だけで、中身を一度も見ていなかった。ここが緩いと、
+  /// **素の `e` を渡すより悪い**形（PII を組み込んだ合成エラー）が通る。
+  group('合成エラーの中身 (#1027-A2)', () {
+    /// [captureException] の第 1 引数だけを与えて、違反になるか見る。
+    bool rejects(String first) {
+      if (!RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) return true;
+      final open = first.indexOf('(');
+      final close = matchParen(first, open);
+      final inner = close < 0 ? first : first.substring(open + 1, close);
+      return unsafeInterpolations(inner).isNotEmpty ||
+          accountLeaks(inner).isNotEmpty;
+    }
+
+    test('素性だけの合成エラーは通す', () {
+      expect(rejects("StateError('prefs.setString returned false')"), isFalse);
+      expect(
+        rejects("StateError('DioException type=\$type status=\$code')"),
+        isFalse,
+      );
+    });
+
+    test('中に生の例外を組み込んだ合成エラーは弾く', () {
+      expect(rejects("StateError('failed: \$e')"), isTrue);
+      expect(rejects("StateError('failed: \${e.message}')"), isTrue);
+    });
+
+    test('中にアカウント識別子を組み込んだ合成エラーは弾く', () {
+      expect(rejects("StateError('\$accountKey が読めません')"), isTrue);
+      expect(rejects("StateError('for \${account.key.username}')"), isTrue);
+    });
+
+    test('host だけなら通す', () {
+      expect(rejects("StateError('failed for \${account.key.host}')"), isFalse);
+    });
+  });
+
+  /// `パス → ソース` から、例外ラッパー呼び出しの違反を数え上げる。
+  ///
+  /// ⚠ `captureException` 自身の第 1 引数は専用の検査が見るので、ここでは
+  /// **ラッパー側だけ**を対象にする。
+  List<String> offendersInExceptionSinks(Map<String, String> sources) {
+    final masked = {
+      for (final MapEntry(key: p, value: s) in sources.entries)
+        p: maskComments(s),
+    };
+    final sinks = exceptionSinks(masked.values)..remove('captureException');
+    final offenders = <String>[];
+    for (final MapEntry(key: path, value: source) in masked.entries) {
+      if (allowedFiles.contains(path)) continue;
+      for (final sink in sinks) {
+        for (final (args, start) in callsOf(source, sink)) {
+          final unsafe = unsafeInterpolations(args);
+          if (unsafe.isEmpty) continue;
+          if (isMarked(sources[path]!, start)) continue;
+          offenders.add('$path: $sink → ${unsafe.join(' / ')}');
+        }
+      }
+    }
+    return offenders;
+  }
+
+  /// ⚠ **この検査はリポジトリが綺麗だと常に緑になる。**判定が壊れても
+  /// 気づけないので、合成ソースと実リポジトリの両方で「見えていること」を
+  /// 固定する。
+  group('例外ラッパーの数え上げ (#1027-A1)', () {
+    test('#1027 が名指ししたラッパーが sink に入っている', () {
+      final sinks = exceptionSinks([
+        for (final f in dartFiles()) maskComments(f.readAsStringSync()),
+      ]);
+      expect(
+        sinks,
+        containsAll(['captureException', 'reportOpFailure', '_reportOnce']),
+        reason: 'ここが空だと「直接呼び出ししか見ない」に退行する',
+      );
+    });
+
+    test('ラッパーの他の引数に生の例外を埋めると挙がる', () {
+      expect(
+        offendersInExceptionSinks({
+          'a.dart':
+              'void reportX({required Object error, Map<String, String>? tags}) '
+              '{ captureException(scrubException(error), tags: tags); }',
+          'b.dart':
+              "void run() { reportX(error: e, tags: {'detail': '\$e'}); }",
+        }),
+        isNotEmpty,
+        reason: '中で scrubException を通していても、tags は素通しで送られる',
+      );
+    });
+
+    // ⚠⚠ **名前だけで数えると fixpoint が爆発する。**`update` のような一般的な
+    // メソッド名が 1 つ混ざると、無関係な UI 状態の保管庫まで sink になり
+    // `errorMessage: e.message` が違反として挙がった（実際に踏んだ）。
+    test('引数を転送しない同名メソッドを巻き込まない', () {
+      final sinks = exceptionSinks([
+        'void report(Object error) { captureException(error); }',
+        'void update(String key, {String? errorMessage}) { store[key] = errorMessage; }',
+      ]);
+      expect(sinks, contains('report'));
+      expect(
+        sinks,
+        isNot(contains('update')),
+        reason: 'エラーを受け取らず転送もしないメソッドは sink ではない',
+      );
+    });
+  });
+
+  test('captureException へ届く経路に生の例外を埋めない (#1027-A1)', () {
+    final offenders = offendersInExceptionSinks({
+      for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
+    });
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'ラッパーが中で scrubException を通していても、tags / extra など'
+          '**他の引数は素通し**で Sentry へ送られる。生の例外は渡さないこと'
+          '\n${offenders.join('\n')}',
+    );
+  });
+
+  /// アカウント識別子の違反を数え上げる。
+  List<String> accountOffendersIn(Map<String, String> sources) {
+    final masked = {
+      for (final MapEntry(key: p, value: s) in sources.entries)
+        p: maskComments(s),
+    };
+    final sinks = accountSinks(masked.values);
+    final offenders = <String>[];
+    for (final MapEntry(key: path, value: source) in masked.entries) {
+      if (allowedFiles.contains(path)) continue;
+      for (final sink in sinks) {
+        for (final (args, start) in callsOf(source, sink)) {
+          final leaks = accountLeaks(args);
+          if (leaks.isEmpty) continue;
+          if (isMarked(sources[path]!, start)) continue;
+          offenders.add('$path: $sink → ${leaks.join(' / ')}');
+        }
+      }
+    }
+    return offenders;
+  }
+
+  test('ログ経路にアカウント識別子を埋めない (#1027-A3)', () {
+    final offenders = accountOffendersIn({
+      for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
+    });
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'breadcrumb の message は _scrubBreadcrumb（data しか見ない）を'
+          '通らないので、書いた文字列がそのまま Sentry に出る。'
+          'sentrySafeAccount / sentrySafeAccountKey を通すこと'
+          '（host は残る・username だけ潰れる）\n${offenders.join('\n')}',
+    );
+  });
+
+  /// ⚠ **判定そのものが効いていることを合成ソースで確かめる。**
+  group('アカウント識別子の判定 (#1027-A3)', () {
+    test('storage key / username を拾う', () {
+      expect(accountLeaks(r"'no keys for $accountKey'"), isNotEmpty);
+      expect(accountLeaks(r"'failed for $keyStr'"), isNotEmpty);
+      expect(accountLeaks(r"'x ${account.key.toStorageKey()}'"), isNotEmpty);
+      expect(
+        accountLeaks(r"'x ${account.key.username}@${a.key.host}'"),
+        isNotEmpty,
+      );
+    });
+
+    /// ⚠ **#1027-B が名指ししていた形。**変数名が `accountKey` ではなく
+    /// `account` なので、storage key のパターンだけでは拾えなかった。
+    /// 実際この 1 行は #1020 で隣（14 行下）を直したときに残っている。
+    test('account を丸ごと埋める形も拾う', () {
+      expect(accountLeaks(r"'no push keys for $account'"), isNotEmpty);
+      expect(accountLeaks(r"'x ${account}'"), isNotEmpty);
+    });
+
+    /// ⚠ **変数名の列挙が取りこぼしていた形（v1.61 のリリース前レビューで検出）。**
+    /// 旧パターンは `(accountKey|keyStr|storageKey)` の完全一致だったため、
+    /// `$accountStorageKey` がどれにも当たらなかった。
+    /// `announcement_subscription_service.dart` の `disable()`（debugPrint）と
+    /// `enable()`（StateError のメッセージ）が実際にこれで漏れていた。
+    test('接頭辞つきの storage key も拾う', () {
+      expect(accountLeaks(r"'disabled $accountStorageKey'"), isNotEmpty);
+      expect(accountLeaks(r"'x ${accountStorageKey}'"), isNotEmpty);
+      expect(accountLeaks(r"'no endpoint for $currentAccountKey'"), isNotEmpty);
+    });
+
+    /// ⚠ **正しい直し方をした箇所を違反にしない。**接尾辞で見るようにした結果、
+    /// `${sentrySafeAccountKey(k)}` が `AccountKey` に当たってしまう形が出た。
+    /// ここが緑でないと「直すほど赤くなる」検査になる。
+    test('sentrySafe 系を通したものは違反にしない', () {
+      expect(
+        accountLeaks(r"'disabled ${sentrySafeAccountKey(accountStorageKey)}'"),
+        isEmpty,
+      );
+      expect(accountLeaks(r"'x ${sentrySafeAccount(account.key)}'"), isEmpty);
+    });
+
+    test('host だけなら通す', () {
+      expect(accountLeaks(r"'failed for ${account.key.host}'"), isEmpty);
+      expect(accountLeaks(r"'host=$host'"), isEmpty);
+    });
+
+    // ⚠ **ラッパー越しでも見える**こと。debugPrint の直呼びしか見ないと、
+    // `debugLogException('... $accountKey', e)` が素通りする。
+    test('ラッパー越しの呼び出しも捕まえる', () {
+      expect(
+        accountOffendersIn({
+          'a.dart': 'void logX(String m) => debugPrint(m);',
+          'b.dart': "void run() { logX('for \$accountKey'); }",
+        }),
+        isNotEmpty,
+      );
+    });
+
+    // ⚠⚠ **storage / relay API を違反にしない。**storage key をそれらへ渡すのは
+    // 正しい用途で、ログではない。名前で絞る前は 24 件中 6 件がこの形だった。
+    test('ログでない関数へ渡すのは違反にしない', () {
+      final offenders = accountOffendersIn({
+        'a.dart':
+            'void saveAccount(String accountKey) '
+            "{ debugPrint('saved \$accountKey'); }",
+        'b.dart': 'void run() { saveAccount(key.toStorageKey()); }',
+      });
+
+      // 呼び出し側は保存 API へ渡しているだけ。挙がってはいけない。
+      expect(
+        offenders.where((o) => o.startsWith('b.dart')),
+        isEmpty,
+        reason: 'saveAccount は保存 API であってログではない',
+      );
+      // ⚠ **中の debugPrint は本物の違反**なので、そちらは挙がること。
+      // ここを緩めると「絞りすぎて何も見なくなった」に気づけない。
+      expect(
+        offenders.where((o) => o.startsWith('a.dart')),
+        isNotEmpty,
+        reason: '保存 API の中で素の accountKey を出しているのは違反',
+      );
+    });
+
+    /// ⚠ **名前で絞る以上、既知のラッパーを取りこぼしていないことを確かめる。**
+    /// ここが空になると、検査は「debugPrint の直呼びしか見ない」に退行する。
+    test('既知のログラッパーは sink に残る', () {
+      final sinks = accountSinks([
+        for (final f in dartFiles()) maskComments(f.readAsStringSync()),
+      ]);
+      expect(
+        sinks,
+        containsAll([
+          'debugPrint',
+          'Breadcrumb',
+          'debugLogException',
+          '_trace',
+        ]),
+      );
+    });
+  });
+
   List<String> offendersIn(Map<String, String> sources) {
     // ⚠ **コメントを潰してから構文を見る。**潰さないと本体の終わりを取り違える。
     // 長さは変わらないので index は元ソースとそのまま対応する。

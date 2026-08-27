@@ -41,9 +41,16 @@ _safeConvert<S, T>(
       results.add(convert(item));
       if (raw != null) raws.add(raw);
     } catch (e) {
-      developer.log('skipping item during conversion: $e', name: 'capsicum');
+      // ⚠ 生の `$e` を出さない (#1027-A5)。FormatException は source（＝生 JSON
+      // の断片＝投稿本文）を、NoSuchMethodError は receiver の toString を含む。
+      developer.log(
+        'skipping item during conversion: ${describeConversionFailure(e)}',
+        name: 'capsicum',
+      );
       try {
-        skipped.add(SkippedPost(id: getId(item), error: '$e'));
+        skipped.add(
+          SkippedPost(id: getId(item), error: describeConversionFailure(e)),
+        );
       } catch (_) {}
     }
   }
@@ -1603,6 +1610,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> renameDriveFile(String fileId, String newName) async {
     await client.updateDriveFile(fileId, name: newName);
+  }
+
+  /// ⚠ **空文字は「消す」経路へ分ける (#1005 と同じ理由)。**
+  /// [MisskeyClient.updateDriveFile] は null をキーごと省略するので、空文字を
+  /// そのまま渡すと body が `{fileId}` だけになり **500** になる。
+  @override
+  Future<void> updateDriveFileDescription(
+    String fileId,
+    String description,
+  ) async {
+    if (description.isEmpty) {
+      await client.clearDriveFileComment(fileId);
+      return;
+    }
+    await client.updateDriveFile(fileId, comment: description);
   }
 
   @override

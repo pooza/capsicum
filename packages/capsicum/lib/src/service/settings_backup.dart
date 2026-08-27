@@ -30,6 +30,31 @@ const settingsBackupFormatVersion = 1;
 /// として 1MiB を置く。ここを通さないと `readAsString` が端末のメモリを埋める。
 const maxSettingsBackupBytes = 1024 * 1024;
 
+/// フロースタイル (`[...]` / `{...}`) の入れ子の上限 (#1025)。
+///
+/// ⚠ **これは CPU 側の境界。**[maxSettingsBackupBytes] はメモリだけを見ており、
+/// **1MiB に収まる範囲でパーサを何十秒も回せる**。`package:yaml` は再帰下降なので
+/// 深さがそのまま時間に効き、実測（debug JIT）はこうなる。
+///
+/// | 深さ | サイズ | 経過 |
+/// | --- | --- | --- |
+/// | 5,000 | 10KB | 59ms |
+/// | 50,000 | 100KB | 4,047ms |
+/// | 200,000 | 400KB | 約 65,000ms |
+///
+/// フロースタイルは 1 段 2 バイト (`[` + `]`) なので、1MiB あれば 50 万段書ける。
+/// **ブロックスタイルは 1 段ごとにインデントが伸びる**ので、同じ 1MiB でも
+/// 深さは 1,500 段ほどが上限（実時間で数十 ms）。危ないのはフローだけ。
+///
+/// 実ファイルの深さは `settings` / `accounts` の 2〜3 段で、リスト値を数えても
+/// 4〜5 段。32 は**実用の遥か上・病的の遥か下**に置いた線。
+///
+/// ⚠ **`compute()` で別 isolate へ出す案は採らなかった。**UI は固まらなくなるが、
+/// **待ち時間は消えない**（数十秒 `_busy` のまま）。そもそも壊れたファイルなので、
+/// 数 ms で理由を出して弾くほうが正しい。`YamlMap` を isolate 境界越しに返す
+/// リスクも負わずに済む。
+const maxSettingsBackupNestingDepth = 32;
+
 /// 索引へ取り込むアカウントの上限 (#1012)。
 ///
 /// プリセット 5 + 手元のサーバーを足しても 2 桁に届かない。手編集や別ファイルで
@@ -297,6 +322,63 @@ String buildSettingsBackupYaml(
   return buffer.toString();
 }
 
+/// フロースタイルの入れ子が [maxSettingsBackupNestingDepth] を超えるか (#1025)。
+///
+/// パースせずに 1 パスで数える。**壊れたファイルを弾くための安価な門番**であって、
+/// YAML の妥当性検査ではない。閉じ括弧の対応も見ない（超えたかどうかだけ分かれば
+/// よく、不整合な括弧は後段の `loadYaml` が弾く）。
+///
+/// 引用符とコメントは飛ばす。⚠ **ここを省くと、本文に `[` を含む設定値
+/// （投稿テンプレート等）が深さに数えられて、正しいファイルを誤って弾く。**
+/// 逆に飛ばしすぎても、閾値 32 まで届く括弧列を持つ実ファイルは無いので安全側。
+///
+/// ⚠ **ブロックスタイルは数えない。**1 段ごとにインデントが伸びるため
+/// [maxSettingsBackupBytes] が実質的な上限になっており、そこまで深くしても
+/// 実時間は数十 ms に収まる（[maxSettingsBackupNestingDepth] の doc 参照）。
+bool exceedsSettingsBackupNestingDepth(String yamlText) {
+  var depth = 0;
+  for (var i = 0; i < yamlText.length; i++) {
+    final c = yamlText[i];
+    switch (c) {
+      case '#':
+        // コメントは行末まで。YAML では行頭か空白の後ろだけがコメント開始だが、
+        // ここでは括弧を数えないことだけが目的なので厳密さは要らない。
+        while (i < yamlText.length && yamlText[i] != '\n') {
+          i++;
+        }
+      case "'":
+        // 単一引用スカラー。'' が閉じない形のエスケープ。
+        i++;
+        while (i < yamlText.length) {
+          if (yamlText[i] != "'") {
+            i++;
+            continue;
+          }
+          if (i + 1 < yamlText.length && yamlText[i + 1] == "'") {
+            i += 2;
+            continue;
+          }
+          break;
+        }
+      case '"':
+        // 二重引用スカラー。\ でエスケープ。
+        i++;
+        while (i < yamlText.length && yamlText[i] != '"') {
+          if (yamlText[i] == r'\') i++;
+          i++;
+        }
+      case '[':
+      case '{':
+        depth++;
+        if (depth > maxSettingsBackupNestingDepth) return true;
+      case ']':
+      case '}':
+        if (depth > 0) depth--;
+    }
+  }
+  return false;
+}
+
 /// YAML を読み込んで設定を書き戻す (#857)。
 ///
 /// **知らないキー・型違い・端末固有キーは飛ばして続行する。**1 つの不整合で
@@ -311,6 +393,17 @@ Future<SettingsImportResult> applySettingsBackupYaml(
   String yamlText, {
   AccountStorage? accountStorage,
 }) async {
+  // ⚠ **パースの前に深さを見る (#1025)。**ここを通してしまうと、例外を捕まえる
+  // 前にメイン isolate が数十秒（実測で最大 65 秒）同期的に回る。Android は
+  // ANR、iOS はウォッチドッグの射程。
+  //
+  // ⚠ **`readSettingsBackupFile` ではなくここに置く。**取り込み口は設定画面と
+  // サーバー選択画面の 2 つあり、さらに将来ファイル以外から YAML が来ても
+  // ここを通る。手前に置くと、その都度「両方に入れたか」を数え直すことになる。
+  if (exceedsSettingsBackupNestingDepth(yamlText)) {
+    throw const SettingsBackupFormatException('ファイルの構造が深すぎて読み込めませんでした');
+  }
+
   final Object? parsed;
   try {
     parsed = loadYaml(yamlText);

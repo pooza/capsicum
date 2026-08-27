@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/upstream_error_message.dart';
 import '../util/op_error.dart';
@@ -123,6 +124,11 @@ class ScheduledPostsScreen extends ConsumerWidget {
       }
     }
 
+    // ⚠ **シートを開く前に確定させる (#1027-C2)。**`onSave` は `Navigator.pop`
+    // のあとに走るので、そこで `ref` を読むと dispose 済みで StateError になり、
+    // **失敗の SnackBar ごと落ちる**（post_tile の `_RetagSheet` と同じ形）。
+    final reblogLabel = ref.read(reblogLabelProvider);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -159,7 +165,11 @@ class ScheduledPostsScreen extends ConsumerWidget {
             // Misskey の `error` がオブジェクトになるため、そのままだと
             // `{code: ..., message: ..., id: ...}` が画面に出る。既知コードは
             // 日本語に訳し、読めないものは汎用文言に倒す (#886)。
-            final message = upstreamFailureText('タグの更新に失敗しました', e);
+            final message = upstreamFailureText(
+              'タグの更新に失敗しました',
+              e,
+              reblogLabel: reblogLabel,
+            );
             debugLogException('Tag update error', e);
             if (context.mounted) {
               ScaffoldMessenger.of(

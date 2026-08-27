@@ -87,6 +87,57 @@ flutter run -d <device-id> --dart-define=RELAY_SECRET=$RELAY_SECRET
 
 `flutter devices` は絞り込まずに全部並べるので、**「`flutter devices` には出るのに `flutter run` で選べない」**という食い違いが起きる。`packages/capsicum` へ `cd` してから実行する。
 
+## Claude Code の権限設定（auto モード・全端末）
+
+**目標は「本番サーバーを壊す操作でない限り確認 0」。**確認が出たら、その場でクリックして流すのではなく**設定を直して次から出ないようにする**。定形作業（同期・リリース・デプロイ）の途中でダイアログが連発するのは、たいてい手順書のコマンドが使う補助コマンドが allowlist に無いだけなので、1 つずつ足すのではなく**手順書を読み直してまとめて 1 回で足す**。
+
+### 何をどちらのファイルに書くか
+
+| | ファイル | git | 中身 |
+|---|---|---|---|
+| モード | `.claude/settings.json` | tracked | `permissions.defaultMode` = `auto`。全端末共通なのでここでよい |
+| 汎用 permission | `.claude/settings.json` | tracked | ホスト名・絶対パスを含まないもの（`git -C * show *` 等） |
+| 端末固有 permission | `.claude/settings.local.json` | **gitignore** | 内部ホスト名を含む ssh / scp、端末固有の絶対パス |
+| `autoMode` ブロック | `.claude/settings.local.json` | **gitignore** | 本番・ステージングの固有名が文面に入るため |
+
+⚠ **capsicum は public リポジトリ。**内部 SSH ホスト名・deploy ユーザー名を含むものは `settings.json` に書けない。`autoMode` の文面は本番 4 台・ステージング 4 台・relay 2 台の名前を含むので、**必ず `settings.local.json` 側**に置く。
+
+⚠ **`acceptEdits` では Bash の確認は 1 件も減らない。**自動承認されるのはファイル編集だけで、確認の発生源はほぼ全部 Bash 側。逆に `bypassPermissions` は本番への操作まで素通りするので使わない。
+
+### `autoMode` の書き方
+
+自然文で意図を書く。permission パターンは URL を判定できないが、分類器は文意を読む。**`curl` を規約でしか止められなかった問題は、これで設定側へ移せる。**
+
+- `soft_deny`（＝確認へ落とす）: 本番 Fediverse サーバー 5 つの**状態を変える操作**（書き込み API・`tootctl` 等の管理コマンド・本番 DB への書き込み）と、本番ホスト上でサービス / DB の状態を変える操作。**読み取り（GET）は入れない**
+- `allow`: 本番およびモロヘイヤへの**読み取り**、ステージングへの読み書き、capsicum-relay 本番への読み取り / デプロイ / 再起動、GitHub と Sentry の操作、ローカル git とビルド / テスト / 解析
+
+⚠ **配列の先頭に `"$defaults"` を入れる。**`autoMode.allow` / `soft_deny` / `environment` は**書いた内容で組み込みルールを置き換える**ため、入れないと組み込みが消える（Claude Code 2.1.x）。
+
+⚠ **`hard_deny` は本番 Fedi に使わない。**明示的に指示されたときは確認の上で実行したいので、`soft_deny`（確認へ落とす）が正しい。
+
+固有名の出典（**この docs には書かない**）:
+
+- プリセット 5 サーバーのドメイン → `packages/capsicum/lib/src/preset_servers.dart`
+- 本番 4 台・ステージング 4 台・relay 2 台のホスト名とユーザー → chubo2 `docs/infra-servers.md` の「本番」節
+- ⚠ chubo2 の `docs/infra-note.md` は 2026-08-23 に 10 ファイルへ分割された。サーバー一覧は `infra-servers.md` を見る
+
+### `permissions.allow` の ssh は別枠
+
+`autoMode` を整えても、`permissions.allow` に ssh のエントリが無ければ確認が出る。**relay 2 台とステージング 4 台は allow に入れる。**
+
+⚠ **本番 4 台はあえて `allow` に入れない。**allowlist に入ると分類器を素通りし、`soft_deny` が効かなくなる。読み取り目的の ssh でも分類器に通す。そのうえで **`permissions.ask` に本番 4 台を FQDN で明示**しておくと、表記ゆれに関係なく確実に確認へ落ちる。
+
+⚠ **本番ホストは FQDN で書く。**`~/.ssh/config` は chubo2 の workstation レシピが自動生成し、**旧来の親しみやすい別名（`<サービス名>_<用途>` 形式）は廃止**されて Host は FQDN になっている。別名で書いたエントリは、移行済みの旧ホストを指したまま**永久に一致しない**死に設定になる。実際、キュアスタ！とダイスキーは 2026-07〜08 に別ホストへ移行しており、別名のまま残った設定は現行ホストに当たらない。
+
+### 落とし穴
+
+- ⚠ **絶対パスは素の名前の allowlist に当たらない。**`Bash(sentry-cli *)` は `~/.local/bin/sentry-cli` を通さない。素の名前で呼べない端末では実パスを `settings.local.json` に足す
+- ⚠ **`ssh -o ConnectTimeout=10 user@host …` は `Bash(ssh user@host *)` に当たらない。**オプションが先に来るため。`Bash(ssh -o * user@host *)` を対で入れる
+- ⚠ **`scp` の `:*` はパターン末尾にしか置けない。**アップロードは `Bash(scp * user@host:*)`、ダウンロードは `Bash(scp user@host:*)`
+- ⚠ **auto モードの分類器は「広い」自己付与を拒否する。**ホスト限定の ssh エントリは通るが、`git -C <path> *`（任意のサブコマンド）や `curl -s -X *`（任意の HTTP メソッド）は**確認にもならず拒否**される。迂回せず、一時的に手動モードへ戻してもらうか、ホスト・パスを固定した狭いエントリに割る
+
+シェルのループと関数定義を機械的に拒否する `PreToolUse` フックについては [sync-procedure.md](sync-procedure.md) の §0 を参照。
+
 ## メイン (macOS) セットアップ
 
 - `~/.config/capsicum/` に App Store Connect API Key（`.p8`）と Google Play サービスアカウント JSON キーを配置（Fastfile から参照。具体的なファイル名・Key ID 等は非公開）

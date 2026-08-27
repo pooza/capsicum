@@ -15,10 +15,10 @@ import '../../service/server_version_checker.dart';
 import '../../service/tco_resolver.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/relative_time.dart';
-import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
@@ -936,7 +936,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ],
                     ),
                     Text(
-                      '@${user.username}@${user.host ?? ""}',
+                      '@${userAcct(user)}',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

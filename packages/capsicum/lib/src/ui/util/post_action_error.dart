@@ -30,13 +30,16 @@ import '../../util/upstream_error_message.dart';
 ///   汎用文言へ倒れる。
 /// - **403**: 権限・再ログイン系。Misskey 固有コードより一般的な案内を優先する。
 /// - **500**: サーバー内部エラー。
-String describePostActionError(Object e) {
+/// [reblogLabel] は `reblogLabelProvider` の値を渡す。⚠ **呼び出し側で
+/// 「ブースト」と決め打ちしない (#1027-C2)** — きゅあすきーは「リキュア！」で、
+/// 直書きするとエラー文言だけが他の全 UI と食い違う。
+String describePostActionError(Object e, {required String reblogLabel}) {
   if (e is DioException) {
     final statusCode = e.response?.statusCode;
     if (statusCode == 400) {
       final code = misskeyApiErrorCode(e);
       if (code != null) {
-        final reason = misskeyErrorReason(code);
+        final reason = misskeyErrorReason(code, reblogLabel: reblogLabel);
         if (reason != null) return reason;
       }
     }

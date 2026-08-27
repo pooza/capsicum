@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/preferences_provider.dart';
+import 'inline_custom_emoji.dart';
 
 /// A [Text]-like widget that replaces `:shortcode:` patterns with inline
 /// custom-emoji images.
@@ -57,17 +58,14 @@ class EmojiText extends ConsumerWidget {
         spans.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            // 幅に固定の上限を置かない (#858)。理由と経緯は content_parser.dart
-            // の同パターン (_NodeType.emoji) を参照。2 箇所で挙動を揃えている。
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: emojiSize),
-              child: Image.network(
-                url,
-                height: emojiSize,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) =>
-                    Text(':$shortcode:', style: const TextStyle(fontSize: 14)),
-              ),
+            // 幅の扱い（cap を置かない = #858・デコード前の幅を予約する = #1032）は
+            // InlineCustomEmoji に寄せてある。content_parser の _NodeType.emoji と
+            // 同じ widget を使うことで、2 箇所の挙動がコメントの申し合わせでなく
+            // 実装で揃う。
+            child: InlineCustomEmoji(
+              url: url,
+              shortcode: shortcode,
+              size: emojiSize,
             ),
           ),
         );

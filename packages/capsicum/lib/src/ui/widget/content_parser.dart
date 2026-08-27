@@ -8,6 +8,7 @@ import 'package:html_unescape/html_unescape.dart';
 
 import '../../constants.dart';
 import '../../url_helper.dart';
+import 'inline_custom_emoji.dart';
 import 'mfm_animation.dart';
 
 final _unescape = HtmlUnescape();
@@ -1226,16 +1227,15 @@ class ContentRenderer {
       case _NodeType.emoji:
         final emojiUrl = resolveEmoji(node.text);
         if (emojiUrl != null) {
-          // 幅に固定の上限を置かない (#858)。WidgetSpan の子には
-          // RenderParagraph が BoxConstraints(maxWidth: 段落の利用可能幅) を
-          // 渡すため、ConstrainedBox の enforce で幅はタイル/行の幅に頭打ち
-          // になる。縮むのは物理的に幅が足りない文脈 (返信インデント/引用
-          // カード等) だけで済む。
+          // 幅の扱いは InlineCustomEmoji に集約してある。要点は 2 つ:
           //
-          // かつて maxWidth: emojiSize * 3 を置いていたが、3:1 を超える横長
-          // 絵文字が BoxFit.contain で細い帯に潰れていた (ダイスキー実測で
-          // 7.7% が該当・最長 9.85:1 のテキストバナー系)。同じ理由で
-          // emoji_text.dart 側も cap なしに揃えてある。
+          // - 幅に固定の上限を置かない (#858)。かつて maxWidth: emojiSize * 3 を
+          //   置いていたが、3:1 を超える横長絵文字が BoxFit.contain で細い帯に
+          //   潰れていた (ダイスキー実測で 7.7% が該当・最長 9.85:1 のテキスト
+          //   バナー系)。頭打ちは RenderParagraph が渡す maxWidth に委ねる。
+          // - デコード前の幅を予約する (#1032)。既知のアスペクト比があれば最初の
+          //   レイアウトから実寸で置くので、デコード後に折り返しが動かない。
+          //
           // $[x2]/$[x3]/$[x4]・小さめ表示・見出し等で style.fontSize が基準から
           // 変わっているとき、カスタム絵文字も同じ倍率で拡縮する (#844)。テキストと
           // Unicode 絵文字 (_buildTextWithEmoji) は style.fontSize 由来で追従するが、
@@ -1249,15 +1249,10 @@ class ContentRenderer {
               ? (style.fontSize ?? baseFontSize) / baseFontSize
               : 1.0;
           final scaledEmojiSize = emojiSize * ratio;
-          final image = ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: scaledEmojiSize),
-            child: Image.network(
-              emojiUrl,
-              height: scaledEmojiSize,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) =>
-                  Text(':${node.text}:', style: const TextStyle(fontSize: 14)),
-            ),
+          final image = InlineCustomEmoji(
+            url: emojiUrl,
+            shortcode: node.text,
+            size: scaledEmojiSize,
           );
           return [
             WidgetSpan(

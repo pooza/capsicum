@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/is_cat_provider.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/user_acct.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -134,7 +135,7 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      '@${user.username}@${user.host}',
+                      '@${userAcct(user)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

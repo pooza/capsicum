@@ -9,8 +9,10 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../constants.dart';
 import '../model/account.dart';
+import '../model/account_key.dart';
 import '../preset_servers.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
@@ -272,7 +274,8 @@ class PushRegistrationService {
       }
 
       debugPrint(
-        'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
+        'capsicum: push.registration: registered '
+        '${sentrySafeAccount(account.key)}',
       );
       store.update(accountKey, PushRegistrationState.registered);
 
@@ -421,6 +424,30 @@ class PushRegistrationService {
       }
     }
 
+    await forgetAccountLocally(account.key);
+  }
+
+  /// 端末側に残る push の痕跡だけを消す。**上流の購読解除は行わない。**
+  ///
+  /// [unregisterAccount] の後半そのもの。分けてあるのは、
+  /// [AccountManagerNotifier.removeOfflineAccount] から呼ぶため (#1024)。
+  /// あちらが相手にする未接続アカウント ([OfflineAccount]) は **adapter も
+  /// アクセストークンも持たない**（昇格できなかった＝復元できなかった状態）
+  /// ので、SNS 側へ unsubscribe を投げようがない。
+  ///
+  /// ⚠ **[unregisterAccount] と本メソッドを別々に書かないこと。**あちらは
+  /// これを呼ぶ形にしてある。同じ掃除を 2 箇所に持つと、片方にだけ項目が
+  /// 足されて #1024 と同じ非対称が再発する（あの Issue の実体は
+  /// 「logout にだけ掃除が足された」だった）。
+  ///
+  /// 上流に購読が残るぶんは、サーバー側の endpoint 失効か、ユーザーが
+  /// そのアカウントへログインし直したときの再登録で解消される。
+  static Future<void> forgetAccountLocally(AccountKey key) async {
+    final accountKey = key.toStorageKey();
+    // 上流の unsubscribe を待つ間も「解除済み」に見せたいので
+    // [unregisterAccount] は先頭でも呼ぶ。remove は冪等。
+    PushRegistrationStatusStore.instance.remove(accountKey);
+
     try {
       await PushKeyStore.delete(accountKey);
     } catch (e, st) {
@@ -428,7 +455,7 @@ class PushRegistrationService {
         'capsicum: push.registration: keystore delete failed',
         e,
       );
-      _reportUnregisterFailure(e, st, account.key.host, 'keystore');
+      _reportUnregisterFailure(e, st, key.host, 'keystore');
     }
 
     // お知らせ通知 (#477) の subscription 解除。relay 側 schema は
@@ -436,10 +463,7 @@ class PushRegistrationService {
     // いるため [unregisterDevice] 経由ならば自動掃除されるが、ログアウト
     // 経路 (relay row は残す) ではここで明示 DELETE が必要。disable 内部で
     // relay エラーは握り潰すため例外は伝播しない。
-    await AnnouncementSubscriptionService.disable(
-      accountKey,
-      host: account.key.host,
-    );
+    await AnnouncementSubscriptionService.disable(accountKey, host: key.host);
 
     // Windows: ログアウトで消した鍵を LocalState のバックグラウンドタスク用
     // コピー (push_keys.json) からも除く (#474 フェーズ C)。これを怠ると、
@@ -470,7 +494,7 @@ class PushRegistrationService {
       } catch (e) {
         debugLogException(
           'capsicum: push.registration: relay id read failed for '
-          '${a.key.toStorageKey()}',
+          '${sentrySafeAccount(a.key)}',
           e,
         );
       }

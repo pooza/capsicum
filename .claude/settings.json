@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-shell-loops.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(adb devices *)",
@@ -6,11 +20,11 @@
       "Bash(appstreamcli *)",
       "Bash(apt-cache *)",
       "Bash(awk *)",
+      "Bash(basename *)",
       "Bash(bundle exec rake *)",
       "Bash(bundle exec rubocop *)",
       "Bash(bundle install *)",
       "Bash(bundle show *)",
-      "Bash(basename *)",
       "Bash(cat *)",
       "Bash(chmod +x *)",
       "Bash(chmod 600 *)",
@@ -22,7 +36,9 @@
       "Bash(curl -s *)",
       "Bash(curl -sG *)",
       "Bash(curl -sH *)",
+      "Bash(curl -sL *)",
       "Bash(curl -sS *)",
+      "Bash(curl -sSL *)",
       "Bash(cut *)",
       "Bash(cygpath *)",
       "Bash(dart --version)",
@@ -62,16 +78,20 @@
       "Bash(gh run *)",
       "Bash(gh search *)",
       "Bash(gh workflow *)",
-      "Bash(git cat-file *)",
-      "Bash(git rev-parse *)",
-      "Bash(git symbolic-ref *)",
+      "Bash(git -C * branch *)",
+      "Bash(git -C * describe *)",
+      "Bash(git -C * diff *)",
       "Bash(git -C * fetch *)",
       "Bash(git -C * log *)",
       "Bash(git -C * pull *)",
+      "Bash(git -C * rev-list *)",
+      "Bash(git -C * rev-parse *)",
+      "Bash(git -C * show *)",
       "Bash(git -C * status *)",
       "Bash(git -C * tag *)",
       "Bash(git add *)",
       "Bash(git branch *)",
+      "Bash(git cat-file *)",
       "Bash(git check-ignore *)",
       "Bash(git checkout *)",
       "Bash(git cherry-pick *)",
@@ -85,14 +105,17 @@
       "Bash(git pull *)",
       "Bash(git remote *)",
       "Bash(git rev-list *)",
+      "Bash(git rev-parse *)",
       "Bash(git stash *)",
       "Bash(git status *)",
       "Bash(git switch *)",
+      "Bash(git symbolic-ref *)",
       "Bash(git tag *)",
       "Bash(grep *)",
       "Bash(head *)",
       "Bash(ibus *)",
       "Bash(identify *)",
+      "Bash(journalctl *)",
       "Bash(jq *)",
       "Bash(ldconfig *)",
       "Bash(ldd *)",
@@ -100,10 +123,10 @@
       "Bash(ls *)",
       "Bash(lsb_release *)",
       "Bash(magick *)",
-      "Bash(mkdir *)",
       "Bash(melos bootstrap *)",
       "Bash(melos clean *)",
       "Bash(melos list *)",
+      "Bash(mkdir *)",
       "Bash(objdump *)",
       "Bash(openssl *)",
       "Bash(pgrep *)",
@@ -125,8 +148,8 @@
       "Bash(sudo apt *)",
       "Bash(tail *)",
       "Bash(tar *)",
-      "Bash(unzip *)",
       "Bash(uniq *)",
+      "Bash(unzip *)",
       "Bash(wc *)",
       "Bash(which *)",
       "Bash(xcodebuild *)",
@@ -160,7 +183,7 @@
       "WebSearch",
       "Write(**)"
     ],
-    "defaultMode": "acceptEdits",
+    "defaultMode": "auto",
     "additionalDirectories": [
       "/opt/local",
       "/private/tmp",
@@ -168,10 +191,10 @@
     ],
     "ask": [
       "Bash(fastlane release *)",
+      "Bash(gh pr merge *)",
       "Bash(gh release create *)",
-      "Bash(gh release edit *)",
       "Bash(gh release delete *)",
-      "Bash(gh pr merge *)"
+      "Bash(gh release edit *)"
     ]
   }
 }

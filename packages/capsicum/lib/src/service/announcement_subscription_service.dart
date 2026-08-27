@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/account.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
 import 'push_relay_client.dart';
@@ -144,8 +145,13 @@ class AnnouncementSubscriptionService {
     final accountStorageKey = account.key.toStorageKey();
     final endpoint = await PushKeyStore.getEndpoint(accountStorageKey);
     if (endpoint == null) {
+      // ⚠ **例外メッセージにも storage key を埋めない (#1027-A3/B)。**この
+      // StateError は [autoEnableIfDefault] の catch から [debugLogException]
+      // に渡り、release では breadcrumb になる。[scrubException] は既知の機密
+      // クエリと例外型しか見ないので、素の `mastodon://user@host` は素通りする。
       throw StateError(
-        'announcement_subscription: no push endpoint for $accountStorageKey '
+        'announcement_subscription: no push endpoint for '
+        '${sentrySafeAccountKey(accountStorageKey)} '
         '(call PushRegistrationService.registerAccount first)',
       );
     }
@@ -175,7 +181,7 @@ class AnnouncementSubscriptionService {
       await prefs.remove('$prefsKeyOptOutPrefix$accountStorageKey');
       debugPrint(
         'capsicum: announcement_subscription: enabled '
-        '${account.key.username}@${account.key.host} (id=$id)',
+        '${sentrySafeAccount(account.key)} (id=$id)',
       );
     } catch (e, st) {
       _captureFailure(e, st, account.key.host, phase: 'enable');
@@ -209,7 +215,8 @@ class AnnouncementSubscriptionService {
       await _client.unregisterAnnouncementSubscription(id);
       debugPrint(
         'capsicum: announcement_subscription: disabled '
-        '$accountStorageKey (id=$id, explicit=$explicit)',
+        '${sentrySafeAccountKey(accountStorageKey)} '
+        '(id=$id, explicit=$explicit)',
       );
     } catch (e, st) {
       _captureFailure(e, st, host ?? '(unknown)', phase: 'disable');

@@ -21,6 +21,7 @@ import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
+import '../../util/text_length.dart';
 import '../util/attachment_description_edit.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
@@ -606,6 +607,7 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
       // （Codex P2 / PR #1023）。小さいほうへ寄せたまま切るのをやめると、
       // **Misskey で 512 超を入力して保存でき 400 で落ちる**。
       maxLength: widget.maxLength,
+      buildCounter: serverLengthCounter(_controller),
       maxLengthEnforcement: MaxLengthEnforcement.none,
     ),
     actions: [
@@ -617,7 +619,7 @@ class _DescriptionEditDialogState extends State<_DescriptionEditDialog> {
       ValueListenableBuilder<TextEditingValue>(
         valueListenable: _controller,
         builder: (context, value, _) => FilledButton(
-          onPressed: value.text.characters.length > widget.maxLength
+          onPressed: serverTextLength(value.text) > widget.maxLength
               ? null
               : () => Navigator.pop(context, value.text),
           child: const Text('保存'),

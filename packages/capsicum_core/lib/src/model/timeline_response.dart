@@ -3,6 +3,9 @@ import 'post.dart';
 /// A post that failed conversion from the server's raw format.
 class SkippedPost {
   final String id;
+
+  /// 失敗の理由。⚠ **[describeConversionFailure] を通したものだけを入れる。**
+  /// この値は Sentry へ実際に送られるので、`'$e'` を入れると投稿本文が載る。
   final String error;
 
   const SkippedPost({required this.id, required this.error});
@@ -38,4 +41,26 @@ class TimelineResponse {
     this.skippedPosts = const [],
     this.rawJson = const [],
   });
+}
+
+/// 変換に失敗した理由を、**本文を載せずに**説明する (#1027-A5)。
+///
+/// ⚠⚠ **`'$e'` を使わないこと。**この文字列は
+/// `Sentry.captureMessage(..., params: [...])` に載り、**`logentry.params` として
+/// 実際に送信される**（`hint` は `beforeSend` へ渡るだけで送られないので、
+/// 現状これが唯一の観測経路）。素で埋めると:
+///
+/// - `FormatException.toString()` は `source`（＝変換しようとしていた生 JSON の
+///   断片＝投稿本文）を含む
+/// - `NoSuchMethodError.toString()` は receiver の `toString()` を含む
+///
+/// 逆に `TypeError` は「type 'Null' is not a subtype of type 'String'」のように
+/// **型名しか出さない**ので、そのまま残すほうが原因の切り分けに効く。
+///
+/// ⚠ `SkippedPost.error` の doc が謳う「本文は載せない」を成立させているのは
+/// **ここだけ**。呼び出し側で `'$e'` に戻すと、宣言だけが残って実態が消える。
+String describeConversionFailure(Object e) {
+  if (e is FormatException) return 'FormatException: ${e.message}';
+  if (e is TypeError) return 'TypeError: $e';
+  return e.runtimeType.toString();
 }

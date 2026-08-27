@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -147,10 +148,19 @@ Future<void> _boostWithAccount(
       Sentry.captureException(
         scrubException(e),
         stackTrace: st,
-        withScope: (scope) => scope.setTag('phase', 'post_action'),
+        withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
       ),
     );
     messenger.removeCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          // ⚠ **現在アカウントの `reblogLabelProvider` ではなく [label]。**
+          // ここは**別アカウント（別サーバー）へ**ブーストする経路なので、
+          // 失敗の理由もその相手の用語で言う (#1027-C2)。
+          describePostActionError(e, reblogLabel: label),
+        ),
+      ),
+    );
   }
 }

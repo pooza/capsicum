@@ -19,22 +19,23 @@ import '../../provider/server_config_provider.dart';
 import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
-import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
-import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
 import 'emoji_action_sheet.dart';
 import 'emoji_text.dart';
 import 'home_menu.dart' show pickFollowedChannel;
+import 'inline_custom_emoji.dart';
 import 'post_touch_action_row.dart';
+import 'preview_card_widget.dart';
 import 'reaction_picker_sheet.dart';
 import 'report_comment_dialog.dart';
 import 'user_avatar.dart';
@@ -208,7 +209,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       for (final card in cards)
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: _PreviewCardWidget(card: card),
+          child: PreviewCardWidget(card: card),
         ),
     ];
   }
@@ -1103,7 +1104,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       Sentry.captureMessage(
         'post_tile.action_sheet.tile_disposed',
         level: SentryLevel.warning,
-        withScope: (scope) => scope.setTag('phase', 'post_action'),
+        withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
       ),
     );
   }
@@ -1665,6 +1666,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // その呼び出しは `addReaction` より前にあったため、リアクションが送信され
     // ないまま成功も失敗も出ずに消えていた（Sentry CAPSICUM-4N）。
     final timeline = readVisibleTimelines(ref);
+    // 失敗文言のラベルも同じ窓で dispose されうる (#1027-C2)。これを渡さないと
+    // 失敗時に `ref.read` が走り、**失敗の SnackBar ごと落ちる**。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     unawaited(
       showReactionPickerSheet(
@@ -1677,6 +1681,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
           timeline: timeline,
+          reblogLabel: reblogLabel,
         ),
       ),
     );
@@ -1688,16 +1693,18 @@ class _PostTileState extends ConsumerState<PostTile> {
   PostActionRunner _runner(
     ScaffoldMessengerState messenger, {
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => PostActionRunner(
     ref: ref,
     messenger: messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
     onPostUpdated: widget.onPostUpdated,
     onActionCompleted: onActionCompleted,
   );
 
-  /// [timeline] は、シート等で await をまたぐ導線が**開く前に**捕まえたもの
-  /// (#990)。渡さなければ実行時に取りにいく。
+  /// [timeline] と [reblogLabel] は、シート等で await をまたぐ導線が**開く前に**
+  /// 捕まえたもの (#990 / #1027-C2)。渡さなければ実行時に取りにいく。
   Future<void> _runReactionAction(
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
@@ -1706,9 +1713,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage, {
     String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => _runner(
     messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
   ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Future<void> _runAction(
@@ -1755,6 +1764,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final messenger = ScaffoldMessenger.of(context);
     // 理由は [_confirmDelete] の同名コメント (#990)。
     final timeline = readVisibleTimelines(ref);
+    // ⚠ **ダイアログを開く前に確定させる (#1009)。**失敗文言の組み立ては
+    // ダイアログを閉じたあとに走るので、そこで `ref` を読むと dispose 済みの
+    // タイルで StateError になる。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     showDialog(
       context: context,
@@ -1788,11 +1801,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                         scrubException(e),
                         stackTrace: st,
                         withScope: (scope) =>
-                            scope.setTag('phase', 'post_action'),
+                            scope.setTag('phase', ReactionPhase.post),
                       ),
                     );
                     messenger.showSnackBar(
-                      SnackBar(content: Text(describePostActionError(e))),
+                      SnackBar(
+                        content: Text(
+                          describePostActionError(e, reblogLabel: reblogLabel),
+                        ),
+                      ),
                     );
                   });
             },
@@ -1824,6 +1841,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // ラベルも同じ理由で開く前に確定させる (#1009)。builder の中に置くと、
     // 入力欄でキーボードが開いた再ビルドのときに dispose 済みで投げる。
     final postLabel = ref.read(postLabelProvider);
+    // 失敗文言の組み立てに使う (#1027-C2)。onSubmit は上の窓の中で走るので、
+    // ここも開く前に確定させる。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     showModalBottomSheet(
       context: context,
@@ -1858,11 +1878,15 @@ class _PostTileState extends ConsumerState<PostTile> {
               Sentry.captureException(
                 scrubException(e),
                 stackTrace: st,
-                withScope: (scope) => scope.setTag('phase', 'post_action'),
+                withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
               ),
             );
             messenger.showSnackBar(
-              SnackBar(content: Text(describePostActionError(e))),
+              SnackBar(
+                content: Text(
+                  describePostActionError(e, reblogLabel: reblogLabel),
+                ),
+              ),
             );
           }
         },
@@ -2532,25 +2556,27 @@ class _ReactionChipState extends ConsumerState<_ReactionChip>
               if (widget.emojiUrl != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
-                  child: ConstrainedBox(
-                    // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
-                    // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
-                    // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
-                    // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
-                    constraints: BoxConstraints(
-                      maxHeight: emojiSize,
-                      maxWidth: emojiSize * 3,
-                    ),
-                    child: Image.network(
-                      widget.emojiUrl!,
-                      height: emojiSize,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => Text(
-                        widget.reactionKey,
-                        style: TextStyle(
-                          fontSize:
-                              emojiSize * AppConstants.emojiFallbackTextScale,
-                        ),
+                  // 横長絵文字は高さの 3 倍で頭打ちにする。**本文の EmojiText は
+                  // #858 で固定倍率 cap を撤廃したが、リアクションチップは肥大化
+                  // 防止でこの 3x cap を意図的に維持する**（本文と別方針・#924）。
+                  // 撤廃するとチップが横に伸びて行が崩れるので消さないこと。
+                  //
+                  // ⚠ **デコード前の幅を予約するのは本文以上に重要** (#1032)。
+                  // チップは `_ReactionChips` の `Wrap` に並ぶので、幅が 0 のまま
+                  // レイアウトされると少ない行数に詰まり、デコード後に**行ごと**
+                  // 増えてタイルの高さが飛ぶ。本文の折り返し 1 行より変動が大きい。
+                  // アスペクト比のキャッシュは本文と共有なので、本文で一度出た
+                  // 絵文字はチップでも初回から正しい幅になる。
+                  child: InlineCustomEmoji(
+                    url: widget.emojiUrl!,
+                    shortcode: widget.reactionKey,
+                    size: emojiSize,
+                    maxWidthFactor: 3,
+                    fallback: Text(
+                      widget.reactionKey,
+                      style: TextStyle(
+                        fontSize:
+                            emojiSize * AppConstants.emojiFallbackTextScale,
                       ),
                     ),
                   ),
@@ -3206,89 +3232,6 @@ class _QuoteStateCard extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PreviewCardWidget extends ConsumerWidget {
-  final PreviewCard card;
-
-  const _PreviewCardWidget({required this.card});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(previewCardModeProvider);
-    if (mode == PreviewCardMode.hide) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: () {
-        final uri = Uri.tryParse(card.url);
-        // プレビューカードのリンクも本文中 URL と同様に、対応する専用アプリが
-        // あればそちらで開く（YouTube 等・モバイルのみ・#755）。
-        if (uri != null) launchInPreferredApp(uri);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (card.imageUrl != null)
-              mode == PreviewCardMode.blur
-                  ? ClipRect(
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                        child: Image.network(
-                          card.imageUrl!,
-                          width: double.infinity,
-                          height: 160,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    )
-                  : Image.network(
-                      card.imageUrl!,
-                      width: double.infinity,
-                      height: 160,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    card.title,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (card.description != null &&
-                      card.description!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      card.description!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -16,6 +16,9 @@ void reportSkippedNotifications(
   if (skipped.isEmpty) return;
   try {
     for (final item in skipped) {
+      // params は logentry.params として実際に送られる（hint は送られない）ので、
+      // ここが変換失敗の唯一の観測経路 (#1027-A5)。
+      // scrub-guard: allow: item.error は describeConversionFailure 済み（本文なし）
       Sentry.captureMessage(
         'Notification conversion failed',
         level: SentryLevel.warning,

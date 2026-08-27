@@ -28,9 +28,12 @@ void main() {
           'kind': 'client',
         },
       });
-      expect(upstreamErrorMessage(error), '下書きの数が上限に達しています。不要な下書きを削除してください');
       expect(
-        upstreamFailureText('下書きの保存に失敗しました', error),
+        upstreamErrorMessage(error, reblogLabel: 'リノート'),
+        '下書きの数が上限に達しています。不要な下書きを削除してください',
+      );
+      expect(
+        upstreamFailureText('下書きの保存に失敗しました', error, reblogLabel: 'リノート'),
         '下書きの保存に失敗しました: 下書きの数が上限に達しています。不要な下書きを削除してください',
       );
     });
@@ -38,10 +41,15 @@ void main() {
     test('上限値の数字を文面に埋め込まない（noteDraftLimit はロールポリシー）', () {
       // 既定は 10 だがロールで変わる。「10 件までです」と書くと上限を上げた
       // サーバーで嘘になるため、数字を持たないことをテストで固定する。
-      final reason = misskeyErrorReason('TOO_MANY_DRAFTS')!;
+      final reason = misskeyErrorReason(
+        'TOO_MANY_DRAFTS',
+        reblogLabel: 'リノート',
+      )!;
       expect(RegExp(r'\d').hasMatch(reason), isFalse);
       expect(
-        RegExp(r'\d').hasMatch(misskeyErrorReason('TOO_MANY_SCHEDULED_NOTES')!),
+        RegExp(r'\d').hasMatch(
+          misskeyErrorReason('TOO_MANY_SCHEDULED_NOTES', reblogLabel: 'リノート')!,
+        ),
         isFalse,
       );
     });
@@ -54,13 +62,17 @@ void main() {
           'id': 'x',
         },
       });
-      expect(upstreamErrorMessage(error), isNull);
-      expect(upstreamFailureText('下書きの保存に失敗しました', error), '下書きの保存に失敗しました');
+      expect(upstreamErrorMessage(error, reblogLabel: 'リノート'), isNull);
+      expect(
+        upstreamFailureText('下書きの保存に失敗しました', error, reblogLabel: 'リノート'),
+        '下書きの保存に失敗しました',
+      );
     });
 
     test('code が無い / 文字列でないオブジェクトは null', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error': {'message': 'no code here'},
           }),
@@ -69,6 +81,7 @@ void main() {
       );
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error': {'code': 42},
           }),
@@ -82,7 +95,7 @@ void main() {
     test('人間向けの散文はそのまま出す', () {
       final error = _dioError({'error': 'Validation failed: Text is too long'});
       expect(
-        upstreamErrorMessage(error),
+        upstreamErrorMessage(error, reblogLabel: 'リノート'),
         'Validation failed: Text is too long',
       );
     });
@@ -91,7 +104,10 @@ void main() {
       final error = _dioError({
         'error': 'アップロードしたファイルがサーバーの上限サイズを超過しています。',
       }, status: 413);
-      expect(upstreamErrorMessage(error), 'アップロードしたファイルがサーバーの上限サイズを超過しています。');
+      expect(
+        upstreamErrorMessage(error, reblogLabel: 'リノート'),
+        'アップロードしたファイルがサーバーの上限サイズを超過しています。',
+      );
     });
 
     test('透過できなかった残骸 `Bad response NNN` は出さない', () {
@@ -99,23 +115,30 @@ void main() {
       // ときに来る。ユーザーには意味がないので汎用文言に倒す。
       for (final body in ['Bad response 400', 'Bad response 502']) {
         final error = _dioError({'error': body});
-        expect(upstreamErrorMessage(error), isNull, reason: body);
+        expect(
+          upstreamErrorMessage(error, reblogLabel: 'リノート'),
+          isNull,
+          reason: body,
+        );
       }
       // 前後に文脈がある文はフラット化の残骸ではないので通す。
       expect(
-        upstreamErrorMessage(_dioError({'error': 'Bad response 400 from foo'})),
+        upstreamErrorMessage(
+          _dioError({'error': 'Bad response 400 from foo'}),
+          reblogLabel: 'リノート',
+        ),
         'Bad response 400 from foo',
       );
     });
 
     test('空 / 複数行 / 長すぎる文字列は出さない', () {
-      expect(upstreamErrorMessage(_dioError({'error': '   '})), isNull);
-      expect(upstreamErrorMessage(_dioError({'error': 'a\nb'})), isNull);
-      expect(upstreamErrorMessage(_dioError({'error': 'あ' * 201})), isNull);
-      expect(
-        upstreamErrorMessage(_dioError({'error': 'あ' * 200}))?.length,
-        200,
-      );
+      String? reason(Object body) =>
+          upstreamErrorMessage(_dioError(body), reblogLabel: 'リノート');
+
+      expect(reason({'error': '   '}), isNull);
+      expect(reason({'error': 'a\nb'}), isNull);
+      expect(reason({'error': 'あ' * 201}), isNull);
+      expect(reason({'error': 'あ' * 200})?.length, 200);
     });
   });
 
@@ -127,13 +150,25 @@ void main() {
         'class': 'Ginseng::NotFoundError',
         'message': 'Not Found',
       }, status: 404);
-      expect(upstreamErrorMessage(error), isNull);
+      expect(upstreamErrorMessage(error, reblogLabel: 'リノート'), isNull);
     });
 
     test('DioException でない例外・ボディが Map でない場合は null', () {
-      expect(upstreamErrorMessage(StateError('boom')), isNull);
-      expect(upstreamErrorMessage(_dioError('<html>502</html>')), isNull);
-      expect(upstreamErrorMessage(_dioError(null)), isNull);
+      expect(
+        upstreamErrorMessage(StateError('boom'), reblogLabel: 'リノート'),
+        isNull,
+      );
+      expect(
+        upstreamErrorMessage(
+          _dioError('<html>502</html>'),
+          reblogLabel: 'リノート',
+        ),
+        isNull,
+      );
+      expect(
+        upstreamErrorMessage(_dioError(null), reblogLabel: 'リノート'),
+        isNull,
+      );
     });
 
     test('レスポンスを持たない DioException（接続断など）は null', () {
@@ -141,8 +176,11 @@ void main() {
         requestOptions: RequestOptions(path: '/api/notes/create'),
         type: DioExceptionType.connectionError,
       );
-      expect(upstreamErrorMessage(error), isNull);
-      expect(upstreamFailureText('投稿に失敗しました', error), '投稿に失敗しました');
+      expect(upstreamErrorMessage(error, reblogLabel: 'リノート'), isNull);
+      expect(
+        upstreamFailureText('投稿に失敗しました', error, reblogLabel: 'リノート'),
+        '投稿に失敗しました',
+      );
     });
   });
 
@@ -164,6 +202,7 @@ void main() {
       // ⚠ 数字を決め打ちしない。上限はサーバー設定で変わる。
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error': 'Validation failed: Text character limit of 500 exceeded',
           }),
@@ -172,6 +211,7 @@ void main() {
       );
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error': 'Validation failed: Text character limit of 3000 exceeded',
           }),
@@ -190,6 +230,7 @@ void main() {
     test('Rails 既定形はフィールド名で訳し分ける', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error':
                 'Validation failed: Comment is too long '
@@ -200,6 +241,7 @@ void main() {
       );
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error':
                 'Validation failed: Description is too long '
@@ -215,6 +257,7 @@ void main() {
     test('素性の分からないフィールドは field 中立に倒す', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'error':
                 'Validation failed: Avatar description is too long '
@@ -227,11 +270,15 @@ void main() {
 
     test('定型句は日本語にする', () {
       expect(
-        upstreamErrorMessage(_dioError({'error': 'Record not found'})),
+        upstreamErrorMessage(
+          _dioError({'error': 'Record not found'}),
+          reblogLabel: 'リノート',
+        ),
         '対象が見つかりません。削除された可能性があります',
       );
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({'error': 'The access token is invalid'}),
         ),
         'ログイン情報が無効です。ログインし直してください',
@@ -243,6 +290,7 @@ void main() {
     test('未知の文言は英語のまま出す', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({'error': 'Something unexpected happened upstream'}),
         ),
         'Something unexpected happened upstream',
@@ -255,6 +303,7 @@ void main() {
     test('errors（複数形・配列）も理由として拾う', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'errors': ['タグは 10 個までです'],
           }, status: 422),
@@ -266,6 +315,7 @@ void main() {
     test('errors が複数なら先頭 + 件数に畳む', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'errors': ['タグは 10 個までです', 'タグに使えない文字が含まれています'],
           }, status: 422),
@@ -277,6 +327,7 @@ void main() {
     test('errors が文字列でなければ拾わない', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'errors': [
               {'tags': 'too many'},
@@ -286,7 +337,10 @@ void main() {
         isNull,
       );
       expect(
-        upstreamErrorMessage(_dioError({'errors': <String>[]}, status: 422)),
+        upstreamErrorMessage(
+          _dioError({'errors': <String>[]}, status: 422),
+          reblogLabel: 'リノート',
+        ),
         isNull,
       );
     });
@@ -296,6 +350,7 @@ void main() {
     test('errors でも提示に耐えないものは落とす', () {
       expect(
         upstreamErrorMessage(
+          reblogLabel: 'リノート',
           _dioError({
             'errors': ['a' * 300],
           }, status: 422),
@@ -316,8 +371,65 @@ void main() {
       'MAX_FILE_SIZE_EXCEEDED',
       'ALREADY_FAVORITED',
     ]) {
-      expect(misskeyErrorReason(code), isNotEmpty, reason: code);
+      expect(
+        misskeyErrorReason(code, reblogLabel: 'リノート'),
+        isNotEmpty,
+        reason: code,
+      );
     }
-    expect(misskeyErrorReason('NOT_A_REAL_CODE'), isNull);
+    expect(misskeyErrorReason('NOT_A_REAL_CODE', reblogLabel: 'リノート'), isNull);
+  });
+
+  /// #1027-C2: 用語の正本は `reblogLabelProvider`（モロヘイヤの `reblog_label`
+  /// → `ReactionSupport` の順）。
+  ///
+  /// ⚠⚠ **初版は「ブースト」で直書きされていた。**Misskey 専用の表なのに
+  /// Mastodon 側の用語で、しかも**きゅあすきーは「リキュア！」**なので、
+  /// そのサーバーでは**エラー文言だけが他の全 UI と食い違っていた**。
+  group('リノートの用語 (#1027-C2)', () {
+    test('渡したラベルが文面へ入る', () {
+      expect(
+        misskeyErrorReason('CANNOT_RENOTE', reblogLabel: 'リノート'),
+        'この投稿はリノートできません',
+      );
+      expect(
+        misskeyErrorReason('CANNOT_RENOTE', reblogLabel: 'リキュア！'),
+        'この投稿はリキュア！できません',
+      );
+    });
+
+    test('1 つの文面に 2 箇所あっても両方入る', () {
+      expect(
+        misskeyErrorReason(
+          'CANNOT_RENOTE_TO_A_PURE_RENOTE',
+          reblogLabel: 'リキュア！',
+        ),
+        'リキュア！そのものはリキュア！できません',
+      );
+    });
+
+    // ⚠ **差し込み記号を残したまま画面へ出さない。**表の編集で書き損じると
+    // ユーザーに `{reblog}` がそのまま見える。
+    test('どの文面にも差し込み記号が残らない', () {
+      for (final code in misskeyErrorCodes) {
+        expect(
+          misskeyErrorReason(code, reblogLabel: 'リノート'),
+          isNot(contains(reblogPlaceholder)),
+          reason: code,
+        );
+      }
+    });
+
+    // ⚠ **「ブースト」を直書きへ戻さない。**Misskey 専用の表なので、
+    // Mastodon 側の用語が現れたらそれは退行。
+    test('表に「ブースト」を直書きしない', () {
+      for (final code in misskeyErrorCodes) {
+        expect(
+          misskeyErrorReason(code, reblogLabel: 'リノート'),
+          isNot(contains('ブースト')),
+          reason: code,
+        );
+      }
+    });
   });
 }
