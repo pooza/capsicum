@@ -1847,6 +1847,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   void _reportSkippedPosts(List<SkippedPost> skipped, String? maxId) {
     try {
       for (final post in skipped) {
+        // params は logentry.params として実際に送られる（hint は送られない）ので、
+        // ここが変換失敗の唯一の観測経路 (#1027-A5)。
+        // scrub-guard: allow: post.error は describeConversionFailure 済み（本文なし）
         Sentry.captureMessage(
           'Post conversion failed',
           level: SentryLevel.warning,

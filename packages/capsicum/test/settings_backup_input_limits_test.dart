@@ -44,13 +44,17 @@ void main() {
 
     // ⚠ **format 例外にすること。**ユーザーの選択ミスであって障害ではないので、
     // 呼び出し側の汎用 catch（error レベル）ではなく件数だけ数える方へ落とす。
+    //
+    // ⚠⚠ **上限ちょうどのファイルで測ること (#1027-E)。**以前はここが 24 バイトの
+    // ファイルで、**境界を一度も踏んでいなかった**。実装の `>` を `>=` に変えても
+    // 緑のまま通る＝「ちょうど」を名乗りながら何も見ていない検査だった。
     test('上限ちょうどは通す', () async {
       final file = File('${dir.path}/ok.yaml')
-        ..writeAsStringSync('version: 1\nsettings: {}\n');
+        ..writeAsBytesSync(List.filled(maxSettingsBackupBytes, 0x41));
 
       expect(
         await readSettingsBackupFile(XFile(file.path)),
-        contains('version'),
+        hasLength(maxSettingsBackupBytes),
       );
     });
   });

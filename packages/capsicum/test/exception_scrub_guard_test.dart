@@ -325,8 +325,20 @@ void main() {
   final interpolationStart = RegExp(
     r'\$\{?(e|err|error|ex|exception)(?![A-Za-z0-9_])',
   );
+
+  /// ⚠ **`response` / `details` / `osError` を落とさない (#1027-A4)。**
+  ///
+  /// - `${e.response}` は `Response.toString()` が**ボディ全体**を返す
+  /// - `${e.details}` は `PlatformException` / `IAPError` のネイティブ内部情報
+  /// - `${e.osError}` は `SocketException` の OS エラーで、ホスト名と
+  ///   ポートを含む
+  ///
+  /// ⚠ **`statusCode` は通る**（`response` の後ろに続いても、鎖全体に
+  /// `response` が現れるので弾かれる点は承知のうえ）。素性だけ欲しいときは
+  /// `e.response?.statusCode` ではなく [scrubException] を通すこと。
   final unsafeMembers = RegExp(
-    r'\b(message|data|body|uri|path|toString|requestOptions)\b',
+    r'\b(message|data|body|uri|path|toString|requestOptions'
+    r'|response|details|osError)\b',
   );
 
   /// 補間ではなく**引数として直に**渡す形（`Breadcrumb(message: e.toString())`）。
@@ -349,8 +361,22 @@ void main() {
   /// は breadcrumb に載せる**正しい**形なので、`toString` に反応して弾いては
   /// いけない（この除外が無いと timeline_provider / chat_provider /
   /// desktop_notification_dispatcher の正しい実装が軒並み違反になる）。
-  bool unsafeChain(String chain) =>
-      !chain.startsWith('runtimeType') && unsafeMembers.hasMatch(chain);
+  /// 素性しか出さないと分かっている鎖。**通した理由を必ず書くこと。**
+  ///
+  /// ⚠ **`response` を丸ごと安全扱いにしない (#1027-A4)。**危ないのは
+  /// `Response.toString()`（ボディ全体）であって、そこから 1 つ引いた
+  /// `statusCode` は数値。**鎖の終端まで見て、この形ちょうどのときだけ**通す。
+  final safeChains = <RegExp>[
+    // dio の HTTP ステータス。数値しか出ない。
+    RegExp(r'^response\??\.statusCode$'),
+  ];
+
+  bool unsafeChain(String chain) {
+    // 型名しか出ない。`e.runtimeType.toString()` は breadcrumb に載せる正しい形。
+    if (chain.startsWith('runtimeType')) return false;
+    if (safeChains.any((r) => r.hasMatch(chain))) return false;
+    return unsafeMembers.hasMatch(chain);
+  }
 
   /// [args] の中の危ない補間を返す。
   List<String> unsafeInterpolations(String args) {
@@ -378,6 +404,94 @@ void main() {
 
   String relativePath(File f) =>
       f.path.replaceFirst('${Directory.current.path}/', '');
+
+  /// `captureMessage` の `params:` に載せてよい形 (#1027-A5)。
+  ///
+  /// ⚠⚠ **`params` は `logentry.params` として実際に送信される。**`hint` が
+  /// `beforeSend` へ渡るだけで送られないのとは違う。にもかかわらず、この検査は
+  /// `captureMessage` を一度も見ていなかった。`conversion_skip_report` /
+  /// `timeline_provider` が `[item.id, item.error]` を渡しており、`item.error` は
+  /// adapter が作る `'$e'`（＝ FormatException の source ＝**投稿本文**）だった。
+  ///
+  /// 通すのは **ID とリテラルだけ**。denylist ではなく allowlist にするのは、
+  /// 「危ない名前」を数え上げる形だと**次に増えた名前が黙って通る**ため。
+  /// 素性を丸めた値を載せたいときは [marker] で個別に抜ける（理由が残る）。
+  final safeParamEntry = RegExp(
+    // 文字列 / 数値リテラル
+    r'''^(?:'[^']*'|"[^"]*"|[0-9]+)$'''
+    // `item.id` / `postId` / `x?.id` のような ID
+    r'''|^[A-Za-z_][A-Za-z0-9_]*(?:\??\.[A-Za-z_][A-Za-z0-9_]*)*'''
+    r'''(?<=[Ii]d|ID)$''',
+  );
+
+  test('captureMessage の params に ID とリテラル以外を載せない (#1027-A5)', () {
+    final offenders = <String>[];
+    for (final file in dartFiles()) {
+      final path = relativePath(file);
+      if (allowedFiles.contains(path)) continue;
+      final original = file.readAsStringSync();
+      final source = maskComments(original);
+      for (final (args, start) in callsOf(source, 'captureMessage')) {
+        if (isMarked(original, start)) continue;
+        for (final arg in splitArgs(args)) {
+          if (!arg.startsWith('params:')) continue;
+          final list = arg.substring('params:'.length).trim();
+          final inner = list
+              .replaceFirst(RegExp(r'^\[\s*'), '')
+              .replaceFirst(RegExp(r'\s*\]$'), '');
+          for (final entry in splitArgs(inner)) {
+            if (entry.isEmpty) continue;
+            if (safeParamEntry.hasMatch(entry)) continue;
+            offenders.add('$path: captureMessage(params: [… $entry …])');
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'params は logentry.params として実際に送信される（hint と違う）。'
+          'ID とリテラル以外を載せないこと。素性へ丸めた値なら '
+          '`// $marker: <理由>` で個別に抜ける\n${offenders.join('\n')}',
+    );
+  });
+
+  /// ⚠ **検査そのものが効いていることを、合成ソースで確かめる。**
+  /// 上の検査はリポジトリが綺麗になった時点で「常に緑」になるので、
+  /// **判定ロジックが壊れても気づけない**。
+  group('params の判定 (#1027-A5)', () {
+    bool safe(String entry) => safeParamEntry.hasMatch(entry);
+
+    test('ID とリテラルは通す', () {
+      expect(safe('post.id'), isTrue);
+      expect(safe('item?.id'), isTrue);
+      expect(safe('notificationId'), isTrue);
+      expect(safe('maxId'), isTrue);
+      expect(safe("'fixed'"), isTrue);
+      expect(safe('42'), isTrue);
+    });
+
+    test('それ以外は弾く', () {
+      expect(safe('post.error'), isFalse);
+      expect(safe('e.toString()'), isFalse);
+      expect(safe('body'), isFalse);
+      // ⚠ **`id` を含むだけでは通さない。**終端が id であること。
+      expect(safe('post.identity'), isFalse);
+      expect(safe('idle'), isFalse);
+    });
+  });
+
+  /// ⚠ **`response` を丸ごと安全扱いにしていないこと (#1027-A4)。**
+  test('response の鎖は終端まで見る', () {
+    expect(unsafeChain('response?.statusCode'), isFalse, reason: '数値だけ');
+    expect(unsafeChain('response.statusCode'), isFalse);
+    expect(unsafeChain('response'), isTrue, reason: 'toString はボディ全体');
+    expect(unsafeChain('response?.data'), isTrue);
+    expect(unsafeChain('details'), isTrue, reason: 'ネイティブの内部情報');
+    expect(unsafeChain('osError'), isTrue, reason: 'ホスト名とポート');
+    expect(unsafeChain('runtimeType.toString()'), isFalse);
+  });
 
   test('captureException には scrub 済みの例外だけを渡す', () {
     final offenders = <String>[];

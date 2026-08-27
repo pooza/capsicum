@@ -41,9 +41,16 @@ _safeConvert<S, T>(
       results.add(convert(item));
       if (raw != null) raws.add(raw);
     } catch (e) {
-      developer.log('skipping item during conversion: $e', name: 'capsicum');
+      // ⚠ 生の `$e` を出さない (#1027-A5)。FormatException は source（＝生 JSON
+      // の断片＝投稿本文）を、NoSuchMethodError は receiver の toString を含む。
+      developer.log(
+        'skipping item during conversion: ${describeConversionFailure(e)}',
+        name: 'capsicum',
+      );
       try {
-        skipped.add(SkippedPost(id: getId(item), error: '$e'));
+        skipped.add(
+          SkippedPost(id: getId(item), error: describeConversionFailure(e)),
+        );
       } catch (_) {}
     }
   }
