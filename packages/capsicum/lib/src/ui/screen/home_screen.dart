@@ -73,6 +73,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 見せるための RefreshIndicator ハンドル (#841)。
   final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
+  /// デスクトップメニューの「タイムラインを更新」登録先 (#841)。
+  ///
+  /// ⚠ **`dispose()` の中で `ref.read` してはいけない (#1026 と同じ機構)。**
+  /// `StatefulElement.unmount()` は `super.unmount()` で `_widget = null` を
+  /// 置いてから `state.dispose()` を呼ぶ（framework.dart の 4863 / 6029-6030）。
+  /// そのため dispose 中は `context.mounted` が必ず false で、riverpod の
+  /// `_assertNotDisposed` は **assert ではなく実際に StateError を投げる**
+  /// （consumer.dart:548）＝ release ビルドでも発火する。投げると以降の解除が
+  /// 全部飛び、**defunct な State が `WidgetsBindingObserver` として残り続ける**
+  /// （以後アプリを復帰させるたびに旧 State の [didChangeAppLifecycleState] が
+  /// 走り、`_throttleTimer` も止まらない）。initState で掴んでおくこと。
+  StateController<Future<void> Function()?>? _refreshNotifier;
+
   @override
   void initState() {
     super.initState();
@@ -81,10 +94,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Shell 上のデスクトップメニュー (#834) の「タイムラインを更新」/ Ctrl+R が
     // 現在表示中のタイムラインをリフレッシュできるよう、自身の
     // [_refreshCurrentTimeline] を provider に登録する。dispose で解除する。
+    _refreshNotifier = ref.read(desktopTimelineRefreshProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(desktopTimelineRefreshProvider.notifier).state =
-            _refreshCurrentTimeline;
+        _refreshNotifier?.state = _refreshCurrentTimeline;
       }
     });
   }
@@ -92,9 +105,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void dispose() {
     // 登録済みが自分自身のときだけ解除する（別 HomeScreen が既に上書きして
-    // いたら触らない）。
-    final refreshNotifier = ref.read(desktopTimelineRefreshProvider.notifier);
-    if (refreshNotifier.state == _refreshCurrentTimeline) {
+    // いたら触らない）。⚠ notifier は [_refreshNotifier] から取る。ここで
+    // `ref.read` すると必ず投げて、以降の解除に到達しない。
+    final refreshNotifier = _refreshNotifier;
+    if (refreshNotifier != null &&
+        refreshNotifier.state == _refreshCurrentTimeline) {
       refreshNotifier.state = null;
     }
     WidgetsBinding.instance.removeObserver(this);
