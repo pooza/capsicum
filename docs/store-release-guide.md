@@ -397,6 +397,8 @@ cd ..
 > §4.4 の ASC API に切り替える**（`upload_to_testflight` に
 > `skip_waiting_for_build_processing` を渡す手もある）。
 
+> ⚠️ **`flutter build ipa` は `ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。**出荷したバイナリと一致させるため、この差分はリリースブランチにコミットすること**（v1.61 で pin フォーマットが 2→3 に上がった実績あり）。放置すると次のリリースで「誰も触っていない差分」として現れる。
+
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
 
