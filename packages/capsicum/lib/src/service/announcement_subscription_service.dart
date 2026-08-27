@@ -145,8 +145,13 @@ class AnnouncementSubscriptionService {
     final accountStorageKey = account.key.toStorageKey();
     final endpoint = await PushKeyStore.getEndpoint(accountStorageKey);
     if (endpoint == null) {
+      // ⚠ **例外メッセージにも storage key を埋めない (#1027-A3/B)。**この
+      // StateError は [autoEnableIfDefault] の catch から [debugLogException]
+      // に渡り、release では breadcrumb になる。[scrubException] は既知の機密
+      // クエリと例外型しか見ないので、素の `mastodon://user@host` は素通りする。
       throw StateError(
-        'announcement_subscription: no push endpoint for $accountStorageKey '
+        'announcement_subscription: no push endpoint for '
+        '${sentrySafeAccountKey(accountStorageKey)} '
         '(call PushRegistrationService.registerAccount first)',
       );
     }
@@ -210,7 +215,8 @@ class AnnouncementSubscriptionService {
       await _client.unregisterAnnouncementSubscription(id);
       debugPrint(
         'capsicum: announcement_subscription: disabled '
-        '$accountStorageKey (id=$id, explicit=$explicit)',
+        '${sentrySafeAccountKey(accountStorageKey)} '
+        '(id=$id, explicit=$explicit)',
       );
     } catch (e, st) {
       _captureFailure(e, st, host ?? '(unknown)', phase: 'disable');

@@ -425,7 +425,19 @@ void main() {
     ),
     (
       // `$accountKey` / `${accountKey}` / `$keyStr` / `${storageKey}`
-      pattern: RegExp(r'\$\{?(accountKey|keyStr|storageKey)(?![A-Za-z0-9_])'),
+      //
+      // ⚠ **変数名を列挙しない。**以前は `(accountKey|keyStr|storageKey)` の
+      // 完全一致だったため、`$accountStorageKey` がどれにも当たらず素通しに
+      // なっていた（`announcement_subscription_service.dart` の 2 箇所が実際に
+      // 漏れており、v1.61 のリリース前レビューで検出）。**列挙は必ず取りこぼす**
+      // ので、接尾辞で見て前置きは何でも許す形にする。
+      // ⚠ **`sentrySafe…` 自身を拾わないこと。**`${sentrySafeAccountKey(k)}`
+      // は接尾辞 `AccountKey` に当たってしまう＝**正しい直し方をした箇所だけが
+      // 違反として出る**ので、先頭で除外する。
+      pattern: RegExp(
+        r'\$\{?(?!sentrySafe)[A-Za-z0-9_]*'
+        r'(?:[Ss]torageKey|[Aa]ccountKey|keyStr)(?![A-Za-z0-9_])',
+      ),
       what: 'storage key の補間',
     ),
     (
@@ -1009,6 +1021,28 @@ void main() {
     test('account を丸ごと埋める形も拾う', () {
       expect(accountLeaks(r"'no push keys for $account'"), isNotEmpty);
       expect(accountLeaks(r"'x ${account}'"), isNotEmpty);
+    });
+
+    /// ⚠ **変数名の列挙が取りこぼしていた形（v1.61 のリリース前レビューで検出）。**
+    /// 旧パターンは `(accountKey|keyStr|storageKey)` の完全一致だったため、
+    /// `$accountStorageKey` がどれにも当たらなかった。
+    /// `announcement_subscription_service.dart` の `disable()`（debugPrint）と
+    /// `enable()`（StateError のメッセージ）が実際にこれで漏れていた。
+    test('接頭辞つきの storage key も拾う', () {
+      expect(accountLeaks(r"'disabled $accountStorageKey'"), isNotEmpty);
+      expect(accountLeaks(r"'x ${accountStorageKey}'"), isNotEmpty);
+      expect(accountLeaks(r"'no endpoint for $currentAccountKey'"), isNotEmpty);
+    });
+
+    /// ⚠ **正しい直し方をした箇所を違反にしない。**接尾辞で見るようにした結果、
+    /// `${sentrySafeAccountKey(k)}` が `AccountKey` に当たってしまう形が出た。
+    /// ここが緑でないと「直すほど赤くなる」検査になる。
+    test('sentrySafe 系を通したものは違反にしない', () {
+      expect(
+        accountLeaks(r"'disabled ${sentrySafeAccountKey(accountStorageKey)}'"),
+        isEmpty,
+      );
+      expect(accountLeaks(r"'x ${sentrySafeAccount(account.key)}'"), isEmpty);
     });
 
     test('host だけなら通す', () {
