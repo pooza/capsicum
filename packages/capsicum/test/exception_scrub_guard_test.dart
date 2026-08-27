@@ -405,6 +405,53 @@ void main() {
   String relativePath(File f) =>
       f.path.replaceFirst('${Directory.current.path}/', '');
 
+  /// ログ経路に載せてはいけないアカウント識別子 (#1027-A3 / B)。
+  ///
+  /// ⚠⚠ **この検査は例外しか見ていなかった。**動機に挙げているのは
+  /// 「breadcrumb の message は `_scrubBreadcrumb` を通らない」ことなのに、
+  /// [interpolationStart] は `e` / `error` 系の識別子しか対象にしていない。
+  /// **`'... for $accountKey'` は例外ですらないので一度も引っかからなかった**。
+  /// #1020 で `account_storage.dart` の 1 行を直したときも、同じファイルの
+  /// 隣の行や `push_message_dispatcher.dart:174` は残っていた。
+  ///
+  /// 載っていた実体は `mastodon://user@host`（storage key）や
+  /// `username@host`。**host は残してよい**（プリセットかどうかで優先度を
+  /// 切る運用があり、素性が分からないとトリアージできない）ので、
+  /// 潰すのは username 側だけ。`sentrySafeAccount` を通すこと。
+  final accountIdentifiers = <({RegExp pattern, String what})>[
+    (
+      pattern: RegExp(r'\.toStorageKey\(\)'),
+      what: 'toStorageKey() （mastodon://user@host そのもの）',
+    ),
+    (
+      // `$accountKey` / `${accountKey}` / `$keyStr` / `${storageKey}`
+      pattern: RegExp(r'\$\{?(accountKey|keyStr|storageKey)(?![A-Za-z0-9_])'),
+      what: 'storage key の補間',
+    ),
+    (
+      // ⚠ **`$account` を丸ごと埋める形 (#1027-B)。**この名前の変数は
+      // `Account` か storage key 文字列で、後者だと `mastodon://user@host`
+      // がそのまま出る。`push_message_dispatcher.dart:174` が実際にこれで、
+      // **同じファイルの 14 行下は #1020 で直っていたのに残っていた**。
+      //
+      // ⚠ **`.` が続く形は除く。**`${account.key.host}` は host だけなので可。
+      // 危ないのは「丸ごと」だけ。
+      pattern: RegExp(r'\$\{?account(?![A-Za-z0-9_.])'),
+      what: 'account を丸ごと補間',
+    ),
+    (
+      // `${account.key.username}` / `${a.key.username}` / `$username`
+      pattern: RegExp(r'\$\{?[A-Za-z0-9_.?]*\busername\b'),
+      what: 'username の補間',
+    ),
+  ];
+
+  /// [args] に含まれるアカウント識別子を返す。
+  List<String> accountLeaks(String args) => [
+    for (final id in accountIdentifiers)
+      if (id.pattern.hasMatch(args)) id.what,
+  ];
+
   /// `captureMessage` の `params:` に載せてよい形 (#1027-A5)。
   ///
   /// ⚠⚠ **`params` は `logentry.params` として実際に送信される。**`hint` が
@@ -510,7 +557,27 @@ void main() {
         // 直前で `final scrubbed = scrubException(e);` と控えた変数も可。
         // ⚠ **名前だけで信じる**ので、`scrubbed` を別の意味に使わないこと。
         if (RegExp(r'^scrubbed[A-Za-z0-9_]*$').hasMatch(first)) continue;
-        if (RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) continue;
+        // その場で作った合成エラー（`StateError('...')` 等）。
+        //
+        // ⚠⚠ **無条件に通してはいけない (#1027-A2)。**免除していたのは
+        // 「型名 + `(`」の形だけで、**中身を一度も見ていなかった**。
+        // `StateError('$accountKey が読めません: $e')` のように**中に PII や
+        // 生の例外を組み込んだ合成エラー**は、素の `e` を渡すより悪い
+        // （`exceptions[].value` は breadcrumb と違って必ず送られる）。
+        if (RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) {
+          final open = first.indexOf('(');
+          final close = matchParen(first, open);
+          final inner = close < 0 ? first : first.substring(open + 1, close);
+          final leaks = [
+            ...unsafeInterpolations(inner),
+            ...accountLeaks(inner),
+          ];
+          if (leaks.isEmpty) continue;
+          offenders.add(
+            '$path: captureException($first) → ${leaks.join(' / ')}',
+          );
+          continue;
+        }
         offenders.add('$path: captureException($first, ...)');
       }
     }
@@ -662,53 +729,6 @@ void main() {
     return sinks;
   }
 
-  /// ログ経路に載せてはいけないアカウント識別子 (#1027-A3 / B)。
-  ///
-  /// ⚠⚠ **この検査は例外しか見ていなかった。**動機に挙げているのは
-  /// 「breadcrumb の message は `_scrubBreadcrumb` を通らない」ことなのに、
-  /// [interpolationStart] は `e` / `error` 系の識別子しか対象にしていない。
-  /// **`'... for $accountKey'` は例外ですらないので一度も引っかからなかった**。
-  /// #1020 で `account_storage.dart` の 1 行を直したときも、同じファイルの
-  /// 隣の行や `push_message_dispatcher.dart:174` は残っていた。
-  ///
-  /// 載っていた実体は `mastodon://user@host`（storage key）や
-  /// `username@host`。**host は残してよい**（プリセットかどうかで優先度を
-  /// 切る運用があり、素性が分からないとトリアージできない）ので、
-  /// 潰すのは username 側だけ。`sentrySafeAccount` を通すこと。
-  final accountIdentifiers = <({RegExp pattern, String what})>[
-    (
-      pattern: RegExp(r'\.toStorageKey\(\)'),
-      what: 'toStorageKey() （mastodon://user@host そのもの）',
-    ),
-    (
-      // `$accountKey` / `${accountKey}` / `$keyStr` / `${storageKey}`
-      pattern: RegExp(r'\$\{?(accountKey|keyStr|storageKey)(?![A-Za-z0-9_])'),
-      what: 'storage key の補間',
-    ),
-    (
-      // ⚠ **`$account` を丸ごと埋める形 (#1027-B)。**この名前の変数は
-      // `Account` か storage key 文字列で、後者だと `mastodon://user@host`
-      // がそのまま出る。`push_message_dispatcher.dart:174` が実際にこれで、
-      // **同じファイルの 14 行下は #1020 で直っていたのに残っていた**。
-      //
-      // ⚠ **`.` が続く形は除く。**`${account.key.host}` は host だけなので可。
-      // 危ないのは「丸ごと」だけ。
-      pattern: RegExp(r'\$\{?account(?![A-Za-z0-9_.])'),
-      what: 'account を丸ごと補間',
-    ),
-    (
-      // `${account.key.username}` / `${a.key.username}` / `$username`
-      pattern: RegExp(r'\$\{?[A-Za-z0-9_.?]*\busername\b'),
-      what: 'username の補間',
-    ),
-  ];
-
-  /// [args] に含まれるアカウント識別子を返す。
-  List<String> accountLeaks(String args) => [
-    for (final id in accountIdentifiers)
-      if (id.pattern.hasMatch(args)) id.what,
-  ];
-
   /// `パス → ソース` から違反を数え上げる。
   ///
   /// ⚠ **合成ソースで丸ごと動かせる形にしておくこと（#1020・Codex P2 の 5 巡目）。**
@@ -738,6 +758,201 @@ void main() {
   Set<String> accountSinks(Iterable<String> masked) => breadcrumbSinks(
     masked,
   ).where((s) => s == 'Breadcrumb' || logLikeName.hasMatch(s)).toSet();
+
+  /// `Sentry.captureException` へ**到達する**関数を数え上げる (#1027-A1)。
+  ///
+  /// ⚠⚠ **例外側は直接呼び出ししか見ていなかった。**breadcrumb 側は fixpoint で
+  /// ラッパーを辿るのに、こちらは `captureException(` の呼び出しだけを見ていた
+  /// ので、`reportOpFailure` / `_reportOnce` を経由すると**検査の視野から
+  /// 消えていた**。
+  ///
+  /// これが効くのは、ラッパーが内部で `scrubException` を通していても
+  /// **他の引数が素通しになる**ため。`reportOpFailure` の `tags` は
+  /// `Map<String, String>` がそのまま Sentry のタグになるので、
+  /// `tags: {'detail': '$e'}` と書けば生の例外が送られる。
+  ///
+  /// ⚠⚠ **「本体が sink を呼んでいる」だけで sink と見なしてはいけない。**
+  /// [callsOf] / [declarationsOf] は**名前でしか照合しない**ので、`update` の
+  /// ような一般的なメソッド名が 1 つ混ざると fixpoint が爆発する。実際、
+  /// 無関係な `PushRegistrationStatusStore.update`（UI 状態の保管庫）まで
+  /// sink になり、`errorMessage: e.message` が違反として挙がった。
+  ///
+  /// breadcrumb 側と同じく**自分の引数を転送していること**を要求する。例外は
+  /// `Object` / `dynamic` / `〜Exception` / `〜Error` 型で受けるので、String
+  /// 前提の [stringParamNames] とは別に集める。
+  final errorParamDecl = RegExp(
+    r'^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^()]*\))?\s*)*'
+    r'(?:required\s+)?'
+    r'(?:Object|dynamic|[A-Za-z0-9_]*(?:Exception|Error))\??\s+'
+    r'([a-z_][A-Za-z0-9_]*)',
+  );
+
+  Set<String> errorParamNames(String params) {
+    final out = <String>{};
+    for (final group in splitArgs(params)) {
+      final inner = group
+          .replaceFirst(RegExp(r'^[{\[]\s*'), '')
+          .replaceFirst(RegExp(r'\s*[}\]]$'), '');
+      for (final p in splitArgs(inner)) {
+        final m = errorParamDecl.firstMatch(p);
+        if (m != null) out.add(m.group(1)!);
+      }
+    }
+    return out;
+  }
+
+  Set<String> exceptionSinks(Iterable<String> masked) {
+    final sinks = {'captureException'};
+    final pending = [
+      for (final source in masked)
+        for (final (name, params, bodyStart, bodyEnd) in declarationsOf(source))
+          if (errorParamNames(params) case final names when names.isNotEmpty)
+            (
+              name: name,
+              params: names,
+              body: source.substring(bodyStart, bodyEnd),
+            ),
+    ];
+    var added = true;
+    while (added) {
+      added = false;
+      pending.removeWhere((c) {
+        final forwards = sinks.any(
+          (sink) => callsOf(
+            c.body,
+            sink,
+          ).any((call) => forwardsTo(call.$1, c.params)),
+        );
+        if (!forwards) return false;
+        sinks.add(c.name);
+        added = true;
+        return true;
+      });
+    }
+    return sinks;
+  }
+
+  /// ⚠ **合成エラーの免除は無条件ではない (#1027-A2)。**免除していたのは
+  /// 「型名 + `(`」の形だけで、中身を一度も見ていなかった。ここが緩いと、
+  /// **素の `e` を渡すより悪い**形（PII を組み込んだ合成エラー）が通る。
+  group('合成エラーの中身 (#1027-A2)', () {
+    /// [captureException] の第 1 引数だけを与えて、違反になるか見る。
+    bool rejects(String first) {
+      if (!RegExp(r'^[A-Z][A-Za-z0-9_]*\(').hasMatch(first)) return true;
+      final open = first.indexOf('(');
+      final close = matchParen(first, open);
+      final inner = close < 0 ? first : first.substring(open + 1, close);
+      return unsafeInterpolations(inner).isNotEmpty ||
+          accountLeaks(inner).isNotEmpty;
+    }
+
+    test('素性だけの合成エラーは通す', () {
+      expect(rejects("StateError('prefs.setString returned false')"), isFalse);
+      expect(
+        rejects("StateError('DioException type=\$type status=\$code')"),
+        isFalse,
+      );
+    });
+
+    test('中に生の例外を組み込んだ合成エラーは弾く', () {
+      expect(rejects("StateError('failed: \$e')"), isTrue);
+      expect(rejects("StateError('failed: \${e.message}')"), isTrue);
+    });
+
+    test('中にアカウント識別子を組み込んだ合成エラーは弾く', () {
+      expect(rejects("StateError('\$accountKey が読めません')"), isTrue);
+      expect(rejects("StateError('for \${account.key.username}')"), isTrue);
+    });
+
+    test('host だけなら通す', () {
+      expect(rejects("StateError('failed for \${account.key.host}')"), isFalse);
+    });
+  });
+
+  /// `パス → ソース` から、例外ラッパー呼び出しの違反を数え上げる。
+  ///
+  /// ⚠ `captureException` 自身の第 1 引数は専用の検査が見るので、ここでは
+  /// **ラッパー側だけ**を対象にする。
+  List<String> offendersInExceptionSinks(Map<String, String> sources) {
+    final masked = {
+      for (final MapEntry(key: p, value: s) in sources.entries)
+        p: maskComments(s),
+    };
+    final sinks = exceptionSinks(masked.values)..remove('captureException');
+    final offenders = <String>[];
+    for (final MapEntry(key: path, value: source) in masked.entries) {
+      if (allowedFiles.contains(path)) continue;
+      for (final sink in sinks) {
+        for (final (args, start) in callsOf(source, sink)) {
+          final unsafe = unsafeInterpolations(args);
+          if (unsafe.isEmpty) continue;
+          if (isMarked(sources[path]!, start)) continue;
+          offenders.add('$path: $sink → ${unsafe.join(' / ')}');
+        }
+      }
+    }
+    return offenders;
+  }
+
+  /// ⚠ **この検査はリポジトリが綺麗だと常に緑になる。**判定が壊れても
+  /// 気づけないので、合成ソースと実リポジトリの両方で「見えていること」を
+  /// 固定する。
+  group('例外ラッパーの数え上げ (#1027-A1)', () {
+    test('#1027 が名指ししたラッパーが sink に入っている', () {
+      final sinks = exceptionSinks([
+        for (final f in dartFiles()) maskComments(f.readAsStringSync()),
+      ]);
+      expect(
+        sinks,
+        containsAll(['captureException', 'reportOpFailure', '_reportOnce']),
+        reason: 'ここが空だと「直接呼び出ししか見ない」に退行する',
+      );
+    });
+
+    test('ラッパーの他の引数に生の例外を埋めると挙がる', () {
+      expect(
+        offendersInExceptionSinks({
+          'a.dart':
+              'void reportX({required Object error, Map<String, String>? tags}) '
+              '{ captureException(scrubException(error), tags: tags); }',
+          'b.dart':
+              "void run() { reportX(error: e, tags: {'detail': '\$e'}); }",
+        }),
+        isNotEmpty,
+        reason: '中で scrubException を通していても、tags は素通しで送られる',
+      );
+    });
+
+    // ⚠⚠ **名前だけで数えると fixpoint が爆発する。**`update` のような一般的な
+    // メソッド名が 1 つ混ざると、無関係な UI 状態の保管庫まで sink になり
+    // `errorMessage: e.message` が違反として挙がった（実際に踏んだ）。
+    test('引数を転送しない同名メソッドを巻き込まない', () {
+      final sinks = exceptionSinks([
+        'void report(Object error) { captureException(error); }',
+        'void update(String key, {String? errorMessage}) { store[key] = errorMessage; }',
+      ]);
+      expect(sinks, contains('report'));
+      expect(
+        sinks,
+        isNot(contains('update')),
+        reason: 'エラーを受け取らず転送もしないメソッドは sink ではない',
+      );
+    });
+  });
+
+  test('captureException へ届く経路に生の例外を埋めない (#1027-A1)', () {
+    final offenders = offendersInExceptionSinks({
+      for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
+    });
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'ラッパーが中で scrubException を通していても、tags / extra など'
+          '**他の引数は素通し**で Sentry へ送られる。生の例外は渡さないこと'
+          '\n${offenders.join('\n')}',
+    );
+  });
 
   /// アカウント識別子の違反を数え上げる。
   List<String> accountOffendersIn(Map<String, String> sources) {
