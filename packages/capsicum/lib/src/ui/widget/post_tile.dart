@@ -1756,6 +1756,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final messenger = ScaffoldMessenger.of(context);
     // 理由は [_confirmDelete] の同名コメント (#990)。
     final timeline = readVisibleTimelines(ref);
+    // ⚠ **ダイアログを開く前に確定させる (#1009)。**失敗文言の組み立ては
+    // ダイアログを閉じたあとに走るので、そこで `ref` を読むと dispose 済みの
+    // タイルで StateError になる。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     showDialog(
       context: context,
@@ -1793,7 +1797,11 @@ class _PostTileState extends ConsumerState<PostTile> {
                       ),
                     );
                     messenger.showSnackBar(
-                      SnackBar(content: Text(describePostActionError(e))),
+                      SnackBar(
+                        content: Text(
+                          describePostActionError(e, reblogLabel: reblogLabel),
+                        ),
+                      ),
                     );
                   });
             },
@@ -1825,6 +1833,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // ラベルも同じ理由で開く前に確定させる (#1009)。builder の中に置くと、
     // 入力欄でキーボードが開いた再ビルドのときに dispose 済みで投げる。
     final postLabel = ref.read(postLabelProvider);
+    // 失敗文言の組み立てに使う (#1027-C2)。onSubmit は上の窓の中で走るので、
+    // ここも開く前に確定させる。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     showModalBottomSheet(
       context: context,
@@ -1863,7 +1874,11 @@ class _PostTileState extends ConsumerState<PostTile> {
               ),
             );
             messenger.showSnackBar(
-              SnackBar(content: Text(describePostActionError(e))),
+              SnackBar(
+                content: Text(
+                  describePostActionError(e, reblogLabel: reblogLabel),
+                ),
+              ),
             );
           }
         },

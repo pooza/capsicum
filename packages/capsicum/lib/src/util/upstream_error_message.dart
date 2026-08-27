@@ -35,22 +35,22 @@ import 'misskey_api_error.dart';
 ///   `message`（`"Some files are not found."` 等）へ倒すことはしない。日本語の
 ///   汎用文言より不親切になるため。コード自体は Sentry のタグへ回して観測する。
 /// - **Mastodon は定型句だけ訳し、残りは英語のまま出す** (#976)。あちらの
-///   `error` は人間向けの散文で、クライアントに見せる前提のもの。ただし
-///   **プリセット 5 サーバーのうち 3 つが Mastodon** なので、素通しにすると
-///   多数派の環境ほど英語が出る。実際に踏む定型句
-///   （[_mastodonErrorPhrases]）だけ日本語へ寄せ、それ以外は英語のまま出す。
+///   `error` は人間向けの散文で、クライアントに見せる前提のもの。実際に踏む
+///   定型句（[_mastodonErrorPhrases]）だけ日本語へ寄せ、それ以外は英語のまま
+///   出す。⚠ **どれが本当に英語で届くかは [_localizeMastodonError] の doc が
+///   正本**（I18n を通る形は ja アカウントでは日本語で届く・#1027-C3）。
 ///   ⚠ これは取りこぼしではなく**意図した非対称**（Misskey の未知は
 ///   `SOME_ERROR_CODE` という機械語だが、Mastodon の未知は曲がりなりにも
 ///   文章になっている）。機械的な残骸・巨大ボディは従来どおり弾く。
 /// - **`errors`（複数形・配列）も見る** (#976)。モロヘイヤ独自 API の
 ///   バリデーション失敗はこの形で返る。
-String? upstreamErrorMessage(Object error) {
+String? upstreamErrorMessage(Object error, {required String reblogLabel}) {
   final code = misskeyApiErrorCode(error);
   if (code != null) {
     // Misskey 形（オブジェクト）と分かった時点で、未知コードでも文字列側へは
     // 落とさない。`error` は Map なので [_mastodonErrorText] は元々 null を返すが、
     // 意図として明示しておく。
-    return misskeyErrorReason(code);
+    return misskeyErrorReason(code, reblogLabel: reblogLabel);
   }
   return _mastodonErrorText(error);
 }
@@ -60,8 +60,12 @@ String? upstreamErrorMessage(Object error) {
 ///
 /// 表示の組み立てをここ 1 箇所に閉じ、呼び出し側ごとに「理由を括弧書きにするか
 /// 改行するか」が割れないようにする。
-String upstreamFailureText(String fallback, Object error) {
-  final reason = upstreamErrorMessage(error);
+String upstreamFailureText(
+  String fallback,
+  Object error, {
+  required String reblogLabel,
+}) {
+  final reason = upstreamErrorMessage(error, reblogLabel: reblogLabel);
   return reason == null ? fallback : '$fallback: $reason';
 }
 
@@ -74,12 +78,34 @@ String upstreamFailureText(String fallback, Object error) {
 /// この範囲なので、闇雲に全コードを並べない。
 ///
 /// 上流がコードを増やしても、ここに無ければ汎用文言に倒れるだけで壊れない。
-String? misskeyErrorReason(String code) => _misskeyErrorReasons[code];
+///
+/// [reblogLabel] は [reblogLabelProvider] の値を渡す。理由は
+/// [_misskeyErrorReasons] の doc を参照。
+String? misskeyErrorReason(String code, {required String reblogLabel}) =>
+    _misskeyErrorReasons[code]?.replaceAll(reblogPlaceholder, reblogLabel);
+
+/// [_misskeyErrorReasons] の文面で「ブースト / リノート / リキュア！」の位置を
+/// 表す差し込み記号 (#1027-C2)。
+const reblogPlaceholder = '{reblog}';
+
+/// 収録済みのコード一覧。**検査が母数をソースから取れるように**公開している
+/// （#1027-C2）。テスト側に一覧を写すと、コードを足したときに検査が付いてこない。
+Iterable<String> get misskeyErrorCodes => _misskeyErrorReasons.keys;
 
 /// **文面に上限値の数字を書かない。** `noteDraftLimit` / `scheduledNoteLimit` は
 /// Misskey のロールポリシー（既定 10 だがロールで変わる）なので、「10 件までです」と
 /// 決め打ちすると上限を引き上げたサーバーで嘘になる。実際の値は `/api/i` の
 /// `policies` に出るが、エラー時に追加の API を叩いてまで数字を出す価値は薄い。
+///
+/// ⚠⚠ **「ブースト」「リノート」を直書きしない (#1027-C2)。**用語の正本は
+/// `reblogLabelProvider`（モロヘイヤの `reblog_label` → `ReactionSupport` の
+/// 有無、の優先順）。ここは Misskey 専用の表なので素朴には「リノート」だが、
+/// **きゅあすきーは「リキュア！」**なので直書きすると**そのサーバーだけ
+/// エラー文言だけが他の全 UI と食い違う**。[reblogPlaceholder] を置き、
+/// 表示直前に差し替える。
+///
+/// 初版は「ブースト」で統一されており、Misskey 専用の表なのに Mastodon 側の
+/// 用語になっていた（v1.60 リリース前レビュー）。
 const _misskeyErrorReasons = <String, String>{
   // 下書き / 予約投稿（#879 の発端はここ）。
   'TOO_MANY_DRAFTS': '下書きの数が上限に達しています。不要な下書きを削除してください',
@@ -105,17 +131,17 @@ const _misskeyErrorReasons = <String, String>{
   'NO_SUCH_CHANNEL': '対象のチャンネルが見つかりません',
   'NO_SUCH_FILE': '添付ファイルが見つかりません',
 
-  // ブースト（リノート）の可否。Misskey は条件ごとに別コードを返す。
-  'CANNOT_RENOTE': 'この投稿はブーストできません',
-  'CANNOT_RENOTE_DUE_TO_VISIBILITY': '公開範囲の設定により、この投稿はブーストできません',
-  'CANNOT_RENOTE_OUTSIDE_OF_CHANNEL': 'チャンネルの外へはブーストできません',
-  'CANNOT_RENOTE_TO_A_PURE_RENOTE': 'ブーストそのものはブーストできません',
-  'CANNOT_RENOTE_TO_EXTERNAL': '外部のサーバーへはブーストできません',
-  'CANNOT_REACT_TO_RENOTE': 'ブーストにはリアクションできません',
+  // リノートの可否。Misskey は条件ごとに別コードを返す。
+  'CANNOT_RENOTE': 'この投稿は{reblog}できません',
+  'CANNOT_RENOTE_DUE_TO_VISIBILITY': '公開範囲の設定により、この投稿は{reblog}できません',
+  'CANNOT_RENOTE_OUTSIDE_OF_CHANNEL': 'チャンネルの外へは{reblog}できません',
+  'CANNOT_RENOTE_TO_A_PURE_RENOTE': '{reblog}そのものは{reblog}できません',
+  'CANNOT_RENOTE_TO_EXTERNAL': '外部のサーバーへは{reblog}できません',
+  'CANNOT_REACT_TO_RENOTE': '{reblog}にはリアクションできません',
 
   // 返信の可否。
   'CANNOT_REPLY_TO_AN_INVISIBLE_NOTE': '見えない投稿には返信できません',
-  'CANNOT_REPLY_TO_A_PURE_RENOTE': 'ブーストそのものには返信できません',
+  'CANNOT_REPLY_TO_A_PURE_RENOTE': '{reblog}そのものには返信できません',
   'CANNOT_REPLY_TO_SPECIFIED_NOTE_WITH_EXTENDED_VISIBILITY':
       '公開範囲の設定により、この投稿には返信できません',
   'CANNOT_REPLY_TO_SPECIFIED_VISIBILITY_NOTE_WITH_EXTENDED_VISIBILITY':
@@ -174,9 +200,30 @@ String? _mastodonErrorText(Object error) {
 
 /// Mastodon がよく返す英語の `error` を日本語へ寄せる (#976)。
 ///
-/// ⚠ **プリセット 5 サーバーのうち 3 つが Mastodon**なので、素通しすると
-/// **多数派の環境ほど英語が出る**。Misskey 側は `error.code` を丁寧に日本語化
-/// しているのに、こちらだけ英語のまま流していた。
+/// ## どの文言が実際に英語で届くか（#1027-C3・フォークのソースで確定）
+///
+/// ⚠⚠ **「多数派の環境ほど英語が出る」は半分しか正しくない。**`Api::BaseController`
+/// は `ApplicationController` 経由で `Localized` を include しており、
+/// `set_locale` が **`current_user.locale` を見る**。つまり**ロケールが `ja` の
+/// アカウントには、I18n を通る文言は日本語で届く**。
+///
+/// | capsicum が訳している文言 | サーバー側 | ja アカウントに届くもの |
+/// | --- | --- | --- |
+/// | `character limit of N exceeded` | `I18n.t('statuses.over_character_limit')` | **日本語**（「上限は500文字です」） |
+/// | `X is too long (maximum is N characters)` | ActiveRecord 既定 | **日本語** |
+/// | `Text can't be blank` | ActiveRecord 既定 | **日本語** |
+/// | `Record not found` | **ハードコード**（`concerns/api/error_handling.rb`） | **英語** |
+/// | `This action is not allowed` | **ハードコード**（同上） | **英語** |
+/// | `Your login is currently disabled` | **ハードコード**（`application_controller.rb`） | **英語** |
+/// | `The access token is invalid` / `was revoked` | doorkeeper に ja 訳あり | **英語**（未認証で `current_user` が無く、capsicum は `Accept-Language` を送らないので `default_locale` へ落ちる） |
+///
+/// ⚠ **上 3 つ（I18n を通る形）の訳は ja アカウントでは発火しない。**ただし
+/// **消す理由も無い** — `en` ロケールのアカウントでは実際に英語で届くし、
+/// サーバー側の日本語はそのまま素通しされるので害も無い。
+///
+/// ⚠ **下 4 つ（ハードコード）はロケールに関係なく英語**なので、ここの訳が
+/// 実質の効き所。**「英語が出る」という動機を疑うときは、まず I18n を通る形か
+/// ハードコードかを分けること。**
 ///
 /// ⚠ **未知の文言は英語のまま出す。**これは上の「方針」で意図的に決めた挙動
 /// （Mastodon の `error` は人間向けの散文で、クライアントに見せる前提）。

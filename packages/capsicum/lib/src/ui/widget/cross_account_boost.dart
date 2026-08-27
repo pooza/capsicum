@@ -151,6 +151,15 @@ Future<void> _boostWithAccount(
       ),
     );
     messenger.removeCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          // ⚠ **現在アカウントの `reblogLabelProvider` ではなく [label]。**
+          // ここは**別アカウント（別サーバー）へ**ブーストする経路なので、
+          // 失敗の理由もその相手の用語で言う (#1027-C2)。
+          describePostActionError(e, reblogLabel: label),
+        ),
+      ),
+    );
   }
 }

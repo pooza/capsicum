@@ -221,7 +221,16 @@ class PostActionRunner {
   /// 規約は [describePostActionError] の doc が正本。
   void _report(String label, Object e, StackTrace st, {required String phase}) {
     _reportQuietly(label, e, st, phase: phase);
-    messenger.showSnackBar(SnackBar(content: Text(describePostActionError(e))));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          describePostActionError(
+            e,
+            reblogLabel: ref.read(reblogLabelProvider),
+          ),
+        ),
+      ),
+    );
   }
 
   /// 観測だけして、ユーザーには何も出さない失敗。

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/upstream_error_message.dart';
 import '../util/op_error.dart';
@@ -159,7 +160,11 @@ class ScheduledPostsScreen extends ConsumerWidget {
             // Misskey の `error` がオブジェクトになるため、そのままだと
             // `{code: ..., message: ..., id: ...}` が画面に出る。既知コードは
             // 日本語に訳し、読めないものは汎用文言に倒す (#886)。
-            final message = upstreamFailureText('タグの更新に失敗しました', e);
+            final message = upstreamFailureText(
+              'タグの更新に失敗しました',
+              e,
+              reblogLabel: ref.read(reblogLabelProvider),
+            );
             debugLogException('Tag update error', e);
             if (context.mounted) {
               ScaffoldMessenger.of(

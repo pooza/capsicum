@@ -3131,7 +3131,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             // サーバーが返した理由を添える (#886)。下書き上限 (TOO_MANY_DRAFTS)
             // が「保存に失敗しました」としか出ず原因が分からなかった #879 の
             // 受け皿。理由が読めなければ従来どおり汎用文言のまま。
-            content: Text(upstreamFailureText('下書きの保存に失敗しました', e)),
+            content: Text(
+              upstreamFailureText(
+                '下書きの保存に失敗しました',
+                e,
+                reblogLabel: ref.read(reblogLabelProvider),
+              ),
+            ),
           ),
         );
       }
@@ -3351,7 +3357,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
             // 投稿できない理由（禁止語・メンション過多・ブースト不可等）は
             // サーバーしか知らないので、透過されてきたものを添える (#886)。
             content: Text(
-              upstreamFailureText('${ref.read(postLabelProvider)}に失敗しました', e),
+              upstreamFailureText(
+                '${ref.read(postLabelProvider)}に失敗しました',
+                e,
+                reblogLabel: ref.read(reblogLabelProvider),
+              ),
             ),
           ),
         );

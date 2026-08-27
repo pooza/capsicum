@@ -26,28 +26,38 @@ void main() {
       expect(
         describePostActionError(
           _misskeyCode('CANNOT_RENOTE_OUTSIDE_OF_CHANNEL'),
+          reblogLabel: 'リノート',
         ),
-        'チャンネルの外へはブーストできません',
+        'チャンネルの外へはリノートできません',
       );
     });
 
     test('400 + NO_SUCH_CHANNEL は専用文言 (#923)', () {
       expect(
-        describePostActionError(_misskeyCode('NO_SUCH_CHANNEL')),
+        describePostActionError(
+          _misskeyCode('NO_SUCH_CHANNEL'),
+          reblogLabel: 'リノート',
+        ),
         '対象のチャンネルが見つかりません',
       );
     });
 
     test('400 でも未知 code は汎用文言に倒す', () {
       expect(
-        describePostActionError(_misskeyCode('SOME_BRAND_NEW_CODE')),
+        describePostActionError(
+          _misskeyCode('SOME_BRAND_NEW_CODE'),
+          reblogLabel: 'リノート',
+        ),
         '操作に失敗しました',
       );
     });
 
     test('400 でもボディに error.code が無ければ汎用文言', () {
       expect(
-        describePostActionError(_dioError({'error': 'plain string'})),
+        describePostActionError(
+          _dioError({'error': 'plain string'}),
+          reblogLabel: 'リノート',
+        ),
         '操作に失敗しました',
       );
     });
@@ -55,20 +65,29 @@ void main() {
     test('403 は従来どおり権限・再ログイン案内（Misskey code より優先）', () {
       // Misskey が 403 + code を返しても、403 の一般案内を優先する。
       expect(
-        describePostActionError(_misskeyCode('ACCESS_DENIED', status: 403)),
+        describePostActionError(
+          _misskeyCode('ACCESS_DENIED', status: 403),
+          reblogLabel: 'リノート',
+        ),
         '権限がありません。再ログインが必要な場合があります',
       );
     });
 
     test('500 は従来どおりサーバー内部エラー', () {
       expect(
-        describePostActionError(_dioError(null, status: 500)),
+        describePostActionError(
+          _dioError(null, status: 500),
+          reblogLabel: 'リノート',
+        ),
         'サーバー内部エラーが発生しました。サーバー管理者にお問い合わせください',
       );
     });
 
     test('DioException 以外は汎用文言', () {
-      expect(describePostActionError(Exception('x')), '操作に失敗しました');
+      expect(
+        describePostActionError(Exception('x'), reblogLabel: 'リノート'),
+        '操作に失敗しました',
+      );
     });
   });
 }
