@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/drive_provider.dart';
+import '../../util/text_length.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
 import '../widget/desktop_menu_model.dart';
@@ -585,16 +586,32 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             controller: controller,
             autofocus: true,
             decoration: InputDecoration(hintText: hint),
+            // ⚠ **切り詰めない (#1027-F2)。**Flutter の
+            // `LengthLimitingTextInputFormatter` は**書記素**で切るので、
+            // 512 書記素まで通しても**コードポイントでは 512 を超えうる**
+            // （家族絵文字は 1 書記素 = 7 コードポイント）。つまり切っても
+            // サーバーの 400 は防げていなかった。数えるのはサーバーと同じ
+            // 単位にし、超過は OK を塞いで判断をユーザーへ返す
+            // （投稿画面・メディアビューアの ALT 欄と同じ形）。
             maxLength: maxLength,
+            maxLengthEnforcement: MaxLengthEnforcement.none,
+            buildCounter: serverLengthCounter(controller),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('キャンセル'),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('OK'),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, value, _) => TextButton(
+                onPressed:
+                    maxLength != null &&
+                        serverTextLength(value.text) > maxLength
+                    ? null
+                    : () => Navigator.pop(context, value.text.trim()),
+                child: const Text('OK'),
+              ),
             ),
           ],
         );

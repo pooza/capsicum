@@ -1612,6 +1612,21 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     await client.updateDriveFile(fileId, name: newName);
   }
 
+  /// ⚠ **空文字は「消す」経路へ分ける (#1005 と同じ理由)。**
+  /// [MisskeyClient.updateDriveFile] は null をキーごと省略するので、空文字を
+  /// そのまま渡すと body が `{fileId}` だけになり **500** になる。
+  @override
+  Future<void> updateDriveFileDescription(
+    String fileId,
+    String description,
+  ) async {
+    if (description.isEmpty) {
+      await client.clearDriveFileComment(fileId);
+      return;
+    }
+    await client.updateDriveFile(fileId, comment: description);
+  }
+
   @override
   Future<void> moveDriveFile(String fileId, String? folderId) async {
     // Misskey API ではキー省略=変更なし、明示的 null=ルートへ移動。

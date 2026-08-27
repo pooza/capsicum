@@ -30,11 +30,13 @@ import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
+import '../../util/text_length.dart';
 import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
 import '../util/annict_link.dart';
 import '../util/compose_template_display.dart';
 import '../util/draft_display.dart';
+import '../util/drive_description_sync.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
@@ -2025,6 +2027,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           // 512 で切ると Mastodon 利用者の ALT を黙って削ることになる。超過は
           // 赤字のカウンタで見せ、OK ボタンを塞いで判断はユーザーへ返す。
           maxLength: maxDescription,
+          buildCounter: serverLengthCounter(descController),
           maxLengthEnforcement: MaxLengthEnforcement.none,
         ),
         actions: [
@@ -2035,7 +2038,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: descController,
             builder: (context, value, _) => TextButton(
-              onPressed: value.text.characters.length > maxDescription
+              onPressed: serverTextLength(value.text) > maxDescription
                   ? null
                   : () => Navigator.pop(dialogContext, value.text),
               child: const Text('OK'),
@@ -3041,6 +3044,55 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _submit();
   }
 
+  /// ドライブ添付の ALT を、投稿の前にドライブ側へ書き戻す (#1027-F1)。
+  ///
+  /// ⚠ **これが無いと、編集した ALT は黙って捨てられる。**送信経路は
+  /// `if (entry.isDrive) return entry.driveFile!.id;` で ID だけを返すので、
+  /// ローカルからアップロードした添付（`AttachmentDraft` に載る）と違い
+  /// `entry.description` を誰も見ていなかった。編集ダイアログは drive / local を
+  /// 区別せず開くため、**ユーザーからは編集できたように見える**。
+  ///
+  /// ⚠⚠ **ドライブのファイルは実体が 1 つ。**書き換えると、そのファイルを
+  /// 使っている**過去の投稿の ALT も変わる**。Misskey の Web UI と同じ挙動で、
+  /// 仕様として受け入れている（#1027 の判断）。
+  ///
+  /// ⚠ **変わっていないものは送らない。**毎回打つと、触っていない添付にまで
+  /// 書き込みが走る（＝過去の投稿へ無用な更新が波及する）。
+  ///
+  /// 失敗しても投稿は止めない。ALT が更新できないことより、投稿できないことの
+  /// ほうが重い。観測だけ残す。
+  Future<void> _syncDriveDescriptions() async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! DriveSupport) return;
+    // 判断は [pendingDriveDescriptionUpdates] が持つ（検査できるように分けて
+    // ある）。ここは残った I/O だけ。
+    final pending = pendingDriveDescriptionUpdates([
+      for (final entry in _attachments)
+        if (entry.isDrive)
+          (
+            fileId: entry.driveFile!.id,
+            original: entry.driveFile!.description,
+            current: entry.description,
+          ),
+    ]);
+    for (final update in pending) {
+      try {
+        await (adapter as DriveSupport).updateDriveFileDescription(
+          update.fileId,
+          update.description,
+        );
+      } catch (e, st) {
+        reportOpFailure(
+          tagKey: 'drive.op',
+          operation: 'update_description_on_compose',
+          error: e,
+          stackTrace: st,
+          account: ref.read(currentAccountProvider),
+        );
+      }
+    }
+  }
+
   /// 現在の内容をサーバー下書き（Misskey `notes/drafts`）として保存する (#174)。
   /// DraftSupport のあるアダプタでのみ AppBar に導線が出る。復元元の下書きが
   /// あれば新規保存に一本化するため削除する。
@@ -3060,6 +3112,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
+      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
+      // 返さないので、通さないと編集が黙って捨てられる。
+      await _syncDriveDescriptions();
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
           if (entry.isDrive) return entry.driveFile!.id;
@@ -3222,6 +3277,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
+      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
+      // 返さないので、通さないと編集が黙って捨てられる。
+      await _syncDriveDescriptions();
       // Upload local attachments / reuse drive file IDs.
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
@@ -3771,7 +3829,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                             child: ValueListenableBuilder<TextEditingValue>(
                               valueListenable: _controller,
                               builder: (context, value, _) {
-                                final len = value.text.length;
+                                final len = serverTextLength(value.text);
                                 return Text(
                                   '$len / $maxLength',
                                   style: TextStyle(
