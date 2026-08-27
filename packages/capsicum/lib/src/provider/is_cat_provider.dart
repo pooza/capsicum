@@ -3,6 +3,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../model/account.dart';
+import '../util/user_acct.dart';
 import 'account_manager_provider.dart';
 
 /// isCat の判定結果はユーザー（ActivityPub actor）に紐づくほぼ静的な
@@ -43,7 +44,7 @@ class IsCatEnricher {
   /// 単一ユーザーの isCat を補完する。
   Future<User> enrichUser(User user) async {
     if (user.isCat || user.host == null) return user;
-    final acct = '${user.username}@${user.host}';
+    final acct = userAcct(user);
 
     if (_cache.containsKey(acct)) {
       return _cache[acct]! ? user.copyWithIsCat(true) : user;
@@ -58,7 +59,7 @@ class IsCatEnricher {
     final accts = <String>{};
     for (final user in users) {
       if (!user.isCat && user.host != null) {
-        final acct = '${user.username}@${user.host}';
+        final acct = userAcct(user);
         if (!_cache.containsKey(acct)) accts.add(acct);
       }
     }
@@ -67,7 +68,7 @@ class IsCatEnricher {
 
     return users.map((user) {
       if (user.isCat || user.host == null) return user;
-      final acct = '${user.username}@${user.host}';
+      final acct = userAcct(user);
       return (_cache[acct] ?? false) ? user.copyWithIsCat(true) : user;
     }).toList();
   }
@@ -120,13 +121,13 @@ class IsCatEnricher {
 
   void _collectAcct(User? user, Set<String> accts) {
     if (user == null || user.isCat || user.host == null) return;
-    final acct = '${user.username}@${user.host}';
+    final acct = userAcct(user);
     if (!_cache.containsKey(acct)) accts.add(acct);
   }
 
   User? _maybeCatUser(User? user) {
     if (user == null || user.isCat || user.host == null) return user;
-    final acct = '${user.username}@${user.host}';
+    final acct = userAcct(user);
     return (_cache[acct] ?? false) ? user.copyWithIsCat(true) : user;
   }
 

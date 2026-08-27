@@ -85,7 +85,7 @@ class PostActionRunner {
       _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      _report('run', e, st, phase: 'post_action');
+      _report('run', e, st, phase: ReactionPhase.post);
     }
   }
 
@@ -100,7 +100,7 @@ class PostActionRunner {
       _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e, st) {
-      _report('runVoid', e, st, phase: 'post_action');
+      _report('runVoid', e, st, phase: ReactionPhase.post);
     }
   }
 
@@ -170,7 +170,7 @@ class PostActionRunner {
       _notifyCompleted();
       messenger.showSnackBar(SnackBar(content: Text('$boostLabelを取り消しました')));
     } catch (e, st) {
-      _report('unrepeat', e, st, phase: 'post_action');
+      _report('unrepeat', e, st, phase: ReactionPhase.post);
     }
   }
 

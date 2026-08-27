@@ -32,6 +32,10 @@ include: package:lints/recommended.yaml
 # 相対 import の並び順を守る (#976)。#926 が `exception_scrub.dart` を
 # 15 ファイルでブロック末尾に追記してアルファベット順を崩したのを機に有効化。
 # フォーマッタは並べ替えないので、lint で止めないと静かに崩れ続ける。
+#
+# ⚠ **記法は `名前: true` のマップ形に揃える (#1027-D)。**リスト形
+# (`- directives_ordering`) と混在していると、無効化 (`名前: false`) を
+# 足すときに書き換えが要る。ルート / capsicum がマップ形なので、そちらへ寄せる。
 linter:
   rules:
-    - directives_ordering
+    directives_ordering: true

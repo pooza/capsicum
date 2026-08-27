@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
@@ -147,7 +148,7 @@ Future<void> _boostWithAccount(
       Sentry.captureException(
         scrubException(e),
         stackTrace: st,
-        withScope: (scope) => scope.setTag('phase', 'post_action'),
+        withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
       ),
     );
     messenger.removeCurrentSnackBar();

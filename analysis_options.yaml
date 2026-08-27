@@ -1,3 +1,18 @@
+# モノレポのルート。
+#
+# ⚠⚠ **この設定はどの Dart ファイルにも効いていない (#1027-D)。**
+# analyzer は「対象ファイルから見て最も近い `analysis_options.yaml`」だけを
+# 使う。`packages/*` は 4 つとも自前の設定を持っており、**`packages/` の外に
+# Dart ファイルは 1 つも無い**（2026-08-27 時点で 0 件）。
+#
+# つまり下の `prefer_const_constructors` / `prefer_final_locals` /
+# `avoid_print` は**有効に見えて 1 行も検査していない**。ここを読んで
+# 「リポジトリ全体で const が強制されている」と思わないこと。
+#
+# ⚠ **消さずに残しているのは、`packages/` 外に Dart を置いた瞬間に効かせる
+# ため**（ツール類のスクリプト等）。本当に全パッケージへ効かせたいなら、
+# 各パッケージの `analysis_options.yaml` に足す判断が別途要る
+# （既存コードに数百件の info が出るので、#1027 の範囲では決めない）。
 include: package:flutter_lints/flutter.yaml
 
 linter:

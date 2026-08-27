@@ -20,13 +20,13 @@ import '../../service/server_metadata_cache.dart';
 import '../../service/tco_resolver.dart';
 import '../../service/url_preview_cache.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
 import '../util/relative_time.dart';
-import '../util/user_acct.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
 import 'cross_account_boost.dart';
@@ -1104,7 +1104,7 @@ class _PostTileState extends ConsumerState<PostTile> {
       Sentry.captureMessage(
         'post_tile.action_sheet.tile_disposed',
         level: SentryLevel.warning,
-        withScope: (scope) => scope.setTag('phase', 'post_action'),
+        withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
       ),
     );
   }
@@ -1793,7 +1793,7 @@ class _PostTileState extends ConsumerState<PostTile> {
                         scrubException(e),
                         stackTrace: st,
                         withScope: (scope) =>
-                            scope.setTag('phase', 'post_action'),
+                            scope.setTag('phase', ReactionPhase.post),
                       ),
                     );
                     messenger.showSnackBar(
@@ -1870,7 +1870,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               Sentry.captureException(
                 scrubException(e),
                 stackTrace: st,
-                withScope: (scope) => scope.setTag('phase', 'post_action'),
+                withScope: (scope) => scope.setTag('phase', ReactionPhase.post),
               ),
             );
             messenger.showSnackBar(

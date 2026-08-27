@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
+import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
@@ -345,7 +346,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '@${user.username}@${user.host}',
+            '@${userAcct(user)}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

@@ -9,6 +9,7 @@ import '../model/account_key.dart';
 import '../service/timeline_cache.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
+import '../util/user_acct.dart';
 import 'account_manager_provider.dart';
 import 'preferences_provider.dart';
 
@@ -1886,7 +1887,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     for (final p in posts) {
       for (final user in [p.author, if (p.reblog != null) p.reblog!.author]) {
         if (!user.isCat && user.host != null) {
-          final acct = '${user.username}@${user.host}';
+          final acct = userAcct(user);
           if (!_isCatCache.containsKey(acct)) accts.add(acct);
         }
       }
@@ -1923,7 +1924,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   User _maybeCatUser(User user) {
     if (user.isCat || user.host == null) return user;
-    final acct = '${user.username}@${user.host}';
+    final acct = userAcct(user);
     final isCat = _isCatCache[acct] ?? false;
     return isCat ? user.copyWithIsCat(true) : user;
   }

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/chat_provider.dart';
+import '../../util/user_acct.dart';
 import '../widget/user_avatar.dart';
 
 /// 新規 DM 相手を選ぶ画面。ユーザー検索 → タップで ChatThreadScreen へ遷移する。
@@ -111,9 +112,7 @@ class _UserTile extends StatelessWidget {
     final displayName = user.displayName?.isNotEmpty == true
         ? user.displayName!
         : user.username;
-    final handle = user.host != null
-        ? '@${user.username}@${user.host}'
-        : '@${user.username}';
+    final handle = '@${userAcct(user)}';
     return ListTile(
       leading: Opacity(
         opacity: disabled ? 0.5 : 1.0,
