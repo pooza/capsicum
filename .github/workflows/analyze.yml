@@ -54,12 +54,20 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # ⚠⚠ **`printf ... | grep -q` を使わないこと (#1036)。**`grep -q` は
+          # **マッチした時点で即座に終了**するので、書き込み途中の printf が
+          # SIGPIPE で落ちる。`pipefail` があるとパイプライン全体が失敗になり、
+          # **条件に合致したときだけ判定が false になる**という逆転が起きる。
+          # しかも入力が小さいと printf が書き切れてしまい再現しないため、
+          # **コミット数の多い push でだけ落ちる**。v1.61 のリリースで実踏
+          # （`chore(deps)` を正しく付けたのに 28 commits の push で誤爆）。
+          # 判定は herestring (`<<<`) で渡す。
           if [ "$EVENT" = "pull_request" ]; then
             files="$(git diff --name-only "$PR_BASE"..."$PR_HEAD")"
             msgs="$(git log --format='%s %b' "$PR_BASE".."$PR_HEAD")"
           else
             # ブランチ新規作成（before が全ゼロ）は範囲を取れないのでスキップ。
-            if printf '%s' "$PUSH_BEFORE" | grep -qE '^0+$'; then
+            if grep -qE '^0+$' <<< "$PUSH_BEFORE"; then
               echo "branch creation push; skip lock guard"; exit 0
             fi
             # force-push すると before は到達不能な SHA になり、git diff が
@@ -120,7 +128,7 @@ jobs:
           # workflow: 実際に `flutter-version:` の行が動いたときだけ随伴と見なす。
           if [ "$companion_changed" != true ]; then
             wf_lines="$(changed_lines '.github/workflows')"
-            if printf '%s\n' "$wf_lines" | grep -qE '^[+-][[:space:]]*flutter-version:'; then
+            if grep -qE '^[+-][[:space:]]*flutter-version:' <<< "$wf_lines"; then
               companion_changed=true
               echo "workflow flutter-version pin changed"
             fi
@@ -130,7 +138,7 @@ jobs:
             echo "pubspec.lock changed together with a real dependency / pin change; ok"
             exit 0
           fi
-          if printf '%s' "$msgs" | grep -qiE 'chore\(deps\)|\[pubspec-lock\]'; then
+          if grep -qiE 'chore\(deps\)|\[pubspec-lock\]' <<< "$msgs"; then
             echo "lock-only change is an explicit deps/upgrade commit; ok"; exit 0
           fi
           echo "::error::pubspec.lock が pubspec.yaml / Flutter pin (workflow) の変更を伴わず単独で変わっています (#970)。依存を足す/上げるなら pubspec.yaml を、Flutter 版追従なら workflow の pin を同じ変更に含めてください。リリース前の pub upgrade（意図的な lock 単独更新）はコミットメッセージを chore(deps) にするか本文に [pubspec-lock] を付けてください。"
