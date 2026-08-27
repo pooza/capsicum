@@ -382,7 +382,13 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
   PostActionRunner _runner(
     ScaffoldMessengerState messenger, {
     VisibleTimelineMutator? timeline,
-  }) => PostActionRunner(ref: ref, messenger: messenger, timeline: timeline);
+    String? reblogLabel,
+  }) => PostActionRunner(
+    ref: ref,
+    messenger: messenger,
+    timeline: timeline,
+    reblogLabel: reblogLabel,
+  );
 
   Future<void> _runAction(
     ScaffoldMessengerState messenger,
@@ -440,6 +446,9 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     // 走るので、その間にこのタイルが dispose されていると実行時の解決が投げ、
     // リアクションが送信されないまま無言で消える（post_tile と同じ形）。
     final timeline = readVisibleTimelines(ref);
+    // 失敗文言のラベルも同じ窓で dispose されうる (#1027-C2)。渡さないと失敗時に
+    // `ref.read` が走り、**失敗の SnackBar ごと落ちる**（post_tile と同じ形）。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     unawaited(
       showReactionPickerSheet(
@@ -452,6 +461,7 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
           timeline: timeline,
+          reblogLabel: reblogLabel,
         ),
       ),
     );
@@ -465,9 +475,11 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     String successMessage, {
     String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => _runner(
     messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
   ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Widget _buildHeader(BuildContext context, String label) {

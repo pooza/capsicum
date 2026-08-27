@@ -1666,6 +1666,9 @@ class _PostTileState extends ConsumerState<PostTile> {
     // その呼び出しは `addReaction` より前にあったため、リアクションが送信され
     // ないまま成功も失敗も出ずに消えていた（Sentry CAPSICUM-4N）。
     final timeline = readVisibleTimelines(ref);
+    // 失敗文言のラベルも同じ窓で dispose されうる (#1027-C2)。これを渡さないと
+    // 失敗時に `ref.read` が走り、**失敗の SnackBar ごと落ちる**。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     unawaited(
       showReactionPickerSheet(
@@ -1678,6 +1681,7 @@ class _PostTileState extends ConsumerState<PostTile> {
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
           timeline: timeline,
+          reblogLabel: reblogLabel,
         ),
       ),
     );
@@ -1689,16 +1693,18 @@ class _PostTileState extends ConsumerState<PostTile> {
   PostActionRunner _runner(
     ScaffoldMessengerState messenger, {
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => PostActionRunner(
     ref: ref,
     messenger: messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
     onPostUpdated: widget.onPostUpdated,
     onActionCompleted: onActionCompleted,
   );
 
-  /// [timeline] は、シート等で await をまたぐ導線が**開く前に**捕まえたもの
-  /// (#990)。渡さなければ実行時に取りにいく。
+  /// [timeline] と [reblogLabel] は、シート等で await をまたぐ導線が**開く前に**
+  /// 捕まえたもの (#990 / #1027-C2)。渡さなければ実行時に取りにいく。
   Future<void> _runReactionAction(
     ScaffoldMessengerState messenger,
     BackendAdapter adapter,
@@ -1707,9 +1713,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     String successMessage, {
     String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => _runner(
     messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
   ).runReaction(adapter, postId, action, successMessage, phase: phase);
 
   Future<void> _runAction(

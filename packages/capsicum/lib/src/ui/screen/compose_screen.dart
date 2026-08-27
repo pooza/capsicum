@@ -3064,6 +3064,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   Future<void> _syncDriveDescriptions() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! DriveSupport) return;
+    // ⚠ **報告に使う値は await の前に確定させる (#1027-C2)。**下のループは
+    // await をまたぐので、catch の中で `ref.read` すると画面を離れたときに
+    // dispose 済みで StateError になり、**投稿そのものが無言で落ちる**
+    // （外側の catch が `if (!mounted) return;` に吸う）。
+    final account = ref.read(currentAccountProvider);
     // 判断は [pendingDriveDescriptionUpdates] が持つ（検査できるように分けて
     // ある）。ここは残った I/O だけ。
     final pending = pendingDriveDescriptionUpdates([
@@ -3087,7 +3092,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           operation: 'update_description_on_compose',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: account,
         );
       }
     }

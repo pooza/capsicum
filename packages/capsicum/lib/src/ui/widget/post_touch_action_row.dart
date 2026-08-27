@@ -230,10 +230,12 @@ class PostTouchActionRow extends ConsumerWidget {
     WidgetRef ref,
     ScaffoldMessengerState messenger, {
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => PostActionRunner(
     ref: ref,
     messenger: messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
     onPostUpdated: onPostUpdated,
     onActionCompleted: onActionCompleted,
   );
@@ -269,6 +271,9 @@ class PostTouchActionRow extends ConsumerWidget {
     // 走るので、その間にこの行が dispose されていると実行時の解決が投げ、
     // リアクションが送信されないまま無言で消える（post_tile と同じ形）。
     final timeline = readVisibleTimelines(ref);
+    // 失敗文言のラベルも同じ窓で dispose されうる (#1027-C2)。渡さないと失敗時に
+    // `ref.read` が走り、**失敗の SnackBar ごと落ちる**（post_tile と同じ形）。
+    final reblogLabel = ref.read(reblogLabelProvider);
 
     unawaited(
       showReactionPickerSheet(
@@ -281,6 +286,7 @@ class PostTouchActionRow extends ConsumerWidget {
           () => reaction.addReaction(targetPost.id, emoji),
           'リアクションしました',
           timeline: timeline,
+          reblogLabel: reblogLabel,
         ),
       ),
     );
@@ -294,10 +300,12 @@ class PostTouchActionRow extends ConsumerWidget {
     String successMessage, {
     String phase = ReactionPhase.add,
     VisibleTimelineMutator? timeline,
+    String? reblogLabel,
   }) => _runner(
     ref,
     messenger,
     timeline: timeline,
+    reblogLabel: reblogLabel,
   ).runReaction(adapter, targetPost.id, action, successMessage, phase: phase);
 
   Future<void> _runAction(

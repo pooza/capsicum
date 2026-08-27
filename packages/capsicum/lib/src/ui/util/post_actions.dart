@@ -49,11 +49,16 @@ import 'visible_timeline.dart';
 /// 1. 呼び出し側が [timeline] を**シートを開く前に**捕まえて渡す（規約どおりの直し方）
 /// 2. それでも取れなかったときは [VisibleTimelineMutator.detached] へ落とし、
 ///    **画面反映だけを諦めてアクションは実行する**
+///
+/// ⚠ **同じ 2 段構えを [PostActionRunner.reblogLabel] にも適用している**
+/// (#1027-C2)。`ref` を触るものを await のあとに増やすときは、必ずこの形に
+/// 揃えること。
 class PostActionRunner {
   const PostActionRunner({
     required this.ref,
     required this.messenger,
     this.timeline,
+    this.reblogLabel,
     this.onPostUpdated,
     this.onActionCompleted,
   });
@@ -64,6 +69,15 @@ class PostActionRunner {
   /// 反映先の TL。**シート等で await をまたぐ導線は、開く前に捕まえて渡す** (#990)。
   /// null なら実行時に [readVisibleTimelinesOrDetached] で取りにいく。
   final VisibleTimelineMutator? timeline;
+
+  /// 失敗文言に使う「ブースト / リノート」ラベル ([reblogLabelProvider] の値)。
+  ///
+  /// ⚠ **[timeline] とまったく同じ理由で optional にしてある。** これを使うのは
+  /// [_report] ＝ **await のあとの catch** なので、そこで `ref.read` すると
+  /// dispose 済みのタイルで StateError を投げる。**シート等で await をまたぐ
+  /// 導線は、開く前に捕まえて渡すこと**（[post_tile] の絵文字メニューが
+  /// 先例）。null なら [_reblogLabel] が実行時に安全側で取りにいく。
+  final String? reblogLabel;
 
   /// 更新後の投稿を呼び出し側へ返す口（タイルのローカル表示更新用）。
   final void Function(Post updated)? onPostUpdated;
@@ -182,6 +196,14 @@ class PostActionRunner {
   VisibleTimelineMutator get _timeline =>
       timeline ?? readVisibleTimelinesOrDetached(ref);
 
+  /// 失敗文言のラベルを決める (#1027-C2)。
+  ///
+  /// ⚠ **[_timeline] と同じく、取れなくても投げない。** ここは失敗を伝える
+  /// ための経路なので、投げると **失敗の SnackBar が出ないまま** 未処理の非同期
+  /// 例外に化け、本来の失敗を覆い隠す。ラベルが多少ずれることより、失敗が
+  /// ユーザーに伝わることを優先する。
+  String get _reblogLabel => reblogLabel ?? readReblogLabelOrDefault(ref);
+
   /// 更新後の投稿を呼び出し側へ渡す。
   ///
   /// ⚠ **[_notifyCompleted] と同じ理由で本体の `try` から切り離す。** 渡ってくる
@@ -223,12 +245,7 @@ class PostActionRunner {
     _reportQuietly(label, e, st, phase: phase);
     messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          describePostActionError(
-            e,
-            reblogLabel: ref.read(reblogLabelProvider),
-          ),
-        ),
+        content: Text(describePostActionError(e, reblogLabel: _reblogLabel)),
       ),
     );
   }
@@ -439,4 +456,27 @@ class PostActionAvailability {
 
   /// 「ブックマーク」/「お気に入り」。
   final String bookmarkLabel;
+}
+
+/// [reblogLabelProvider] を **投げずに** 読む (#1027-C2)。
+///
+/// 失敗文言を組み立てる catch は await のあとに走るため、素の `ref.read` だと
+/// dispose 済みのタイルで StateError を投げる。**そこで投げると失敗の SnackBar
+/// が出ないまま未処理の非同期例外に化け、本来の失敗を覆い隠す**。ラベルは表示の
+/// 見た目でしかないので、取れなければ既定へ落として失敗そのものは必ず伝える。
+///
+/// ⚠ **「ブースト」と決め打ちする代わりに使ってはいけない。** await をまたぐ
+/// 導線は、シートを開く前に [reblogLabelProvider] を捕まえて渡すのが本筋
+/// ([PostActionRunner.reblogLabel])。これは取れなかったときの最後の砦。
+String readReblogLabelOrDefault(WidgetRef ref) {
+  try {
+    return ref.read(reblogLabelProvider);
+  } on StateError catch (e) {
+    debugLogException(
+      'capsicum: reblog label unavailable (widget disposed)',
+      e,
+    );
+    // Mastodon 既定。`ReactionSupport` か否かも `ref` 無しでは判定できない。
+    return 'ブースト';
+  }
 }

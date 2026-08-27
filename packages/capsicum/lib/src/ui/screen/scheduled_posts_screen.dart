@@ -124,6 +124,11 @@ class ScheduledPostsScreen extends ConsumerWidget {
       }
     }
 
+    // ⚠ **シートを開く前に確定させる (#1027-C2)。**`onSave` は `Navigator.pop`
+    // のあとに走るので、そこで `ref` を読むと dispose 済みで StateError になり、
+    // **失敗の SnackBar ごと落ちる**（post_tile の `_RetagSheet` と同じ形）。
+    final reblogLabel = ref.read(reblogLabelProvider);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -163,7 +168,7 @@ class ScheduledPostsScreen extends ConsumerWidget {
             final message = upstreamFailureText(
               'タグの更新に失敗しました',
               e,
-              reblogLabel: ref.read(reblogLabelProvider),
+              reblogLabel: reblogLabel,
             );
             debugLogException('Tag update error', e);
             if (context.mounted) {
