@@ -12,6 +12,7 @@ import '../model/account.dart';
 import '../model/account_key.dart';
 import '../preset_servers.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'announcement_subscription_service.dart';
 import 'apns_service.dart';
 import 'device_install_id.dart';
@@ -273,7 +274,8 @@ class PushRegistrationService {
       }
 
       debugPrint(
-        'capsicum: push.registration: registered ${account.key.username}@${account.key.host}',
+        'capsicum: push.registration: registered '
+        '${sentrySafeAccount(account.key)}',
       );
       store.update(accountKey, PushRegistrationState.registered);
 
@@ -492,7 +494,7 @@ class PushRegistrationService {
       } catch (e) {
         debugLogException(
           'capsicum: push.registration: relay id read failed for '
-          '${a.key.toStorageKey()}',
+          '${sentrySafeAccount(a.key)}',
           e,
         );
       }

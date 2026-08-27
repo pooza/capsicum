@@ -120,7 +120,8 @@ class AccountStorage {
       // delete も失敗するため、ここでは観測のみ行い secret は残す。
       // 次回起動で再試行される。
       debugLogException(
-        'capsicum: plugin register race persisted for $accountKey',
+        'capsicum: plugin register race persisted for '
+        '${sentrySafeAccountKey(accountKey)}',
         e,
       );
       _reportOnce('secret:$accountKey', e, st);
@@ -134,7 +135,8 @@ class AccountStorage {
       // (CAPSICUM-1M, #531)。
       if (_isKeychainTransient(e)) {
         debugLogException(
-          'capsicum: keychain transient for $accountKey (code=${e.code})',
+          'capsicum: keychain transient for '
+          '${sentrySafeAccountKey(accountKey)} (code=${e.code})',
           e,
         );
         _reportOnce('secret:$accountKey:transient', e, st, code: e.code);
@@ -150,7 +152,8 @@ class AccountStorage {
       // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
       if (Platform.isAndroid) {
         debugLogException(
-          'capsicum: android keystore read error for $accountKey, '
+          'capsicum: android keystore read error for '
+          '${sentrySafeAccountKey(accountKey)}, '
           'keeping secret (code=${e.code})',
           e,
         );
@@ -158,7 +161,11 @@ class AccountStorage {
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
         throw TransientSecretUnavailableException(e);
       }
-      debugLogException('capsicum: failed to read secrets for $accountKey', e);
+      debugLogException(
+        'capsicum: failed to read secrets for '
+        '${sentrySafeAccountKey(accountKey)}',
+        e,
+      );
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
@@ -167,7 +174,8 @@ class AccountStorage {
       // after app reinstall (encryption key regenerated). Android では上と同様、
       // 一過性の Keystore 失敗で破壊しないよう delete を見送る (#730 / #731)。
       debugLogException(
-        'capsicum: unexpected error reading secrets for $accountKey',
+        'capsicum: unexpected error reading secrets for '
+        '${sentrySafeAccountKey(accountKey)}',
         e,
       );
       if (Platform.isAndroid) {
@@ -403,7 +411,8 @@ class AccountStorage {
         return unresolved;
       } catch (e, st) {
         debugLogException(
-          'capsicum: stale secret probe failed for $accountKey',
+          'capsicum: stale secret probe failed for '
+          '${sentrySafeAccountKey(accountKey)}',
           e,
         );
         _reportOnce('secret:$accountKey:purge_probe', e, st);
@@ -448,12 +457,17 @@ class AccountStorage {
       await _storage.delete(key: key);
     } on MissingPluginException catch (e, st) {
       debugLogException(
-        'capsicum: plugin register race on delete for $accountKey',
+        'capsicum: plugin register race on delete for '
+        '${sentrySafeAccountKey(accountKey)}',
         e,
       );
       _reportOnce('secret:$accountKey:delete', e, st);
     } on PlatformException catch (e, st) {
-      debugLogException('capsicum: failed to delete secret for $accountKey', e);
+      debugLogException(
+        'capsicum: failed to delete secret for '
+        '${sentrySafeAccountKey(accountKey)}',
+        e,
+      );
       _reportOnce('secret:$accountKey:delete', e, st);
     }
     try {
@@ -474,7 +488,8 @@ class AccountStorage {
       }
     } catch (e, st) {
       debugLogException(
-        'capsicum: verify after delete failed for $accountKey',
+        'capsicum: verify after delete failed for '
+        '${sentrySafeAccountKey(accountKey)}',
         e,
       );
       _reportOnce('secret:$accountKey:verify', e, st);

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/account.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'push_device_type.dart';
 import 'push_key_store.dart';
 import 'push_relay_client.dart';
@@ -175,7 +176,7 @@ class AnnouncementSubscriptionService {
       await prefs.remove('$prefsKeyOptOutPrefix$accountStorageKey');
       debugPrint(
         'capsicum: announcement_subscription: enabled '
-        '${account.key.username}@${account.key.host} (id=$id)',
+        '${sentrySafeAccount(account.key)} (id=$id)',
       );
     } catch (e, st) {
       _captureFailure(e, st, account.key.host, phase: 'enable');

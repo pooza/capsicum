@@ -16,6 +16,7 @@ import '../provider/platform_providers.dart';
 import '../ui/util/notification_type_display.dart';
 import '../ui/widget/content_parser.dart';
 import '../util/exception_scrub.dart';
+import '../util/sentry_tag_hash.dart';
 import 'bounded_key_set.dart';
 import 'delivered_push_cleaner.dart';
 import 'notification_dedup_channel.dart';
@@ -95,7 +96,8 @@ class DesktopNotificationDispatcher {
       if (_subs.containsKey(account.key)) continue; // 既に購読中
       debugPrint(
         'capsicum: push.desktop: subscribing notification stream '
-        '(account=${account.key.toStorageKey()} adapter=${adapter.runtimeType})',
+        '(account=${sentrySafeAccount(account.key)} '
+        'adapter=${adapter.runtimeType})',
       );
       _subs[account.key] = (adapter as NotificationStreamSupport)
           .streamNotifications(
@@ -118,7 +120,7 @@ class DesktopNotificationDispatcher {
       _subs.remove(key)?.cancel();
       debugPrint(
         'capsicum: push.desktop: unsubscribed '
-        '(account=${key.toStorageKey()})',
+        '(account=${sentrySafeAccount(key)})',
       );
     }
   }
@@ -157,7 +159,7 @@ class DesktopNotificationDispatcher {
       // APNs 先着で OS 通知は表示済み。WebSocket 側は出さない。
       debugPrint(
         'capsicum: push.desktop: skip (native shown) '
-        'account=${account.key.toStorageKey()} id=${n.id}',
+        'account=${sentrySafeAccount(account.key)} id=${n.id}',
       );
       return;
     }
@@ -178,7 +180,8 @@ class DesktopNotificationDispatcher {
     final body = _body(n);
     // 本文（ユーザーコンテンツ）はログに残さない。account/id/type と有無のみ。
     debugPrint(
-      'capsicum: push.desktop: emit account=${account.key.toStorageKey()} '
+      'capsicum: push.desktop: emit '
+      'account=${sentrySafeAccount(account.key)} '
       'id=${n.id} type=${n.type.name} '
       'hasUser=${n.user != null} hasPost=${n.post != null}',
     );

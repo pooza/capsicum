@@ -152,7 +152,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       } catch (e) {
         debugLogException(
           'capsicum: addAccount: detectTimelineAvailability failed for '
-          '${account.key.toStorageKey()}',
+          '${sentrySafeAccount(account.key)}',
           e,
         );
       }
@@ -716,7 +716,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         try {
           final account = await _probeAccount(keyStr, secrets);
           debugPrint(
-            'capsicum: restoreSessions: $keyStr recovered on immediate retry '
+            'capsicum: restoreSessions: ${sentrySafeAccountKey(keyStr)} '
+            'recovered on immediate retry '
             '(${kInitialProbeRetryDelay.inMilliseconds}ms)',
           );
           return (account: account, outcome: null);
@@ -736,7 +737,8 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       final outcome = classifyRestoreFailure(e);
       if (outcome == RestoreOutcome.retriable) {
         debugLogException(
-          'capsicum: restoreSessions: transient failure for $keyStr, '
+          'capsicum: restoreSessions: transient failure for '
+          '${sentrySafeAccountKey(keyStr)}, '
           'kept offline and will retry in background',
           e,
         );
@@ -747,7 +749,11 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
       // (#496)。debugPrint で起動ログに出し、Sentry にも accountKey 単位で
       // 1 度だけ送る (Keystore 破壊で全アカウント同時失敗するケースで Sentry を
       // 埋めないように)。
-      debugLogException('capsicum: account_restore: failed for $keyStr', e, st);
+      debugLogException(
+        'capsicum: account_restore: failed for ${sentrySafeAccountKey(keyStr)}',
+        e,
+        st,
+      );
       _reportRestoreOnce(keyStr, e, st);
       return (account: null, outcome: outcome);
     }
@@ -789,7 +795,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
         ? adapter.detectTimelineAvailability().catchError((Object e) {
             debugLogException(
               'capsicum: restoreSessions: detectTimelineAvailability '
-              'failed for $keyStr',
+              'failed for ${sentrySafeAccountKey(keyStr)}',
               e,
             );
           })
