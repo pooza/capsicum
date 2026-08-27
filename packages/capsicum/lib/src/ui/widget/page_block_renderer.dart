@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/preferences_provider.dart';
+import '../util/fediverse_link.dart';
 import '../util/pages_error.dart';
 import 'content_parser.dart';
 import 'post_tile.dart';
@@ -247,6 +248,9 @@ class _TextBlockState extends ConsumerState<_TextBlock> {
           }
           return null;
         },
+        // ⚠ **渡さないと `content_parser` が `launchUrlSafely` へ落ちる** —
+        // Pages 本文の fediverse リンクがアプリ内ではなくブラウザで開く (#1030)。
+        onLinkTap: (url) => openFediverseLink(context, ref, url),
         emojiSize: emojiSize,
         animateMfm: ref.watch(mfmAnimationEnabledProvider),
       );
