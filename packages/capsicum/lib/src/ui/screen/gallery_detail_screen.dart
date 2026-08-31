@@ -4,6 +4,8 @@ import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../widget/bottom_safe_area.dart';
+
 class GalleryDetailScreen extends StatelessWidget {
   final GalleryPost post;
 
@@ -18,61 +20,63 @@ class GalleryDetailScreen extends StatelessWidget {
         title: Text(post.title),
         backgroundColor: theme.colorScheme.inversePrimary,
       ),
-      body: ListView(
-        children: [
-          // Images
-          for (var i = 0; i < post.files.length; i++)
-            _buildImage(context, post.files[i], i),
-          // Metadata
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(post.title, style: theme.textTheme.headlineSmall),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (post.author.avatarUrl != null) ...[
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundImage: NetworkImage(post.author.avatarUrl!),
+      body: BottomSafeArea(
+        child: ListView(
+          children: [
+            // Images
+            for (var i = 0; i < post.files.length; i++)
+              _buildImage(context, post.files[i], i),
+            // Metadata
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(post.title, style: theme.textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (post.author.avatarUrl != null) ...[
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundImage: NetworkImage(post.author.avatarUrl!),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          post.author.displayName ?? post.author.username,
+                          style: theme.textTheme.titleSmall,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      if (post.likedCount > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.favorite,
+                              size: 16,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${post.likedCount}',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                     ],
-                    Expanded(
-                      child: Text(
-                        post.author.displayName ?? post.author.username,
-                        style: theme.textTheme.titleSmall,
-                      ),
-                    ),
-                    if (post.likedCount > 0)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.favorite,
-                            size: 16,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${post.likedCount}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
+                  ),
+                  if (post.description != null &&
+                      post.description!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(post.description!, style: theme.textTheme.bodyMedium),
                   ],
-                ),
-                if (post.description != null &&
-                    post.description!.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(post.description!, style: theme.textTheme.bodyMedium),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

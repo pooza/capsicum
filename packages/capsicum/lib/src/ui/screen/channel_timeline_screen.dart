@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/channel_provider.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/simple_post_bar.dart';
@@ -106,7 +107,12 @@ class _ChannelTimelineViewState extends ConsumerState<ChannelTimelineView> {
             channelName: widget.channelName,
             onPosted: () =>
                 ref.invalidate(channelTimelineProvider(widget.channelId)),
-          ),
+          )
+        else
+          // ⚠ 投稿できないチャンネルではバーが出ず、下端の inset を誰も吸わない
+          // ため、最後の投稿がナビゲーションバーのボタンに潜り込む (#1037)。
+          // ここで高さだけ確保する。バーが出るときは SimplePostBar 側が吸う。
+          const BottomSafeArea(child: SizedBox.shrink()),
       ],
     );
   }

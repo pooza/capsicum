@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../widget/account_multi_select_sheet.dart';
+import '../widget/bottom_safe_area.dart';
 
 /// Mastodon 4.6 Collections（#722 / #742）の一覧画面。
 ///
@@ -147,7 +148,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
               child: const Icon(Icons.add),
             )
           : null,
-      body: _buildBody(),
+      body: BottomSafeArea(child: _buildBody()),
     );
   }
 

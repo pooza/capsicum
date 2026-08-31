@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/announcement_provider.dart';
 import '../util/op_error.dart';
 import '../widget/announcement_tile.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 final _infoBotUserProvider = FutureProvider.autoDispose<User?>((ref) async {
@@ -34,7 +35,7 @@ class AnnouncementScreen extends ConsumerWidget {
         title: const Text('お知らせ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: const AnnouncementView(),
+      body: const BottomSafeArea(child: AnnouncementView()),
     );
   }
 }

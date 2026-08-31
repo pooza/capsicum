@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/drive_provider.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 class DrivePickerScreen extends ConsumerStatefulWidget {
@@ -102,57 +103,59 @@ class _DrivePickerScreenState extends ConsumerState<DrivePickerScreen> {
               ),
           ],
         ),
-        body: drive.when(
-          data: (state) {
-            final totalFolders = state.folders.length;
-            final totalFiles = state.files.length;
-            final totalItems =
-                totalFolders + totalFiles + (state.isLoadingMore ? 1 : 0);
+        body: BottomSafeArea(
+          child: drive.when(
+            data: (state) {
+              final totalFolders = state.folders.length;
+              final totalFiles = state.files.length;
+              final totalItems =
+                  totalFolders + totalFiles + (state.isLoadingMore ? 1 : 0);
 
-            if (totalFolders == 0 && totalFiles == 0) {
-              return const Center(child: Text('ファイルがありません'));
-            }
+              if (totalFolders == 0 && totalFiles == 0) {
+                return const Center(child: Text('ファイルがありません'));
+              }
 
-            return RefreshIndicator(
-              onRefresh: () =>
-                  ref.refresh(driveContentsProvider(_currentFolderId).future),
-              child: GridView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(4),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 140,
-                  crossAxisSpacing: 4,
-                  mainAxisSpacing: 4,
-                ),
-                itemCount: totalItems,
-                itemBuilder: (context, index) {
-                  if (index < totalFolders) {
-                    return _DriveFolderTile(
-                      folder: state.folders[index],
-                      onTap: () => _openFolder(state.folders[index]),
+              return RefreshIndicator(
+                onRefresh: () =>
+                    ref.refresh(driveContentsProvider(_currentFolderId).future),
+                child: GridView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(4),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 140,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: totalItems,
+                  itemBuilder: (context, index) {
+                    if (index < totalFolders) {
+                      return _DriveFolderTile(
+                        folder: state.folders[index],
+                        onTap: () => _openFolder(state.folders[index]),
+                      );
+                    }
+                    final fileIndex = index - totalFolders;
+                    if (fileIndex >= totalFiles) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final file = state.files[fileIndex];
+                    final selected = _selectedIds.contains(file.id);
+                    return _DriveFileTile(
+                      file: file,
+                      selected: selected,
+                      onTap: () => _toggleSelection(file),
                     );
-                  }
-                  final fileIndex = index - totalFolders;
-                  if (fileIndex >= totalFiles) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final file = state.files[fileIndex];
-                  final selected = _selectedIds.contains(file.id);
-                  return _DriveFileTile(
-                    file: file,
-                    selected: selected,
-                    onTap: () => _toggleSelection(file),
-                  );
-                },
-              ),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => RetryErrorView(
-            message: '読み込みに失敗しました',
-            isRetrying: drive.isLoading,
-            onRetry: () =>
-                ref.invalidate(driveContentsProvider(_currentFolderId)),
+                  },
+                ),
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stack) => RetryErrorView(
+              message: '読み込みに失敗しました',
+              isRetrying: drive.isLoading,
+              onRetry: () =>
+                  ref.invalidate(driveContentsProvider(_currentFolderId)),
+            ),
           ),
         ),
       ),

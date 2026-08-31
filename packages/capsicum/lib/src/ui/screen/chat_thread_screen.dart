@@ -12,6 +12,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
@@ -236,13 +237,20 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
             )
           else
             // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
-            Container(
-              padding: const EdgeInsets.all(12),
-              alignment: Alignment.center,
-              child: Text(
-                'このアカウントではメッセージを送信できません',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
+            //
+            // ⚠ 下端の inset はここで吸う (#1037)。ChatComposeRow は自前で
+            // SafeArea を持っているが、この else 側には何も無いため、注記が
+            // ナビゲーションバーのボタンに潜り込む。body ごと包まないのは、
+            // バーが出ているときは今までどおり画面下端まで伸ばしたいため。
+            BottomSafeArea(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                alignment: Alignment.center,
+                child: Text(
+                  'このアカウントではメッセージを送信できません',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                 ),
               ),
             ),

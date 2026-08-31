@@ -32,6 +32,7 @@ import '../util/about_dialog.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/mouse_drag_scroll_behavior.dart';
 import '../util/offline_account_display.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/home_menu.dart';
 import '../widget/post_tile.dart';
@@ -1936,111 +1937,113 @@ class _OfflineHomeScaffold extends ConsumerWidget {
         title: Text(allNeedLogin ? '未接続のアカウント' : '接続できません'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.all(24),
-            children: [
-              Icon(
-                allNeedLogin ? Icons.link_off : Icons.cloud_off,
-                size: 64,
-                color: Theme.of(context).colorScheme.outline,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                allNeedLogin
-                    ? '接続し直してください'
-                    : anyRetrying
-                    ? '接続中…'
-                    : '接続できません',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
-              // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
-              // 再構築だったが、到達不能の理由はここでは区別できない）。
-              //
-              // **「自動的に戻ります」と再び書けるようになった (#938)。**
-              // 背景再試行は 2/5/15/30 秒の 4 回・計 52 秒で打ち切っていたため、
-              // 一度はこの文言を外していた（打ち切り後は事実に反するため）。
-              // #938 で打ち切りを外し、この画面が出ている間は 60 秒間隔で回り
-              // 続ける + フォアグラウンド復帰でも即座に試すようにしたので、
-              // 文言と実装が一致した。**再び上限を入れるならここも戻すこと。**
-              Text(
-                allNeedLogin
-                    // 待っても戻らないことを明示する。「自動で再試行」と書くと
-                    // 何もせず待たせることになる (#967)。
-                    ? 'ログイン情報が見つかりません。端末の復元・データ削除・'
-                          '設定のインポートのあとに起こります。アカウントの一覧は'
-                          '残っているので、接続し直せば元に戻ります。'
-                    : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
-                          '可能性があります。アカウントは保持したまま自動で再試行を'
-                          '続けるので、接続が回復すればタイムラインへ戻ります。',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              for (final o in offline)
-                Card(
-                  child: ListTile(
-                    leading: Icon(
-                      o.recoverableByRetry
-                          ? Icons.person_off_outlined
-                          : Icons.link_off,
-                    ),
-                    title: Text(
-                      o.handle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // #938 で `retrying` は「この瞬間 probe が走っている」に
-                    // 変わった。合間は「接続を待っています」＝自動再試行は
-                    // 続いている（「接続できません」だと終わったように読める）。
-                    subtitle: Text(
-                      !o.recoverableByRetry
-                          ? disconnectedAccountSubtitle
-                          : o.retrying
-                          ? '再試行中…'
-                          : '接続を待っています',
-                    ),
-                    onTap: o.recoverableByRetry
-                        ? null
-                        : () => context.push(reconnectRouteFor(o.key)),
-                    trailing: IconButton(
-                      // 削除操作は delete_outline に統一する (#828)。logout は
-                      // 実ログアウト (ドロワー) と紛れるため使わない。
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: 'このアカウントを削除',
-                      onPressed: () =>
-                          confirmRemoveOfflineAccount(context, ref, o),
-                    ),
-                  ),
+      body: BottomSafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(24),
+              children: [
+                Icon(
+                  allNeedLogin ? Icons.link_off : Icons.cloud_off,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.outline,
                 ),
-              const SizedBox(height: 16),
-              // ⚠ **全件が「未接続」のときは再試行を出さない** (#1014)。
-              // [AccountManager.retryOfflineRestores] の対象は #1001 以降
-              // `secretMissing` を明示的に除外するので、**まさにこの状態で
-              // 押しても黙って何も起きない**。上の説明文も「待っても戻らない」
-              // と言っており、押せるボタンがあること自体が矛盾していた。
-              // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
-              if (!allNeedLogin) ...[
-                FilledButton.icon(
-                  onPressed: () => ref
-                      .read(accountManagerProvider.notifier)
-                      .retryOfflineRestores(),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('今すぐ再試行'),
+                const SizedBox(height: 16),
+                Text(
+                  allNeedLogin
+                      ? '接続し直してください'
+                      : anyRetrying
+                      ? '接続中…'
+                      : '接続できません',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
+                // 原因を「サーバー側」と断定しない (#917)。この画面は機内モード等で
+                // 端末がオフラインなときにも出る（#792 の想定はサーバー停止 /
+                // 再構築だったが、到達不能の理由はここでは区別できない）。
+                //
+                // **「自動的に戻ります」と再び書けるようになった (#938)。**
+                // 背景再試行は 2/5/15/30 秒の 4 回・計 52 秒で打ち切っていたため、
+                // 一度はこの文言を外していた（打ち切り後は事実に反するため）。
+                // #938 で打ち切りを外し、この画面が出ている間は 60 秒間隔で回り
+                // 続ける + フォアグラウンド復帰でも即座に試すようにしたので、
+                // 文言と実装が一致した。**再び上限を入れるならここも戻すこと。**
+                Text(
+                  allNeedLogin
+                      // 待っても戻らないことを明示する。「自動で再試行」と書くと
+                      // 何もせず待たせることになる (#967)。
+                      ? 'ログイン情報が見つかりません。端末の復元・データ削除・'
+                            '設定のインポートのあとに起こります。アカウントの一覧は'
+                            '残っているので、接続し直せば元に戻ります。'
+                      : '端末がオフラインか、ログイン中のサーバーが停止 / 再構築中の'
+                            '可能性があります。アカウントは保持したまま自動で再試行を'
+                            '続けるので、接続が回復すればタイムラインへ戻ります。',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                for (final o in offline)
+                  Card(
+                    child: ListTile(
+                      leading: Icon(
+                        o.recoverableByRetry
+                            ? Icons.person_off_outlined
+                            : Icons.link_off,
+                      ),
+                      title: Text(
+                        o.handle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // #938 で `retrying` は「この瞬間 probe が走っている」に
+                      // 変わった。合間は「接続を待っています」＝自動再試行は
+                      // 続いている（「接続できません」だと終わったように読める）。
+                      subtitle: Text(
+                        !o.recoverableByRetry
+                            ? disconnectedAccountSubtitle
+                            : o.retrying
+                            ? '再試行中…'
+                            : '接続を待っています',
+                      ),
+                      onTap: o.recoverableByRetry
+                          ? null
+                          : () => context.push(reconnectRouteFor(o.key)),
+                      trailing: IconButton(
+                        // 削除操作は delete_outline に統一する (#828)。logout は
+                        // 実ログアウト (ドロワー) と紛れるため使わない。
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'このアカウントを削除',
+                        onPressed: () =>
+                            confirmRemoveOfflineAccount(context, ref, o),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                // ⚠ **全件が「未接続」のときは再試行を出さない** (#1014)。
+                // [AccountManager.retryOfflineRestores] の対象は #1001 以降
+                // `secretMissing` を明示的に除外するので、**まさにこの状態で
+                // 押しても黙って何も起きない**。上の説明文も「待っても戻らない」
+                // と言っており、押せるボタンがあること自体が矛盾していた。
+                // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
+                if (!allNeedLogin) ...[
+                  FilledButton.icon(
+                    onPressed: () => ref
+                        .read(accountManagerProvider.notifier)
+                        .retryOfflineRestores(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('今すぐ再試行'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                OutlinedButton.icon(
+                  onPressed: () => context.push('/server'),
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('別のアカウントでログイン'),
+                ),
               ],
-              OutlinedButton.icon(
-                onPressed: () => context.push('/server'),
-                icon: const Icon(Icons.person_add),
-                label: const Text('別のアカウントでログイン'),
-              ),
-            ],
+            ),
           ),
         ),
       ),

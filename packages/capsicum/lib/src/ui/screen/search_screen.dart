@@ -11,6 +11,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
 import '../util/fediverse_link.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/post_tile.dart';
 import '../widget/user_avatar.dart';
@@ -180,7 +181,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           ),
         ],
       ),
-      body: _buildBody(),
+      body: BottomSafeArea(child: _buildBody()),
     );
   }
 

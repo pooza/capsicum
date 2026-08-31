@@ -22,10 +22,25 @@ void main() {
   String homeScreenSource() =>
       File('lib/src/ui/screen/home_screen.dart').readAsStringSync();
 
+  // ⚠ **インデントを直書きしない。**見たいのは「ボタンが分岐の直下にある」こと
+  // だけで、桁数はレイアウト側の都合で動く。実際 #1037 で body を
+  // `BottomSafeArea` で包んだ際、中身は 1 文字も変えていないのに
+  // `dart format` の再整形（2 桁ぶんの字下げ）だけでこの検査が落ちた。
+  // 意味のない失敗は「検査を直せば通る」学習を生むので、空白は正規表現で吸う。
+  // `...[` は spread の分岐にだけ付くので**丸ごと任意**にする。オフラインホーム
+  // 側は `if (...) ...[ Widget` 形式、ドロワー側は `if (...) Widget` 形式で、
+  // 同じ「分岐の直下か」を見たい。
+  Matcher gatedBy(String condition, String widget) => matches(
+    RegExp(
+      '${RegExp.escape(condition)}\\s*(?:\\.\\.\\.\\[)?\\s*'
+      '${RegExp.escape(widget)}',
+    ),
+  );
+
   test('全件が未接続なら「今すぐ再試行」を出さない', () {
     expect(
       homeScreenSource(),
-      contains('if (!allNeedLogin) ...[\n                FilledButton.icon('),
+      gatedBy('if (!allNeedLogin)', 'FilledButton.icon('),
       reason:
           'retryOfflineRestores は secretMissing を除外するので、'
           'この状態のボタンは押しても黙って何も起きない',
@@ -51,12 +66,12 @@ void main() {
 
     expect(
       source,
-      contains('if (!needsLogin)\n                          IconButton('),
+      gatedBy('if (!needsLogin)', 'IconButton('),
       reason: '未接続のアカウントに「再試行」アイコンを出さない',
     );
     expect(
       source,
-      contains('if (needsLogin)\n                          IconButton('),
+      gatedBy('if (needsLogin)', 'IconButton('),
       reason: '代わりに「接続し直す」を出す',
     );
   });

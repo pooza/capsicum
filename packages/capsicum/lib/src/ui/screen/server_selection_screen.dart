@@ -16,6 +16,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../util/settings_backup_apply.dart';
 import '../util/settings_backup_file_type.dart';
+import '../widget/bottom_safe_area.dart';
 
 class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key, this.initialHost});
@@ -204,84 +205,86 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(),
-      body: _isProbing
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const SizedBox(height: 16),
-                Center(
-                  child: Image.asset('assets/images/logo.png', height: 96),
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: Text(
-                    'プリセットサーバーを選択',
-                    style: Theme.of(context).textTheme.titleMedium,
+      body: BottomSafeArea(
+        child: _isProbing
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Image.asset('assets/images/logo.png', height: 96),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Center(
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('プリセットサーバーについて'),
-                    onPressed: () => launchUrlSafely(
-                      AppConstants.presetServersUrl,
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...visiblePresetServers().map((server) {
-                  return ListTile(
-                    leading: const Icon(Icons.dns),
-                    title: Text(server.displayName),
-                    subtitle: Text(server.host),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    onTap: () => _connectTo(server.host),
-                  );
-                }),
-                const Divider(height: 32),
-                TextField(
-                  controller: _hostController,
-                  decoration: InputDecoration(
-                    labelText: 'その他のサーバー',
-                    hintText: 'example.com',
-                    errorText: _error,
-                    prefixIcon: const Icon(Icons.dns),
-                  ),
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.go,
-                  onSubmitted: (_) => _onSubmit(),
-                  autocorrect: false,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(onPressed: _onSubmit, child: const Text('接続')),
-                const Divider(height: 32),
-                // ⚠ **ログイン前に置く**（Codex P1 / PR #1002）。設定画面は
-                // セッションが無いと router が /server へ引き戻すので、新しい
-                // 端末では到達できない。**移行はここから始まる**ので、バック
-                // アップの取り込みだけはログイン前に要る (#1001)。
-                Center(
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.download),
-                    label: const Text('バックアップから設定とアカウントを読み込む'),
-                    onPressed: _importing ? null : _importBackup,
-                  ),
-                ),
-                if (_importedHosts.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                  const SizedBox(height: 16),
+                  Center(
                     child: Text(
-                      '読み込んだアカウント: ${_importedHosts.join(" / ")}\n'
-                      '上のサーバーを選んでログインすると使えるようになります。',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      'プリセットサーバーを選択',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-              ],
-            ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('プリセットサーバーについて'),
+                      onPressed: () => launchUrlSafely(
+                        AppConstants.presetServersUrl,
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...visiblePresetServers().map((server) {
+                    return ListTile(
+                      leading: const Icon(Icons.dns),
+                      title: Text(server.displayName),
+                      subtitle: Text(server.host),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      onTap: () => _connectTo(server.host),
+                    );
+                  }),
+                  const Divider(height: 32),
+                  TextField(
+                    controller: _hostController,
+                    decoration: InputDecoration(
+                      labelText: 'その他のサーバー',
+                      hintText: 'example.com',
+                      errorText: _error,
+                      prefixIcon: const Icon(Icons.dns),
+                    ),
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => _onSubmit(),
+                    autocorrect: false,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(onPressed: _onSubmit, child: const Text('接続')),
+                  const Divider(height: 32),
+                  // ⚠ **ログイン前に置く**（Codex P1 / PR #1002）。設定画面は
+                  // セッションが無いと router が /server へ引き戻すので、新しい
+                  // 端末では到達できない。**移行はここから始まる**ので、バック
+                  // アップの取り込みだけはログイン前に要る (#1001)。
+                  Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.download),
+                      label: const Text('バックアップから設定とアカウントを読み込む'),
+                      onPressed: _importing ? null : _importBackup,
+                    ),
+                  ),
+                  if (_importedHosts.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        '読み込んだアカウント: ${_importedHosts.join(" / ")}\n'
+                        '上のサーバーを選んでログインすると使えるようになります。',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                ],
+              ),
+      ),
     );
   }
 }

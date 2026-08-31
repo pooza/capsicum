@@ -43,6 +43,7 @@ import '../util/program_schedule_display.dart';
 import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/visible_timeline.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/emoji_text.dart';
@@ -3749,594 +3750,610 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           ),
         ],
       ),
-      body: DropTarget(
-        onDragEntered: (_) => setState(() => _dragging = true),
-        onDragExited: (_) => setState(() => _dragging = false),
-        onDragDone: (detail) {
-          setState(() => _dragging = false);
-          _onDragDone(detail);
-        },
-        child: ColoredBox(
-          color: _dragging
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
-              : Colors.transparent,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (widget.replyTo != null)
-                  _CollapsiblePreview(post: widget.replyTo!, icon: Icons.reply),
-                if (_quotedPost != null)
-                  _CollapsiblePreview(
-                    post: _quotedPost!,
-                    icon: Icons.format_quote,
-                  ),
-                if (_cwEnabled)
-                  TextField(
-                    controller: _cwController,
-                    enabled: !_sending,
-                    decoration: InputDecoration(
-                      hintText: '閲覧注意の警告文',
-                      border: const UnderlineInputBorder(),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      // CW 欄にも絵文字 / 劇中ワードの拡張ピッカーを届ける (#686)。
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.emoji_emotions_outlined),
-                        tooltip: '絵文字・ワード',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _sending ? null : _showCwPicker,
-                      ),
+      body: BottomSafeArea(
+        child: DropTarget(
+          onDragEntered: (_) => setState(() => _dragging = true),
+          onDragExited: (_) => setState(() => _dragging = false),
+          onDragDone: (detail) {
+            setState(() => _dragging = false);
+            _onDragDone(detail);
+          },
+          child: ColoredBox(
+            color: _dragging
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                : Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.replyTo != null)
+                    _CollapsiblePreview(
+                      post: widget.replyTo!,
+                      icon: Icons.reply,
                     ),
-                  ),
-                // 復元したことの告知 (#964)。黙って本文を書き戻すと、目の前の
-                // 文字列が「前回の続き」なのか判別できない。1 タップで取り消せる。
-                if (_draftRestoredNotice) _buildRestoredBanner(context),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      // Cmd+Enter / Ctrl+Enter で送信 (#708)。Enter 単独は改行。
-                      CallbackShortcuts(
-                        bindings: <ShortcutActivator, VoidCallback>{
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            meta: true,
-                          ): _submitFromKeyboard,
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            control: true,
-                          ): _submitFromKeyboard,
-                        },
-                        child: TextField(
-                          controller: _controller,
-                          maxLines: null,
-                          expands: true,
-                          textAlignVertical: TextAlignVertical.top,
-                          autofocus: true,
-                          enabled: !_sending,
-                          // #892: デスクトップで等幅フォント名が設定されていれば
-                          // 本文入力に適用（空なら null = 既定フォント）。
-                          style: composeFontFamily.isEmpty
-                              ? null
-                              : TextStyle(fontFamily: composeFontFamily),
-                          decoration: const InputDecoration(
-                            hintText: '今なにしてる？',
-                            border: InputBorder.none,
-                          ),
+                  if (_quotedPost != null)
+                    _CollapsiblePreview(
+                      post: _quotedPost!,
+                      icon: Icons.format_quote,
+                    ),
+                  if (_cwEnabled)
+                    TextField(
+                      controller: _cwController,
+                      enabled: !_sending,
+                      decoration: InputDecoration(
+                        hintText: '閲覧注意の警告文',
+                        border: const UnderlineInputBorder(),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        // CW 欄にも絵文字 / 劇中ワードの拡張ピッカーを届ける (#686)。
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.emoji_emotions_outlined),
+                          tooltip: '絵文字・ワード',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _sending ? null : _showCwPicker,
                         ),
                       ),
-                      if (maxLength != null)
-                        Positioned(
-                          right: 4,
-                          bottom: 4,
-                          child: IgnorePointer(
-                            child: ValueListenableBuilder<TextEditingValue>(
-                              valueListenable: _controller,
-                              builder: (context, value, _) {
-                                final len = serverTextLength(value.text);
-                                return Text(
-                                  '$len / $maxLength',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: len > maxLength
-                                        ? Theme.of(context).colorScheme.error
-                                        : len > maxLength * 0.8
-                                        ? Colors.orange
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant
-                                              .withValues(alpha: 0.5),
-                                  ),
-                                );
-                              },
+                    ),
+                  // 復元したことの告知 (#964)。黙って本文を書き戻すと、目の前の
+                  // 文字列が「前回の続き」なのか判別できない。1 タップで取り消せる。
+                  if (_draftRestoredNotice) _buildRestoredBanner(context),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        // Cmd+Enter / Ctrl+Enter で送信 (#708)。Enter 単独は改行。
+                        CallbackShortcuts(
+                          bindings: <ShortcutActivator, VoidCallback>{
+                            const SingleActivator(
+                              LogicalKeyboardKey.enter,
+                              meta: true,
+                            ): _submitFromKeyboard,
+                            const SingleActivator(
+                              LogicalKeyboardKey.enter,
+                              control: true,
+                            ): _submitFromKeyboard,
+                          },
+                          child: TextField(
+                            controller: _controller,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            autofocus: true,
+                            enabled: !_sending,
+                            // #892: デスクトップで等幅フォント名が設定されていれば
+                            // 本文入力に適用（空なら null = 既定フォント）。
+                            style: composeFontFamily.isEmpty
+                                ? null
+                                : TextStyle(fontFamily: composeFontFamily),
+                            decoration: const InputDecoration(
+                              hintText: '今なにしてる？',
+                              border: InputBorder.none,
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                // 「保存されているタイミングがわかりづらい」への回答 (#964)。
-                // 自動保存は無音なので、最後に保存できた時刻を常時出す。
-                //
-                // ⚠ **止まったら止まったと言う (#1012)。**別の画面がスロットを
-                // 片づけると #969 の世代ガードでこの画面は二度と保存できない。
-                // 時刻を残すと「保存されている」と読めるので、注意色で停止を出す。
-                if (_draftAutoSave &&
-                    (_draftSuperseded || _draftSavedAt != null))
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8, bottom: 2),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        _draftSuperseded
-                            ? '自動保存は停止中（別の画面で下書きが片づけられました）'
-                            : '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _draftSuperseded
-                              ? Theme.of(context).colorScheme.error
-                              : Theme.of(context).colorScheme.onSurfaceVariant
-                                    .withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_mentionSuggestions.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _mentionSuggestions.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 4),
-                      itemBuilder: (context, index) {
-                        final user = _mentionSuggestions[index];
-                        final localHost = ref
-                            .read(currentAccountProvider)
-                            ?.user
-                            .host;
-                        final isRemote =
-                            user.host != null && user.host != localHost;
-                        final label = isRemote
-                            ? '@${_buildAcct(user)}'
-                            : '@${user.username}';
-                        return ActionChip(
-                          avatar: user.isGroup
-                              ? const Icon(Icons.groups, size: 18)
-                              : user.isBot
-                              ? const Icon(Icons.smart_toy, size: 18)
-                              : user.avatarUrl != null
-                              ? CircleAvatar(
-                                  backgroundImage: NetworkImage(
-                                    user.avatarUrl!,
-                                  ),
-                                  radius: 12,
-                                )
-                              : const Icon(Icons.person, size: 18),
-                          label: Text(label, overflow: TextOverflow.ellipsis),
-                          tooltip: user.isGroup
-                              ? 'コミュニティ: @${_buildAcct(user)}'
-                              : '@${_buildAcct(user)}',
-                          onPressed: () => _insertMention(user),
-                        );
-                      },
-                    ),
-                  ),
-                if (_hashtagSuggestions.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _hashtagSuggestions.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 4),
-                      itemBuilder: (context, index) {
-                        final tag = _hashtagSuggestions[index];
-                        return ActionChip(
-                          avatar: const Icon(Icons.tag, size: 18),
-                          label: Text('#$tag', overflow: TextOverflow.ellipsis),
-                          onPressed: () => _insertHashtag(tag),
-                        );
-                      },
-                    ),
-                  ),
-                if (_emojiSuggestions.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _emojiSuggestions.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 4),
-                      itemBuilder: (context, index) {
-                        final emoji = _emojiSuggestions[index];
-                        return ActionChip(
-                          avatar: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: Image.network(
-                              emoji.url,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.emoji_emotions, size: 18),
-                            ),
-                          ),
-                          label: Text(
-                            ':${emoji.shortcode}:',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onPressed: () => _completeEmojiFromSuggestion(emoji),
-                        );
-                      },
-                    ),
-                  ),
-                if (_wordSuggestions.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _wordSuggestions.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 4),
-                      itemBuilder: (context, index) {
-                        final word = _wordSuggestions[index];
-                        return ActionChip(
-                          avatar: const Icon(Icons.menu_book, size: 18),
-                          label: Text(
-                            word.surface,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          tooltip: word.category != null
-                              ? '${word.reading}・${word.category}'
-                              : word.reading,
-                          onPressed: () => _insertWordSuggestion(word),
-                        );
-                      },
-                    ),
-                  ),
-                if (_pollEnabled) ...[const Divider(), _buildPollEditor()],
-                if (_attachments.isNotEmpty) ...[
-                  const Divider(),
-                  SizedBox(
-                    height: 60,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _attachments.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final entry = _attachments[index];
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _sending
-                              ? null
-                              : () => _showAttachmentMenu(index),
-                          child: Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: _buildThumbnail(entry),
+                        if (maxLength != null)
+                          Positioned(
+                            right: 4,
+                            bottom: 4,
+                            child: IgnorePointer(
+                              child: ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _controller,
+                                builder: (context, value, _) {
+                                  final len = serverTextLength(value.text);
+                                  return Text(
+                                    '$len / $maxLength',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: len > maxLength
+                                          ? Theme.of(context).colorScheme.error
+                                          : len > maxLength * 0.8
+                                          ? Colors.orange
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.5),
+                                    ),
+                                  );
+                                },
                               ),
-                              // ALT badge
-                              if (entry.description.isNotEmpty)
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // 「保存されているタイミングがわかりづらい」への回答 (#964)。
+                  // 自動保存は無音なので、最後に保存できた時刻を常時出す。
+                  //
+                  // ⚠ **止まったら止まったと言う (#1012)。**別の画面がスロットを
+                  // 片づけると #969 の世代ガードでこの画面は二度と保存できない。
+                  // 時刻を残すと「保存されている」と読めるので、注意色で停止を出す。
+                  if (_draftAutoSave &&
+                      (_draftSuperseded || _draftSavedAt != null))
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8, bottom: 2),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          _draftSuperseded
+                              ? '自動保存は停止中（別の画面で下書きが片づけられました）'
+                              : '自動保存 ${formatTimeOfDay(_draftSavedAt!)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _draftSuperseded
+                                ? Theme.of(context).colorScheme.error
+                                : Theme.of(context).colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_mentionSuggestions.isNotEmpty)
+                    SizedBox(
+                      height: 48,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _mentionSuggestions.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, index) {
+                          final user = _mentionSuggestions[index];
+                          final localHost = ref
+                              .read(currentAccountProvider)
+                              ?.user
+                              .host;
+                          final isRemote =
+                              user.host != null && user.host != localHost;
+                          final label = isRemote
+                              ? '@${_buildAcct(user)}'
+                              : '@${user.username}';
+                          return ActionChip(
+                            avatar: user.isGroup
+                                ? const Icon(Icons.groups, size: 18)
+                                : user.isBot
+                                ? const Icon(Icons.smart_toy, size: 18)
+                                : user.avatarUrl != null
+                                ? CircleAvatar(
+                                    backgroundImage: NetworkImage(
+                                      user.avatarUrl!,
+                                    ),
+                                    radius: 12,
+                                  )
+                                : const Icon(Icons.person, size: 18),
+                            label: Text(label, overflow: TextOverflow.ellipsis),
+                            tooltip: user.isGroup
+                                ? 'コミュニティ: @${_buildAcct(user)}'
+                                : '@${_buildAcct(user)}',
+                            onPressed: () => _insertMention(user),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_hashtagSuggestions.isNotEmpty)
+                    SizedBox(
+                      height: 48,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _hashtagSuggestions.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, index) {
+                          final tag = _hashtagSuggestions[index];
+                          return ActionChip(
+                            avatar: const Icon(Icons.tag, size: 18),
+                            label: Text(
+                              '#$tag',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () => _insertHashtag(tag),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_emojiSuggestions.isNotEmpty)
+                    SizedBox(
+                      height: 48,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _emojiSuggestions.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, index) {
+                          final emoji = _emojiSuggestions[index];
+                          return ActionChip(
+                            avatar: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Image.network(
+                                emoji.url,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.emoji_emotions, size: 18),
+                              ),
+                            ),
+                            label: Text(
+                              ':${emoji.shortcode}:',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () =>
+                                _completeEmojiFromSuggestion(emoji),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_wordSuggestions.isNotEmpty)
+                    SizedBox(
+                      height: 48,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _wordSuggestions.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, index) {
+                          final word = _wordSuggestions[index];
+                          return ActionChip(
+                            avatar: const Icon(Icons.menu_book, size: 18),
+                            label: Text(
+                              word.surface,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            tooltip: word.category != null
+                                ? '${word.reading}・${word.category}'
+                                : word.reading,
+                            onPressed: () => _insertWordSuggestion(word),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_pollEnabled) ...[const Divider(), _buildPollEditor()],
+                  if (_attachments.isNotEmpty) ...[
+                    const Divider(),
+                    SizedBox(
+                      height: 60,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _attachments.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final entry = _attachments[index];
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _sending
+                                ? null
+                                : () => _showAttachmentMenu(index),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: _buildThumbnail(entry),
+                                ),
+                                // ALT badge
+                                if (entry.description.isNotEmpty)
+                                  Positioned(
+                                    bottom: 4,
+                                    left: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'ALT',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                // トリミング・回転はサムネタップの編集メニュー
+                                // （_showAttachmentMenu, #769）へ集約したため、
+                                // 角のトリミングアイコンは廃止した。
+                                // Remove button
                                 Positioned(
-                                  bottom: 4,
-                                  left: 4,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'ALT',
-                                      style: TextStyle(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: _sending
+                                        ? null
+                                        : () => _removeAttachment(index),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(4),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 16,
                                         color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
                                 ),
-                              // トリミング・回転はサムネタップの編集メニュー
-                              // （_showAttachmentMenu, #769）へ集約したため、
-                              // 角のトリミングアイコンは廃止した。
-                              // Remove button
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: GestureDetector(
-                                  onTap: _sending
-                                      ? null
-                                      : () => _removeAttachment(index),
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black54,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    padding: const EdgeInsets.all(4),
-                                    child: const Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  const Divider(),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        // ソフトキーボードが出ている時だけ「しまう」ボタンを出す (#594)。
+                        // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
+                        // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐
+                        // 不要 (desktop では viewInsets.bottom が 0 で常に非表示)。
+                        //
+                        // Scaffold(resizeToAvoidBottomInset:true) は body を
+                        // MediaQuery.removeViewInsets でラップするため、body 配下の
+                        // ここでは MediaQuery.viewInsets.bottom が 0 に剥がれて常に
+                        // 非表示になっていた。simple_post_bar と判定軸を揃え、
+                        // View.of(context) で root view から直接拾う (#635 / #630)。
+                        if (View.of(context).viewInsets.bottom > 0)
+                          IconButton(
+                            onPressed: () => FocusScope.of(context).unfocus(),
+                            icon: const Icon(Icons.keyboard_hide),
+                            tooltip: 'キーボードをしまう',
+                            visualDensity: VisualDensity.compact,
                           ),
-                        );
-                      },
+                        IconButton(
+                          onPressed: _sending ? null : _pickMedia,
+                          icon: const Icon(Icons.photo),
+                          tooltip: 'メディアを添付',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (ref.watch(currentAdapterProvider) is DriveSupport)
+                          IconButton(
+                            onPressed: _sending ? null : _pickDriveFiles,
+                            icon: const Icon(Icons.cloud_outlined),
+                            tooltip: 'ドライブ',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        IconButton(
+                          onPressed: _sending ? null : _showEmojiPicker,
+                          icon: const Icon(Icons.emoji_emotions_outlined),
+                          tooltip: '絵文字',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ
+                        // 出す（判定は ReactionSupport の有無、CLAUDE.md）。
+                        if (ref.watch(currentAdapterProvider)
+                            is ReactionSupport)
+                          IconButton(
+                            onPressed: _sending ? null : _showMfmPicker,
+                            icon: const Icon(Icons.palette_outlined),
+                            tooltip: 'MFM 装飾',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        IconButton(
+                          onPressed: _sending ? null : _toggleCw,
+                          icon: Icon(
+                            Icons.warning_amber,
+                            color: _cwEnabled
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          tooltip: '閲覧注意',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (ref.watch(currentAdapterProvider) is PollSupport)
+                          IconButton(
+                            onPressed: _sending ? null : _togglePoll,
+                            icon: Icon(
+                              Icons.poll_outlined,
+                              color: _pollEnabled
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            tooltip: 'アンケート',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (_attachments.isNotEmpty)
+                          IconButton(
+                            onPressed: _sending ? null : _toggleSensitive,
+                            icon: Icon(
+                              _effectiveSensitive
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: _effectiveSensitive
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            tooltip: '閲覧注意メディア',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (ref.watch(currentMulukhiyaProvider) != null)
+                          IconButton(
+                            onPressed: _sending ? null : _showTagsetSheet,
+                            icon: const Icon(Icons.live_tv),
+                            tooltip: '実況',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        // 投稿テンプレート選択 (#767)。テンプレ機能提供サーバーのみ。
+                        if (ref
+                                .watch(currentMulukhiyaProvider)
+                                ?.composeTemplatesEnabled ==
+                            true)
+                          IconButton(
+                            onPressed: _sending ? null : _showTemplateSheet,
+                            icon: const Icon(Icons.description_outlined),
+                            tooltip: '投稿テンプレート',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        // サーバー下書きの呼び戻し (#963)。保存側は AppBar の
+                        // オーバーフローに残る。DraftSupport は現状 Misskey のみ。
+                        if (ref.watch(currentAdapterProvider) is DraftSupport)
+                          IconButton(
+                            onPressed: _sending ? null : _showDraftSheet,
+                            icon: const Icon(Icons.edit_note),
+                            tooltip: '下書き',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
+                        // Spotify 連携）がこの端末で使えるときだけ出す。
+                        if (ref
+                            .watch(nowPlayingResolverProvider)
+                            .hasAvailableSource)
+                          IconButton(
+                            onPressed: (_sending || _insertingNowPlaying)
+                                ? null
+                                : _insertNowPlaying,
+                            icon: _insertingNowPlaying
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.music_note),
+                            tooltip: 'ナウプレを挿入',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (ref.watch(currentAdapterProvider)
+                            is ScheduleSupport)
+                          IconButton(
+                            onPressed: _sending ? null : _pickScheduleDate,
+                            icon: Icon(
+                              Icons.schedule,
+                              color: _scheduledAt != null
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            tooltip: '予約投稿',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        const VerticalDivider(width: 16),
+                        DropdownButton<PostScope>(
+                          value: _scope,
+                          underline: const SizedBox.shrink(),
+                          isDense: true,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          onChanged: _sending
+                              ? null
+                              : (value) {
+                                  if (value != null) _scopeSetters[value]!();
+                                },
+                          items: _scopeItems(ref),
+                        ),
+                        if (ref.watch(currentAdapterProvider)
+                            is ReactionSupport)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: FilterChip(
+                              label: const Text('ローカルのみ'),
+                              selected: _localOnly,
+                              onSelected: _sending
+                                  ? null
+                                  : (_) => _toggleLocalOnly(),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        if (_language != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: DropdownButton<String>(
+                              value: _language,
+                              underline: const SizedBox.shrink(),
+                              isDense: true,
+                              onChanged: _sending
+                                  ? null
+                                  : (v) {
+                                      if (v != null) {
+                                        setState(() => _language = v);
+                                      }
+                                    },
+                              items: _languageOptions.entries
+                                  .map(
+                                    (e) => DropdownMenuItem(
+                                      value: e.key,
+                                      child: Text(
+                                        e.value,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        if (ref.watch(currentAdapterProvider)
+                            is MastodonAdapter)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: DropdownButton<String?>(
+                              value: _quoteApprovalPolicy,
+                              underline: const SizedBox.shrink(),
+                              isDense: true,
+                              hint: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.format_quote, size: 16),
+                                  const SizedBox(width: 4),
+                                  const Text(
+                                    '引用許可',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                              onChanged: _sending
+                                  ? null
+                                  : (v) => setState(
+                                      () => _quoteApprovalPolicy = v,
+                                    ),
+                              items: _quoteApprovalLabels.entries
+                                  .map(
+                                    (e) => DropdownMenuItem(
+                                      value: e.key,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _quoteApprovalIcons[e.key],
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            e.value,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        if (_scheduledAt != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Chip(
+                              avatar: const Icon(Icons.schedule, size: 16),
+                              label: Text(
+                                '${_scheduledAt!.month}/${_scheduledAt!.day} '
+                                '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
+                                '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              onDeleted: _sending
+                                  ? null
+                                  : () => setState(() => _scheduledAt = null),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
-                const Divider(),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      // ソフトキーボードが出ている時だけ「しまう」ボタンを出す (#594)。
-                      // Android ATOK のように IME 側に dismiss ボタンが無い環境向け。
-                      // 画面幅でなくソフトキーボード有無で出し分けるため Platform 分岐
-                      // 不要 (desktop では viewInsets.bottom が 0 で常に非表示)。
-                      //
-                      // Scaffold(resizeToAvoidBottomInset:true) は body を
-                      // MediaQuery.removeViewInsets でラップするため、body 配下の
-                      // ここでは MediaQuery.viewInsets.bottom が 0 に剥がれて常に
-                      // 非表示になっていた。simple_post_bar と判定軸を揃え、
-                      // View.of(context) で root view から直接拾う (#635 / #630)。
-                      if (View.of(context).viewInsets.bottom > 0)
-                        IconButton(
-                          onPressed: () => FocusScope.of(context).unfocus(),
-                          icon: const Icon(Icons.keyboard_hide),
-                          tooltip: 'キーボードをしまう',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      IconButton(
-                        onPressed: _sending ? null : _pickMedia,
-                        icon: const Icon(Icons.photo),
-                        tooltip: 'メディアを添付',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      if (ref.watch(currentAdapterProvider) is DriveSupport)
-                        IconButton(
-                          onPressed: _sending ? null : _pickDriveFiles,
-                          icon: const Icon(Icons.cloud_outlined),
-                          tooltip: 'ドライブ',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      IconButton(
-                        onPressed: _sending ? null : _showEmojiPicker,
-                        icon: const Icon(Icons.emoji_emotions_outlined),
-                        tooltip: '絵文字',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      // MFM 装飾の挿入メニュー (#688)。MFM 対応の Misskey でのみ
-                      // 出す（判定は ReactionSupport の有無、CLAUDE.md）。
-                      if (ref.watch(currentAdapterProvider) is ReactionSupport)
-                        IconButton(
-                          onPressed: _sending ? null : _showMfmPicker,
-                          icon: const Icon(Icons.palette_outlined),
-                          tooltip: 'MFM 装飾',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      IconButton(
-                        onPressed: _sending ? null : _toggleCw,
-                        icon: Icon(
-                          Icons.warning_amber,
-                          color: _cwEnabled
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        tooltip: '閲覧注意',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      if (ref.watch(currentAdapterProvider) is PollSupport)
-                        IconButton(
-                          onPressed: _sending ? null : _togglePoll,
-                          icon: Icon(
-                            Icons.poll_outlined,
-                            color: _pollEnabled
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          tooltip: 'アンケート',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      if (_attachments.isNotEmpty)
-                        IconButton(
-                          onPressed: _sending ? null : _toggleSensitive,
-                          icon: Icon(
-                            _effectiveSensitive
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: _effectiveSensitive
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          tooltip: '閲覧注意メディア',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      if (ref.watch(currentMulukhiyaProvider) != null)
-                        IconButton(
-                          onPressed: _sending ? null : _showTagsetSheet,
-                          icon: const Icon(Icons.live_tv),
-                          tooltip: '実況',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      // 投稿テンプレート選択 (#767)。テンプレ機能提供サーバーのみ。
-                      if (ref
-                              .watch(currentMulukhiyaProvider)
-                              ?.composeTemplatesEnabled ==
-                          true)
-                        IconButton(
-                          onPressed: _sending ? null : _showTemplateSheet,
-                          icon: const Icon(Icons.description_outlined),
-                          tooltip: '投稿テンプレート',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      // サーバー下書きの呼び戻し (#963)。保存側は AppBar の
-                      // オーバーフローに残る。DraftSupport は現状 Misskey のみ。
-                      if (ref.watch(currentAdapterProvider) is DraftSupport)
-                        IconButton(
-                          onPressed: _sending ? null : _showDraftSheet,
-                          icon: const Icon(Icons.edit_note),
-                          tooltip: '下書き',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      // ナウプレ挿入 (#466)。取得源（Linux MPRIS / Windows SMTC /
-                      // Spotify 連携）がこの端末で使えるときだけ出す。
-                      if (ref
-                          .watch(nowPlayingResolverProvider)
-                          .hasAvailableSource)
-                        IconButton(
-                          onPressed: (_sending || _insertingNowPlaying)
-                              ? null
-                              : _insertNowPlaying,
-                          icon: _insertingNowPlaying
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.music_note),
-                          tooltip: 'ナウプレを挿入',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      if (ref.watch(currentAdapterProvider) is ScheduleSupport)
-                        IconButton(
-                          onPressed: _sending ? null : _pickScheduleDate,
-                          icon: Icon(
-                            Icons.schedule,
-                            color: _scheduledAt != null
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          tooltip: '予約投稿',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      const VerticalDivider(width: 16),
-                      DropdownButton<PostScope>(
-                        value: _scope,
-                        underline: const SizedBox.shrink(),
-                        isDense: true,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        onChanged: _sending
-                            ? null
-                            : (value) {
-                                if (value != null) _scopeSetters[value]!();
-                              },
-                        items: _scopeItems(ref),
-                      ),
-                      if (ref.watch(currentAdapterProvider) is ReactionSupport)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: FilterChip(
-                            label: const Text('ローカルのみ'),
-                            selected: _localOnly,
-                            onSelected: _sending
-                                ? null
-                                : (_) => _toggleLocalOnly(),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                      if (_language != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: DropdownButton<String>(
-                            value: _language,
-                            underline: const SizedBox.shrink(),
-                            isDense: true,
-                            onChanged: _sending
-                                ? null
-                                : (v) {
-                                    if (v != null) {
-                                      setState(() => _language = v);
-                                    }
-                                  },
-                            items: _languageOptions.entries
-                                .map(
-                                  (e) => DropdownMenuItem(
-                                    value: e.key,
-                                    child: Text(
-                                      e.value,
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ),
-                      if (ref.watch(currentAdapterProvider) is MastodonAdapter)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: DropdownButton<String?>(
-                            value: _quoteApprovalPolicy,
-                            underline: const SizedBox.shrink(),
-                            isDense: true,
-                            hint: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.format_quote, size: 16),
-                                const SizedBox(width: 4),
-                                const Text(
-                                  '引用許可',
-                                  style: TextStyle(fontSize: 13),
-                                ),
-                              ],
-                            ),
-                            onChanged: _sending
-                                ? null
-                                : (v) =>
-                                      setState(() => _quoteApprovalPolicy = v),
-                            items: _quoteApprovalLabels.entries
-                                .map(
-                                  (e) => DropdownMenuItem(
-                                    value: e.key,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _quoteApprovalIcons[e.key],
-                                          size: 16,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          e.value,
-                                          style: const TextStyle(fontSize: 13),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ),
-                      if (_scheduledAt != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: Chip(
-                            avatar: const Icon(Icons.schedule, size: 16),
-                            label: Text(
-                              '${_scheduledAt!.month}/${_scheduledAt!.day} '
-                              '${_scheduledAt!.hour.toString().padLeft(2, '0')}:'
-                              '${_scheduledAt!.minute.toString().padLeft(2, '0')}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            onDeleted: _sending
-                                ? null
-                                : () => setState(() => _scheduledAt = null),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

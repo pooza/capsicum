@@ -11,6 +11,7 @@ import '../../provider/server_info_provider.dart';
 import '../../provider/server_version_provider.dart';
 import '../../service/server_version_checker.dart';
 import '../../url_helper.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/push_registration_status_section.dart';
 import '../widget/section_header.dart';
@@ -46,10 +47,12 @@ class _ServerInfoScreenState extends ConsumerState<ServerInfoScreen> {
         title: const Text('サーバー情報'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: asyncState.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('読み込みに失敗しました\n$error')),
-        data: (state) => _buildContent(context, ref, state),
+      body: BottomSafeArea(
+        child: asyncState.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(child: Text('読み込みに失敗しました\n$error')),
+          data: (state) => _buildContent(context, ref, state),
+        ),
       ),
     );
   }

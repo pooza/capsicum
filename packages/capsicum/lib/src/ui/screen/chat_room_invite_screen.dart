@@ -9,6 +9,7 @@ import '../../provider/chat_provider.dart';
 import '../../util/user_acct.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/user_avatar.dart';
 
 /// ルームに招待するユーザーを検索 → 招待を送信する画面 (#438)。owner のみ
@@ -93,60 +94,62 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
         title: const Text('メンバーを招待'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _controller,
-              autofocus: true,
-              onChanged: _onChanged,
-              decoration: const InputDecoration(
-                hintText: 'ユーザー名で検索',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-                isDense: true,
+      body: BottomSafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: _controller,
+                autofocus: true,
+                onChanged: _onChanged,
+                decoration: const InputDecoration(
+                  hintText: 'ユーザー名で検索',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: results.when(
-              data: (users) {
-                if (_query.trim().isEmpty) {
-                  return const Center(child: Text('ユーザー名を入力してください'));
-                }
-                if (users.isEmpty) {
-                  return const Center(child: Text('該当ユーザーがいません'));
-                }
-                return ListView.separated(
-                  itemCount: users.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final user = users[index];
-                    final invited = _invitedUserIds.contains(user.id);
-                    final pending = _pendingUserId == user.id;
-                    return _UserTile(
-                      user: user,
-                      invited: invited,
-                      pending: pending,
-                      onInvite: () => _invite(user),
-                    );
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SelectableText(
-                    '検索に失敗しました\n${summarizeOpError(error)}',
-                    textAlign: TextAlign.center,
+            Expanded(
+              child: results.when(
+                data: (users) {
+                  if (_query.trim().isEmpty) {
+                    return const Center(child: Text('ユーザー名を入力してください'));
+                  }
+                  if (users.isEmpty) {
+                    return const Center(child: Text('該当ユーザーがいません'));
+                  }
+                  return ListView.separated(
+                    itemCount: users.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final user = users[index];
+                      final invited = _invitedUserIds.contains(user.id);
+                      final pending = _pendingUserId == user.id;
+                      return _UserTile(
+                        user: user,
+                        invited: invited,
+                        pending: pending,
+                        onInvite: () => _invite(user),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SelectableText(
+                      '検索に失敗しました\n${summarizeOpError(error)}',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

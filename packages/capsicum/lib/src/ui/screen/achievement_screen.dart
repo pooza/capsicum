@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/achievement_provider.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 class AchievementScreen extends ConsumerWidget {
@@ -21,35 +22,37 @@ class AchievementScreen extends ConsumerWidget {
         title: Text(displayName != null ? '$displayName の実績' : '実績'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: achievements.when(
-        data: (items) {
-          if (items.isEmpty) {
-            return const Center(child: Text('実績はまだありません'));
-          }
-          // Sort by unlockedAt descending (newest first).
-          final sorted = [...items]
-            ..sort((a, b) => b.unlockedAt.compareTo(a.unlockedAt));
-          return RefreshIndicator(
-            onRefresh: () => ref.refresh(achievementProvider(userId).future),
-            child: GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 140,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 0.85,
+      body: BottomSafeArea(
+        child: achievements.when(
+          data: (items) {
+            if (items.isEmpty) {
+              return const Center(child: Text('実績はまだありません'));
+            }
+            // Sort by unlockedAt descending (newest first).
+            final sorted = [...items]
+              ..sort((a, b) => b.unlockedAt.compareTo(a.unlockedAt));
+            return RefreshIndicator(
+              onRefresh: () => ref.refresh(achievementProvider(userId).future),
+              child: GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 140,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.85,
+                ),
+                itemCount: sorted.length,
+                itemBuilder: (context, index) =>
+                    _AchievementTile(achievement: sorted[index]),
               ),
-              itemCount: sorted.length,
-              itemBuilder: (context, index) =>
-                  _AchievementTile(achievement: sorted[index]),
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => RetryErrorView(
-          message: '実績の読み込みに失敗しました\n${summarizeOpError(error)}',
-          isRetrying: achievements.isLoading,
-          onRetry: () => ref.invalidate(achievementProvider(userId)),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stack) => RetryErrorView(
+            message: '実績の読み込みに失敗しました\n${summarizeOpError(error)}',
+            isRetrying: achievements.isLoading,
+            onRetry: () => ref.invalidate(achievementProvider(userId)),
+          ),
         ),
       ),
     );

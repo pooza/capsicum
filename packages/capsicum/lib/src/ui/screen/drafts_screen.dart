@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../util/draft_display.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 /// サーバー下書き一覧 (#174)。DraftSupport のあるアダプタ（Misskey）でのみ
@@ -26,29 +27,31 @@ class DraftsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('下書き')),
-      body: draftsAsync.when(
-        data: (drafts) {
-          if (drafts.isEmpty) {
-            return const Center(child: Text('下書きはありません'));
-          }
-          return ListView.separated(
-            itemCount: drafts.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final draft = drafts[index];
-              return _DraftTile(
-                draft: draft,
-                onTap: () => _restore(context, ref, draft),
-                onDelete: () => _confirmDelete(context, ref, draft),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => RetryErrorView(
-          message: '読み込みに失敗しました\n${summarizeOpError(error)}',
-          isRetrying: draftsAsync.isLoading,
-          onRetry: () => ref.invalidate(_draftsProvider),
+      body: BottomSafeArea(
+        child: draftsAsync.when(
+          data: (drafts) {
+            if (drafts.isEmpty) {
+              return const Center(child: Text('下書きはありません'));
+            }
+            return ListView.separated(
+              itemCount: drafts.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final draft = drafts[index];
+                return _DraftTile(
+                  draft: draft,
+                  onTap: () => _restore(context, ref, draft),
+                  onDelete: () => _confirmDelete(context, ref, draft),
+                );
+              },
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => RetryErrorView(
+            message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+            isRetrying: draftsAsync.isLoading,
+            onRetry: () => ref.invalidate(_draftsProvider),
+          ),
         ),
       ),
     );

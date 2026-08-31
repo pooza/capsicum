@@ -11,6 +11,7 @@ import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/notification_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -25,7 +26,7 @@ class NotificationScreen extends ConsumerWidget {
         title: const Text('通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: const NotificationView(),
+      body: const BottomSafeArea(child: NotificationView()),
     );
   }
 }

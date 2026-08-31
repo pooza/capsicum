@@ -13,6 +13,7 @@ import '../../provider/server_config_provider.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../util/post_actions.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
@@ -339,6 +340,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 
     // スレッドには入力欄が無いので、本体をそのまま包んで ↑ ↓ を受ける (#849)。
     body = wrapKeyboardListNavigation(child: body);
+
+    // ⚠ **背景より内側**に置く (#1037)。外に出すと背景がナビゲーションバーの
+    // 手前で切れて、下端だけ地の色が出る。スレッドは下端に何も置いていないので、
+    // ここが無いと最後の投稿がナビゲーションバーのボタンに潜り込む。
+    body = BottomSafeArea(child: body);
 
     if (bgPath != null) {
       body = Container(

@@ -9,6 +9,7 @@ import '../../provider/drive_provider.dart';
 import '../../util/text_length.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/screen_menu.dart';
@@ -957,112 +958,135 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                   ),
                 ],
         ),
-        body: drive.when(
-          data: (state) {
-            final totalFolders = state.folders.length;
-            final totalFiles = state.files.length;
-            final totalItems =
-                totalFolders + totalFiles + (state.isLoadingMore ? 1 : 0);
+        body: BottomSafeArea(
+          child: drive.when(
+            data: (state) {
+              final totalFolders = state.folders.length;
+              final totalFiles = state.files.length;
+              final totalItems =
+                  totalFolders + totalFiles + (state.isLoadingMore ? 1 : 0);
 
-            // 画面幅が広いと初期 20 件が viewport 内に収まり、スクロール
-            // 由来の loadMore() が起動しない。レイアウト確定後にスクロール
-            // 可能か再評価し、必要なら次ページを要求する (#452)。
-            // 毎フレーム積むのを避けるため _autoLoadRequested ラッチで
-            // 一度だけ実行する。folder 移動 / refresh で false に戻す (#459)。
-            if (!_autoLoadRequested) {
-              _autoLoadRequested = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                // ref.read が dispose 後に呼ばれる極稀ケース等に備え、全体を
-                // try/catch で包み Sentry に上げる (#459)。
-                try {
-                  _maybeLoadMoreIfNotScrollable();
-                } catch (e, st) {
-                  reportDriveOpFailure(
-                    'auto_load',
-                    e,
-                    st,
-                    account: ref.read(currentAccountProvider),
-                  );
-                }
-              });
-            }
-
-            if (totalFolders == 0 && totalFiles == 0) {
-              return const Center(child: Text('ファイルがありません'));
-            }
-
-            return RefreshIndicator(
-              onRefresh: () =>
-                  ref.refresh(driveContentsProvider(_currentFolderId).future),
-              child: GridView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(4),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 140,
-                  crossAxisSpacing: 4,
-                  mainAxisSpacing: 4,
-                ),
-                itemCount: totalItems,
-                itemBuilder: (context, index) {
-                  if (index < totalFolders) {
-                    final folder = state.folders[index];
-                    // 選択モード中もフォルダは drop 先として活かす (#694 一括移動)。
-                    // タップ／ロングプレス（開く・操作メニュー）は選択モード中は
-                    // 無効（フォルダ複数選択は範囲外、#567）。
-                    return DragTarget<List<Attachment>>(
-                      key: ValueKey('folder-${folder.id}'),
-                      onWillAcceptWithDetails: (_) => true,
-                      onAcceptWithDetails: (details) =>
-                          _handleDropToFolder(details.data, folder.id),
-                      builder: (context, candidateData, rejectedData) {
-                        return _FolderTile(
-                          folder: folder,
-                          onTap: _selectionMode
-                              ? () {}
-                              : () => _openFolder(folder),
-                          onLongPress: _selectionMode
-                              ? () {}
-                              : () => _showFolderActions(folder),
-                          isHighlighted: candidateData.isNotEmpty,
-                        );
-                      },
+              // 画面幅が広いと初期 20 件が viewport 内に収まり、スクロール
+              // 由来の loadMore() が起動しない。レイアウト確定後にスクロール
+              // 可能か再評価し、必要なら次ページを要求する (#452)。
+              // 毎フレーム積むのを避けるため _autoLoadRequested ラッチで
+              // 一度だけ実行する。folder 移動 / refresh で false に戻す (#459)。
+              if (!_autoLoadRequested) {
+                _autoLoadRequested = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  // ref.read が dispose 後に呼ばれる極稀ケース等に備え、全体を
+                  // try/catch で包み Sentry に上げる (#459)。
+                  try {
+                    _maybeLoadMoreIfNotScrollable();
+                  } catch (e, st) {
+                    reportDriveOpFailure(
+                      'auto_load',
+                      e,
+                      st,
+                      account: ref.read(currentAccountProvider),
                     );
                   }
-                  final fileIndex = index - totalFolders;
-                  if (fileIndex >= totalFiles) {
-                    return const Center(
-                      key: ValueKey('loading'),
-                      child: CircularProgressIndicator(),
-                    );
-                  }
-                  final file = state.files[fileIndex];
-                  if (_selectionMode) {
-                    final isSelected = _selectedFileIds.contains(file.id);
-                    // 未選択タイルは従来どおり tap で選択トグル（drag は起こさない）。
-                    if (!isSelected) {
-                      return _FileTile(
-                        key: ValueKey('file-${file.id}'),
-                        file: file,
-                        isSelectionMode: true,
-                        isSelected: false,
-                        onTap: () => _toggleFileSelected(file.id),
+                });
+              }
+
+              if (totalFolders == 0 && totalFiles == 0) {
+                return const Center(child: Text('ファイルがありません'));
+              }
+
+              return RefreshIndicator(
+                onRefresh: () =>
+                    ref.refresh(driveContentsProvider(_currentFolderId).future),
+                child: GridView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(4),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 140,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: totalItems,
+                  itemBuilder: (context, index) {
+                    if (index < totalFolders) {
+                      final folder = state.folders[index];
+                      // 選択モード中もフォルダは drop 先として活かす (#694 一括移動)。
+                      // タップ／ロングプレス（開く・操作メニュー）は選択モード中は
+                      // 無効（フォルダ複数選択は範囲外、#567）。
+                      return DragTarget<List<Attachment>>(
+                        key: ValueKey('folder-${folder.id}'),
+                        onWillAcceptWithDetails: (_) => true,
+                        onAcceptWithDetails: (details) =>
+                            _handleDropToFolder(details.data, folder.id),
+                        builder: (context, candidateData, rejectedData) {
+                          return _FolderTile(
+                            folder: folder,
+                            onTap: _selectionMode
+                                ? () {}
+                                : () => _openFolder(folder),
+                            onLongPress: _selectionMode
+                                ? () {}
+                                : () => _showFolderActions(folder),
+                            isHighlighted: candidateData.isNotEmpty,
+                          );
+                        },
                       );
                     }
-                    // 選択済みタイルは long-press で「選択全件」をまとめてドラッグ
-                    // できる (#694)。drop 先（フォルダ／親）の DragTarget は選択全件を
-                    // _handleDropToFolder → _moveSelectedFilesToFolder で移す。
-                    final selected = state.files
-                        .where((f) => _selectedFileIds.contains(f.id))
-                        .toList();
-                    final tile = _FileTile(
-                      file: file,
-                      isSelectionMode: true,
-                      isSelected: true,
-                      onTap: () => _toggleFileSelected(file.id),
-                    );
+                    final fileIndex = index - totalFolders;
+                    if (fileIndex >= totalFiles) {
+                      return const Center(
+                        key: ValueKey('loading'),
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+                    final file = state.files[fileIndex];
+                    if (_selectionMode) {
+                      final isSelected = _selectedFileIds.contains(file.id);
+                      // 未選択タイルは従来どおり tap で選択トグル（drag は起こさない）。
+                      if (!isSelected) {
+                        return _FileTile(
+                          key: ValueKey('file-${file.id}'),
+                          file: file,
+                          isSelectionMode: true,
+                          isSelected: false,
+                          onTap: () => _toggleFileSelected(file.id),
+                        );
+                      }
+                      // 選択済みタイルは long-press で「選択全件」をまとめてドラッグ
+                      // できる (#694)。drop 先（フォルダ／親）の DragTarget は選択全件を
+                      // _handleDropToFolder → _moveSelectedFilesToFolder で移す。
+                      final selected = state.files
+                          .where((f) => _selectedFileIds.contains(f.id))
+                          .toList();
+                      final tile = _FileTile(
+                        file: file,
+                        isSelectionMode: true,
+                        isSelected: true,
+                        onTap: () => _toggleFileSelected(file.id),
+                      );
+                      return LongPressDraggable<List<Attachment>>(
+                        key: ValueKey('file-${file.id}'),
+                        data: selected,
+                        onDragStarted: () {
+                          setState(() => _isDragging = true);
+                          _startDragAutoScroll(context);
+                        },
+                        onDragUpdate: (details) =>
+                            _updateDragAutoScroll(details.globalPosition),
+                        onDragEnd: (_) {
+                          setState(() => _isDragging = false);
+                          _stopDragAutoScroll();
+                        },
+                        feedback: _buildBulkDragFeedback(file),
+                        childWhenDragging: Opacity(opacity: 0.3, child: tile),
+                        // 起点以外の選択タイルもドラッグ中はまとめて減光する (#694)。
+                        child: Opacity(
+                          opacity: _isDragging ? 0.3 : 1.0,
+                          child: tile,
+                        ),
+                      );
+                    }
                     return LongPressDraggable<List<Attachment>>(
                       key: ValueKey('file-${file.id}'),
-                      data: selected,
+                      data: [file],
                       onDragStarted: () {
                         setState(() => _isDragging = true);
                         _startDragAutoScroll(context);
@@ -1073,59 +1097,38 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                         setState(() => _isDragging = false);
                         _stopDragAutoScroll();
                       },
-                      feedback: _buildBulkDragFeedback(file),
-                      childWhenDragging: Opacity(opacity: 0.3, child: tile),
-                      // 起点以外の選択タイルもドラッグ中はまとめて減光する (#694)。
-                      child: Opacity(
-                        opacity: _isDragging ? 0.3 : 1.0,
-                        child: tile,
-                      ),
-                    );
-                  }
-                  return LongPressDraggable<List<Attachment>>(
-                    key: ValueKey('file-${file.id}'),
-                    data: [file],
-                    onDragStarted: () {
-                      setState(() => _isDragging = true);
-                      _startDragAutoScroll(context);
-                    },
-                    onDragUpdate: (details) =>
-                        _updateDragAutoScroll(details.globalPosition),
-                    onDragEnd: (_) {
-                      setState(() => _isDragging = false);
-                      _stopDragAutoScroll();
-                    },
-                    feedback: Material(
-                      elevation: 4,
-                      borderRadius: BorderRadius.circular(4),
-                      child: SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: Opacity(
-                          opacity: 0.8,
-                          child: _FileTile(file: file, onTap: () {}),
+                      feedback: Material(
+                        elevation: 4,
+                        borderRadius: BorderRadius.circular(4),
+                        child: SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: Opacity(
+                            opacity: 0.8,
+                            child: _FileTile(file: file, onTap: () {}),
+                          ),
                         ),
                       ),
-                    ),
-                    childWhenDragging: Opacity(
-                      opacity: 0.3,
-                      child: _FileTile(file: file, onTap: () {}),
-                    ),
-                    child: _FileTile(
-                      file: file,
-                      onTap: () => _openFile(file, state.files, fileIndex),
-                      onMorePressed: () => _showFileActions(file),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => RetryErrorView(
-            message: '読み込みに失敗しました',
-            isRetrying: drive.isLoading,
-            onRetry: _refresh,
+                      childWhenDragging: Opacity(
+                        opacity: 0.3,
+                        child: _FileTile(file: file, onTap: () {}),
+                      ),
+                      child: _FileTile(
+                        file: file,
+                        onTap: () => _openFile(file, state.files, fileIndex),
+                        onMorePressed: () => _showFileActions(file),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stack) => RetryErrorView(
+              message: '読み込みに失敗しました',
+              isRetrying: drive.isLoading,
+              onRetry: _refresh,
+            ),
           ),
         ),
       ),
