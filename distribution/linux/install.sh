@@ -114,8 +114,10 @@ else
   fi
   echo "==> Looking up the latest release"
   RELEASE_JSON=$(fetch_stdout "$LATEST_API")
-  DOWNLOAD_URL=$(printf '%s\n' "$RELEASE_JSON" \
-    | grep -m1 -oE 'https://[^"]+-x86_64\.AppImage' || true)
+  # grep -m1 は 1 件目で終了するため、パイプで流し込むと書き手が SIGPIPE で
+  # 落ちて pipefail に引っかかる (#1036)。ここは末尾の `|| true` がたまたま
+  # 打ち消していたが、依存する理由がないので herestring にする。
+  DOWNLOAD_URL=$(grep -m1 -oE 'https://[^"]+-x86_64\.AppImage' <<< "$RELEASE_JSON" || true)
   if [[ -z "$DOWNLOAD_URL" ]]; then
     echo "error: could not find an x86_64 AppImage asset in the latest release" >&2
     echo "       see $RAW_BASE/INSTALL.md for manual steps" >&2
@@ -177,7 +179,12 @@ prune_old_appimages() {
   keep=$(printf '%s\n%s\n' "$keep" "$FILENAME")
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
-    if ! printf '%s\n' "$keep" | grep -qxF -- "$f"; then
+    # ⚠ `printf ... | grep -q` にしないこと (#1036)。grep -q はマッチした時点で
+    # 終了するので、後ろにデータが残っていると printf が SIGPIPE で落ち、
+    # pipefail がパイプライン全体を失敗にする。すると `!` が反転して
+    # 「keep に無い」と判定され、**残すべき AppImage を rm する**。
+    # herestring なら一時ファイル経由なので書き手が落ちない。
+    if ! grep -qxF -- "$f" <<< "$keep"; then
       echo "==> Removing old AppImage $APPLICATIONS_DIR/$f"
       rm -f "$APPLICATIONS_DIR/$f"
     fi
