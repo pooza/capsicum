@@ -293,14 +293,13 @@ capsicum が送るのは `untilId` / `sinceId` / `limit` / `withFiles`。未使�
 
 ### 9-7. 新しく拾うと判断したもの
 
-**A に足す候補（判断待ち）:**
+**A に足したもの（2026-08-31 に起票・すべて v1.63）:**
 
-| | 内容 | 根拠 |
-| --- | --- | --- |
-| **A-6** | Misskey の `reactionAcceptance` を尊重する | 9-1。ユーザーが選んだものと違う結果になり、しかも無言 |
-| **A-7** | `i/notifications` に `markAsRead: false` を明示する | 9-2。他クライアントの未読を黙って消す。**1 行**で直る |
-
-⚠ **A-6 / A-7 はまだ起票していない。**v1.63 は「#993 の分類 A として拾うと決めたもの」の枠なので、足すなら同じ枠。判断を仰ぐ。
+| | 内容 | Issue | 根拠 |
+| --- | --- | --- | --- |
+| **A-6** | Misskey の `reactionAcceptance` を尊重する | [#1044](https://github.com/pooza/capsicum/issues/1044) | 9-1。選んだものと違う結果になり、しかも無言 |
+| **A-7** | `i/notifications` に `markAsRead: false` を明示する | [#1045](https://github.com/pooza/capsicum/issues/1045) | 9-2。他クライアントの未読を黙って消す。**1 行**で直る |
+| **A-8** | 「指名」投稿に `visibleUserIds` を送る | [#1043](https://github.com/pooza/capsicum/issues/1043) | 10-1。**新規投稿が誰にも届かない**。この枠で唯一の bug |
 
 **既存 Issue へ反映済み:** #1042 に 9-3（Misskey も対称・`supported_types`）を追記した。
 
@@ -309,3 +308,69 @@ capsicum が送るのは `untilId` / `sinceId` / `limit` / `withFiles`。未使�
 - Misskey の層② は `notes/timeline` / `i/notifications` しか見ていない。**capsicum が呼ぶ 111 経路のうち 2 つ**
 - Misskey の層③ は Note / User のみ。`drive-file` / `notification` / `channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` 等は見ていない
 - Mastodon の層② は主要 6 経路 + 通知のみ
+
+## 10. 層② 主要経路の結果（2026-08-31・追加分）
+
+capsicum が呼ぶ Misskey の 113 経路のうち、**投稿・タイムライン・アップロードの主要 4 経路**を見た。残りは §11。
+
+### 10-1. ★★ Misskey の「指名」投稿が、新規投稿だと誰にも届かない
+
+**`notes/create` の `visibleUserIds` を capsicum は一度も送っていない**（`visibleUserIds` はリポジトリ全体で 0 ヒット）。一方 `MisskeyCapabilities.supportedScopes` は `PostScope.direct` を含んでおり（`misskey/adapter.dart:72`）、投稿画面に**「指名」が選択肢として出る**（`post_scope_display.dart:38`）。
+
+サーバー側（`core/NoteCreateService.ts:624-636`）はこう動く:
+
+```ts
+if (data.visibility === 'specified') {
+  if (data.visibleUsers == null) throw new Error('invalid param');
+  for (const u of data.visibleUsers) { /* mentionedUsers へ足す */ }
+  if (data.reply && !data.visibleUsers.some(x => x.id === data.reply!.userId)) {
+    data.visibleUsers.push(/* 返信先を足す */);
+  }
+}
+```
+
+`visibleUsers` は **`visibleUserIds` パラメータと「返信先」からしか作られない**（`notes/create.ts:239` が `ps.visibleUserIds ?? []`、`NoteCreateService.ts:300` が空配列にする）。したがって:
+
+| 操作 | 結果 |
+| --- | --- |
+| 「指名」で**新規投稿** | `visibleUsers` が空 → **投稿者以外の誰にも見えない** |
+| 「指名」で**返信** | 返信先が自動で足される → 届く ✅ |
+
+⚠ **本文に `@alice` と書いても宛先にならない。**上のコードは `visibleUsers` → `mentionedUsers` の一方向で、逆は無い。**Mastodon とは挙動が違う**（Mastodon の `direct` は本文のメンションがそのまま宛先）。この非対称が、同じ「指名 / ダイレクト」ラベルの裏に隠れている。
+
+⚠ **失敗しない。**サーバーはエラーを返さず、投稿は成功する。投稿者の画面には自分の投稿として残るので、**相手に届いていないことに気付けない。**
+
+### 10-2. `notes/create` のその他の未使用パラメータ
+
+| パラメータ | 効き方 |
+| --- | --- |
+| `reactionAcceptance` | **投稿時にリアクションの受付を制限する。**§9-1 の裏返し（読む側だけでなく書く側も未対応） |
+| `noExtractMentions` / `noExtractHashtags` / `noExtractEmojis` | 本文からの自動抽出を止める。⚠ **タグ管理が根幹の capsicum とは相性がある論点**だが、現状の「サーバーに抽出させる」挙動で困っている報告は無い |
+| `mediaIds` | `fileIds` の旧名。使う必要なし |
+
+### 10-3. タイムライン系で捨てているパラメータ
+
+`notes/timeline` は §9-5。`users/notes`（プロフィールのタイムライン）も同型:
+
+| パラメータ | 既定 | 効き方 |
+| --- | --- | --- |
+| `withReplies` | `false` | **プロフィールに返信が出ない。**「この人の発言を全部見たい」に応えられない |
+| `withChannelNotes` | `false` | チャンネル投稿がプロフィールに出ない |
+| `withRenotes` | `true` | リノートを外せない |
+| `withFiles` / `allowPartial` / `sinceDate` / `untilDate` | ― | §9-5 と同じ |
+
+### 10-4. `drive/files/create`
+
+capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未使用は `name`（ファイル名の明示）と `force`（重複チェックの無視）。⚠ **`force` を送らないのは正しい** — Misskey はハッシュで重複排除して既存ファイルを返すので、送らないほうが容量を食わない。`name` も multipart のファイル名で足りている。**ここは当たり無し。**
+
+## 11. 未実施のまま残す範囲（→ [#1046](https://github.com/pooza/capsicum/issues/1046)）
+
+「主要なものだけ進め、残りは別 Issue」という 2026-08-31 の判断に従い、以下は**この文書では扱わない**。続きは [#1046](https://github.com/pooza/capsicum/issues/1046)（v2.0）で回す。
+
+| 層 | 残り |
+| --- | --- |
+| Misskey ② | 113 経路のうち **109**（chat / clips / antennas / channels / pages / flash / drive folders / lists / following / blocking / mute ほか） |
+| Misskey ③ | Note / User 以外の全 entity（`drive-file` / `notification` / `channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` / `emoji` / `role` ほか） |
+| Mastodon ② | 主要 6 経路 + 通知 以外 |
+
+⚠ **「見ていない」であって「無かった」ではない。**主要経路だけで ★ が 5 件出ているので、**残りにも同じ密度で当たりがある前提**で扱うこと。
