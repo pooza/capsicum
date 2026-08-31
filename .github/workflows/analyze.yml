@@ -110,10 +110,21 @@ jobs:
             fi | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true
           }
 
-          FILES="$files" \
-          MSGS="$msgs" \
-          PUBSPEC_LINES="$(changed_lines 'pubspec.yaml' '*/pubspec.yaml')" \
-          WF_LINES="$(changed_lines '.github/workflows')" \
+          # ⚠ **判定への入力はファイルで渡す。**中身を環境変数に入れると、
+          # Linux の execve 上限 (1 つあたり 128KB) に当たって
+          # `Argument list too long` でガードが起動できない。**コミット数の
+          # 多い push では `git log` の出力が普通にこれを超える**——つまり、
+          # このガードがまさに想定している場面で壊れる。
+          work="$(mktemp -d)"
+          printf '%s\n' "$files" > "$work/files"
+          printf '%s\n' "$msgs" > "$work/msgs"
+          changed_lines 'pubspec.yaml' '*/pubspec.yaml' > "$work/pubspec_lines"
+          changed_lines '.github/workflows' > "$work/wf_lines"
+
+          FILES_FILE="$work/files" \
+          MSGS_FILE="$work/msgs" \
+          PUBSPEC_LINES_FILE="$work/pubspec_lines" \
+          WF_LINES_FILE="$work/wf_lines" \
             bash .github/scripts/lock_guard.sh
       - uses: subosito/flutter-action@v2
         with:

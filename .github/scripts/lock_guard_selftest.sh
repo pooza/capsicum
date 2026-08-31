@@ -21,16 +21,36 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 guard="${1:-$here/lock_guard.sh}"
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
 pass=0
 fail=0
 
 # run_case <名前> <期待する exit> <FILES> <MSGS> <PUBSPEC_LINES> <WF_LINES>
+#
+# ⚠ **中身をファイルに書いてからパスを渡す。**環境変数に直接入れると、下の
+# `big` のような大きな入力で Linux の execve 上限 (1 つあたり 128KB) に当たり、
+# `Argument list too long` でガードの起動自体が失敗する。macOS では通るので
+# 手元では再現せず、CI で初めて落ちた。
 run_case() {
   local name="$1" want="$2" out got
+  printf '%s' "$3" > "$work/files"
+  printf '%s' "$4" > "$work/msgs"
+  printf '%s' "$5" > "$work/pubspec_lines"
+  printf '%s' "$6" > "$work/wf_lines"
+
   set +e
-  out="$(FILES="$3" MSGS="$4" PUBSPEC_LINES="$5" WF_LINES="$6" bash "$guard" 2>&1)"
+  out="$(
+    FILES_FILE="$work/files" \
+    MSGS_FILE="$work/msgs" \
+    PUBSPEC_LINES_FILE="$work/pubspec_lines" \
+    WF_LINES_FILE="$work/wf_lines" \
+      bash "$guard" 2>&1
+  )"
   got=$?
   set -e
+
   if [ "$got" = "$want" ]; then
     printf 'ok   %s\n' "$name"
     pass=$((pass + 1))
