@@ -37,6 +37,18 @@ jobs:
           # pubspec.lock churn ガード (#970) が push / PR の差分と範囲内の
           # コミットメッセージを git で参照するため、全履歴を取る。
           fetch-depth: 0
+      # #1036: ガード本体より先に、ガードの判定が壊れていないことを検査する。
+      #
+      # このガードは本番の push でしか実行されないため、v1.61 では「条件に
+      # 合致したときだけ落ちる」逆転を抱えたまま複数リリースを通過した。
+      # ⚠ ガードが間違った方向に壊れると、正しい手順を踏んだ人が「規約どおりに
+      # やったのに怒られる」状態になり、規約そのものへの信頼が落ちる。だから
+      # 「落ちるべきときに落ちる」だけでなく「通るべきときに通る」も検査する。
+      #
+      # 順序が大事: 先に走らせておくと、ガードが赤くなったときに「実際に規約
+      # 違反があるのか、ガードが壊れているのか」をログの並びだけで切り分けられる。
+      - name: Self-test the pubspec.lock guard (#1036)
+        run: bash .github/scripts/lock_guard_selftest.sh
       # #970: pubspec.lock が pubspec.yaml / Flutter pin (workflow) の変更を伴わず
       # 単独で動いていたら落とす。#836 で決めた「揃える前に出た lock 差分はコミット
       # しない」規約を機械で受ける（1fd1a135 で docs コミットに lock のダウングレード
@@ -54,14 +66,20 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # ⚠⚠ **`printf ... | grep -q` を使わないこと (#1036)。**`grep -q` は
+          # このステップが持つのは「**どの範囲を見るか**」だけ。通す / 落とすの
+          # 判定は .github/scripts/lock_guard.sh へ切り出してあり、直前のステップ
+          # (Self-test the pubspec.lock guard) が毎 push それを検査する。
+          # 分けた理由は #1036 — 判定がここに直書きされていた間は本番の push で
+          # しか実行されず、逆転バグを抱えたまま複数リリースを通過した。
+          #
+          # ⚠⚠ **`printf ... | grep -q` の形を書かないこと (#1036)。**`grep -q` は
           # **マッチした時点で即座に終了**するので、書き込み途中の printf が
           # SIGPIPE で落ちる。`pipefail` があるとパイプライン全体が失敗になり、
           # **条件に合致したときだけ判定が false になる**という逆転が起きる。
           # しかも入力が小さいと printf が書き切れてしまい再現しないため、
           # **コミット数の多い push でだけ落ちる**。v1.61 のリリースで実踏
           # （`chore(deps)` を正しく付けたのに 28 commits の push で誤爆）。
-          # 判定は herestring (`<<<`) で渡す。
+          # 下の `^0+$` 判定のように、入力は必ず herestring (`<<<`) で渡す。
           if [ "$EVENT" = "pull_request" ]; then
             files="$(git diff --name-only "$PR_BASE"..."$PR_HEAD")"
             msgs="$(git log --format='%s %b' "$PR_BASE".."$PR_HEAD")"
@@ -82,22 +100,6 @@ jobs:
             msgs="$(git log --format='%s %b' "$PUSH_BEFORE".."$GITHUB_SHA")"
           fi
 
-          lock_changed=false
-          while IFS= read -r f; do
-            case "$f" in
-              pubspec.lock|*/pubspec.lock) lock_changed=true ;;
-            esac
-          done <<< "$files"
-
-          if [ "$lock_changed" != true ]; then
-            echo "pubspec.lock unchanged; ok"; exit 0
-          fi
-
-          # 随伴の判定は**ファイル名一致ではなく実変更の中身**で行う (#976)。
-          # 「pubspec.yaml か workflow のどれかが変わっていれば随伴」だと、
-          # バージョンだけの bump や無関係な CI ジョブ編集でも lock の単独更新を
-          # 通してしまい、このガードが素通りする（PR #973 の Codex P2）。
-          #
           # 変更行だけを取る（-U0 + ヘッダ行 `+++` / `---` を除く）。grep は
           # 不一致で 1 を返すので、`set -e` に巻き込まれないよう `|| true`。
           changed_lines() {
@@ -108,41 +110,11 @@ jobs:
             fi | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true
           }
 
-          companion_changed=false
-
-          # pubspec.yaml: `version:` 行**だけ**の変更はバンプであって依存の変更
-          # ではない。それ以外の行が動いていれば依存セクションが触られたと見なす
-          # （dependencies / dev_dependencies / dependency_overrides / SDK 制約は
-          # すべてここに落ちる）。
-          pubspec_lines="$(changed_lines 'pubspec.yaml' '*/pubspec.yaml')"
-          if [ -n "$pubspec_lines" ]; then
-            non_version="$(printf '%s\n' "$pubspec_lines" | grep -vE '^[+-]version:' || true)"
-            if [ -n "$non_version" ]; then
-              companion_changed=true
-              echo "pubspec.yaml dependency lines changed"
-            else
-              echo "pubspec.yaml changed but only the version bump line"
-            fi
-          fi
-
-          # workflow: 実際に `flutter-version:` の行が動いたときだけ随伴と見なす。
-          if [ "$companion_changed" != true ]; then
-            wf_lines="$(changed_lines '.github/workflows')"
-            if grep -qE '^[+-][[:space:]]*flutter-version:' <<< "$wf_lines"; then
-              companion_changed=true
-              echo "workflow flutter-version pin changed"
-            fi
-          fi
-
-          if [ "$companion_changed" = true ]; then
-            echo "pubspec.lock changed together with a real dependency / pin change; ok"
-            exit 0
-          fi
-          if grep -qiE 'chore\(deps\)|\[pubspec-lock\]' <<< "$msgs"; then
-            echo "lock-only change is an explicit deps/upgrade commit; ok"; exit 0
-          fi
-          echo "::error::pubspec.lock が pubspec.yaml / Flutter pin (workflow) の変更を伴わず単独で変わっています (#970)。依存を足す/上げるなら pubspec.yaml を、Flutter 版追従なら workflow の pin を同じ変更に含めてください。リリース前の pub upgrade（意図的な lock 単独更新）はコミットメッセージを chore(deps) にするか本文に [pubspec-lock] を付けてください。"
-          exit 1
+          FILES="$files" \
+          MSGS="$msgs" \
+          PUBSPEC_LINES="$(changed_lines 'pubspec.yaml' '*/pubspec.yaml')" \
+          WF_LINES="$(changed_lines '.github/workflows')" \
+            bash .github/scripts/lock_guard.sh
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
