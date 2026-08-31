@@ -120,6 +120,25 @@ for (const note of renotes) { this.noteDeleteService.delete(..., note); }
 
 **新しい画面 / 新しい概念を持ち込むもの。**1.x の集約枠には粒度が合わない。
 
+**2026-08-31 に全件 v2.0 で起票済み**（pooza の判断）:
+
+| 項目 | Issue |
+| --- | --- |
+| フィルタ（キーワードミュート）の管理 UI | [#1047](https://github.com/pooza/capsicum/issues/1047) |
+| 通知のグループ化 | [#1048](https://github.com/pooza/capsicum/issues/1048) |
+| トレンド | [#1049](https://github.com/pooza/capsicum/issues/1049) |
+| Misskey クリップの操作 | [#1050](https://github.com/pooza/capsicum/issues/1050) |
+| Misskey チャンネルの操作 | [#1051](https://github.com/pooza/capsicum/issues/1051) |
+| Misskey アンテナの管理 | [#1052](https://github.com/pooza/capsicum/issues/1052) |
+| Misskey ギャラリー | [#1053](https://github.com/pooza/capsicum/issues/1053) |
+| 編集済み投稿の表示 | [#1054](https://github.com/pooza/capsicum/issues/1054) |
+| 引っ越し済みアカウントの表示 | [#1055](https://github.com/pooza/capsicum/issues/1055) |
+| タグの取得元（§7-2） | [#1056](https://github.com/pooza/capsicum/issues/1056) |
+
+⚠ **#1050 / #1051 / #1052 は「保存済みショートカットの管理 UI をどこに置くか」という同じ設計問題を共有する。**バラバラに作ると UI の流儀が割れるので、**1 つ目を作るときに 3 つ分の型を決める**（各 Issue に相互リンク済み）。
+
+⚠ **#1042（v1.63・通知の種別フィルタ）と #1048（v2.0・通知のグループ化）は同じリクエストに乗る。**#1042 を v1 の `GET /api/v1/notifications` で先に入れると、#1048 で v2 へ移るときに書き直しになりうる。**順序を意識すること。**
+
 | 項目 | Mastodon | Misskey | 備考 |
 | --- | --- | --- | --- |
 | **フィルタ（キーワードミュート）** | `filters` v1/v2 + `filters/keywords` / `filters/statuses`、Status の `filtered` フィールド | `notes/thread-muting/*`、`renote-mute/*` | ⚠ **capsicum は Status の `filtered` を既に受け取っている**（`status.dart` に `filtered` あり）。つまり**サーバーが「これは伏せろ」と言ってきているのを読んでいる可能性がある**一方、フィルタの管理 UI が無い。CLAUDE.md の「見たくないものを見ないようにする道具は読む側に提供する」に真正面から合致する枠 |
@@ -168,7 +187,9 @@ for (const note of renotes) { this.noteDeleteService.delete(..., note); }
 - ~~A-5（Misskey のリノート解除）の UI 側の実装確認~~ → 上の A-5 に決着を書いた。**起票不要**。
 - ~~Status の `tags` / `mentions` を capsicum が読んでいない点~~ → 下記のとおり確定。**判断待ち**として §7-2 へ移した。
 
-### 7-2. タグの取得元がサーバーの `tags` ではなく描画済み HTML / MFM のパース（要判断）
+### 7-2. タグの取得元がサーバーの `tags` ではなく描画済み HTML / MFM のパース（→ [#1056](https://github.com/pooza/capsicum/issues/1056)・v2.0）
+
+**2026-08-31 決着。**「基本設計の見直しとしてはぜひやりたいが、**現行実装がバグというわけでもない**ので v2.0 へ割り当てる」（pooza の判断）。
 
 **事実として確定した。**`packages/fediverse_objects/lib/src/mastodon/status.dart` に `tag` / `mention` のフィールドが**そもそも無く**、backends のどこにも `'tags'` を読む箇所が無い。`Post` モデル（`capsicum_core`）にも `tags` / `mentions` は無い。タグは 100% `extractHashtags(content, isHtml:)`（`content_parser.dart:145`）が**本文をパースして**得ている（Mastodon は HTML の `hashtag` ノード、Misskey は MFM）。
 
@@ -194,7 +215,9 @@ for (const note of renotes) { this.noteDeleteService.delete(..., note); }
 4. **A-4 通知の種別フィルタ**（パラメータのみ・小粒）
 5. ~~A-5 は確認後に判断~~ → **確認済み・起票不要**（2026-08-31）
 
-B は v2.0 に据え置き、**フィルタと通知グループ化のどちらかを次の大更新の候補**として設計書（#720 / #597 と同じ形）に進める判断を仰ぐ。
+**B は 2026-08-31 に全件 v2.0 で起票済み**（一覧は §4）。⚠ **これで #993 の分類はすべて Issue になった。**この文書に「まだ起票していないもの」は残っていない。
+
+残る判断は **#1047（フィルタ）を設計書（#720 / #597 と同じ形）に進めるか**。⚠ 両 SNS でモデルが根本的に違う（Mastodon はサーバー判定、Misskey は capsicum が `mutedWords` を読んで端末側で判定）ので、**1 つの UI に畳む設計判断が要る**＝設計書向きの候補として #1047 の本文に書いてある。
 
 ### 起票の行き先（2026-08-31 決着）
 
