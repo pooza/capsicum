@@ -234,6 +234,36 @@ WNS raw push のバックグラウンドタスクは FullTrust 本体とは別�
 
 ## CI / ビルド
 
+### `set -o pipefail` + 早期終了するパイプは、判定を「合致したときだけ false」に反転させる
+
+シェルで書いた**判定**が、入力が大きいときだけ逆さまに壊れる罠。v1.61 のリリースで実踏し（#1036）、その後の掃き出しで `distribution/linux/install.sh` にも同型が残っていた。
+
+```sh
+set -euo pipefail
+if printf '%s' "$msgs" | grep -qiE 'chore\(deps\)'; then   # ⚠ 壊れる
+```
+
+`grep -q` は**マッチした時点で即座に終了する**。すると書き込み途中の `printf` が SIGPIPE で落ち、`pipefail` によってパイプライン全体の終了ステータスが非ゼロになる。`if` はパイプラインの終了ステータスを見るので、**マッチしたときに条件が false になる**。マッチしなければ grep は入力を最後まで読むので、`printf` は正常終了して判定も正しく false になる。つまり**「合致しない」だけが正しく動く**。
+
+⚠ **入力が小さいと再現しない。**パイプバッファ（64KB）に書き切れてしまうため。再現には「**マッチが先頭近く + 後ろに大量のデータ**」の両方が要る。`git log` は新しい順に出すので、「直前に印を付けたコミットを積んで、まとめて大きな push をする」形でだけ落ちる。
+
+⚠ **zsh では再現しない。**手元で試して再現しなかったことを「バグではない」と読み替えないこと。確認は bash で行う。
+
+```sh
+bash -c 'set -euo pipefail
+msgs="$(echo "chore(deps): bump"; head -c 300000 /dev/zero | tr "\0" "x")"
+if printf "%s" "$msgs" | grep -qiE "chore\(deps\)"; then echo OLD:matched; else echo "OLD:NOT matched (誤爆)"; fi
+if grep -qiE "chore\(deps\)" <<< "$msgs"; then echo NEW:matched; else echo "NEW:NOT matched"; fi'
+```
+
+**対処**: 入力は herestring (`<<<`) で渡す。一時ファイル経由になるので、読み手が早期終了しても書き手が落ちない。同じことが `grep -m1` / `head -n` を**パイプの下流に置いた**場合にも起きる（下流が先に終了して上流を殺す）ので、件数の絞り込みは `grep -m1 <file>` のようにパイプを挟まない形へ寄せる。
+
+⚠ **`|| true` が付いていると無害に見えるが、依存していると気付かない。**`X=$(a | grep -m1 b || true)` は、grep が終了前に stdout を出しているので値は正しく、`|| true` が `set -e` を打ち消す。動くが、`|| true` が load-bearing であることが読み取れない。書き換えておく。
+
+⚠ **`#!/bin/sh` で `set` を書いていないスクリプトは影響を受けない**（pipefail が無いので `if` は末尾の grep だけを見る）。`.claude/hooks/deny-shell-loops.sh` がこれ。ただしここに pipefail を足すと、**ループを検出できたときに限って素通りする**ガードになる。dash 互換のため herestring へ寄せられないので、「足さない」ことで担保している。
+
+**ガードは自分自身を検査させる。**この種のバグは「ガードが間違った方向に壊れる」形で出るため、正しい手順を踏んだ人が「規約どおりにやったのに怒られる」状態になり、規約そのものへの信頼が落ちる。判定を `.github/scripts/lock_guard.sh` へ切り出し、`lock_guard_selftest.sh` が毎 push 回している。切り分けの基準は「環境が無いと再現できるか」で、**どの範囲を見るか**（GitHub のイベントが要る）は workflow に残し、**通すか落とすか**（純粋な判定）だけをスクリプトへ出す。検査は「落ちるべきときに落ちる」だけでなく「**通るべきときに通る**」も見ること。セルフテストは第 1 引数で対象を差し替えられるので、壊れた実装を食わせて**検査に歯があること**を確認できる。
+
 ### Windows: mpv アーカイブの `Integrity check failed` は一過性（再実行で通る）
 
 `windows-release.yml` の msix ジョブが、Dart のコンパイルより手前の CMake 段階で落ちることがある。
