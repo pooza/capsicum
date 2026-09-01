@@ -179,4 +179,46 @@ void main() {
           '⚠ `viewPadding` ではなく `padding` を使う（キーボード表示時に 0 になる側）',
     );
   });
+
+  test('スレッド画面がジャンプ FAB のぶんを本文側で確保している (#1059)', () {
+    // ⚠ **これは #1037 / #1058 とは重なる相手が違う。**あちらはシステムの
+    // ナビゲーションバー、こちらは **アプリ自身の FAB**。FAB は
+    // `Scaffold.floatingActionButton` で body の**上に浮く**ため、body を
+    // `BottomSafeArea` で包んでも避けられない。スクロール範囲に足していないと、
+    // 最下部まで送っても最後の投稿がボタンの下に残り、逃がす手段が無い。
+    //
+    // ⚠ **`BottomSafeArea` があるから大丈夫、と読まないこと。**両方要る。
+    // 片方で足りているように見えるのは、投稿がそこまで届いていないときだけ
+    // （実際 2026-09-01 の検証で、1 画面に収まるスレッドを見て「合格」と
+    // 誤判定しかけた）。
+    final source = File(
+      'lib/src/ui/screen/post_detail_screen.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains('_jumpFabReservedHeight'),
+      reason:
+          'ジャンプ FAB のぶんの確保が無い (#1059)。'
+          'ScrollablePositionedList の padding に FAB の高さを足すこと',
+    );
+    expect(
+      source,
+      contains('showJump'),
+      reason: 'FAB の出し分け条件が見当たらない。構造が変わったならこの検査も直す',
+    );
+    // FAB が出ていないときに足すと下端に無駄な余白が残るので、条件付きで
+    // あることまで見る。
+    //
+    // ⚠ **インデントに依存させない。**整形やネストの変化で落ちる検査は、
+    // 中身が正しいのに赤くなって信用を失う（#1037 の掃き出しで
+    // `offline_retry_action_gate_source_test.dart` が実際にそうなった）。
+    expect(
+      source,
+      matches(RegExp(r'showJump\s*\?\s*const\s+EdgeInsets\.only\(\s*bottom:')),
+      reason:
+          'padding が `showJump` で出し分けられていない (#1059)。'
+          'FAB が無いときに足すと下端に無駄な余白が残る',
+    );
+  });
 }
