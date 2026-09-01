@@ -273,7 +273,11 @@ v1.18 のレビューでは、この 5 観点でセキュリティ単独では�
 
 #### リリース PR 前のローカル整形・解析チェック
 
-`analyze.yml`（CI の `dart format` / `dart analyze`）は `main` への push / PR でのみ起動し、**`develop` への push では走らない**。そのため `develop` 上では format / analyze の drift が CI 未検出のまま蓄積しうる。リリース PR（`develop` → `main`）を作る前に、リポジトリルートで一度全体をチェックしてリリース PR の CI 不合格を未然に防ぐこと:
+⚠ **この節の前提は 2026-09-01 に古くなった。**`analyze.yml` の push トリガーは現在 `branches: [main, develop]` で、**`develop` への push でも走る**（v1.48 で 6 ファイルぶんの drift が溜まりリリース PR の CI が落ちた反省から追加された。理由はワークフローのコメントに残っている）。
+
+したがって「develop は CI 未検出でノーガード」ではない。ただし**コミット前のローカルチェックは引き続き要る** — develop へ push してから赤を踏むと、[sync-procedure.md](sync-procedure.md) の同期ステップで「赤ならその場で直す」対応が要るぶん手戻りになる（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
+
+リポジトリルートで一度全体をチェックしてから push すること:
 
 ```bash
 # format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
@@ -396,6 +400,8 @@ cd ..
 > 張り付いた値にしない、(b) アップロード成功行が出たら報告していったん離れ、状態確認は
 > §4.4 の ASC API に切り替える**（`upload_to_testflight` に
 > `skip_waiting_for_build_processing` を渡す手もある）。
+
+> ⚠️ **`flutter build ipa` は `ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。**出荷したバイナリと一致させるため、この差分はリリースブランチにコミットすること**（v1.61 で pin フォーマットが 2→3 に上がった実績あり）。放置すると次のリリースで「誰も触っていない差分」として現れる。
 
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。

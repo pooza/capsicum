@@ -99,7 +99,9 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 - **none（capsicum 無関係）**: `config/routes/` の差分は `admin.rb` の 2 行のみ（管理画面）。`streaming/` は `package.json` の依存更新だけで**プロトコル不変**。`deprecation_concern` の変更は OpenTelemetry span 属性の付与で、`Deprecation` / `Sunset` ヘッダの形は不変。ActivityPub の完全性証明（`object_integrity_proof` / `multibase`）・FASP・annual_report は連合内部 / server 専用。
 - **フォーク固有のオペ変更なし**: nginx / rc.d / モロヘイヤ連携（`X-Mulukhiya-Purpose` の map 等）に差分なし。[#121](https://github.com/pooza/capsicum/issues/121) の経路（4.6.5 で開通済み）は 4.7.0 でも維持されている。
 
-実測（2026-08-21）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.0`。⚠ **モロヘイヤは 3 台とも 5.33.0 のままで、#121 のブロッカー（5.34.0 未リリース）は 4.7.0 適用では解消していない。**
+実測（2026-08-21）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.0`。
+
+⚠ **この時点で書いた「モロヘイヤが 5.33.0 なので #121 はブロック中」は解消済み。**2026-09-01 に美食丼の `GET /mulukhiya/api/about` を引くと `package.version` は `5.35.0`（判定は `.config.features.<flag>` ではなく `.package.version`）。#121 の ALT 編集は **v1.60 で出荷済み**。プリセットで導線が出ないサーバーがあるのは fail-closed が効いている正常な状態で、条件の正本は `tech-notes.md`。
 
 ## 関連
 

@@ -20,6 +20,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/page_card.dart';
@@ -520,76 +521,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            backgroundColor: colorScheme.inversePrimary,
-            leading: Padding(
-              padding: const EdgeInsets.all(8),
-              child: CircleAvatar(
-                backgroundColor: Colors.black38,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
+      body: BottomSafeArea(
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverAppBar(
+              expandedHeight: 200,
+              pinned: true,
+              backgroundColor: colorScheme.inversePrimary,
+              leading: Padding(
+                padding: const EdgeInsets.all(8),
+                child: CircleAvatar(
+                  backgroundColor: Colors.black38,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
               ),
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
-                onTap: user.bannerUrl != null
-                    ? () => _openImageViewer(
-                        user.bannerUrl!,
-                        user.bannerDescription,
-                      )
-                    : null,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (user.bannerUrl != null)
-                      Image.network(
-                        user.bannerUrl!,
-                        fit: BoxFit.cover,
-                        semanticLabel: user.bannerDescription,
-                      )
-                    else
-                      Container(color: colorScheme.primaryContainer),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.5),
-                          ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  // ヘッダー画像をタップで全画面表示。alt を説明に載せる (#733)。
+                  onTap: user.bannerUrl != null
+                      ? () => _openImageViewer(
+                          user.bannerUrl!,
+                          user.bannerDescription,
+                        )
+                      : null,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (user.bannerUrl != null)
+                        Image.network(
+                          user.bannerUrl!,
+                          fit: BoxFit.cover,
+                          semanticLabel: user.bannerDescription,
+                        )
+                      else
+                        Container(color: colorScheme.primaryContainer),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.5),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          SliverToBoxAdapter(child: _buildProfileHeader(context, user)),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TabBarDelegate(
-              TabBar(
-                controller: _tabController,
-                tabs: _visibleTabs
-                    .map((t) => Tab(text: _tabLabels[t]))
-                    .toList(),
+            SliverToBoxAdapter(child: _buildProfileHeader(context, user)),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabBarDelegate(
+                TabBar(
+                  controller: _tabController,
+                  tabs: _visibleTabs
+                      .map((t) => Tab(text: _tabLabels[t]))
+                      .toList(),
+                ),
+                colorScheme.surface,
               ),
-              colorScheme.surface,
             ),
-          ),
-          ..._buildTabContent(colorScheme),
-        ],
+            ..._buildTabContent(colorScheme),
+          ],
+        ),
       ),
     );
   }

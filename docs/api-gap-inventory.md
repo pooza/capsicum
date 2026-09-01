@@ -2,7 +2,7 @@
 
 [#993](https://github.com/pooza/capsicum/issues/993) の成果物。**API 実装だけが先行していて WebUI に出ていない機能**を含めて、サーバーが提供しているのに capsicum が使っていない面を洗い出し、拾う / 拾わないを決める。
 
-- 実施日: **2026-08-25**
+- 実施日: **2026-08-25**（宿題 2 件の決着 = **2026-08-31**）
 - 基準: **pooza フォーク**（美食丼 = `~/repos/mastodon` の `bshockdon` / ダイスキー = `~/repos/misskey` の `daisskey`）
 - 兄弟の棚卸し: #991（WebUI 基準の未実装項目）/ #992（サーバー側に保存された設定）。**本ファイルは #993 の分**で、#991 / #992 は別ファイルになる。
 
@@ -24,10 +24,22 @@
 | 層 | Mastodon | Misskey |
 | --- | --- | --- |
 | ① エンドポイント | **全数**（routes 全行を読んで突き合わせ） | **全数**（338 とカテゴリ別 diff） |
-| ② パラメータ | **主要 6 経路のみ**（statuses / notifications / accounts.statuses / timelines / search / tag） | **未実施** |
-| ③ entity フィールド | **Status / Account の 2 つのみ** | **未実施** |
+| ② パラメータ | **主要 6 経路 + 通知**（2026-08-31 に追加） | **主要経路のみ**（timeline / 通知。2026-08-31） |
+| ③ entity フィールド | **全 8 entity**（2026-08-31 に 6 つ追加） | **Note / User**（2026-08-31） |
 
-⚠ **②③ の未実施ぶんは「無かった」ではなく「見ていない」。**Misskey の ②③ は次回以降の宿題として残る。ただし #993 の期待値設定（「Mastodon 側が主」）どおり、Misskey は API と WebUI が同時に育つため **API 先行機能という意味での当たりは実際に出ていない** — 出たのは「capsicum が実装していないだけ」の普通の未実装で、これは #991 の担当範囲と重なる。
+結果は §9。⚠ **層② は今も全数ではない。**「capsicum が呼んでいる経路のうち、主要なもの」に絞ってある。
+
+### ⚠ 層③ の測り方（2026-08-31 に誤診しかけた）
+
+**モデルのフィールド一覧で測ると間違える。**capsicum は一部の値を**型付きモデルを経由せず生の `Map<String, dynamic>` から読んでいる**（例: `isMuted` / `isBlocking` / `isFollowing` は `MisskeyUser` に無いが `misskey/adapter.dart:917-920` が生 map から読んでいる）。最初にモデルだけを見て「関係フラグが未読」と判定しかけた。
+
+正しい母数の取り方は **backends 配下で実際に参照している JSON キーの集合**:
+
+```sh
+grep -rhoE "\['[a-zA-Z_][a-zA-Z0-9_]*'\]" packages/capsicum_backends/lib/src/misskey/ | tr -d "[']" | sort -u
+```
+
+これに `fediverse_objects` の `@JsonKey(name:)` とフィールド名を足したものを、サーバー側スキーマと `comm` で突き合わせる。
 
 ## 2. 落とす基準（列挙前に確定）
 
@@ -81,15 +93,51 @@ capsicum は **block / unblock / mute / unmute をすべて実装済み**（`blo
 
 ⚠ **これは機能追加ではなくパラメータ 1 個の話**なので、A の中では最も軽い。
 
-### A-5. Misskey のリノート解除が原理的に届かない経路がある（要確認）
+### A-5. Misskey のリノート解除（**2026-08-31 確認済み → 起票不要へ格下げ**）
 
-`notes/unrenote` が未使用で、`MisskeyAdapter.unrepeatPost` は `notes/delete`（自分のリノート note を消す）で代用している。**リノート note の id を握っているときしか成立しない**ため、TL で「既にリノート済みの元投稿」を見ているときに解除できるかは実装依存。
+**結論: 現状の実装は正しく、壊れてもいない。**ただし「元投稿を見ているときは解除できない」という制約が残り、それは **Misskey の API 側の制約**なので、素直に `notes/unrenote` を足しても解決しない。以下、確認した事実。
 
-⚠ **未確認。**UI 側が元投稿から自分のリノートを解決しているなら問題ない。**確認してから起票する**（していないなら A、しているなら不要）。
+**① 危険な分岐は到達不能。**`post_actions.dart:171` は `unrepeatPost(isOwnRenote ? outerPost : targetPost)` と分岐しており、`isOwnRenote == false` の側は `targetPost`（＝元投稿）を渡す。Misskey の `unrepeatPost` は `client.deleteNote(post.id)`（`misskey/adapter.dart:618`）なので、**もしこの枝に入れば元投稿そのものを削除しにいく**。自分が書いた投稿なら消えてしまう。
+
+しかし到達しない。導線の条件が `canUnrepeat = isOwnRenote || targetPost.reblogged`（`post_tile.dart:1170` / `post_touch_action_row.dart:137`）で、**Misskey の `toCapsicum` は `reblogged` を一度も立てない**（`misskey/extensions.dart:93-` に代入が無く、`Post` の既定値 `false` のまま。`post.dart:65`）。よって Misskey では `canUnrepeat == isOwnRenote` に縮退し、`targetPost` を渡す枝は**構造的に選ばれない**。
+
+⚠ **これは「安全」ではなく「たまたま安全」。**Misskey 側で `reblogged` を埋める変更を入れた瞬間に、この枝が生きて**元投稿の削除**が起きる。`unrepeatPost` の Misskey 実装に「渡ってくるのは自分のリノート note に限る」という前提が**コメントでしか表現されていない**（`post_actions.dart` の doc）。ガードを置くならここ。
+
+**② `notes/unrenote` は「元投稿の id」を取る。**フォークの実体（`packages/backend/src/server/api/endpoints/notes/unrenote.ts`）を読んだ:
+
+```ts
+const renotes = await this.notesRepository.findBy({ userId: me.id, renoteId: note.id });
+for (const note of renotes) { this.noteDeleteService.delete(..., note); }
+```
+
+つまり `noteId` に**元投稿**を渡すと、自分のリノートを全部消してくれる。capsicum が今できない「元投稿を見ているときの解除」に、まさに対応するエンドポイント。
+
+**③ ただし「解除できると知る」手段が無い。**Misskey の Note の JSON Schema（`models/json-schema/note.ts`）が持つのは `renoteId` / `renote` / `renoteCount` だけで、**自己リノート済みを示すフラグが無い**（Mastodon の `reblogged` に相当するものが存在しない）。TL のペイロードからは「この元投稿を自分がリノート済みか」が分からないので、`notes/unrenote` を足しても**トグルの状態が出せない**。判定するには投稿ごとに `notes/renotes` を引く必要があり、TL では非現実的。
+
+**したがって A からは外す。**現状は「自分のリノート行が TL にあるときだけ解除できる」という、API の情報量なりの正しい姿。安く効くとすれば**スレッド / 投稿詳細画面**（対象が 1 件なので `notes/renotes` を 1 回引ける）に限った話で、それは機能追加であって片肺の解消ではない。⚠ **B にも入れない** — 次の棚卸しで再浮上させないため、判断済みとしてここに残す。
 
 ## 4. 分類 B — 2.0 以降のマイルストーンに載せるもの
 
 **新しい画面 / 新しい概念を持ち込むもの。**1.x の集約枠には粒度が合わない。
+
+**2026-08-31 に全件 v2.0 で起票済み**（pooza の判断）:
+
+| 項目 | Issue |
+| --- | --- |
+| フィルタ（キーワードミュート）の管理 UI | [#1047](https://github.com/pooza/capsicum/issues/1047) |
+| 通知のグループ化 | [#1048](https://github.com/pooza/capsicum/issues/1048) |
+| トレンド | [#1049](https://github.com/pooza/capsicum/issues/1049) |
+| Misskey クリップの操作 | [#1050](https://github.com/pooza/capsicum/issues/1050) |
+| Misskey チャンネルの操作 | [#1051](https://github.com/pooza/capsicum/issues/1051) |
+| Misskey アンテナの管理 | [#1052](https://github.com/pooza/capsicum/issues/1052) |
+| Misskey ギャラリー | [#1053](https://github.com/pooza/capsicum/issues/1053) |
+| 編集済み投稿の表示 | [#1054](https://github.com/pooza/capsicum/issues/1054) |
+| 引っ越し済みアカウントの表示 | [#1055](https://github.com/pooza/capsicum/issues/1055) |
+| タグの取得元（§7-2） | [#1056](https://github.com/pooza/capsicum/issues/1056) |
+
+⚠ **#1050 / #1051 / #1052 は「保存済みショートカットの管理 UI をどこに置くか」という同じ設計問題を共有する。**バラバラに作ると UI の流儀が割れるので、**1 つ目を作るときに 3 つ分の型を決める**（各 Issue に相互リンク済み）。
+
+⚠ **#1042（v1.63・通知の種別フィルタ）と #1048（v2.0・通知のグループ化）は同じリクエストに乗る。**#1042 を v1 の `GET /api/v1/notifications` で先に入れると、#1048 で v2 へ移るときに書き直しになりうる。**順序を意識すること。**
 
 | 項目 | Mastodon | Misskey | 備考 |
 | --- | --- | --- | --- |
@@ -134,8 +182,26 @@ capsicum は **block / unblock / mute / unmute をすべて実装済み**（`blo
 
 - **Misskey の層 ②③（パラメータ・entity フィールド）が丸ごと未実施。**338 エンドポイントの JSON Schema を持つので機械的に回せるはずだが、母数が大きいので独立した回にする。
 - **Mastodon 層 ③ は Status / Account の 2 entity のみ。**`Notification` / `MediaAttachment` / `PreviewCard` / `Poll` / `List` / `Announcement` は見ていない。
-- Status の `tags` / `mentions` を capsicum が読んでいない点。**タグ管理が根幹の機能である以上、HTML パースではなく `tags` 配列を使うべき場面があるはず**だが、現状の実装がどちらに依存しているかを確認していない。⚠ **これは棚卸しの結果ではなく疑義**なので、確認してから扱いを決める。
-- A-5（Misskey のリノート解除）の UI 側の実装確認。
+**確認済みになったもの**（2026-08-31）:
+
+- ~~A-5（Misskey のリノート解除）の UI 側の実装確認~~ → 上の A-5 に決着を書いた。**起票不要**。
+- ~~Status の `tags` / `mentions` を capsicum が読んでいない点~~ → 下記のとおり確定。**判断待ち**として §7-2 へ移した。
+
+### 7-2. タグの取得元がサーバーの `tags` ではなく描画済み HTML / MFM のパース（→ [#1056](https://github.com/pooza/capsicum/issues/1056)・v2.0）
+
+**2026-08-31 決着。**「基本設計の見直しとしてはぜひやりたいが、**現行実装がバグというわけでもない**ので v2.0 へ割り当てる」（pooza の判断）。
+
+**事実として確定した。**`packages/fediverse_objects/lib/src/mastodon/status.dart` に `tag` / `mention` のフィールドが**そもそも無く**、backends のどこにも `'tags'` を読む箇所が無い。`Post` モデル（`capsicum_core`）にも `tags` / `mentions` は無い。タグは 100% `extractHashtags(content, isHtml:)`（`content_parser.dart:145`）が**本文をパースして**得ている（Mastodon は HTML の `hashtag` ノード、Misskey は MFM）。
+
+非対称になるのは次の点:
+
+- **`tags` はサーバーが正規化した正本**（`name` + `url`）。パースは**描画の見た目**に依存するので、リモートのソフトウェアがハッシュタグをリンクにしない形で連合してくると、サーバーは認識しているのに capsicum は拾えない。
+- **大文字小文字の扱い**が、サーバーの正規化とパースの結果で割れうる。
+- 逆に、**本文に書いてあるがサーバーがタグと認めていない**文字列をタグとして拾う余地もある（コードブロック内など）。
+
+⚠ **これを「不具合」と断定しない。**実際に取りこぼした報告は無く、プリセットサーバー（Mastodon / Misskey とも pooza フォーク）同士では両者が一致する見込みが高い。一方で **capsicum の根幹はタグ管理**であり、「サーバーが正本を返しているのに読んでいない」という構図自体は棚卸しの結果として正しい。
+
+判断が要るのは「**投稿を読む側のタグ**（タグ TL へ飛ぶ・タグをコピー）の取得元を `tags` に寄せるか」。⚠ **投稿を書く側（末尾ハッシュタグの管理・お気に入りタグ・タグセット）はクライアント側のテキストの話なので無関係**。混同しやすいので分けて扱う。
 
 ## 8. 次の一手
 
@@ -147,6 +213,187 @@ capsicum は **block / unblock / mute / unmute をすべて実装済み**（`blo
 2. **A-2 フォローリクエスト**（両 SNS・機能欠落・中粒）
 3. **A-3 Misskey 本文検索**（非対称の解消・小粒）
 4. **A-4 通知の種別フィルタ**（パラメータのみ・小粒）
-5. A-5 は確認後に判断
+5. ~~A-5 は確認後に判断~~ → **確認済み・起票不要**（2026-08-31）
 
-B は v2.0 に据え置き、**フィルタと通知グループ化のどちらかを次の大更新の候補**として設計書（#720 / #597 と同じ形）に進める判断を仰ぐ。
+**B は 2026-08-31 に全件 v2.0 で起票済み**（一覧は §4）。⚠ **これで #993 の分類はすべて Issue になった。**この文書に「まだ起票していないもの」は残っていない。
+
+残る判断は **#1047（フィルタ）を設計書（#720 / #597 と同じ形）に進めるか**。⚠ 両 SNS でモデルが根本的に違う（Mastodon はサーバー判定、Misskey は capsicum が `mutedWords` を読んで端末側で判定）ので、**1 つの UI に畳む設計判断が要る**＝設計書向きの候補として #1047 の本文に書いてある。
+
+### 起票の行き先（2026-08-31 決着）
+
+**A 群は専用の枠 [v1.63](https://github.com/pooza/capsicum/milestone/77) で消化する**（pooza の判断）。
+
+論点はこうだった。CLAUDE.md の「大玉の進め方」§3 は「確定後に **1.x 行きだけを稼働中の枠へ**」と決めているが、稼働中の [v1.62](https://github.com/pooza/capsicum/milestone/76) は**外部要因の発生ベース**の枠として、内部由来の #1034 / #1035 / #1038 を意図的に外して作った。A 群は棚卸し由来なので同じ基準では内部由来にあたり、**入れると同じ回に外した 3 件と扱いが割れる**。
+
+→ **棚卸しの成果は棚卸しの枠で消化する**ことにして、基準の衝突を回避した。
+
+⚠ **v1.63 は「内部由来を入れてよい枠」ではない。**#993 の分類 A として明示的に拾うと決めたものだけが入る。#1034 / #1035 / #1038 をここへ移送しない。
+
+起票済み（2026-08-31）:
+
+| 分類 | Issue | 粒度 |
+| --- | --- | --- |
+| A-1 | [#1039](https://github.com/pooza/capsicum/issues/1039) ブロック・ミュートの一覧 | 小〜中（**この枠の主役**） |
+| A-2 | [#1040](https://github.com/pooza/capsicum/issues/1040) フォローリクエストの承認・拒否 | 中 |
+| A-3 | [#1041](https://github.com/pooza/capsicum/issues/1041) Misskey の本文検索 | 小 |
+| A-4 | [#1042](https://github.com/pooza/capsicum/issues/1042) 通知の種別フィルタをサーバー側で | 小 |
+
+A-5 は上記のとおり**起票不要**。B は v2.0 据え置きで**未起票**（設計書へ進めるかの判断は別途）。
+
+## 9. 層②③ の結果（2026-08-31）
+
+層① は「呼んでいないエンドポイント」を見る。層②③ は「**呼んでいる経路の中で捨てている情報**」を見るので、性質が違う。実際、層① で出なかった当たりがここで出た。
+
+### 9-1. ★ Misskey の `reactionAcceptance` を読んでいない（リアクションが黙って ❤️ に化ける）
+
+**Note の `reactionAcceptance`（`enum: likeOnly / likeOnlyForRemote / nonSensitiveOnly / nonSensitiveOnlyForLocalLikeOnlyForRemote / null`）が未読。**
+
+サーバー側（`core/ReactionService.ts:125-160`）は、条件に合うと**エラーを返さず、リアクションの中身を差し替える**。`FALLBACK = '❤'`（❤️）:
+
+- `likeOnly` → 何を選んでも ❤️
+- `nonSensitiveOnly` + センシティブなカスタム絵文字 → ❤️
+- **ロール制限つきの絵文字**（`roleIdsThatCanBeUsedThisEmojiAsReaction`）で権限が無い → ❤️
+- 未知の絵文字 → ❤️
+
+capsicum は投稿ごとの受付条件を知らないので、**常に全部入りのピッカーを出す**。ユーザーが選んだ絵文字と違うものが付き、`runReaction` は成功扱いなので**エラーも出ず Sentry にも出ない**（読み直しで TL の表示だけは正しくなるため、ユーザーには「押し間違えた？」に見える）。
+
+⚠ **リノートへのリアクションは別途サーバーがエラーを返す**（`You cannot react to Renote.`）が、capsicum は `targetPost.id`（元投稿）を送っているので**踏まない**（`post_tile.dart:1054` ほか）。
+
+### 9-2. ★ Misskey の `i/notifications` は `markAsRead` の既定が `true`
+
+capsicum が送っているのは `sinceId` / `untilId` / `limit` だけ。**`markAsRead` を明示していないので既定の `true` が効き、取得しただけでサーバー側の未読が消える。**
+
+capsicum は未読をクライアント側で数えているので自分では困らないが、**WebUI を併用しているユーザーは、capsicum のバックグラウンド取得によって WebUI 側の未読バッジが黙って消える**。⚠ **これは capsicum の画面では観測できない**（他クライアントの状態が変わる）ので、報告が来ても原因に辿り着きにくい。
+
+### 9-3. ★ 通知の種別フィルタは両 SNS に揃っている（#1042 の前提が確定）
+
+`i/notifications` の paramDef に **`includeTypes` / `excludeTypes`** が実在した。[#1042](https://github.com/pooza/capsicum/issues/1042) は Mastodon 限定として起票したが、**Misskey にも同じ機能があるので対称に実装できる**。クライアント側の絞り込みをフォールバックとして残す必要は無い。
+
+あわせて Mastodon 側で層② の当たりが 1 つ:**`GET /api/v1/notifications` の `supported_types` が未使用**（`api/v1/notifications_controller.rb:19`）。これを送ると、サーバーは capsicum が知らない通知型に対して **`fallback: { title, summary }`**（人間が読める文言）を返す（`NotificationFallbackConcern`）。送らないと `needs_fallback?` が即 `false` を返すので**永久に来ない**。未知の型が増えたときに「中身のわからない通知」を出さずに済む安全弁。→ **#1042 に追記した。**
+
+### 9-4. ★ `tags` は Misskey も返している（§7-2 の裏付け）
+
+Misskey の Note スキーマにも **`tags`（配列）** があり、こちらも未読。**両 SNS ともサーバーが正規化済みのタグ配列を返しているのに、capsicum は本文のパースだけで済ませている**ことが確定した。§7-2 の判断材料として強くなった。
+
+### 9-5. Misskey `notes/timeline` で捨てているパラメータ
+
+capsicum が送るのは `untilId` / `sinceId` / `limit` / `withFiles`。未使用:
+
+| パラメータ | 既定 | 効き方 |
+| --- | --- | --- |
+| **`withRenotes`** | `true` | **リノートを TL から外す**。「リノートが多くて読めない」に対する一次的な答えで、クライアント側の間引きより正確 |
+| `includeMyRenotes` / `includeRenotedMyNotes` / `includeLocalRenotes` | すべて `true` | リノートの内訳を細かく制御 |
+| `allowPartial` | `false` | ⚠ 上流のコメントが **`true is recommended`**（互換のため既定が false）と明記。取得の速度に効く |
+| `sinceDate` / `untilDate` | ― | 日時での範囲指定。id ベースのページングでは辿れない範囲を取れる |
+
+### 9-6. 層③ の全体像（数え直した結果）
+
+| entity | 母数 | 読んでいる | 主な未読 |
+| --- | --- | --- | --- |
+| Misskey Note | 35 | 24 | `reactionAcceptance` ★ / `tags` ★ / `visibleUserIds` / `isHidden` / `mentions` / `uri` / `deletedAt` / `clippedCount` |
+| Misskey User | 100 | 32 | 下記 |
+| Mastodon Notification | 12 | 8 | `fallback` ★ / `group_key`（B の通知グループ化）/ `moderation_warning` / `report` |
+| Mastodon MediaAttachment | 10 | 5 | `meta` / `blurhash` / `remote_url` / `preview_remote_url` / `text_url`(deprecated) |
+| Mastodon PreviewCard | 19 | 7 | `width` / `height` / `blurhash` / `published_at` / `authors` / `author_name` / `html` / `embed_url` ほか |
+| Mastodon Poll | 10 | 10 | **未読ゼロ** ✅ |
+| Mastodon List | 4 | 2 | `replies_policy` / `exclusive` |
+| Mastodon Announcement | 13 | 7 | `starts_at` / `ends_at` / `all_day` / `published_at` / `mentions` / `tags` |
+
+⚠ **添付画像の `meta` / `blurhash` は #1032 と同型ではない。**「サーバーが縦横比を返しているのに読んでいない」構図は絵文字（#1032）と同じだが、**添付グリッドは `SizedBox(height: 320 * thumbScale)` の固定高**（`post_tile.dart:3334` 付近）なので、寸法が未知でもレイアウトはずれない。効くのは (a) 読み込み中のプレースホルダ（`blurhash`）、(b) `meta.focus`（フォーカルポイント）に沿った切り抜き、(c) 動画の長さ表示。**不具合ではなく品質項目**なので A ではない。
+
+⚠ **PreviewCard の `width` / `height` も同様に優先度が下がる。**[#1033](https://github.com/pooza/capsicum/issues/1033) で「OGP 画像の有無によらずカードの大きさを一定にする」と決めたばかりで、サーバーの寸法に従う方針を採っていない。
+
+**Misskey User の未読 68 個の内訳:**
+
+- **#1039 / #1040 で使う** — `hasPendingFollowRequestToYou` / `hasPendingFollowRequestFromYou` / `hasPendingReceivedFollowRequest`（フォロー申請の状態）/ `isBlocked`（相手が自分をブロック。capsicum は `isBlocking` だけ読んでいる）/ `isRenoteMuted`
+- **アカウントの状態** — `isSilenced` / `isSuspended` / `isDeleted`。⚠ **凍結・削除済みのアカウントを普通のプロフィールとして表示している**
+- **プロフィールの項目** — `location` / `birthday` / `lang` / `memo`（自分だけに見えるメモ）/ `achievements` / `instance`（リモートユーザーのサーバー情報）/ `onlineStatus` / `publicReactions` / `pinnedPage`
+- **一覧の公開範囲** — `followersVisibility` / `followingVisibility`。⚠ 非公開のときフォロー一覧が空で返るはずで、capsicum は「0 人」と区別できていない可能性がある（未確認）
+- **未読フラグ 9 種** — `hasUnreadAnnouncement` / `unreadAnnouncements` / `hasUnreadMentions` / `hasUnreadSpecifiedNotes` / `hasUnreadAntenna` / `hasUnreadChannel` / `hasUnreadChatMessages` / `hasUnreadNotification` / `unreadNotificationsCount`。**サーバーが持っているのに capsicum はクライアント側で数えている**
+- **引っ越し** — `movedTo` / `alsoKnownAs`（B 群に既出）
+- **→ #992 へ** — `policies`（ロールによる機能可否）/ `notificationRecieveConfig` / `mutedInstances` / `emailNotificationTypes` / `alwaysMarkNsfw` / `autoSensitive` / `carefulBot` / `autoAcceptFollowed` / `noCrawle` / `preventAiLearning` / `injectFeaturedNote` / `hideOnlineStatus` / `receiveAnnouncementEmail` / `followedMessage` / `withReplies` / `notify`
+- **拾わない**（§2 の基準どおり） — `email` / `emailVerified` / `twoFactorEnabled` / `usePasswordLessLogin` / `securityKeys` / `securityKeysList` / `twoFactorBackupCodesStock`（認証）/ `moderationNote` / `isAdmin` / `isModerator`（管理）/ `avatarId` / `bannerId` / `pinnedNoteIds` / `lastFetchedAt` / `uri`（内部 id・冗長）
+
+### 9-7. 新しく拾うと判断したもの
+
+**A に足したもの（2026-08-31 に起票・すべて v1.63）:**
+
+| | 内容 | Issue | 根拠 |
+| --- | --- | --- | --- |
+| **A-6** | Misskey の `reactionAcceptance` を尊重する | [#1044](https://github.com/pooza/capsicum/issues/1044) | 9-1。選んだものと違う結果になり、しかも無言 |
+| **A-7** | `i/notifications` に `markAsRead: false` を明示する | [#1045](https://github.com/pooza/capsicum/issues/1045) | 9-2。他クライアントの未読を黙って消す。**1 行**で直る |
+| **A-8** | 「指名」投稿に `visibleUserIds` を送る | [#1043](https://github.com/pooza/capsicum/issues/1043) | 10-1。**新規投稿が誰にも届かない**。この枠で唯一の bug |
+
+**既存 Issue へ反映済み:** #1042 に 9-3（Misskey も対称・`supported_types`）を追記した。
+
+**未実施のまま残るもの（正直に）:**
+
+- Misskey の層② は `notes/timeline` / `i/notifications` しか見ていない。**capsicum が呼ぶ 111 経路のうち 2 つ**
+- Misskey の層③ は Note / User のみ。`drive-file` / `notification` / `channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` 等は見ていない
+- Mastodon の層② は主要 6 経路 + 通知のみ
+
+## 10. 層② 主要経路の結果（2026-08-31・追加分）
+
+capsicum が呼ぶ Misskey の 113 経路のうち、**投稿・タイムライン・アップロードの主要 4 経路**を見た。残りは §11。
+
+### 10-1. ★★ Misskey の「指名」投稿が、新規投稿だと誰にも届かない
+
+**`notes/create` の `visibleUserIds` を capsicum は一度も送っていない**（`visibleUserIds` はリポジトリ全体で 0 ヒット）。一方 `MisskeyCapabilities.supportedScopes` は `PostScope.direct` を含んでおり（`misskey/adapter.dart:72`）、投稿画面に**「指名」が選択肢として出る**（`post_scope_display.dart:38`）。
+
+サーバー側（`core/NoteCreateService.ts:624-636`）はこう動く:
+
+```ts
+if (data.visibility === 'specified') {
+  if (data.visibleUsers == null) throw new Error('invalid param');
+  for (const u of data.visibleUsers) { /* mentionedUsers へ足す */ }
+  if (data.reply && !data.visibleUsers.some(x => x.id === data.reply!.userId)) {
+    data.visibleUsers.push(/* 返信先を足す */);
+  }
+}
+```
+
+`visibleUsers` は **`visibleUserIds` パラメータと「返信先」からしか作られない**（`notes/create.ts:239` が `ps.visibleUserIds ?? []`、`NoteCreateService.ts:300` が空配列にする）。したがって:
+
+| 操作 | 結果 |
+| --- | --- |
+| 「指名」で**新規投稿** | `visibleUsers` が空 → **投稿者以外の誰にも見えない** |
+| 「指名」で**返信** | 返信先が自動で足される → 届く ✅ |
+
+⚠ **本文に `@alice` と書いても宛先にならない。**上のコードは `visibleUsers` → `mentionedUsers` の一方向で、逆は無い。**Mastodon とは挙動が違う**（Mastodon の `direct` は本文のメンションがそのまま宛先）。この非対称が、同じ「指名 / ダイレクト」ラベルの裏に隠れている。
+
+⚠ **失敗しない。**サーバーはエラーを返さず、投稿は成功する。投稿者の画面には自分の投稿として残るので、**相手に届いていないことに気付けない。**
+
+### 10-2. `notes/create` のその他の未使用パラメータ
+
+| パラメータ | 効き方 |
+| --- | --- |
+| `reactionAcceptance` | **投稿時にリアクションの受付を制限する。**§9-1 の裏返し（読む側だけでなく書く側も未対応） |
+| `noExtractMentions` / `noExtractHashtags` / `noExtractEmojis` | 本文からの自動抽出を止める。⚠ **タグ管理が根幹の capsicum とは相性がある論点**だが、現状の「サーバーに抽出させる」挙動で困っている報告は無い |
+| `mediaIds` | `fileIds` の旧名。使う必要なし |
+
+### 10-3. タイムライン系で捨てているパラメータ
+
+`notes/timeline` は §9-5。`users/notes`（プロフィールのタイムライン）も同型:
+
+| パラメータ | 既定 | 効き方 |
+| --- | --- | --- |
+| `withReplies` | `false` | **プロフィールに返信が出ない。**「この人の発言を全部見たい」に応えられない |
+| `withChannelNotes` | `false` | チャンネル投稿がプロフィールに出ない |
+| `withRenotes` | `true` | リノートを外せない |
+| `withFiles` / `allowPartial` / `sinceDate` / `untilDate` | ― | §9-5 と同じ |
+
+### 10-4. `drive/files/create`
+
+capsicum が送るのは `file` / `comment` / `isSensitive` / `folderId`。未使用は `name`（ファイル名の明示）と `force`（重複チェックの無視）。⚠ **`force` を送らないのは正しい** — Misskey はハッシュで重複排除して既存ファイルを返すので、送らないほうが容量を食わない。`name` も multipart のファイル名で足りている。**ここは当たり無し。**
+
+## 11. 未実施のまま残す範囲（→ [#1046](https://github.com/pooza/capsicum/issues/1046)）
+
+「主要なものだけ進め、残りは別 Issue」という 2026-08-31 の判断に従い、以下は**この文書では扱わない**。続きは [#1046](https://github.com/pooza/capsicum/issues/1046)（v2.0）で回す。
+
+| 層 | 残り |
+| --- | --- |
+| Misskey ② | 113 経路のうち **109**（chat / clips / antennas / channels / pages / flash / drive folders / lists / following / blocking / mute ほか） |
+| Misskey ③ | Note / User 以外の全 entity（`drive-file` / `notification` / `channel` / `clip` / `antenna` / `page` / `flash` / `chat-*` / `emoji` / `role` ほか） |
+| Mastodon ② | 主要 6 経路 + 通知 以外 |
+
+⚠ **「見ていない」であって「無かった」ではない。**主要経路だけで ★ が 5 件出ているので、**残りにも同じ密度で当たりがある前提**で扱うこと。

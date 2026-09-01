@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/pages_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/page_block_renderer.dart';
 import '../widget/user_avatar.dart';
 
@@ -100,34 +101,39 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
         title: const Text('ページ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: FutureBuilder<Page>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('ページの読み込みに失敗しました', textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _resolving
-                          ? null
-                          : () => setState(() => _future = _trackResolve()),
-                      child: const Text('再試行'),
-                    ),
-                  ],
+      body: BottomSafeArea(
+        child: FutureBuilder<Page>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || !snapshot.hasData) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'ページの読み込みに失敗しました',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _resolving
+                            ? null
+                            : () => setState(() => _future = _trackResolve()),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-          return _PageBody(page: snapshot.data!);
-        },
+              );
+            }
+            return _PageBody(page: snapshot.data!);
+          },
+        ),
       ),
     );
   }

@@ -13,10 +13,25 @@ import '../../provider/server_config_provider.dart';
 import '../util/keyboard_list_navigation.dart';
 import '../util/op_error.dart';
 import '../util/post_actions.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/post_tile.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/screen_menu.dart';
+
+/// ↑ / ↓ ジャンプ FAB のぶん、スクロール本体の下端に確保する高さ (#1059)。
+///
+/// FAB は `Scaffold.floatingActionButton` で **body の上に浮く**ので、body を
+/// inset しても避けられない。スクロール範囲に足しておかないと、最下部まで
+/// 送っても最後の投稿がボタンの下に残り、**逃がす手段が無い**。
+///
+/// 内訳: `FloatingActionButton.small` が 40 で 2 つ、間隔 8、`Scaffold` が
+/// FAB に与える既定マージン 16。
+///
+/// ⚠ **[BottomSafeArea] の inset とは別物。**あちらはシステムのナビゲーション
+/// バー (#1037)、こちらはアプリ自身のボタン。**両方要る。**片方で足りている
+/// ように見えるのは、たまたま投稿がそこまで届いていないときだけ。
+const double _jumpFabReservedHeight = 40 * 2 + 8 + 16;
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final Post post;
@@ -252,7 +267,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
         title: const Text('スレッド'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: _buildBody(context, ref, threadFuture),
+      body: _buildBody(context, ref, threadFuture, showJump: showJump),
       floatingActionButton: showJump
           ? Column(
               mainAxisSize: MainAxisSize.min,
@@ -279,8 +294,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
   Widget _buildBody(
     BuildContext context,
     WidgetRef ref,
-    AsyncValue<List<Post>> threadFuture,
-  ) {
+    AsyncValue<List<Post>> threadFuture, {
+    required bool showJump,
+  }) {
     final storageKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
     final bgPath = storageKey != null
         ? ref.watch(backgroundImageProvider(storageKey))
@@ -296,6 +312,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
         return ScrollablePositionedList.separated(
           itemScrollController: _itemScrollController,
           itemPositionsListener: _itemPositionsListener,
+          // ジャンプ FAB が出ているときだけ、その高さぶんスクロール範囲を
+          // 伸ばす (#1059)。出ていないときに足すと下端に無駄な余白が残る。
+          padding: showJump
+              ? const EdgeInsets.only(bottom: _jumpFabReservedHeight)
+              : null,
           // 開いた時点で対象リプライの位置へアンカーする (#711)。見つからない
           // ときは最後尾（フォールバック）。root(0) のときはそのまま先頭表示。
           initialScrollIndex: thread.isEmpty ? 0 : _targetIndex(thread),
@@ -339,6 +360,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen>
 
     // スレッドには入力欄が無いので、本体をそのまま包んで ↑ ↓ を受ける (#849)。
     body = wrapKeyboardListNavigation(child: body);
+
+    // ⚠ **背景より内側**に置く (#1037)。外に出すと背景がナビゲーションバーの
+    // 手前で切れて、下端だけ地の色が出る。スレッドは下端に何も置いていないので、
+    // ここが無いと最後の投稿がナビゲーションバーのボタンに潜り込む。
+    body = BottomSafeArea(child: body);
 
     if (bgPath != null) {
       body = Container(

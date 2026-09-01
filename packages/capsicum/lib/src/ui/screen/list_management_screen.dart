@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../provider/list_provider.dart';
+import '../widget/bottom_safe_area.dart';
 
 class ListManagementScreen extends ConsumerWidget {
   const ListManagementScreen({super.key});
@@ -25,44 +26,46 @@ class ListManagementScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: listsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => const Center(child: Text('読み込みに失敗しました')),
-        data: (lists) {
-          if (lists.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.list, size: 48, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text('リストがありません'),
-                  SizedBox(height: 8),
-                  Text(
-                    '右上の＋ボタンからリストを作成できます',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView.separated(
-            itemCount: lists.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final list = lists[index];
-              return ListTile(
-                leading: const Icon(Icons.list),
-                title: Text(list.title),
-                onTap: () => context.push('/lists/members', extra: list),
-                trailing: IconButton(
-                  icon: const Icon(Icons.more_horiz),
-                  onPressed: () => _showActionSheet(context, ref, list),
+      body: BottomSafeArea(
+        child: listsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => const Center(child: Text('読み込みに失敗しました')),
+          data: (lists) {
+            if (lists.isEmpty) {
+              return const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.list, size: 48, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('リストがありません'),
+                    SizedBox(height: 8),
+                    Text(
+                      '右上の＋ボタンからリストを作成できます',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
                 ),
               );
-            },
-          );
-        },
+            }
+            return ListView.separated(
+              itemCount: lists.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final list = lists[index];
+                return ListTile(
+                  leading: const Icon(Icons.list),
+                  title: Text(list.title),
+                  onTap: () => context.push('/lists/members', extra: list),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.more_horiz),
+                    onPressed: () => _showActionSheet(context, ref, list),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

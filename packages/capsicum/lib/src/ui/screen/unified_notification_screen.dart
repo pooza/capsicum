@@ -13,6 +13,7 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/relative_time.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/retry_error_view.dart';
@@ -33,45 +34,47 @@ class UnifiedNotificationScreen extends ConsumerWidget {
         title: const Text('すべての通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: state.when(
-        data: (data) {
-          // 取得状況バナー（#862 B）を常に最上部に置き、逐次描画（#862 A）で
-          // 差し込まれる通知リストをその下に並べる。バナーは pending / failed が
-          // 無くなれば自動的に畳まれる。
-          final banner = _UnifiedStatusBanner(state: data);
-          final Widget listArea;
-          if (data.isComplete &&
-              data.items.isEmpty &&
-              data.failedAccounts.isEmpty) {
-            listArea = const Center(child: Text('通知はありません'));
-          } else {
-            listArea = ListView.separated(
-              // 件数が少ない / 空でも pull-to-refresh できるようにする。
-              physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: data.items.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) => _UnifiedNotificationTile(
-                item: data.items[index],
-                reblogLabel: reblogLabel,
-                postLabel: postLabel,
+      body: BottomSafeArea(
+        child: state.when(
+          data: (data) {
+            // 取得状況バナー（#862 B）を常に最上部に置き、逐次描画（#862 A）で
+            // 差し込まれる通知リストをその下に並べる。バナーは pending / failed が
+            // 無くなれば自動的に畳まれる。
+            final banner = _UnifiedStatusBanner(state: data);
+            final Widget listArea;
+            if (data.isComplete &&
+                data.items.isEmpty &&
+                data.failedAccounts.isEmpty) {
+              listArea = const Center(child: Text('通知はありません'));
+            } else {
+              listArea = ListView.separated(
+                // 件数が少ない / 空でも pull-to-refresh できるようにする。
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: data.items.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) => _UnifiedNotificationTile(
+                  item: data.items[index],
+                  reblogLabel: reblogLabel,
+                  postLabel: postLabel,
+                ),
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: () => ref.refresh(unifiedNotificationProvider.future),
+              child: Column(
+                children: [
+                  banner,
+                  Expanded(child: listArea),
+                ],
               ),
             );
-          }
-          return RefreshIndicator(
-            onRefresh: () => ref.refresh(unifiedNotificationProvider.future),
-            child: Column(
-              children: [
-                banner,
-                Expanded(child: listArea),
-              ],
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => RetryErrorView(
-          message: '通知の読み込みに失敗しました\n$error',
-          isRetrying: state.isLoading,
-          onRetry: () => ref.invalidate(unifiedNotificationProvider),
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stack) => RetryErrorView(
+            message: '通知の読み込みに失敗しました\n$error',
+            isRetrying: state.isLoading,
+            onRetry: () => ref.invalidate(unifiedNotificationProvider),
+          ),
         ),
       ),
     );

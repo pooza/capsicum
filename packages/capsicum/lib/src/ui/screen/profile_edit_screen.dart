@@ -12,6 +12,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../../service/sentry_op_failure.dart';
+import '../widget/bottom_safe_area.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
   const ProfileEditScreen({super.key});
@@ -324,41 +325,43 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           ),
         ],
       ),
-      body: !_loaded
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildBannerPicker(user),
-                  const SizedBox(height: 16),
-                  _buildAvatarPicker(user),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _displayNameController,
-                    decoration: const InputDecoration(
-                      labelText: '表示名',
-                      border: OutlineInputBorder(),
+      body: BottomSafeArea(
+        child: !_loaded
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildBannerPicker(user),
+                    const SizedBox(height: 16),
+                    _buildAvatarPicker(user),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: _displayNameController,
+                      decoration: const InputDecoration(
+                        labelText: '表示名',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _bioController,
-                    decoration: const InputDecoration(
-                      labelText: '自己紹介',
-                      border: OutlineInputBorder(),
-                      alignLabelWithHint: true,
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _bioController,
+                      decoration: const InputDecoration(
+                        labelText: '自己紹介',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                      maxLines: 5,
                     ),
-                    maxLines: 5,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildFieldsSection(),
-                  const SizedBox(height: 24),
-                  _buildPrivacySection(),
-                ],
+                    const SizedBox(height: 24),
+                    _buildFieldsSection(),
+                    const SizedBox(height: 24),
+                    _buildPrivacySection(),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../provider/gallery_provider.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 class GalleryScreen extends ConsumerStatefulWidget {
@@ -45,32 +46,35 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
         title: const Text('ギャラリー'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: gallery.when(
-        data: (state) => state.posts.isEmpty
-            ? const Center(child: Text('ギャラリー投稿はありません'))
-            : RefreshIndicator(
-                onRefresh: () => ref.refresh(galleryPostsProvider.future),
-                child: ListView.separated(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(8),
-                  itemCount: state.posts.length + (state.isLoadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    if (index >= state.posts.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    return _GalleryCard(post: state.posts[index]);
-                  },
+      body: BottomSafeArea(
+        child: gallery.when(
+          data: (state) => state.posts.isEmpty
+              ? const Center(child: Text('ギャラリー投稿はありません'))
+              : RefreshIndicator(
+                  onRefresh: () => ref.refresh(galleryPostsProvider.future),
+                  child: ListView.separated(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(8),
+                    itemCount:
+                        state.posts.length + (state.isLoadingMore ? 1 : 0),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      if (index >= state.posts.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return _GalleryCard(post: state.posts[index]);
+                    },
+                  ),
                 ),
-              ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => RetryErrorView(
-          message: '読み込みに失敗しました',
-          isRetrying: gallery.isLoading,
-          onRetry: () => ref.invalidate(galleryPostsProvider),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stack) => RetryErrorView(
+            message: '読み込みに失敗しました',
+            isRetrying: gallery.isLoading,
+            onRetry: () => ref.invalidate(galleryPostsProvider),
+          ),
         ),
       ),
     );

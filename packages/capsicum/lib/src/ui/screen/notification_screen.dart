@@ -11,6 +11,7 @@ import '../../provider/notification_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/background_notification_service.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/notification_tile.dart';
 import '../widget/retry_error_view.dart';
 
@@ -25,6 +26,9 @@ class NotificationScreen extends ConsumerWidget {
         title: const Text('通知'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      // 下端 inset は [NotificationView] が自分で吸う。ここでは包まない
+      // （包んでも [BottomSafeArea] は冪等なので壊れないが、吸う場所が
+      // 2 つあると「どちらかを直せば足りる」と読まれる）。
       body: const NotificationView(),
     );
   }
@@ -129,44 +133,61 @@ class _NotificationViewState extends ConsumerState<NotificationView>
     super.build(context);
     final notifications = ref.watch(notificationProvider);
 
-    return notifications.when(
-      data: (state) {
-        if (state.notifications.isEmpty) {
-          return const Center(child: Text('通知はありません'));
-        }
-        _restoreMarker(state.notifications);
-        return RefreshIndicator(
-          onRefresh: () {
-            _markerRestored = false;
-            return ref.refresh(notificationProvider.future);
-          },
-          child: ScrollablePositionedList.separated(
-            itemScrollController: _itemScrollController,
-            itemPositionsListener: _itemPositionsListener,
-            itemCount:
-                state.notifications.length + (state.isLoadingMore ? 1 : 0),
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              if (index >= state.notifications.length) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              return NotificationTile(
-                notification: state.notifications[index],
-                postLabel: ref.watch(postLabelProvider),
-                reblogLabel: ref.watch(reblogLabelProvider),
-              );
+    // ⚠ **下端 inset を吸うのは画面側ではなく View 側**。この View には
+    // ホストが 2 つある — 単独画面 [NotificationScreen] と、ホームの通知タブ
+    // (`home_screen.dart` の `_buildTabContent`)。#1037 では単独画面の
+    // `Scaffold.body` だけを包んだので、**導線の多いホームのタブに穴が
+    // 残っていた**（`withBackground(const NotificationView())` は
+    // `SimplePostBar` を持つ Column へ落ちる前に早期 return する）。
+    //
+    // ⚠ 中身が [ScrollablePositionedList] なので、**`ListView` の暗黙吸収は
+    // 効かない。**`BoxScrollView` は `padding` 未指定なら `MediaQuery` の
+    // 縦 padding を自動で足すが、`ScrollablePositionedList` は
+    // `widget.padding` しか見ない（`positioned_list.dart`）。隣の
+    // `AnnouncementView` が同じ構造なのに無事なのは、あちらが素の
+    // `ListView.separated` で暗黙吸収に乗っているからにすぎない。
+    //
+    // 共有 View は自分で吸う、が [ChannelTimelineView] と揃えた形。
+    return BottomSafeArea(
+      child: notifications.when(
+        data: (state) {
+          if (state.notifications.isEmpty) {
+            return const Center(child: Text('通知はありません'));
+          }
+          _restoreMarker(state.notifications);
+          return RefreshIndicator(
+            onRefresh: () {
+              _markerRestored = false;
+              return ref.refresh(notificationProvider.future);
             },
-          ),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => RetryErrorView(
-        message: '通知の読み込みに失敗しました\n${summarizeOpError(error)}',
-        isRetrying: notifications.isLoading,
-        onRetry: () => ref.invalidate(notificationProvider),
+            child: ScrollablePositionedList.separated(
+              itemScrollController: _itemScrollController,
+              itemPositionsListener: _itemPositionsListener,
+              itemCount:
+                  state.notifications.length + (state.isLoadingMore ? 1 : 0),
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                if (index >= state.notifications.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return NotificationTile(
+                  notification: state.notifications[index],
+                  postLabel: ref.watch(postLabelProvider),
+                  reblogLabel: ref.watch(reblogLabelProvider),
+                );
+              },
+            ),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stack) => RetryErrorView(
+          message: '通知の読み込みに失敗しました\n${summarizeOpError(error)}',
+          isRetrying: notifications.isLoading,
+          onRetry: () => ref.invalidate(notificationProvider),
+        ),
       ),
     );
   }

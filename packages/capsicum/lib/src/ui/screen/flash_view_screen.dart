@@ -20,6 +20,7 @@ import '../flash/flash_view.dart';
 import '../util/fediverse_link.dart';
 import '../util/flash_error.dart';
 import '../util/hashtag_actions.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
@@ -99,39 +100,41 @@ class _FlashViewScreenState extends ConsumerState<FlashViewScreen> {
         title: const Text('Play'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: FutureBuilder<Flash>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData) {
-            // snapshot.error はそのまま出さない。Misskey の URL には
-            // ?i=<accessToken> が載るため (#460 同型)。
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Play の読み込みに失敗しました',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _resolving
-                          ? null
-                          : () => setState(() => _future = _trackResolve()),
-                      child: const Text('再試行'),
-                    ),
-                  ],
+      body: BottomSafeArea(
+        child: FutureBuilder<Flash>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || !snapshot.hasData) {
+              // snapshot.error はそのまま出さない。Misskey の URL には
+              // ?i=<accessToken> が載るため (#460 同型)。
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Play の読み込みに失敗しました',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _resolving
+                            ? null
+                            : () => setState(() => _future = _trackResolve()),
+                        child: const Text('再試行'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-          return _FlashBody(flash: snapshot.data!);
-        },
+              );
+            }
+            return _FlashBody(flash: snapshot.data!);
+          },
+        ),
       ),
     );
   }

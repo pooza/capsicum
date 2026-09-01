@@ -23,7 +23,10 @@ DESKTOP_ENTRY="$DESKTOP_DIR/$APP_ID.desktop"
 # ため、symlink ならリンク先の実体 AppImage も併せて消す。旧来 (#707 以前)
 # は Exec がバージョン付き AppImage を直接指している。
 if [[ -f "$DESKTOP_ENTRY" ]]; then
-  EXEC_LINE=$(grep -E "^Exec=" "$DESKTOP_ENTRY" | head -1 | sed -E "s|^Exec=||" || true)
+  # `grep | head -1` は head が先に終了して grep を SIGPIPE で殺すので、
+  # pipefail 下ではパイプライン全体が失敗になる (#1036)。件数の絞り込みは
+  # grep -m1 に寄せて、パイプの下流に早期終了するコマンドを置かない。
+  EXEC_LINE=$(grep -m1 -E "^Exec=" "$DESKTOP_ENTRY" | sed -E "s|^Exec=||" || true)
   EXEC_PATH="${EXEC_LINE% %U}"
   if [[ -L "$EXEC_PATH" ]]; then
     TARGET=$(readlink -f "$EXEC_PATH" || true)

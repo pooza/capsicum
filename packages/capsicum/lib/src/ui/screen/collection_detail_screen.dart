@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/section_header.dart';
 import '../widget/user_avatar.dart';
@@ -141,7 +142,7 @@ class _CollectionDetailScreenState
           ],
         ],
       ),
-      body: _buildBody(context),
+      body: BottomSafeArea(child: _buildBody(context)),
     );
   }
 

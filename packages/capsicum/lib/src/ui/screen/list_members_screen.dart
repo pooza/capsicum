@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -57,7 +58,7 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
           ),
         ],
       ),
-      body: _buildBody(context),
+      body: BottomSafeArea(child: _buildBody(context)),
     );
   }
 

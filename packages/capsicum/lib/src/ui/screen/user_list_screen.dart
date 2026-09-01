@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/user_acct.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
 
@@ -103,46 +104,48 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _users.isEmpty
-          ? const Center(child: Text('ユーザーはいません'))
-          : RefreshIndicator(
-              onRefresh: () async {
-                setState(() => _loading = true);
-                await _loadInitial();
-              },
-              child: ListView.separated(
-                controller: _scrollController,
-                itemCount: _users.length + (_loadingMore ? 1 : 0),
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  if (index >= _users.length) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  final user = _users[index];
-                  return ListTile(
-                    onTap: () => context.push('/profile', extra: user),
-                    leading: UserAvatar(user: user, size: 40),
-                    title: EmojiText(
-                      user.displayName ?? user.username,
-                      emojis: user.emojis,
-                      fallbackHost: user.host,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      '@${userAcct(user)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
+      body: BottomSafeArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _users.isEmpty
+            ? const Center(child: Text('ユーザーはいません'))
+            : RefreshIndicator(
+                onRefresh: () async {
+                  setState(() => _loading = true);
+                  await _loadInitial();
                 },
+                child: ListView.separated(
+                  controller: _scrollController,
+                  itemCount: _users.length + (_loadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index >= _users.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final user = _users[index];
+                    return ListTile(
+                      onTap: () => context.push('/profile', extra: user),
+                      leading: UserAvatar(user: user, size: 40),
+                      title: EmojiText(
+                        user.displayName ?? user.username,
+                        emojis: user.emojis,
+                        fallbackHost: user.host,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '@${userAcct(user)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
+      ),
     );
   }
 }

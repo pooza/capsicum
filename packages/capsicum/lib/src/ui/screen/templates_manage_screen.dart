@@ -9,6 +9,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../util/compose_template_display.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 /// 投稿テンプレート一覧 (#767)。モロヘイヤの per-user CRUD API から取得する。
@@ -57,38 +58,40 @@ class TemplatesManageScreen extends ConsumerWidget {
         tooltip: 'テンプレートを作成',
         child: const Icon(Icons.add),
       ),
-      body: templatesAsync.when(
-        data: (templates) {
-          if (templates.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'テンプレートはありません。\n右下の＋から作成できます。',
-                  textAlign: TextAlign.center,
+      body: BottomSafeArea(
+        child: templatesAsync.when(
+          data: (templates) {
+            if (templates.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'テンプレートはありません。\n右下の＋から作成できます。',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            );
-          }
-          return ListView.separated(
-            itemCount: templates.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final t = templates[index];
-              return _TemplateTile(
-                template: t,
-                onEdit: () => _edit(context, ref, t),
-                onCompose: () => _compose(context, t),
-                onDelete: () => _confirmDelete(context, ref, t),
               );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => RetryErrorView(
-          message: 'テンプレートの読み込みに失敗しました',
-          isRetrying: templatesAsync.isLoading,
-          onRetry: () => ref.invalidate(composeTemplatesProvider),
+            }
+            return ListView.separated(
+              itemCount: templates.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final t = templates[index];
+                return _TemplateTile(
+                  template: t,
+                  onEdit: () => _edit(context, ref, t),
+                  onCompose: () => _compose(context, t),
+                  onDelete: () => _confirmDelete(context, ref, t),
+                );
+              },
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => RetryErrorView(
+            message: 'テンプレートの読み込みに失敗しました',
+            isRetrying: templatesAsync.isLoading,
+            onRetry: () => ref.invalidate(composeTemplatesProvider),
+          ),
         ),
       ),
     );

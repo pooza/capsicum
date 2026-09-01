@@ -8,6 +8,7 @@ import '../../provider/preferences_provider.dart';
 import '../../util/oauth_scope_error.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/oauth_scope_error_view.dart';
 import '../widget/retry_error_view.dart';
 import '../widget/user_avatar.dart';
@@ -126,39 +127,41 @@ class _ChatThreadListScreenState extends ConsumerState<ChatThreadListScreen>
         tooltip: '新規',
         child: const Icon(Icons.add),
       ),
-      body: threads.when(
-        data: (list) => RefreshIndicator(
-          onRefresh: () => ref.refresh(chatThreadListProvider.future),
-          // empty でも pull-to-refresh を効かせるため LayoutBuilder +
-          // AlwaysScrollableScrollPhysics で常にスクロール可能にする。
-          child: list.isEmpty
-              ? LayoutBuilder(
-                  builder: (context, constraints) => SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
+      body: BottomSafeArea(
+        child: threads.when(
+          data: (list) => RefreshIndicator(
+            onRefresh: () => ref.refresh(chatThreadListProvider.future),
+            // empty でも pull-to-refresh を効かせるため LayoutBuilder +
+            // AlwaysScrollableScrollPhysics で常にスクロール可能にする。
+            child: list.isEmpty
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: const Center(child: Text('メッセージはありません')),
                       ),
-                      child: const Center(child: Text('メッセージはありません')),
                     ),
+                  )
+                : ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) =>
+                        _ChatThreadTile(thread: list[index]),
                   ),
-                )
-              : ListView.separated(
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) =>
-                      _ChatThreadTile(thread: list[index]),
+          ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => isOAuthScopeError(error)
+              ? const OAuthScopeErrorView()
+              : RetryErrorView(
+                  message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+                  selectable: true,
+                  isRetrying: threads.isLoading,
+                  onRetry: () => ref.invalidate(chatThreadListProvider),
                 ),
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => isOAuthScopeError(error)
-            ? const OAuthScopeErrorView()
-            : RetryErrorView(
-                message: '読み込みに失敗しました\n${summarizeOpError(error)}',
-                selectable: true,
-                isRetrying: threads.isLoading,
-                onRetry: () => ref.invalidate(chatThreadListProvider),
-              ),
       ),
     );
   }

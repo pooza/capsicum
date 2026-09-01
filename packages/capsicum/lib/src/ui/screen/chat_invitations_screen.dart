@@ -7,6 +7,7 @@ import '../../provider/account_manager_provider.dart';
 import '../../provider/chat_provider.dart';
 import '../util/chat_error.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 /// 自分宛のルーム招待一覧 (#438)。Accept (= join) で参加、Ignore で受信箱から
@@ -93,73 +94,75 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
         title: const Text('ルーム招待'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: invitations.when(
-        data: (list) {
-          if (list.isEmpty) {
-            return const Center(child: Text('招待はありません'));
-          }
-          return RefreshIndicator(
-            onRefresh: () => ref.refresh(chatInvitationInboxProvider.future),
-            child: ListView.separated(
-              itemCount: list.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final invitation = list[index];
-                final room = invitation.room;
-                final pending = _pendingRoomId == invitation.roomId;
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primaryContainer,
-                    child: Icon(
-                      Icons.groups,
-                      color: Theme.of(context).colorScheme.primary,
+      body: BottomSafeArea(
+        child: invitations.when(
+          data: (list) {
+            if (list.isEmpty) {
+              return const Center(child: Text('招待はありません'));
+            }
+            return RefreshIndicator(
+              onRefresh: () => ref.refresh(chatInvitationInboxProvider.future),
+              child: ListView.separated(
+                itemCount: list.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final invitation = list[index];
+                  final room = invitation.room;
+                  final pending = _pendingRoomId == invitation.roomId;
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
+                      child: Icon(
+                        Icons.groups,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                  ),
-                  title: Text(
-                    room?.name ?? '(不明なルーム)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: room?.description.isNotEmpty == true
-                      ? Text(
-                          room!.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      : null,
-                  isThreeLine: room?.description.isNotEmpty == true,
-                  trailing: pending
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextButton(
-                              onPressed: () => _ignore(invitation),
-                              child: const Text('無視'),
-                            ),
-                            FilledButton(
-                              onPressed: () => _accept(invitation),
-                              child: const Text('参加'),
-                            ),
-                          ],
-                        ),
-                );
-              },
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => RetryErrorView(
-          message: '読み込みに失敗しました\n${summarizeOpError(error)}',
-          selectable: true,
-          isRetrying: invitations.isLoading,
-          onRetry: () => ref.invalidate(chatInvitationInboxProvider),
+                    title: Text(
+                      room?.name ?? '(不明なルーム)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: room?.description.isNotEmpty == true
+                        ? Text(
+                            room!.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : null,
+                    isThreeLine: room?.description.isNotEmpty == true,
+                    trailing: pending
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () => _ignore(invitation),
+                                child: const Text('無視'),
+                              ),
+                              FilledButton(
+                                onPressed: () => _accept(invitation),
+                                child: const Text('参加'),
+                              ),
+                            ],
+                          ),
+                  );
+                },
+              ),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => RetryErrorView(
+            message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+            selectable: true,
+            isRetrying: invitations.isLoading,
+            onRetry: () => ref.invalidate(chatInvitationInboxProvider),
+          ),
         ),
       ),
     );

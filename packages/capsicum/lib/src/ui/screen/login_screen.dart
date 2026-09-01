@@ -22,6 +22,7 @@ import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/login_error.dart';
 import '../util/launch_url_toast.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
 
 /// OAuth コールバック受信後にシステムブラウザへ表示する完了ページ (#654)。
@@ -1221,80 +1222,83 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.host)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Server thumbnail
-          // 横長ビューポート (macOS / タブレット landscape) で box が
-          // 極端に横長になり上下がクリップされていたため、maxWidth 480 で
-          // 頭打ちにして中央寄せする (#479)。
-          // 候補にバナー(横長)だけでなく iconUrl(正方形ロゴ/favicon)も
-          // 含む。バナーは cover で枠を埋め、アイコンは contain で天地を切らない
-          // ように、選んだ画像種別に応じて fit を切り替える (#658)。
-          if (_serverThumbnail != null)
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    _serverThumbnail!,
-                    height: 160,
-                    width: double.infinity,
-                    fit: _serverThumbnailFit,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      body: BottomSafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Server thumbnail
+            // 横長ビューポート (macOS / タブレット landscape) で box が
+            // 極端に横長になり上下がクリップされていたため、maxWidth 480 で
+            // 頭打ちにして中央寄せする (#479)。
+            // 候補にバナー(横長)だけでなく iconUrl(正方形ロゴ/favicon)も
+            // 含む。バナーは cover で枠を埋め、アイコンは contain で天地を切らない
+            // ように、選んだ画像種別に応じて fit を切り替える (#658)。
+            if (_serverThumbnail != null)
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      _serverThumbnail!,
+                      height: 160,
+                      width: double.infinity,
+                      fit: _serverThumbnailFit,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
-            ),
-          const SizedBox(height: 16),
-          // Server name + type
-          Center(
-            child: Text(
-              _serverName ?? widget.host,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Center(
-            child: Text(
-              widget.backendType.displayName,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            const SizedBox(height: 16),
+            // Server name + type
+            Center(
+              child: Text(
+                _serverName ?? widget.host,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          // Server description
-          if (_serverDescription != null && _serverDescription!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              _serverDescription!,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-              maxLines: 5,
-              overflow: TextOverflow.ellipsis,
+            Center(
+              child: Text(
+                widget.backendType.displayName,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            // Server description
+            if (_serverDescription != null &&
+                _serverDescription!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _serverDescription!,
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 24),
+            if (_error != null) ...[
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+            ],
+            Center(
+              child: _isLoggingIn
+                  ? const CircularProgressIndicator()
+                  : FilledButton.icon(
+                      onPressed: _login,
+                      icon: const Icon(Icons.open_in_browser),
+                      label: const Text('ブラウザでログイン'),
+                    ),
             ),
           ],
-          const SizedBox(height: 24),
-          if (_error != null) ...[
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-          ],
-          Center(
-            child: _isLoggingIn
-                ? const CircularProgressIndicator()
-                : FilledButton.icon(
-                    onPressed: _login,
-                    icon: const Icon(Icons.open_in_browser),
-                    label: const Text('ブラウザでログイン'),
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }

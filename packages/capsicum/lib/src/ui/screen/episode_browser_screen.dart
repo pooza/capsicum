@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../util/annict_link.dart';
+import '../widget/bottom_safe_area.dart';
 import 'annict_record_screen.dart';
 import 'annict_review_screen.dart';
 
@@ -181,7 +182,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
           ),
         ],
       ),
-      body: _buildWorksBody(),
+      body: BottomSafeArea(child: _buildWorksBody()),
     );
   }
 
@@ -376,7 +377,7 @@ class _EpisodeBrowserScreenState extends ConsumerState<EpisodeBrowserScreen> {
           ],
         ],
       ),
-      body: _buildEpisodesBody(),
+      body: BottomSafeArea(child: _buildEpisodesBody()),
     );
   }
 

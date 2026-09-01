@@ -8,6 +8,7 @@ import '../../provider/server_config_provider.dart';
 import '../../util/exception_scrub.dart';
 import '../../util/upstream_error_message.dart';
 import '../util/op_error.dart';
+import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 
 final _scheduledPostsProvider = FutureProvider.autoDispose<List<ScheduledPost>>(
@@ -27,28 +28,30 @@ class ScheduledPostsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('予約投稿')),
-      body: postsAsync.when(
-        data: (posts) {
-          if (posts.isEmpty) {
-            return const Center(child: Text('予約投稿はありません'));
-          }
-          return ListView.builder(
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return _ScheduledPostTile(
-                post: post,
-                onEditTags: () => _showTagEditor(context, ref, post),
-                onCancel: () => _confirmCancel(context, ref, post),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => RetryErrorView(
-          message: '読み込みに失敗しました\n${summarizeOpError(error)}',
-          isRetrying: postsAsync.isLoading,
-          onRetry: () => ref.invalidate(_scheduledPostsProvider),
+      body: BottomSafeArea(
+        child: postsAsync.when(
+          data: (posts) {
+            if (posts.isEmpty) {
+              return const Center(child: Text('予約投稿はありません'));
+            }
+            return ListView.builder(
+              itemCount: posts.length,
+              itemBuilder: (context, index) {
+                final post = posts[index];
+                return _ScheduledPostTile(
+                  post: post,
+                  onEditTags: () => _showTagEditor(context, ref, post),
+                  onCancel: () => _confirmCancel(context, ref, post),
+                );
+              },
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => RetryErrorView(
+            message: '読み込みに失敗しました\n${summarizeOpError(error)}',
+            isRetrying: postsAsync.isLoading,
+            onRetry: () => ref.invalidate(_scheduledPostsProvider),
+          ),
         ),
       ),
     );
