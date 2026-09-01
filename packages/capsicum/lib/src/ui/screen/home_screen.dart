@@ -1304,8 +1304,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             announcementsShownAsTab,
             onActivate: dismiss,
           );
+          // ドロワーは `Scaffold.drawer` で body ではないため、#1037 の
+          // `BottomSafeArea` が掛かっていない。padding を 0 のままにすると
+          // 末尾のフッター（サーバー情報と capsicum の版番号）がナビゲーション
+          // バーの下に入り、**最下部までスクロールしても逃がせない** (#1058)。
+          // 3 ボタンナビはバーが不透明なので版番号が完全に隠れる。
+          //
+          // ⚠ **包むのではなく padding で足す。**`SafeArea` で包むとリストの
+          // ビューポート自体が縮み、スクロール中の項目がバーの手前で切れて
+          // ドロワーの地色が帯で残る。上端のヘッダーが `SafeArea(bottom: false)`
+          // を内側に持ちつつ背景は全面に伸びているのと同じ扱いに揃える。
+          //
+          // ⚠ ヘッダーの `SafeArea` は自分の子から padding を取り除くだけで、
+          // ここの `MediaQuery` は消費しない。二重には入らない。
           final list = ListView(
-            padding: EdgeInsets.zero,
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.paddingOf(innerCtx).bottom,
+            ),
             children: [
               Container(
                 color: Theme.of(context).colorScheme.primaryContainer,

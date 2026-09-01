@@ -129,4 +129,52 @@ void main() {
       reason: '自前で inset を測らず SafeArea に委譲する。viewPadding を掴むとキーボードの上に無駄な余白が残る',
     );
   });
+
+  test('ドロワーの ListView が下端 inset を落としていない (#1058)', () {
+    // ⚠ **上の掃き出しはこの穴を検出しない。**あれは `Scaffold.body` だけを
+    // 見るが、ドロワーは `Scaffold.drawer` という別スロットで、body の外側に
+    // 居る。#1037 の修正で 43 画面を包んだあともここだけ残り、フッター
+    // （サーバー情報と capsicum の版番号）がナビゲーションバーの下に入って
+    // いた。最下部までスクロールしても逃がせず、3 ボタンナビはバーが
+    // 不透明なので版番号が完全に隠れる。
+    //
+    // ⚠ **`BottomSafeArea` で包む形ではないので、absorbers では表せない。**
+    // ドロワーは上端のヘッダーが背景を全面に伸ばしたまま内側で
+    // `SafeArea(bottom: false)` を持つ作りなので、下端も「包む」ではなく
+    // 「`padding` で足す」に揃えてある。だからここは専用の検査にしている。
+    final source = File(
+      'lib/src/ui/screen/home_screen.dart',
+    ).readAsStringSync();
+
+    final start = source.indexOf('Widget _buildDrawer(');
+    expect(
+      start,
+      isNonNegative,
+      reason: '_buildDrawer が見つからない。名前が変わったならこの検査のアンカーも直す',
+    );
+    // 次のメソッド定義までを走査対象にする（ファイル末尾まで見ると、
+    // 無関係な ListView の padding を巻き込む）。
+    final end = source.indexOf('\n  Widget _', start + 1);
+    final drawer = end < 0 ? source.substring(start) : source.substring(start, end);
+
+    expect(
+      drawer,
+      contains('ListView('),
+      reason: 'ドロワーの ListView が見つからない。構造が変わったならこの検査も直す',
+    );
+    expect(
+      drawer,
+      isNot(contains('padding: EdgeInsets.zero')),
+      reason:
+          'ドロワーのフッターがナビゲーションバーの下に潜り込む (#1058)。'
+          'ListView の padding に下端 inset を足すこと',
+    );
+    expect(
+      drawer,
+      contains('MediaQuery.paddingOf'),
+      reason:
+          '下端 inset を読んでいない (#1058)。'
+          '⚠ `viewPadding` ではなく `padding` を使う（キーボード表示時に 0 になる側）',
+    );
+  });
 }
