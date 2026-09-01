@@ -155,7 +155,9 @@ void main() {
     // 次のメソッド定義までを走査対象にする（ファイル末尾まで見ると、
     // 無関係な ListView の padding を巻き込む）。
     final end = source.indexOf('\n  Widget _', start + 1);
-    final drawer = end < 0 ? source.substring(start) : source.substring(start, end);
+    final drawer = end < 0
+        ? source.substring(start)
+        : source.substring(start, end);
 
     expect(
       drawer,
