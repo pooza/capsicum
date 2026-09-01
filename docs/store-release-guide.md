@@ -273,7 +273,11 @@ v1.18 のレビューでは、この 5 観点でセキュリティ単独では�
 
 #### リリース PR 前のローカル整形・解析チェック
 
-`analyze.yml`（CI の `dart format` / `dart analyze`）は `main` への push / PR でのみ起動し、**`develop` への push では走らない**。そのため `develop` 上では format / analyze の drift が CI 未検出のまま蓄積しうる。リリース PR（`develop` → `main`）を作る前に、リポジトリルートで一度全体をチェックしてリリース PR の CI 不合格を未然に防ぐこと:
+⚠ **この節の前提は 2026-09-01 に古くなった。**`analyze.yml` の push トリガーは現在 `branches: [main, develop]` で、**`develop` への push でも走る**（v1.48 で 6 ファイルぶんの drift が溜まりリリース PR の CI が落ちた反省から追加された。理由はワークフローのコメントに残っている）。
+
+したがって「develop は CI 未検出でノーガード」ではない。ただし**コミット前のローカルチェックは引き続き要る** — develop へ push してから赤を踏むと、[sync-procedure.md](sync-procedure.md) の同期ステップで「赤ならその場で直す」対応が要るぶん手戻りになる（2026-09-01 に #1058 の修正で実際に踏んだ。`786d47cf` → `2561b020`）。
+
+リポジトリルートで一度全体をチェックしてから push すること:
 
 ```bash
 # format はバージョン管理対象の .dart だけにスコープする（build/ を巻き込まない）
