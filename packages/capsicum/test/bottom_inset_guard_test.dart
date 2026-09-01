@@ -180,6 +180,56 @@ void main() {
     );
   });
 
+  test('ホームのタブにも出る共有 View は、View 側で下端 inset を吸っている', () {
+    // ⚠ **上の掃き出しはこの穴を検出しない。**あれはファイル単位で
+    // 「`Scaffold(` があり absorber の文字列がどこかにあるか」しか見ない。
+    // `notification_screen.dart` は単独画面 `NotificationScreen` の
+    // `Scaffold.body` を包んでいたので**合格していたが、同じ View を
+    // ホームのタブとして出す経路には穴が空いていた**。
+    //
+    // `home_screen.dart` の `_buildTabContent` は
+    // `withBackground(const NotificationView())` を早期 return するので、
+    // `SimplePostBar` を持つ Column（＝タイムライン経路で inset を吸う場所）
+    // に到達しない。つまり **`Scaffold` を経由しないホストがある**。
+    //
+    // ⚠ **`ListView` の暗黙吸収を当てにしない。**`BoxScrollView` は `padding`
+    // 未指定なら `MediaQuery` の縦 padding を自動で足すが（実測: 未指定の
+    // `ListView` は `maxScrollExtent` が inset ぶん大きい）、
+    // `ScrollablePositionedList` は `widget.padding` しか見ない。隣の
+    // `AnnouncementView` が同じ構造で無事なのは前者に乗っているからで、
+    // 誰かが `padding:` を足した瞬間に無言で穴が開く。
+    //
+    // 2 ホストある View は「画面側で包む」ではなく「View 側で吸う」に
+    // 揃える。`ChannelTimelineView` が先行例。
+    const views = <String, String>{
+      'notification_screen.dart': '_NotificationViewState',
+      'channel_timeline_screen.dart': '_ChannelTimelineViewState',
+    };
+
+    final offenders = <String>[];
+    views.forEach((file, className) {
+      final source = File('lib/src/ui/screen/$file').readAsStringSync();
+      final start = source.indexOf('class $className');
+      expect(
+        start,
+        isNonNegative,
+        reason: '$file に $className が見つからない。名前が変わったならこの検査のアンカーも直す',
+      );
+      if (!source.substring(start).contains('BottomSafeArea')) {
+        offenders.add('$file / $className');
+      }
+    });
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'ホームのタブ経路で下端がナビゲーションバーに潜り込む。'
+          '共有 View は Scaffold を経由しないホストを持つので、'
+          '画面側ではなく **View の build で** BottomSafeArea を掛けること',
+    );
+  });
+
   test('スレッド画面がジャンプ FAB のぶんを本文側で確保している (#1059)', () {
     // ⚠ **これは #1037 / #1058 とは重なる相手が違う。**あちらはシステムの
     // ナビゲーションバー、こちらは **アプリ自身の FAB**。FAB は

@@ -38,7 +38,19 @@ import 'package:flutter/material.dart';
 ///
 /// 背景 (`backgroundImageProvider`) を敷いている画面では、**背景の内側**に
 /// 置く。外側に置くと背景がナビゲーションバーの手前で切れて、下端だけ地の色が
-/// 出る。対象は `home_screen` と `post_detail_screen` の 2 つだけ。
+/// 出る。実例は `post_detail_screen`（`body` を包んでから背景の `Container` を
+/// 被せる）。
+///
+/// `home_screen` の本体 body にこれは掛かっていない。タイムライン経路は末尾の
+/// `SimplePostBar` が inset を吸う設計で、背景は `withBackground()` が外側から
+/// 被せる。ホームで唯一これを使うのは `_OfflineHomeScaffold`（背景なし）。
+///
+/// ## 共有 View は画面ではなく View 側で吸う
+///
+/// ホームのタブとしても単独画面としても出る View（`NotificationView` /
+/// `ChannelTimelineView`）は、**View の中で吸う**。`Scaffold.body` 側だけを
+/// 包むと、`Scaffold` を経由しないホームのタブ経路に穴が残る（#1037 の初回
+/// 修正で実際に `NotificationView` を取りこぼした）。
 class BottomSafeArea extends StatelessWidget {
   const BottomSafeArea({super.key, required this.child});
 
