@@ -103,6 +103,12 @@ minor 内の patch 更新（自前 3 鯖は pooza が本番へリリース日に
 
 ⚠ **この時点で書いた「モロヘイヤが 5.33.0 なので #121 はブロック中」は解消済み。**2026-09-01 に美食丼の `GET /mulukhiya/api/about` を引くと `package.version` は `5.35.0`（判定は `.config.features.<flag>` ではなく `.package.version`）。#121 の ALT 編集は **v1.60 で出荷済み**。プリセットで導線が出ないサーバーがあるのは fail-closed が効いている正常な状態で、条件の正本は `tech-notes.md`。
 
+### v4.7.0 → v4.7.1（本番 3 台適用済み・2026-09-03 トリアージ）
+
+**client 影響なし（capsicum コード変更ゼロ）**。`app/serializers/rest/` ・ `config/routes/api.rb` ・ `config/routes.rb` ・ `streaming/` の diff がいずれも**完全に空**。`app/controllers/api/` に出る差分は **`admin/` 配下 16 ファイルに `include Admin::PermissionsConcern` を 1 行ずつ足しただけ**（計 +16 行）で、管理 API の権限判定を concern へ寄せる整理。capsicum は admin API を叩かないため無関係。
+
+実測（2026-09-03）: 美食丼 / デルムリン丼 / キュアスタ！の `/api/v2/instance` はいずれも `4.7.1`。
+
 ## 関連
 
 - [#721](https://github.com/pooza/capsicum/issues/721) Mastodon 4.6 互換性確認（受動・closed）
