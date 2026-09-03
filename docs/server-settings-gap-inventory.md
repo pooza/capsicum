@@ -5,6 +5,7 @@
 - 実施日: **2026-09-03**
 - 基準: **pooza フォーク**（美食丼 = `~/repos/mastodon` の `bshockdon` / ダイスキー = `~/repos/misskey` の `daisskey`）
 - 兄弟の棚卸し: [#993](https://github.com/pooza/capsicum/issues/993)（API 基準・完了 → [api-gap-inventory.md](api-gap-inventory.md)）/ [#991](https://github.com/pooza/capsicum/issues/991)（WebUI 基準・第 1 巡完了 → [webui-gap-inventory.md](webui-gap-inventory.md)）
+- **親 Issue #992 は 2026-09-04 に close 済み**（完了条件＝この計画書を残すところまで、を満たしたため）。残った宿題は §5 → [#1078](https://github.com/pooza/capsicum/issues/1078)、§6 の未起票分 → [#1079](https://github.com/pooza/capsicum/issues/1079) へ切り出した
 
 ⚠ **この文書はチェックリストではない。**拾うと決めたものは、ここから**最初からマイルストーンを付けた個別 Issue** として切り出す。
 
@@ -123,16 +124,18 @@ capsicum は `draft.sensitive ? true : null` と書いてこれを回避して�
 | Mastodon `indexable` / `discoverable` / `noindex` | 検索エンジン・ディレクトリへの掲載可否で、**サーバーとサーバー間の話**。⚠ `discoverable` は**既に対応済み**（プロフィール編集のトグル・[#865](https://github.com/pooza/capsicum/issues/865)） |
 | Mastodon `attribution_domains` | 記事の著者表示に使うサーバー側の検証情報。クライアントの表示に効かない |
 
-## 5. 未実施・次回の宿題
+## 5. 未実施・次回の宿題（2026-09-04 に [#1078](https://github.com/pooza/capsicum/issues/1078) へ切り出し済み）
+
+⚠ **3 点とも「無かった」ではなく「見ていない」で終わっている。**#992 を close するにあたり、まとめて **[#1078](https://github.com/pooza/capsicum/issues/1078)（v2.0）** へ切り出した。
 
 - **Misskey の `i/registry` の中身を実データで見ていない。**分類 C としたのは「WebUI のクライアント設定ストアだから」という**性質による判定**で、⚠ **中に投稿の挙動を決める値が紛れていないかは未確認**。ダイスキーの実アカウントで `i/registry/keys` を引けば確定する
-- **Mastodon の `source` は `verify_credentials` 経由でしか見ていない。**⚠ 起動時に 1 回読むきりなら、**WebUI で設定を変えても capsicum を再起動するまで古い値のまま**という経路がありうる。反映のタイミングは未確認
+- **Mastodon の `source` は `verify_credentials` 経由でしか見ていない。**⚠ 起動時に 1 回読むきりなら、**WebUI で設定を変えても capsicum を再起動するまで古い値のまま**という経路がありうる。反映のタイミングは未確認。⚠ これは「読んでいない」ではなく「**読んだ値が腐る**」型なので、§1 の母数の取り方では原理的に出てこない
 - **フォーク固有の設定は両 SNS とも見つからなかった**が、⚠ **モロヘイヤ側のユーザー設定（`GET/POST /mulukhiya/api/config`）は今回の母数に入れていない**。#992 の基準が「Mastodon / Misskey のサーバー側設定」だったため。**モロヘイヤの設定反映は別軸**として扱う
 
 ## 6. 起票
 
 - **分類 A（§3-1）→ [#1076](https://github.com/pooza/capsicum/issues/1076)・[v1.63](https://github.com/pooza/capsicum/milestone/77)**。「隠すべきものを隠す」は 1.x で片付ける（pooza 判断）。行き先は #991 分類 A と同じ扱い（棚卸しの成果枠）
-- **§3-2（preferences の 3 設定）は未起票。**⚠ **サーバー設定と端末設定のどちらを優先するかの設計判断が先**で、それを決めずに起票すると本文が書けない。判断が出てから起票する
+- **§3-2（preferences の 3 設定）→ [#1079](https://github.com/pooza/capsicum/issues/1079)・[v2.0](https://github.com/pooza/capsicum/milestone/65)**。⚠ **サーバー設定と端末設定のどちらを優先するかの設計判断が先**で、それを決めずに実装の Issue は書けない。そこで **2026-09-04 に「判断そのものを完了条件とする Issue」として起票した**（[#1049](https://github.com/pooza/capsicum/issues/1049) トレンドと同じ「やる / やらないの決着でよい」型）。⚠ **分類 C 行きもありうる**
 
 ⚠ **この棚卸しの母数から「拾わない」と決めたものは §4 に理由付きで残してある。**次の棚卸しで再浮上させないこと。
 

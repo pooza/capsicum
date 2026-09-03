@@ -4,7 +4,8 @@
 
 - 実施日: **2026-09-03**（第 1 巡・層① 完了）
 - 基準: **pooza フォーク**（美食丼 = `~/repos/mastodon` の `bshockdon` / ダイスキー = `~/repos/misskey` の `daisskey`）
-- 兄弟の棚卸し: [#993](https://github.com/pooza/capsicum/issues/993)（API 基準・完了 → [api-gap-inventory.md](api-gap-inventory.md)）/ [#992](https://github.com/pooza/capsicum/issues/992)（サーバー側に保存された設定・未着手）
+- 兄弟の棚卸し: [#993](https://github.com/pooza/capsicum/issues/993)（API 基準・完了 → [api-gap-inventory.md](api-gap-inventory.md)）/ [#992](https://github.com/pooza/capsicum/issues/992)（サーバー側に保存された設定・完了 → [server-settings-gap-inventory.md](server-settings-gap-inventory.md)）
+- **親 Issue #991 は 2026-09-04 に close 済み**（完了条件＝この計画書を残すところまで、を満たしたため）。残った宿題は §6 のとおり [#1077](https://github.com/pooza/capsicum/issues/1077) へ切り出した
 
 ⚠ **この文書はチェックリストではない。**拾うと決めたものは、ここから**最初からマイルストーンを付けた個別 Issue** として切り出す（[#905](https://github.com/pooza/capsicum/issues/905) / [#915](https://github.com/pooza/capsicum/issues/915) で 37 項目が滞留した形の再発防止）。
 
@@ -128,12 +129,18 @@
 | Misskey `/drive/cleaner` | ドライブの一括整理。capsicum のドライブは**投稿に添付する導線**として持っているもので、容量管理は WebUI の領分 |
 | Mastodon `/@:acct/:statusId/reblogs` `/favourites`（投稿単位） | **実装済み**（`post_tile.dart` の `_showRebloggedBy` / `_showFavouritedBy`）。落とすのではなく既済 |
 
-## 6. 未実施・次回の宿題
+## 6. 未実施・次回の宿題（2026-09-04 に [#1077](https://github.com/pooza/capsicum/issues/1077) へ切り出し済み）
 
-- **層③（画面内の表示要素）が丸ごと未実施。**「画面も操作もあるが、出している情報が欠けている」層。⚠ **#993 の層③（entity の未読フィールド）と母数が重なる**ので、[#1046](https://github.com/pooza/capsicum/issues/1046) と同じ回に回すのが効率的
-- **層② は「閲覧のみ」パターンしか追っていない。**「作成はできるが編集できない」「一覧はあるが並べ替えられない」等の変種は見ていない
-- **Misskey の設定画面（`/settings/*` 相当）を丸ごと落としている。**落とす基準 5 のとおり意図的だが、⚠ **その中にサーバー側へ保存される値が混ざる**ので、#992 の母数として引き継ぐ
-- **Mastodon の `/public/remote`（リモートのみの連合 TL）**は画面ではなくパラメータの差（capsicum は `local` しか送っていない・`mastodon/client.dart:849`）。層② の話なので #1046 側で扱う
+⚠ **この節は行き先が決まっている。**#991 を close するにあたって、下記のうち引き継ぎ先が未定だった 2 件を **[#1077](https://github.com/pooza/capsicum/issues/1077)（v2.0）** に切り出した。残る 2 件は元から他 Issue が引き取っている。
+
+| 宿題 | 行き先 |
+| --- | --- |
+| **層③（画面内の表示要素）が丸ごと未実施。**「画面も操作もあるが、出している情報が欠けている」層 | **#1077**。⚠ **#993 の層③（entity の未読フィールド）と母数が重なる**ので、[#1046](https://github.com/pooza/capsicum/issues/1046) と同じ回に回す |
+| **層② は「閲覧のみ」パターンしか追っていない。**「作成はできるが編集できない」「一覧はあるが並べ替えられない」等の変種は見ていない | **#1077** |
+| **Misskey の設定画面（`/settings/*` 相当）を丸ごと落としている。**落とす基準 5 のとおり意図的だが、⚠ **その中にサーバー側へ保存される値が混ざる** | [#992](https://github.com/pooza/capsicum/issues/992) の母数として引き継ぎ済み（#992 も完了。そこから残った未確認分は [#1078](https://github.com/pooza/capsicum/issues/1078)） |
+| **Mastodon の `/public/remote`（リモートのみの連合 TL）**は画面ではなくパラメータの差（capsicum は `local` しか送っていない・`mastodon/client.dart:849`） | 層② の話なので [#1046](https://github.com/pooza/capsicum/issues/1046) 側で扱う |
+
+⚠ **#1077 と #1046 は同じ回に回すが、数え方は 2 通り維持する。**API 基準（#1046）と WebUI 基準（#1077）で母数の取り方が違い、§0 のとおり**片方でしか出ない項目が実際にあった**ため。
 
 ## 7. 起票（2026-09-03 完了）
 
