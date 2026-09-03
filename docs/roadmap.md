@@ -160,7 +160,7 @@
 
 ### 3. #1042 と #1048 の順序（実装時に効く）
 
-⚠ **[#1042](https://github.com/pooza/capsicum/issues/1042)（v1.63・通知の種別フィルタ）と [#1048](https://github.com/pooza/capsicum/issues/1048)（v1.67・通知のグループ化）は同じリクエストに乗る。**#1042 を Mastodon の v1 `notifications` で先に入れると、#1048 で v2 へ移るときに書き直しになりうる。
+⚠ **[#1042](https://github.com/pooza/capsicum/issues/1042)（v1.63・通知の種別フィルタ）と [#1048](https://github.com/pooza/capsicum/issues/1048)（v2.0・通知のグループ化）は同じリクエストに乗る。**#1042 を Mastodon の v1 `notifications` で先に入れると、#1048 で v2 へ移るときに書き直しになりうる。
 
 - v1.63 はまだ着手 0 件なので、**#1042 に着手する時点で #1048 側の設計（v2 `notifications` を使うか）を先に見る**
 - 枠をまたぐので忘れやすい。⚠ **v1.63 の description と #1042 本文にも同じ注意がある**
@@ -170,7 +170,7 @@
 現在の [`index.md`](https://github.com/pooza/capsicum-site/blob/master/index.md) は「直近では信頼性・使い勝手の改善に継続的に取り組んでいます」＋ Milestones へのリンクという抽象的な書き方で、**個別の枠を載せていない**。
 
 - ⚠ **v2.0（デッキ UI）は themed / 大更新なので先に掲載してよい**（[milestone-transition.md](milestone-transition.md) §5）。ただし**着手前に載せると「いつ来るのか」の問い合わせが発生する**ので、設計書が固まってからが妥当
-- v1.63〜v1.68 は集約枠に近いので、リリースが近づいてから
+- 1.x の枠（v1.63〜）は集約枠に近いので、リリースが近づいてから
 
 ## 関連
 
