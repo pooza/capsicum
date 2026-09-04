@@ -173,9 +173,17 @@ class IsCatEnricher {
         accts: targets,
       );
       if (result == null) {
-        // リクエストごと失敗（タイムアウト・504 等）。**要求した全件**を
-        // 覚えておく。1 件でも到達不能な相手が混ざると全体が落ちるため。
-        _markFailed(targets);
+        // ⚠ **リクエスト全体の失敗では acct を落とさない**（リリース前
+        // レビューで修正）。以前はここで要求した全件を 30 分ブロックして
+        // いたが、`fetchIsCat` は**クライアント側の通信断とサーバー側の
+        // 504 を区別せず null を返す**。機内モードの ON/OFF 1 回で、その回の
+        // バッチに載った 20〜40 acct の猫耳が 30 分消えていた。
+        //
+        // 落とすのは「**その acct が解決できない**」と分かったときだけ
+        // （下の個別 null 判定）。リクエストごと落ちたのは相手の問題とは
+        // 限らないので、次の取得でもう一度試す。⚠ **タイムアウトの払い直しは
+        // `is_cat` 側の 5 秒 + 呼び出し側の 2 秒バジェットで頭打ちになる**ので、
+        // #1080 が直した「1 分待たされる」には戻らない。
         return;
       }
       // 個別に解決できなかった acct（値が null）も覚える。モロヘイヤ側は
@@ -183,6 +191,9 @@ class IsCatEnricher {
       _markFailed(targets.where((a) => result[a] == null));
       for (final entry in result.entries) {
         if (entry.value != null) {
+          // 後から解決できたら失敗記録を消す。⚠ **これが無いと「実は解決
+          // 済み」の acct が失敗キャッシュに残り続け、eviction 枠を食う。**
+          _globalIsCatFailureCache.remove(_failureKey(entry.key));
           // LinkedHashMap の挿入順を維持しつつ最新エントリを末尾へ送るため
           // remove → 再 put する。FIFO の先頭（= 最古エントリ）が evict
           // 対象になる。
@@ -198,26 +209,36 @@ class IsCatEnricher {
         }
       }
     } catch (_) {
-      // ⚠ **通信エラーもネガティブキャッシュに載せる (#1080)。**以前はここで
-      // 何もせず「次回再問い合わせ」にしていたが、相手が到達不能なままだと
-      // 再問い合わせのたびにタイムアウトを払うだけだった。
-      _markFailed(targets);
+      // ⚠ **例外でも acct を落とさない**（`result == null` と同じ理由）。
+      // 通信断・タイムアウトは「その acct が解決できない」ことを意味しない。
     }
   }
 
+  /// 失敗キャッシュのキー (#1080・リリース前レビューで modulo 追加)。
+  ///
+  /// ⚠⚠ **モロヘイヤの baseUrl で名前空間を切る。**以前は acct だけをキーに
+  /// しており、**アカウント横断で共有**されていた。アカウント B のモロヘイヤが
+  /// 落ちていると、健全なアカウント A でも同じ acct の猫耳が 30 分付かなく
+  /// なる（「すべての通知」は全アカウントを並列に引くので実際に起きる）。
+  ///
+  /// 「解決できない」のは **acct とモロヘイヤの組**に対する事実であって、
+  /// acct 単独の性質ではない。
+  String _failureKey(String acct) => '${_mulukhiya?.baseUrl} $acct';
+
   /// 直近に失敗していない acct だけ問い合わせる (#1080)。
   bool _shouldQuery(String acct) {
-    final failedAt = _globalIsCatFailureCache[acct];
+    final key = _failureKey(acct);
+    final failedAt = _globalIsCatFailureCache[key];
     if (failedAt == null) return true;
     if (DateTime.now().difference(failedAt) < _failureTtl) return false;
-    _globalIsCatFailureCache.remove(acct);
+    _globalIsCatFailureCache.remove(key);
     return true;
   }
 
   void _markFailed(Iterable<String> accts) {
     final now = DateTime.now();
     for (final acct in accts) {
-      _globalIsCatFailureCache[acct] = now;
+      _globalIsCatFailureCache[_failureKey(acct)] = now;
     }
     // 成功側と同じく上限で丸める。挿入順（＝古い順）から落とす。
     if (_globalIsCatFailureCache.length > _maxCacheSize) {

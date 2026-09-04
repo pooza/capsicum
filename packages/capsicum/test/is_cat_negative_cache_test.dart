@@ -6,23 +6,30 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// #1080 の回帰テスト。
 ///
-/// ⚠ **守りたいのは「一度失敗した acct を毎回引きに行かない」こと。**
+/// ⚠ **守りたいのは「解決できないと分かった acct を毎回引きに行かない」こと。**
 /// モロヘイヤの `/account/is_cat` はキャッシュに無い acct をその場でリモートへ
 /// 取りに行き、**失敗をサーバー側にキャッシュしない**（mulukhiya#4677）。
-/// 到達不能なサーバーのアカウントは通知欄に何か月も残るので、クライアント側で
-/// 覚えておかないと、その通知が流れるまで毎回タイムアウトを払い続ける。
-
-/// `fetchIsCat` の呼び出し回数と引数を数えるだけのスタブ。
+/// 到達不能になったサーバーのアカウントは通知欄に何か月も残るので、クライアント
+/// 側で覚えておかないと、その通知が流れるまで毎回タイムアウトを払う。
 ///
-/// ⚠ **実サーバーに依存させない。**外部サーバーの生死は制御できないので、
-/// 実再現に頼ると次に同じ調査からやり直しになる。
+/// ⚠⚠ **ただし「落とす条件」はリリース前レビューで絞り込んだ。**当初は
+/// リクエスト全体の失敗（タイムアウト・通信断）でも要求バッチ全件を 30 分
+/// ブロックしていたが、`fetchIsCat` は**クライアント側の通信断とサーバー側の
+/// 504 を区別せず null を返す**。機内モードの ON/OFF 1 回で 20〜40 acct の
+/// 猫耳が 30 分消えていた。**落とすのは個別に解決できなかった acct だけ。**
 class _CountingMulukhiya implements MulukhiyaService {
   final List<List<String>> calls = [];
+
+  @override
+  final String baseUrl;
 
   /// 返す値。null なら「リクエストごと失敗」を表す。
   Map<String, bool?>? response;
 
-  _CountingMulukhiya({this.response});
+  _CountingMulukhiya({
+    this.baseUrl = 'https://example.test/mulukhiya/api',
+    this.response,
+  });
 
   @override
   Future<Map<String, bool?>?> fetchIsCat({
@@ -37,6 +44,28 @@ class _CountingMulukhiya implements MulukhiyaService {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _ThrowingMulukhiya implements MulukhiyaService {
+  int callCount = 0;
+
+  @override
+  final String baseUrl = 'https://example.test/mulukhiya/api';
+
+  @override
+  Future<Map<String, bool?>?> fetchIsCat({
+    required String accessToken,
+    required List<String> accts,
+  }) async {
+    callCount++;
+    throw DioException.connectionTimeout(
+      timeout: const Duration(seconds: 5),
+      requestOptions: RequestOptions(path: '/account/is_cat'),
+    );
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 User _user(String username, String host) =>
     User(id: username, username: username, host: host);
 
@@ -44,23 +73,9 @@ void main() {
   setUp(IsCatEnricher.resetCachesForTest);
 
   group('IsCatEnricher のネガティブキャッシュ (#1080)', () {
-    test('リクエストごと失敗した acct は再問い合わせしない', () async {
-      final mulukhiya = _CountingMulukhiya();
-      final enricher = IsCatEnricher(
-        mulukhiya: mulukhiya,
-        accessToken: 'token',
-      );
-      final users = [_user('someone', 'unreachable.example')];
-
-      await enricher.enrichUsers(users);
-      expect(mulukhiya.calls, hasLength(1));
-
-      // 2 回目は問い合わせ自体が起きない。
-      await enricher.enrichUsers(users);
-      expect(mulukhiya.calls, hasLength(1));
-    });
-
-    test('個別に解決できなかった acct も再問い合わせしない', () async {
+    test('個別に解決できなかった acct は再問い合わせしない', () async {
+      // サーバーは 200 を返しているが、値が null ＝「この相手は解決できない」。
+      // これは acct 自身の性質なので覚えてよい。
       final mulukhiya = _CountingMulukhiya(
         response: {'someone@unreachable.example': null},
       );
@@ -73,7 +88,6 @@ void main() {
       await enricher.enrichUsers(users);
       await enricher.enrichUsers(users);
 
-      // サーバーは 200 を返しているが、値が null＝解決できていない。
       expect(mulukhiya.calls, hasLength(1));
     });
 
@@ -107,7 +121,6 @@ void main() {
       await enricher.enrichUsers([_user('dead', 'unreachable.example')]);
       expect(mulukhiya.calls, hasLength(1));
 
-      // 別の acct はネガティブキャッシュに載っていないので問い合わせる。
       mulukhiya.response = {'nyan@example.com': true};
       final result = await enricher.enrichUsers([_user('nyan', 'example.com')]);
 
@@ -116,18 +129,98 @@ void main() {
       expect(result.single.isCat, isTrue);
     });
 
-    test('通信例外もネガティブキャッシュに載る', () async {
+    test('後から解決できたら失敗記録を消す', () async {
+      final mulukhiya = _CountingMulukhiya(
+        response: {'nyan@example.com': null},
+      );
+      final enricher = IsCatEnricher(
+        mulukhiya: mulukhiya,
+        accessToken: 'token',
+      );
+      final users = [_user('nyan', 'example.com')];
+
+      await enricher.enrichUsers(users);
+      // 失敗記録が残っているので 2 回目は問い合わせない。
+      await enricher.enrichUsers(users);
+      expect(mulukhiya.calls, hasLength(1));
+
+      // TTL を待たずに検証したいので、キャッシュを消して解決できる状態を作る。
+      IsCatEnricher.resetCachesForTest();
+      mulukhiya.response = {'nyan@example.com': true};
+      await enricher.enrichUsers(users);
+      expect(mulukhiya.calls, hasLength(2));
+
+      // 解決できたので、以降は成功キャッシュに乗って問い合わせない。
+      await enricher.enrichUsers(users);
+      expect(mulukhiya.calls, hasLength(2));
+    });
+  });
+
+  group('リクエスト全体の失敗では acct を落とさない（レビュー修正）', () {
+    test('null 応答（タイムアウト・504 等）では次回また問い合わせる', () async {
+      // ⚠ fetchIsCat はクライアント側の通信断とサーバー側の 504 を区別せず
+      // null を返す。ここで落とすと、機内モード 1 回でバッチ全件が 30 分消える。
+      final mulukhiya = _CountingMulukhiya();
+      final enricher = IsCatEnricher(
+        mulukhiya: mulukhiya,
+        accessToken: 'token',
+      );
+      final users = [_user('someone', 'example.com')];
+
+      await enricher.enrichUsers(users);
+      await enricher.enrichUsers(users);
+
+      expect(
+        mulukhiya.calls,
+        hasLength(2),
+        reason: 'リクエスト全体の失敗は「その acct が解決できない」を意味しない',
+      );
+    });
+
+    test('通信例外でも次回また問い合わせる', () async {
       final mulukhiya = _ThrowingMulukhiya();
       final enricher = IsCatEnricher(
         mulukhiya: mulukhiya,
         accessToken: 'token',
       );
-      final users = [_user('someone', 'unreachable.example')];
+      final users = [_user('someone', 'example.com')];
 
       await enricher.enrichUsers(users);
       await enricher.enrichUsers(users);
 
-      expect(mulukhiya.callCount, 1);
+      expect(mulukhiya.callCount, 2);
+    });
+  });
+
+  group('失敗キャッシュはモロヘイヤごとに分ける（レビュー修正）', () {
+    test('別サーバーのアカウントは巻き添えにならない', () async {
+      // ⚠⚠ 以前は acct だけをキーにしていたため、アカウント B のモロヘイヤが
+      // 落ちていると健全なアカウント A でも同じ acct が 30 分ブロックされた。
+      // 「すべての通知」は全アカウントを並列に引くので実際に起きる。
+      const acct = 'someone@remote.example';
+      final serverB = _CountingMulukhiya(
+        baseUrl: 'https://b.example/mulukhiya/api',
+        response: {acct: null},
+      );
+      final serverA = _CountingMulukhiya(
+        baseUrl: 'https://a.example/mulukhiya/api',
+        response: {acct: true},
+      );
+      final users = [_user('someone', 'remote.example')];
+
+      await IsCatEnricher(
+        mulukhiya: serverB,
+        accessToken: 'token-b',
+      ).enrichUsers(users);
+      expect(serverB.calls, hasLength(1));
+
+      final result = await IsCatEnricher(
+        mulukhiya: serverA,
+        accessToken: 'token-a',
+      ).enrichUsers(users);
+
+      expect(serverA.calls, hasLength(1), reason: 'B の失敗が A の問い合わせを止めている');
+      expect(result.single.isCat, isTrue);
     });
   });
 
@@ -138,23 +231,4 @@ void main() {
       expect(kIsCatEnrichBudget, lessThan(const Duration(seconds: 5)));
     });
   });
-}
-
-class _ThrowingMulukhiya implements MulukhiyaService {
-  int callCount = 0;
-
-  @override
-  Future<Map<String, bool?>?> fetchIsCat({
-    required String accessToken,
-    required List<String> accts,
-  }) async {
-    callCount++;
-    throw DioException.connectionTimeout(
-      timeout: const Duration(seconds: 5),
-      requestOptions: RequestOptions(path: '/account/is_cat'),
-    );
-  }
-
-  @override
-  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
