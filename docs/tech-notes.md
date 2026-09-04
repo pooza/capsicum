@@ -380,6 +380,23 @@ client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/abo
 
 ## Misskey API
 
+### ⚠⚠ サーバーの挙動を推測で語らない — フォークのソースを引く
+
+**`~/repos/mastodon` / `~/repos/misskey` は運用中のサーバーソフトそのもの。**「送っていないから効かないはず」「送れば通るはず」の類は、**必ず該当の service / controller を開いて確かめる**。
+
+v1.63 で実際に踏んだ（#1043）:
+
+- **誤った前提**: 「Misskey の指名投稿は `visibleUserIds` を送らないと誰にも届かない」→ 公開範囲を `followersOnly` へ丸める実装を入れた
+- **実際**: `NoteCreateService` は**返信のときだけ返信先の作者を `visibleUsers` へ自動補完する**ので、`visibleUserIds` を送らなくても**返信は正しく届いていた**
+- **被害 1**: `reply.visibility === 'specified' && data.visibility !== 'specified'` は **400 で拒否**される。丸めた結果、**動いていた返信を確実に壊した**
+- **被害 2**: redraft には返信関係が無いのでサーバーが弾かず、**DM がフォロワー全員へ出る**形になった（「見せたくないものが見えている」型）
+
+⚠ **コードの見た目からは自然な推測でも、サーバーを読めば 5 分で否定できた。**ソースが手元にあるのに引かなかったのが原因。
+
+同じ回で `notes/search` の `UNAVAILABLE` を「全文検索バックエンド未設定だから」と書いたのも誤り。実際は `RoleService` の **`canSearchNotes` が既定 false というロールポリシー**由来。⚠ **観測される挙動が同じでも、因果を推測で書かない。**
+
+⚠ 逆に、**カーソルの正体（関係レコードの内部 id か、投稿 / User の id か）はソースを引いて全件確認したぶんは 1 件も外していない**。引けば当たる。
+
 ### MiAuth パーミッション
 
 新しい Misskey API エンドポイントを利用する際は `MisskeyAdapter._permissions` リストに該当パーミッションを追加すること。追加漏れは 403 `PERMISSION_DENIED` になる。既存トークンには効かないため、ユーザーは再ログインが必要。v1.2 で `read:channels` / `write:channels` / `write:report-abuse` を追加した経緯がある。

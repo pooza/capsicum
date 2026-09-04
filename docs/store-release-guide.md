@@ -330,6 +330,19 @@ flutter pub upgrade --major-versions
 > 再ビルド対応した。`export` 文と `flutter build` 文は **必ず別文**
 > （独立した行）で書き、`\` で繋いで 1 行に圧縮しないこと。
 
+#### ⚠ ビルド前に古い DerivedData を落とす（v1.63 で 22 分かかった）
+
+**`~/Library/Developer/Xcode/DerivedData` は内蔵ディスクに固定で置かれ、リポジトリの場所と無関係に育つ。**⚠⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを自動で消さない。**v1.63 のリリース時、6〜8 月分を含む `Runner-*` が 13 個・計 14G 残っており、内蔵の空きが 8.7GB まで落ちていた。その結果 `flutter clean` の `xcodebuild clean` が **502 秒**（通常の 5 倍）かかり、1 回のビルドが 22 分になった。
+
+```sh
+du -sh ~/Library/Developer/Xcode/DerivedData   # 数 G を超えていたら落とす
+rm -rf ~/Library/Developer/Xcode/DerivedData
+```
+
+⚠ **ビルド生成物だけなので消して安全**（次回の初回ビルドだけ長くなる）。⚠ **Xcode が動いていると `Index.noindex` が残るが実害はない。**
+
+⚠ **「外部ボリュームだから遅い」ではない。**小ファイル 5000 件の作成・削除を両方で実測したところ、内蔵 6.29s / 外部(USB SSD) 6.49s、削除は外部のほうが速いくらいで差が無かった（2026-09-04 実測）。**遅さの原因は容量逼迫であって配置ではない。**推測で配置を疑わないこと。
+
 ```bash
 cd packages/capsicum
 
