@@ -272,7 +272,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final hasPosts = results.posts.isNotEmpty;
     final hasNotestock = _notestockResults.isNotEmpty || _notestockLoading;
 
+    // ⚠ **本文検索が使えないサーバーでは、この早期 return に入らせない
+    // (#1041)。**入るとタブごと消えて「本文検索に対応していない」旨を
+    // 出す場所が無くなり、notestock タブにも辿り着けなくなる。
     if (!_serverLoading &&
+        !results.postSearchUnavailable &&
         !hasUsers &&
         !hasHashtags &&
         !hasPosts &&
@@ -308,6 +312,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   : _buildHashtagList(results.hashtags),
               _serverLoading
                   ? const Center(child: CircularProgressIndicator())
+                  // ⚠ **「0 件」と「引けない」を区別する (#1041)。**サーバーが
+                  // 全文検索バックエンドを持たないと `notes/search` は
+                  // `UNAVAILABLE` を返す。空リストのまま出すと「その語の投稿は
+                  // 無い」に見え、実際より悪い誤解を与える。
+                  : results.postSearchUnavailable
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'このサーバーは本文検索に対応していません。\n'
+                          'アカウント・ハッシュタグの検索と、\n'
+                          '下の notestock タブは利用できます。',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
                   : _buildPostList(results.posts),
               _buildNotestockList(),
             ],

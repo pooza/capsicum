@@ -13,10 +13,31 @@
 | `python3 -c` / `perl -e` で JSON を捌く | **`jq`**。インタプリタは任意コード実行になるので allowlist に載せない方針で、載る見込みもない |
 | **シェルの `for` ループで複数対象を回す** | **1 対象 1 ツール呼び出しにして並列に投げる**。ループは丸ごと未知のコマンド扱いになる。並列のほうが速い |
 | 関数定義・`$(...)`・`while` 等をコマンドに混ぜる | 同上。**複合シェル構文が 1 つでも入ると、中身が全部 allowlist に載っていても確認になる** |
-| 他リポジトリへ `cd` してから `git` | **`git -C <path> <sub>`**。許可済みは `fetch` / `log` / `pull` / `status` / `tag` / `show` / `diff` / `rev-parse` / `rev-list` / `branch` / `describe` の 11 個 |
+| 他リポジトリへ `cd` してから `git` | **`git -C <path> <sub>`**。許可済みは `fetch` / `log` / `pull` / `status` / `tag` / `show` / `diff` / `rev-parse` / `rev-list` / `branch` / `describe` の 11 個。⚠⚠ **`cd` は次のツール呼び出しにも残る**（下の「`cd` は残る」節） |
+| `gh` をリポジトリ指定なしで書き込む | **`gh <sub> --repo pooza/capsicum`**。⚠ **書き込み系（`issue comment` / `issue create` / `issue edit` / `pr comment`）は必ず付ける。**読み取りだけなら省略してよい |
 | 絶対パスでコマンドを呼ぶ | **素の名前で呼ぶ**。`Bash(sentry-cli *)` は `/Users/…/.local/bin/sentry-cli` には**当たらない**（別コマンド扱い）。絶対パスが要る環境では settings.local.json に実パスで足す |
 | `curl -sL` / `curl -sX` のように短縮を連結 | **`curl -s -L` / `curl -s -X`**。allowlist は `curl -s ` の後ろに空白を要求する |
 | `TOKEN=$(...)` の変数代入から始める | トークンは**単独のコマンドで 1 回読んで**、以降のコマンドへ直接埋める |
+
+### ⚠⚠ `cd` は次のツール呼び出しにも残る（外部リポジトリへの誤爆を起こした）
+
+**2026-09-04 に、上流の `mastodon/mastodon` へコメントを投稿する誤爆を起こした。**約 1 分で削除したが、**公開リポジトリに他プロジェクトのメモが載った**。
+
+経緯:
+
+1. フォークを調べるため `cd /Volumes/extdata/repos/mastodon && git diff ...` を実行した（**この時点で `git -C` の規約に違反**）
+2. Bash ツールの **working directory はツール呼び出しをまたいで持続する**
+3. 数手あとに `gh issue comment 1054 --body ...` を実行 → **`gh` は cwd の git remote を見る**ので `mastodon/mastodon` の #1054（無関係な PR）へ飛んだ
+
+⚠ **`git -C` の規約は許可確認を減らす目的で書かれていたが、この誤爆も防いでいた。**規約を守っていれば起きなかった。
+
+したがって二重化する:
+
+- **他リポジトリを読むときは `git -C <path>`。`cd` しない**
+- **`gh` の書き込み系は `--repo pooza/capsicum` を必ず付ける。**cwd が正しいと信じない
+- ⚠ **番号の衝突は日常的に起きる。**capsicum の #1054 は mastodon/mastodon にも存在した。**「番号が通ったから正しいリポジトリ」ではない**
+
+削除は `gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>`。実行後に同じ ID を GET して **404 を確認する**。
 
 ### ループと関数定義は機械で止めている
 

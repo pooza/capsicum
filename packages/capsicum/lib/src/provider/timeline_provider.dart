@@ -11,6 +11,7 @@ import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
 import '../util/user_acct.dart';
 import 'account_manager_provider.dart';
+import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
 
 /// Currently selected tab (unified across all tab types).
@@ -1894,12 +1895,20 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     }
     if (accts.isEmpty) return posts;
 
-    final result = await mulukhiya.fetchIsCat(
-      accessToken: account.userSecret.accessToken,
-      accts: accts.toList(),
-    );
+    // ⚠ **猫耳のためにタイムラインの描画を止めない (#1080)。**理由は
+    // `is_cat_provider.dart` の [kIsCatEnrichBudget] の doc が正本。超えたら
+    // エンリッチ前の値で先に描画する（解決は続き、結果はキャッシュに載る）。
+    final result = await mulukhiya
+        .fetchIsCat(
+          accessToken: account.userSecret.accessToken,
+          accts: accts.toList(),
+        )
+        .timeout(kIsCatEnrichBudget, onTimeout: () => null);
 
     // 通信エラー時はキャッシュせず、次回再問い合わせ
+    // ⚠ **ここは [IsCatEnricher] のネガティブキャッシュの恩恵を受けない。**
+    // timeline は独自の `_isCatCache` を持っており（`_applyIsCat` が読む）、
+    // 2 系統が並存している。統合は #1082。
     if (result == null) return posts;
 
     // 確定した結果のみキャッシュ（null = 取得失敗はキャッシュしない）

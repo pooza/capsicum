@@ -146,6 +146,26 @@ List<HomeNavItem> buildHomeNavItems(
       icon: Icons.bookmark_outline,
       onSelected: () => act(() => context.push('/bookmarks')),
     ),
+    // お気に入りの一覧 (#1071)。⚠ **ブックマークの隣に置く** — 同じ「あとで
+    // 見る」系なのに片方だけ一覧がある非対称を解消するのが趣旨のため。
+    // ⚠ **Misskey には出さない。**あちらの「お気に入り」はブックマーク相当で
+    // 既に上の項目へ寄せてあり、並べると同じものが 2 つ出る。
+    if (adapter is FavoriteSupport)
+      HomeNavItem(
+        title: 'お気に入り',
+        icon: Icons.star_outline,
+        onSelected: () => act(() => context.push('/favorites')),
+      ),
+    // フォローリクエスト (#1040)。⚠ **鍵アカウントでないと出番が無い**ので
+    // 通知の近くに置くに留め、一等地は使わない。⚠ ただし**常に出す** —
+    // `locked` は自分の設定なので取得済みだが、鍵を外した直後に未処理の
+    // 申請が残る経路があり、隠すと処理できなくなる。
+    if (adapter is FollowRequestSupport)
+      HomeNavItem(
+        title: 'フォローリクエスト',
+        icon: Icons.person_add_alt,
+        onSelected: () => act(() => context.push('/follow-requests')),
+      ),
     if (!announcementsShownAsTab)
       HomeNavItem(
         title: 'お知らせ',

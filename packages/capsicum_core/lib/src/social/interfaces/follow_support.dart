@@ -18,4 +18,20 @@ abstract mixin class FollowSupport {
     String userId, {
     TimelineQuery? query,
   });
+
+  /// ブロック中のユーザー一覧 (#1039)。
+  ///
+  /// ⚠ **`blockUser` の裏返しが無いと、自分が誰をブロックしているか確認できない。**
+  Future<({List<User> users, String? nextCursor})> getBlockedUsers({
+    TimelineQuery? query,
+  });
+
+  /// ミュート中のユーザー一覧 (#1039)。
+  ///
+  /// ⚠⚠ **これが無いと解除の導線が構造的に塞がる。**ミュートは「相手が TL から
+  /// 出てこなくなる」操作なので、解除したくなったときに相手のプロフィールへ
+  /// 辿り着く手段が残らない。うろ覚えだと詰む。
+  Future<({List<User> users, String? nextCursor})> getMutedUsers({
+    TimelineQuery? query,
+  });
 }

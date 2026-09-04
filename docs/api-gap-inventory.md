@@ -17,6 +17,8 @@
 
 ⚠ **フォーク固有の API は Mastodon 側に存在しなかった。**`git diff upstream/main bshockdon -- config/routes/api.rb` が空。つまり「本家にもあるか / フォーク固有か」の列は全行「本家」で埋まる。capsicum が使っている `collections` / `in_collections` / `quotes` 系も**本家 4.7 の機能**であって美食丼の独自実装ではない。
 
+⚠ **上の「`quotes` 系」の書き方は 2026-09-04 まで不正確だった**（[#1072](https://github.com/pooza/capsicum/issues/1072) で訂正）。当時 capsicum が使っていたのは entity のフィールド（`quotes_count` / `quote`）だけで、**`GET /api/v1/statuses/:id/quotes` エンドポイントは叩いていなかった**。⚠ **この取り違えは棚卸しの母数そのものに効く** — 「使っている」に数えると、一覧が無いことが緑に見えてしまう。**エンドポイントを叩いているのか、entity のフィールドを読んでいるだけなのかを混ぜない。**（エンドポイント自体は v1.63 の #1072 で実装済み。）
+
 ### 実施範囲の正直な線引き
 
 **層ごとに深さが違う。**均一に回したわけではないので、次の棚卸しが同じ地点から再開できるように書いておく。

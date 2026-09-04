@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/push_registration_service.dart';
+import '../util/post_scope_display.dart';
 import '../widget/bottom_safe_area.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -45,6 +46,27 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/settings/display'),
             ),
+            // ブロック / ミュートの一覧と解除 (#1039)。⚠ **ミュートは相手が TL
+            // から出てこなくなる操作なので、ここが無いと解除の導線が塞がる。**
+            ListTile(
+              leading: const Icon(Icons.block),
+              title: const Text('ブロックとミュート'),
+              subtitle: const Text('一覧の確認・解除'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/settings/moderation'),
+            ),
+            // フォロー中のハッシュタグ (#1070)。⚠ **#1039 と同じ「付けられる
+            // のに外す導線が塞がる」形**なので隣に置く。Misskey では一覧が
+            // 常に空になる（フォローの概念が無い）ため、エントリ自体を
+            // アダプターで出し分ける。
+            if (!isMisskeyAdapter(ref.watch(currentAdapterProvider)))
+              ListTile(
+                leading: const Icon(Icons.tag),
+                title: const Text('フォロー中のハッシュタグ'),
+                subtitle: const Text('一覧の確認・解除'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings/followed-hashtags'),
+              ),
             ListTile(
               leading: const Icon(Icons.touch_app),
               title: const Text('タッチ操作'),

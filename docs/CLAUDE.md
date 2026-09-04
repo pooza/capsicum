@@ -222,9 +222,12 @@ capsicum/
     desktop-plugin-compatibility.md  # デスクトップ対応のプラグイン棚卸し
     flutter-upstream-watch.md  # Flutter 上流バグの追跡（月初に手動で chase・資格情報の満了チェックも相乗り）
     api-gap-inventory.md  # 棚卸し: API にあって capsicum が使っていない機能（#993 の成果物・1.x / 2.0 / 拾わない の分類）
+    webui-gap-inventory.md  # 棚卸し: WebUI にあって capsicum に無い機能（#991 の成果物・同じ 3 分類。層①＝画面 / ②＝画面内の操作 / ③＝表示要素）
+    server-settings-gap-inventory.md  # 棚卸し: サーバー側に保存された設定の反映漏れ（#992 の成果物・誤爆 0 件の実測記録。⚠ 送らない = サーバー既定が効く、の設計を壊さないための正本）
     mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
+    roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
     milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
     doc-maintenance.md    # ドキュメント/メモリの棚卸し手順（不定期・陳腐化改善・memory↔docs 移送・インフラ記述の infra-note 移設・アーカイブ）
     store-release-guide.md  # ストアリリース手順書（運用正本）
@@ -260,7 +263,9 @@ capsicum/
 
 ### マイルストーン運用
 
-マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は [milestone-transition.md](milestone-transition.md) に手順化。以下は判断規約の正本。
+マイルストーン完了→次着手の移行時に毎回回す一連の手順（未割り当て Issue のトリアージ・次スコープ確定・ロードマップ調整・capsicum-site 更新・バージョンバンプ）は [milestone-transition.md](milestone-transition.md) に手順化。**枠の数・各枠の主題・1.x と 2.x の境界は [roadmap.md](roadmap.md) が正本**（2026-09-04 策定）。以下は判断規約の正本。
+
+⚠ **1.x と 2.x は並走系列で、境界は「時期」でも「技術的な線」でもない。****メジャーに何を載せるかは製品判断（売りの束ね方）**で、pooza が決める。`v2.0` は [#720](https://github.com/pooza/capsicum/issues/720) デッキ UI + [#597](https://github.com/pooza/capsicum/issues/597) 有償リレー + [#884](https://github.com/pooza/capsicum/issues/884) 画像編集レイヤの **3 本を束ねるメジャーリリース**。⚠ **この枠には「大更新 0〜1 件」の目安を当てない**（容量は通常枠の数倍。実績の最大は v1.0 の 46 件に対し直近の平均は 13 件）。技術規模が決めるのは「点リリースで単独配置するか」と「万一入りきらないとき何から逃がすか（＝ #884）」だけ。⚠ **2026-08-17〜 の「外部要因の発生ベース」運用は v1.65 をもって終了**した。
 
 - **大更新は独立マイルストーンに単独配置**。UI の構造変更・既存モデルの拡張・複数画面への影響などが絡む「大更新」は、他に同規模以上の項目がないマイルストーンに入れる。並走させると設計検討・実装・動作確認がいずれも中途半端になるため
 - **規模の測り方は「大更新の数」が主軸**。1 マイルストーンに入れるのは大更新 0〜1 件 + 小粒・中粒 5〜12 件程度を目安とする。件数は目安であって閾値ではない。リリース前レビュー（5 観点）の followup が膨らんだ場合、上限に縛られて後送りするより同一マイルストーンに取り込んで消化する方が望ましい（直前リリースの設計理解が新鮮なうちに直したいため）。**P1（緊急性あり）に加え、極めて容易な P2/P3 も同一マイルストーンで消化する**（数行の bug fix・コメント書き直し・リネーム・型変更等）。それでも入りきらない場合は、(a) リファクタ系を次マイルストーンに送る、(b) 観測性強化系を分離する、のどちらかで調整する
@@ -275,7 +280,19 @@ capsicum/
 
 v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し 3 本（[#991](https://github.com/pooza/capsicum/issues/991) WebUI 差分 / [#992](https://github.com/pooza/capsicum/issues/992) サーバー保存設定 / [#993](https://github.com/pooza/capsicum/issues/993) 未使用 API）の回し方（2026-08-25 合意）。
 
-1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。**#993 は 2026-08-31 に完了**（成果物 [api-gap-inventory.md](api-gap-inventory.md)・分類は全件起票済み・残りの掃き出しは #1046）。次は #991。
+1. **棚卸しは 1 本ずつ回す。**3 本は母数も手法も違うので同時に走らせない。順序は **#993 → #991 → #992**（#993 が最も機械的で当たりが出やすく、その結果が #991 の見方を決めるため）。**3 本とも完了・親 Issue は 3 本とも close 済み**で、次は v2.x のロードマップ（枠の数・各枠の主題・1.x との境界）。
+
+   | 親（close 済み） | 完了日 | 成果物 | 続きの Issue |
+   | --- | --- | --- | --- |
+   | [#993](https://github.com/pooza/capsicum/issues/993) API 基準 | 2026-08-31 | [api-gap-inventory.md](api-gap-inventory.md) | [#1046](https://github.com/pooza/capsicum/issues/1046) 層②③ の残り |
+   | [#991](https://github.com/pooza/capsicum/issues/991) WebUI 基準（層① のみ） | 2026-09-03 | [webui-gap-inventory.md](webui-gap-inventory.md) | [#1077](https://github.com/pooza/capsicum/issues/1077) 層② の変種と層③ |
+   | [#992](https://github.com/pooza/capsicum/issues/992) サーバー側設定 | 2026-09-03 | [server-settings-gap-inventory.md](server-settings-gap-inventory.md) | [#1078](https://github.com/pooza/capsicum/issues/1078) 未確認 3 点 / [#1079](https://github.com/pooza/capsicum/issues/1079) preferences の決着 |
+
+   ⚠ **親 Issue の close は「宿題の切り出し」とセットにする。**#991 / #992 は完了後も 2 日ほど open のまま残った（2026-09-04 の同期で検出）。宿題を Issue 本文でなく計画書の「未実施」節に置いたため、**行き先が Issue として見えず close の判断がつかなくなっていた**。完了条件が「計画書を残すところまで」の調査 Issue は、**計画書に残った宿題を Issue へ切り出してから close する**。
+
+   ⚠ **#991 が #993 の後でも価値を出した理由を残す。**#993 の分類 A / B / C のどこにも無い項目が 3 件出た。3 件とも `routes/api.rb` にあるので #993 の母数には入っていたが、**capsicum が「付ける」側だけ実装して「見る」側を持っていない**形（お気に入りは付けられるが一覧できない / タグはフォローできるが一覧できない / 引用数は出しているが一覧できない）だった。**エンドポイント単位で数えると片方が緑なので落ちる。画面単位で見ると「一覧が無い」として一発で出る。**棚卸しは母数の取り方を変えると別のものが見える、という実例。
+
+   ⚠ **#992 では「実害の型」が 1 つ増えた。**本文は実害を「誤爆（投稿）」と「見たくないものが見える（読み方）」の 2 種類で定義していたが、実測で出たのは **「見せたくないものが見えている」という第 3 の型**（本人が非表示にしたプロフィールのタブを capsicum が出していた → [#1076](https://github.com/pooza/capsicum/issues/1076)）。**「隠すべきものは隠す」は本来やってなきゃいけない**ので、意思表示の無視ではなく実装漏れとして扱う（2026-09-03 pooza）。**探すときは「サーバーが強制できない設定」から入ると早い** — 強制できるものはサーバーが既に強制しているので、クライアントが落とせる穴はそこにしか無い。
 
    ⚠ **#993 でいちばん効いた知見: 層を分けて回すこと。**「① 呼んでいないエンドポイント / ② 呼んでいる経路の未使用パラメータ / ③ 受け取っている entity の未読フィールド」の 3 層で見ると、**当たりの性質が層ごとに違った**。層① から出た 4 件は全部 enhancement（機能の欠落）だったのに対し、**層②③ から出た 3 件は全部 bug**（すでに動いている機能の壊れ方）で、しかも 3 件とも**サーバーがエラーを返さない**ため Sentry にもユーザー報告にも出てこないものだった。**層① だけで終えると、この種類は永久に見つからない。**
 
@@ -350,9 +367,9 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.61.0**（2026-08-27 タグ、build 174、pubspec 1.61.0+174、リリース PR [#1031](https://github.com/pooza/capsicum/pull/1031)、merge `422f441d`）。**大更新なし — 1.x の集約枠・前進スロット**（v1.60 と同型）。**全プラットフォーム公開済み**（2026-08-28 実測）: iOS / macOS とも `READY_FOR_SALE`（ASC API）/ Android は production track の versionCode 174 が `completed` / Windows は公開カタログが `9AFBB08E.capsicum_1.61.174.0_x64__8ekzzj58251a2` を返す / Linux AppImage は [GitHub Release v1.61.0](https://github.com/pooza/capsicum/releases/tag/v1.61.0)（Latest・アセット 3 点）。マイルストーン [#75](https://github.com/pooza/capsicum/milestone/75)。消化（7 件）: [#1024](https://github.com/pooza/capsicum/issues/1024) オフラインアカウント削除で通知ラベルキャッシュが残る / [#1025](https://github.com/pooza/capsicum/issues/1025) 深くネストした YAML で UI が数十秒固まる / [#1026](https://github.com/pooza/capsicum/issues/1026) 投稿フォーム設定の flush がウィンドウを閉じる経路を覆っていない / [#1027](https://github.com/pooza/capsicum/issues/1027) v1.60 レビュー緑まとめ / [#1030](https://github.com/pooza/capsicum/issues/1030) Play を指すプレビューカードが WebUI に飛ぶ / [#1032](https://github.com/pooza/capsicum/issues/1032) 上へ戻るとスクロール位置が跳ねる / [#1033](https://github.com/pooza/capsicum/issues/1033) プレビューカードの幅が OGP 画像の有無で変わる。**relay は v1.61 で触っていない**（open Issue 0 件・open マイルストーン 0 件、prod の `/health` が `b9ce14c` で origin/main の HEAD と一致・2026-08-27 実測）。
+最新リリース: **v1.62.0**（2026-09-01 タグ、build 175、pubspec 1.62.0+175、リリース PR [#1066](https://github.com/pooza/capsicum/pull/1066)、merge `0fa3280f`）。**大更新なし — メンテナンスモードに入って最初の「外部要因の発生ベース」枠**（着火点は 2026-08-28 のユーザー報告 → [#1037](https://github.com/pooza/capsicum/issues/1037)）。**全プラットフォーム公開済み**（2026-09-02 実測）: iOS / macOS とも `READY_FOR_SALE`（ASC API）/ Android は production track の versionCode 175 が `completed` / Windows は公開カタログが `9AFBB08E.capsicum_1.62.175.0_x64__8ekzzj58251a2` を返す / Linux AppImage は [GitHub Release v1.62.0](https://github.com/pooza/capsicum/releases/tag/v1.62.0)（Latest・アセット 3 点）。マイルストーン [#76](https://github.com/pooza/capsicum/milestone/76)。消化（5 件）: [#1036](https://github.com/pooza/capsicum/issues/1036) lock ガードが「条件に合致したときだけ落ちる」逆転 / [#1037](https://github.com/pooza/capsicum/issues/1037) Android: 画面最下部がナビゲーションバーに潜り込む（**この枠の着火点**。報告はスレッド画面 1 件だったが、同型が 40 画面以上あった）/ [#1058](https://github.com/pooza/capsicum/issues/1058) ドロワーのフッターが潜り込む（`Scaffold.drawer` は #1037 の掃き出し対象外だった）/ [#1059](https://github.com/pooza/capsicum/issues/1059) スレッドの ↑ / ↓ ジャンプボタンが本文に被る / [#1060](https://github.com/pooza/capsicum/issues/1060) ホームの通知タブだけ残っていた（共有 View が Scaffold を経由しないホストを持つ）。**relay は v1.62 で触っていない**（open Issue 0 件・同名マイルストーン無し、prod の `/health` が `b9ce14c` で origin/main の HEAD と一致・2026-09-02 実測）。
 
-**リリース前レビューは 1 巡**（5 観点・赤 3 + 黄 12 + 緑 8。赤と同族 2 件・ガード 2 本を消化し、残りは [#1035](https://github.com/pooza/capsicum/issues/1035) へ未割り当てで送った）。⚠ **赤 3 件はすべて「今回入れた仕組みが意図どおり働いていない」型だった** — (a) `post_actions` の `_report` が await 後に `ref.read`（#1027-C2 が `reblogLabel` を配って回った副作用。**5 観点のうち 3 本が独立に検出**し、同じコミットが `post_tile` の 2 箇所は規約どおり事前捕捉していたのに共有側だけ破っていた）、(b) `home_screen` の `dispose()` 内 `ref.read`（#1026 が突き止めた機構の sweep 漏れ・v1.51 以来。`StatefulElement.unmount()` が `_widget = null` を先に置くので **release でも必ず投げ**、以降の `removeObserver` / タイマー解除に到達しない）、(c) `announcement_subscription_service` の storage key 漏れ **2 箇所**（#1027-B が指摘した「隣だけ直っていた」形の**再発**。片方は `StateError` のメッセージ経由で、ガードにも `scrubException` にも見えなかった）。⚠ **(c) を見逃した理由は検査の側にある** — `exception_scrub_guard_test` が変数名を**完全一致で列挙**していたため `$accountStorageKey` が素通りしていた。接尾辞判定へ変更済みだが、**`sentrySafe…` を除外しないと「正しく直した箇所だけが違反になる」**ので注意（同型の列挙が #1035 の C 節に 3 件残っている）。⚠ **レビューの提案をそのまま採ると壊れる例が 1 件** — 「`launchUrlSafely` を迂回リストに足す」は、EULA / About / OAuth などブラウザで開くのが正しい導線 15 ファイルを全部違反にする。守るべき不変条件は「`ContentRenderer` に `onLinkTap` を渡す」だったので検査ごと作り替え、その結果 Play / Pages の**本文リンク**が迂回していた 2 件が見つかった（同じ Play 画面でサマリ側だけルーターを通る割れ方をしていた）。⚠ **CI の lock ガード自体が壊れていた**（[#1036](https://github.com/pooza/capsicum/issues/1036)）。`set -o pipefail` + `printf | grep -q` で **マッチしたときだけ判定が false になる**逆転で、`chore(deps)` を規約どおり付けたのに落ちた。マッチが範囲の先頭近くにあり後ろにコミットが続くときだけ再現するため、**このガードが想定している使い方でだけ踏む**。
+**リリース前レビューは 1 巡**（5 観点・🔴 1 件を [#1060](https://github.com/pooza/capsicum/issues/1060) として出荷前に消化し、残りは [#1061](https://github.com/pooza/capsicum/issues/1061)〜[#1065](https://github.com/pooza/capsicum/issues/1065) へ送った）。⚠ **リリース PR を立てる前に `git log origin/develop..origin/main` を見る** — v1.61 のリリース中に main へ直接入れたホットフィックス `170d9e9e`（#1036 の応急処置）が develop に戻っておらず、リリース PR がマージ不能になった。develop 側は同じ問題をスクリプト切り出し + セルフテストまで進めていたので `git merge origin/main` で **develop 版を採用**（`9f3381ff`）。ホットフィックス運用をしている以上これは毎回起こりうる。⚠ **Codex の P1 は誤検出だった** — 「lock ガードがこのリリースを落とす」という指摘は、`analyze.yml` と同じ入力を作って `lock_guard.sh` に渡すと exit 0（Codex は PR タイトル `1.62` をコミットメッセージと誤認していた。ガードが見るのは PR レンジ全体の `git log`）。⚠ **ただし隣に本物のリスクがあった** — **リリース PR を squash merge すると指摘どおり落ちる**（main に載るのが PR タイトル由来の 1 コミットだけになり `chore(deps)` が消えるため）。**リリース PR は merge commit で入れる**。⚠ **Codex の空振り判定は早すぎた** — `@codex review` を 2 回打って 12 分発火せず「空振り」と記録して先へ進めたが、**そのあと遅れてレビューが届いた**（[#1066 の line comment](https://github.com/pooza/capsicum/pull/1066#discussion_r3902793204)）。空振り断定は、リリース後の同期でもう一度数え直す前提で扱う。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 

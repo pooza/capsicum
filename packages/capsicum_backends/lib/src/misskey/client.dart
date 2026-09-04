@@ -177,6 +177,72 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/following/requests/list (#1040)
+  ///
+  /// 返るのは FollowRequest オブジェクト（`{id, follower: User, followee}`）。
+  /// ⚠ **`untilId` に渡すのは FollowRequest の `id`**（申請レコードの id）で
+  /// あって `follower.id` ではない。
+  Future<List<Map<String, dynamic>>> getFollowRequests({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/following/requests/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/following/requests/accept (#1040)
+  ///
+  /// ⚠ `userId` は**申請者の User id**。申請レコードの id ではない。
+  Future<void> acceptFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/accept',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/following/requests/reject (#1040)
+  Future<void> rejectFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/reject',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/blocking/list (#1039)
+  ///
+  /// 返るのは Blocking オブジェクト（`{id, blockee: User, ...}`）で、
+  /// **User そのものではない**。⚠ **`untilId` に渡すのは Blocking の `id`**
+  /// （関係レコードの id）であって、`blockee.id` ではない。取り違えると
+  /// ページが飛ぶ。
+  Future<List<Map<String, dynamic>>> getBlockingList({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/blocking/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/mute/list (#1039)
+  ///
+  /// 返るのは Muting オブジェクト（`{id, mutee: User, expiresAt, ...}`）。
+  /// `untilId` の扱いは [getBlockingList] と同じ。
+  Future<List<Map<String, dynamic>>> getMutingList({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/mute/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/users/following
   Future<List<Map<String, dynamic>>> getUserFollowing(
     String userId, {
@@ -780,6 +846,12 @@ class MisskeyClient {
   }
 
   /// POST /api/i/notifications
+  ///
+  /// ⚠ **`markAsRead` を必ず明示する (#1045)。**サーバー側の既定は `true` なので、
+  /// 省略すると**取得しただけでサーバーの未読が消える**。capsicum は未読を
+  /// クライアント側で持つ運用（2026-09-04 pooza 判断・クライアント側が正本）
+  /// なので、サーバーの既読状態には触らない。WebUI や他クライアントを併用して
+  /// いるユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
   Future<List<MisskeyNotification>> getNotifications({
     String? sinceId,
     String? untilId,
@@ -791,6 +863,7 @@ class MisskeyClient {
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,
+        'markAsRead': false,
       }),
     );
     return (response.data as List)
@@ -828,6 +901,43 @@ class MisskeyClient {
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
       rethrow;
+    }
+  }
+
+  /// POST /api/notes/search (#1041)
+  ///
+  /// 本文検索。⚠ **サーバーで無効化されうる。**Misskey は全文検索バックエンド
+  /// （Meilisearch / pgroonga 等）を別立てで持つ構成で、未設定のサーバーは
+  /// `UNAVAILABLE`（"Search of notes unavailable."）を返す。実際プリセットの
+  /// ダイスキー・きゅあすきーとも未設定（2026-09-04 実測）。
+  ///
+  /// ⚠⚠ **どんな失敗でも `null` を返し、例外を投げない。**同時に投げている
+  /// ユーザー検索・タグ検索は `Future.wait` で束ねられているので、**1 本でも
+  /// 例外を投げると成功していた 2 本の結果まで捨てられる**（リリース前レビュー
+  /// で検出）。当初は `UNAVAILABLE` だけを null に倒していたが、全文検索
+  /// バックエンドは「未設定」以外に「設定されているが落ちている（500）」
+  /// 「レート制限（429）」という状態を取るので、切り分けが狭すぎた。
+  ///
+  /// ⚠ **本文検索は検索画面の一部でしかない。**それが落ちたときにアカウント
+  /// 検索・ハッシュタグ検索・notestock まで道連れにするのは、#1080 で直した
+  /// 「装飾のために本体を止める」構造とまったく同じ。
+  ///
+  /// ⚠ **タイムアウトも短くする。**既定は 60 秒（`kAdapterReceiveTimeout`）で、
+  /// 応答しないバックエンドがあると**60 秒待たされた末に結果ゼロ**になる。
+  /// 本文検索が返らなくても他の結果は先に出したい。
+  Future<List<MisskeyNote>?> searchNotes(String query, {int? limit}) async {
+    try {
+      final response = await dio.post(
+        '/api/notes/search',
+        data: createBody({'query': query, 'limit': ?limit}),
+        options: Options(receiveTimeout: const Duration(seconds: 10)),
+      );
+      return (response.data as List)
+          .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      // 失敗の種別は呼び出し側で使い分けていない（「引けなかった」で足りる）。
+      return null;
     }
   }
 

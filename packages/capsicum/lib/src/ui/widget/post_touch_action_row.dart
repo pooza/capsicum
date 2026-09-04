@@ -11,6 +11,7 @@ import '../../provider/preferences_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/reaction_acceptance.dart';
 import '../util/visible_timeline.dart';
 import 'reaction_picker_sheet.dart';
 
@@ -275,6 +276,24 @@ class PostTouchActionRow extends ConsumerWidget {
     // `ref.read` が走り、**失敗の SnackBar ごと落ちる**（post_tile と同じ形）。
     final reblogLabel = ref.read(reblogLabelProvider);
 
+    // 受付条件が ❤️ のみなら、ピッカーを開かずそのまま送る (#1044)。post_tile と
+    // 同じ判定・同じ理由。**片方だけに入れない**（#990 で 6 経路取りこぼした形）。
+    if (reactionPickerMode(targetPost, myHost: account.key.host) ==
+        ReactionPickerMode.likeOnly) {
+      unawaited(
+        _runReactionAction(
+          ref,
+          messenger,
+          backend,
+          () => reaction.addReaction(targetPost.id, kMisskeyReactionFallback),
+          'リアクションしました',
+          timeline: timeline,
+          reblogLabel: reblogLabel,
+        ),
+      );
+      return;
+    }
+
     unawaited(
       showReactionPickerSheet(
         context: context,
@@ -283,7 +302,10 @@ class PostTouchActionRow extends ConsumerWidget {
           ref,
           messenger,
           backend,
-          () => reaction.addReaction(targetPost.id, emoji),
+          () => reaction.addReaction(
+            targetPost.id,
+            effectiveReaction(emoji, targetPost, myHost: account.key.host),
+          ),
           'リアクションしました',
           timeline: timeline,
           reblogLabel: reblogLabel,

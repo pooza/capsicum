@@ -16,6 +16,7 @@ import '../util/hashtag_actions.dart';
 import '../util/notification_type_display.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
@@ -420,9 +421,16 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
               messenger,
               adapter as BackendAdapter,
               targetPost.id,
+              // 通知タイルからの経路も判定を通す (#1044・Codex P1)。
               () => (adapter as ReactionSupport).addReaction(
                 targetPost.id,
-                ':$shortcode:',
+                // ⚠ host はシートを開く前に捕まえた `account` から取る
+                // （#990 / #1064 と同じ理由・Codex P2）。
+                effectiveReaction(
+                  ':$shortcode:',
+                  targetPost,
+                  myHost: account?.key.host,
+                ),
               ),
               'リアクションしました',
               timeline: timeline,
@@ -450,6 +458,25 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
     // `ref.read` が走り、**失敗の SnackBar ごと落ちる**（post_tile と同じ形）。
     final reblogLabel = ref.read(reblogLabelProvider);
 
+    // 受付条件が ❤️ のみならピッカーを開かず直接送る (#1044・Codex P1)。
+    // ⚠ **通知タイルにはこの判定が入っていなかった。**post_tile と
+    // post_touch_action_row にだけ入れて、ここを取りこぼしていた。
+    if (reactionPickerMode(targetPost, myHost: account?.key.host) ==
+        ReactionPickerMode.likeOnly) {
+      unawaited(
+        _runReactionAction(
+          messenger,
+          backend,
+          targetPost.id,
+          () => reaction.addReaction(targetPost.id, kMisskeyReactionFallback),
+          'リアクションしました',
+          timeline: timeline,
+          reblogLabel: reblogLabel,
+        ),
+      );
+      return;
+    }
+
     unawaited(
       showReactionPickerSheet(
         context: context,
@@ -458,7 +485,10 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
           messenger,
           backend,
           targetPost.id,
-          () => reaction.addReaction(targetPost.id, emoji),
+          () => reaction.addReaction(
+            targetPost.id,
+            effectiveReaction(emoji, targetPost, myHost: account?.key.host),
+          ),
           'リアクションしました',
           timeline: timeline,
           reblogLabel: reblogLabel,

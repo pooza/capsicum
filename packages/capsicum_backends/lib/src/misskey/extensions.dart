@@ -11,6 +11,20 @@ const misskeyVisibilityRosetta = <String, PostScope>{
 String misskeyVisibilityFromScope(PostScope scope) =>
     misskeyVisibilityRosetta.entries.firstWhere((e) => e.value == scope).key;
 
+/// Misskey の `reactionAcceptance` → [ReactionAcceptance] (#1044)。
+///
+/// ⚠ **知らない値は null（制限なし）に落とす。**上流が受付条件を増やしたときに
+/// 投稿の変換ごと落とさないため。表に無い値は「制限を知らない」だけなので、
+/// ピッカーは従来どおり全部出す（サーバー側の差し替えは起きるが、少なくとも
+/// タイムラインは表示できる）。
+const misskeyReactionAcceptanceRosetta = <String, ReactionAcceptance>{
+  'likeOnly': ReactionAcceptance.likeOnly,
+  'likeOnlyForRemote': ReactionAcceptance.likeOnlyForRemote,
+  'nonSensitiveOnly': ReactionAcceptance.nonSensitiveOnly,
+  'nonSensitiveOnlyForLocalLikeOnlyForRemote':
+      ReactionAcceptance.nonSensitiveOnlyForLocalLikeOnlyForRemote,
+};
+
 extension CapsicumMisskeyUserExtension on MisskeyUser {
   User toCapsicum(String localHost, {Set<String> adminRoleIds = const {}}) {
     return User(
@@ -119,6 +133,8 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
       url: 'https://$localHost/notes/$id',
+      reactionAcceptance:
+          misskeyReactionAcceptanceRosetta[reactionAcceptance ?? ''],
     );
   }
 }

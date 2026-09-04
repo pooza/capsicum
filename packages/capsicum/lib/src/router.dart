@@ -31,7 +31,10 @@ import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
+import 'ui/screen/favorites_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
+import 'ui/screen/follow_requests_screen.dart';
+import 'ui/screen/followed_hashtags_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
 import 'ui/screen/gallery_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
@@ -42,10 +45,12 @@ import 'ui/screen/list_timeline_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
+import 'ui/screen/moderation_list_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/pages_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/post_list_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -206,6 +211,18 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/settings/touch',
             builder: (context, state) => const TouchActionSettingsScreen(),
           ),
+          // ブロック / ミュートの一覧と解除 (#1039)。設定の下だが中身は管理 UI
+          // なので独立画面（#805 の様式）。
+          GoRoute(
+            path: '/settings/moderation',
+            builder: (context, state) => const ModerationListScreen(),
+          ),
+          // フォロー中のハッシュタグの一覧と解除 (#1070)。#1039 と同じ構造
+          // （付けられるのに外す導線が塞がる）なので様式を揃える。
+          GoRoute(
+            path: '/settings/followed-hashtags',
+            builder: (context, state) => const FollowedHashtagsScreen(),
+          ),
           GoRoute(
             path: '/settings/desktop',
             builder: (context, state) => const DesktopSettingsScreen(),
@@ -301,6 +318,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/bookmarks',
             builder: (context, state) => const BookmarkScreen(),
           ),
+          // お気に入りの一覧 (#1071)。ブックマークの隣に 1 枚足す形。
+          GoRoute(
+            path: '/favorites',
+            builder: (context, state) => const FavoritesScreen(),
+          ),
+          // 自分宛のフォローリクエスト (#1040)。⚠ 通知は流れるので、溜まった
+          // 申請をまとめて処理する行き先が要る。
+          GoRoute(
+            path: '/follow-requests',
+            builder: (context, state) => const FollowRequestsScreen(),
+          ),
           GoRoute(
             path: '/achievements',
             builder: (context, state) {
@@ -340,6 +368,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               return UserListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as UserListFetcher,
+              );
+            },
+          ),
+          // 投稿一覧の汎用画面 (#1072)。`/users` の投稿版。
+          GoRoute(
+            path: '/posts',
+            builder: (context, state) {
+              final extra = state.extra! as Map<String, dynamic>;
+              return PostListScreen(
+                title: extra['title'] as String,
+                fetcher: extra['fetcher'] as PostListFetcher,
+                emptyMessage: extra['emptyMessage'] as String? ?? '投稿はありません',
               );
             },
           ),

@@ -6,6 +6,28 @@ import 'user.dart';
 
 enum QuoteState { pending, accepted, rejected, deleted, unauthorized }
 
+/// 投稿ごとのリアクション受付条件（Misskey の `reactionAcceptance`）。#1044
+///
+/// ⚠ **サーバーは条件に合わないリアクションをエラーにせず ❤️ へ差し替える**
+/// （`core/ReactionService.ts` の `FALLBACK = '❤'`）。成功扱いで返ってくるので
+/// **クライアントからは失敗として観測できない**。ユーザーには「押し間違えた？」
+/// に見えるため、送る前に出し分ける必要がある。
+///
+/// Mastodon には対応する概念が無いので、常に null になる。
+enum ReactionAcceptance {
+  /// 何を選んでも ❤️ になる。
+  likeOnly,
+
+  /// リアクションする側がリモートなら ❤️ になる。
+  likeOnlyForRemote,
+
+  /// センシティブなカスタム絵文字は ❤️ になる。
+  nonSensitiveOnly,
+
+  /// ローカルは [nonSensitiveOnly]、リモートは [likeOnly] 相当。
+  nonSensitiveOnlyForLocalLikeOnlyForRemote,
+}
+
 class Post {
   final String id;
   final DateTime postedAt;
@@ -49,6 +71,9 @@ class Post {
   final String? language;
   final String? url;
 
+  /// リアクションの受付条件 (#1044)。Misskey のみ。null は制限なし。
+  final ReactionAcceptance? reactionAcceptance;
+
   const Post({
     required this.id,
     required this.postedAt,
@@ -86,6 +111,7 @@ class Post {
     this.quotable = true,
     this.language,
     this.url,
+    this.reactionAcceptance,
   });
 
   /// 派生オブジェクトを生成する。enrich パイプライン（IsCatEnricher 等）の
@@ -136,6 +162,7 @@ class Post {
     quotable: quotable,
     language: language,
     url: url,
+    reactionAcceptance: reactionAcceptance,
   );
 }
 

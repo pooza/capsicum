@@ -111,6 +111,18 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### baseline: `e5c8faae29`（2026.7.0+4、2026-09-03 記録）
+
+`9d6b7d05de`（2026.7.0+0）..`daisskey`（2026.7.0+4）の差分トリアージ。**upstream の版は 2026.7.0 のまま**で、動いたのは**フォーク側の +1〜+4 だけ**。**endpoint 追加なし・entity フィールド変化なし・packed json-schema 変化なし**（`packages/backend/src/server/api/endpoints/` ・ `packages/backend/src/models/json-schema/` ・ `packages/misskey-js/src/autogen/` の diff がいずれも完全に空）。21 ファイル中の大半は WebUI・docs・CI で、backend は 2 ファイル計 3 行のみ:
+
+- **passive（サーバー側の挙動修正・capsicum に有益）**: `NoteCreateService` のデフォルトタグ付与が**条件反転していた**のを修正（`if (String(data.text).match(tag))` → `if (!...)`。従来は「既にタグがある投稿にだけ足す」＝実質機能していなかった）。ダイスキーの `#delmulin` が投稿本文に無いときに追記されるようになる。**capsicum 側の対応は不要**（送信内容は変えない・重複追記もしない）。⚠ ただしプリセットのデフォルトタグは[インシデント扱いの領域](https://github.com/pooza/capsicum/issues)なので、タグ管理まわりの不具合報告が来たらこの変更日（フォーク +1〜+4 の適用時期）を切り分けの軸に入れる。
+- **none（運用のみ）**: `QueueService` の `cleanRemoteNotes` の cron を 4 時 → 2 時へ。
+- **none（capsicum 無関係）**: タグセット widget の「エア番組」表示（#419 / #424）・診断系 workflow の削除（#428）・フォーク開発ガイドの docs 追加。いずれも Misskey の WebUI / リポジトリ運用側。
+
+Flash 互換ハーネスは未実施。`@syuilo/aiscript` は据え置き（upstream の版が動いていない）ため、[baseline `9d6b7d05de`](#baseline-9d6b7d05de202672026-08-01-記録) 節の「言語世代が動く圧力がない」判断がそのまま生きる。
+
+→ actionable なし。次回は `e5c8faae29..daisskey` から差分する。
+
 ### baseline: `9d6b7d05de`（2026.7.0、2026-08-01 記録）
 
 `589d4ece`（2026.6.0）..`daisskey`（2026.7.0+0）の差分トリアージ。**beta.1 の先読み時点から追加はなく、GA の内容は先読みと同一**だった。

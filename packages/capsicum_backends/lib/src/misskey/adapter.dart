@@ -69,7 +69,13 @@ class MisskeyCapabilities extends AdapterCapabilities {
     PostScope.public,
     PostScope.unlisted,
     PostScope.followersOnly,
-    PostScope.direct,
+    // ⚠ **`PostScope.direct`（Misskey の「指名」= `specified`）は載せない (#1043)。**
+    // 送信には宛先の `visibleUserIds` が要るが、capsicum にそれを組み立てる
+    // 導線が無い。載せると「選べるのに誰にも届かない投稿」ができる。
+    // 宛先選択 UI を作るまでは選択肢から外す、という判断（2026-09-04 pooza）。
+    // ⚠ **受信側の表示は別経路なので影響しない**（`extensions.dart` の
+    // `'specified': PostScope.direct` は残す）。Misskey の 1 対 1 のやり取りは
+    // #248 のチャット機能が担う。
   };
 
   @override
@@ -93,6 +99,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         BookmarkSupport,
         AnnouncementSupport,
         FollowSupport,
+        FollowRequestSupport,
         NotificationSupport,
         SearchSupport,
         ReactionSupport,
@@ -963,6 +970,72 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
 
+  // FollowRequestSupport (#1040)
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getFollowRequests({
+    TimelineQuery? query,
+  }) async {
+    final items = await client.getFollowRequests(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'follower');
+  }
+
+  @override
+  Future<void> authorizeFollowRequest(String userId) =>
+      client.acceptFollowRequest(userId);
+
+  @override
+  Future<void> rejectFollowRequest(String userId) =>
+      client.rejectFollowRequest(userId);
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getBlockedUsers({
+    TimelineQuery? query,
+  }) async {
+    final items = await client.getBlockingList(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'blockee');
+  }
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getMutedUsers({
+    TimelineQuery? query,
+  }) async {
+    // ⚠ **期限付きミュート（`expiresAt`）は一覧に出していない。**`muteUser` は
+    // 期限を送れるので対称にする余地はあるが、User モデルに載せる情報では
+    // ないため、必要になった時点で別の見せ方を考える。
+    final items = await client.getMutingList(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'mutee');
+  }
+
+  /// Blocking / Muting のような「関係レコード + 相手の User」形式の一覧を
+  /// [User] のリストへ均す (#1039)。
+  ///
+  /// ⚠⚠ **カーソルは関係レコードの `id`。**`users.last.id`（相手の User id）を
+  /// 渡すとページが飛ぶ。`getFollowers` / `getFollowing` は User id を返して
+  /// いるが、あちらに合わせない。
+  ({List<User> users, String? nextCursor}) _relationList(
+    List<Map<String, dynamic>> items,
+    String userKey,
+  ) {
+    final users = items
+        .map(
+          (item) => MisskeyUser.fromJson(
+            item[userKey] as Map<String, dynamic>,
+          ).toCapsicum(client.host, adminRoleIds: _adminRoleIds),
+        )
+        .toList();
+    return (users: users, nextCursor: items.lastOrNull?['id'] as String?);
+  }
+
   @override
   Future<({List<User> users, String? nextCursor})> getFollowing(
     String userId, {
@@ -1099,15 +1172,38 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       return const SearchResults();
     }
 
-    final users = await client.searchUsers(query, limit: 20);
-    final hashtags = await client.searchHashtags(query, limit: 20);
+    // ⚠ **3 本を並列で投げる (#1041)。**逐次 await していたので、本文検索を
+    // 足すとレイテンシが素直に 1.5 倍になる。
+    final results = await Future.wait([
+      client.searchNotes(query, limit: 20),
+      client.searchUsers(query, limit: 20),
+      client.searchHashtags(query, limit: 20),
+    ]);
+    // ⚠ **`null` は「0 件」ではなく「このサーバーでは本文検索が提供されて
+    // いない」。**呼び出し側で見せ方を変えるので潰さない。
+    final notes = results[0] as List<MisskeyNote>?;
+    final users = results[1] as List<MisskeyUser>;
+    final hashtags = results[2] as List<String>;
+
     final seen = <String>{};
     return SearchResults(
+      // ⚠ **`_safeConvert` を通す**（リリース前レビューで検出）。ここは
+      // Post 変換＝いちばん落ちやすい経路なのに、同ファイルの timeline 系が
+      // 全部通しているのにここだけ素の `map` だった。1 件腐ると検索結果が
+      // 丸ごと消える。
+      posts: notes == null
+          ? const []
+          : _safeConvert(
+              notes,
+              (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
+              (n) => n.id,
+            ).results,
       users: users
           .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
           .where((u) => seen.add(u.id))
           .toList(),
       hashtags: hashtags,
+      postSearchUnavailable: notes == null,
     );
   }
 
@@ -1274,6 +1370,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowHashtag(String hashtag) => throw UnimplementedError();
+
+  /// Misskey にハッシュタグのフォローという概念は無い (#1070)。
+  ///
+  /// ⚠ **`UnimplementedError` を投げない。**呼び出し側は「一覧を出す画面」で、
+  /// 例外にすると画面ごと落ちる。**空 = フォローしているタグが無い**として
+  /// 素直に扱えるので、そちらへ倒す。
+  @override
+  Future<({List<String> tags, String? nextCursor})> getFollowedHashtags({
+    TimelineQuery? query,
+  }) async => (tags: const <String>[], nextCursor: null);
 
   @override
   Future<List<Post>> getPostsByHashtag(

@@ -94,9 +94,12 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     with
         FavoriteSupport,
         BookmarkSupport,
+        // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
+        QuoteSupport,
         AnnouncementSupport,
         AnnouncementReactionSupport,
         FollowSupport,
+        FollowRequestSupport,
         NotificationSupport,
         SearchSupport,
         CustomEmojiSupport,
@@ -712,6 +715,44 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
   }
 
+  @override
+  Future<({List<Post> posts, String? nextCursor})> getFavorites({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFavourites(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      posts: _safeConvert(
+        result.statuses,
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+        (s) => s.id,
+      ).results,
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<({List<Post> posts, String? nextCursor})> getQuotesOf(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getQuotes(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      posts: _safeConvert(
+        result.statuses,
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+        (s) => s.id,
+      ).results,
+      nextCursor: result.nextMaxId,
+    );
+  }
+
   // BookmarkSupport
 
   @override
@@ -817,6 +858,67 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }) async {
     final result = await client.getAccountFollowers(
       userId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  // FollowRequestSupport (#1040)
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getFollowRequests({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFollowRequests(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<void> authorizeFollowRequest(String userId) =>
+      client.authorizeFollowRequest(userId);
+
+  @override
+  Future<void> rejectFollowRequest(String userId) =>
+      client.rejectFollowRequest(userId);
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getBlockedUsers({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getBlocks(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getMutedUsers({
+    TimelineQuery? query,
+  }) async {
+    // ⚠ **「通知だけミュート」（`notifications: false`）は一覧には出ない。**
+    // `GET /api/v1/mutes` が返すのは Account なので、ミュートの種別を区別する
+    // 情報がレスポンスに乗らない。一覧では表現せず、解除の導線としてだけ使う。
+    final result = await client.getMutes(
       maxId: query?.maxId,
       limit: query?.limit,
     );
@@ -1244,6 +1346,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
 
   @override
   Future<void> unfollowHashtag(String hashtag) => client.unfollowTag(hashtag);
+
+  @override
+  Future<({List<String> tags, String? nextCursor})> getFollowedHashtags({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFollowedTags(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (tags: result.names, nextCursor: result.nextMaxId);
+  }
 
   @override
   Future<List<Post>> getPostsByHashtag(

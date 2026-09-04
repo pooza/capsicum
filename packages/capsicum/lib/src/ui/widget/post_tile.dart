@@ -26,6 +26,7 @@ import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
@@ -323,6 +324,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   void dispose() {
     _cardFetchDebounce?.cancel();
     _contentRenderer?.dispose();
+    _cwRenderer?.dispose();
     super.dispose();
   }
 
@@ -346,6 +348,14 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   ContentRenderer? _contentRenderer;
 
+  /// CW 用のレンダラ (#1068)。
+  ///
+  /// ⚠⚠ **本文と同じインスタンスを使い回してはいけない。**[_renderContent] は
+  /// 呼ばれるたび冒頭で前のインスタンスを `dispose()` するので、共有すると
+  /// **本文を描いた瞬間に CW 側の `TapGestureRecognizer` が破棄され、CW の
+  /// ハッシュタグが押せなくなる**（押しても何も起きない、という壊れ方）。
+  ContentRenderer? _cwRenderer;
+
   TextSpan _renderContent(
     String content,
     TextStyle baseStyle,
@@ -355,7 +365,41 @@ class _PostTileState extends ConsumerState<PostTile> {
     bool isCat = false,
   }) {
     _contentRenderer?.dispose();
-    _contentRenderer = ContentRenderer(
+    _contentRenderer = _buildRenderer(
+      baseStyle,
+      emojis,
+      fallbackHost: fallbackHost,
+      isCat: isCat,
+    );
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
+  }
+
+  /// CW（警告文）を本文と同じ導線でレンダリングする (#1068)。
+  ///
+  /// ⚠ **Mastodon の `spoiler_text` はプレーンテキスト、Misskey の `cw` は
+  /// MFM。**一律 `renderMfm` に通すと Mastodon 側の CW で `**〜**` 等が
+  /// 意図せず装飾される。投稿が HTML（= Mastodon）なら `renderPlain` を使う。
+  TextSpan _renderCw(
+    String cw,
+    TextStyle baseStyle,
+    Map<String, String> emojis, {
+    String? fallbackHost,
+    required bool isHtml,
+  }) {
+    _cwRenderer?.dispose();
+    _cwRenderer = _buildRenderer(baseStyle, emojis, fallbackHost: fallbackHost);
+    return isHtml ? _cwRenderer!.renderPlain(cw) : _cwRenderer!.renderMfm(cw);
+  }
+
+  ContentRenderer _buildRenderer(
+    TextStyle baseStyle,
+    Map<String, String> emojis, {
+    String? fallbackHost,
+    bool isCat = false,
+  }) {
+    return ContentRenderer(
       baseStyle: baseStyle,
       applyNyaize: isCat,
       resolveEmoji: (shortcode) {
@@ -388,9 +432,6 @@ class _PostTileState extends ConsumerState<PostTile> {
       emojiSize: ref.watch(emojiSizeProvider),
       animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
   }
 
   @override
@@ -671,20 +712,28 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     color: Theme.of(context).colorScheme.error,
                                   ),
                                   const SizedBox(width: 4),
+                                  // CW 内のハッシュタグも本文と同じ導線で
+                                  // 押せるようにする (#1068)。⚠ 見た目は
+                                  // 従来どおり bold のまま。
                                   Expanded(
-                                    child: EmojiText(
-                                      displayPost.spoilerText!,
-                                      emojis: {
-                                        ...displayPost.emojis,
-                                        ...displayPost.author.emojis,
-                                      },
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                      fallbackHost: displayPost.emojiHost,
+                                    child: Text.rich(
+                                      _renderCw(
+                                        displayPost.spoilerText!,
+                                        Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ) ??
+                                            const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                        {
+                                          ...displayPost.emojis,
+                                          ...displayPost.author.emojis,
+                                        },
+                                        fallbackHost: displayPost.emojiHost,
+                                        isHtml: displayPost.isHtml,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -967,6 +1016,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 icon: Icons.format_quote,
                                 label: '引用',
                                 count: displayPost.quoteCount,
+                                // 数字が出ている以上「押せば見られる」と
+                                // 期待される (#1072)。⚠ 対応していない
+                                // サーバーでは押せないままにする（onTap を
+                                // null にすると _CountChip 側で無効になる）。
+                                onTap:
+                                    ref.read(currentAdapterProvider)
+                                        is QuoteSupport
+                                    ? () => _showQuotes(context, displayPost)
+                                    : null,
                               ),
                               const SizedBox(width: 8),
                             ],
@@ -1036,6 +1094,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final reactionAdapter = adapter as ReactionSupport;
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
+    // ⚠ **クロージャの外で捕まえる**（#990 / #1064 と同じ理由）。closure が
+    // 走る時点でこのタイルが dispose されていると `ref.read` が投げ、
+    // リアクションが送信されないまま無言で消える。
+    final myHost = ref.read(currentAccountProvider)?.key.host;
 
     if (targetPost.myReaction == emoji) {
       _runReactionAction(
@@ -1051,7 +1113,11 @@ class _PostTileState extends ConsumerState<PostTile> {
         messenger,
         adapter,
         targetPost.id,
-        () => reactionAdapter.addReaction(targetPost.id, emoji),
+        // 既存チップのタップもピッカーと同じ判定を通す (#1044・Codex P1)。
+        () => reactionAdapter.addReaction(
+          targetPost.id,
+          effectiveReaction(emoji, targetPost, myHost: myHost),
+        ),
         'リアクションしました',
       );
     }
@@ -1632,9 +1698,19 @@ class _PostTileState extends ConsumerState<PostTile> {
               messenger,
               adapter as BackendAdapter,
               targetPost.id,
+              // カスタム絵文字のタップも同じ判定を通す (#1044・Codex P1)。
+              // ⚠ **host はシートを開く前に捕まえた `account` から取る**
+              // （#990 / #1064 と同じ理由・Codex P2）。ここで `ref.read` を
+              // すると、シートが開いている間に TL が更新されてこのタイルが
+              // dispose された場合に**投げて、リアクションが送信されないまま
+              // 無言で消える**。
               () => (adapter as ReactionSupport).addReaction(
                 targetPost.id,
-                ':$shortcode:',
+                effectiveReaction(
+                  ':$shortcode:',
+                  targetPost,
+                  myHost: account?.key.host,
+                ),
               ),
               'リアクションしました',
               timeline: timeline,
@@ -1670,6 +1746,24 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 失敗時に `ref.read` が走り、**失敗の SnackBar ごと落ちる**。
     final reblogLabel = ref.read(reblogLabelProvider);
 
+    // 受付条件が ❤️ のみなら、ピッカーを開かずそのまま送る (#1044)。開いても
+    // 何を選んでもサーバーが ❤️ へ差し替えるので、選ばせるほうが嘘になる。
+    if (reactionPickerMode(targetPost, myHost: account?.key.host) ==
+        ReactionPickerMode.likeOnly) {
+      unawaited(
+        _runReactionAction(
+          messenger,
+          backend,
+          targetPost.id,
+          () => reaction.addReaction(targetPost.id, kMisskeyReactionFallback),
+          'リアクションしました',
+          timeline: timeline,
+          reblogLabel: reblogLabel,
+        ),
+      );
+      return;
+    }
+
     unawaited(
       showReactionPickerSheet(
         context: context,
@@ -1678,7 +1772,12 @@ class _PostTileState extends ConsumerState<PostTile> {
           messenger,
           backend,
           targetPost.id,
-          () => reaction.addReaction(targetPost.id, emoji),
+          // ピッカー経由も念のため通す (#1044)。likeOnly ならここへ来ないが、
+          // 判定の入口を 1 本に保つ。
+          () => reaction.addReaction(
+            targetPost.id,
+            effectiveReaction(emoji, targetPost, myHost: account?.key.host),
+          ),
           'リアクションしました',
           timeline: timeline,
           reblogLabel: reblogLabel,
@@ -1989,6 +2088,29 @@ class _PostTileState extends ConsumerState<PostTile> {
         },
       );
     }
+  }
+
+  /// 引用している投稿の一覧を開く (#1072)。
+  ///
+  /// ⚠ **ブースト / お気に入りの一覧とは中身が違う。**あちらは「反応した人」で
+  /// ユーザー一覧（`/users`）だが、引用は「引用した投稿」なので投稿一覧
+  /// （`/posts`）になる。BottomSheet ではなく独立画面にしたのはそのため
+  /// （投稿タイルは高さがあり、シートに収めると 2〜3 件しか見えない）。
+  void _showQuotes(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! QuoteSupport) return;
+    final quote = adapter as QuoteSupport;
+    context.push(
+      '/posts',
+      extra: {
+        'title': '引用',
+        'emptyMessage': '引用している投稿はありません',
+        'fetcher': (String? cursor) => quote.getQuotesOf(
+          post.id,
+          query: TimelineQuery(maxId: cursor, limit: 20),
+        ),
+      },
+    );
   }
 
   void _showRebloggedBy(BuildContext context, Post post) {
@@ -3072,19 +3194,55 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   }
 }
 
-class _QuoteCard extends StatefulWidget {
+/// ⚠ **ConsumerStatefulWidget にしたのは CW のレンダリングのため (#1068)。**
+/// `ContentRenderer` は絵文字サイズ・MFM アニメーションの設定と、リンクタップの
+/// アプリ内解決に `ref` を要る。
+class _QuoteCard extends ConsumerStatefulWidget {
   final Post quote;
 
   const _QuoteCard({required this.quote});
 
   @override
-  State<_QuoteCard> createState() => _QuoteCardState();
+  ConsumerState<_QuoteCard> createState() => _QuoteCardState();
 }
 
-class _QuoteCardState extends State<_QuoteCard> {
+class _QuoteCardState extends ConsumerState<_QuoteCard> {
   bool _cwExpanded = false;
 
+  /// 引用元 CW 用のレンダラ (#1068)。⚠ **本体側の `_cwRenderer` とは別インス
+  /// タンス**（別 State なので共有しようがないが、共有すると本体と同じ
+  /// 「dispose されてタップが死ぬ」形になる）。
+  ContentRenderer? _cwRenderer;
+
   Post get quote => widget.quote;
+
+  @override
+  void dispose() {
+    _cwRenderer?.dispose();
+    super.dispose();
+  }
+
+  /// 引用元の CW を本体と同じ規則でレンダリングする (#1068)。
+  ///
+  /// ⚠ **Mastodon はプレーンテキスト、Misskey は MFM**（本体側と同じ振り分け）。
+  TextSpan _renderCw(String cw, TextStyle? baseStyle) {
+    _cwRenderer?.dispose();
+    final renderer = ContentRenderer(
+      baseStyle: baseStyle ?? const TextStyle(),
+      resolveEmoji: (shortcode) {
+        final url = quote.emojis[shortcode];
+        if (url != null) return url;
+        final host = quote.emojiHost;
+        return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+      emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    );
+    _cwRenderer = renderer;
+    return quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw);
+  }
 
   @override
   void didUpdateWidget(covariant _QuoteCard oldWidget) {
@@ -3149,12 +3307,13 @@ class _QuoteCardState extends State<_QuoteCard> {
                       color: theme.textTheme.bodySmall?.color,
                     ),
                     const SizedBox(width: 2),
+                    // 引用元の CW でもハッシュタグを押せるようにする (#1068)。
                     Expanded(
-                      child: EmojiText(
-                        quote.spoilerText!,
-                        emojis: quote.emojis,
-                        fallbackHost: quote.emojiHost,
-                        style: theme.textTheme.bodySmall,
+                      child: Text.rich(
+                        _renderCw(
+                          quote.spoilerText!,
+                          theme.textTheme.bodySmall,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

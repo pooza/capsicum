@@ -364,7 +364,47 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // OS のファイラーからのドラッグ中だけ true。ドロップ可能なことを示す
   // ハイライト表示に使う (#571)。デスクトップ以外では発火しない。
   bool _dragging = false;
+
+  /// 公開範囲 (#1043)。
+  ///
+  /// ⚠⚠ **外から来た値を勝手に丸めない。**下書きの復元・redraft・返信元の
+  /// 引き継ぎ・サーバー既定など、ピッカーを経由せず入る経路が 5 つある。
+  /// 一時はここで「送れない範囲」を `followersOnly` へ丸めていたが、
+  /// **2 通りに有害だった**（リリース前レビューで検出）:
+  ///
+  /// 1. **指名への返信が必ず 400 で落ちる。**Misskey の `NoteCreateService` は
+  ///    `reply.visibility === 'specified' && data.visibility !== 'specified'`
+  ///    を拒否する。**指名への返信は指名でしか送れない**
+  /// 2. ⚠⚠ **自分の指名ノートの redraft が、DM をフォロワー全員へ広げる。**
+  ///    返信関係が無いのでサーバーは弾かず、そのまま followers 宛に出る
+  ///
+  /// ⚠ **「誰にも届かない」という丸めの前提自体が誤りだった。**返信については
+  /// サーバーが返信先の作者を `visibleUsers` へ自動補完する
+  /// （`NoteCreateService.ts` の `data.visibleUsers.push(...)`）ので、
+  /// `visibleUserIds` を送らなくても**正しく相手に届いていた**。誰にも届かない
+  /// のは**返信でない指名投稿**だけ。
+  ///
+  /// したがって現在は **丸めず、送れない状況では送信を止める**
+  /// （[_unsendableScopeReason]）。⚠ **広げる方向の自動補正はしない。**
   PostScope _scope = PostScope.public;
+
+  /// 現在の公開範囲では送れない理由。送れるなら null (#1043)。
+  ///
+  /// ⚠ **「宛先を作れない指名」だけを止める。**返信なら宛先はサーバーが補完
+  /// するので送れる。redraft / 下書き復元 / サーバー既定で入った指名は、
+  /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
+  /// ユーザーに選び直してもらう。
+  String? get _unsendableScopeReason {
+    if (_scope != PostScope.direct) return null;
+    final adapter = ref.read(currentAdapterProvider);
+    if (selectableScopes(adapter).contains(PostScope.direct)) return null;
+    if (widget.replyTo != null) return null;
+    final label = postScopeLabel(PostScope.direct, adapter);
+    return '「$label」は宛先を指定する必要がありますが、capsicum には指定する画面が'
+        'ありません。このままでは誰にも届きません。公開範囲を選び直すか、'
+        '「メッセージ」をお使いください。';
+  }
+
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
@@ -518,20 +558,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
-    return PostScope.values.map((scope) {
-      final display = postScopeDisplay(scope, adapter);
-      return DropdownMenuItem(
-        value: scope,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(display.icon, size: 16),
-            const SizedBox(width: 4),
-            Text(display.label, style: const TextStyle(fontSize: 13)),
-          ],
-        ),
-      );
-    }).toList();
+    // 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
+    // 返信・redraft 等で「指名」が入っていることがあり、items に無い値を
+    // DropdownButton に渡すと assert で落ちる。並び順は PostScope.values に
+    // 揃えたいので、`selectableScopes` に足すのではなく values 側で絞る。
+    final selectable = selectableScopes(adapter);
+    return PostScope.values
+        .where((s) => selectable.contains(s) || s == _scope)
+        .map((scope) {
+          final display = postScopeDisplay(scope, adapter);
+          return DropdownMenuItem(
+            value: scope,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(display.icon, size: 16),
+                const SizedBox(width: 4),
+                Text(display.label, style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+          );
+        })
+        .toList();
   }
 
   @override
@@ -3235,6 +3283,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     final text = _controller.text.trim();
     if (text.isEmpty && _attachments.isEmpty && !_pollEnabled) return;
 
+    // 宛先を作れない「指名」は送らせない (#1043)。
+    //
+    // ⚠⚠ **勝手に広い範囲へ倒さない。**以前ここを `followersOnly` へ丸めて
+    // いたが、自分の指名ノートを redraft すると**サーバーが弾かないまま DM が
+    // フォロワー全員へ出る**（リリース前レビューで検出）。「誰にも届かない」
+    // より「意図せず広がる」ほうが実害が大きい。ユーザーに選び直してもらう。
+    //
+    // ⚠ **返信はここに来ない。**返信先が指名なら宛先はサーバーが補完するので
+    // そのまま送れる（[_unsendableScopeReason] が null を返す）。
+    final unsendable = _unsendableScopeReason;
+    if (unsendable != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(unsendable)));
+      return;
+    }
+
     if (await ref.read(confirmBeforePostProvider.notifier).readPersisted()) {
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
@@ -3581,7 +3647,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       MenuSubmenuEntry(
         label: '公開範囲',
         children: [
-          for (final scope in PostScope.values)
+          // ツールバーの Dropdown と同じ母数にする (#1043)。⚠ **現在値を
+          // 含めるのも同じ**（返信で「指名」が入っていると選択中の項目が
+          // メニューから消え、何が選ばれているか分からなくなる）。
+          for (final scope in PostScope.values.where(
+            (s) => selectableScopes(adapter).contains(s) || s == _scope,
+          ))
             MenuActionEntry(
               label: postScopeLabel(scope, adapter),
               checked: _scope == scope,
@@ -4078,6 +4149,36 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ],
+                  // 送れない公開範囲が入っていることを画面に出す (#1043)。
+                  //
+                  // ⚠ **SnackBar にしない。**この状態になるのは返信・redraft・
+                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
+                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
+                  // 送信もブロックするので、理由は出したままにする。
+                  if (_unsendableScopeReason != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _unsendableScopeReason!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const Divider(),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,

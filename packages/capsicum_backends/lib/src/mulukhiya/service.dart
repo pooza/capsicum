@@ -1571,7 +1571,17 @@ class MulukhiyaService {
       final response = await _dio.post(
         '$baseUrl/account/is_cat',
         data: {'accts': accts},
-        options: _bearerOptions(accessToken),
+        // ⚠ **既定の 60 秒を使わない (#1080)。**モロヘイヤはキャッシュに無い
+        // acct を **その場でリモートへ取りに行く**（`fetch_actor`）。相手が
+        // 到達不能（TCP を drop）だと接続タイムアウトまで塞がり、nginx が 504 を
+        // 返すまで待たされる。実測で通知一覧が約 1 分止まっていた。
+        //
+        // これは**猫耳表示のための装飾情報**なので、早く諦めてよい。キャッシュに
+        // 乗っていれば数十ミリ秒で返る API なので、5 秒は正常系には十分広い。
+        options: _bearerOptions(accessToken).copyWith(
+          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: const Duration(seconds: 5),
+        ),
       );
       final data = response.data as Map<String, dynamic>? ?? {};
       return {
