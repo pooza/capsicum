@@ -968,6 +968,15 @@ class _PostTileState extends ConsumerState<PostTile> {
                                 icon: Icons.format_quote,
                                 label: '引用',
                                 count: displayPost.quoteCount,
+                                // 数字が出ている以上「押せば見られる」と
+                                // 期待される (#1072)。⚠ 対応していない
+                                // サーバーでは押せないままにする（onTap を
+                                // null にすると _CountChip 側で無効になる）。
+                                onTap:
+                                    ref.read(currentAdapterProvider)
+                                        is QuoteSupport
+                                    ? () => _showQuotes(context, displayPost)
+                                    : null,
                               ),
                               const SizedBox(width: 8),
                             ],
@@ -2008,6 +2017,29 @@ class _PostTileState extends ConsumerState<PostTile> {
         },
       );
     }
+  }
+
+  /// 引用している投稿の一覧を開く (#1072)。
+  ///
+  /// ⚠ **ブースト / お気に入りの一覧とは中身が違う。**あちらは「反応した人」で
+  /// ユーザー一覧（`/users`）だが、引用は「引用した投稿」なので投稿一覧
+  /// （`/posts`）になる。BottomSheet ではなく独立画面にしたのはそのため
+  /// （投稿タイルは高さがあり、シートに収めると 2〜3 件しか見えない）。
+  void _showQuotes(BuildContext context, Post post) {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter is! QuoteSupport) return;
+    final quote = adapter as QuoteSupport;
+    context.push(
+      '/posts',
+      extra: {
+        'title': '引用',
+        'emptyMessage': '引用している投稿はありません',
+        'fetcher': (String? cursor) => quote.getQuotesOf(
+          post.id,
+          query: TimelineQuery(maxId: cursor, limit: 20),
+        ),
+      },
+    );
   }
 
   void _showRebloggedBy(BuildContext context, Post post) {

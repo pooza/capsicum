@@ -146,6 +146,16 @@ List<HomeNavItem> buildHomeNavItems(
       icon: Icons.bookmark_outline,
       onSelected: () => act(() => context.push('/bookmarks')),
     ),
+    // お気に入りの一覧 (#1071)。⚠ **ブックマークの隣に置く** — 同じ「あとで
+    // 見る」系なのに片方だけ一覧がある非対称を解消するのが趣旨のため。
+    // ⚠ **Misskey には出さない。**あちらの「お気に入り」はブックマーク相当で
+    // 既に上の項目へ寄せてあり、並べると同じものが 2 つ出る。
+    if (adapter is FavoriteSupport)
+      HomeNavItem(
+        title: 'お気に入り',
+        icon: Icons.star_outline,
+        onSelected: () => act(() => context.push('/favorites')),
+      ),
     if (!announcementsShownAsTab)
       HomeNavItem(
         title: 'お知らせ',

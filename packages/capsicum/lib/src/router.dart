@@ -31,6 +31,7 @@ import 'ui/screen/drafts_screen.dart';
 import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
+import 'ui/screen/favorites_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
@@ -48,6 +49,7 @@ import 'ui/screen/notification_screen.dart';
 import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/pages_screen.dart';
 import 'ui/screen/post_detail_screen.dart';
+import 'ui/screen/post_list_screen.dart';
 import 'ui/screen/profile_edit_screen.dart';
 import 'ui/screen/profile_screen.dart';
 import 'ui/screen/scheduled_posts_screen.dart';
@@ -315,6 +317,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/bookmarks',
             builder: (context, state) => const BookmarkScreen(),
           ),
+          // お気に入りの一覧 (#1071)。ブックマークの隣に 1 枚足す形。
+          GoRoute(
+            path: '/favorites',
+            builder: (context, state) => const FavoritesScreen(),
+          ),
           GoRoute(
             path: '/achievements',
             builder: (context, state) {
@@ -354,6 +361,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               return UserListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as UserListFetcher,
+              );
+            },
+          ),
+          // 投稿一覧の汎用画面 (#1072)。`/users` の投稿版。
+          GoRoute(
+            path: '/posts',
+            builder: (context, state) {
+              final extra = state.extra! as Map<String, dynamic>;
+              return PostListScreen(
+                title: extra['title'] as String,
+                fetcher: extra['fetcher'] as PostListFetcher,
+                emptyMessage: extra['emptyMessage'] as String? ?? '投稿はありません',
               );
             },
           ),
