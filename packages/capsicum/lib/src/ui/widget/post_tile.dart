@@ -26,6 +26,7 @@ import '../util/hashtag_actions.dart';
 import '../util/post_action_error.dart';
 import '../util/post_actions.dart';
 import '../util/post_scope_display.dart';
+import '../util/reaction_acceptance.dart';
 import '../util/relative_time.dart';
 import '../util/visible_timeline.dart';
 import 'content_parser.dart';
@@ -1669,6 +1670,24 @@ class _PostTileState extends ConsumerState<PostTile> {
     // 失敗文言のラベルも同じ窓で dispose されうる (#1027-C2)。これを渡さないと
     // 失敗時に `ref.read` が走り、**失敗の SnackBar ごと落ちる**。
     final reblogLabel = ref.read(reblogLabelProvider);
+
+    // 受付条件が ❤️ のみなら、ピッカーを開かずそのまま送る (#1044)。開いても
+    // 何を選んでもサーバーが ❤️ へ差し替えるので、選ばせるほうが嘘になる。
+    if (reactionPickerMode(targetPost, myHost: account?.key.host) ==
+        ReactionPickerMode.likeOnly) {
+      unawaited(
+        _runReactionAction(
+          messenger,
+          backend,
+          targetPost.id,
+          () => reaction.addReaction(targetPost.id, kMisskeyReactionFallback),
+          'リアクションしました',
+          timeline: timeline,
+          reblogLabel: reblogLabel,
+        ),
+      );
+      return;
+    }
 
     unawaited(
       showReactionPickerSheet(

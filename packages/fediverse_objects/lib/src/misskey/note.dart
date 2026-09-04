@@ -29,6 +29,14 @@ class MisskeyNote {
   final Map<String, dynamic>? channel;
   final bool? localOnly;
 
+  /// リアクションの受付条件 (#1044)。`likeOnly` / `likeOnlyForRemote` /
+  /// `nonSensitiveOnly` / `nonSensitiveOnlyForLocalLikeOnlyForRemote` / null。
+  ///
+  /// ⚠ **未知の値が来ても落とさないよう `String?` のまま受ける。**enum への
+  /// 変換は `toCapsicum()` 側で行い、知らない値は「制限なし」として扱う
+  /// （新しい受付条件が上流に増えても投稿の変換ごと落とさないため）。
+  final String? reactionAcceptance;
+
   const MisskeyNote({
     required this.id,
     required this.createdAt,
@@ -50,6 +58,7 @@ class MisskeyNote {
     this.poll,
     this.channel,
     this.localOnly,
+    this.reactionAcceptance,
   });
 
   factory MisskeyNote.fromJson(Map<String, dynamic> json) =>
