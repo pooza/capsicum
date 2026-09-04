@@ -52,6 +52,13 @@ class _PostListScreenState extends ConsumerState<PostListScreen> {
   /// 飛ばすので、失敗を「引用している投稿はありません」と描くと嘘になる。
   Object? _error;
 
+  /// 取得の世代（Codex P1 レビューで追加）。
+  ///
+  /// ⚠ **引っ張って更新と追加読み込みが交差すると、新しい 1 ページ目に古い
+  /// 2 ページ目が連結され、カーソルも巻き戻る。**`favorite_provider` で同じ
+  /// 形を直したので、Widget State 側にも同じ守りを入れる。
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
@@ -73,10 +80,12 @@ class _PostListScreenState extends ConsumerState<PostListScreen> {
   }
 
   Future<void> _load() async {
+    final generation = ++_generation;
     try {
       final result = await widget.fetcher(null);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
+        _loadingMore = false;
         _posts = result.posts;
         _nextCursor = result.nextCursor;
         _loading = false;
@@ -85,7 +94,7 @@ class _PostListScreenState extends ConsumerState<PostListScreen> {
       });
     } catch (e) {
       debugLogException('PostListScreen load error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
         _error = e;
@@ -95,10 +104,12 @@ class _PostListScreenState extends ConsumerState<PostListScreen> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _posts.isEmpty) return;
+    // 着地時に _load が走り直していたら、この結果は古いページなので捨てる。
+    final generation = _generation;
     setState(() => _loadingMore = true);
     try {
       final result = await widget.fetcher(_nextCursor);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _posts = [..._posts, ...result.posts];
         _nextCursor = result.nextCursor;
@@ -107,7 +118,7 @@ class _PostListScreenState extends ConsumerState<PostListScreen> {
       });
     } catch (e) {
       debugLogException('PostListScreen loadMore error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _loadingMore = false);
     }
   }

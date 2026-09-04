@@ -43,6 +43,9 @@ class _FollowedHashtagsScreenState
   /// と描くと、フォローが消えたと誤解させる。
   Object? _error;
 
+  /// 取得の世代（Codex P1 レビューで追加・[PostListScreen] と同型）。
+  int _generation = 0;
+
   /// 解除済みのタグ。⚠ **行を消さない**（#1039 と同じ理由）。サーバー側の
   /// 反映にラグがあると取り直しで復活し、「解除できていない」に見える。
   final _released = <String>{};
@@ -79,12 +82,14 @@ class _FollowedHashtagsScreenState
       if (mounted) setState(() => _loading = false);
       return;
     }
+    final generation = ++_generation;
     try {
       final result = await support.getFollowedHashtags(
         query: const TimelineQuery(limit: _pageSize),
       );
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
+        _loadingMore = false;
         _tags = result.tags;
         _nextCursor = result.nextCursor;
         _loading = false;
@@ -93,7 +98,7 @@ class _FollowedHashtagsScreenState
       });
     } catch (e) {
       debugLogException('FollowedHashtagsScreen load error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
         _error = e;
@@ -105,12 +110,13 @@ class _FollowedHashtagsScreenState
     if (_loadingMore || !_hasMore || _tags.isEmpty) return;
     final support = _support;
     if (support == null) return;
+    final generation = _generation;
     setState(() => _loadingMore = true);
     try {
       final result = await support.getFollowedHashtags(
         query: TimelineQuery(maxId: _nextCursor, limit: _pageSize),
       );
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _tags = [..._tags, ...result.tags];
         _nextCursor = result.nextCursor;
@@ -119,7 +125,7 @@ class _FollowedHashtagsScreenState
       });
     } catch (e) {
       debugLogException('FollowedHashtagsScreen loadMore error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _loadingMore = false);
     }
   }

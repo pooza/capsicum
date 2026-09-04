@@ -75,6 +75,10 @@ class _UserListViewState extends ConsumerState<UserListView> {
   /// 隣で落としていた。
   Object? _error;
 
+  /// 取得の世代（Codex P1 レビューで追加・[PostListScreen] と同型）。
+  /// 引っ張って更新と追加読み込みが交差したときに古いページを捨てる。
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
@@ -96,14 +100,16 @@ class _UserListViewState extends ConsumerState<UserListView> {
   }
 
   Future<void> _loadInitial() async {
+    final generation = ++_generation;
     try {
       final result = await widget.fetcher(null);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       final enriched = await ref
           .read(isCatEnricherProvider)
           .enrichUsers(result.users);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
+        _loadingMore = false;
         _users = enriched;
         _nextCursor = result.nextCursor;
         _loading = false;
@@ -114,7 +120,7 @@ class _UserListViewState extends ConsumerState<UserListView> {
       });
     } catch (e) {
       debugLogException('UserListScreen load error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
         _error = e;
@@ -124,14 +130,15 @@ class _UserListViewState extends ConsumerState<UserListView> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _users.isEmpty) return;
+    final generation = _generation;
     setState(() => _loadingMore = true);
     try {
       final result = await widget.fetcher(_nextCursor);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       final enriched = await ref
           .read(isCatEnricherProvider)
           .enrichUsers(result.users);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _users = [..._users, ...enriched];
         _nextCursor = result.nextCursor;
@@ -140,7 +147,7 @@ class _UserListViewState extends ConsumerState<UserListView> {
       });
     } catch (e) {
       debugLogException('UserListScreen loadMore error', e);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _loadingMore = false);
     }
   }
