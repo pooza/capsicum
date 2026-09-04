@@ -1281,6 +1281,17 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<void> unfollowHashtag(String hashtag) => client.unfollowTag(hashtag);
 
   @override
+  Future<({List<String> tags, String? nextCursor})> getFollowedHashtags({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFollowedTags(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (tags: result.names, nextCursor: result.nextMaxId);
+  }
+
+  @override
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
     TimelineQuery? query,

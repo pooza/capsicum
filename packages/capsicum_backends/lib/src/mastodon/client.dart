@@ -979,6 +979,25 @@ class MastodonClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /api/v1/followed_tags (#1070)
+  ///
+  /// ⚠ **ページングは `Link` ヘッダの `max_id`。**返る Tag entity には id が
+  /// 無い（`name` / `url` / `history` だけ）ので、一覧の中身からカーソルは
+  /// 作れない。ヘッダを見るしかない。
+  Future<({List<String> names, String? nextMaxId})> getFollowedTags({
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/followed_tags',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final names = (response.data as List)
+        .map((e) => (e as Map<String, dynamic>)['name'] as String)
+        .toList();
+    return (names: names, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
   /// POST /api/v1/tags/:name/follow
   Future<void> followTag(String name) async {
     await dio.post('/api/v1/tags/$name/follow');

@@ -32,6 +32,7 @@ import 'ui/screen/drive_manager_screen.dart';
 import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
+import 'ui/screen/followed_hashtags_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
 import 'ui/screen/gallery_screen.dart';
 import 'ui/screen/hashtag_timeline_screen.dart';
@@ -212,6 +213,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/moderation',
             builder: (context, state) => const ModerationListScreen(),
+          ),
+          // フォロー中のハッシュタグの一覧と解除 (#1070)。#1039 と同じ構造
+          // （付けられるのに外す導線が塞がる）なので様式を揃える。
+          GoRoute(
+            path: '/settings/followed-hashtags',
+            builder: (context, state) => const FollowedHashtagsScreen(),
           ),
           GoRoute(
             path: '/settings/desktop',

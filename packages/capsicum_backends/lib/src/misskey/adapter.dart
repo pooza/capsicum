@@ -1326,6 +1326,16 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   @override
   Future<void> unfollowHashtag(String hashtag) => throw UnimplementedError();
 
+  /// Misskey にハッシュタグのフォローという概念は無い (#1070)。
+  ///
+  /// ⚠ **`UnimplementedError` を投げない。**呼び出し側は「一覧を出す画面」で、
+  /// 例外にすると画面ごと落ちる。**空 = フォローしているタグが無い**として
+  /// 素直に扱えるので、そちらへ倒す。
+  @override
+  Future<({List<String> tags, String? nextCursor})> getFollowedHashtags({
+    TimelineQuery? query,
+  }) async => (tags: const <String>[], nextCursor: null);
+
   @override
   Future<List<Post>> getPostsByHashtag(
     String hashtag, {
