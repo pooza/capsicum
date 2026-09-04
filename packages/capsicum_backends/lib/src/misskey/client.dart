@@ -177,6 +177,38 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/blocking/list (#1039)
+  ///
+  /// 返るのは Blocking オブジェクト（`{id, blockee: User, ...}`）で、
+  /// **User そのものではない**。⚠ **`untilId` に渡すのは Blocking の `id`**
+  /// （関係レコードの id）であって、`blockee.id` ではない。取り違えると
+  /// ページが飛ぶ。
+  Future<List<Map<String, dynamic>>> getBlockingList({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/blocking/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/mute/list (#1039)
+  ///
+  /// 返るのは Muting オブジェクト（`{id, mutee: User, expiresAt, ...}`）。
+  /// `untilId` の扱いは [getBlockingList] と同じ。
+  Future<List<Map<String, dynamic>>> getMutingList({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/mute/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
   /// POST /api/users/following
   Future<List<Map<String, dynamic>>> getUserFollowing(
     String userId, {

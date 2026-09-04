@@ -42,6 +42,7 @@ import 'ui/screen/list_timeline_screen.dart';
 import 'ui/screen/login_screen.dart';
 import 'ui/screen/media_catalog_screen.dart';
 import 'ui/screen/media_viewer_screen.dart';
+import 'ui/screen/moderation_list_screen.dart';
 import 'ui/screen/notification_screen.dart';
 import 'ui/screen/page_view_screen.dart';
 import 'ui/screen/pages_screen.dart';
@@ -205,6 +206,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings/touch',
             builder: (context, state) => const TouchActionSettingsScreen(),
+          ),
+          // ブロック / ミュートの一覧と解除 (#1039)。設定の下だが中身は管理 UI
+          // なので独立画面（#805 の様式）。
+          GoRoute(
+            path: '/settings/moderation',
+            builder: (context, state) => const ModerationListScreen(),
           ),
           GoRoute(
             path: '/settings/desktop',

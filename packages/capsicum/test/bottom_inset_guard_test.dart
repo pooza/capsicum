@@ -58,6 +58,21 @@ void main() {
     'ReorderableListView',
   ];
 
+  /// 下端 inset を **別ファイルの共有 View 側で吸っている**画面 (#1039)。
+  ///
+  /// ⚠ **exempt とは意味が違う。**あちらは「敷き詰めるのが正しい」画面。
+  /// こちらは**吸っているが、吸っている場所がこのファイルに無い**画面で、
+  /// 検査が文字列でしか見ていないために落ちるもの。
+  ///
+  /// ⚠ **足すときは「どのファイルの何が吸っているか」まで書くこと。**
+  /// 委譲先を書いておかないと、その View から `BottomSafeArea` が消えたときに
+  /// ここが嘘になったことに気づけない。
+  const delegated = <String, String>{
+    'moderation_list_screen.dart':
+        'body は UserListView（user_list_screen.dart）で、'
+        'そちらが BottomSafeArea を持つ',
+  };
+
   /// 下端まで敷き詰めるのが正しい画面。**理由を書いてから足すこと。**
   const exempt = <String, String>{
     // 全画面のメディアビューア。画像 / 動画はナビゲーションバーの裏まで
@@ -67,6 +82,23 @@ void main() {
     'splash_screen.dart': 'スクロールしない',
   };
 
+  test('委譲先を書いた画面が実在し、その委譲先が inset を吸っている', () {
+    // [delegated] が嘘になっていないことを確かめる (#1039)。委譲先から
+    // BottomSafeArea が消えても、委譲元は検査を素通りしてしまうため。
+    for (final name in delegated.keys) {
+      final file = File('${screenDir.path}/$name');
+      expect(file.existsSync(), isTrue, reason: '$name が存在しない');
+    }
+    final userList = File(
+      '${screenDir.path}/user_list_screen.dart',
+    ).readAsStringSync();
+    expect(
+      userList.contains('BottomSafeArea'),
+      isTrue,
+      reason: 'UserListView が下端 inset を吸わなくなった。委譲元も直すこと',
+    );
+  });
+
   test('Scaffold + スクロールする画面は、下端の inset を誰かが吸っている', () {
     final offenders = <String>[];
 
@@ -74,6 +106,7 @@ void main() {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final name = entity.uri.pathSegments.last;
       if (exempt.containsKey(name)) continue;
+      if (delegated.containsKey(name)) continue;
 
       final source = entity.readAsStringSync();
       if (!source.contains('Scaffold(')) continue;

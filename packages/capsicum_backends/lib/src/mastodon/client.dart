@@ -167,6 +167,41 @@ class MastodonClient {
     return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
   }
 
+  /// GET /api/v1/blocks (#1039)
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getBlocks({
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/blocks',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final accounts = (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
+  /// GET /api/v1/mutes (#1039)
+  ///
+  /// ⚠ **ページングのカーソルは Account の id ではない。**Mastodon はブロック /
+  /// ミュートの**関係レコードの id** で切るので、`Link` ヘッダの `max_id` を
+  /// そのまま使う（`_parseLinkNextMaxId`）。一覧の最後の account.id を渡すと
+  /// ページが飛ぶ。
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})> getMutes({
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/mutes',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final accounts = (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
   /// GET /api/v1/statuses/:id/favourited_by
   Future<({List<MastodonAccount> accounts, String? nextMaxId})> getFavouritedBy(
     String id, {

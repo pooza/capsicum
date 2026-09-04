@@ -15,17 +15,45 @@ enum UserListType { followers, following, favouritedBy, rebloggedBy }
 typedef UserListFetcher =
     Future<({List<User> users, String? nextCursor})> Function(String? cursor);
 
-class UserListScreen extends ConsumerStatefulWidget {
+class UserListScreen extends StatelessWidget {
   final String title;
   final UserListFetcher fetcher;
 
   const UserListScreen({super.key, required this.title, required this.fetcher});
 
   @override
-  ConsumerState<UserListScreen> createState() => _UserListScreenState();
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: UserListView(fetcher: fetcher),
+  );
 }
 
-class _UserListScreenState extends ConsumerState<UserListScreen> {
+/// ユーザー一覧の中身だけを持つ widget (#1039)。
+///
+/// ⚠ **Scaffold を含めない。**タブの中に並べる用途（ブロック / ミュートの
+/// 2 タブ）が出たため、[UserListScreen] から切り出した。画面として使うときは
+/// [UserListScreen] が Scaffold と AppBar を被せる。
+class UserListView extends ConsumerStatefulWidget {
+  final UserListFetcher fetcher;
+
+  /// 一覧が空のときの文言。既定は「ユーザーはいません」。
+  final String emptyMessage;
+
+  /// 各行の末尾に置く widget（解除ボタン等）。省略時は何も置かない。
+  final Widget Function(User user)? trailingBuilder;
+
+  const UserListView({
+    super.key,
+    required this.fetcher,
+    this.emptyMessage = 'ユーザーはいません',
+    this.trailingBuilder,
+  });
+
+  @override
+  ConsumerState<UserListView> createState() => _UserListViewState();
+}
+
+class _UserListViewState extends ConsumerState<UserListView> {
   static const _pageSize = 20;
   final _scrollController = ScrollController();
   List<User> _users = [];
@@ -102,50 +130,48 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: BottomSafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _users.isEmpty
-            ? const Center(child: Text('ユーザーはいません'))
-            : RefreshIndicator(
-                onRefresh: () async {
-                  setState(() => _loading = true);
-                  await _loadInitial();
-                },
-                child: ListView.separated(
-                  controller: _scrollController,
-                  itemCount: _users.length + (_loadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= _users.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    final user = _users[index];
-                    return ListTile(
-                      onTap: () => context.push('/profile', extra: user),
-                      leading: UserAvatar(user: user, size: 40),
-                      title: EmojiText(
-                        user.displayName ?? user.username,
-                        emojis: user.emojis,
-                        fallbackHost: user.host,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '@${userAcct(user)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    return BottomSafeArea(
+      child: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _users.isEmpty
+          ? Center(child: Text(widget.emptyMessage))
+          : RefreshIndicator(
+              onRefresh: () async {
+                setState(() => _loading = true);
+                await _loadInitial();
+              },
+              child: ListView.separated(
+                controller: _scrollController,
+                itemCount: _users.length + (_loadingMore ? 1 : 0),
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (index >= _users.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
                     );
-                  },
-                ),
+                  }
+                  final user = _users[index];
+                  return ListTile(
+                    onTap: () => context.push('/profile', extra: user),
+                    leading: UserAvatar(user: user, size: 40),
+                    title: EmojiText(
+                      user.displayName ?? user.username,
+                      emojis: user.emojis,
+                      fallbackHost: user.host,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '@${userAcct(user)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: widget.trailingBuilder?.call(user),
+                  );
+                },
               ),
-      ),
+            ),
     );
   }
 }

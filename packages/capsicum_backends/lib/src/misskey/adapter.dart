@@ -970,6 +970,51 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<({List<User> users, String? nextCursor})> getBlockedUsers({
+    TimelineQuery? query,
+  }) async {
+    final items = await client.getBlockingList(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'blockee');
+  }
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getMutedUsers({
+    TimelineQuery? query,
+  }) async {
+    // ⚠ **期限付きミュート（`expiresAt`）は一覧に出していない。**`muteUser` は
+    // 期限を送れるので対称にする余地はあるが、User モデルに載せる情報では
+    // ないため、必要になった時点で別の見せ方を考える。
+    final items = await client.getMutingList(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'mutee');
+  }
+
+  /// Blocking / Muting のような「関係レコード + 相手の User」形式の一覧を
+  /// [User] のリストへ均す (#1039)。
+  ///
+  /// ⚠⚠ **カーソルは関係レコードの `id`。**`users.last.id`（相手の User id）を
+  /// 渡すとページが飛ぶ。`getFollowers` / `getFollowing` は User id を返して
+  /// いるが、あちらに合わせない。
+  ({List<User> users, String? nextCursor}) _relationList(
+    List<Map<String, dynamic>> items,
+    String userKey,
+  ) {
+    final users = items
+        .map(
+          (item) => MisskeyUser.fromJson(
+            item[userKey] as Map<String, dynamic>,
+          ).toCapsicum(client.host, adminRoleIds: _adminRoleIds),
+        )
+        .toList();
+    return (users: users, nextCursor: items.lastOrNull?['id'] as String?);
+  }
+
+  @override
   Future<({List<User> users, String? nextCursor})> getFollowing(
     String userId, {
     TimelineQuery? query,

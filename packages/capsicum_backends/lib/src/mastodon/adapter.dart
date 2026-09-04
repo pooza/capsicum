@@ -829,6 +829,41 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   }
 
   @override
+  Future<({List<User> users, String? nextCursor})> getBlockedUsers({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getBlocks(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getMutedUsers({
+    TimelineQuery? query,
+  }) async {
+    // ⚠ **「通知だけミュート」（`notifications: false`）は一覧には出ない。**
+    // `GET /api/v1/mutes` が返すのは Account なので、ミュートの種別を区別する
+    // 情報がレスポンスに乗らない。一覧では表現せず、解除の導線としてだけ使う。
+    final result = await client.getMutes(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
   Future<({List<User> users, String? nextCursor})> getFollowing(
     String userId, {
     TimelineQuery? query,
