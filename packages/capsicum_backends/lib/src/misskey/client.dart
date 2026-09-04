@@ -780,6 +780,12 @@ class MisskeyClient {
   }
 
   /// POST /api/i/notifications
+  ///
+  /// ⚠ **`markAsRead` を必ず明示する (#1045)。**サーバー側の既定は `true` なので、
+  /// 省略すると**取得しただけでサーバーの未読が消える**。capsicum は未読を
+  /// クライアント側で持つ運用（2026-09-04 pooza 判断・クライアント側が正本）
+  /// なので、サーバーの既読状態には触らない。WebUI や他クライアントを併用して
+  /// いるユーザーの未読バッジが、capsicum の取得だけで消えるのを防ぐ。
   Future<List<MisskeyNotification>> getNotifications({
     String? sinceId,
     String? untilId,
@@ -791,6 +797,7 @@ class MisskeyClient {
         'sinceId': ?sinceId,
         'untilId': ?untilId,
         'limit': ?limit,
+        'markAsRead': false,
       }),
     );
     return (response.data as List)
