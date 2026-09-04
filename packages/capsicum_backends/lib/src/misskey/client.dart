@@ -870,6 +870,38 @@ class MisskeyClient {
     }
   }
 
+  /// POST /api/notes/search (#1041)
+  ///
+  /// 本文検索。⚠ **サーバーで無効化されうる。**Misskey は全文検索バックエンド
+  /// （Meilisearch / pgroonga 等）を別立てで持つ構成で、未設定のサーバーは
+  /// `UNAVAILABLE`（"Search of notes unavailable."）を返す。実際プリセットの
+  /// ダイスキー・きゅあすきーとも未設定（2026-09-04 実測）。
+  ///
+  /// ⚠ **提供されていない場合は `null` を返す。**例外にすると、同時に投げて
+  /// いるユーザー検索・タグ検索まで巻き添えで落ちる。**「0 件」と「引けない」も
+  /// 区別できなくなる**ので、呼び出し側で出し分けられるようにする。
+  Future<List<MisskeyNote>?> searchNotes(String query, {int? limit}) async {
+    try {
+      final response = await dio.post(
+        '/api/notes/search',
+        data: createBody({'query': query, 'limit': ?limit}),
+      );
+      return (response.data as List)
+          .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      // ⚠ **改行の位置で `?` が型に食われる。**`data is Map<String, dynamic>`
+      // の直後で改行して `?` を置くと `Map<String, dynamic>?` と解釈されて
+      // 構文ごと壊れる。条件を変数に切って避ける。
+      final data = e.response?.data;
+      final body = data is Map<String, dynamic> ? data : null;
+      final error = body?['error'];
+      final code = error is Map<String, dynamic> ? error['code'] : null;
+      if (code == 'UNAVAILABLE') return null;
+      rethrow;
+    }
+  }
+
   /// POST /api/emojis
   Future<List<Map<String, dynamic>>> getEmojis() async {
     final response = await dio.post('/api/emojis', data: {});

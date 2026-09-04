@@ -1150,15 +1150,30 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       return const SearchResults();
     }
 
-    final users = await client.searchUsers(query, limit: 20);
-    final hashtags = await client.searchHashtags(query, limit: 20);
+    // ⚠ **3 本を並列で投げる (#1041)。**逐次 await していたので、本文検索を
+    // 足すとレイテンシが素直に 1.5 倍になる。
+    final results = await Future.wait([
+      client.searchNotes(query, limit: 20),
+      client.searchUsers(query, limit: 20),
+      client.searchHashtags(query, limit: 20),
+    ]);
+    // ⚠ **`null` は「0 件」ではなく「このサーバーでは本文検索が提供されて
+    // いない」。**呼び出し側で見せ方を変えるので潰さない。
+    final notes = results[0] as List<MisskeyNote>?;
+    final users = results[1] as List<MisskeyUser>;
+    final hashtags = results[2] as List<String>;
+
     final seen = <String>{};
     return SearchResults(
+      posts: (notes ?? const [])
+          .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
+          .toList(),
       users: users
           .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
           .where((u) => seen.add(u.id))
           .toList(),
       hashtags: hashtags,
+      postSearchUnavailable: notes == null,
     );
   }
 
