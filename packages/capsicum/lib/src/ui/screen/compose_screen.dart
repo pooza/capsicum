@@ -364,7 +364,33 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   // OS のファイラーからのドラッグ中だけ true。ドロップ可能なことを示す
   // ハイライト表示に使う (#571)。デスクトップ以外では発火しない。
   bool _dragging = false;
-  PostScope _scope = PostScope.public;
+  PostScope _rawScope = PostScope.public;
+
+  /// 公開範囲。⚠ **読むときは必ずこの getter を通す (#1043)。**
+  ///
+  /// `_rawScope` には、下書きの復元・redraft・返信元の引き継ぎ・サーバー既定
+  /// など**外から来た値**がそのまま入る。アダプターが送る手段を持たない範囲
+  /// （Misskey の「指名」）が混ざりうるので、読み出しで丸める。
+  ///
+  /// ⚠ **丸めないと「指名」投稿への返信が誰にも届かなくなる。**返信は元投稿の
+  /// scope を引き継ぐ (`_scope = replyTo.scope`) ため、`visibleUserIds` を送れ
+  /// ないまま `specified` で投稿してしまう。選択肢から外すだけでは塞げない。
+  PostScope get _scope => _clampScope(_rawScope);
+
+  set _scope(PostScope value) => _rawScope = value;
+
+  /// 送る手段の無い公開範囲を、送れるものへ丸める (#1043)。
+  ///
+  /// 落とし先は **`followersOnly`**。丸め元の「指名」より広い範囲へ勝手に
+  /// 出さないよう、選べるうちで最も狭いものを選ぶ。
+  PostScope _clampScope(PostScope scope) {
+    final selectable = selectableScopes(ref.read(currentAdapterProvider));
+    if (selectable.contains(scope)) return scope;
+    return selectable.contains(PostScope.followersOnly)
+        ? PostScope.followersOnly
+        : selectable.last;
+  }
+
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
   // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
@@ -518,7 +544,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
-    return PostScope.values.map((scope) {
+    // 送る手段のある範囲だけを出す (#1043)。
+    return selectableScopes(adapter).map((scope) {
       final display = postScopeDisplay(scope, adapter);
       return DropdownMenuItem(
         value: scope,
@@ -3581,7 +3608,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       MenuSubmenuEntry(
         label: '公開範囲',
         children: [
-          for (final scope in PostScope.values)
+          // ツールバーの Dropdown と同じ母数にする (#1043)。
+          for (final scope in selectableScopes(adapter))
             MenuActionEntry(
               label: postScopeLabel(scope, adapter),
               checked: _scope == scope,

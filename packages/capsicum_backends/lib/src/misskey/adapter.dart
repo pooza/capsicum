@@ -69,7 +69,13 @@ class MisskeyCapabilities extends AdapterCapabilities {
     PostScope.public,
     PostScope.unlisted,
     PostScope.followersOnly,
-    PostScope.direct,
+    // ⚠ **`PostScope.direct`（Misskey の「指名」= `specified`）は載せない (#1043)。**
+    // 送信には宛先の `visibleUserIds` が要るが、capsicum にそれを組み立てる
+    // 導線が無い。載せると「選べるのに誰にも届かない投稿」ができる。
+    // 宛先選択 UI を作るまでは選択肢から外す、という判断（2026-09-04 pooza）。
+    // ⚠ **受信側の表示は別経路なので影響しない**（`extensions.dart` の
+    // `'specified': PostScope.direct` は残す）。Misskey の 1 対 1 のやり取りは
+    // #248 のチャット機能が担う。
   };
 
   @override
