@@ -119,9 +119,16 @@ class UnifiedNotificationNotifier
         source: 'unified_notification',
       );
       final enricher = IsCatEnricher.forAccount(account);
-      final notifications = await enricher.enrichNotifications(
-        response.notifications,
-      );
+      // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**エンリッチは
+      // モロヘイヤの `/account/is_cat` を叩き、キャッシュに無い acct を
+      // その場でリモートへ取りに行く。到達不能なサーバーのアカウントからの
+      // 通知が 1 件混ざっているだけで、ここが分単位で返らなくなっていた。
+      //
+      // ⚠ **`timeout` は下の future を止めない。**解決はバックグラウンドで
+      // 続き、結果はプロセス共有のキャッシュに載るので次の取得で効く。
+      final notifications = await enricher
+          .enrichNotifications(response.notifications)
+          .timeout(kIsCatEnrichBudget, onTimeout: () => response.notifications);
       return _FetchResult(account: account, notifications: notifications);
     } catch (e, st) {
       // 失敗は上部バナーでユーザーには見えるが、サーバー側で「どの host が・

@@ -17,6 +17,30 @@ import 'account_manager_provider.dart';
 final Map<String, bool> _globalIsCatCache = {};
 const int _maxCacheSize = 2000;
 
+/// 解決に失敗した acct のネガティブキャッシュ (#1080)。値は失敗時刻。
+///
+/// ⚠ **これが無いと「一度遅い acct は、ずっと遅い」。**モロヘイヤの
+/// `/account/is_cat` はキャッシュに無い acct をその場でリモートへ取りに行き、
+/// **失敗はサーバー側にもキャッシュされない**（mulukhiya#4677）。到達不能に
+/// なったサーバーのアカウントは復旧しないまま何か月も通知欄に残るので、
+/// クライアント側で覚えておかないと**その通知が流れるまで毎回タイムアウトを
+/// 払い続ける**ことになる。
+final Map<String, DateTime> _globalIsCatFailureCache = {};
+
+/// ネガティブキャッシュの寿命 (#1080)。
+///
+/// 猫耳が付くのが少し遅れるだけなので長めでよいが、**サーバーの復旧や
+/// `isCat` のトグルを永久に拾えなくなるのは避けたい**ので有限にする。
+const Duration _failureTtl = Duration(minutes: 30);
+
+/// 装飾のために通知・タイムラインの表示を止めない上限 (#1080)。
+///
+/// ⚠ **`is_cat` 側のタイムアウト（5 秒）とは別物。**あちらは「1 リクエストを
+/// いつ諦めるか」、こちらは「**呼び出し元がいつまで待つか**」。超えたら
+/// エンリッチ前の値で先に描画し、解決自体はバックグラウンドで続行させる
+/// （結果はキャッシュに載るので次の取得で効く）。
+const kIsCatEnrichBudget = Duration(seconds: 2);
+
 /// isCat エンリッチのキャッシュ付きユーティリティ。
 ///
 /// モロヘイヤの `POST /account/is_cat` を使い、リモートユーザーの
@@ -140,12 +164,23 @@ class IsCatEnricher {
 
   Future<void> _fetchAndCache(List<String> accts) async {
     if (_mulukhiya == null || _accessToken == null) return;
+    // 直近に失敗した acct は問い合わせ直さない (#1080)。
+    final targets = accts.where(_shouldQuery).toList(growable: false);
+    if (targets.isEmpty) return;
     try {
       final result = await _mulukhiya.fetchIsCat(
         accessToken: _accessToken,
-        accts: accts,
+        accts: targets,
       );
-      if (result == null) return;
+      if (result == null) {
+        // リクエストごと失敗（タイムアウト・504 等）。**要求した全件**を
+        // 覚えておく。1 件でも到達不能な相手が混ざると全体が落ちるため。
+        _markFailed(targets);
+        return;
+      }
+      // 個別に解決できなかった acct（値が null）も覚える。モロヘイヤ側は
+      // 失敗をキャッシュしないので、ここで止めないと毎回引きに行かせてしまう。
+      _markFailed(targets.where((a) => result[a] == null));
       for (final entry in result.entries) {
         if (entry.value != null) {
           // LinkedHashMap の挿入順を維持しつつ最新エントリを末尾へ送るため
@@ -163,8 +198,41 @@ class IsCatEnricher {
         }
       }
     } catch (_) {
-      // 通信エラー時はキャッシュせず、次回再問い合わせ
+      // ⚠ **通信エラーもネガティブキャッシュに載せる (#1080)。**以前はここで
+      // 何もせず「次回再問い合わせ」にしていたが、相手が到達不能なままだと
+      // 再問い合わせのたびにタイムアウトを払うだけだった。
+      _markFailed(targets);
     }
+  }
+
+  /// 直近に失敗していない acct だけ問い合わせる (#1080)。
+  bool _shouldQuery(String acct) {
+    final failedAt = _globalIsCatFailureCache[acct];
+    if (failedAt == null) return true;
+    if (DateTime.now().difference(failedAt) < _failureTtl) return false;
+    _globalIsCatFailureCache.remove(acct);
+    return true;
+  }
+
+  void _markFailed(Iterable<String> accts) {
+    final now = DateTime.now();
+    for (final acct in accts) {
+      _globalIsCatFailureCache[acct] = now;
+    }
+    // 成功側と同じく上限で丸める。挿入順（＝古い順）から落とす。
+    if (_globalIsCatFailureCache.length > _maxCacheSize) {
+      final evict = _globalIsCatFailureCache.length - _maxCacheSize;
+      final victims = _globalIsCatFailureCache.keys.take(evict).toList();
+      for (final k in victims) {
+        _globalIsCatFailureCache.remove(k);
+      }
+    }
+  }
+
+  /// テスト用。プロセス寿命のキャッシュを空にする。
+  static void resetCachesForTest() {
+    _globalIsCatCache.clear();
+    _globalIsCatFailureCache.clear();
   }
 }
 

@@ -54,9 +54,14 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
       query: const TimelineQuery(limit: _pageSize),
     );
     reportSkippedNotifications(response.skippedPosts, source: 'notification');
+    // ⚠ **猫耳のために通知一覧の表示を止めない (#1080)。**理由と仕組みは
+    // `is_cat_provider.dart` の [kIsCatEnrichBudget] の doc が正本。
+    // ⚠ **「すべての通知」だけの話ではない。**この単体の通知画面も同じ経路で
+    // 待たされていたので、両方に入れる。
     final notifications = await ref
         .read(isCatEnricherProvider)
-        .enrichNotifications(response.notifications);
+        .enrichNotifications(response.notifications)
+        .timeout(kIsCatEnrichBudget, onTimeout: () => response.notifications);
     // Update last-seen ID so background polling skips already-seen items.
     if (notifications.isNotEmpty) {
       _updateLastSeen(notifications.first.id);
@@ -121,9 +126,14 @@ class NotificationNotifier extends AutoDisposeAsyncNotifier<NotificationState> {
           source: 'notification.loadMore',
           maxId: lastId,
         );
+        // 追加読み込みも同じ扱い (#1080)。ここで止まるとスクロールが刺さる。
         final older = await ref
             .read(isCatEnricherProvider)
-            .enrichNotifications(response.notifications);
+            .enrichNotifications(response.notifications)
+            .timeout(
+              kIsCatEnrichBudget,
+              onTimeout: () => response.notifications,
+            );
 
         state = AsyncData(
           base.copyWith(
