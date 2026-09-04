@@ -379,6 +379,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   set _scope(PostScope value) => _rawScope = value;
 
+  /// 公開範囲が丸められたときに画面へ出す文言 (#1043)。丸めが無ければ null。
+  ///
+  /// ⚠ **「誰にも届かない」→「フォロワーに見える」は広がる方向の変化。**
+  /// 以前の挙動が事故的に安全だっただけで、直したこと自体は正しいが、
+  /// **黙って広げてはいけない。**送信前にユーザーが気づける場所へ出す。
+  String? get _clampedScopeNotice {
+    final clamped = _clampScope(_rawScope);
+    if (clamped == _rawScope) return null;
+    final adapter = ref.read(currentAdapterProvider);
+    final from = postScopeLabel(_rawScope, adapter);
+    final to = postScopeLabel(clamped, adapter);
+    return '元の公開範囲「$from」はこのサーバーへ送れないため、「$to」で投稿します。';
+  }
+
   /// 送る手段の無い公開範囲を、送れるものへ丸める (#1043)。
   ///
   /// 落とし先は **`followersOnly`**。丸め元の「指名」より広い範囲へ勝手に
@@ -4106,6 +4120,38 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                       ),
                     ),
                   ],
+                  // 公開範囲が丸められたことを画面にも出す (#1043)。
+                  //
+                  // ⚠ **SnackBar にしない。**丸めが効くのは返信・引用・redraft・
+                  // 下書き復元・サーバー既定という「開いた瞬間に決まる」経路
+                  // なので、消える通知だと**送信ボタンを押す時点で情報が無い**。
+                  // 送るまで出したままにする。
+                  if (_clampedScopeNotice != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _clampedScopeNotice!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const Divider(),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
