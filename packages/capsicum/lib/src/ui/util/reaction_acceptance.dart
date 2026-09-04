@@ -32,6 +32,22 @@ enum ReactionPickerMode {
 /// センシティブかは Note ではなく**絵文字カタログ側の情報**で、そちらの拡張が
 /// 要る。同時にやると膨らむので分けてある（`likeOnly` 系だけでも「何を押しても
 /// ❤️ になる」という最も分かりにくい実害は消える）。
+/// 実際に送るリアクションを決める (#1044)。
+///
+/// ⚠⚠ **`addReaction` を呼ぶ経路は必ずこれを通す。**判定をピッカーの入口だけに
+/// 置いたら、**既存のリアクションチップのタップ・カスタム絵文字のタップ・通知
+/// タイルのピッカー**が素通しで残っていた（リリース PR の Codex P1）。それらの
+/// 経路ではサーバーが黙って ❤️ へ差し替えるので、直したはずの実害がそのまま
+/// 出る。⚠ **#990 で「片方だけに入れて 6 経路を取りこぼした」のと同じ形を、
+/// それを警戒すると書いた回に繰り返していた。**
+///
+/// 受け付けられない絵文字なら [kMisskeyReactionFallback] を返す。呼び出し側は
+/// 戻り値をそのまま `addReaction` へ渡すだけでよい。
+String effectiveReaction(String reaction, Post post, {String? myHost}) =>
+    reactionPickerMode(post, myHost: myHost) == ReactionPickerMode.likeOnly
+    ? kMisskeyReactionFallback
+    : reaction;
+
 ReactionPickerMode reactionPickerMode(Post post, {String? myHost}) {
   final acceptance = post.reactionAcceptance;
   if (acceptance == null) return ReactionPickerMode.full;

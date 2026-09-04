@@ -1109,7 +1109,15 @@ class _PostTileState extends ConsumerState<PostTile> {
         messenger,
         adapter,
         targetPost.id,
-        () => reactionAdapter.addReaction(targetPost.id, emoji),
+        // 既存チップのタップもピッカーと同じ判定を通す (#1044・Codex P1)。
+        () => reactionAdapter.addReaction(
+          targetPost.id,
+          effectiveReaction(
+            emoji,
+            targetPost,
+            myHost: ref.read(currentAccountProvider)?.key.host,
+          ),
+        ),
         'リアクションしました',
       );
     }
@@ -1690,9 +1698,14 @@ class _PostTileState extends ConsumerState<PostTile> {
               messenger,
               adapter as BackendAdapter,
               targetPost.id,
+              // カスタム絵文字のタップも同じ判定を通す (#1044・Codex P1)。
               () => (adapter as ReactionSupport).addReaction(
                 targetPost.id,
-                ':$shortcode:',
+                effectiveReaction(
+                  ':$shortcode:',
+                  targetPost,
+                  myHost: ref.read(currentAccountProvider)?.key.host,
+                ),
               ),
               'リアクションしました',
               timeline: timeline,
@@ -1754,7 +1767,12 @@ class _PostTileState extends ConsumerState<PostTile> {
           messenger,
           backend,
           targetPost.id,
-          () => reaction.addReaction(targetPost.id, emoji),
+          // ピッカー経由も念のため通す (#1044)。likeOnly ならここへ来ないが、
+          // 判定の入口を 1 本に保つ。
+          () => reaction.addReaction(
+            targetPost.id,
+            effectiveReaction(emoji, targetPost, myHost: account?.key.host),
+          ),
           'リアクションしました',
           timeline: timeline,
           reblogLabel: reblogLabel,

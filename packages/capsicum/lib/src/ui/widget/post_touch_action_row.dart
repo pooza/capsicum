@@ -302,7 +302,10 @@ class PostTouchActionRow extends ConsumerWidget {
           ref,
           messenger,
           backend,
-          () => reaction.addReaction(targetPost.id, emoji),
+          () => reaction.addReaction(
+            targetPost.id,
+            effectiveReaction(emoji, targetPost, myHost: account.key.host),
+          ),
           'リアクションしました',
           timeline: timeline,
           reblogLabel: reblogLabel,
