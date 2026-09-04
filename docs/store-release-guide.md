@@ -334,14 +334,24 @@ flutter pub upgrade --major-versions
 
 **`~/Library/Developer/Xcode/DerivedData` は内蔵ディスクに固定で置かれ、リポジトリの場所と無関係に育つ。**⚠⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを自動で消さない。**v1.63 のリリース時、6〜8 月分を含む `Runner-*` が 13 個・計 14G 残っており、内蔵の空きが 8.7GB まで落ちていた。その結果 `flutter clean` の `xcodebuild clean` が **502 秒**（通常の 5 倍）かかり、1 回のビルドが 22 分になった。
 
+⚠ **2026-09-04 に DerivedData / Archives / CompilationCache を外部ボリュームへ移した**（Xcode → Settings → Locations）。置き場所は `defaults read com.apple.dt.Xcode | grep IDECustom` で確認できる。
+
 ```sh
-du -sh ~/Library/Developer/Xcode/DerivedData   # 数 G を超えていたら落とす
-rm -rf ~/Library/Developer/Xcode/DerivedData
+ls -1 "$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation)" | grep -c '^Runner-'
+rm -rf "$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation)"/*
 ```
+
+⚠ **見るのはサイズではなくエントリ数。**`clean` の所要時間は `Runner-*` の数に効く。外部は容量が潤沢なので、**逼迫による激遅化はもう起きない**。
+
+⚠ **毎リリース掃除する必要は無い。**目安は「`clean` が体感で長くなったら」。3 か月で 13 個・14G が溜まって 502 秒になった実績があるので、**数か月に一度**で足りる。
 
 ⚠ **ビルド生成物だけなので消して安全**（次回の初回ビルドだけ長くなる）。⚠ **Xcode が動いていると `Index.noindex` が残るが実害はない。**
 
-⚠ **「外部ボリュームだから遅い」ではない。**小ファイル 5000 件の作成・削除を両方で実測したところ、内蔵 6.29s / 外部(USB SSD) 6.49s、削除は外部のほうが速いくらいで差が無かった（2026-09-04 実測）。**遅さの原因は容量逼迫であって配置ではない。**推測で配置を疑わないこと。
+## ⚠⚠ 「外部ボリュームだから遅い」は誤り（実測で否定済み）
+
+小ファイル 5000 件の作成・削除を両方で実測したところ、**内蔵 6.29s / 外部(USB SSD) 6.49s、削除は外部のほうが速い**（2026-09-04）。さらに**移設後のフルビルドは 22 分 → 10 分 34 秒**、`Cleaning Xcode workspace` は **502.8s → 137.9s**、`Xcode archive` も **245s → 189s** と全項目で改善した。
+
+**遅さの原因は容量逼迫であって配置ではない。**⚠ **推測で配置を疑わないこと。**
 
 ```bash
 cd packages/capsicum
