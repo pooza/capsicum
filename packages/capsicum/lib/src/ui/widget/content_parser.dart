@@ -199,7 +199,16 @@ class _MfmParser {
   final String input;
   int _pos = 0;
 
-  _MfmParser(this.input);
+  /// 装飾構文を解釈せず、**リンク化と絵文字だけ**を拾うモード (#1068)。
+  ///
+  /// ⚠ **CW のために要る。**Mastodon の `spoiler_text` は**プレーンテキスト**
+  /// なので、一律 MFM に通すと `**〜**` や `*` が意図せず装飾される。一方で
+  /// ハッシュタグ・メンション・URL・カスタム絵文字は本文と同じように扱いたい。
+  ///
+  /// ⚠ **Misskey の `cw` は MFM なので、そちらはこのモードを使わない。**
+  final bool plainOnly;
+
+  _MfmParser(this.input, {this.plainOnly = false});
 
   // Mastodon HASHTAG_NAME_RE 相当のハッシュタグ仕様 (#566)。
   //  - 直前境界: Mastodon の lookbehind `(?<![=\/)\w])` に揃え、ASCII word
@@ -214,6 +223,47 @@ class _MfmParser {
   static final _hashtagHasLetter = RegExp(r'\p{L}', unicode: true);
 
   List<_Node> parse() => _parseInline(null);
+
+  /// plainOnly で拾う 4 種（mention / hashtag / url / emoji）を試す (#1068)。
+  ///
+  /// 拾えたら [nodes] に足して true。⚠ **判定条件は装飾モードと同じものを
+  /// 使い回す** — ここで別の条件を書くと、本文と CW でハッシュタグの成立範囲が
+  /// ずれる（#566 で揃えた Mastodon 互換の境界判定が二重管理になる）。
+  bool _tryPlainNode(List<_Node> nodes, void Function() flushBuf, String c) {
+    if (c == '@' && (_pos == 0 || !_isAlnum(input[_pos - 1]))) {
+      flushBuf();
+      final node = _tryMention();
+      if (node != null) {
+        nodes.add(node);
+        return true;
+      }
+    }
+    if (c == '#' && (_pos == 0 || !_isAlnum(input[_pos - 1]))) {
+      flushBuf();
+      final node = _tryHashtag();
+      if (node != null) {
+        nodes.add(node);
+        return true;
+      }
+    }
+    if (c == 'h' && _lookingAt('http')) {
+      flushBuf();
+      final node = _tryUrl();
+      if (node != null) {
+        nodes.add(node);
+        return true;
+      }
+    }
+    if (c == ':') {
+      flushBuf();
+      final node = _tryEmoji();
+      if (node != null) {
+        nodes.add(node);
+        return true;
+      }
+    }
+    return false;
+  }
 
   List<_Node> _parseInline(String? stopPattern) {
     final nodes = <_Node>[];
@@ -233,6 +283,17 @@ class _MfmParser {
       }
 
       final c = input[_pos];
+
+      // ⚠ **plainOnly では装飾構文を一切解釈しない (#1068)。**mention /
+      // hashtag / url / emoji の 4 つだけを下で拾い、残りは素のテキストとして
+      // buf に積む。ここで早期に飛ばすことで、装飾側の分岐に一切触れずに済む。
+      if (plainOnly) {
+        if (!_tryPlainNode(nodes, flushBuf, c)) {
+          buf.write(c);
+          _pos++;
+        }
+        continue;
+      }
 
       // Code block: ```
       if (c == '`' && _lookingAt('```')) {
@@ -962,6 +1023,16 @@ class ContentRenderer {
   /// Render MFM text to a TextSpan.
   TextSpan renderMfm(String input) {
     final nodes = _parseMfm(input);
+    return TextSpan(children: _renderNodes(nodes, baseStyle), style: baseStyle);
+  }
+
+  /// 装飾構文を解釈せず、リンク化とカスタム絵文字だけを適用する (#1068)。
+  ///
+  /// ⚠ **Mastodon の CW（`spoiler_text`）用。**あちらはプレーンテキストなので
+  /// `renderMfm` に通すと `**〜**` 等が意図せず装飾される。Misskey の `cw` は
+  /// MFM なので、そちらは従来どおり [renderMfm] を使うこと。
+  TextSpan renderPlain(String input) {
+    final nodes = _MfmParser(input, plainOnly: true).parse();
     return TextSpan(children: _renderNodes(nodes, baseStyle), style: baseStyle);
   }
 

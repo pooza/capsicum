@@ -324,6 +324,7 @@ class _PostTileState extends ConsumerState<PostTile> {
   void dispose() {
     _cardFetchDebounce?.cancel();
     _contentRenderer?.dispose();
+    _cwRenderer?.dispose();
     super.dispose();
   }
 
@@ -347,6 +348,14 @@ class _PostTileState extends ConsumerState<PostTile> {
 
   ContentRenderer? _contentRenderer;
 
+  /// CW 用のレンダラ (#1068)。
+  ///
+  /// ⚠⚠ **本文と同じインスタンスを使い回してはいけない。**[_renderContent] は
+  /// 呼ばれるたび冒頭で前のインスタンスを `dispose()` するので、共有すると
+  /// **本文を描いた瞬間に CW 側の `TapGestureRecognizer` が破棄され、CW の
+  /// ハッシュタグが押せなくなる**（押しても何も起きない、という壊れ方）。
+  ContentRenderer? _cwRenderer;
+
   TextSpan _renderContent(
     String content,
     TextStyle baseStyle,
@@ -356,7 +365,41 @@ class _PostTileState extends ConsumerState<PostTile> {
     bool isCat = false,
   }) {
     _contentRenderer?.dispose();
-    _contentRenderer = ContentRenderer(
+    _contentRenderer = _buildRenderer(
+      baseStyle,
+      emojis,
+      fallbackHost: fallbackHost,
+      isCat: isCat,
+    );
+    return isHtml
+        ? _contentRenderer!.renderHtml(content)
+        : _contentRenderer!.renderMfm(content);
+  }
+
+  /// CW（警告文）を本文と同じ導線でレンダリングする (#1068)。
+  ///
+  /// ⚠ **Mastodon の `spoiler_text` はプレーンテキスト、Misskey の `cw` は
+  /// MFM。**一律 `renderMfm` に通すと Mastodon 側の CW で `**〜**` 等が
+  /// 意図せず装飾される。投稿が HTML（= Mastodon）なら `renderPlain` を使う。
+  TextSpan _renderCw(
+    String cw,
+    TextStyle baseStyle,
+    Map<String, String> emojis, {
+    String? fallbackHost,
+    required bool isHtml,
+  }) {
+    _cwRenderer?.dispose();
+    _cwRenderer = _buildRenderer(baseStyle, emojis, fallbackHost: fallbackHost);
+    return isHtml ? _cwRenderer!.renderPlain(cw) : _cwRenderer!.renderMfm(cw);
+  }
+
+  ContentRenderer _buildRenderer(
+    TextStyle baseStyle,
+    Map<String, String> emojis, {
+    String? fallbackHost,
+    bool isCat = false,
+  }) {
+    return ContentRenderer(
       baseStyle: baseStyle,
       applyNyaize: isCat,
       resolveEmoji: (shortcode) {
@@ -389,9 +432,6 @@ class _PostTileState extends ConsumerState<PostTile> {
       emojiSize: ref.watch(emojiSizeProvider),
       animateMfm: ref.watch(mfmAnimationEnabledProvider),
     );
-    return isHtml
-        ? _contentRenderer!.renderHtml(content)
-        : _contentRenderer!.renderMfm(content);
   }
 
   @override
@@ -672,20 +712,28 @@ class _PostTileState extends ConsumerState<PostTile> {
                                     color: Theme.of(context).colorScheme.error,
                                   ),
                                   const SizedBox(width: 4),
+                                  // CW 内のハッシュタグも本文と同じ導線で
+                                  // 押せるようにする (#1068)。⚠ 見た目は
+                                  // 従来どおり bold のまま。
                                   Expanded(
-                                    child: EmojiText(
-                                      displayPost.spoilerText!,
-                                      emojis: {
-                                        ...displayPost.emojis,
-                                        ...displayPost.author.emojis,
-                                      },
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                      fallbackHost: displayPost.emojiHost,
+                                    child: Text.rich(
+                                      _renderCw(
+                                        displayPost.spoilerText!,
+                                        Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ) ??
+                                            const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                        {
+                                          ...displayPost.emojis,
+                                          ...displayPost.author.emojis,
+                                        },
+                                        fallbackHost: displayPost.emojiHost,
+                                        isHtml: displayPost.isHtml,
+                                      ),
                                     ),
                                   ),
                                 ],
