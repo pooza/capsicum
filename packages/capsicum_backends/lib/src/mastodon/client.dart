@@ -748,6 +748,44 @@ class MastodonClient {
     );
   }
 
+  /// GET /api/v1/favourites (#1071)
+  ///
+  /// ⚠⚠ **`max_id` に渡すのは status の id ではない。**このエンドポイントは
+  /// **お気に入りレコードの内部 id** でページングするので、`Link` ヘッダから
+  /// 取った値を次の `max_id` にそのまま渡す。status の id を渡すとページが飛ぶ。
+  Future<({List<MastodonStatus> statuses, String? nextMaxId})> getFavourites({
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/favourites',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final statuses = (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (statuses: statuses, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
+  /// GET /api/v1/statuses/:id/quotes (#1072)
+  ///
+  /// その投稿を引用している投稿の一覧。⚠ **ユーザー一覧ではなく投稿一覧**なので
+  /// `favourited_by` / `reblogged_by` とは戻り値の型が違う。
+  Future<({List<MastodonStatus> statuses, String? nextMaxId})> getQuotes(
+    String id, {
+    String? maxId,
+    int? limit,
+  }) async {
+    final response = await dio.get(
+      '/api/v1/statuses/$id/quotes',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final statuses = (response.data as List)
+        .map((e) => MastodonStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (statuses: statuses, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
   /// GET /api/v1/bookmarks
   Future<List<MastodonStatus>> getBookmarks({
     String? maxId,

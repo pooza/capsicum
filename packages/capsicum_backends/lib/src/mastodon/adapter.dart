@@ -94,6 +94,8 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     with
         FavoriteSupport,
         BookmarkSupport,
+        // 引用の一覧 (#1072)。Misskey には無いので Mastodon adapter だけが持つ。
+        QuoteSupport,
         AnnouncementSupport,
         AnnouncementReactionSupport,
         FollowSupport,
@@ -710,6 +712,44 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<Post> unfavoritePost(String id) async {
     final status = await client.unfavouriteStatus(id);
     return status.toCapsicum(host, adminRoleIds: _adminRoleIds);
+  }
+
+  @override
+  Future<({List<Post> posts, String? nextCursor})> getFavorites({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFavourites(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      posts: _safeConvert(
+        result.statuses,
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+        (s) => s.id,
+      ).results,
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<({List<Post> posts, String? nextCursor})> getQuotesOf(
+    String postId, {
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getQuotes(
+      postId,
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      posts: _safeConvert(
+        result.statuses,
+        (s) => s.toCapsicum(host, adminRoleIds: _adminRoleIds),
+        (s) => s.id,
+      ).results,
+      nextCursor: result.nextMaxId,
+    );
   }
 
   // BookmarkSupport
