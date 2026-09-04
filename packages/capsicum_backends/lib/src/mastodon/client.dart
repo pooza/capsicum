@@ -748,6 +748,34 @@ class MastodonClient {
     );
   }
 
+  /// GET /api/v1/follow_requests (#1040)
+  ///
+  /// ⚠ **ページングは `Link` ヘッダの `max_id`。**返るのは Account だが、
+  /// カーソルは**申請レコードの内部 id** なので account.id からは作れない。
+  Future<({List<MastodonAccount> accounts, String? nextMaxId})>
+  getFollowRequests({String? maxId, int? limit}) async {
+    final response = await dio.get(
+      '/api/v1/follow_requests',
+      queryParameters: {'max_id': ?maxId, 'limit': ?limit},
+    );
+    final accounts = (response.data as List)
+        .map((e) => MastodonAccount.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (accounts: accounts, nextMaxId: _parseLinkNextMaxId(response));
+  }
+
+  /// POST /api/v1/follow_requests/:id/authorize (#1040)
+  ///
+  /// ⚠ `:id` は**申請者の account id**。申請レコードの id ではない。
+  Future<void> authorizeFollowRequest(String accountId) async {
+    await dio.post('/api/v1/follow_requests/$accountId/authorize');
+  }
+
+  /// POST /api/v1/follow_requests/:id/reject (#1040)
+  Future<void> rejectFollowRequest(String accountId) async {
+    await dio.post('/api/v1/follow_requests/$accountId/reject');
+  }
+
   /// GET /api/v1/favourites (#1071)
   ///
   /// ⚠⚠ **`max_id` に渡すのは status の id ではない。**このエンドポイントは

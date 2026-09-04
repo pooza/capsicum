@@ -99,6 +99,7 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         AnnouncementSupport,
         AnnouncementReactionSupport,
         FollowSupport,
+        FollowRequestSupport,
         NotificationSupport,
         SearchSupport,
         CustomEmojiSupport,
@@ -867,6 +868,32 @@ class MastodonAdapter extends DecentralizedBackendAdapter
       nextCursor: result.nextMaxId,
     );
   }
+
+  // FollowRequestSupport (#1040)
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getFollowRequests({
+    TimelineQuery? query,
+  }) async {
+    final result = await client.getFollowRequests(
+      maxId: query?.maxId,
+      limit: query?.limit,
+    );
+    return (
+      users: result.accounts
+          .map((a) => a.toCapsicum(client.host, adminRoleIds: _adminRoleIds))
+          .toList(),
+      nextCursor: result.nextMaxId,
+    );
+  }
+
+  @override
+  Future<void> authorizeFollowRequest(String userId) =>
+      client.authorizeFollowRequest(userId);
+
+  @override
+  Future<void> rejectFollowRequest(String userId) =>
+      client.rejectFollowRequest(userId);
 
   @override
   Future<({List<User> users, String? nextCursor})> getBlockedUsers({

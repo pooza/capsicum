@@ -156,6 +156,16 @@ List<HomeNavItem> buildHomeNavItems(
         icon: Icons.star_outline,
         onSelected: () => act(() => context.push('/favorites')),
       ),
+    // フォローリクエスト (#1040)。⚠ **鍵アカウントでないと出番が無い**ので
+    // 通知の近くに置くに留め、一等地は使わない。⚠ ただし**常に出す** —
+    // `locked` は自分の設定なので取得済みだが、鍵を外した直後に未処理の
+    // 申請が残る経路があり、隠すと処理できなくなる。
+    if (adapter is FollowRequestSupport)
+      HomeNavItem(
+        title: 'フォローリクエスト',
+        icon: Icons.person_add_alt,
+        onSelected: () => act(() => context.push('/follow-requests')),
+      ),
     if (!announcementsShownAsTab)
       HomeNavItem(
         title: 'お知らせ',

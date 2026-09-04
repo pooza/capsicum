@@ -33,6 +33,7 @@ import 'ui/screen/episode_browser_screen.dart';
 import 'ui/screen/eula_screen.dart';
 import 'ui/screen/favorites_screen.dart';
 import 'ui/screen/flash_view_screen.dart';
+import 'ui/screen/follow_requests_screen.dart';
 import 'ui/screen/followed_hashtags_screen.dart';
 import 'ui/screen/gallery_detail_screen.dart';
 import 'ui/screen/gallery_screen.dart';
@@ -321,6 +322,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/favorites',
             builder: (context, state) => const FavoritesScreen(),
+          ),
+          // 自分宛のフォローリクエスト (#1040)。⚠ 通知は流れるので、溜まった
+          // 申請をまとめて処理する行き先が要る。
+          GoRoute(
+            path: '/follow-requests',
+            builder: (context, state) => const FollowRequestsScreen(),
           ),
           GoRoute(
             path: '/achievements',

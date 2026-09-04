@@ -99,6 +99,7 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         BookmarkSupport,
         AnnouncementSupport,
         FollowSupport,
+        FollowRequestSupport,
         NotificationSupport,
         SearchSupport,
         ReactionSupport,
@@ -968,6 +969,27 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     }).toList();
     return (users: users, nextCursor: users.lastOrNull?.id);
   }
+
+  // FollowRequestSupport (#1040)
+
+  @override
+  Future<({List<User> users, String? nextCursor})> getFollowRequests({
+    TimelineQuery? query,
+  }) async {
+    final items = await client.getFollowRequests(
+      untilId: query?.maxId,
+      limit: query?.limit,
+    );
+    return _relationList(items, 'follower');
+  }
+
+  @override
+  Future<void> authorizeFollowRequest(String userId) =>
+      client.acceptFollowRequest(userId);
+
+  @override
+  Future<void> rejectFollowRequest(String userId) =>
+      client.rejectFollowRequest(userId);
 
   @override
   Future<({List<User> users, String? nextCursor})> getBlockedUsers({

@@ -177,6 +177,40 @@ class MisskeyClient {
     return (response.data as List).cast<Map<String, dynamic>>();
   }
 
+  /// POST /api/following/requests/list (#1040)
+  ///
+  /// 返るのは FollowRequest オブジェクト（`{id, follower: User, followee}`）。
+  /// ⚠ **`untilId` に渡すのは FollowRequest の `id`**（申請レコードの id）で
+  /// あって `follower.id` ではない。
+  Future<List<Map<String, dynamic>>> getFollowRequests({
+    String? untilId,
+    int? limit,
+  }) async {
+    final response = await dio.post(
+      '/api/following/requests/list',
+      data: createBody({'untilId': ?untilId, 'limit': ?limit}),
+    );
+    return (response.data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// POST /api/following/requests/accept (#1040)
+  ///
+  /// ⚠ `userId` は**申請者の User id**。申請レコードの id ではない。
+  Future<void> acceptFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/accept',
+      data: createBody({'userId': userId}),
+    );
+  }
+
+  /// POST /api/following/requests/reject (#1040)
+  Future<void> rejectFollowRequest(String userId) async {
+    await dio.post(
+      '/api/following/requests/reject',
+      data: createBody({'userId': userId}),
+    );
+  }
+
   /// POST /api/blocking/list (#1039)
   ///
   /// 返るのは Blocking オブジェクト（`{id, blockee: User, ...}`）で、

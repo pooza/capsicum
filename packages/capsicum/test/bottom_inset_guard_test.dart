@@ -71,6 +71,9 @@ void main() {
     'moderation_list_screen.dart':
         'body は UserListView（user_list_screen.dart）で、'
         'そちらが BottomSafeArea を持つ',
+    'follow_requests_screen.dart':
+        'body は UserListView（user_list_screen.dart）で、'
+        'そちらが BottomSafeArea を持つ',
   };
 
   /// 下端まで敷き詰めるのが正しい画面。**理由を書いてから足すこと。**
