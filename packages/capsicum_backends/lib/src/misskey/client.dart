@@ -911,28 +911,33 @@ class MisskeyClient {
   /// `UNAVAILABLE`（"Search of notes unavailable."）を返す。実際プリセットの
   /// ダイスキー・きゅあすきーとも未設定（2026-09-04 実測）。
   ///
-  /// ⚠ **提供されていない場合は `null` を返す。**例外にすると、同時に投げて
-  /// いるユーザー検索・タグ検索まで巻き添えで落ちる。**「0 件」と「引けない」も
-  /// 区別できなくなる**ので、呼び出し側で出し分けられるようにする。
+  /// ⚠⚠ **どんな失敗でも `null` を返し、例外を投げない。**同時に投げている
+  /// ユーザー検索・タグ検索は `Future.wait` で束ねられているので、**1 本でも
+  /// 例外を投げると成功していた 2 本の結果まで捨てられる**（リリース前レビュー
+  /// で検出）。当初は `UNAVAILABLE` だけを null に倒していたが、全文検索
+  /// バックエンドは「未設定」以外に「設定されているが落ちている（500）」
+  /// 「レート制限（429）」という状態を取るので、切り分けが狭すぎた。
+  ///
+  /// ⚠ **本文検索は検索画面の一部でしかない。**それが落ちたときにアカウント
+  /// 検索・ハッシュタグ検索・notestock まで道連れにするのは、#1080 で直した
+  /// 「装飾のために本体を止める」構造とまったく同じ。
+  ///
+  /// ⚠ **タイムアウトも短くする。**既定は 60 秒（`kAdapterReceiveTimeout`）で、
+  /// 応答しないバックエンドがあると**60 秒待たされた末に結果ゼロ**になる。
+  /// 本文検索が返らなくても他の結果は先に出したい。
   Future<List<MisskeyNote>?> searchNotes(String query, {int? limit}) async {
     try {
       final response = await dio.post(
         '/api/notes/search',
         data: createBody({'query': query, 'limit': ?limit}),
+        options: Options(receiveTimeout: const Duration(seconds: 10)),
       );
       return (response.data as List)
           .map((e) => MisskeyNote.fromJson(e as Map<String, dynamic>))
           .toList();
-    } on DioException catch (e) {
-      // ⚠ **改行の位置で `?` が型に食われる。**`data is Map<String, dynamic>`
-      // の直後で改行して `?` を置くと `Map<String, dynamic>?` と解釈されて
-      // 構文ごと壊れる。条件を変数に切って避ける。
-      final data = e.response?.data;
-      final body = data is Map<String, dynamic> ? data : null;
-      final error = body?['error'];
-      final code = error is Map<String, dynamic> ? error['code'] : null;
-      if (code == 'UNAVAILABLE') return null;
-      rethrow;
+    } catch (_) {
+      // 失敗の種別は呼び出し側で使い分けていない（「引けなかった」で足りる）。
+      return null;
     }
   }
 

@@ -48,8 +48,13 @@ void main() {
       );
     });
 
-    test('UNAVAILABLE 以外のエラーは握りつぶさない', () async {
-      // 本当の障害まで「本文検索に対応していません」と出すと誤診を招く。
+    test('UNAVAILABLE 以外の失敗も null を返し、例外を投げない', () async {
+      // ⚠⚠ **当初は rethrow していたが、リリース前レビューで 🔴 になった。**
+      // 呼び出し側は `Future.wait` でユーザー検索・タグ検索と束ねているので、
+      // **1 本でも例外を投げると成功していた 2 本の結果まで捨てられる**。
+      // 本文検索は検索画面の一部でしかなく、それが落ちたときにアカウント検索・
+      // ハッシュタグ検索・notestock まで道連れにするのは、#1080 で直した
+      // 「装飾のために本体を止める」構造とまったく同じ。
       stub.respondWith(
         statusCode: 500,
         body: {
@@ -58,8 +63,9 @@ void main() {
       );
 
       expect(
-        () => client.searchNotes('capsicum'),
-        throwsA(isA<DioException>()),
+        await client.searchNotes('capsicum'),
+        isNull,
+        reason: '本文検索の失敗が検索画面全体を潰してはいけない',
       );
     });
 

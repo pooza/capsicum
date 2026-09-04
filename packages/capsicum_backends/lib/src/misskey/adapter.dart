@@ -1187,9 +1187,17 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
     final seen = <String>{};
     return SearchResults(
-      posts: (notes ?? const [])
-          .map((n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds))
-          .toList(),
+      // ⚠ **`_safeConvert` を通す**（リリース前レビューで検出）。ここは
+      // Post 変換＝いちばん落ちやすい経路なのに、同ファイルの timeline 系が
+      // 全部通しているのにここだけ素の `map` だった。1 件腐ると検索結果が
+      // 丸ごと消える。
+      posts: notes == null
+          ? const []
+          : _safeConvert(
+              notes,
+              (n) => n.toCapsicum(host, adminRoleIds: _adminRoleIds),
+              (n) => n.id,
+            ).results,
       users: users
           .map((u) => u.toCapsicum(host, adminRoleIds: _adminRoleIds))
           .where((u) => seen.add(u.id))
