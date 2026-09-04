@@ -1094,6 +1094,10 @@ class _PostTileState extends ConsumerState<PostTile> {
     final reactionAdapter = adapter as ReactionSupport;
     final targetPost = post.reblog ?? post;
     final messenger = ScaffoldMessenger.of(context);
+    // ⚠ **クロージャの外で捕まえる**（#990 / #1064 と同じ理由）。closure が
+    // 走る時点でこのタイルが dispose されていると `ref.read` が投げ、
+    // リアクションが送信されないまま無言で消える。
+    final myHost = ref.read(currentAccountProvider)?.key.host;
 
     if (targetPost.myReaction == emoji) {
       _runReactionAction(
@@ -1112,11 +1116,7 @@ class _PostTileState extends ConsumerState<PostTile> {
         // 既存チップのタップもピッカーと同じ判定を通す (#1044・Codex P1)。
         () => reactionAdapter.addReaction(
           targetPost.id,
-          effectiveReaction(
-            emoji,
-            targetPost,
-            myHost: ref.read(currentAccountProvider)?.key.host,
-          ),
+          effectiveReaction(emoji, targetPost, myHost: myHost),
         ),
         'リアクションしました',
       );
@@ -1699,12 +1699,17 @@ class _PostTileState extends ConsumerState<PostTile> {
               adapter as BackendAdapter,
               targetPost.id,
               // カスタム絵文字のタップも同じ判定を通す (#1044・Codex P1)。
+              // ⚠ **host はシートを開く前に捕まえた `account` から取る**
+              // （#990 / #1064 と同じ理由・Codex P2）。ここで `ref.read` を
+              // すると、シートが開いている間に TL が更新されてこのタイルが
+              // dispose された場合に**投げて、リアクションが送信されないまま
+              // 無言で消える**。
               () => (adapter as ReactionSupport).addReaction(
                 targetPost.id,
                 effectiveReaction(
                   ':$shortcode:',
                   targetPost,
-                  myHost: ref.read(currentAccountProvider)?.key.host,
+                  myHost: account?.key.host,
                 ),
               ),
               'リアクションしました',

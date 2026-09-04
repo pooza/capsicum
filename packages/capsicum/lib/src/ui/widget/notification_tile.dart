@@ -424,10 +424,12 @@ class _NotificationTileState extends ConsumerState<NotificationTile> {
               // 通知タイルからの経路も判定を通す (#1044・Codex P1)。
               () => (adapter as ReactionSupport).addReaction(
                 targetPost.id,
+                // ⚠ host はシートを開く前に捕まえた `account` から取る
+                // （#990 / #1064 と同じ理由・Codex P2）。
                 effectiveReaction(
                   ':$shortcode:',
                   targetPost,
-                  myHost: ref.read(currentAccountProvider)?.key.host,
+                  myHost: account?.key.host,
                 ),
               ),
               'リアクションしました',
