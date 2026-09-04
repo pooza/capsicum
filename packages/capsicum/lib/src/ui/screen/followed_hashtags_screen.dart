@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../util/exception_scrub.dart';
+import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
+import '../widget/retry_error_view.dart';
 
 /// フォロー中のハッシュタグ一覧 (#1070)。
 ///
@@ -35,6 +37,11 @@ class _FollowedHashtagsScreenState
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
+
+  /// 初回取得の失敗。⚠ **「0 件」と「引けない」を混ぜない**（#1041 と同じ趣旨・
+  /// リリース前レビューで追加）。失敗を「フォロー中のハッシュタグはありません」
+  /// と描くと、フォローが消えたと誤解させる。
+  Object? _error;
 
   /// 解除済みのタグ。⚠ **行を消さない**（#1039 と同じ理由）。サーバー側の
   /// 反映にラグがあると取り直しで復活し、「解除できていない」に見える。
@@ -81,12 +88,16 @@ class _FollowedHashtagsScreenState
         _tags = result.tags;
         _nextCursor = result.nextCursor;
         _loading = false;
-        _hasMore = result.nextCursor != null && result.tags.length >= _pageSize;
+        _error = null;
+        _hasMore = result.nextCursor != null;
       });
     } catch (e) {
       debugLogException('FollowedHashtagsScreen load error', e);
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _error = e;
+      });
     }
   }
 
@@ -104,7 +115,7 @@ class _FollowedHashtagsScreenState
         _tags = [..._tags, ...result.tags];
         _nextCursor = result.nextCursor;
         _loadingMore = false;
-        _hasMore = result.nextCursor != null && result.tags.length >= _pageSize;
+        _hasMore = result.nextCursor != null;
       });
     } catch (e) {
       debugLogException('FollowedHashtagsScreen loadMore error', e);
@@ -152,13 +163,22 @@ class _FollowedHashtagsScreenState
       body: BottomSafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? RetryErrorView(
+                message: '読み込みに失敗しました\n${summarizeOpError(_error!)}',
+                onRetry: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+              )
             : _tags.isEmpty
             ? const Center(child: Text('フォロー中のハッシュタグはありません'))
             : RefreshIndicator(
-                onRefresh: () async {
-                  setState(() => _loading = true);
-                  await _load();
-                },
+                // ⚠ `_loading` を立てると RefreshIndicator ごと消える。
+                onRefresh: _load,
                 child: ListView.separated(
                   controller: _scrollController,
                   itemCount: _tags.length + (_loadingMore ? 1 : 0),
