@@ -3171,19 +3171,55 @@ class _PollWidgetState extends ConsumerState<_PollWidget> {
   }
 }
 
-class _QuoteCard extends StatefulWidget {
+/// ⚠ **ConsumerStatefulWidget にしたのは CW のレンダリングのため (#1068)。**
+/// `ContentRenderer` は絵文字サイズ・MFM アニメーションの設定と、リンクタップの
+/// アプリ内解決に `ref` を要る。
+class _QuoteCard extends ConsumerStatefulWidget {
   final Post quote;
 
   const _QuoteCard({required this.quote});
 
   @override
-  State<_QuoteCard> createState() => _QuoteCardState();
+  ConsumerState<_QuoteCard> createState() => _QuoteCardState();
 }
 
-class _QuoteCardState extends State<_QuoteCard> {
+class _QuoteCardState extends ConsumerState<_QuoteCard> {
   bool _cwExpanded = false;
 
+  /// 引用元 CW 用のレンダラ (#1068)。⚠ **本体側の `_cwRenderer` とは別インス
+  /// タンス**（別 State なので共有しようがないが、共有すると本体と同じ
+  /// 「dispose されてタップが死ぬ」形になる）。
+  ContentRenderer? _cwRenderer;
+
   Post get quote => widget.quote;
+
+  @override
+  void dispose() {
+    _cwRenderer?.dispose();
+    super.dispose();
+  }
+
+  /// 引用元の CW を本体と同じ規則でレンダリングする (#1068)。
+  ///
+  /// ⚠ **Mastodon はプレーンテキスト、Misskey は MFM**（本体側と同じ振り分け）。
+  TextSpan _renderCw(String cw, TextStyle? baseStyle) {
+    _cwRenderer?.dispose();
+    final renderer = ContentRenderer(
+      baseStyle: baseStyle ?? const TextStyle(),
+      resolveEmoji: (shortcode) {
+        final url = quote.emojis[shortcode];
+        if (url != null) return url;
+        final host = quote.emojiHost;
+        return host != null ? 'https://$host/emoji/$shortcode.webp' : null;
+      },
+      onLinkTap: (url) => openFediverseLink(context, ref, url),
+      onHashtagTap: (tag) => showHashtagActionMenu(context, tag),
+      emojiSize: ref.watch(emojiSizeProvider),
+      animateMfm: ref.watch(mfmAnimationEnabledProvider),
+    );
+    _cwRenderer = renderer;
+    return quote.isHtml ? renderer.renderPlain(cw) : renderer.renderMfm(cw);
+  }
 
   @override
   void didUpdateWidget(covariant _QuoteCard oldWidget) {
@@ -3248,12 +3284,13 @@ class _QuoteCardState extends State<_QuoteCard> {
                       color: theme.textTheme.bodySmall?.color,
                     ),
                     const SizedBox(width: 2),
+                    // 引用元の CW でもハッシュタグを押せるようにする (#1068)。
                     Expanded(
-                      child: EmojiText(
-                        quote.spoilerText!,
-                        emojis: quote.emojis,
-                        fallbackHost: quote.emojiHost,
-                        style: theme.textTheme.bodySmall,
+                      child: Text.rich(
+                        _renderCw(
+                          quote.spoilerText!,
+                          theme.textTheme.bodySmall,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
