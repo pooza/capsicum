@@ -1,6 +1,7 @@
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MaxLengthEnforcement;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +9,7 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/text_length.dart';
 import '../util/compose_template_display.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
@@ -393,6 +395,20 @@ class _TemplateEditorDialogState extends State<_TemplateEditorDialog> {
               child: TextField(
                 controller: _bodyController,
                 maxLength: widget.maxBodyLength,
+                // ⚠⚠ **compose と同じ上限を使うなら、数え方も enforcement も
+                // 揃える (#1035-A3)。**上限は投稿フォームと同じ
+                // [maxPostLengthProvider] なのに、ここだけ**既定の書記素
+                // カウンタ + 既定の enforcement（＝切り詰める）**のままだった。
+                //
+                // - **黙って切られる** — Misskey (3000) で絵文字混じりのテンプレ
+                //   本文が、入力途中で予告なく切り捨てられる
+                // - **compose と数字が食い違う** — 家族絵文字 👨‍👩‍👧‍👦 は書記素 1・
+                //   コードポイント 7。同じ本文を compose に貼ると別の数字が出る
+                //
+                // `text_length.dart` が立てた「切らずにサーバーと同じ単位で
+                // 数える」方針と真逆だったので揃える。
+                buildCounter: serverLengthCounter(_bodyController),
+                maxLengthEnforcement: MaxLengthEnforcement.none,
                 expands: true,
                 maxLines: null,
                 minLines: null,

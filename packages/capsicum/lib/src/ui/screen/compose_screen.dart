@@ -3110,6 +3110,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   ///
   /// 失敗しても投稿は止めない。ALT が更新できないことより、投稿できないことの
   /// ほうが重い。観測だけ残す。
+  ///
+  /// ## ⚠⚠ 呼ぶのは「投稿 / 保存が通ったあと」(#1035-A2)
+  ///
+  /// 以前は `postStatus` / `saveDraft` の**前**にあった。ドライブファイルは
+  /// 実体が 1 つなので、**投稿が失敗しても、そのファイルを使っている過去の
+  /// 投稿の ALT は新しい文字列のまま残る**。ユーザーには「投稿に失敗しました」
+  /// しか出ず、諦めて画面を閉じても戻らない。
+  ///
+  /// ⚠ **後ろへ回せるのは Misskey の仕様による。**ノートの ALT はドライブ
+  /// ファイルの `comment` を**参照**するので、投稿後に書いても反映される
+  /// （送っているのは `mediaIds` ＝ ID だけ）。
+  ///
+  /// ⚠ **前に戻さないこと。**「ID しか返さないので通さないと編集が黙って
+  /// 捨てられる」(#1027-F1) は**どこかで通す必要がある**という意味であって、
+  /// 前に置く理由ではない。
   Future<void> _syncDriveDescriptions() async {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! DriveSupport) return;
@@ -3166,9 +3181,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
-      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
-      // 返さないので、通さないと編集が黙って捨てられる。
-      await _syncDriveDescriptions();
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
           if (entry.isDrive) return entry.driveFile!.id;
@@ -3199,6 +3211,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           channelId: _effectiveChannelId,
         ),
       );
+
+      // ⚠ **保存が通ってから ALT を書き戻す (#1035-A2)。**理由は
+      // [_submitInternal] の同じ位置のコメント（失敗したのに過去の投稿の ALT
+      // だけ書き換わるのを防ぐ）。
+      await _syncDriveDescriptions();
 
       // サーバーへ保存できたので、ローカルに自動保存された下書きは破棄する。
       // これをしないと、投稿成功経路（_clearDraft を呼ぶ）と非対称になり、
@@ -3349,9 +3366,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
-      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
-      // 返さないので、通さないと編集が黙って捨てられる。
-      await _syncDriveDescriptions();
       // Upload local attachments / reuse drive file IDs.
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
@@ -3396,6 +3410,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
+      // ⚠⚠ **ドライブ添付の ALT は投稿が通ってから書き戻す (#1035-A2)。**
+      // 以前は `postStatus` の**前**にあった。ドライブファイルは実体が 1 つ
+      // なので、投稿が失敗しても**そのファイルを使っている過去の投稿の ALT は
+      // 新しい文字列のまま残る**。ユーザーには「投稿に失敗しました」しか出ず、
+      // 諦めて画面を閉じても戻らない。
+      //
+      // ⚠ **後ろへ回せるのは Misskey の仕様による。**ノートの ALT はドライブ
+      // ファイルの `comment` を**参照**するので、投稿後に書いても反映される
+      // （下の `mediaIds` は ID しか渡していない）。#1027-F1 が「通さないと
+      // 編集が黙って捨てられる」と書いたのは前に置いた理由ではなく、
+      // **どこかで通す必要がある**という意味。
+      //
+      // ⚠ **「過去の投稿も変わる」こと自体は仕様として受け入れ済み**
+      // （`drive_support.dart` の doc）。直したのは**失敗したのに残る**ほう。
+      await _syncDriveDescriptions();
       // Posting succeeded — drop any persisted draft so it doesn't reappear
       // the next time the user opens compose. Only applies to fresh-compose
       // sessions; reply/quote/redraft/share flows never autosaved and must
