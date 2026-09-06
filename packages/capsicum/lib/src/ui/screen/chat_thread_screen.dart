@@ -71,12 +71,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       _textController.clear();
       if (mounted) setState(() => _attachedFile = null);
     } catch (e, st) {
-      reportChatOpFailure(
-        'send_message',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('send_message', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeOpError(e)})')),
@@ -92,12 +87,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       final file = await showChatAttachmentPicker(context, ref);
       if (file != null && mounted) setState(() => _attachedFile = file);
     } catch (e, st) {
-      reportChatOpFailure(
-        'attach_file',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('attach_file', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('ファイルの添付に失敗しました (${summarizeOpError(e)})')),
@@ -135,7 +125,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
         'delete_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -169,7 +159,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
         'react_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

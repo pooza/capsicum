@@ -51,7 +51,7 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
         'accept_invitation',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -75,7 +75,7 @@ class _ChatInvitationsScreenState extends ConsumerState<ChatInvitationsScreen> {
         'ignore_invitation',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

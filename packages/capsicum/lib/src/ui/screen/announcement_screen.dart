@@ -35,7 +35,11 @@ class AnnouncementScreen extends ConsumerWidget {
         title: const Text('お知らせ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: const BottomSafeArea(child: AnnouncementView()),
+      // 下端 inset は [AnnouncementView] が自分で吸う。ここでは包まない
+      // （包んでも [BottomSafeArea] は冪等なので壊れないが、吸う場所が
+      // 2 つあると「どちらかを直せば足りる」と読まれる）。[NotificationScreen]
+      // と揃えた形。
+      body: const AnnouncementView(),
     );
   }
 }
@@ -66,48 +70,61 @@ class _AnnouncementViewState extends ConsumerState<AnnouncementView> {
     final mulukhiya = ref.watch(currentMulukhiyaProvider);
     final infoBotAcct = mulukhiya?.infoBotAcct;
 
-    return announcements.when(
-      data: (state) => state.announcements.isEmpty && infoBotAcct == null
-          ? const Center(child: Text('お知らせはありません'))
-          : RefreshIndicator(
-              onRefresh: () => ref.refresh(announcementProvider.future),
-              child: ListView.separated(
-                itemCount:
-                    state.announcements.length + (infoBotAcct != null ? 1 : 0),
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  if (infoBotAcct != null) {
-                    if (index == 0) {
-                      final infoBotUser = ref
-                          .watch(_infoBotUserProvider)
-                          .valueOrNull;
-                      return _InfoBotBanner(
-                        acct: infoBotAcct,
-                        displayName: _infoBotDisplayName(infoBotUser),
-                        onTap: () => _openInfoBotProfile(context, ref),
-                        avatarUrl: infoBotUser?.avatarUrl,
-                      );
+    // ⚠ **ホームのタブとしても単独画面としても出る共有 View なので、View 側で
+    // 下端 inset を吸う (#1061)。**`home_screen` の `_buildTabContent` は
+    // `withBackground(const AnnouncementView())` を早期 return するので、
+    // `Scaffold` を経由しないホストがある。画面側だけ包むとそちらに穴が残る。
+    //
+    // ⚠ **それまでは `ListView` の暗黙吸収に乗っていただけ。**`BoxScrollView` は
+    // `padding` 未指定なら `MediaQuery` の縦 padding を自動で足すので結果的に
+    // 無事だったが、**誰かが `padding:` を足した瞬間に無言で穴が開く**形だった
+    // （[NotificationView] は `ScrollablePositionedList` で暗黙吸収が効かず、
+    // 同じ構造なのにあちらだけ穴になっていた）。
+    return BottomSafeArea(
+      child: announcements.when(
+        data: (state) => state.announcements.isEmpty && infoBotAcct == null
+            ? const Center(child: Text('お知らせはありません'))
+            : RefreshIndicator(
+                onRefresh: () => ref.refresh(announcementProvider.future),
+                child: ListView.separated(
+                  itemCount:
+                      state.announcements.length +
+                      (infoBotAcct != null ? 1 : 0),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (infoBotAcct != null) {
+                      if (index == 0) {
+                        final infoBotUser = ref
+                            .watch(_infoBotUserProvider)
+                            .valueOrNull;
+                        return _InfoBotBanner(
+                          acct: infoBotAcct,
+                          displayName: _infoBotDisplayName(infoBotUser),
+                          onTap: () => _openInfoBotProfile(context, ref),
+                          avatarUrl: infoBotUser?.avatarUrl,
+                        );
+                      }
+                      index -= 1;
                     }
-                    index -= 1;
-                  }
-                  final announcement = state.announcements[index];
-                  return AnnouncementTile(
-                    announcement: announcement,
-                    host: ref.read(currentAccountProvider)?.key.host,
-                    onDismiss: announcement.read
-                        ? null
-                        : () => ref
-                              .read(announcementProvider.notifier)
-                              .dismiss(announcement.id),
-                  );
-                },
+                    final announcement = state.announcements[index];
+                    return AnnouncementTile(
+                      announcement: announcement,
+                      host: ref.read(currentAccountProvider)?.key.host,
+                      onDismiss: announcement.read
+                          ? null
+                          : () => ref
+                                .read(announcementProvider.notifier)
+                                .dismiss(announcement.id),
+                    );
+                  },
+                ),
               ),
-            ),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => RetryErrorView(
-        message: 'お知らせの読み込みに失敗しました\n${summarizeOpError(error)}',
-        isRetrying: announcements.isLoading,
-        onRetry: () => ref.invalidate(announcementProvider),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stack) => RetryErrorView(
+          message: 'お知らせの読み込みに失敗しました\n${summarizeOpError(error)}',
+          isRetrying: announcements.isLoading,
+          onRetry: () => ref.invalidate(announcementProvider),
+        ),
       ),
     );
   }

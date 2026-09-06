@@ -61,6 +61,55 @@ run_case() {
   fi
 }
 
+# run_unwired_case <名前> <期待する exit> <FILES_FILE に入れる値（空なら未設定）>
+#
+# ⚠ **入力が配線されていないときの挙動を検査する (#1063)。**run_case は 4 本を
+# 必ず設定するので、**呼び出し側の変数名の打ち間違い**という現実の失敗モードを
+# 再現できない。FILES_FILE が空に倒れると `pubspec.lock unchanged; ok` で
+# exit 0 になり、**CI ログ上は正常な緑と区別が付かない**。
+#
+# ⚠ 期待値を 1 ではなく 2 にしてあるのは、「規約違反で落ちた」のではなく
+# 「配線ミスで落ちた」ことまで固定するため。ここが 1 に化けたら、ガードが
+# 別の理由で落ちていることになる。
+run_unwired_case() {
+  local name="$1" want="$2" files_value="$3" out got
+  printf '%s' "$lock" > "$work/files"
+  printf '%s' 'fix: 何か直す' > "$work/msgs"
+  : > "$work/pubspec_lines"
+  : > "$work/wf_lines"
+
+  set +e
+  if [ -n "$files_value" ]; then
+    out="$(
+      FILES_FILE="$files_value" \
+      MSGS_FILE="$work/msgs" \
+      PUBSPEC_LINES_FILE="$work/pubspec_lines" \
+      WF_LINES_FILE="$work/wf_lines" \
+        bash "$guard" 2>&1
+    )"
+  else
+    # ⚠ 実際の打ち間違い（FILE_FILES）をそのまま再現する。FILES_FILE は未設定。
+    out="$(
+      FILE_FILES="$work/files" \
+      MSGS_FILE="$work/msgs" \
+      PUBSPEC_LINES_FILE="$work/pubspec_lines" \
+      WF_LINES_FILE="$work/wf_lines" \
+        bash "$guard" 2>&1
+    )"
+  fi
+  got=$?
+  set -e
+
+  if [ "$got" = "$want" ]; then
+    printf 'ok   %s\n' "$name"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL %s: want exit=%s, got exit=%s\n' "$name" "$want" "$got"
+    printf '     output: %s\n' "$out"
+    fail=$((fail + 1))
+  fi
+}
+
 # #1036 の再現に要る「マッチの後ろに続く大量のデータ」。パイプバッファ (64KB)
 # を超えないと SIGPIPE が起きないので、余裕を見て 300KB 取る。
 big="$(head -c 300000 /dev/zero | tr '\0' 'x')"
@@ -127,6 +176,13 @@ run_case 'workflow が pin 以外だけなら随伴と見なさず落とす' 1 \
 .github/workflows/analyze.yml" 'ci: ジョブ名を変える' '' \
   '-      - name: Analyze
 +      - name: Static analysis'
+
+# --- 入力が未配線のとき (#1063) ------------------------------------------
+# ⚠ どちらのケースも「lock が単独で変わっている」＝**本来は落ちるべき**入力を
+# 用意したうえで、FILES_FILE だけを壊している。旧実装はここで
+# `pubspec.lock unchanged; ok` と言って **exit 0** を返していた。
+run_unwired_case 'FILES_FILE が未設定なら、素通りせず落ちる' 2 ''
+run_unwired_case 'FILES_FILE が不在パスなら、素通りせず落ちる' 2 "$work/nonexistent"
 
 # -------------------------------------------------------------------------
 printf '\n%s passed, %s failed\n' "$pass" "$fail"

@@ -111,6 +111,25 @@ daisskey（ダイスキー本番のフォーク本体）への**本番適用**�
 
 ## トリアージ履歴
 
+### baseline: `179cb2da75`（**2026.9.0**、2026-09-07 記録）
+
+`e5c8faae29`（2026.7.0+4）..`daisskey`（2026.9.0）の差分トリアージ。⚠⚠ **マイナーが 2 つ上がった**（2026.8.0 と 2026.9.0）。upstream の GA は **2026-09-06**、**ダイスキー本番は同日中に 2026.9.0 へ昇格済み**（`/api/meta` で実測）。
+
+⚠⚠ **① の集約 API 契約（`packages/misskey-js/src/autogen/entities.ts` / `endpoint.ts`）の diff が完全に空。**マイナー 2 つぶんを跨いで **entity フィールドも endpoint も 1 つも動いていない**。②（`models/json-schema/` の diff・新規 endpoint）も空。
+
+⚠ **「空だから変化なし」と読む前にレンジを確かめた。**`e5c8faae29..daisskey` は **77 commits / 179 ファイル / +7,861 −4,975 行**で、レンジ自体は空ではない。`packages/misskey-js/src/autogen/` の 5 ファイルも daisskey に実在する。**検査が空振りしているのではなく、本当に API 契約が動いていない。**
+
+**既存 endpoint の中身は 8 ファイル動いている**（①②では拾えないので個別に見た）。capsicum が叩くのは `notes/reactions` と `notes/translate` の 2 つだけ:
+
+- **passive**: `notes/reactions` から **`allowGet: true` と `cacheSec: 60` が外れ**、可視性チェック（`isVisibleForMe`）が入った。⚠ **capsicum は `dio.post('/api/notes/reactions', ...)` で叩いている**ので `allowGet` の削除は当たらない。可視性チェックも「自分に見えているノートのタイルからしか開かない」ので実質当たらず、当たっても既存のエラー処理に乗る
+- **passive**: `notes/translate` が **CW も翻訳対象に含める**ようになった（`cw + "\n-----\n" + text`）。レスポンスの schema は不変。capsicum は結果の文字列をそのまま出すので、CW 付き投稿の翻訳が `翻訳された CW` / `-----` / `翻訳された本文` の 3 行で出る。**表示は成立するので追随不要**（むしろ従来は CW が翻訳されていなかった）
+- **none（capsicum 無関係）**: `admin/emoji/import-zip` / `admin/queue/jobs` / `admin/queue/stats`（管理画面）・`i/revoke-token`・`notes/thread-muting/create`・`users/get-frequently-replied-users`（いずれも capsicum から呼んでいない）
+- **none（純粋なリファクタ）**: `server/api/stream/channels/main.ts` の +62/−45 は、インラインのコールバックを `@bindThis` 付きメソッドへ切り出しただけ。**送るイベントも条件も変わっていない**。⚠ [#720](https://github.com/pooza/capsicum/issues/720) の streaming 多重化（[#1089](https://github.com/pooza/capsicum/issues/1089)）で読む場所なので、**構造が変わったことだけ記録しておく**
+
+Flash 互換ハーネスは未実施。`@syuilo/aiscript` は **1.2.1 で据え置き**（diff に変化なし）なので、[baseline `9d6b7d05de`](#baseline-9d6b7d05de202672026-08-01-記録) 節の「言語世代が動く圧力がない」判断がそのまま生きる。
+
+→ **actionable なし。**次回は `179cb2da75..daisskey` から差分する。
+
 ### baseline: `e5c8faae29`（2026.7.0+4、2026-09-03 記録）
 
 `9d6b7d05de`（2026.7.0+0）..`daisskey`（2026.7.0+4）の差分トリアージ。**upstream の版は 2026.7.0 のまま**で、動いたのは**フォーク側の +1〜+4 だけ**。**endpoint 追加なし・entity フィールド変化なし・packed json-schema 変化なし**（`packages/backend/src/server/api/endpoints/` ・ `packages/backend/src/models/json-schema/` ・ `packages/misskey-js/src/autogen/` の diff がいずれも完全に空）。21 ファイル中の大半は WebUI・docs・CI で、backend は 2 ファイル計 3 行のみ:

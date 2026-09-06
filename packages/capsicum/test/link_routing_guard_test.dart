@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/dart_source.dart';
+
 /// #1030: アプリ内のリンクのルーティングを 1 箇所に寄せたままにする。
 ///
 /// 報告は「Play を指すプレビューカードが capsicum 内ではなく WebUI で開く」
@@ -49,15 +51,14 @@ void main() {
 
   /// 行コメントを落とす。doc / コメントで関数名に言及しただけの行を指摘しない。
   ///
-  /// ⚠ 文字列リテラルは落とさない。`'launchUrl('` のような形で迂回する経路は
-  /// 無いので、素朴に切って構わない。
-  String stripLineComments(String source) => source
-      .split('\n')
-      .map((line) {
-        final i = line.indexOf('//');
-        return i == -1 ? line : line.substring(0, i);
-      })
-      .join('\n');
+  /// ⚠ **文字列リテラルを見る版へ寄せた (#1035-C5)。**以前は
+  /// `line.indexOf('//')` で素朴に切っており、doc で「素朴に切って構わない」と
+  /// 許容判断済みだった。判断自体は今も正しい（`'launchUrl('` の形で迂回する
+  /// 経路は無い）が、**同じ実装が 3 本のガードへ写されていて、そのうち
+  /// `phase_tag_literal_guard_test` では URL リテラルを含む行が丸ごと消える
+  /// 実害があった**。同型を残すと次に写した人が踏むので、3 本とも
+  /// [maskComments] へ統一する。
+  String stripLineComments(String source) => maskComments(source);
 
   test('探索そのものが壊れていない', () {
     final files = uiDartFiles();

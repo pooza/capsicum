@@ -335,48 +335,110 @@ String buildSettingsBackupYaml(
 /// ⚠ **ブロックスタイルは数えない。**1 段ごとにインデントが伸びるため
 /// [maxSettingsBackupBytes] が実質的な上限になっており、そこまで深くしても
 /// 実時間は数十 ms に収まる（[maxSettingsBackupNestingDepth] の doc 参照）。
+///
+/// ## ⚠⚠ 引用符 1 個でガードが無効化されていた (#1035-A1)
+///
+/// 初版は `'` / `"` を**どこに現れても引用開始とみなして**閉じ引用符まで
+/// 読み飛ばしていた。ところが **YAML の平文スカラーは 2 文字目以降に引用符を
+/// 含められる** ——`bait: x"` も `a: don't` も**正当な YAML**。閉じが現れないと
+/// **ファイル末尾まで飛び、以降の `[` を 1 つも数えない**。
+///
+/// 実測（yaml 3.1.3）: `bait: x"` + **250,000 段**のネスト = 500,058 バイト
+/// （1MiB 以内）で、ガードは **false（素通り）**、`loadYaml` が
+/// **100,690ms 同期的にメイン isolate を占有**したのち `StackOverflowError`。
+/// ⚠ **#1025 が挙げた ANR / ウォッチドッグの状況がそのまま再現する。**
+/// 同じ深さでも `bait: x"` を除くと正しく弾かれるので、**テストが見ていたのは
+/// 素直なペイロードだけ**だった。
+///
+/// 塞ぎ方は 2 つ重ねてある:
+///
+/// 1. **引用符は「トークンの先頭」でだけ引用開始とみなす**（[_atTokenStart]）。
+///    平文スカラーの途中の `"` は引用ではない
+/// 2. **閉じが見つからなければ弾く側へ倒す**（[_skipQuoted] が `-1`）。
+///    閉じない引用符を持つファイルは `loadYaml` でもどうせ失敗するので、
+///    **数十秒かけて失敗するより先に弾く**ほうがよい
 bool exceedsSettingsBackupNestingDepth(String yamlText) {
   var depth = 0;
-  for (var i = 0; i < yamlText.length; i++) {
+  var i = 0;
+  while (i < yamlText.length) {
     final c = yamlText[i];
-    switch (c) {
-      case '#':
-        // コメントは行末まで。YAML では行頭か空白の後ろだけがコメント開始だが、
-        // ここでは括弧を数えないことだけが目的なので厳密さは要らない。
-        while (i < yamlText.length && yamlText[i] != '\n') {
-          i++;
-        }
-      case "'":
-        // 単一引用スカラー。'' が閉じない形のエスケープ。
+
+    // ⚠ **YAML のコメントは「行頭」か「空白の後ろ」だけ。**`tag#1` の `#` は
+    // 平文スカラーの一部で、コメントではない。引用符と同じ型の取りこぼしなので
+    // 揃えてある（こちらは行末までしか飛ばないので実害は小さい）。
+    if (c == '#' && _atTokenStart(yamlText, i)) {
+      while (i < yamlText.length && yamlText[i] != '\n') {
         i++;
-        while (i < yamlText.length) {
-          if (yamlText[i] != "'") {
-            i++;
-            continue;
-          }
-          if (i + 1 < yamlText.length && yamlText[i + 1] == "'") {
-            i += 2;
-            continue;
-          }
-          break;
-        }
-      case '"':
-        // 二重引用スカラー。\ でエスケープ。
-        i++;
-        while (i < yamlText.length && yamlText[i] != '"') {
-          if (yamlText[i] == r'\') i++;
-          i++;
-        }
-      case '[':
-      case '{':
-        depth++;
-        if (depth > maxSettingsBackupNestingDepth) return true;
-      case ']':
-      case '}':
-        if (depth > 0) depth--;
+      }
+      continue;
     }
+
+    if ((c == "'" || c == '"') && _atTokenStart(yamlText, i)) {
+      final end = _skipQuoted(yamlText, i);
+      if (end < 0) return true; // 閉じない引用符。弾く側へ倒す
+      i = end;
+      continue;
+    }
+
+    if (c == '[' || c == '{') {
+      depth++;
+      if (depth > maxSettingsBackupNestingDepth) return true;
+    } else if (c == ']' || c == '}') {
+      if (depth > 0) depth--;
+    }
+    i++;
   }
   return false;
+}
+
+/// [i] が「トークンの先頭」か (#1035-A1)。
+///
+/// 引用スカラーが始まれるのは**行頭・空白の後ろ・`[` `{` `,` `:` `-` の後ろ**
+/// だけ。それ以外の位置の `'` / `"` は**平文スカラーの一部**であって、引用の
+/// 開始ではない。
+bool _atTokenStart(String text, int i) {
+  if (i == 0) return true;
+  final prev = text[i - 1];
+  return prev == ' ' ||
+      prev == '\n' ||
+      prev == '\r' ||
+      prev == '\t' ||
+      prev == '[' ||
+      prev == '{' ||
+      prev == ',' ||
+      prev == ':' ||
+      prev == '-';
+}
+
+/// [start] から始まる引用スカラーの直後の位置。**閉じが無ければ `-1`。**
+int _skipQuoted(String text, int start) {
+  final quote = text[start];
+  var i = start + 1;
+  if (quote == "'") {
+    // 単一引用スカラー。`''` が閉じない形のエスケープ。
+    while (i < text.length) {
+      if (text[i] != "'") {
+        i++;
+        continue;
+      }
+      if (i + 1 < text.length && text[i + 1] == "'") {
+        i += 2;
+        continue;
+      }
+      return i + 1;
+    }
+    return -1;
+  }
+  // 二重引用スカラー。`\` でエスケープ。
+  while (i < text.length) {
+    if (text[i] == r'\') {
+      i += 2;
+      continue;
+    }
+    if (text[i] == '"') return i + 1;
+    i++;
+  }
+  return -1;
 }
 
 /// YAML を読み込んで設定を書き戻す (#857)。

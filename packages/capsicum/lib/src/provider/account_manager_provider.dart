@@ -18,6 +18,7 @@ import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
+import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
@@ -1136,10 +1137,39 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 未接続アカウントは adapter もアクセストークンも持たないので、SNS 側へ
     // unsubscribe を投げようがない。[logout] との差はここだけで、端末側の
     // 掃除は同じものを共有している。
-    await PushRegistrationService.forgetAccountLocally(key);
-    // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ `@user@host` へ
-    // 入り直したときに古いラベルを引きうる。
-    await NotificationLabelCache.remove(_notificationLabelKey(key));
+    //
+    // ⚠⚠ **待たない (#1035-A4)。**`forgetAccountLocally` は中で
+    // `AnnouncementSubscriptionService.disable` が **relay へ DELETE を投げる**
+    // （connect / receive 各 10 秒）。`confirmRemoveOfflineAccount` は spinner も
+    // busy フラグも持たないので、**圏外だと最大 10 秒以上ボタンが効いていない
+    // ように見える**。
+    //
+    // ⚠ **待ち方が [logout] と非対称だった。**あちらは
+    // `PushRegistrationService.unregisterAccount(account);` を投げっぱなしに
+    // している。#1024 は掃除の**対称性**だけを機械化したので、**待ち方の差は
+    // 残っていた**。
+    //
+    // ⚠⚠ **順序の問題でもあった。**`await` していたせいで、中の
+    // `SharedPreferences.getInstance()` 等が投げると **下の
+    // `storage.removeAccount` に到達せず、アカウントが消えないまま無言で終わる**。
+    // 投げっぱなしにすることで、掃除の失敗が削除そのものを巻き込まなくなる。
+    unawaited(() async {
+      try {
+        await PushRegistrationService.forgetAccountLocally(key);
+        // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
+        // `@user@host` へ入り直したときに古いラベルを引きうる。
+        await NotificationLabelCache.remove(_notificationLabelKey(key));
+      } catch (e, st) {
+        // ⚠ **握りつぶさず観測は残す。**削除自体は成立しているので UI は
+        // 止めないが、端末に痕跡が残ったことは分かるようにする。
+        reportOpFailure(
+          tagKey: 'account.op',
+          operation: 'forget_offline_artifacts',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }());
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1331,3 +1361,54 @@ final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
 final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
   return ref.watch(currentAccountProvider)?.mulukhiya;
 });
+
+/// `catch` の中から `account` を読むための、**投げない**読み取り (#1064)。
+///
+/// ## なぜ要るか
+///
+/// `reportOpFailure(account: ref.read(currentAccountProvider))` は、
+/// **catch 節の中で `await` の後に `ref.read` する**形になっている。画面が
+/// 既に dispose されていると:
+///
+/// - `flutter_riverpod` の `_assertNotDisposed()` は **`assert` ではなく素の
+///   `throw StateError`** なので、⚠ **release ビルドでも投げる**
+/// - 投げるのは `reportOpFailure` へ入る**前**なので、⚠⚠ **StateError が元の
+///   例外を潰して Sentry に何も上がらない**
+///
+/// → **「エラーが出ないのでうまくいっている」に見える観測性ギャップ。**
+/// しかも消えるのは**失敗を最も観測したい場面**（重い操作の最中に画面を離れた）
+/// に限られるので、母数からは異常に見えない。
+///
+/// ## ⚠ host タグは落ちうる
+///
+/// dispose 済みなら `null` を返すので、[reportOpFailure] は `host` / `backend`
+/// を `-` で詰める。**プリセット host で優先度を切る運用**から見ると劣化だが、
+/// **報告そのものが消えるよりは桁違いにまし**という判断。
+///
+/// ⚠ **host を落としたくない経路は、`await` の前に `account` を捕まえて
+/// 直接渡すこと**（#990 / #1009 の「開く前に捕まえる」と同じ形。
+/// `profile_edit_screen` の `_save` がその例）。これは**捕まえ忘れても報告だけは
+/// 残す最後の砦**であって、捕まえる代わりではない。
+extension AccountForReport on WidgetRef {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// provider（`Ref`）側の同じ形 (#1064)。
+///
+/// ⚠ **autoDispose の provider は破棄後の `ref.read` で同じ StateError を投げる。**
+/// `chat_provider` / `announcement_provider` の失敗報告がこれに当たる。
+extension AccountForReportOnRef on Ref {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}

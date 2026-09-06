@@ -140,9 +140,13 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 
 ### プッシュ通知
 
-プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主に自前サーバー（プリセット登録済み）のユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装）はそのコスト補填のための仕組みとして構想が残り、投げ銭サブスクと同じ商品 SKU で吸収できる可能性がある。
+プッシュ通知には、Mastodon の Web Push を APNs/FCM に変換する中継サーバーの運用が必要。capsicum は主に自前サーバー（プリセット登録済み）のユーザー向けに開発されており、プリセットサーバーのユーザーには [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) 経由で無償でリレーを提供している。外部ユーザー向けの有償提供（[#597](https://github.com/pooza/capsicum/issues/597)・未実装・v2.0）の設計書は [paid-relay-plan.md](paid-relay-plan.md) が正本（2026-09-06）。
 
-v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）はサポーターサブスク（[#428](https://github.com/pooza/capsicum/issues/428)）の設計検討の中で扱う。
+⚠ **「コスト補填」という当初の建付けは実測で組み直した。**開発工数を人件費換算すると回収に届かないため、**回収を KPI に置く限り永久に「やらない」が正解になる**。収益目標は **「relay のインフラを持ち出しにしないこと」**（2026-09-06 pooza 決定）。⚠ **プリセットのアカウントを 1 つも持たない利用者は現時点で 0 人**（本番 DB の実測）なので、**対象は「これから来る人」で需要は未証明**。⚠ **サーバー別に数えると外部が 36% に見えるが、マルチアカウント利用者の別アカウント宛であって「外部ユーザー」ではない**。
+
+v1.15 の観測性強化（#293）により、iOS のバックグラウンド通知は発火回数 0回で事実上機能していないことが確認された。v1.18 でプッシュ通知リレー（[#52](https://github.com/pooza/capsicum/issues/52)）を実装し、根本解決済み。リレーサーバー（Ruby、公開ドメイン `relay.capsicum.shrieker.net`）の実装は [pooza/capsicum-relay](https://github.com/pooza/capsicum-relay) リポジトリが正本（ホスト構成・デプロイ手順はインフラノートが正本）。初期設計判断の経緯は [archive/push-relay-plan.md](archive/push-relay-plan.md) に保存。具体的な課金設計（料金体系・ストア課金統合等）は [paid-relay-plan.md](paid-relay-plan.md) が正本（投げ銭本体は [#428](https://github.com/pooza/capsicum/issues/428) / [supporter-subscription-plan.md](supporter-subscription-plan.md)）。
+
+⚠ **配送の重さは device_type で大きく違う**（2026-09-06 実測・正本は [paid-relay-plan.md](paid-relay-plan.md) 1-5）。**Windows (WNS) が処理時間の 88% を占め、1 件あたり iOS の 16 倍**（2,056ms 対 126ms）。⚠ **APNs だけが永続 HTTP/2 接続を保持しており、WNS / FCM は 1 通ごとに TLS を張り直している**。改善は [relay#54](https://github.com/pooza/capsicum-relay/issues/54)（接続再利用・v1.65）/ [relay#55](https://github.com/pooza/capsicum-relay/issues/55)（非同期化・#597 と同じ回）/ [relay#56](https://github.com/pooza/capsicum-relay/issues/56)（バックオフ・on-hold）。⚠ **WNS の `dropped` は「端末が落ちている / スリープ」**であって dedup ではない。**raw notification は queue されない**ので、その間の通知は失われる。
 
 ### サポート優先順位
 
@@ -228,6 +232,8 @@ capsicum/
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
     sync-procedure.md     # セッション開始時の同期手順
     roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
+    deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
+    paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
     milestone-transition.md  # マイルストーン完了→次着手の移行手順（トリアージ・スコープ確定・サイト更新・バンプ）
     doc-maintenance.md    # ドキュメント/メモリの棚卸し手順（不定期・陳腐化改善・memory↔docs 移送・インフラ記述の infra-note 移設・アーカイブ）
     store-release-guide.md  # ストアリリース手順書（運用正本）
@@ -303,6 +309,28 @@ v2.0 に集めたメジャー級の大玉と、その種を見つける棚卸し
 
 設計書の型は既存の 6 本（[archive/push-relay-plan.md](archive/push-relay-plan.md) / [archive/desktop-notification-design.md](archive/desktop-notification-design.md) ほか）に倣い、**`## 決定済み事項` と `## 未決事項` を分ける**。未決を明示的に置けるので「全部決まるまで完成しない」状態で止まらない。⚠ **設計書の効用は分解だけではない** — desktop-notification-design では書いた結果 #476 が不要と判明して close できた。**Issue から始めるとこれができない**。
 
+### ソース検査ガードの書き方
+
+capsicum には「ソースを文字列で走査して規約違反を落とす」テストが多い（`test/*_guard_test.dart` 系。ウィジェットツリーを組み立てず静的に見るのは、対象が数十ファイルに散っていて pump の足場を用意するコストに見合わないため）。
+
+⚠⚠ **この形の検査は、判定が壊れても緑になる。**`expect(offenders, isEmpty)` は**何も見ていなくても通る**。v1.61 → v1.62 → v1.63 と **3 リリース続けて「ガードが壊れていても CI が緑」**が出ており（[#1036](https://github.com/pooza/capsicum/issues/1036) / [#1061](https://github.com/pooza/capsicum/issues/1061) / [#1063](https://github.com/pooza/capsicum/issues/1063) / [#1035](https://github.com/pooza/capsicum/issues/1035) の C 群）、**検査を足す / 直すときは以下を必ずセットで入れる**。
+
+1. **走査が空振りしていないことを別テストで固定する** — 対象ファイル数、既知の対象が列挙に含まれること、置き換え後の形が実在すること。⚠ **「旧形が無い」だけを見ると、「どちらも無い」で緑になる。**
+2. **判定ロジックに合成ソースを直接食わせる** — 当たるべき書き方ごとに 1 件、**当ててはいけない形**（コメント・文字列リテラル・真偽判定）にも 1 件。
+3. **⚠⚠ 歯があることを、実際に穴を開けて確かめる** — 修正前のファイルを `git show HEAD:<path>` で戻して食わせ、**狙ったテストだけが落ちる**ことを見る。
+
+⚠ **3 を飛ばすと実際に誤読する。**[#1062](https://github.com/pooza/capsicum/issues/1062) のガード初版は「`viewInsets.bottom` の直後が `+` / `,` / `)`」で絞っており、**`final x = ...viewInsets.bottom;` を拾えなかった**（`;` が続くので当たらない）。それは修正対象の実物の形そのもので、**2 の合成テストは自分が想定した書き方しか並べないので通ってしまった**。
+
+#### 判定を書くときの原則
+
+- **列挙をやめ、構造で見る。**「名前の表」は次に増えた名前が黙って通る。⚠ **型が見えないときは「型の代わりになる構造」を探す** — [#1035](https://github.com/pooza/capsicum/issues/1035)-C4 は `AccountKey.host`（非 null）と `User.host`（nullable）を、**「同じ receiver への null ガードが同じファイルにあるか」**で見分けた。
+- **コメントと文字列リテラルを落としてから見る**（`test/support/dart_source.dart` の `maskComments`）。⚠ **素朴な `indexOf('//')` は同一行に URL があると行末までを消す。**同じ実装が 3 本へ写されていた（#1035-C5）。
+- **集約したものは「委譲していること」まで見る。**正本だけ見ていると、画面が自前実装へ戻っても正本は緑のまま素通りする。⚠ **集約系の再発は「壊れること」ではなく「使わなくなること」として現れる**（[#1083](https://github.com/pooza/capsicum/issues/1083)-A）。
+
+#### 集約するときの注意
+
+⚠ **集約は「レビューで積み上がった振る舞い」を落とす最大の機会。**#1083-A で 4 本を 1 本にしたとき、それぞれに別のレビューで足された守りが 4 種類入っていた（失敗と 0 件の描き分け / 世代カウンタ / 継続判定 / 引っ張って更新）。**集約先の doc に、何を引き継いだかを列挙して残すこと。**
+
 ### コミットの分割方針
 
 コミットはなるべく Issue ごとに分ける。レビュー・revert・cherry-pick の粒度を保つため。同じファイルに複数 Issue の変更が混在して分離できない場合のみ、まとめてよい。
@@ -367,9 +395,17 @@ v1.27 マイルストーンに単独配置し（大更新のため他項目と�
 
 [GitHub Milestones](https://github.com/pooza/capsicum/milestones) が正本。各マイルストーンの概要・スコープはマイルストーンの description に記載し、CLAUDE.md には複写しない。個別 Issue の一覧・ステータスも同様。
 
-最新リリース: **v1.62.0**（2026-09-01 タグ、build 175、pubspec 1.62.0+175、リリース PR [#1066](https://github.com/pooza/capsicum/pull/1066)、merge `0fa3280f`）。**大更新なし — メンテナンスモードに入って最初の「外部要因の発生ベース」枠**（着火点は 2026-08-28 のユーザー報告 → [#1037](https://github.com/pooza/capsicum/issues/1037)）。**全プラットフォーム公開済み**（2026-09-02 実測）: iOS / macOS とも `READY_FOR_SALE`（ASC API）/ Android は production track の versionCode 175 が `completed` / Windows は公開カタログが `9AFBB08E.capsicum_1.62.175.0_x64__8ekzzj58251a2` を返す / Linux AppImage は [GitHub Release v1.62.0](https://github.com/pooza/capsicum/releases/tag/v1.62.0)（Latest・アセット 3 点）。マイルストーン [#76](https://github.com/pooza/capsicum/milestone/76)。消化（5 件）: [#1036](https://github.com/pooza/capsicum/issues/1036) lock ガードが「条件に合致したときだけ落ちる」逆転 / [#1037](https://github.com/pooza/capsicum/issues/1037) Android: 画面最下部がナビゲーションバーに潜り込む（**この枠の着火点**。報告はスレッド画面 1 件だったが、同型が 40 画面以上あった）/ [#1058](https://github.com/pooza/capsicum/issues/1058) ドロワーのフッターが潜り込む（`Scaffold.drawer` は #1037 の掃き出し対象外だった）/ [#1059](https://github.com/pooza/capsicum/issues/1059) スレッドの ↑ / ↓ ジャンプボタンが本文に被る / [#1060](https://github.com/pooza/capsicum/issues/1060) ホームの通知タブだけ残っていた（共有 View が Scaffold を経由しないホストを持つ）。**relay は v1.62 で触っていない**（open Issue 0 件・同名マイルストーン無し、prod の `/health` が `b9ce14c` で origin/main の HEAD と一致・2026-09-02 実測）。
+最新リリース: **v1.63.0**（2026-09-04 タグ、build 179、pubspec 1.63.0+179、リリース PR [#1069](https://github.com/pooza/capsicum/pull/1069)、merge `d99b3b53`）。**大更新なし — 棚卸し 3 本（#993 / #991 / #992）の成果を消化する枠**。**全 5 プラットフォーム公開済み**（2026-09-05 実測）: iOS / macOS とも 1.63.0 が `READY_FOR_SALE`（ASC API のプラットフォーム別 `appStoreState`）/ Android は production track の versionCode 179 が `completed`（Play API）/ Windows は Microsoft Store の現行パッケージが `9AFBB08E.capsicum_1.63.179.0_x64`（displaycatalog）/ Linux AppImage は [GitHub Release v1.63.0](https://github.com/pooza/capsicum/releases/tag/v1.63.0)（Latest）。マイルストーン [#77](https://github.com/pooza/capsicum/milestone/77)。消化（11 件）: [#1039](https://github.com/pooza/capsicum/issues/1039) ブロック・ミュートの一覧と解除（**この枠の主役**）/ [#1040](https://github.com/pooza/capsicum/issues/1040) フォローリクエストの承認・拒否 / [#1041](https://github.com/pooza/capsicum/issues/1041) Misskey の本文検索 / [#1043](https://github.com/pooza/capsicum/issues/1043) 「指名」を選択肢から外す / [#1044](https://github.com/pooza/capsicum/issues/1044) リアクションが黙って ❤️ へ差し替えられる / [#1045](https://github.com/pooza/capsicum/issues/1045) 通知取得でサーバー側の未読が消える / [#1068](https://github.com/pooza/capsicum/issues/1068) CW 内のハッシュタグをクリッカブルに / [#1070](https://github.com/pooza/capsicum/issues/1070) フォロー中のハッシュタグの一覧 / [#1071](https://github.com/pooza/capsicum/issues/1071) お気に入りの一覧 / [#1072](https://github.com/pooza/capsicum/issues/1072) 引用の一覧 / [#1080](https://github.com/pooza/capsicum/issues/1080) 通知の取得が異常に遅い（**ユーザー報告由来**）。**relay は v1.63 で触っていない**（open Issue 0 件・同名マイルストーン無し）。⚠ [#1076](https://github.com/pooza/capsicum/issues/1076) は**起票時点で実装済み**と判明して close、[#1042](https://github.com/pooza/capsicum/issues/1042) は**前提が誤り**（絞る UI がそもそも無い）で v2.0 へ移送。
 
-**リリース前レビューは 1 巡**（5 観点・🔴 1 件を [#1060](https://github.com/pooza/capsicum/issues/1060) として出荷前に消化し、残りは [#1061](https://github.com/pooza/capsicum/issues/1061)〜[#1065](https://github.com/pooza/capsicum/issues/1065) へ送った）。⚠ **リリース PR を立てる前に `git log origin/develop..origin/main` を見る** — v1.61 のリリース中に main へ直接入れたホットフィックス `170d9e9e`（#1036 の応急処置）が develop に戻っておらず、リリース PR がマージ不能になった。develop 側は同じ問題をスクリプト切り出し + セルフテストまで進めていたので `git merge origin/main` で **develop 版を採用**（`9f3381ff`）。ホットフィックス運用をしている以上これは毎回起こりうる。⚠ **Codex の P1 は誤検出だった** — 「lock ガードがこのリリースを落とす」という指摘は、`analyze.yml` と同じ入力を作って `lock_guard.sh` に渡すと exit 0（Codex は PR タイトル `1.62` をコミットメッセージと誤認していた。ガードが見るのは PR レンジ全体の `git log`）。⚠ **ただし隣に本物のリスクがあった** — **リリース PR を squash merge すると指摘どおり落ちる**（main に載るのが PR タイトル由来の 1 コミットだけになり `chore(deps)` が消えるため）。**リリース PR は merge commit で入れる**。⚠ **Codex の空振り判定は早すぎた** — `@codex review` を 2 回打って 12 分発火せず「空振り」と記録して先へ進めたが、**そのあと遅れてレビューが届いた**（[#1066 の line comment](https://github.com/pooza/capsicum/pull/1066#discussion_r3902793204)）。空振り断定は、リリース後の同期でもう一度数え直す前提で扱う。
+⚠⚠ **リリース前レビューで 🔴 5 件、うち 4 件がその日に入れた変更由来だった。**5 観点を独立に並列で回した効果が出た回で、**3 件は複数観点が独立に同じ結論**に達している（単一視点なら取りこぼしていた）。逆に**私が「いちばん怪しい」と名指しした箇所は無罪**で、実際の 🔴 は名指ししていなかった箇所から出た。**当たりの見当は外れてよく、母数を広く取るほうが効く。**
+
+⚠⚠ **サーバーの挙動を推測で語らない。**#1043 で「Misskey の指名投稿は `visibleUserIds` を送らないと誰にも届かない」を前提に丸めを実装し、レビューで否定された。サーバーは**返信のときだけ返信先の作者を `visibleUsers` へ自動補完する**ので、**返信は従来どおり届いていた**。しかも `reply.visibility === 'specified'` と異なる visibility の返信は 400 で拒否されるため、**動いていた返信を壊していた**。さらに redraft では**サーバーが弾かないまま DM がフォロワー全員へ出る**形だった。⚠ **`~/repos/misskey` を開けば 5 分で否定できた**（[reference: フォークは運用中のサーバーソフトそのもの](#関連リポジトリ)）。
+
+⚠⚠ **テストが「バグの側」を固定していた事例が 2 件**（is_cat の「通信例外もキャッシュに載る」/ 検索の「rethrow する」）。**テストがあることは正しさの証明にならない。**バグごとテストで固めると、次に直す人がテストを根拠に戻す。
+
+⚠ **Codex は 5 観点レビューが見落とした P1 を出した**（リアクション判定の経路取りこぼし。ピッカーの入口 2 箇所にしか入れておらず、既存チップ・カスタム絵文字・通知タイルが素通しだった）。2 巡目の P1 は誤検出（`following/requests/list` の戻り値の形）で、**フォークのソースを引いて否定した**。⚠ **実在の P1 が出たときだけ再依頼**し、P2 のみなら直すだけにする。
+
+⚠ **ビルドが 22 分かかった原因は DerivedData の肥大**（14G）。内蔵ディスクの空きが 8.7GB まで落ち、`xcodebuild clean` が 502 秒かかっていた。⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを消さない**（6〜8 月のものが 13 個残っていた）。消したら 66M・空き 22G に回復。⚠ **外部ボリュームが遅いせいではない**（小ファイル 5000 件の作成・削除を実測したところ内蔵と差が無かった）。
 
 過去リリースの詳細ログは [archive/release-log.md](archive/release-log.md) に退避した（正本は [GitHub Releases](https://github.com/pooza/capsicum/releases) / Milestones）。マイルストーン移行時のログトリム手順は [milestone-transition.md](milestone-transition.md) を参照。
 

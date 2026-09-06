@@ -5,10 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
-import '../../util/exception_scrub.dart';
-import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
-import '../widget/retry_error_view.dart';
+import '../widget/cursor_paged_list_view.dart';
 
 /// フォロー中のハッシュタグ一覧 (#1070)。
 ///
@@ -19,6 +17,10 @@ import '../widget/retry_error_view.dart';
 ///
 /// ⚠ **Mastodon 固有。**Misskey はハッシュタグのフォローを持たないので
 /// アダプター側が空を返し、この画面は「フォロー中のタグはありません」になる。
+///
+/// ⚠ **ページングの骨格は [CursorPagedListView] が持つ (#1083-A)。**ここが足すのは
+/// 解除ボタンとその途中状態だけ。⚠ **以前はプリフェッチ閾値を独自に 400 に
+/// していたが、理由の記載が無かった**ので集約時に多数派の 600 へ揃えた。
 class FollowedHashtagsScreen extends ConsumerStatefulWidget {
   const FollowedHashtagsScreen({super.key});
 
@@ -29,105 +31,31 @@ class FollowedHashtagsScreen extends ConsumerStatefulWidget {
 
 class _FollowedHashtagsScreenState
     extends ConsumerState<FollowedHashtagsScreen> {
+  /// ⚠ **ページサイズは fetcher 側に閉じ込める (#1083-A)。**他の 2 本は
+  /// 「渡す側が `limit` ごと持つ」形なので揃えた。
   static const _pageSize = 40;
-
-  final _scrollController = ScrollController();
-  List<String> _tags = [];
-  String? _nextCursor;
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _hasMore = true;
-
-  /// 初回取得の失敗。⚠ **「0 件」と「引けない」を混ぜない**（#1041 と同じ趣旨・
-  /// リリース前レビューで追加）。失敗を「フォロー中のハッシュタグはありません」
-  /// と描くと、フォローが消えたと誤解させる。
-  Object? _error;
-
-  /// 取得の世代（Codex P1 レビューで追加・[PostListScreen] と同型）。
-  int _generation = 0;
 
   /// 解除済みのタグ。⚠ **行を消さない**（#1039 と同じ理由）。サーバー側の
   /// 反映にラグがあると取り直しで復活し、「解除できていない」に見える。
   final _released = <String>{};
   final _inFlight = <String>{};
 
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 400) {
-      _loadMore();
-    }
-  }
-
   HashtagSupport? get _support {
     final adapter = ref.read(currentAdapterProvider);
     return adapter is HashtagSupport ? adapter as HashtagSupport : null;
   }
 
-  Future<void> _load() async {
+  Future<({List<String> items, String? nextCursor})> _fetch(
+    String? cursor,
+  ) async {
     final support = _support;
-    if (support == null) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
-    final generation = ++_generation;
-    try {
-      final result = await support.getFollowedHashtags(
-        query: const TimelineQuery(limit: _pageSize),
-      );
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _loadingMore = false;
-        _tags = result.tags;
-        _nextCursor = result.nextCursor;
-        _loading = false;
-        _error = null;
-        _hasMore = result.nextCursor != null;
-      });
-    } catch (e) {
-      debugLogException('FollowedHashtagsScreen load error', e);
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _loading = false;
-        _error = e;
-      });
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore || _tags.isEmpty) return;
-    final support = _support;
-    if (support == null) return;
-    final generation = _generation;
-    setState(() => _loadingMore = true);
-    try {
-      final result = await support.getFollowedHashtags(
-        query: TimelineQuery(maxId: _nextCursor, limit: _pageSize),
-      );
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _tags = [..._tags, ...result.tags];
-        _nextCursor = result.nextCursor;
-        _loadingMore = false;
-        _hasMore = result.nextCursor != null;
-      });
-    } catch (e) {
-      debugLogException('FollowedHashtagsScreen loadMore error', e);
-      if (!mounted || generation != _generation) return;
-      setState(() => _loadingMore = false);
-    }
+    // ⚠ Misskey は HashtagSupport を持たない。空で返して
+    // 「フォロー中のハッシュタグはありません」に落とす（失敗ではない）。
+    if (support == null) return (items: <String>[], nextCursor: null);
+    final result = await support.getFollowedHashtags(
+      query: TimelineQuery(maxId: cursor, limit: _pageSize),
+    );
+    return (items: result.tags, nextCursor: result.nextCursor);
   }
 
   Future<void> _unfollow(String tag) async {
@@ -167,46 +95,18 @@ class _FollowedHashtagsScreenState
     return Scaffold(
       appBar: AppBar(title: const Text('フォロー中のハッシュタグ')),
       body: BottomSafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? RetryErrorView(
-                message: '読み込みに失敗しました\n${summarizeOpError(_error!)}',
-                onRetry: () {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  _load();
-                },
-              )
-            : _tags.isEmpty
-            ? const Center(child: Text('フォロー中のハッシュタグはありません'))
-            : RefreshIndicator(
-                // ⚠ `_loading` を立てると RefreshIndicator ごと消える。
-                onRefresh: _load,
-                child: ListView.separated(
-                  controller: _scrollController,
-                  itemCount: _tags.length + (_loadingMore ? 1 : 0),
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= _tags.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    final tag = _tags[index];
-                    return ListTile(
-                      leading: const Icon(Icons.tag),
-                      title: Text('#$tag'),
-                      // 一覧からタグのタイムラインへ飛べる（完了条件のひとつ）。
-                      onTap: () => context.push('/hashtag/$tag'),
-                      trailing: _trailing(tag),
-                    );
-                  },
-                ),
-              ),
+        child: CursorPagedListView<String>(
+          debugLabel: 'FollowedHashtagsScreen',
+          fetcher: _fetch,
+          emptyMessage: 'フォロー中のハッシュタグはありません',
+          itemBuilder: (context, tag) => ListTile(
+            leading: const Icon(Icons.tag),
+            title: Text('#$tag'),
+            // 一覧からタグのタイムラインへ飛べる（完了条件のひとつ）。
+            onTap: () => context.push('/hashtag/$tag'),
+            trailing: _trailing(tag),
+          ),
+        ),
       ),
     );
   }

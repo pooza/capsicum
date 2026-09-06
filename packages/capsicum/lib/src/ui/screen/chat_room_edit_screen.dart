@@ -81,7 +81,7 @@ class _ChatRoomEditScreenState extends ConsumerState<ChatRoomEditScreen> {
         widget.isEditing ? 'update_room' : 'create_room',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

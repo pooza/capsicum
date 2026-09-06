@@ -144,7 +144,7 @@ class _ChatRoomTimelineScreenState
         'toggle_room_mute',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -194,12 +194,7 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure(
-        'leave_room',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('leave_room', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('退出に失敗しました (${summarizeOpError(e)})')),
@@ -235,12 +230,7 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure(
-        'delete_room',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('delete_room', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
@@ -276,7 +266,7 @@ class _ChatRoomTimelineScreenState
         'delete_room_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -310,7 +300,7 @@ class _ChatRoomTimelineScreenState
         'react_room_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

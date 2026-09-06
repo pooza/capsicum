@@ -500,7 +500,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                             operation: 'drag_out',
                             error: e,
                             stackTrace: st,
-                            account: ref.read(currentAccountProvider),
+                            account: ref.accountForReport,
                           ),
                           child: image,
                         )

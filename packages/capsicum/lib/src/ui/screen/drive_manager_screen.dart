@@ -250,12 +250,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         ).showSnackBar(const SnackBar(content: Text('フォルダを移動しました')));
       }
     } catch (e, st) {
-      reportDriveOpFailure(
-        'move_folder',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportDriveOpFailure('move_folder', e, st, account: ref.accountForReport);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('移動に失敗しました (${summarizeOpError(e)})')),
@@ -335,7 +330,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         'move_files_bulk',
         lastError,
         lastSt,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
     }
     if (mounted) {
@@ -434,7 +429,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         'move_file_out',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -658,12 +653,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           .read(driveContentsProvider(_currentFolderId).notifier)
           .updateFileDescription(file.id, newAlt);
     } catch (e, st) {
-      reportDriveOpFailure(
-        'edit_alt',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportDriveOpFailure('edit_alt', e, st, account: ref.accountForReport);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
@@ -681,12 +671,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
           .read(driveContentsProvider(_currentFolderId).notifier)
           .renameFile(file.id, newName);
     } catch (e, st) {
-      reportDriveOpFailure(
-        'rename_file',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportDriveOpFailure('rename_file', e, st, account: ref.accountForReport);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('操作に失敗しました (${summarizeOpError(e)})')),
@@ -725,12 +710,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         ).showSnackBar(const SnackBar(content: Text('削除しました')));
       }
     } catch (e, st) {
-      reportDriveOpFailure(
-        'delete_file',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportDriveOpFailure('delete_file', e, st, account: ref.accountForReport);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
@@ -752,7 +732,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         'rename_folder',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -791,7 +771,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         'delete_folder',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -812,7 +792,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
         'create_folder',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -983,7 +963,7 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
                       'auto_load',
                       e,
                       st,
-                      account: ref.read(currentAccountProvider),
+                      account: ref.accountForReport,
                     );
                   }
                 });

@@ -39,15 +39,26 @@ class _ResizablePickerSheetState extends ConsumerState<ResizablePickerSheet> {
     // 下にパディングしてシートをその上へ押し上げる (#614)。viewInsets は
     // モーダルルート側で更新されるため、IME 開閉に追従させるには本ウィジェット
     // の context を見る。
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
-    // 高さは画面高ではなく利用可能領域（画面 - キーボード）基準にする。
-    // フル投稿フォーム（closeOnSelect=false）では本文にフォーカスしたまま
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    // ⚠⚠ **ナビゲーションバーぶんも足す (#1062)。**以前はキーボードだけを見て
+    // おり、**絵文字グリッドの最下段がナビゲーションバーのボタンと重なって**
+    // いた。リアクションは最頻の操作なので、#1037 と同じ体験になる。
+    //
+    // ⚠ **二重には入らない。**`MediaQuery.padding` は `viewPadding` から
+    // `viewInsets` を引いた残りなので、キーボードがナビゲーションバーを覆って
+    // いる間は 0 になる（`BottomSafeArea` の doc と同じ理由）。
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // 高さは画面高ではなく利用可能領域（画面 - キーボード - 下端 inset）基準に
+    // する。フル投稿フォーム（closeOnSelect=false）では本文にフォーカスしたまま
     // シートを開くためキーボードが残り、画面高基準だと本文が隠れる。利用可能
     // 領域基準ならキーボード開時にシートも縮み、本文の可視領域が回復する
     // (#689 / iPhone 実機報告)。
-    final available = widget.screenHeight - keyboardInset;
+    //
+    // ⚠ **`bottomInset` も引く。**引かずに下の Padding だけ足すと、
+    // `_factor` が 1 に近いときシート全体（高さ + padding）が画面高を超える。
+    final available = widget.screenHeight - keyboardInset - bottomInset;
     return Padding(
-      padding: EdgeInsets.only(bottom: keyboardInset),
+      padding: EdgeInsets.only(bottom: keyboardInset + bottomInset),
       child: SizedBox(
         height: available * _factor,
         child: Column(
