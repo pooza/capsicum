@@ -300,8 +300,12 @@ class _TabManagementSheetState extends ConsumerState<TabManagementSheet> {
     final hasHashtags = entries.any((e) => e.tab is HashtagTab);
 
     return Padding(
+      // ⚠ キーボードとナビゲーションバーの両方を足す (#1062)。二重には入らない
+      // （キーボードが覆っている間は `padding.bottom` が 0 になる）。
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom:
+            MediaQuery.viewInsetsOf(context).bottom +
+            MediaQuery.paddingOf(context).bottom,
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(

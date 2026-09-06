@@ -378,6 +378,113 @@ void main() {
     );
   });
 
+  test('キーボードぶんを足す箇所は、ナビゲーションバーぶんも足している (#1062)', () {
+    // ⚠⚠ **ボトムシートは `Scaffold` の外に出るので、どのガードにも掛からない。**
+    // `Scaffold` のスロット単位で穴が見つかってきた流れ（body #1037 /
+    // drawer #1058 / floatingActionButton #1059 / 共有 View #1060）の続きで、
+    // **シートだけが最後まで残っていた**。
+    //
+    // 見るのは「`viewInsets.bottom`（キーボード）を足しているのに
+    // `padding.bottom`（ナビゲーションバー）を足していない」形。⚠ **キーボードを
+    // 閉じた状態だと `viewInsets` が 0 になるので、下端に置いた要素が
+    // 3 ボタンナビの帯とほぼ完全に重なる。**`post_tile` の `_RetagSheet` は
+    // **破壊的操作の主 CTA**（「削除してタグづけ」）がこの形だった。
+    //
+    // ⚠ **二重には入らない。**`MediaQuery.padding` は `viewPadding` から
+    // `viewInsets` を引いた残りなので、キーボードがナビゲーションバーを覆って
+    // いる間は 0 になる。だから素直に足してよい。
+    //
+    // ⚠ **`View.of(context).viewInsets.bottom > 0` は対象外。**あれは
+    // 「キーボードが出ているか」の真偽判定で、余白を作っていない
+    // （`compose_screen` / `simple_post_bar`）。
+    const exempt = <String, String>{
+      // AlertDialog は画面中央に出るので下端に届かない。viewInsets は
+      // 「キーボードを除いた利用可能高さ」の計算に使っているだけ。
+      'lib/src/ui/screen/templates_manage_screen.dart': 'AlertDialog（下端に届かない）',
+    };
+
+    final offenders = <String>[];
+    for (final file
+        in Directory('lib')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.dart'))) {
+      if (exempt.containsKey(file.path)) continue;
+      final code = _structural(file.readAsStringSync());
+      // 余白として使っている形だけを見る（真偽判定は `> 0` が続く）。
+      if (!_paddingUseOfViewInsets.hasMatch(code)) continue;
+      if (_bottomPaddingRead.hasMatch(code)) continue;
+      offenders.add(file.path);
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'キーボードぶん（viewInsets）を足しているのに、ナビゲーションバーぶん'
+          '（padding）を足していない (#1062)。キーボードを閉じると下端の要素が'
+          'ナビゲーションバーと重なる。⚠ viewPadding ではなく padding を足すこと'
+          '（viewPadding はキーボード表示中も減らないので、キーボードの上に'
+          '死んだ余白が残る）\n${offenders.join('\n')}',
+    );
+  });
+
+  group('#1062 の判定ロジック', () {
+    // ⚠ 上は「offenders が空なら緑」なので、判定が壊れても気づけない。
+    bool flags(String source) {
+      final code = _structural(source);
+      if (!_paddingUseOfViewInsets.hasMatch(code)) return false;
+      return !_bottomPaddingRead.hasMatch(code);
+    }
+
+    test('キーボードだけ足している形を拾う', () {
+      expect(
+        flags(
+          'padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom + 16)',
+        ),
+        isTrue,
+      );
+      expect(
+        flags(
+          'padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(c).bottom)',
+        ),
+        isTrue,
+      );
+    });
+
+    test('⚠ 変数に代入してから使う形も拾う', () {
+      // ⚠⚠ **`resizable_picker_sheet` の実物がこの形だった。**「`+` / `,` / `)`
+      // が続く形」で絞った初版はここを取りこぼしており、**修正前のファイルを
+      // 食わせても緑だった**。この Issue でいちばん直したかった箇所なので、
+      // 見落とすと「緑だから直っている」と読み違える。
+      expect(
+        flags(
+          'final keyboardInset = MediaQuery.of(context).viewInsets.bottom;\n'
+          'return Padding(padding: EdgeInsets.only(bottom: keyboardInset));',
+        ),
+        isTrue,
+      );
+    });
+
+    test('両方足していれば通す', () {
+      expect(
+        flags(
+          'bottom: MediaQuery.viewInsetsOf(context).bottom + '
+          'MediaQuery.paddingOf(context).bottom + 16',
+        ),
+        isFalse,
+      );
+    });
+
+    test('真偽判定（> 0）は拾わない', () {
+      expect(flags('if (View.of(context).viewInsets.bottom > 0)'), isFalse);
+    });
+
+    test('コメント中の言及は拾わない', () {
+      expect(flags('// viewInsets.bottom + 16 と書いていた'), isFalse);
+    });
+  });
+
   test('スレッド画面がジャンプ FAB のぶんを本文側で確保している (#1059)', () {
     // ⚠ **これは #1037 / #1058 とは重なる相手が違う。**あちらはシステムの
     // ナビゲーションバー、こちらは **アプリ自身の FAB**。FAB は
@@ -514,6 +621,32 @@ void main() {
 // -------------------------------------------------------------------------
 
 final _safeAreaCall = RegExp(r'(?<![A-Za-z0-9_])SafeArea\s*\(');
+
+/// キーボードぶんを**余白として**使っている形 (#1062)。
+///
+/// ⚠ **真偽判定だけを除外する。**`View.of(context).viewInsets.bottom > 0` は
+/// 「キーボードが出ているか」を見ているだけで余白を作っていない
+/// （`compose_screen` / `simple_post_bar`）。**比較演算子が続く形だけ**を外し、
+/// 残りは全部「余白の計算」とみなす。
+///
+/// ⚠⚠ **「`+` / `,` / `)` が続く形」で絞ってはいけない。**最初そう書いたら、
+/// **`final keyboardInset = MediaQuery.of(context).viewInsets.bottom;` を
+/// 拾えなかった**（`;` が続くので当たらない）。⚠ **これは
+/// `resizable_picker_sheet` の実物の形**で、この Issue でいちばん直したかった
+/// 箇所そのもの。修正前のファイルを食わせる歯の確認をしていなければ、
+/// **「緑だから直っている」と読み違えていた。**
+///
+/// ⚠ **`MediaQuery.of(c)` と `MediaQuery.viewInsetsOf(c)` の両方を拾う。**
+/// 変数名を `context` に決め打つと片方が外れる。
+final _paddingUseOfViewInsets = RegExp(
+  r'viewInsets(?:Of\([^)]*\))?\.bottom(?!\s*[<>=!])',
+);
+
+/// ナビゲーションバーぶんを読んでいる形 (#1062)。
+///
+/// ⚠ **`viewPadding` は認めない。**あちらはキーボード表示中も減らないので、
+/// 足すと**キーボードの上に inset ぶんの死んだ余白**が残る。
+final _bottomPaddingRead = RegExp(r'(?:paddingOf\([^)]*\)|\.padding)\.bottom');
 
 /// `BoxScrollView` のサブクラス。**`padding` 未指定なら `MediaQuery` の縦
 /// padding を自動で足す**（`BoxScrollView.buildSlivers`）。
