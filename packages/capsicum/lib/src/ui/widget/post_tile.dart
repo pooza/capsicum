@@ -2037,13 +2037,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
-  String _handleText(User author) {
-    final handle = '@${author.username}';
-    if (author.host != null) {
-      return '$handle@${author.host}';
-    }
-    return handle;
-  }
+  /// ⚠ **`userAcct` へ寄せた (#1035-C4)。**自前の三項は `host != null` しか
+  /// 見ておらず、**空文字列の host をローカル扱いしない**。`userAcct` が潰した
+  /// 分岐がここだけ落ちていた（変数名が `user` ではなかったので、再実装を
+  /// 検出するガードにも見えていなかった）。
+  String _handleText(User author) => '@${userAcct(author)}';
 
   String _formatTime(DateTime postedAt) {
     if (ref.watch(absoluteTimeProvider)) {

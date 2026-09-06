@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
+import '../../util/user_acct.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/user_avatar.dart';
@@ -99,7 +100,8 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+            // ⚠ 自前の三項は host == '' を落とす (#1035-C4)。
+            '@${userAcct(user)}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -209,7 +211,8 @@ class _ListMembersScreenState extends ConsumerState<ListMembersScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+                          // ⚠ 自前の三項は host == '' を落とす (#1035-C4)。
+                          '@${userAcct(user)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

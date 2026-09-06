@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/account_manager_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/user_acct.dart';
 import 'emoji_text.dart';
 import 'user_avatar.dart';
 
@@ -207,7 +208,8 @@ class _AccountMultiSelectSheetState
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+                      // ⚠ 自前の三項は host == '' を落とす (#1035-C4)。
+                      '@${userAcct(user)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
