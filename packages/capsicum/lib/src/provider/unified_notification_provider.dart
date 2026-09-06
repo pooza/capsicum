@@ -126,9 +126,11 @@ class UnifiedNotificationNotifier
       //
       // ⚠ **`timeout` は下の future を止めない。**解決はバックグラウンドで
       // 続き、結果はプロセス共有のキャッシュに載るので次の取得で効く。
-      final notifications = await enricher
-          .enrichNotifications(response.notifications)
-          .timeout(kIsCatEnrichBudget, onTimeout: () => response.notifications);
+      // ⚠ **待ち上限は enricher の中で掛かる (#1083-C)。**ここに `.timeout` を
+      // 書き足さないこと。
+      final notifications = await enricher.enrichNotifications(
+        response.notifications,
+      );
       return _FetchResult(account: account, notifications: notifications);
     } catch (e, st) {
       // 失敗は上部バナーでユーザーには見えるが、サーバー側で「どの host が・
