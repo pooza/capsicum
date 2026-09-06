@@ -97,7 +97,7 @@ class _AccountMultiSelectSheetState
         operation: 'search_member',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted || seq != _searchSeq) return;
       setState(() {

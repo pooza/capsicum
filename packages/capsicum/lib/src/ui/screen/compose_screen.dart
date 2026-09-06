@@ -3257,7 +3257,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         operation: 'save_server_draft',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
         // scrubException が DioException を `status=400 path=...` に丸めるため、
         // Sentry 上では上限超過も他の 400 も同じ 1 件に見えていた（CAPSICUM-3X）。
         // 透過されるようになった code をタグに載せて内訳を分けられるようにする

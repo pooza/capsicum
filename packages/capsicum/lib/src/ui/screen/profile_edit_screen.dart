@@ -175,6 +175,21 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     final adapter = ref.read(currentAdapterProvider);
     if (adapter is! ProfileEditSupport) return;
     final account = ref.read(currentAccountProvider);
+    // ⚠⚠ **await の前に捕まえる (#1064)。**アイコン / ヘッダー付きの保存は数秒
+    // かかる。その間に戻られると `ref.read` が **StateError** を投げる
+    // （`_assertNotDisposed` は assert ではなく素の throw なので **release でも
+    // 投げる**）。すると:
+    //
+    // 1. サーバー側の PATCH は**成功済み**
+    // 2. 下の `catch (e, st)` が握って `reportOpFailure(operation: 'save')`
+    //    → **成功した保存が失敗として Sentry に上がる**
+    // 3. ローカルの `Account.user` は更新されないまま（表示名 / アイコンが
+    //    再起動まで古い）
+    //
+    // ⚠ **notifier は widget より長生き**（`accountManagerProvider` は
+    // autoDispose ではない app スコープ）なので、掴んでおけば dispose 後でも
+    // 安全に呼べる。#990 / #1009 の「開く前に捕まえる」と同じ形。
+    final accountManager = ref.read(accountManagerProvider.notifier);
 
     // 補足情報は「項目名・値とも空」の行を送らない（未入力の UI 行）。さらに
     // Mastodon は「値はあるが項目名が空」の行を 422 で弾く
@@ -230,14 +245,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         discoverable: _discoverable,
       );
 
-      ref.read(accountManagerProvider.notifier).updateCurrentUser(updatedUser);
+      accountManager.updateCurrentUser(updatedUser);
 
       if (mounted) context.pop(updatedUser);
     } on ProfileUpdatePartialException catch (e) {
       // 本文（表示名・自己紹介・項目）は保存済みで、画像削除だけが失敗した
       // 部分成功（#806）。全失敗表示にせず、保存済み分を反映しつつ実態に沿った
       // 文面を出す。画像はサーバーに残っているので、再編集で削除を再試行できる。
-      ref.read(accountManagerProvider.notifier).updateCurrentUser(e.user);
+      // ⚠ ここも同じ理由で掴んでおいたものを使う (#1064)。部分成功
+      // （本文は保存済み・画像削除だけ失敗）は**保存済み分の反映が要る**ので、
+      // ここで投げるとローカルだけ古いまま残る。
+      accountManager.updateCurrentUser(e.user);
       reportOpFailure(
         tagKey: 'profile.op',
         operation: 'save_partial',

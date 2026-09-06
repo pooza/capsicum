@@ -99,12 +99,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         });
       }
     } catch (e, st) {
-      reportPagesOpFailure(
-        'load_liked',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportPagesOpFailure('load_liked', e, st, account: ref.accountForReport);
       if (!mounted) return;
       // 旧トークン (read:page-likes 未付与) は 403 PERMISSION_DENIED で失敗する。
       // 汎用 SnackBar ではなく再ログイン誘導 (OAuthScopeErrorView) を出す (#615)。
@@ -148,7 +143,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         'load_more_liked',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted || gen != _loadGeneration) return;
       setState(() => _loadingMoreLiked = false);
@@ -179,7 +174,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         'load_featured',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       // 人気は補助セクションなので失敗してもいいね一覧は出す。SnackBar は出さず
@@ -229,7 +224,7 @@ class _PagesScreenState extends ConsumerState<PagesScreen> {
         'load_my_pages',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       // 自分のページも補助セクション扱い。失敗しても他セクションは出すため

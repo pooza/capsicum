@@ -84,12 +84,7 @@ class _PageViewScreenState extends ConsumerState<PageViewScreen> {
       // から rethrow する。UI 側 (FutureBuilder の error branch) では
       // snapshot.error を表示せず汎用文言にとどめ、画面スクショ経由でも
       // token が漏れない経路に揃える (#460 と同型を回避)。
-      reportPagesOpFailure(
-        'view',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportPagesOpFailure('view', e, st, account: ref.accountForReport);
       rethrow;
     }
   }
@@ -180,7 +175,7 @@ class _PageBodyState extends ConsumerState<_PageBody> {
         wasLiked ? 'unlike' : 'like',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       setState(() {

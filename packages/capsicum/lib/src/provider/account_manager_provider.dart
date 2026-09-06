@@ -1331,3 +1331,54 @@ final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
 final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
   return ref.watch(currentAccountProvider)?.mulukhiya;
 });
+
+/// `catch` の中から `account` を読むための、**投げない**読み取り (#1064)。
+///
+/// ## なぜ要るか
+///
+/// `reportOpFailure(account: ref.read(currentAccountProvider))` は、
+/// **catch 節の中で `await` の後に `ref.read` する**形になっている。画面が
+/// 既に dispose されていると:
+///
+/// - `flutter_riverpod` の `_assertNotDisposed()` は **`assert` ではなく素の
+///   `throw StateError`** なので、⚠ **release ビルドでも投げる**
+/// - 投げるのは `reportOpFailure` へ入る**前**なので、⚠⚠ **StateError が元の
+///   例外を潰して Sentry に何も上がらない**
+///
+/// → **「エラーが出ないのでうまくいっている」に見える観測性ギャップ。**
+/// しかも消えるのは**失敗を最も観測したい場面**（重い操作の最中に画面を離れた）
+/// に限られるので、母数からは異常に見えない。
+///
+/// ## ⚠ host タグは落ちうる
+///
+/// dispose 済みなら `null` を返すので、[reportOpFailure] は `host` / `backend`
+/// を `-` で詰める。**プリセット host で優先度を切る運用**から見ると劣化だが、
+/// **報告そのものが消えるよりは桁違いにまし**という判断。
+///
+/// ⚠ **host を落としたくない経路は、`await` の前に `account` を捕まえて
+/// 直接渡すこと**（#990 / #1009 の「開く前に捕まえる」と同じ形。
+/// `profile_edit_screen` の `_save` がその例）。これは**捕まえ忘れても報告だけは
+/// 残す最後の砦**であって、捕まえる代わりではない。
+extension AccountForReport on WidgetRef {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// provider（`Ref`）側の同じ形 (#1064)。
+///
+/// ⚠ **autoDispose の provider は破棄後の `ref.read` で同じ StateError を投げる。**
+/// `chat_provider` / `announcement_provider` の失敗報告がこれに当たる。
+extension AccountForReportOnRef on Ref {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}

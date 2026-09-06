@@ -80,7 +80,7 @@ class _CollectionDetailScreenState
         operation: 'load_detail',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         setState(() {
@@ -319,7 +319,7 @@ class _CollectionDetailScreenState
         operation: 'revoke',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
     }
@@ -346,7 +346,7 @@ class _CollectionDetailScreenState
         operation: 'remove_member',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('メンバーの削除に失敗しました')));
     }
@@ -387,7 +387,7 @@ class _CollectionDetailScreenState
         operation: 'delete',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('削除に失敗しました')));
     }
@@ -484,7 +484,7 @@ class _CollectionDetailScreenState
           operation: 'update',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: ref.accountForReport,
         );
         messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
       }
@@ -574,7 +574,7 @@ class _CollectionDetailScreenState
                                 operation: 'search_member',
                                 error: e,
                                 stackTrace: st,
-                                account: ref.read(currentAccountProvider),
+                                account: ref.accountForReport,
                               );
                               if (!context.mounted) return;
                               setSheetState(() {
@@ -723,7 +723,7 @@ class _CollectionDetailScreenState
         operation: 'add_member',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       return (ok: false, message: 'メンバーの追加に失敗しました。');
     }

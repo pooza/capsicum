@@ -83,12 +83,7 @@ class _FlashViewScreenState extends ConsumerState<FlashViewScreen> {
         initial?.id ?? widget.flashId!,
       );
     } catch (e, st) {
-      reportFlashOpFailure(
-        'view',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportFlashOpFailure('view', e, st, account: ref.accountForReport);
       rethrow;
     }
   }
@@ -541,7 +536,7 @@ class _FlashBodyState extends ConsumerState<_FlashBody> {
         wasLiked ? 'unlike' : 'like',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       ScaffoldMessenger.of(
         context,
