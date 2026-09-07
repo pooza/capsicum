@@ -1,6 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:capsicum/src/ui/widget/content_parser.dart';
 import 'package:capsicum/src/ui/widget/emoji_text.dart';
 import 'package:capsicum/src/ui/widget/inline_custom_emoji.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,6 +70,34 @@ void main() {
       cache.record('c', 3);
 
       expect(cache['a'], isNull, reason: 'FIFO なので再記録しても最古のまま');
+      expect(cache['b'], 2);
+      expect(cache['c'], 3);
+    });
+
+    test('同じ URL でも比が変われば上書きする (#1038)', () {
+      final cache = EmojiAspectRatioCache();
+      cache.record(url, 1);
+      cache.record(url, 9.85);
+
+      expect(
+        cache[url],
+        9.85,
+        reason:
+            'サーバー管理者は同じショートコードのまま画像を差し替える。素通りさせると '
+            '再起動まで古い比で幅を渡し続ける',
+      );
+      expect(cache.length, 1);
+    });
+
+    test('比が変わる上書きでも FIFO の位置は動かない (#1038)', () {
+      final cache = EmojiAspectRatioCache(maxSize: 2);
+      cache.record('a', 1);
+      cache.record('b', 2);
+      // a の画像が差し替わった。値は変わるが挿入順は変わらない。
+      cache.record('a', 9.85);
+      cache.record('c', 3);
+
+      expect(cache['a'], isNull, reason: '上書きは LinkedHashMap の挿入順を動かさない');
       expect(cache['b'], 2);
       expect(cache['c'], 3);
     });
@@ -185,6 +216,45 @@ void main() {
       );
     });
 
+    testWidgets('画像が差し替わったら、覚えている比を測り直す (#1038)', (tester) async {
+      // 「同じ URL・違う寸法」を作る。サーバー管理者が同じショートコードのまま
+      // 画像を差し替えた状態を、デコード結果の側から再現している。
+      //
+      // ⚠ `runAsync` で包む。`createTestImage` は `decodeImageFromPixels` の
+      // コールバック待ちで、testWidgets の fake async のままだとエンジンからの
+      // 呼び戻しが来ず**永久に await する**（10 分でテストが timeout する）。
+      final replaced = (await tester.runAsync(
+        () => createTestImage(width: 40, height: 10),
+      ))!;
+      addTearDown(replaced.dispose);
+      // 差し替え前に覚えていた比（正方形）。
+      final cache = EmojiAspectRatioCache()..record(url, 1);
+
+      await tester.pumpWidget(
+        wrap(
+          InlineCustomEmoji(
+            url: url,
+            shortcode: 'banner',
+            size: 20,
+            cache: cache,
+            imageProvider: _FakeEmojiImage(replaced),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        cache[url],
+        4.0,
+        reason: '既知でも mount のたびに 1 回測る。測らないと新しい寸法を観測する経路が無い',
+      );
+      expect(
+        emojiImage(tester).width,
+        20.0 * 4.0,
+        reason: '測り直した比がそのフレームの予約幅にも効く',
+      );
+    });
+
     testWidgets('フォールバックを差し替えられる', (tester) async {
       await tester.pumpWidget(
         wrap(
@@ -245,4 +315,27 @@ void main() {
       expect(tester.widget<Image>(find.byType(Image).first).width, 20.0 * 9.85);
     });
   });
+}
+
+/// 実寸を持つ画像を同期で 1 枚だけ返す [ImageProvider] (#1038)。
+///
+/// `Image.network` はテスト環境で 400 を返すため、デコードが伴う経路
+/// （比の測り直し）を駆動できない。`createTestImage` で作った寸法だけの画像を
+/// そのまま流し込む。
+class _FakeEmojiImage extends ImageProvider<_FakeEmojiImage> {
+  _FakeEmojiImage(this.image);
+
+  final ui.Image image;
+
+  @override
+  Future<_FakeEmojiImage> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_FakeEmojiImage>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _FakeEmojiImage key,
+    ImageDecoderCallback decode,
+  ) => OneFrameImageStreamCompleter(
+    SynchronousFuture<ImageInfo>(ImageInfo(image: image.clone())),
+  );
 }
