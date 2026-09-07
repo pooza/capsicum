@@ -424,7 +424,15 @@ cd ..
 > §4.4 の ASC API に切り替える**（`upload_to_testflight` に
 > `skip_waiting_for_build_processing` を渡す手もある）。
 
-> ⚠️ **`flutter build ipa` は `ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。**出荷したバイナリと一致させるため、この差分はリリースブランチにコミットすること**（v1.61 で pin フォーマットが 2→3 に上がった実績あり）。放置すると次のリリースで「誰も触っていない差分」として現れる。
+> ⚠️ **`flutter build ipa` は `packages/capsicum/ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。
+>
+> **コミットするのは pin が動いたときだけ**（`"version" : "10.1.0"` のような依存の版）。出荷したバイナリと一致させるのが目的なので、pin が動いていれば取り込む（v1.61 で GoogleDataTransport 10.1.0→10.1.1 / GoogleUtilities 8.1.2→8.1.3 を取り込んだのがこれ）。
+>
+> ⚠⚠ **形式だけの差分（トップレベルの `"version" : 2` ⇄ `3` と `originHash` の増減）は取り込まない。**`git checkout -- <path>` で捨てる。**この形式は Xcode の版が決めており、`flutter-version` は 3.44.6 に pin してあるが Xcode は pin していない**ので、端末を替えるたびに 2 ⇄ 3 を往復する。取り込むと「誰も触っていない差分」を毎リリース作り続けることになり、**手順書が避けようとしている状態を手順書どおりにやると作ってしまう**（v1.61 で 2→3 を取り込み、v1.62 では別の Mac が pin を 1 つも動かさずに 3→2 へ戻した。#1067）。
+>
+> **端末間で Xcode を揃える運用は取らない。**揃えるコストに対して、形式差が出荷バイナリに与える影響がゼロ（pin が同一なら解決結果も同一）だから。`.gitattributes` でも吸えない — 形式差は空白でもマージでもなく**ファイルの正当な中身**で、`git` 側に「無視するが追跡は続ける」表現が無い（`skip-worktree` は端末ローカルの旗で、コミットして共有できない）。**ビルド後に人が捨てる**のが唯一の受け口なので、ここに書いてある。
+>
+> ⚠ **紛らわしい同名ファイルが 4 つある。**`ios` / `macos` × `Runner.xcworkspace/…` / `Runner.xcodeproj/project.xcworkspace/…` の 4 本が追跡されているが、**ビルドが書き戻すのは workspace 側だけ**（`flutter build` は `Runner.xcworkspace` を開く）。`Runner.xcodeproj/project.xcworkspace` 配下の 3 本は CocoaPods → SwiftPM 移行（#836）以降 1 度も更新されておらず、iOS のものは pin が古いまま止まっている。**参照されないので実害は無いが、差分を見るときにこちらを見ない。**
 
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。
