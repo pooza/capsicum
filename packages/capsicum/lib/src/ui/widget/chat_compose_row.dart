@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/platform_providers.dart';
 import '../screen/drive_picker_screen.dart';
+import 'bottom_safe_area.dart';
 import 'insert_picker_sheet.dart';
 
 /// chat の添付ファイルを選ぶ (#613)。ドライブの既存ファイル選択か端末からの
@@ -56,6 +57,44 @@ Future<Attachment?> showChatAttachmentPicker(
   return adapter.uploadAttachment(
     AttachmentDraft(filePath: file.path, mimeType: file.mimeType),
   );
+}
+
+/// [ChatComposeRow] を出さないときに、その理由を伝える注記 (#1065)。
+///
+/// readonly ロールのアカウントでは送信 API が 403 を返すため、入力欄を出さず
+/// この注記に差し替える。DM ([ChatThreadScreen]) とルーム
+/// ([ChatRoomTimelineScreen]) の両方で `canSend` が false のときに出る。
+///
+/// ## なぜ独立したウィジェットなのか
+///
+/// 元は 2 画面へ逐語コピーされていた（コメント・文言・padding まで同一）。
+/// #1037 の修正で [BottomSafeArea] の包みが加わったとき、**同じ変更を 2 箇所へ
+/// 手で入れる形**になったので、片方だけ直る事故の面が広がっていた。
+///
+/// ## 下端の inset をここで吸う理由 (#1037)
+///
+/// [ChatComposeRow] は自前で `SafeArea` を持っているが、それを出さない経路
+/// （＝この注記）には何も無いため、注記がナビゲーションバーのボタンに潜り
+/// 込む。body ごと包まないのは、入力欄が出ているときは今までどおり画面下端
+/// まで伸ばしたいため。
+class ChatReadonlyNotice extends StatelessWidget {
+  const ChatReadonlyNotice({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BottomSafeArea(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        alignment: Alignment.center,
+        child: Text(
+          'このアカウントではメッセージを送信できません',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.outline,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// chat の入力欄 (#613)。DM ([ChatThreadScreen]) とルーム
