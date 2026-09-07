@@ -25,6 +25,7 @@ import '../../provider/tab_selection_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
+import '../../service/secure_storage_health.dart';
 import '../../service/update_checker.dart';
 import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
@@ -1998,6 +1999,12 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                             '続けるので、接続が回復すればタイムラインへ戻ります。',
                   textAlign: TextAlign.center,
                 ),
+                // ⚠⚠ **キーリングが死んでいると、ここまでの文言は全部嘘になる**
+                // (#1085)。secure storage が応答しないとログイン情報を読めず、
+                // 到達不能と区別がつかないまま「サーバーが停止中かも」「自動で
+                // 再試行します」と言うことになる。**待っても直らない**ので、
+                // 原因と次の一手を名指しする。
+                const _SecretServiceNotice(),
                 const SizedBox(height: 24),
                 for (final o in offline)
                   Card(
@@ -2098,5 +2105,72 @@ Future<void> confirmRemoveOfflineAccount(
     await ref
         .read(accountManagerProvider.notifier)
         .removeOfflineAccount(offline.key);
+  }
+}
+
+/// secure storage が応答しなかったときだけ出す案内 (#1085)。
+///
+/// ⚠⚠ **「真っ黒なウインドウで無反応」よりマシにするのが要件。**Linux で
+/// gnome-keyring（Secret Service）が死んでいると、capsicum はログイン情報を
+/// 読めない。上に並んでいる「サーバーが停止 / 再構築中かも」「自動で再試行を
+/// 続けます」は**その場合すべて嘘**になり、待っても直らない。
+///
+/// ⚠ **原因（キーリング）と次の一手が伝わればよい。**報告者は「アプリの更新で
+/// 壊れた」と受け取り、v1.58 まで遡って試して初めて原因に辿り着いた。
+///
+/// [SecureStorageHealth] は `ref` を持たない storage 層から立てる旗なので、
+/// riverpod ではなく `ValueListenableBuilder` で見る。
+class _SecretServiceNotice extends StatelessWidget {
+  const _SecretServiceNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: SecureStorageHealth.notifier,
+      builder: (context, unavailable, _) {
+        if (!unavailable) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Card(
+            color: scheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.key_off_outlined,
+                        color: scheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'ログイン情報を読み出せません',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(color: scheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    // ⚠ OS の呼び名を出す。「セキュアストレージ」だけでは何を
+                    // 調べればいいか分からない。
+                    'この端末のパスワード保管庫（キーリング / Secret Service）が'
+                    '応答しませんでした。アカウント情報は消えていません。'
+                    'ほかのアプリでもパスワードの保存に失敗している場合は、'
+                    '端末を再起動すると直ることがあります。',
+                    style: TextStyle(color: scheme.onErrorContainer),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

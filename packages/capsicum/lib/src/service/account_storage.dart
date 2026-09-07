@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -8,9 +9,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants.dart';
 import '../model/account_key.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
+import 'secure_storage_health.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
 /// (#959)。
@@ -115,6 +118,13 @@ class AccountStorage {
       final raw = await _readWithRegisterRetry('secret_$accountKey');
       if (raw == null) return null;
       return Map<String, String>.from(jsonDecode(raw) as Map);
+    } on TimeoutException catch (e) {
+      // secure storage が応答しない (#1085)。⚠ **secret は無傷**なので、
+      // 「存在しない」＝ログアウトとして扱ってはいけない。#959 の
+      // plugin register race と同じ「今は読めない」に合流させ、オフライン
+      // 保持へ落とす（resume / 手動再試行で読み直される）。
+      SecureStorageHealth.markUnavailable(e);
+      throw TransientSecretUnavailableException(e);
     } on MissingPluginException catch (e, st) {
       // plugin register race が retry 後も解消しないケース。同じ race で
       // delete も失敗するため、ここでは観測のみ行い secret は残す。
@@ -203,6 +213,19 @@ class AccountStorage {
   /// `MissingPluginException` は `PlatformException` を継承していないため、
   /// retry 後も解消しない場合はそのまま re-throw して呼び出し側
   /// (`getSecrets`) の専用 catch で処理する。
+  /// ⚠⚠ **読み取りには必ず上限を掛ける (#1085)。**Linux の
+  /// flutter_secure_storage は libsecret → D-Bus `org.freedesktop.secrets` に
+  /// 落ちるので、**Secret Service が死んでいると応答が返らない**。呼び出し側は
+  /// 全部 `try`/`catch` で囲んであるが、**ハングは例外ではないので catch され
+  /// ない**。上限が無い限り「読めなかった」として扱う経路に入れない。
+  ///
+  /// ⚠ **`TimeoutException` はここで潰さない。**[getSecrets] が
+  /// [TransientSecretUnavailableException] へ翻訳する（＝**アカウントを消さず
+  /// オフライン保持**）。ここで null を返すと「secret が存在しない」と区別が
+  /// つかず、**ログアウト扱いになる**。
+  Future<String?> _read(String key) =>
+      _storage.read(key: key).timeout(kSecureStorageReadTimeout);
+
   Future<String?> _readWithRegisterRetry(String key) async {
     // 50 + 100 + 200 + 250 = 600ms。低スペック端末 / cold start で plugin
     // register が遅れる場合に備え、合計を約 600ms に延長 (#497)。
@@ -210,7 +233,7 @@ class AccountStorage {
     MissingPluginException? lastMissing;
     for (final delayMs in delaysMs) {
       try {
-        return await _storage.read(key: key);
+        return await _read(key);
       } on MissingPluginException catch (e) {
         lastMissing = e;
         await Future<void>.delayed(Duration(milliseconds: delayMs));
@@ -218,7 +241,7 @@ class AccountStorage {
     }
     // 最後にもう 1 回試す (delay 累計後)。
     try {
-      return await _storage.read(key: key);
+      return await _read(key);
     } on MissingPluginException catch (e) {
       lastMissing = e;
     }
@@ -291,6 +314,17 @@ class AccountStorage {
   Future<void> migrateAccessibilityIfNeeded() async {
     final prefs = await _prefs();
     if (prefs.getBool(_accessibilityMigrationFlagKey) ?? false) return;
+    // ⚠ **accessibility は Apple の Keychain の概念 (#1085)。**Android
+    // (EncryptedSharedPreferences) / Linux (libsecret) / Windows
+    // (DPAPI) には存在しない。以前は「フラグを立てるため」に全プラット
+    // フォームで走らせていたが、**それは起動経路で secure storage を叩く
+    // 理由になっていない**。Linux では Secret Service が死んでいると
+    // `readAll` が返らず、`runApp()` の手前で止まって**真っ黒なウインドウ**に
+    // なる（それがこの Issue の症状）。フラグだけ立てて素通りする。
+    if (!Platform.isIOS && !Platform.isMacOS) {
+      await prefs.setBool(_accessibilityMigrationFlagKey, true);
+      return;
+    }
     try {
       // 旧 item は default accessibility (unlocked) で書かれており、現行
       // first_unlock の readAll はクエリに kSecAttrAccessible を含むため
