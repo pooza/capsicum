@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../provider/account_manager_provider.dart';
+import '../../service/sentry_op_failure.dart';
 import '../../util/exception_scrub.dart';
 import '../util/op_error.dart';
 import 'retry_error_view.dart';
@@ -67,6 +69,7 @@ class CursorPagedListView<T> extends ConsumerStatefulWidget {
     required this.itemBuilder,
     required this.emptyMessage,
     required this.debugLabel,
+    required this.tagKey,
     this.enrich,
   });
 
@@ -78,6 +81,18 @@ class CursorPagedListView<T> extends ConsumerStatefulWidget {
 
   /// `debugLogException` に載せる識別子（`UserListView` 等）。
   final String debugLabel;
+
+  /// Sentry の `reportOpFailure` に渡す tag キー (#1083-D)。
+  ///
+  /// ⚠ **一覧が空になる失敗を観測できるようにするため必須にしてある。**
+  /// 集約前の 5 画面はどれも `debugLogException` 止まりで、**release では
+  /// breadcrumb にしかならない**（別のイベントが送られない限り Sentry に出ない）。
+  /// `chat_provider` には `chat.room.load_more` / `chat.load_more` という先例が
+  /// あったのに、新しい一覧はそれに倣っていなかった。
+  ///
+  /// 形は `<領域>.op` / `<領域>.<経路>`（正本は `sentry_op_failure.dart` の
+  /// doc・#1083-E）。`operation` は `load` / `load_more` をこの widget が入れる。
+  final String tagKey;
 
   /// 取得したページの加工。省略時は素通し。
   final CursorPageEnricher<T>? enrich;
@@ -152,8 +167,11 @@ class _CursorPagedListViewState<T>
         _error = null;
         _hasMore = result.nextCursor != null;
       });
-    } catch (e) {
+    } catch (e, st) {
       debugLogException('${widget.debugLabel} load error', e);
+      // ⚠ **`mounted` を見る前に報告する (#1083-D)。**画面を閉じた直後の失敗も
+      // 観測したい（一覧が出ないので閉じられた、という順序が普通にある）。
+      _report('load', e, st);
       if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
@@ -178,11 +196,27 @@ class _CursorPagedListViewState<T>
         _loadingMore = false;
         _hasMore = result.nextCursor != null;
       });
-    } catch (e) {
+    } catch (e, st) {
       debugLogException('${widget.debugLabel} loadMore error', e);
+      _report('load_more', e, st);
       if (!mounted || generation != _generation) return;
       setState(() => _loadingMore = false);
     }
+  }
+
+  /// 取得失敗を Sentry へ (#1083-D)。
+  ///
+  /// ⚠ **`ref.accountForReport` を使う (#1064)。**`await` をまたいだあとに
+  /// `ref.read` すると、dispose 済みの `ref` で例外が飛んで**失敗の報告自体が
+  /// 失敗する**（＝成功が「失敗」に化けるのと同型）。
+  void _report(String operation, Object error, StackTrace stackTrace) {
+    reportOpFailure(
+      tagKey: widget.tagKey,
+      operation: operation,
+      error: error,
+      stackTrace: stackTrace,
+      account: ref.accountForReport,
+    );
   }
 
   @override

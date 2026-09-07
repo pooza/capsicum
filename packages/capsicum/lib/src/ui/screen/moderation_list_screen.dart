@@ -59,27 +59,38 @@ enum _ModerationKind {
     label: 'ブロック',
     empty: 'ブロック中のユーザーはいません',
     releaseLabel: 'ブロックを解除',
-    tag: 'moderation.blocks',
+    operation: 'unblock',
   ),
   mute(
     label: 'ミュート',
     empty: 'ミュート中のユーザーはいません',
     releaseLabel: 'ミュートを解除',
-    tag: 'moderation.mutes',
+    operation: 'unmute',
   );
 
   const _ModerationKind({
     required this.label,
     required this.empty,
     required this.releaseLabel,
-    required this.tag,
+    required this.operation,
   });
 
   final String label;
   final String empty;
   final String releaseLabel;
-  final String tag;
+
+  /// `reportOpFailure` の `operation`。
+  ///
+  /// ⚠ **タグのキーを分けず operation で分ける (#1083-E)。**既存 16 箇所は
+  /// `<領域>.op` か `<領域>.<経路>` の 2 型で、ここだけ**対象**（blocks /
+  /// mutes）をキーにしていた。分けると Sentry のファセットで「モデレーション
+  /// 操作の失敗を全部見る」が 1 クエリで書けない。fingerprint は
+  /// `[tagKey, operation, 例外型]` なので、**群の細かさは変わらない**。
+  final String operation;
 }
+
+/// モデレーション操作（ブロック / ミュートの解除）の tag キー。
+const _moderationTagKey = 'moderation.op';
 
 class _ModerationTab extends ConsumerStatefulWidget {
   final _ModerationKind kind;
@@ -99,30 +110,28 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
   /// 解除の実行中。二度押しで同じ相手へ 2 回投げないようにする。
   final _inFlight = <String>{};
 
+  /// ⚠ **[follow] は build 時に解決したものを受け取る (#1083-F)。**
+  /// 取得と解除がそれぞれ独立に `ref.read(currentAdapterProvider)` を評価して
+  /// いたので、**サーバー A から取った id を、切替後のサーバー B へ unblock で
+  /// 投げうる**形だった（`post_list_screen` は push 時にクロージャへ閉じ込めて
+  /// いて一貫している。そちらへ揃えた）。
   Future<({List<User> users, String? nextCursor})> _fetch(
+    FollowSupport follow,
     String? cursor,
-  ) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! FollowSupport) {
-      return (users: <User>[], nextCursor: null);
-    }
-    final follow = adapter as FollowSupport;
+  ) {
     final query = TimelineQuery(maxId: cursor, limit: 20);
     return widget.kind == _ModerationKind.block
         ? follow.getBlockedUsers(query: query)
         : follow.getMutedUsers(query: query);
   }
 
-  Future<void> _release(User user) async {
-    final adapter = ref.read(currentAdapterProvider);
-    if (adapter is! FollowSupport) return;
+  Future<void> _release(FollowSupport follow, User user) async {
     if (_inFlight.contains(user.id) || _released.contains(user.id)) return;
 
     // ⚠ **await をまたぐ前に捕まえる (#1064 と同型)。**シート / タブが閉じた
     // あとに `ref.read` / `ScaffoldMessenger.of` を評価すると、成功していても
     // 失敗の見た目になったり例外で消えたりする。
     final messenger = ScaffoldMessenger.of(context);
-    final follow = adapter as FollowSupport;
     final account = ref.read(currentAccountProvider);
 
     setState(() => _inFlight.add(user.id));
@@ -144,8 +153,8 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
       );
     } catch (e, st) {
       reportOpFailure(
-        tagKey: widget.kind.tag,
-        operation: 'release',
+        tagKey: _moderationTagKey,
+        operation: widget.kind.operation,
         error: e,
         stackTrace: st,
         account: account,
@@ -160,8 +169,20 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠ **build で 1 度だけ解決し、取得と解除へ同じものを渡す (#1083-F)。**
+    // ⚠ `ref.watch` なのでアカウント切替で再構築される。切替後も同じ
+    // `UserListView` を使い回すと**別サーバーの一覧が残る**ので、
+    // アカウントを `key` に入れて作り直す。
+    final adapter = ref.watch(currentAdapterProvider);
+    if (adapter is! FollowSupport) {
+      return const Center(child: Text('このサーバーでは利用できません'));
+    }
+    final follow = adapter as FollowSupport;
+    final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+
     return UserListView(
-      fetcher: _fetch,
+      key: ValueKey('${widget.kind.name}:$accountKey'),
+      fetcher: (cursor) => _fetch(follow, cursor),
       emptyMessage: widget.kind.empty,
       trailingBuilder: (user) {
         if (_released.contains(user.id)) {
@@ -175,7 +196,7 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
           );
         }
         return TextButton(
-          onPressed: () => _release(user),
+          onPressed: () => _release(follow, user),
           child: Text(widget.kind.releaseLabel),
         );
       },

@@ -58,6 +58,9 @@ class UserListView extends ConsumerWidget {
     return BottomSafeArea(
       child: CursorPagedListView<User>(
         debugLabel: 'UserListScreen',
+        // 一覧の取得失敗を観測する (#1083-D)。ブロック / ミュート / フォロー
+        // リクエスト / リストのメンバー等、UserListView を包む画面の共通経路。
+        tagKey: 'user_list.op',
         // ⚠ **ページサイズはこの View が決めない。**`fetcher` を渡す側が
         // `limit` ごと閉じ込めている。
         fetcher: (cursor) async {

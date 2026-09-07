@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../provider/favorite_provider.dart';
+import '../../provider/server_config_provider.dart';
 import '../util/op_error.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/post_tile.dart';
@@ -52,16 +53,21 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
     final favorites = ref.watch(favoriteProvider);
+    // ⚠ **文言を直書きしない (#1083-F)。**用語の正本は provider 側
+    // （#1027-C2）。現状の表示は直書きと一致するが、`FavoriteSupport` と
+    // `ReactionSupport` を両方持つアダプターが入ると、カウントチップ
+    // （provider 由来「リアクション」）とこの画面が同じ機能に別名を付ける。
+    final label = ref.watch(favouriteLabelProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('お気に入り'),
+        title: Text(label),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: BottomSafeArea(
         child: favorites.when(
           data: (state) => state.posts.isEmpty
-              ? const Center(child: Text('お気に入りはありません'))
+              ? Center(child: Text('$labelはありません'))
               : RefreshIndicator(
                   onRefresh: () => ref.refresh(favoriteProvider.future),
                   child: ListView.separated(
@@ -82,7 +88,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 ),
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, stack) => RetryErrorView(
-            message: 'お気に入りの読み込みに失敗しました\n${summarizeOpError(error)}',
+            message: '$labelの読み込みに失敗しました\n${summarizeOpError(error)}',
             isRetrying: favorites.isLoading,
             onRetry: () => ref.invalidate(favoriteProvider),
           ),

@@ -39,6 +39,8 @@ class PostListScreen extends ConsumerWidget {
       body: BottomSafeArea(
         child: CursorPagedListView<Post>(
           debugLabel: 'PostListScreen',
+          // 一覧の取得失敗を観測する (#1083-D)。お気に入り / 引用の一覧。
+          tagKey: 'post_list.op',
           // ⚠ **ページサイズはこの画面が決めない。**`fetcher` を渡す側が
           // `limit` ごと閉じ込めている。継続の判定も件数ではなく
           // `nextCursor` の有無だけで行う（サーバーはフィルタで件数を

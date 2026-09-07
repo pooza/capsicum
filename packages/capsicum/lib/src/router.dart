@@ -361,10 +361,19 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/profile/edit',
             builder: (context, state) => const ProfileEditScreen(),
           ),
+          // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
+          // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、
+          // **Android のプロセス復帰で route だけが復元される**と null になる。
+          // `state.extra!` のままだと、その瞬間に投げて**アプリが落ちる**。
+          // クロージャは復元しようがないのでホームへ戻す（`/login` が
+          // CAPSICUM-16 で同じ形にしてある。そちらへ揃えた）。
           GoRoute(
             path: '/users',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return UserListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as UserListFetcher,
@@ -375,7 +384,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/posts',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return PostListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as PostListFetcher,
@@ -603,3 +615,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// `state.extra` を失った状態で復帰したときの受け皿 (#1083-F)。
+///
+/// build 中に遷移はできないので、次のフレームでホームへ送る。⚠ **`context` の
+/// 生死を確かめてから遷移する**（`/login` の CAPSICUM-16 対応と同じ形）。
+Widget _goHomeAfterBuild(BuildContext context) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (context.mounted) context.go('/home');
+  });
+  return const SizedBox.shrink();
+}

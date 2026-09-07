@@ -152,7 +152,11 @@ List<HomeNavItem> buildHomeNavItems(
     // 既に上の項目へ寄せてあり、並べると同じものが 2 つ出る。
     if (adapter is FavoriteSupport)
       HomeNavItem(
-        title: 'お気に入り',
+        // ⚠ **直書きしない (#1083-F)。**表示は現状 provider と一致するが、将来
+        // FavoriteSupport と ReactionSupport を両方持つアダプターが入ると、
+        // カウントチップ（provider 由来「リアクション」）とここ（直書き
+        // 「お気に入り」）が同じ機能に別名を付ける。
+        title: ref.read(favouriteLabelProvider),
         icon: Icons.star_outline,
         onSelected: () => act(() => context.push('/favorites')),
       ),

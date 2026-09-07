@@ -78,7 +78,10 @@ class _FollowedHashtagsScreenState
       messenger.showSnackBar(SnackBar(content: Text('#$tag のフォローを解除しました')));
     } catch (e, st) {
       reportOpFailure(
-        tagKey: 'hashtag.followed',
+        // ⚠ **キーは「op の系統」で、対象ではない (#1083-E)。**`hashtag.followed`
+        // は「フォロー中のタグ」という**対象**を名前にしていた。何をしたかは
+        // operation が持つ。
+        tagKey: 'hashtag.op',
         operation: 'unfollow',
         error: e,
         stackTrace: st,
@@ -97,6 +100,8 @@ class _FollowedHashtagsScreenState
       body: BottomSafeArea(
         child: CursorPagedListView<String>(
           debugLabel: 'FollowedHashtagsScreen',
+          // 一覧の取得失敗を観測する (#1083-D)。解除操作は上の 'hashtag.op'。
+          tagKey: 'hashtag.list',
           fetcher: _fetch,
           emptyMessage: 'フォロー中のハッシュタグはありません',
           itemBuilder: (context, tag) => ListTile(
