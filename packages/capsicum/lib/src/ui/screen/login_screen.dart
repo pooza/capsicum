@@ -16,7 +16,6 @@ import '../../model/account_key.dart';
 import '../../platform/loopback_oauth_bind.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
-import '../../provider/preferences_provider.dart';
 import '../../service/account_storage.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
@@ -1207,13 +1206,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     await _accountManager.addAccount(account);
     // 以降は UI 操作なので mounted でガードする。
+    //
+    // ⚠ **ここで抜けても遷移は落ちない (#1057)。**Android は OAuth のあいだ
+    // freezer に凍結されるので、解凍されてトークン交換が完走したときには
+    // この画面が消えていることがある。以前はそこで黙って抜け、**アカウント
+    // だけ増えて画面はサーバー選択のまま**になっていた。今は `addAccount` が
+    // 立てた旗をルーターの `redirect` が拾って `/home` へ送る。
+    // タブの既定（`timeline:home`）も `addAccount` 側へ移してある。
     if (!mounted) return;
-
-    // ログイン直後はホームタイムラインを表示する。
-    // 前回のタブ復元が走ると、存在しないリスト/ハッシュタグを参照してエラーになりうる。
-    ref
-        .read(lastTabProvider(account.key.toStorageKey()).notifier)
-        .save('timeline:home');
 
     context.go('/home');
   }

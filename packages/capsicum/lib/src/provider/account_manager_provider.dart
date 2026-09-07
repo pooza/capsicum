@@ -26,6 +26,7 @@ import '../util/action_labels.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
+import 'preferences_provider.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -133,6 +134,40 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
   static const _mulukhiyaAutoRefreshTtl = kServerMetadataFreshnessTtl;
 
+  /// 明示ログイン（[addAccount]）が完了したが、まだホームへ遷移していない
+  /// (#1057)。
+  ///
+  /// ⚠⚠ **ログイン後の遷移を `LoginScreen` の生死に依存させないための旗。**
+  /// Android の OAuth は loopback callback（#276 / #654）なので、認可のあいだ
+  /// アプリはバックグラウンドに回り**キャッシュアプリ freezer に凍結される**。
+  /// 手動で戻すと解凍されてトークン交換が完走するが、その時点で `LoginScreen`
+  /// が生きているとは限らない。生きていないと `if (!mounted) return;` で
+  /// 黙って抜け、**アカウントだけ増えて画面はサーバー選択のまま**になる。
+  ///
+  /// ⚠ **「ログイン済みなら auth 画面から追い出す」では直せない。**設定から
+  /// 2 つ目のアカウントを足すときも `/server` を開くので、ログイン状態だけを
+  /// 見て飛ばすと**その導線を壊す**。見るのは「今この瞬間に addAccount が
+  /// 完了したか」だけにする。
+  ///
+  /// ⚠ [addAccount] の呼び出し元は `LoginScreen` の 1 箇所だけで、セッション
+  /// 復元（[restoreSessions]）はここを通らない。だから起動時の復元でこの旗は
+  /// 立たない。
+  bool _pendingPostLogin = false;
+
+  /// 旗を読み取り、同時に落とす。ルーターの `redirect` から呼ぶ (#1057)。
+  ///
+  /// ⚠ **auth 画面以外でも消費すること。**`LoginScreen` が生きていて自力で
+  /// `/home` へ行けた場合、旗を残すと**次に `/server` を開いた瞬間**（＝
+  /// 2 つ目のアカウントを足そうとしたとき）に跳ね返される。
+  bool consumePendingPostLogin() {
+    final pending = _pendingPostLogin;
+    _pendingPostLogin = false;
+    return pending;
+  }
+
+  /// 旗が立っているか（消費しない）。ルーターが再評価を促すためだけに読む。
+  bool get hasPendingPostLogin => _pendingPostLogin;
+
   Future<void> addAccount(Account account) async {
     final storage = ref.read(accountStorageProvider);
     final secrets = <String, String>{
@@ -194,6 +229,19 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final offline = state.offlineAccounts
         .where((o) => o.key != enriched.key)
         .toList();
+    // ログイン直後はホームタイムラインを表示する。前回のタブ復元が走ると、
+    // 存在しないリスト / ハッシュタグを参照してエラーになりうる。
+    //
+    // ⚠ **ここでやる (#1057)。**以前は `LoginScreen` の `mounted` ガードより
+    // 後ろにあったので、**画面が消えていると保存だけ完走してタブは前回のまま**
+    // という非対称になっていた。遷移と同じ理由でここへ移す。
+    ref
+        .read(lastTabProvider(enriched.key.toStorageKey()).notifier)
+        .save('timeline:home');
+
+    // ⚠ **state を差し替える前に立てる (#1057)。**listener は state の変化で
+    // 走るので、後に立てると「旗が立つ前の通知」を見ることになる。
+    _pendingPostLogin = true;
     state = state.copyWith(
       accounts: newAccounts,
       current: enriched,

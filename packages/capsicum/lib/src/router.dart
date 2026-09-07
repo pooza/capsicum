@@ -90,6 +90,13 @@ class _AuthNotifier extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// ログイン状態が変わっていなくても `redirect` を回す (#1057)。
+  ///
+  /// ⚠ **2 つ目以降のアカウントを足したときは `isLoggedIn` が動かない**ので、
+  /// 上の setter だけでは再評価が起きない。ログイン直後の遷移を拾うために、
+  /// 明示的に促す口を開けてある。
+  void requestRedirect() => notifyListeners();
 }
 
 final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
@@ -102,10 +109,48 @@ final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
     // `/server`（サーバー選択画面）へ引き戻して、ログアウトしたように見える。
     // `/home` へ通れば HomeScreen が「接続できません／再試行」を出す (#792)。
     notifier.isLoggedIn = next.hasSession;
+    // 明示ログインの直後は、ログイン状態が動いていなくても redirect を回す
+    // (#1057)。判定そのものは redirect 側（旗を消費する側）が持つ。
+    if (ref.read(accountManagerProvider.notifier).hasPendingPostLogin) {
+      notifier.requestRedirect();
+    }
   });
 
   return notifier;
 });
+
+/// 認証ゲート（ログイン前に入れる画面）。
+const _authLocations = {'/login', '/server', '/splash', '/eula'};
+
+/// ログイン直後のフォールバック遷移が効く画面 (#1057)。
+///
+/// ⚠ **`/splash` と `/eula` を含めない。**splash は自分でルーティングを決める
+/// 画面で、eula は同意を取り切る前に飛ばしてはいけない。
+const _postLoginBounceFrom = {'/login', '/server'};
+
+/// 行き先を決める（副作用なし）。
+///
+/// ⚠ **判定を純関数にしてあるのは、ログイン導線を壊さずに検査するため
+/// (#1057)。**「ログイン済みなら auth 画面から追い出す」と書くと、設定から
+/// 2 つ目のアカウントを足す導線（`/server` を開く）が壊れる。壊れていないことを
+/// テストで固定できるよう、`redirect` の中身をここへ出してある。
+@visibleForTesting
+String? resolveRedirect({
+  required bool isLoggedIn,
+  required String location,
+  required bool justLoggedIn,
+}) {
+  if (!isLoggedIn && !_authLocations.contains(location)) return '/server';
+
+  // ⚠⚠ **ログイン後の遷移を `LoginScreen` の生死に依存させない (#1057)。**
+  // Android は OAuth のあいだ freezer に凍結されるので、解凍されてトークン
+  // 交換が完走したときには画面が消えていることがある。消えていると
+  // `if (!mounted) return;` で黙って抜け、**アカウントだけ増えて画面は
+  // サーバー選択のまま**になる（保存は完走しているので、再起動するとログイン
+  // 済みで開く）。
+  if (justLoggedIn && _postLoginBounceFrom.contains(location)) return '/home';
+  return null;
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = ref.read(_authNotifierProvider);
@@ -114,18 +159,17 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: authNotifier,
-    redirect: (context, state) {
-      final isLoggedIn = authNotifier.isLoggedIn;
-      final location = state.matchedLocation;
-      final isOnAuth =
-          location == '/login' ||
-          location == '/server' ||
-          location == '/splash' ||
-          location == '/eula';
-
-      if (!isLoggedIn && !isOnAuth) return '/server';
-      return null;
-    },
+    redirect: (context, state) => resolveRedirect(
+      isLoggedIn: authNotifier.isLoggedIn,
+      location: state.matchedLocation,
+      // ⚠ **旗は auth 画面以外でも消費する (#1057)。**`LoginScreen` が生きて
+      // いて自力で `/home` へ行けた場合に残すと、**次に `/server` を開いた
+      // 瞬間**（＝2 つ目のアカウントを足そうとしたとき）に跳ね返される。
+      // だから判定の中ではなく、ここで無条件に読み取って落とす。
+      justLoggedIn: ref
+          .read(accountManagerProvider.notifier)
+          .consumePendingPostLogin(),
+    ),
     routes: [
       GoRoute(
         path: '/splash',
