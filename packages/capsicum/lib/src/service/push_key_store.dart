@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
@@ -85,7 +85,7 @@ class PushKeyStore {
     // 叩く理由になっていない**。Linux では Secret Service が死んでいると
     // `readAll` が返らず、`runApp()` の手前で止まって**真っ黒なウインドウ**に
     // なる。フラグだけ立てて素通りする。
-    if (!Platform.isIOS && !Platform.isMacOS) {
+    if (!usesKeychainAccessibility) {
       await prefs.setBool(_migrationFlagKey, true);
       return;
     }

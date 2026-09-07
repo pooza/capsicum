@@ -1,6 +1,6 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 /// デスクトップ 3 OS（macOS / Linux / Windows）かどうか。
 ///
@@ -88,3 +88,28 @@ bool get oauthCallbackNeedsAppReturn => !kIsWeb && Platform.isAndroid;
 /// loopback がハングするため、Android では再利用しない（host 保存 or fresh 登録
 /// に委ねる）。他プラットフォームは従来どおり再利用してよい。
 bool get canReuseAccountScopedOAuthClient => kIsWeb || !Platform.isAndroid;
+
+/// Keychain の accessibility / accessGroup という概念を持つプラットフォームか
+/// (#1085)。Apple 系（iOS / macOS）だけ true。
+///
+/// ⚠⚠ **起動経路で secure storage を叩く理由になるのはここだけ。**
+/// accessibility の焼き直し migration（#392 / #643）は「フラグを立てるため」に
+/// 全プラットフォームで走っていたが、Android (EncryptedSharedPreferences) /
+/// Linux (libsecret) / Windows (DPAPI) には焼き直すものが無い。**Linux では
+/// Secret Service が死んでいると `readAll` が返らず、`runApp()` の手前で
+/// 止まって真っ黒なウインドウになる**（#1085 の症状）。
+///
+/// UI 層に `Platform.isX` を直書きしない設計指針 (#650) と同じ理由で、
+/// storage 層にも直書きせず機能名で公開する。
+bool get usesKeychainAccessibility =>
+    debugKeychainAccessibilityOverride ??
+    (!kIsWeb && (Platform.isIOS || Platform.isMacOS));
+
+/// テスト用の差し替え口 (#1085)。
+///
+/// ⚠ **これが無いと、Apple 系でしか動かない migration の検査が CI（Linux）で
+/// 素通りする。**実際にこの seam を入れる前は、手元（macOS）で緑・CI で赤に
+/// なった。**プラットフォーム分岐を入れたら、分岐の両側をテストから踏めるように
+/// すること。**
+@visibleForTesting
+bool? debugKeychainAccessibilityOverride;

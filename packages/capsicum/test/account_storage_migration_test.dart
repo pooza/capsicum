@@ -1,3 +1,4 @@
+import 'package:capsicum/src/platform/platform_info.dart';
 import 'package:capsicum/src/service/account_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -94,6 +95,36 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const flagKey = 'account_storage_accessibility_migrated_v2';
+
+  // ⚠⚠ **プラットフォームを固定する (#1085)。**この migration は Apple 系
+  // （Keychain accessibility を持つ OS）でしか走らない。固定しないと**手元の
+  // macOS では緑・CI の Linux では赤**になる（実際に踏んだ）。分岐を入れたら、
+  // 分岐の両側をテストから踏めるようにすること。
+  setUp(() => debugKeychainAccessibilityOverride = true);
+  tearDown(() => debugKeychainAccessibilityOverride = null);
+
+  test(
+    'accessibility を持たない OS では secure storage を触らずに flag だけ立てる (#1085)',
+    () async {
+      debugKeychainAccessibilityOverride = false;
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final fake = _FakeSecureStorage({'secret_mastodon://a@h': 's1'});
+
+      await AccountStorage(fake).migrateAccessibilityIfNeeded();
+
+      expect(
+        fake.deletes,
+        isEmpty,
+        reason:
+            '⚠ **起動経路で secure storage を叩く理由が無い。**Linux では '
+            'Secret Service が死んでいると readAll が返らず、runApp() の手前で'
+            '止まって真っ黒なウインドウになる',
+      );
+      expect(fake.writes, isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(flagKey), isTrue, reason: 'フラグは立てる（毎回この判定に来ないように）');
+    },
+  );
 
   test('owned key のみ焼き直し（非 owned key には触れない）、flag を立てる', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});

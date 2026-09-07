@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
 import '../model/account_key.dart';
+import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
 import 'secure_storage_health.dart';
@@ -321,7 +322,7 @@ class AccountStorage {
     // 理由になっていない**。Linux では Secret Service が死んでいると
     // `readAll` が返らず、`runApp()` の手前で止まって**真っ黒なウインドウ**に
     // なる（それがこの Issue の症状）。フラグだけ立てて素通りする。
-    if (!Platform.isIOS && !Platform.isMacOS) {
+    if (!usesKeychainAccessibility) {
       await prefs.setBool(_accessibilityMigrationFlagKey, true);
       return;
     }
