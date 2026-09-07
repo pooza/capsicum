@@ -590,8 +590,13 @@ class MastodonClient {
           MastodonNotification.fromJson(e as Map<String, dynamic>),
         );
       } catch (err) {
+        // ⚠ 生の `$err` を出さない (#1035-B3)。FormatException は source
+        // （＝生 JSON の断片＝投稿本文）を、NoSuchMethodError は receiver の
+        // toString を含む。`developer.log` は Sentry breadcrumb にはならないが、
+        // Linux の `~/.local/share/capsicum/logs/` や logcat / Console.app に
+        // 残る。アダプタ側の `_safeConvert` (#1027-A5) と同じ形に揃える。
         developer.log(
-          'skipping malformed notification: $err',
+          'skipping malformed notification: ${describeConversionFailure(err)}',
           name: 'capsicum',
         );
       }

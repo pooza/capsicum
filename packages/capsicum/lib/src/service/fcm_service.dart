@@ -122,9 +122,10 @@ class FcmService {
       final delay = _transientRetryDelays[attempt];
       // ⚠ **`message` を載せない (#1035-C2)。**release / profile の
       // `debugPrint` は sentry_flutter の DebugPrintIntegration が breadcrumb 化
-      // するが、breadcrumb の message は `_scrubBreadcrumb`（data しか見ない）を
-      // 通らないので、`FirebaseException.message`（上流が入れる任意の文言）が
-      // そのまま Sentry に出る。`code` は素性だけなので安全。
+      // するが、`_scrubBreadcrumb` が message に当てるのは relay の push token
+      // マスクだけ（範囲の正本はそちらの doc・#1035-D2）なので、
+      // `FirebaseException.message`（上流が入れる任意の文言）がそのまま Sentry に
+      // 出る。`code` は素性だけなので安全。
       //
       // ⚠ **情報は落ちていない。**全リトライを消化したときは下で `lastError` を
       // throw し、`initialize()` の catch から scrub 経由で Sentry へ送っている。

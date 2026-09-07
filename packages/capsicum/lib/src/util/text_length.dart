@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 /// サーバーが数える文字数（**Unicode コードポイント**）(#1027-F2)。
 ///
 /// ⚠⚠ **Dart / Flutter の既定はどれもサーバーと一致しない。**
@@ -23,36 +21,22 @@ import 'package:flutter/material.dart';
 /// 「512/512 なのにサーバーが 400」**、UTF-16 で数えると**必要以上に赤くなる**。
 /// 日本語・英字はどの数え方でも同じなので、通常の入力では見た目が変わらない。
 ///
-/// ⚠ **Mastodon の本文だけは書記素で数える。**`StatusLengthValidator` が
+/// ⚠⚠ **Mastodon の本文はこの数え方と一致しない。**`StatusLengthValidator` が
 /// `each_grapheme_cluster.size` を使っており、さらに **URL を一律 23 文字**として
-/// 数える。そこは別の話なので [serverTextLength] を当てない
-/// （#1027 では扱わず、別 Issue にしてある）。
+/// 数える。
+///
+/// ⚠ **にもかかわらず、本文カウンタは backend を分岐せずこれを当てている**
+/// （`compose_screen` の `'$len / $maxLength'`）。以前この doc は「Mastodon の
+/// 本文には当てない」と書いていたが、**実装がそうなっていない**
+/// （#1035-D3）。v1.60 までは `value.text.length` だったので、当てていないの
+/// ではなく**別のズレ方をしていた**だけ。
+///
+/// 実害は「Mastodon で URL を含む長文のカウンタが実際より多く出る」形で、
+/// **正しい数え方に寄せるのは [#1034](https://github.com/pooza/capsicum/issues/1034)**。
+/// ここに書いてあるのは適用範囲の事実であって、当てるなという規約ではない。
 int serverTextLength(String text) => text.runes.length;
 
-/// [serverTextLength] で数える `TextField` のカウンタ (#1027-F2)。
-///
-/// ⚠ **`buildCounter` に渡ってくる `currentLength` は Flutter が数えた
-/// 書記素**なので使わない。[controller] から取り直す。
-///
-/// 表示は既定と同じ `現在 / 上限`。超過時に色を変えるのは呼び出し側の責務では
-/// なく、ここで済ませる（`maxLengthEnforcement: none` で切らない運用なので、
-/// **超過が見えないと気づけない**）。
-InputCounterWidgetBuilder serverLengthCounter(
-  TextEditingController controller,
-) =>
-    (
-      BuildContext context, {
-      required int currentLength,
-      required bool isFocused,
-      required int? maxLength,
-    }) {
-      final length = serverTextLength(controller.text);
-      final theme = Theme.of(context);
-      final over = maxLength != null && length > maxLength;
-      return Text(
-        maxLength == null ? '$length' : '$length / $maxLength',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: over ? theme.colorScheme.error : null,
-        ),
-      );
-    };
+/// ⚠ **カウンタ widget はここに置かない (#1035-E4)。**`InputCounterWidgetBuilder`
+/// を返す `serverLengthCounter` は Flutter に依存するので
+/// `ui/util/text_length_counter.dart` にある。ここは `lib/src/util/` の他 14
+/// ファイルと同じく、Flutter を import しない純関数だけを持つ。

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../service/server_metadata_cache.dart';
+import '../util/action_labels.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import 'account_manager_provider.dart';
@@ -66,18 +67,24 @@ Color? _parseHexColor(String hex) {
 }
 
 /// The label to use for "post" actions (e.g. "キュア！" on precure.fun).
-final postLabelProvider = Provider<String>((ref) {
-  final mulukhiya = ref.watch(currentMulukhiyaProvider);
-  return mulukhiya?.postLabel ?? '投稿';
-});
+///
+/// ⚠ 呼称の決め方そのものは [postLabelFrom] が正本 (#1035-E1)。ここは
+/// 「現在アカウントの文脈で解決する」ぶんだけを持つ。
+final postLabelProvider = Provider<String>(
+  (ref) => postLabelFrom(ref.watch(currentMulukhiyaProvider)),
+);
 
 /// The label to use for "boost/renote" actions (e.g. "リキュア" on precure.fun).
-final reblogLabelProvider = Provider<String>((ref) {
-  final mulukhiya = ref.watch(currentMulukhiyaProvider);
-  if (mulukhiya?.reblogLabel != null) return mulukhiya!.reblogLabel!;
-  final adapter = ref.watch(currentAdapterProvider);
-  return adapter is ReactionSupport ? 'リノート' : 'ブースト';
-});
+///
+/// ⚠ 呼称の決め方そのものは [reblogLabelFrom] が正本 (#1035-E1)。**別アカウント
+/// / プッシュ payload の文脈ではこの provider を使えない**ので、判定は
+/// provider ではなく関数側に置いてある。
+final reblogLabelProvider = Provider<String>(
+  (ref) => reblogLabelFrom(
+    ref.watch(currentMulukhiyaProvider),
+    ref.watch(currentAdapterProvider),
+  ),
+);
 
 /// The label to use for "bookmark" actions.
 ///
@@ -216,7 +223,8 @@ final customEmojisProvider = FutureProvider<List<CustomEmoji>>((ref) async {
       if (attempt < kCustomEmojiRetryDelays.length &&
           shouldRetryEmojiFetch(e)) {
         // ⚠ 生の例外を埋めない。release では debugPrint が丸ごと breadcrumb に
-        // なり、`_scrubBreadcrumb` は data しか見ないので message は素通しになる。
+        // なり、`_scrubBreadcrumb` が message に当てるのは relay の push token
+        // マスクだけ（範囲の正本はそちらの doc・#1035-D2）なので素通しになる。
         // `DioException.toString()` の uri に載る host は、tag では
         // `isSensitiveTagKey` で弾いている値。
         debugLogException(

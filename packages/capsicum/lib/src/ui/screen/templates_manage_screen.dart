@@ -9,8 +9,8 @@ import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
 import '../../service/sentry_op_failure.dart';
-import '../../util/text_length.dart';
 import '../util/compose_template_display.dart';
+import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/retry_error_view.dart';
 

@@ -1,0 +1,41 @@
+import 'package:flutter/material.dart';
+
+import '../../util/text_length.dart';
+
+/// [serverTextLength] で数える `TextField` のカウンタ (#1027-F2)。
+///
+/// ⚠ **`buildCounter` に渡ってくる `currentLength` は Flutter が数えた
+/// 書記素**なので使わない。[controller] から取り直す。
+///
+/// 表示は既定と同じ `現在 / 上限`。超過時に色を変えるのは呼び出し側の責務では
+/// なく、ここで済ませる（`maxLengthEnforcement: none` で切らない運用なので、
+/// **超過が見えないと気づけない**）。
+///
+/// ⚠ **`ui/util/` に置く (#1035-E4)。**数える純関数（[serverTextLength]）は
+/// `util/` に置いたまま、Flutter に依存するこちらだけをこちらへ分けた。
+/// `lib/src/util/` 15 ファイルのうち **material を import していたのはここだけ**
+/// で、#1027 が `user_acct` を「ui の下にあったことが provider 側の再実装の
+/// 理由」として `util/` へ移したのと**向きが逆**だった。
+InputCounterWidgetBuilder serverLengthCounter(
+  TextEditingController controller,
+) =>
+    (
+      BuildContext context, {
+      required int currentLength,
+      required bool isFocused,
+      required int? maxLength,
+    }) {
+      // ⚠ **上限が無い欄には出さない (#1035-E5)。**Flutter は `maxLength` が
+      // null でも `buildCounter` を呼ぶので、`drive_manager_screen` の
+      // 「名前の変更」「フォルダを作成」に**上限のない裸の数字**が出ていた。
+      // null を返せば既定と同じ「カウンタ無し」に戻る。
+      if (maxLength == null) return null;
+      final length = serverTextLength(controller.text);
+      final theme = Theme.of(context);
+      return Text(
+        '$length / $maxLength',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: length > maxLength ? theme.colorScheme.error : null,
+        ),
+      );
+    };

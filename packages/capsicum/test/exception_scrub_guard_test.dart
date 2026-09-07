@@ -696,8 +696,20 @@ void main() {
   /// `onParseError` が `jsonDecode` の FormatException を `message:` に素で
   /// 載せており（＝チャット本文が Sentry へ）、検査は緑のままだった。
   /// breadcrumb を作る本人を根に入れる。
+  ///
+  /// ⚠⚠ **`developer.log` も根に入れる (#1035-B3)。**Sentry breadcrumb には
+  /// ならないが、**Linux の `~/.local/share/capsicum/logs/` / logcat /
+  /// Console.app には残る**。根から漏れていたあいだ、アダプタ側の
+  /// `skipping malformed notification: $err` と `skipping malformed draft: $e`
+  /// （どちらも FormatException の source ＝投稿本文 / 下書き本文を含む）が
+  /// **緑のまま出荷されていた**。同じファイルの数行上では `_safeConvert` が
+  /// `describeConversionFailure` を通しており、**同じ形の片方だけが直っていた**。
+  ///
+  /// ⚠ 名前は `log` で拾う（`developer.log` / `logger.log` の両方に当たる）。
+  /// 呼び出し検出は識別子の境界を見るので、`AlertDialog(` のような「末尾が
+  /// log」は当たらない。
   Set<String> breadcrumbSinks(Iterable<String> sources) {
-    final sinks = {'debugPrint', 'Breadcrumb'};
+    final sinks = {'debugPrint', 'Breadcrumb', 'log'};
     final pending = candidatesIn(sources.map(maskComments));
     var added = true;
     // 転送が数珠つなぎになることがある（`_logDevException` → `_logDev` →
@@ -1098,8 +1110,8 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          'breadcrumb の message は _scrubBreadcrumb（data しか見ない）を'
-          '通らないので、書いた文字列がそのまま Sentry に出る。'
+          '_scrubBreadcrumb が message に当てるのは relay の push token マスク'
+          'だけ (#1035-D2) なので、書いた文字列がそのまま Sentry に出る。'
           'sentrySafeAccount / sentrySafeAccountKey を通すこと'
           '（host は残る・username だけ潰れる）\n${offenders.join('\n')}',
     );
@@ -1242,10 +1254,86 @@ void main() {
       isEmpty,
       reason:
           'sentry_flutter の DebugPrintIntegration は release と profile で'
-          'debugPrint を差し替える。breadcrumb の message は _scrubBreadcrumb'
-          '（data しか見ない）を通らないので、debugLogException / '
-          '_logDevException を使うこと\n${offenders.join('\n')}',
+          'debugPrint を差し替える。_scrubBreadcrumb が message に当てるのは '
+          'relay の push token マスクだけ (#1035-D2) なので、'
+          'debugLogException / _logDevException を使うこと'
+          '\n${offenders.join('\n')}',
     );
+  });
+
+  /// ⚠⚠ **`developer.log` が根に入っていること (#1035-B3)。**
+  ///
+  /// ここが無いと、上の検査は「リポジトリが綺麗だから緑」なのか「`log` を
+  /// 見ていないから緑」なのかを区別できない。**実際に後者で 2 件を出荷した。**
+  group('developer.log を sink として見ている (#1035-B3)', () {
+    test('走査が空振りしていない — 実リポジトリに developer.log の呼び出しがある', () {
+      final calls = <String>[
+        for (final f in dartFiles())
+          for (final (args, _) in callsOf(
+            maskComments(f.readAsStringSync()),
+            'log',
+          ))
+            '${relativePath(f)}: $args',
+      ];
+      expect(
+        calls,
+        isNotEmpty,
+        reason:
+            '1 件も見つからないなら、名前の拾い方（`developer.log` の `.` の扱い）が'
+            '壊れている。呼び出しが 0 件のリポジトリで緑になっても意味が無い',
+      );
+    });
+
+    test('生の例外を埋めた developer.log は挙がる', () {
+      // ⚠ **これは合成ではなく、#1035-B3 で実際に直した形そのもの。**
+      // 「自分が想定した書き方しか並べない」を避けるため、修正前のソースを写す。
+      expect(
+        offendersIn({
+          'a.dart':
+              "developer.log('skipping malformed draft: \$e', "
+              "name: 'capsicum');",
+        }),
+        isNotEmpty,
+      );
+      expect(
+        offendersIn({
+          'b.dart':
+              "developer.log(\n  'skipping malformed notification: \$err',\n"
+              "  name: 'capsicum',\n);",
+        }),
+        isNotEmpty,
+        reason: '引数が複数行に分かれていても拾う',
+      );
+    });
+
+    test('scrub を通した developer.log は挙がらない', () {
+      expect(
+        offendersIn({
+          'a.dart':
+              "developer.log('skipping: \${describeConversionFailure(e)}', "
+              "name: 'capsicum');",
+        }),
+        isEmpty,
+      );
+    });
+
+    test('コメントの中の developer.log は挙がらない', () {
+      expect(
+        offendersIn({'a.dart': "// developer.log('boom: \$e');"}),
+        isEmpty,
+        reason: '実行されない行を直せと言われても困る',
+      );
+    });
+
+    test('末尾が log の識別子を巻き込まない', () {
+      expect(
+        offendersIn({
+          'a.dart': "showDialog(context: c, builder: (_) => X(\$e));",
+        }),
+        isEmpty,
+        reason: '`Dialog(` の log は識別子の途中。境界を見ずに拾うと全画面が違反になる',
+      );
+    });
   });
 
   /// ラッパー検出が実際に効くこと。**ここが緩いと、上の検査は debugPrint の

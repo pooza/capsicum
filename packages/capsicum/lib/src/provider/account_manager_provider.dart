@@ -22,6 +22,7 @@ import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
+import '../util/action_labels.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
@@ -438,14 +439,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// の既定（notification_type_label.cpp）と文言を揃えること。
   static ({String reblog, String post}) _resolveNotificationLabels(
     Account account,
-  ) {
-    final mulukhiya = account.mulukhiya;
-    final reblog =
-        mulukhiya?.reblogLabel ??
-        (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
-    final post = mulukhiya?.postLabel ?? '投稿';
-    return (reblog: reblog, post: post);
-  }
+  ) => (reblog: reblogLabelFor(account), post: postLabelFor(account));
 
   /// Windows: 完全終了中の bg task / 起動中の in-process 受信が読む
   /// push_labels.json を、現在ログイン中の全アカウントのラベルで更新する (#770)。

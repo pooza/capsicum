@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../main.dart' show appLaunchStopwatch;
 import '../model/account_key.dart';
 import '../service/timeline_cache.dart';
+import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
 import 'account_manager_provider.dart';
@@ -1845,26 +1846,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   /// Report posts that failed conversion to Sentry for debugging.
   /// Only sends post IDs and error messages — never post content.
+  ///
+  /// ⚠ **抑止と件数の載せ方は通知側と共有する** (#1035-B2)。ここだけ 1 件 1 通の
+  /// ままだと、系統的な変換失敗でタイムラインを引くたびに 1 ページぶんが積まれる。
+  /// message は分けたままなので、Sentry の群は投稿 / 通知で分かれる。
   void _reportSkippedPosts(List<SkippedPost> skipped, String? maxId) {
-    try {
-      for (final post in skipped) {
-        // params は logentry.params として実際に送られる（hint は送られない）ので、
-        // ここが変換失敗の唯一の観測経路 (#1027-A5)。
-        // scrub-guard: allow: post.error は describeConversionFailure 済み（本文なし）
-        Sentry.captureMessage(
-          'Post conversion failed',
-          level: SentryLevel.warning,
-          params: [post.id, post.error],
-          hint: Hint.withMap({
-            'skippedPostId': post.id,
-            'conversionError': post.error,
-            'maxId': maxId ?? 'null',
-          }),
-        );
-      }
-    } catch (_) {
-      // Sentry failure must not affect timeline loading.
-    }
+    reportSkippedPosts(skipped, source: 'timeline', maxId: maxId);
   }
 
   /// Reset isLoadingMore to false, preserving the latest state.

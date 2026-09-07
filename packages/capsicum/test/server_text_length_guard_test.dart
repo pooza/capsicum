@@ -33,20 +33,35 @@ void main() {
       .where((f) => f.path.endsWith('.dart'))
       .toList();
 
+  /// 宣言そのもの（`ui/util/text_length_counter.dart`）か。
+  ///
+  /// ⚠ **宣言を「採用箇所」に数えない (#1035-E4)。**カウンタを `util/` から
+  /// `ui/util/` へ移したことで、**定義ファイル自身が走査対象に入った**。
+  /// 名前で除外すると次にファイル名が変わったとき黙って戻るので、
+  /// **「宣言している形」で見分ける**。
+  bool declaresCounter(String code) =>
+      code.contains('InputCounterWidgetBuilder serverLengthCounter(');
+
+  /// カウンタを**使っている**ファイル（宣言は除く）。
+  List<File> counterAdopters() => uiFiles().where((f) {
+    final code = maskComments(f.readAsStringSync());
+    return code.contains('serverLengthCounter') && !declaresCounter(code);
+  }).toList();
+
   test('探索が空振りしていない', () {
     expect(uiFiles().length, greaterThan(50));
     // ⚠ 採用箇所が 0 だと、下の 2 本は「どちらも無い」で緑になる。
-    final adopters = uiFiles()
-        .where(
-          (f) => maskComments(
-            f.readAsStringSync(),
-          ).contains('serverLengthCounter'),
-        )
-        .toList();
     expect(
-      adopters,
+      counterAdopters(),
       isNotEmpty,
       reason: 'serverLengthCounter がどこにも無い。検査のアンカーが外れている',
+    );
+    // ⚠ 宣言も見えていること。ここが 0 なら「移動して見失った」状態で、
+    // 上の採用箇所の数え方（宣言を除く）が意味を成していない。
+    expect(
+      uiFiles().where((f) => declaresCounter(f.readAsStringSync())),
+      hasLength(1),
+      reason: '宣言が 1 つも見つからない / 2 つ以上ある',
     );
   });
 
@@ -54,9 +69,8 @@ void main() {
     // ⚠ **セットで使う。**コードポイントで数えて表示しながら Flutter が
     // 書記素で切ると、カウンタの数字と実際の挙動が食い違う。
     final offenders = <String>[];
-    for (final file in uiFiles()) {
+    for (final file in counterAdopters()) {
       final code = maskComments(file.readAsStringSync());
-      if (!code.contains('serverLengthCounter')) continue;
       if (code.contains('MaxLengthEnforcement.none')) continue;
       offenders.add(file.path);
     }

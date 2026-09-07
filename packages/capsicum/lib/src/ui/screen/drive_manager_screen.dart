@@ -9,6 +9,7 @@ import '../../provider/drive_provider.dart';
 import '../../util/text_length.dart';
 import '../util/drive_error.dart';
 import '../util/op_error.dart';
+import '../util/text_length_counter.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/desktop_menu_model.dart';
 import '../widget/retry_error_view.dart';
@@ -601,9 +602,15 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
               builder: (context, value, _) => TextButton(
+                // ⚠ **判定と返り値の単位を揃える (#1035-E6)。**判定は未 trim・
+                // 返すのは trim 後だったので、末尾の空白や改行で上限をまたぐと
+                // **trim すれば収まるのにボタンが押せなかった**。投稿画面 /
+                // メディアビューアの ALT 欄は trim せずに返すので、この画面だけ
+                // 非対称だった。名前欄は前後の空白を落としたいので trim は残し、
+                // 判定側をそれに合わせる。
                 onPressed:
                     maxLength != null &&
-                        serverTextLength(value.text) > maxLength
+                        serverTextLength(value.text.trim()) > maxLength
                     ? null
                     : () => Navigator.pop(context, value.text.trim()),
                 child: const Text('OK'),
@@ -636,19 +643,16 @@ class _DriveManagerScreenState extends ConsumerState<DriveManagerScreen> {
     try {
       final adapter = ref.read(currentAdapterProvider);
       if (adapter is! DriveSupport) return;
-      final misskeyAdapter = adapter as dynamic;
-      if (newAlt.isEmpty) {
-        // ⚠ **消去は空文字ではなく明示的な null (#1005 / #1012)。**
-        // `updateDriveFile` は null をキーごと省略するので、空文字のまま渡すと
-        // body が `{fileId}` だけになり Misskey 側で更新対象が空になって 500。
-        // 仮に通っても省略は「変更なし」なので ALT を消せない。
-        // ⚠ **投稿側 (`MisskeyAdapter.updateAttachmentDescription`) は #1005 で
-        // 分けたのに、ここだけ空文字のままだった。**消去の表現が null と `''`
-        // の 2 種類に割れていたので、client の消去用メソッドへ寄せる。
-        await misskeyAdapter.client.clearDriveFileComment(file.id);
-      } else {
-        await misskeyAdapter.client.updateDriveFile(file.id, comment: newAlt);
-      }
+      // ⚠ **`adapter as dynamic` で client を直叩きしない (#1035-E2)。**
+      // 「空文字は `clearDriveFileComment`、それ以外は `updateDriveFile`」と
+      // いう同じ分岐を、interface 実装 (`updateDriveFileDescription`) と
+      // ここの 2 箇所に持っていた。⚠ `dynamic` 越しなので**型検査が効かず**、
+      // `DriveSupport` を持つ別アダプタが増えた瞬間に実行時
+      // `NoSuchMethodError` になる形でもあった。分岐の正本は interface 側。
+      await (adapter as DriveSupport).updateDriveFileDescription(
+        file.id,
+        newAlt,
+      );
       ref
           .read(driveContentsProvider(_currentFolderId).notifier)
           .updateFileDescription(file.id, newAlt);

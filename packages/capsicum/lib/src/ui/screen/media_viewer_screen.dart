@@ -23,6 +23,7 @@ import '../../service/sentry_op_failure.dart';
 import '../../util/media_filename.dart';
 import '../../util/text_length.dart';
 import '../util/attachment_description_edit.dart';
+import '../util/text_length_counter.dart';
 
 /// メディア URL を Sentry breadcrumb に載せる際、クエリ（署名トークンや
 /// プロキシ token を含みうる）を落として host + path のみに切り詰める。

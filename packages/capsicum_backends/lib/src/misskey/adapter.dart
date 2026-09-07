@@ -409,7 +409,12 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
         // 1 件の壊れた draft でリスト全体を error state に落とさず、当該 draft
         // のみ skip する（#839）。下書きは自作なので稀だが、下書き画面全体が
         // 使えなくなるのを防ぐ。
-        developer.log('skipping malformed draft: $e', name: 'capsicum');
+        // ⚠ 生の `$e` を出さない (#1035-B3)。下書き本文が Linux のログ /
+        // logcat / Console.app に落ちる。`_safeConvert` (#1027-A5) と同じ形。
+        developer.log(
+          'skipping malformed draft: ${describeConversionFailure(e)}',
+          name: 'capsicum',
+        );
       }
     }
     return drafts;
@@ -696,24 +701,19 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
 
   // MediaUpdateSupport
 
-  /// ⚠ **空文字は「消す」であって「変更なし」ではない (#1005)。**
-  /// [MisskeyClient.updateDriveFile] は null をキーごと省略するので、空文字を
-  /// null に変換して渡すと body が `{fileId}` だけになり、Misskey 側で更新対象が
-  /// 空になって **500** になる（＝「更新に失敗しました」）。しかも仮に通っても
-  /// 省略は「変更なし」なので **ALT を消せない**。明示的な null を送る経路
-  /// （[MisskeyClient.clearDriveFileComment]）へ分ける。
+  /// ⚠ **Misskey では投稿済みの添付もドライブファイルそのもの。**Mastodon の
+  /// ように投稿の更新 API を経由しないので、`postId` を使うことが無く、
+  /// [updateDriveFileDescription] と**本体が完全に同じ**になる。
+  ///
+  /// ⚠ **同じ本体を 2 つ持たない (#1035-E3)。**「空文字は消す」の分岐（#1005）を
+  /// 2 箇所に置いていたため、#1005 の再発点が 2 つあった。実装は
+  /// [updateDriveFileDescription] 側に 1 本だけ持ち、こちらは委譲する。
   @override
   Future<void> updateAttachmentDescription(
     String mediaId,
     String description, {
     required String postId,
-  }) async {
-    if (description.isEmpty) {
-      await client.clearDriveFileComment(mediaId);
-      return;
-    }
-    await client.updateDriveFile(mediaId, comment: description);
-  }
+  }) => updateDriveFileDescription(mediaId, description);
 
   // LoginSupport
 
