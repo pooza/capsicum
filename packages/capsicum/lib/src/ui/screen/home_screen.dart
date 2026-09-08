@@ -109,10 +109,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 登録済みが自分自身のときだけ解除する（別 HomeScreen が既に上書きして
     // いたら触らない）。⚠ notifier は [_refreshNotifier] から取る。ここで
     // `ref.read` すると必ず投げて、以降の解除に到達しない。
+    //
+    // ⚠⚠ **書き換えはフレームの外へ出す。**Riverpod は `dispose` を含む
+    // ライフサイクル中の provider 書き換えを禁じており、ここで直接書くと
+    // `Tried to modify a provider while the widget tree was building` を投げる。
+    // ⚠ **投げると unmount がその場で打ち切られる**ので、以降は Duplicate
+    // GlobalKey / `_lifecycleState == inactive` の assert 失敗が連鎖して赤画面に
+    // なる（＝ここは「解除が漏れる」では済まず、画面ごと壊れる）。
+    //
+    // ⚠ **同一性の判定も遅延先で行う。**新しい HomeScreen は initState の
+    // post-frame で登録するので、この解除より先に走る。判定を遅延先に置けば、
+    // そのとき不一致になって触らない（先に判定すると新しい登録を消す）。
     final refreshNotifier = _refreshNotifier;
-    if (refreshNotifier != null &&
-        refreshNotifier.state == _refreshCurrentTimeline) {
-      refreshNotifier.state = null;
+    final ownRefresh = _refreshCurrentTimeline;
+    if (refreshNotifier != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // ProviderScope ごと畳まれていれば触らない（アプリ終了時）。
+        if (!refreshNotifier.mounted) return;
+        if (refreshNotifier.state == ownRefresh) {
+          refreshNotifier.state = null;
+        }
+      });
     }
     WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);

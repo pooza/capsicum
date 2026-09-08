@@ -92,3 +92,49 @@ String maskComments(String source) {
   }
   return out.toString();
 }
+
+/// 文字列リテラルの**中身**を同じ長さの空白へ潰す（引用符は残す）。改行は残すので
+/// index も行番号もずれない。
+///
+/// ⚠ **[maskComments] は文字列を残す。**あちらは「`'https://…'` の中の `//` で
+/// 行を切らない」ためにリテラルを読み飛ばすだけなので、
+/// `log('notifier.state = null')` のような**説明文の中のコード片**はそのまま残る。
+/// 「その書き方をしていないこと」を見る検査は、これも潰してから見ること。
+///
+/// `'''` / `"""` と生文字列 (`r'…'`) を扱う。文字列内の補間 (`$x` / `${…}`) は
+/// 中身ごと潰す。検査は「どう書いてあるか」を見るので、補間の中まで見る必要が
+/// あるケースが出たら、そのときに分ける。
+String maskStrings(String source) {
+  final out = StringBuffer();
+  for (var i = 0; i < source.length; i++) {
+    final c = source[i];
+    if (c != "'" && c != '"') {
+      out.write(c);
+      continue;
+    }
+    final triple =
+        i + 2 < source.length && source[i + 1] == c && source[i + 2] == c;
+    final delimiter = triple ? c * 3 : c;
+    out.write(delimiter);
+    i += delimiter.length;
+    while (i < source.length) {
+      if (source[i] == r'\') {
+        out.write('  ');
+        i += 2;
+        continue;
+      }
+      if (source.startsWith(delimiter, i)) break;
+      // 1 行の文字列は改行で終わる（閉じ忘れで残りを全部潰さない）。
+      if (!triple && source[i] == '\n') break;
+      out.write(source[i] == '\n' ? '\n' : ' ');
+      i++;
+    }
+    if (i < source.length && source.startsWith(delimiter, i)) {
+      out.write(delimiter);
+      i += delimiter.length;
+    }
+    // 外側の for が i++ するので 1 戻す。
+    i--;
+  }
+  return out.toString();
+}
