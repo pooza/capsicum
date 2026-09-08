@@ -31,6 +31,17 @@ class OAuthKeepAlive {
     'net.shrieker.capsicum/oauth_keepalive',
   );
 
+  /// 認可待ちの世代。
+  ///
+  /// ⚠⚠ **keep-alive はプロセスに 1 つしか無いのに、ログイン試行は重なりうる。**
+  /// #620 の silent recovery や二重タップで 2 本目が始まると、**1 本目の後片づけ
+  /// （`finally` / `dispose`）が 2 本目の keep-alive を止めてしまう**。実機で
+  /// 踏んだ（2026-09-09・08:04:34 と 08:05:21 に二重起動）。
+  ///
+  /// 既存の `HttpServer` 側が `identical(_oauthServer, server)` で同じ罠を
+  /// 塞いでいるので、それに合わせる。
+  static int _generation = 0;
+
   /// この経路が要るプラットフォームか。
   ///
   /// ⚠ UI 層に `Platform.isX` を直書きしない指針 (#650) に従い、判定はここに
@@ -42,18 +53,22 @@ class OAuthKeepAlive {
   /// ⚠⚠ **アプリがフォアグラウンドにいるあいだに呼ぶこと。**foreground service
   /// はバックグラウンドからは起動できないので、**ブラウザを開いた後では遅い**。
   ///
-  /// 戻り値は「実際に keep-alive が上がったか」。端末が Android 12 未満なら
-  /// freezer が無いので `false`（失敗ではない）。
-  static Future<bool> start() async {
-    if (!isSupported) return false;
+  /// 戻り値は [stop] に渡すためのセッション。⚠ **捨てないこと** —— 世代が
+  /// 分からなくなると、古い試行が新しい試行の keep-alive を止める。
+  static Future<OAuthKeepAliveSession> start() async {
+    final token = ++_generation;
+    if (!isSupported) {
+      return OAuthKeepAliveSession._(token: token, active: false);
+    }
     try {
-      return await _channel.invokeMethod<bool>('start') ?? false;
+      final active = await _channel.invokeMethod<bool>('start') ?? false;
+      return OAuthKeepAliveSession._(token: token, active: active);
     } on PlatformException catch (e) {
       // ⚠ **ここで例外を投げ上げないこと。**keep-alive はログインの本筋では
       // なく、上げられなくても #1108 以前と同じ挙動に落ちるだけ。上げ損ねた
       // ことでログインそのものを失敗させるほうが害が大きい。
       debugPrint('capsicum: oauth_keepalive: start failed: ${e.code}');
-      return false;
+      return OAuthKeepAliveSession._(token: token, active: false);
     }
   }
 
@@ -62,12 +77,30 @@ class OAuthKeepAlive {
   /// ⚠ **認可完了・中断・タイムアウトのいずれでも必ず呼ぶ。**通知が出しっぱなしに
   /// なるうえ、`shortService` は 3 分で OS に打ち切られるため、放置は無意味な
   /// 常駐にしかならない。
-  static Future<void> stop() async {
+  ///
+  /// ⚠⚠ **[start] が返したセッションを渡すこと。**世代が進んでいたら（＝別の
+  /// ログイン試行が始まっていたら）何もしない。渡さないと、**古い試行の後片づけ
+  /// が新しい試行の keep-alive を止め、3 分打ち切りの案内通知まで消す**。
+  static Future<void> stop(OAuthKeepAliveSession? session) async {
     if (!isSupported) return;
+    if (session != null && session.token != _generation) return;
     try {
       await _channel.invokeMethod<void>('stop');
     } on PlatformException catch (e) {
       debugPrint('capsicum: oauth_keepalive: stop failed: ${e.code}');
     }
   }
+}
+
+/// [OAuthKeepAlive.start] が返す 1 回ぶんの認可待ち。
+class OAuthKeepAliveSession {
+  const OAuthKeepAliveSession._({required this.token, required this.active});
+
+  /// 何本目の認可待ちか。[OAuthKeepAlive.stop] の世代判定に使う。
+  final int token;
+
+  /// 実際に keep-alive が上がったか。
+  ///
+  /// Android 12 未満は freezer が無いので `false` になるが、**失敗ではない**。
+  final bool active;
 }

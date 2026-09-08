@@ -150,6 +150,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// 閉じてポートを解放する。
   HttpServer? _oauthServer;
 
+  /// この画面が上げた認可待ちの keep-alive (#1108)。⚠ `dispose` で自分の世代
+  /// だけを下ろすために持つ（他の試行のものを止めないため）。
+  OAuthKeepAliveSession? _keepAlive;
+
   // Server info
   String? _serverName;
   String? _serverDescription;
@@ -198,7 +202,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // ⚠ **サーバと同じ理由でここでも下ろす (#1108)。**画面を離れても認可待ちの
     // future は 5 分の timeout まで生き残るので、`finally` に任せると通知が
     // 出しっぱなしになる。⚠ 二重停止は無害（`stopService` は冪等）。
-    unawaited(OAuthKeepAlive.stop());
+    // ⚠⚠ **世代を渡す** —— 渡さないと、この画面の後片づけが**次のログイン画面**の
+    // keep-alive を止める。
+    unawaited(OAuthKeepAlive.stop(_keepAlive));
     super.dispose();
   }
 
@@ -414,8 +420,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // グラウンドからは起動できないので、ブラウザを開いた後では遅い。これが
     // 無いと、認可を待つあいだに凍結されて **callback ページを返せず**、
     // ブラウザが固まったまま戻ってこない（裏に回って 70 秒で凍結される）。
-    final keptAlive = await OAuthKeepAlive.start();
-    _logLoginStep('oauth_keepalive.start', data: {'kept': keptAlive});
+    final keepAlive = await OAuthKeepAlive.start();
+    _keepAlive = keepAlive;
+    _logLoginStep('oauth_keepalive.start', data: {'kept': keepAlive.active});
     try {
       final launched = await launchUrlSafely(
         authorizationUrl,
@@ -492,8 +499,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。サーバを
-      // 閉じるのと同じ寿命で下ろす。
-      await OAuthKeepAlive.stop();
+      // 閉じるのと同じ寿命で下ろす。⚠⚠ **自分の世代だけを下ろす** ——
+      // すぐ下の `identical(_oauthServer, server)` と同じ理由で、2 本目の試行が
+      // 始まっていたらここは何もしてはいけない。
+      await OAuthKeepAlive.stop(keepAlive);
       await server.close(force: true);
       if (identical(_oauthServer, server)) _oauthServer = null;
     }

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 
 /**
  * OAuth の loopback callback を待っているあいだ、プロセスを凍結させないための
@@ -33,11 +34,18 @@ import android.os.IBinder
  *
  * ## ⚠⚠ `shortService` の 3 分を守らないと ANR する
  *
- * 型に `shortService` を選んだのは、**型固有の権限も Play への用途申告も要らない**
- * ため。代わりに制限時間が約 3 分あり、**超過して自分で止めないとアプリごと ANR
- * する**（`FOREGROUND_SERVICE` 以外に依存を増やさない代償）。[onTimeout] で必ず
- * 止める。⚠ **API 34 と API 35 でシグネチャが違う**ので両方を override すること。
- * 片方だけだと、もう片方の API レベルで既定実装に落ちて ANR する。
+ * `shortService` は**型固有の権限が要らない**（`FOREGROUND_SERVICE` だけで済む）
+ * 代わりに、制限時間が約 3 分ある。**超過して自分で止めないとアプリごと ANR
+ * する**ので、[onTimeout] で必ず止める。⚠ **API 34 と API 35 でシグネチャが違う**
+ * ので両方を override すること。片方だけだと、もう片方の API レベルで既定実装に
+ * 落ちて ANR する。
+ *
+ * ⚠ **「Play への用途申告が要らないから」で選んだのではない**（起票時はそう考えて
+ * いたが、調べて否定された）。**申告は宣言したすべての型が対象**で、機能説明と
+ * 動作を示す動画の提出が要る。それでもこの型のままにしたのは、上限を受け入れる
+ * 理由が「意味の正直さ」に変わったため —— OAuth の認可待ちは実際に「短く重要な
+ * 処理」で、審査で説明しやすい。`dataSync` / `specialUse` なら上限は無いが、
+ * 用途の説明が苦しくなる。
  *
  * 3 分を過ぎたら凍結され得るが、そのときの挙動は**この修正が入る前と同じ**
  * （手動でアプリに戻れば #1057 の経路でホームに着く）。退行はしない。
@@ -107,7 +115,14 @@ class OAuthKeepAliveService : Service() {
      * ブラウザに居ても見えるので、いちばん見せたい相手に届く。
      */
     private fun handleTimeout() {
-        postReturnHint()
+        // ⚠⚠ **案内で転んでも必ず止める。**`shortService` は時間内に自分で
+        // 止めないと **アプリごと ANR する**。案内は「あると親切」なだけの
+        // 付け足しなので、それが原因で本体を巻き込むことは許されない。
+        try {
+            postReturnHint()
+        } catch (e: Exception) {
+            Log.w(TAG, "failed to post the return hint", e)
+        }
         stopSelf()
     }
 
@@ -153,6 +168,7 @@ class OAuthKeepAliveService : Service() {
         private const val NOTIFICATION_ID = 4108
         private const val HINT_CHANNEL_ID = "oauth_return_hint"
         private const val HINT_NOTIFICATION_ID = 4109
+        private const val TAG = "OAuthKeepAlive"
 
         /**
          * この端末で keep-alive を上げる意味があるか。
