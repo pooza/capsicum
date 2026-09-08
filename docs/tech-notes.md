@@ -197,6 +197,24 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 派生注意: 移行で旧 item が「読めるようになる」と、そこに残っていた **stale な値が再利用される**副作用がある。capsicum では古い `client_creds`（`capsicum://oauth` era 登録）が localhost redirect_uri で `invalid_redirect_uri` を招いた。client_creds に redirect_uri を併記し一致時のみ再利用する形で解消。
 
+### Linux の secure storage は読み取り失敗を分類できない — 失敗で secret を消してはいけない（#1104）
+
+`flutter_secure_storage_linux` は **read / write / readAll / delete / deleteAll / containsKey の全失敗を `PlatformException(code: "Libsecret error")` 1 種類に潰す**（`linux/flutter_secure_storage_linux_plugin.cc` の `catch (const gchar *e)`）。⚠ **Apple の `errSecInteractionNotAllowed` (-25308) のような「transient を名指しするコード」が存在しない**ので、`_isKeychainTransient` 相当の分岐を Linux 向けに書き足す道は最初から無い。
+
+さらに `linux/include/Secret.hpp` の `readFromKeyring()` は、**読み取りのたびに `warmupKeyring()` を呼ぶ**。中身は `FlutterSecureStorage Control` という**別 item への dummy 書き込み**で（crbug.com/660005 の回避策）、失敗するとリテラル `throw "Failed to unlock the keyring"` になる。
+
+⚠⚠ **ここから「secret は無傷」が構造的に保証される。**warmup はユーザーの item を読みも消しもしていないので、この例外が飛んだ時点で**保存済みの値は損なわれていない**。プラグイン自身のコメントも「**ユーザーが解錠プロンプトをキャンセルしたのか区別できない**」と明記しており、**解錠のキャンセル 1 回**でも同じ例外になる。
+
+したがって **Linux では読み取り失敗を理由に `delete` してはいけない**。誤りのコストが対称でないのが決め手で、permanent を消し損ねても**再ログインが secret を上書きするので無害**だが、transient を permanent と誤判定すると**その場でアカウントが消える**（`restoreSessions` は保存済みアカウントを順に回すので**全件が対象**）。同じ理由で Android（Keystore）も以前から除外されていた（#730 / #731）ので、判断の軸を「プラットフォーム」ではなく **読み取り失敗から permanent を判別できるか**（`mayDeleteSecretOnReadFailure`・Apple のみ true）に置いた。Windows（DPAPI）も同じ穴なので一緒に塞がる。
+
+⚠ **delete は 2 箇所ある**（`getSecrets` の `on PlatformException` 側と `catch` 側）。`BadPaddingException` のように `PlatformException` でラップされずに来る経路があるため、**片方だけでは塞がらない**。
+
+⚠ **「応答が返らない」（#1085）と「例外で断る」（#1104）は別の壊れ方。**前者は `kill -STOP` で作れてタイムアウトで受け、後者はサービスに到達できない / 解錠が成立しないときに出る。**どちらか一方の対処では塞がらない。**
+
+#### 隔離して実機検証する型（本物のキーリングに触れない）
+
+⚠ **LXC は不要。**隔離が要る軸は 2 つだけで、`dbus-run-session`（私設セッションバス＝`org.freedesktop.secrets` の接続先）と `XDG_DATA_HOME` の差し替え（キーリングの実体ファイル）で足りる。⚠ **`XDG_RUNTIME_DIR` も差し替える** — さもないと `discover_other_daemon` が `/run/user/<uid>/keyring` の**本物を見つけて起動を譲る**。⚠ **D-Bus activation の前に `gnome-keyring-daemon --unlock --components=secrets` でキーリングを作っておく**（無いと解錠プロンプト待ちで固まる）。⚠ **`kill -STOP` の対象 PID には安全弁を付ける**（本物の PID / `control-directory=/run/user/<uid>` を弾く。実際に PID 取得に失敗して `/sbin/init` を指した）。
+
 ## ネイティブプッシュ（APNs / WNS）
 
 ### macOS ネイティブ APNs 配線の 3 つの罠（#468）
