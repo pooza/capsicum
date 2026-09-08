@@ -113,3 +113,67 @@ bool get usesKeychainAccessibility =>
 /// すること。**
 @visibleForTesting
 bool? debugKeychainAccessibilityOverride;
+
+/// secure storage の**読み取り失敗**から「permanent（もう二度と読めない）」を
+/// 判別できるプラットフォームか (#1104)。Apple 系（iOS / macOS）だけ true。
+///
+/// ⚠⚠ **false のプラットフォームで secret を delete してはいけない。**delete は
+/// 再ログインを強制する破壊的操作なので、**transient を permanent と誤判定した
+/// 瞬間にユーザーのアカウントが消える**。permanent を消し損ねても、再ログインが
+/// secret を上書きするので無害 —— **誤りのコストが対称でない。**
+///
+/// - **Apple (Keychain)**: `errSecInteractionNotAllowed` (-25308) のような
+///   **文書化された transient コード**が返るので、それ以外を permanent
+///   （再インストールで item が壊れた等）と見なせる
+/// - **Android (EncryptedSharedPreferences / Keystore)**: 起動時のロック中・
+///   Keystore 準備前・register race（transient）と、再インストールでの鍵再生成
+///   （permanent）が**同じ形で返る** (#730 / #731)
+/// - **Linux (libsecret)**: `PlatformException(Libsecret error, …)` という
+///   **粒度の粗い 1 種類**しか返らない。⚠ 実際に観測された
+///   `Failed to unlock the keyring` は**解錠に失敗しただけ＝定義上 transient**
+///   （解錠ダイアログのキャンセル / login keyring のパスワード不一致）なのに、
+///   従来はこれで secret を消していた（Sentry `CAPSICUM-53` / #1104）
+/// - **Windows (DPAPI)**: 同様に transient を名指しできない
+///
+/// storage 層に `Platform.isX` を直書きしない設計指針 (#650) に従い機能名で
+/// 公開する。
+bool get mayDeleteSecretOnReadFailure =>
+    debugMayDeleteSecretOnReadFailureOverride ??
+    (!kIsWeb && (Platform.isIOS || Platform.isMacOS));
+
+/// テスト用の差し替え口 (#1104)。
+///
+/// ⚠⚠ **分岐の両側をテストから踏めるようにするため必須。**#1085 で
+/// `Platform.isIOS || Platform.isMacOS` を直書きしたら、手元（macOS）で緑・
+/// CI（Linux）で赤になった。**ローカルの全数テストはプラットフォーム分岐の
+/// 検査にならない。**
+@visibleForTesting
+bool? debugMayDeleteSecretOnReadFailureOverride;
+
+/// secure storage の backend が D-Bus の Secret Service（libsecret →
+/// gnome-keyring / kwalletd）かどうか (#1085 / #1104)。Linux のみ true。
+///
+/// ⚠ **案内の文面が「キーリング / Secret Service」と OS の呼び名を名指しする**
+/// ので、その文面が真になるプラットフォームでだけ旗を立てる。Android の
+/// Keystore 失敗で「キーリングが応答しませんでした」と出しても、ユーザーは
+/// 存在しないものを探すことになる。
+bool get usesSecretServiceKeyring =>
+    debugUsesSecretServiceKeyringOverride ?? (!kIsWeb && Platform.isLinux);
+
+/// テスト用の差し替え口 (#1104)。
+@visibleForTesting
+bool? debugUsesSecretServiceKeyringOverride;
+
+/// secure storage の backend 名。Sentry の fingerprint 接尾辞に使う (#1104)。
+///
+/// ⚠ **プラットフォーム名ではなく backend 名。**同じ「読めなかった」でも、
+/// 調べに行く先が Keystore なのか libsecret なのか DPAPI なのかで切り分けが
+/// 変わる。⚠ **`android_keystore` は #730 / #731 から使っている既存の値なので
+/// 変えない**（変えると Sentry の既存 issue と分断される）。
+String get secretStoreTag {
+  if (kIsWeb) return 'unknown';
+  if (Platform.isAndroid) return 'android_keystore';
+  if (Platform.isLinux) return 'libsecret';
+  if (Platform.isWindows) return 'dpapi';
+  return 'keychain';
+}

@@ -66,6 +66,20 @@ class SecureStorageHealth {
     );
   }
 
+  /// **応答は返ったが読めなかった**ことを記録する (#1104)。
+  ///
+  /// ⚠ **[markUnavailable] と同じ旗を立てる。**ユーザーから見ると「ログイン情報
+  /// が読めない」で同じで、次の一手（ほかのアプリでも失敗していないか・端末を
+  /// 再起動する）も同じ。⚠ **区別が要るのは開発側だけ**で、そちらは Sentry の
+  /// 例外（`_reportOnce`）が持っている。
+  ///
+  /// ⚠ **ここでは Sentry へ送らない。**呼び出し側が例外そのものを送っているので、
+  /// 同じ事実を 2 回上げると母数が二重に見える。
+  static void markRefused(Object cause) {
+    debugPrint('capsicum: secure storage refused the read: $cause');
+    notifier.value = true;
+  }
+
   @visibleForTesting
   static void resetForTest() {
     notifier.value = false;

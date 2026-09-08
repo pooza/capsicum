@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
@@ -154,21 +153,16 @@ class AccountStorage {
         // secret は残っている。解錠後の再試行で読めるので transient (#959)。
         throw TransientSecretUnavailableException(e);
       }
-      // Android の Keystore 復号エラーは、transient（起動時にロック中 / Keystore
-      // 準備前 / register race）と permanent（再インストールで鍵再生成）が
-      // 判別しづらい。delete は再ログインを強制する破壊的操作で、一過性のときに
-      // 「複数アカウントが一斉ログアウト」を招く (#730 / #731)。Android では
-      // delete せず secret を残して次回起動で再試行する（permanent でも再ログイン
-      // が secret を上書きするので無害）。-25308 のような明示 transient コードが
-      // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
-      if (Platform.isAndroid) {
-        debugLogException(
-          'capsicum: android keystore read error for '
-          '${sentrySafeAccountKey(accountKey)}, '
-          'keeping secret (code=${e.code})',
-          e,
-        );
-        _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
+      // -25308 のような**文書化された transient コード**が無いプラットフォーム
+      // （Android の Keystore / Linux の libsecret / Windows の DPAPI）では、
+      // transient（起動時にロック中 / 準備前 / register race / キーリング未解錠）
+      // と permanent（再インストールで鍵再生成）が**同じ形で返る**ため
+      // _isKeychainTransient が拾えない。delete は再ログインを強制する破壊的
+      // 操作で、一過性のときに「複数アカウントが一斉ログアウト」を招く
+      // (#730 / #731 / #1104)。secret を残して次回起動で再試行する（permanent
+      // でも再ログインが secret を上書きするので無害）。
+      if (!mayDeleteSecretOnReadFailure) {
+        _keepSecretOnReadFailure(accountKey, e, st, code: e.code);
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
         throw TransientSecretUnavailableException(e);
       }
@@ -189,16 +183,42 @@ class AccountStorage {
         '${sentrySafeAccountKey(accountKey)}',
         e,
       );
-      if (Platform.isAndroid) {
-        _reportOnce('secret:$accountKey:android_keystore', e, st);
-        // Android は secret を消さない（一過性の Keystore 失敗と区別しづらい）ので
-        // transient 扱い (#959 / #730 / #731)。
+      if (!mayDeleteSecretOnReadFailure) {
+        // 一過性の失敗と区別できないプラットフォームでは secret を消さない
+        // (#959 / #730 / #731 / #1104)。⚠ **上の PlatformException 側と同じ
+        // 判断をここにも置く。**片方だけ直しても塞がらない（`BadPaddingException`
+        // のように PlatformException でラップされずに来る経路がある）。
+        _keepSecretOnReadFailure(accountKey, e, st);
         throw TransientSecretUnavailableException(e);
       }
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
     }
+  }
+
+  /// 読み取りに失敗したが **secret は消さなかった**ことを記録する (#1104)。
+  ///
+  /// ⚠ **旗を立てるのは Secret Service backend のときだけ。**案内の文面が
+  /// 「キーリング / Secret Service」と OS の呼び名を名指しするので、Android の
+  /// Keystore 失敗で出すとユーザーは存在しないものを探すことになる。
+  ///
+  /// ⚠ Sentry へはここでは送らない。[_reportOnce] が例外そのものを送るので、
+  /// 同じ事実を 2 回上げない。
+  static void _keepSecretOnReadFailure(
+    String accountKey,
+    Object e,
+    StackTrace st, {
+    String? code,
+  }) {
+    debugLogException(
+      'capsicum: $secretStoreTag read error for '
+      '${sentrySafeAccountKey(accountKey)}, keeping secret'
+      '${code != null ? ' (code=$code)' : ''}',
+      e,
+    );
+    _reportOnce('secret:$accountKey:$secretStoreTag', e, st, code: code);
+    if (usesSecretServiceKeyring) SecureStorageHealth.markRefused(e);
   }
 
   /// flutter_secure_storage の MethodChannel が plugin register より先に
