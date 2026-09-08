@@ -159,17 +159,31 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: authNotifier,
-    redirect: (context, state) => resolveRedirect(
-      isLoggedIn: authNotifier.isLoggedIn,
-      location: state.matchedLocation,
+    redirect: (context, state) {
       // ⚠ **旗は auth 画面以外でも消費する (#1057)。**`LoginScreen` が生きて
       // いて自力で `/home` へ行けた場合に残すと、**次に `/server` を開いた
       // 瞬間**（＝2 つ目のアカウントを足そうとしたとき）に跳ね返される。
       // だから判定の中ではなく、ここで無条件に読み取って落とす。
-      justLoggedIn: ref
+      final justLoggedIn = ref
           .read(accountManagerProvider.notifier)
-          .consumePendingPostLogin(),
-    ),
+          .consumePendingPostLogin();
+      final to = resolveRedirect(
+        isLoggedIn: authNotifier.isLoggedIn,
+        location: state.matchedLocation,
+        justLoggedIn: justLoggedIn,
+      );
+      // ⚠ **旗を消費したことを残す (#1057)。**これが無いと、ログイン後に
+      // `/home` が出たとき「フォールバックが効いた」のか「`LoginScreen` が
+      // 自力で遷移した」のかを**実機の確認で区別できない**（実際に区別できず、
+      // 検証が「たぶん通った」で止まった）。
+      if (justLoggedIn) {
+        debugPrint(
+          'capsicum: router: post-login flag consumed '
+          '(location=${state.matchedLocation} -> ${to ?? 'stay'})',
+        );
+      }
+      return to;
+    },
     routes: [
       GoRoute(
         path: '/splash',

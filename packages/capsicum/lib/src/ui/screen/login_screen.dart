@@ -1213,6 +1213,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // だけ増えて画面はサーバー選択のまま**になっていた。今は `addAccount` が
     // 立てた旗をルーターの `redirect` が拾って `/home` へ送る。
     // タブの既定（`timeline:home`）も `addAccount` 側へ移してある。
+    //
+    // ⚠ **画面が生き残ったかを残す (#1057)。**この 1 行が無いと、実機の確認で
+    // 「凍結を再現できたのか（＝フォールバックを踏んだのか）」が分からない。
+    debugPrint('capsicum: login: addAccount done (screen alive=$mounted)');
     if (!mounted) return;
 
     context.go('/home');
