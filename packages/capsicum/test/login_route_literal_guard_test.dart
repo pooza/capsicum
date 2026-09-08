@@ -89,9 +89,16 @@ void main() {
       // ⚠ **合成ソースだけでは足りない (docs/CLAUDE.md「ソース検査ガードの
       // 書き方」)。**自分が想定した書き方しか並べないので、実物の形を外して
       // いても緑になる。修正前のファイルそのものを食わせる。
+      //
+      // ⚠⚠ **SHA で固定する。**`HEAD:` で書くと、修正がコミットされた瞬間に
+      // 取り出されるのが**修正後**のファイルになり、当たらなくなる（実際に
+      // 赤にした）。ここで欲しいのは「歯が立つ実物」＝ `/login` を直書きして
+      // いた最後のコミットなので、動かない参照でなければ意味が無い。
+      // `c80318b4` = #1057 の 1 つ前の直し方。`analyze.yml` は
+      // `fetch-depth: 0` なので CI でも引ける。
       final before = Process.runSync('git', [
         'show',
-        'HEAD:packages/capsicum/lib/src/ui/screen/server_selection_screen.dart',
+        'c80318b4:packages/capsicum/lib/src/ui/screen/server_selection_screen.dart',
       ], workingDirectory: '../..');
       expect(before.exitCode, 0, reason: (before.stderr as String));
       final source = before.stdout as String;
