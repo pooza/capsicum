@@ -91,12 +91,6 @@ class _AuthNotifier extends ChangeNotifier {
     }
   }
 
-  /// ログイン状態が変わっていなくても `redirect` を回す (#1057)。
-  ///
-  /// ⚠ **2 つ目以降のアカウントを足したときは `isLoggedIn` が動かない**ので、
-  /// 上の setter だけでは再評価が起きない。ログイン直後の遷移を拾うために、
-  /// 明示的に促す口を開けてある。
-  void requestRedirect() => notifyListeners();
 }
 
 final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
@@ -109,11 +103,6 @@ final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
     // `/server`（サーバー選択画面）へ引き戻して、ログアウトしたように見える。
     // `/home` へ通れば HomeScreen が「接続できません／再試行」を出す (#792)。
     notifier.isLoggedIn = next.hasSession;
-    // 明示ログインの直後は、ログイン状態が動いていなくても redirect を回す
-    // (#1057)。判定そのものは redirect 側（旗を消費する側）が持つ。
-    if (ref.read(accountManagerProvider.notifier).hasPendingPostLogin) {
-      notifier.requestRedirect();
-    }
   });
 
   return notifier;
@@ -122,11 +111,54 @@ final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
 /// 認証ゲート（ログイン前に入れる画面）。
 const _authLocations = {'/login', '/server', '/splash', '/eula'};
 
-/// ログイン直後のフォールバック遷移が効く画面 (#1057)。
+/// `/login` が必要とする引数。
+class LoginArgs {
+  const LoginArgs({
+    required this.host,
+    required this.backendType,
+    this.softwareVersion,
+  });
+
+  final String host;
+  final BackendType backendType;
+  final String? softwareVersion;
+}
+
+/// `/login` の遷移先（クエリ付き）を組み立てる。
 ///
-/// ⚠ **`/splash` と `/eula` を含めない。**splash は自分でルーティングを決める
-/// 画面で、eula は同意を取り切る前に飛ばしてはいけない。
-const _postLoginBounceFrom = {'/login', '/server'};
+/// ⚠⚠ **`extra` で渡さないこと (#1057 / Sentry CAPSICUM-16)。**go_router は
+/// `refreshListenable` が鳴るたびに現在の RouteMatchList を**シリアライズ経由で
+/// 組み直す**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に
+/// 掛かり、[BackendType]（enum）のような JSON にできない値が 1 つでも入って
+/// いると **extra が丸ごと null に落ちる**（go_router 14.8 の
+/// `RouteMatchListCodec._toPrimitives`）。すると `/login` のフォールバックが
+/// 走って `/server` へ飛び、**OAuth の完走を待っている `LoginScreen` がその場で
+/// dispose される**。これが「認可は成功しているのにサーバー選択画面に戻る」の
+/// 正体だった。クエリ文字列は location そのものなので、この経路を通らない。
+///
+/// ⚠ **組み立てと読み取りを 1 箇所に置いてあるのは、検査が写しを見ないため。**
+/// 呼び出し側で `'/login'` を組み立て直すと、この往復のテストが実物を見なくなる。
+String loginLocation(LoginArgs args) => Uri(
+  path: '/login',
+  queryParameters: {
+    'host': args.host,
+    'backend': args.backendType.name,
+    if (args.softwareVersion != null) 'softwareVersion': args.softwareVersion!,
+  },
+).toString();
+
+/// [loginLocation] の逆。読めなければ null（呼び出し側が `/server` へ戻す）。
+LoginArgs? resolveLoginArgs(Uri uri) {
+  final query = uri.queryParameters;
+  final host = query['host'];
+  final backendType = BackendType.values.asNameMap()[query['backend']];
+  if (host == null || host.isEmpty || backendType == null) return null;
+  return LoginArgs(
+    host: host,
+    backendType: backendType,
+    softwareVersion: query['softwareVersion'],
+  );
+}
 
 /// 行き先を決める（副作用なし）。
 ///
@@ -134,56 +166,34 @@ const _postLoginBounceFrom = {'/login', '/server'};
 /// (#1057)。**「ログイン済みなら auth 画面から追い出す」と書くと、設定から
 /// 2 つ目のアカウントを足す導線（`/server` を開く）が壊れる。壊れていないことを
 /// テストで固定できるよう、`redirect` の中身をここへ出してある。
+///
+/// ⚠⚠ **ここでログイン直後の引き上げをやらないこと (#1057)。**[location] は
+/// `matchList.uri.path` で、**`push` で積んだぶんは反映されない**（go_router
+/// 14.8 の `RouteMatchList.push` は `copyWith(matches:)` だけで `uri` を
+/// 更新しない）。ホームから「アカウントを追加」→ `/server` → `/login` と
+/// 積んでも、ここに来る [location] は `/home` のままになる。実機で 1 度
+/// これを踏んで「旗は消費されたのに引き上げが起きない」状態を作った。
+/// ログイン直後の遷移は [routerProvider] の listener が持つ。
 @visibleForTesting
 String? resolveRedirect({
   required bool isLoggedIn,
   required String location,
-  required bool justLoggedIn,
 }) {
   if (!isLoggedIn && !_authLocations.contains(location)) return '/server';
-
-  // ⚠⚠ **ログイン後の遷移を `LoginScreen` の生死に依存させない (#1057)。**
-  // Android は OAuth のあいだ freezer に凍結されるので、解凍されてトークン
-  // 交換が完走したときには画面が消えていることがある。消えていると
-  // `if (!mounted) return;` で黙って抜け、**アカウントだけ増えて画面は
-  // サーバー選択のまま**になる（保存は完走しているので、再起動するとログイン
-  // 済みで開く）。
-  if (justLoggedIn && _postLoginBounceFrom.contains(location)) return '/home';
   return null;
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = ref.read(_authNotifierProvider);
 
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: authNotifier,
-    redirect: (context, state) {
-      // ⚠ **旗は auth 画面以外でも消費する (#1057)。**`LoginScreen` が生きて
-      // いて自力で `/home` へ行けた場合に残すと、**次に `/server` を開いた
-      // 瞬間**（＝2 つ目のアカウントを足そうとしたとき）に跳ね返される。
-      // だから判定の中ではなく、ここで無条件に読み取って落とす。
-      final justLoggedIn = ref
-          .read(accountManagerProvider.notifier)
-          .consumePendingPostLogin();
-      final to = resolveRedirect(
-        isLoggedIn: authNotifier.isLoggedIn,
-        location: state.matchedLocation,
-        justLoggedIn: justLoggedIn,
-      );
-      // ⚠ **旗を消費したことを残す (#1057)。**これが無いと、ログイン後に
-      // `/home` が出たとき「フォールバックが効いた」のか「`LoginScreen` が
-      // 自力で遷移した」のかを**実機の確認で区別できない**（実際に区別できず、
-      // 検証が「たぶん通った」で止まった）。
-      if (justLoggedIn) {
-        debugPrint(
-          'capsicum: router: post-login flag consumed '
-          '(location=${state.matchedLocation} -> ${to ?? 'stay'})',
-        );
-      }
-      return to;
-    },
+    redirect: (context, state) => resolveRedirect(
+      isLoggedIn: authNotifier.isLoggedIn,
+      location: state.matchedLocation,
+    ),
     routes: [
       GoRoute(
         path: '/splash',
@@ -200,20 +210,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/login',
+        // 引数は `extra` ではなくクエリで運ぶ (#1057)。理由は
+        // [loginLocation] のコメント。
         builder: (context, state) {
-          // rebuild 中に extra が失われるケース（Sentry CAPSICUM-16）に備え、
-          // 強制 unwrap せず null の場合はサーバー選択へ戻す。
-          final extra = state.extra as Map<String, dynamic>?;
-          if (extra == null) {
+          final args = resolveLoginArgs(state.uri);
+          if (args == null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (context.mounted) context.go('/server');
             });
             return const SizedBox.shrink();
           }
           return LoginScreen(
-            host: extra['host'] as String,
-            backendType: extra['backendType'] as BackendType,
-            softwareVersion: extra['softwareVersion'] as String?,
+            host: args.host,
+            backendType: args.backendType,
+            softwareVersion: args.softwareVersion,
           );
         },
       ),
@@ -672,6 +682,31 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // ⚠⚠ **ログイン直後は必ずホームへ出す (#1057)。**`LoginScreen` 自身も
+  // `context.go('/home')` を呼ぶが、Android の OAuth は loopback callback
+  // （#276 / #654）でアプリが背面に回るため、**解凍されてトークン交換が
+  // 完走したときに画面が生きているとは限らない**。生きていないと
+  // `if (!mounted) return;` で黙って抜け、**アカウントだけ増えて画面は
+  // サーバー選択のまま**になる（保存は完走しているので再起動すると回復する）。
+  //
+  // ⚠ **`redirect` ではなくここでやる。**`redirect` に来る location は
+  // `push` で積んだぶんを含まないので、「今どの画面に居るか」で判断できない
+  // （[resolveRedirect] のコメント）。旗が立った＝ログインが完走したという
+  // 事実だけで動かす。
+  //
+  // ⚠ 旗が立つのは [AccountManager.addAccount] だけで、呼び出し元は
+  // `LoginScreen` の 1 箇所。セッション復元は通らないので、起動のたびに
+  // ホームへ引き戻すことはない。
+  ref.listen(accountManagerProvider, (prev, next) {
+    if (!ref.read(accountManagerProvider.notifier).consumePendingPostLogin()) {
+      return;
+    }
+    debugPrint('capsicum: router: post-login -> /home');
+    router.go('/home');
+  });
+
+  return router;
 });
 
 /// `state.extra` を失った状態で復帰したときの受け皿 (#1083-F)。

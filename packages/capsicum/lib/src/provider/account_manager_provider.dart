@@ -154,19 +154,16 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// 立たない。
   bool _pendingPostLogin = false;
 
-  /// 旗を読み取り、同時に落とす。ルーターの `redirect` から呼ぶ (#1057)。
+  /// 旗を読み取り、同時に落とす。`routerProvider` の listener から呼ぶ
+  /// (#1057)。
   ///
-  /// ⚠ **auth 画面以外でも消費すること。**`LoginScreen` が生きていて自力で
-  /// `/home` へ行けた場合、旗を残すと**次に `/server` を開いた瞬間**（＝
-  /// 2 つ目のアカウントを足そうとしたとき）に跳ね返される。
+  /// ⚠ **必ず消費すること。**残すと、次にこの listener が走ったとき（＝別の
+  /// 理由でアカウント一覧が動いたとき）にホームへ引き戻される。
   bool consumePendingPostLogin() {
     final pending = _pendingPostLogin;
     _pendingPostLogin = false;
     return pending;
   }
-
-  /// 旗が立っているか（消費しない）。ルーターが再評価を促すためだけに読む。
-  bool get hasPendingPostLogin => _pendingPostLogin;
 
   Future<void> addAccount(Account account) async {
     final storage = ref.read(accountStorageProvider);
