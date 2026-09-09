@@ -40,6 +40,7 @@ import '../util/drive_description_sync.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
 import '../util/text_length_counter.dart';
@@ -408,9 +409,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
-  // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
-  // post-frame で 1 度出すためのフラグ (#703)。
-  bool _redraftPollDropped = false;
   bool _sending = false;
   // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
   // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
@@ -641,10 +639,42 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (redraft.attachments.isNotEmpty) {
         _attachments.addAll(redraft.attachments.map(_MediaEntry.drive));
       }
-      // アンケートは引き継がない（投票結果がリセットされるため）。元投稿に
-      // アンケートが付いていた場合は post-frame で注釈を出す。
-      if (redraft.poll != null) {
-        _redraftPollDropped = true;
+      // ⚠⚠ **見えない状態は引き継がないと「無言で変わる」(#1113)。**
+      // `scope` は引き継ぐのに `localOnly` を落としていたので、「ローカルの
+      // み」で投稿したものを再編集すると**旗だけ外れて連合へ流れて**いた。
+      // 画面上は何も変わったように見えないので、気づく手掛かりが無い。
+      _localOnly = redraft.localOnly;
+      // 言語も同じく見えない状態。⚠ 端末ロケールで上書きされないよう、
+      // 既定値を入れる `_language` の初期化より**後**でここが走る前提。
+      if (redraft.language != null) _language = redraft.language;
+      // ⚠ **投票は引き継ぐ (#1113)。**旧実装は「投票結果がリセットされるため」
+      // として落としていたが、**削除して再編集は元投稿ごと消える操作**なので、
+      // 引き継ごうが引き継ぐまいと結果はリセットされる。理由が成立していない。
+      //
+      // ⚠ **引き継ぐ理由は「便利」であって整合の保証ではない。**質問文（本文）を
+      // 書き換えれば選択肢と食い違いうるが、**選択肢はフォームに出ていて編集も
+      // 削除もできる**ので、ユーザーが直せる。`localOnly` のような「見えない
+      // まま変わる」性質とは別物（`redraft_carry_over.dart` の doc）。
+      final poll = redraft.poll;
+      if (poll != null && poll.options.isNotEmpty) {
+        _pollEnabled = true;
+        for (final c in _pollControllers) {
+          c.dispose();
+        }
+        _pollControllers
+          ..clear()
+          ..addAll(
+            poll.options.map((o) => TextEditingController(text: o.title)),
+          );
+        _pollMultiple = poll.multiple;
+        // ⚠ `expiresAt`（絶対時刻）は `PostDraft` の `pollExpiresIn`（残り秒数）
+        // へそのまま渡せない。期限切れなら既定へ落とす（2026-09-10 pooza 判断）。
+        _pollExpiresIn = redraftPollExpiresIn(
+          expiresAt: poll.expiresAt,
+          now: DateTime.now(),
+          allowed: _pollDurationOptions.keys,
+          fallback: _pollExpiresIn,
+        );
       }
     } else if (replyTo != null) {
       _scope = replyTo.scope;
@@ -694,7 +724,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final adapter = ref.read(currentAdapterProvider);
-      if (adapter is MastodonAdapter) {
+      // ⚠⚠ **既に決まっているなら上書きしない (#1113)。**ここは post-frame なので
+      // `initState` の redraft 引き継ぎ**より後**に走る。無条件に代入していた
+      // ため、**元投稿の言語を引き継いでも端末ロケールで潰されていた**
+      // （引き継ぎを足すときに実際に踏みかけた）。
+      if (adapter is MastodonAdapter && _language == null) {
         setState(
           () => _language = Localizations.localeOf(context).languageCode,
         );
@@ -704,12 +738,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
       if (adapter is CustomEmojiSupport) {
         _loadAllEmojis(adapter as CustomEmojiSupport);
-      }
-      // redraft 元にアンケートが付いていた場合の引き継ぎ不可注釈 (#703)。
-      if (_redraftPollDropped) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('アンケートは引き継げません。再投稿時に再設定してください。')),
-        );
       }
     });
   }
@@ -3203,7 +3231,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
-          inReplyToId: widget.replyTo?.id,
+          // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
+          // 単独投稿になり、連合先では文脈の無い投稿として流れる。
+          inReplyToId: resolveComposeInReplyToId(
+            widget.replyTo,
+            widget.redraft,
+          ),
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
@@ -3391,7 +3424,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
-          inReplyToId: widget.replyTo?.id,
+          // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
+          // 単独投稿になり、連合先では文脈の無い投稿として流れる。
+          inReplyToId: resolveComposeInReplyToId(
+            widget.replyTo,
+            widget.redraft,
+          ),
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,

@@ -1,0 +1,251 @@
+import 'dart:io';
+
+import 'package:capsicum/src/ui/util/redraft_carry_over.dart';
+import 'package:capsicum_core/capsicum_core.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'support/dart_source.dart';
+
+/// #1113: 「削除して再編集」の引き継ぎ漏れを、**項目が増えたときに落とす**。
+///
+/// ## ⚠⚠ 同じ形が 4 回続いた
+///
+/// #703（CW / 添付 / 閲覧注意）→ #756（引用）→ #384（チャンネル）→ #1113
+/// （返信先 / ローカルのみ / 言語 / 投票）。**そのたびに 1 項目ずつ足してきた**
+/// ので、`PostDraft` に項目が増えるたびに同じ漏れが起きる。
+///
+/// ⚠ **1 項目ずつ吟味する運用に戻さない。**外部の参照点（両 WebUI の挙動）を
+/// 置き、外れる項目は理由を書く。判断そのものは
+/// `lib/src/ui/util/redraft_carry_over.dart` の doc が正本。
+void main() {
+  /// `PostDraft` の項目名を**宣言から読む**。
+  ///
+  /// ⚠ **テスト側に列挙を書かない。**項目が増えたときに書き足すのを忘れると、
+  /// この検査自体が古い母数のまま緑になる（それがこの Issue の形そのもの）。
+  Set<String> postDraftFields() {
+    final source = maskComments(
+      File('../capsicum_core/lib/src/model/post_draft.dart').readAsStringSync(),
+    );
+    final body = source.substring(source.indexOf('class PostDraft'));
+    return RegExp(
+      r'final\s+[\w<>,?\s]+?\s+(\w+);',
+    ).allMatches(body).map((m) => m.group(1)!).toSet();
+  }
+
+  test('探索が空振りしていない', () {
+    final fields = postDraftFields();
+    expect(
+      fields.length,
+      greaterThan(10),
+      reason: 'PostDraft の項目を読めていない。モデルの書き方が変わったらこの検査も直す',
+    );
+    // 既知の項目が拾えていること（正規表現が壊れたら空集合でも「漏れ無し」に
+    // なってしまう）。
+    expect(fields, containsAll(['content', 'inReplyToId', 'localOnly']));
+  });
+
+  test('⚠⚠ PostDraft の全項目に態度が宣言されている', () {
+    final undeclared =
+        postDraftFields()
+            .where((f) => !redraftCarryOverPolicy.containsKey(f))
+            .toList()
+          ..sort();
+
+    expect(
+      undeclared,
+      isEmpty,
+      reason:
+          'PostDraft に増えた項目が redraftCarryOverPolicy に無い (#1113)。'
+          '⚠ 「引き継ぐ / 意図的に落とす / Post に無い」のどれかを必ず宣言すること。'
+          '宣言を忘れると、また 1 項目ずつ漏れる'
+          '\n${undeclared.join(', ')}',
+    );
+  });
+
+  test('⚠ 宣言が古びていない（PostDraft に無い項目が残っていない）', () {
+    final fields = postDraftFields();
+    final stale =
+        redraftCarryOverPolicy.keys.where((k) => !fields.contains(k)).toList()
+          ..sort();
+    expect(
+      stale,
+      isEmpty,
+      reason:
+          'PostDraft から消えた項目の宣言が残っている。'
+          '残すと「ここは考慮済み」という嘘の記述になる\n${stale.join(', ')}',
+    );
+  });
+
+  test('⚠ carry 以外には理由が書いてある', () {
+    // ⚠ **理由の無い drop は「まだ実装していない」と区別がつかない。**
+    // 投票を落としていた理由（「投票結果がリセットされるため」）は、削除して
+    // 再編集では**どのみちリセットされる**ので成立していなかった。
+    final missing =
+        redraftCarryOverPolicy.entries
+            .where((e) => e.value != RedraftCarryOver.carry)
+            .map((e) => e.key)
+            .where((k) => (redraftCarryOverReasons[k] ?? '').trim().isEmpty)
+            .toList()
+          ..sort();
+    expect(
+      missing,
+      isEmpty,
+      reason: '理由の無い drop / notInPost がある\n${missing.join(', ')}',
+    );
+  });
+
+  group('返信先の解決', () {
+    Post post({String? inReplyToId}) => Post(
+      id: 'x',
+      author: User(id: 'u', username: 'u'),
+      postedAt: DateTime.utc(2026),
+      inReplyToId: inReplyToId,
+    );
+
+    test('⚠ redraft 元が返信なら、その返信先を引き継ぐ', () {
+      expect(
+        resolveComposeInReplyToId(null, post(inReplyToId: 'parent')),
+        'parent',
+      );
+    });
+
+    test('返信でなければ null（単独投稿のまま）', () {
+      expect(resolveComposeInReplyToId(null, post()), isNull);
+    });
+
+    test('replyTo が優先（今回の操作を勝たせる）', () {
+      final replyTo = post();
+      expect(
+        resolveComposeInReplyToId(replyTo, post(inReplyToId: 'parent')),
+        replyTo.id,
+      );
+    });
+
+    test('どちらも無ければ null', () {
+      expect(resolveComposeInReplyToId(null, null), isNull);
+    });
+  });
+
+  group('投票の期限', () {
+    const allowed = [300, 1800, 3600, 21600, 43200, 86400, 259200, 604800];
+    final now = DateTime.utc(2026, 9, 10, 12);
+
+    test('⚠ 期限切れなら既定へ落とす', () {
+      // 2026-09-10 pooza 判断。再投稿は新しい投票なので既定から始める。
+      expect(
+        redraftPollExpiresIn(
+          expiresAt: now.subtract(const Duration(hours: 1)),
+          now: now,
+          allowed: allowed,
+          fallback: 86400,
+        ),
+        86400,
+      );
+    });
+
+    test('期限が無ければ既定', () {
+      expect(
+        redraftPollExpiresIn(
+          expiresAt: null,
+          now: now,
+          allowed: allowed,
+          fallback: 86400,
+        ),
+        86400,
+      );
+    });
+
+    test('⚠⚠ 残り時間より短い側へ丸めない', () {
+      // 残り 40 分。⚠ 30 分へ落とすと、送信までの操作時間で期限切れになりうる。
+      expect(
+        redraftPollExpiresIn(
+          expiresAt: now.add(const Duration(minutes: 40)),
+          now: now,
+          allowed: allowed,
+          fallback: 86400,
+        ),
+        3600,
+      );
+    });
+
+    test('選択肢ちょうどならその値', () {
+      expect(
+        redraftPollExpiresIn(
+          expiresAt: now.add(const Duration(hours: 1)),
+          now: now,
+          allowed: allowed,
+          fallback: 86400,
+        ),
+        3600,
+      );
+    });
+
+    test('最長より長ければ最長へ寄せる', () {
+      expect(
+        redraftPollExpiresIn(
+          expiresAt: now.add(const Duration(days: 30)),
+          now: now,
+          allowed: allowed,
+          fallback: 86400,
+        ),
+        604800,
+      );
+    });
+  });
+
+  /// ⚠⚠ **宣言と実装がずれていないこと。**表に `carry` と書いてあるのに
+  /// compose が読んでいなければ、表が嘘になる。
+  group('ソース検査: carry と宣言した項目を実際に読んでいる', () {
+    late String code;
+
+    setUpAll(() {
+      code = maskComments(
+        File('lib/src/ui/screen/compose_screen.dart').readAsStringSync(),
+      );
+    });
+
+    test('探索が空振りしていない', () {
+      expect(code, contains('redraft.scope'));
+    });
+
+    /// `PostDraft` の項目名 → compose 側で redraft から読む形。
+    const readSites = <String, String>{
+      'localOnly': '_localOnly = redraft.localOnly',
+      'language': 'redraft.language',
+      'inReplyToId': 'resolveComposeInReplyToId(',
+      'pollOptions': 'poll.options.map',
+      'pollMultiple': '_pollMultiple = poll.multiple',
+      'pollExpiresIn': 'redraftPollExpiresIn(',
+      'scope': 'redraft.scope',
+      'spoilerText': 'redraft.spoilerText',
+      'sensitive': 'redraft.sensitive',
+      'mediaIds': 'redraft.attachments',
+      'quoteId': 'resolveComposeQuote(',
+      'channelId': 'widget.redraft?.channelId',
+      'content': 'redraft.content',
+    };
+
+    test('readSites が policy の carry を網羅している', () {
+      // ⚠ この表自体が古びると、下の検査が「見ていない項目」を通してしまう。
+      final carried = redraftCarryOverPolicy.entries
+          .where((e) => e.value == RedraftCarryOver.carry)
+          .map((e) => e.key)
+          .toSet();
+      expect(readSites.keys.toSet(), carried);
+    });
+
+    test('⚠ carry と宣言した項目を compose が読んでいる', () {
+      final missing = <String>[];
+      readSites.forEach((field, marker) {
+        if (!code.contains(marker)) missing.add('$field ($marker)');
+      });
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'policy が carry と宣言しているのに、compose が redraft から'
+            '読んでいない (#1113)。表が嘘になっている\n${missing.join('\n')}',
+      );
+    });
+  });
+}
