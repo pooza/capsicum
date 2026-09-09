@@ -395,12 +395,49 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ **「宛先を作れない指名」だけを止める。**返信なら宛先はサーバーが補完
   /// するので送れる。redraft / 下書き復元 / サーバー既定で入った指名は、
   /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
+  /// ⚠ **この投稿が返信として送られるか (#1113)。**
+  ///
+  /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
+  /// で引き継いだ返信先が漏れる（それが #1113 の形）。⚠ **元投稿の取得を
+  /// 待たない**ので、開いた瞬間から正しい。
+  bool get _isReply =>
+      resolveComposeInReplyToId(widget.replyTo, widget.redraft) != null;
+
+  /// 返信先の元投稿。表示にだけ使う。
+  ///
+  /// ⚠ **null でも返信として送られる**ことがある（redraft で取得に失敗した
+  /// とき）。**送信の可否をこれで判断しない。**
+  Post? get _replyToPost => widget.replyTo ?? _redraftReplyTo;
+
+  /// redraft で引き継いだ返信先を取りに行った結果 (#1113)。
+  Post? _redraftReplyTo;
+
+  /// 取得に失敗した / まだ返ってきていない。
+  bool _redraftReplyToUnavailable = false;
+
+  Future<void> _loadRedraftReplyTo(String id) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final post = await adapter.getPostById(id);
+      if (!mounted) return;
+      setState(() => _redraftReplyTo = post);
+    } catch (e) {
+      // ⚠ **失敗しても送信は成立する。**プレビューが出ないだけなので、
+      // ユーザーの操作は止めない。1 行の注記へ落とす。
+      debugLogException('capsicum: redraft reply-to fetch failed', e);
+      if (!mounted) return;
+      setState(() => _redraftReplyToUnavailable = true);
+    }
+  }
+
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
     if (_scope != PostScope.direct) return null;
     final adapter = ref.read(currentAdapterProvider);
     if (selectableScopes(adapter).contains(PostScope.direct)) return null;
-    if (widget.replyTo != null) return null;
+    // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
+    if (_isReply) return null;
     final label = postScopeLabel(PostScope.direct, adapter);
     return '「$label」は宛先を指定する必要がありますが、capsicum には指定する画面が'
         'ありません。このままでは誰にも届きません。公開範囲を選び直すか、'
@@ -675,6 +712,20 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           allowed: _pollDurationOptions.keys,
           fallback: _pollExpiresIn,
         );
+      }
+      // ⚠⚠ **返信として送るなら、そう見えていること (#1113)。**送信側は
+      // `inReplyToId` だけで足りるが、それだけだと**返信として投稿されるのに
+      // 画面のどこにもその旨が出ない**——`localOnly` の不具合と同じ
+      // 「見えないまま効いている」型になる。
+      //
+      // ⚠ **両 WebUI はオブジェクトを持ち回っている**（Mastodon は store から
+      // 引ける・Misskey は `reply: appearNote.reply` を渡す）ので表示できる。
+      // capsicum は id しか持たないので、**取りに行く**。
+      //
+      // ⚠ **取得に失敗しても送信は成立する**（送信は id だけを使う）。
+      // 失敗時は 1 行の注記に落とす。
+      if (redraft.inReplyToId != null) {
+        unawaited(_loadRedraftReplyTo(redraft.inReplyToId!));
       }
     } else if (replyTo != null) {
       _scope = replyTo.scope;
@@ -3810,7 +3861,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           },
         ),
         title: Text(
-          widget.replyTo != null
+          // ⚠ 元投稿の取得を待たずに「リプライ」と出す (#1113)。取得が返る前でも
+          // 返信として送られることは確定している。
+          _isReply
               ? (_effectiveChannelName != null
                     ? 'リプライ：$_effectiveChannelName'
                     : 'リプライ')
@@ -3906,10 +3959,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.replyTo != null)
-                    _CollapsiblePreview(
-                      post: widget.replyTo!,
-                      icon: Icons.reply,
+                  if (_replyToPost != null)
+                    _CollapsiblePreview(post: _replyToPost!, icon: Icons.reply)
+                  // ⚠ **元投稿が引けなくても、返信として送ることは伝える
+                  // (#1113)。**黙っていると「見えないまま効いている」形になる。
+                  else if (_isReply && _redraftReplyToUnavailable)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.reply, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '返信として投稿します（元の投稿は読み込めませんでした）',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   if (_quotedPost != null)
                     _CollapsiblePreview(

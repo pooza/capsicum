@@ -234,6 +234,49 @@ void main() {
       expect(readSites.keys.toSet(), carried);
     });
 
+    /// ⚠⚠ **返信として送るなら、そう見えていること (#1113)。**
+    ///
+    /// 引き継ぎを足した直後は「返信として投稿されるのに画面のどこにも出ない」
+    /// 状態になっていた。**`localOnly` の不具合と同じ「見えないまま効いている」
+    /// 型**で、向きが逆なだけ。⚠ **両 WebUI がオブジェクトを持ち回っているのは
+    /// 表示できるようにするため**なので、id だけ引き継いで済ませない。
+    test('⚠⚠ 表示条件が widget.replyTo の直読みへ戻っていない', () {
+      // ⚠ `widget.replyTo != null` で分岐すると、redraft で引き継いだ返信が
+      // 表示から漏れる（送信はされるのに画面に出ない）。
+      final offenders = <String>[];
+      if (code.contains('widget.replyTo != null')) {
+        offenders.add('widget.replyTo != null が表示条件に残っている');
+      }
+      if (!code.contains('bool get _isReply')) {
+        offenders.add('_isReply が無い（送信側と同じ判定を使うこと）');
+      }
+      if (!code.contains('_replyToPost')) {
+        offenders.add('_replyToPost が無い（プレビューの元投稿）');
+      }
+      expect(offenders, isEmpty, reason: offenders.join('\n'));
+    });
+
+    test('⚠ 元投稿を引けなかったときも「返信として投稿します」と出す', () {
+      // ⚠ 取得は失敗しうる（消された / 見えない / 通信）。黙ると
+      // 「見えないまま効いている」に戻る。
+      expect(code, contains('_redraftReplyToUnavailable'));
+      expect(
+        maskStrings(code).contains('_redraftReplyToUnavailable'),
+        isTrue,
+        reason: 'コメントや文字列ではなく実際の分岐であること',
+      );
+    });
+
+    test('⚠ 送信は取得の成否に依存しない', () {
+      // ⚠ **プレビューが出なくても返信として送る。**送信は id だけを使う。
+      expect(code, contains('resolveComposeInReplyToId('));
+      expect(
+        code.contains('inReplyToId: _replyToPost'),
+        isFalse,
+        reason: '送信が取得結果に依存している。引けなかったら返信が外れてしまう',
+      );
+    });
+
     test('⚠ carry と宣言した項目を compose が読んでいる', () {
       final missing = <String>[];
       readSites.forEach((field, marker) {
