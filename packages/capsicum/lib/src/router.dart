@@ -90,7 +90,6 @@ class _AuthNotifier extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 }
 
 final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
@@ -175,10 +174,7 @@ LoginArgs? resolveLoginArgs(Uri uri) {
 /// これを踏んで「旗は消費されたのに引き上げが起きない」状態を作った。
 /// ログイン直後の遷移は [routerProvider] の listener が持つ。
 @visibleForTesting
-String? resolveRedirect({
-  required bool isLoggedIn,
-  required String location,
-}) {
+String? resolveRedirect({required bool isLoggedIn, required String location}) {
   if (!isLoggedIn && !_authLocations.contains(location)) return '/server';
   return null;
 }
