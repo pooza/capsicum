@@ -114,6 +114,29 @@ bool get usesKeychainAccessibility =>
 @visibleForTesting
 bool? debugKeychainAccessibilityOverride;
 
+/// secure storage が **D-Bus の Secret Service** に載っているか (#1085)。
+///
+/// ⚠⚠ **これが true の OS だけ、「触ると固まる」ことがある。**
+/// `flutter_secure_storage_linux` はメソッドチャネルのハンドラの中で
+/// `secret_password_lookupv_sync` を直に呼ぶため、Secret Service が応答しないと
+/// **プラットフォームスレッド（＝フレームを提示するスレッド）が止まる**。
+/// Apple の Keychain / Android の Keystore / Windows の DPAPI は D-Bus を
+/// 経由しないので、この形にはならない。
+///
+/// ⚠ **`usesKeychainAccessibility` の裏返しではない。**あちらは「焼き直す
+/// accessibility があるか」で Apple 系だけ、こちらは「D-Bus 越しか」で Linux
+/// だけ。**両方 false の OS（Android / Windows）がある。**
+bool get usesSecretService =>
+    debugSecretServiceOverride ?? (!kIsWeb && Platform.isLinux);
+
+/// テスト用の差し替え口 (#1085)。
+///
+/// ⚠ **Linux でしか走らない分岐は、他 OS の CI / 手元で素通りする。**
+/// `usesKeychainAccessibility` で実際に踏んだ形（手元 macOS で緑・CI Linux で
+/// 赤）と同じなので、最初から seam を置く。
+@visibleForTesting
+bool? debugSecretServiceOverride;
+
 /// secure storage の**読み取り失敗**から「permanent（もう二度と読めない）」を
 /// 判別できるプラットフォームか (#1104)。Apple 系（iOS / macOS）だけ true。
 ///

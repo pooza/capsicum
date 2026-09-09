@@ -13,6 +13,7 @@ import '../model/account_key.dart';
 import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
+import 'secret_service_probe.dart';
 import 'secure_storage_health.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
@@ -244,8 +245,30 @@ class AccountStorage {
   /// [TransientSecretUnavailableException] へ翻訳する（＝**アカウントを消さず
   /// オフライン保持**）。ここで null を返すと「secret が存在しない」と区別が
   /// つかず、**ログアウト扱いになる**。
-  Future<String?> _read(String key) =>
-      _storage.read(key: key).timeout(kSecureStorageReadTimeout);
+  ///
+  /// ## ⚠⚠ 上限だけでは黒いウインドウは直らなかった (2026-09-09 の実測)
+  ///
+  /// `flutter_secure_storage_linux` は**メソッドチャネルのハンドラの中で
+  /// `secret_password_lookupv_sync` を直に呼ぶ**（3.0.2 でも同じ）。ハンドラが
+  /// 走るのは**プラットフォームスレッド**＝ GTK のメインループ＝**フレームを
+  /// 提示するスレッド**なので、Secret Service が応答しないとそこが止まる。
+  ///
+  /// → **下の `timeout` は発火する（Sentry に届く）のに、旗を立てても描く
+  /// スレッドが居ないので画面は真っ黒のまま。**報告者の環境で実際にそうなった。
+  ///
+  /// だから **触る前に [SecretServiceProbe] で聞く**。あちらは純 Dart の D-Bus
+  /// なのでプラットフォームスレッドを使わない。⚠ **順序が逆だと意味が無い。**
+  Future<String?> _read(String key) async {
+    if (!await SecretServiceProbe.isResponsive()) {
+      // ⚠ **触らずに諦める。**触れば固まるので、上限を掛けても手遅れになる。
+      // 呼び出し側（[getSecrets]）が transient として扱い、アカウントは残る。
+      throw TimeoutException(
+        'secret service did not answer before the read',
+        kSecureStorageReadTimeout,
+      );
+    }
+    return _storage.read(key: key).timeout(kSecureStorageReadTimeout);
+  }
 
   Future<String?> _readWithRegisterRetry(String key) async {
     // 50 + 100 + 200 + 250 = 600ms。低スペック端末 / cold start で plugin
