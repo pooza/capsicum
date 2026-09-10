@@ -223,6 +223,7 @@ void main() {
       'quoteId': 'resolveComposeQuote(',
       'channelId': 'widget.redraft?.channelId',
       'content': 'redraft.content',
+      'quoteApprovalPolicy': 'redraft.quoteApprovalPolicy',
     };
 
     test('readSites が policy の carry を網羅している', () {

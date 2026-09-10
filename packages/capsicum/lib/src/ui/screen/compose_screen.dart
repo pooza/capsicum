@@ -684,6 +684,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 言語も同じく見えない状態。⚠ 端末ロケールで上書きされないよう、
       // 既定値を入れる `_language` の初期化より**後**でここが走る前提。
       if (redraft.language != null) _language = redraft.language;
+      // 引用許可も見えない状態。⚠ 引き継がないと未選択のまま送られ、サーバーは
+      // **アカウント既定**を使う ——「許可しない」にしていた投稿が再編集で
+      // 「誰でも」へ広がり、ドロップダウンは案内表示のままなので気づけない。
+      // 知らない値は入れない（items に無い値を value に渡すと落ちる）。
+      final quotePolicy = redraft.quoteApprovalPolicy;
+      if (_quoteApprovalLabels.containsKey(quotePolicy)) {
+        _quoteApprovalPolicy = quotePolicy;
+      }
       // ⚠ **投票は引き継ぐ (#1113)。**旧実装は「投票結果がリセットされるため」
       // として落としていたが、**削除して再編集は元投稿ごと消える操作**なので、
       // 引き継ごうが引き継ぐまいと結果はリセットされる。理由が成立していない。

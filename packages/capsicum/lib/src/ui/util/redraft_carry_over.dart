@@ -21,7 +21,7 @@ import 'package:capsicum_core/capsicum_core.dart';
 ///
 /// | | 例 | 引き継ぐ理由 |
 /// | --- | --- | --- |
-/// | **見えない状態** | `localOnly` / `inReplyToId` / `language` | ⚠⚠ **安全**。引き継がないと**無言で**公開範囲や文脈が変わる |
+/// | **見えない状態** | `localOnly` / `inReplyToId` / `language` / `quoteApprovalPolicy` | ⚠⚠ **安全**。引き継がないと**無言で**公開範囲や文脈が変わる |
 /// | **見える状態** | 本文 / CW / 投票の選択肢 | **便利**。齟齬が出ても画面に出ているので直せる |
 ///
 /// ⚠ **`localOnly` を落とすのがいちばん重い。**「ローカルのみ」で投稿したものを
@@ -58,7 +58,7 @@ const redraftCarryOverPolicy = <String, RedraftCarryOver>{
   'pollHideTotals': RedraftCarryOver.notInPost,
   'skipMulukhiya': RedraftCarryOver.notInPost,
   'scheduledAt': RedraftCarryOver.drop,
-  'quoteApprovalPolicy': RedraftCarryOver.notInPost,
+  'quoteApprovalPolicy': RedraftCarryOver.carry,
 };
 
 /// `carry` 以外を選んだ理由。⚠ **理由の無い `drop` は検査で落とす。**
@@ -68,7 +68,6 @@ const redraftCarryOverReasons = <String, String>{
   'scheduledAt':
       '予約投稿の時刻は引き継がない。⚠ 元の時刻は既に過去なので、'
       'そのまま渡すと送信が失敗する。再設定させるのが正しい',
-  'quoteApprovalPolicy': 'Post に引用許可の設定が無い（Mastodon 4.7 の quote_approval を未対応）',
 };
 
 /// 投票の期限（秒）を、元投稿の `expiresAt` から作り直す (#1113)。

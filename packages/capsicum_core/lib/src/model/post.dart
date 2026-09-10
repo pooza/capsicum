@@ -68,6 +68,14 @@ class Post {
   final String? channelName;
   final bool localOnly;
   final bool quotable;
+
+  /// 投稿者がこの投稿に設定した引用許可（`public` / `followers` / `nobody`）。
+  /// Mastodon のみ。null はサーバーが引用許可を持たない（4.5 未満）。
+  ///
+  /// ⚠ **[quotable] とは別物。**あちらは「自分がこの投稿を引用できるか」
+  /// （読む側）、こちらは「投稿者が誰に引用を許したか」（書く側の設定）。
+  /// 削除して再編集で元の設定を戻すのに使う (#1113)。
+  final String? quoteApprovalPolicy;
   final String? language;
   final String? url;
 
@@ -109,6 +117,7 @@ class Post {
     this.channelName,
     this.localOnly = false,
     this.quotable = true,
+    this.quoteApprovalPolicy,
     this.language,
     this.url,
     this.reactionAcceptance,
@@ -160,6 +169,7 @@ class Post {
     channelName: channelName,
     localOnly: localOnly,
     quotable: quotable,
+    quoteApprovalPolicy: quoteApprovalPolicy,
     language: language,
     url: url,
     reactionAcceptance: reactionAcceptance,
