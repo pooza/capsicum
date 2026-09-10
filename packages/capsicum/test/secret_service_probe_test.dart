@@ -158,4 +158,87 @@ void main() {
       );
     });
   });
+
+  /// ⚠⚠ **手元で緑・CI で赤になるテストを増やさない (2026-09-11)。**
+  ///
+  /// `secure_storage_timeout_test` の 2 件が実際にそうなった。`usesSecretService`
+  /// は **Linux でだけ true** なので、
+  ///
+  /// - **macOS / Windows の手元** — probe を素通りして通る
+  /// - **Linux の CI** — 本物の D-Bus 疎通を試みる。⚠ **`fakeAsync` の中では実
+  ///   I/O が進まない**ので `_probeTimeout` の**タイマーだけ**が `elapse` で
+  ///   発火し、**読み取りの上限より先に**打ち切られて赤くなる
+  ///
+  /// ⚠ **手元では一度も再現しないので、原因にたどり着くまでが遠い。**
+  /// `fakeAsync` の中で `AccountStorage` を触るテストは、**probe を差し替える**
+  /// こと（[SecretServiceProbe.debugProbeOverride]）を機械で要求する。
+  group('ソース検査: fakeAsync × AccountStorage は probe を差し替える', () {
+    /// 差し替えが要るテストか。
+    ///
+    /// ⚠ **「要る」の条件は 2 つそろったとき**。`AccountStorage` を素の
+    /// `async` で使うぶんには実 I/O が進むので、この罠は踏まない。
+    bool needsProbeStub(String code) =>
+        code.contains('fakeAsync(') && code.contains('AccountStorage(');
+
+    bool hasProbeStub(String code) =>
+        code.contains('SecretServiceProbe.debugProbeOverride');
+
+    List<File> testFiles() => Directory('test')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('_test.dart'))
+        .toList();
+
+    test('探索が空振りしていない', () {
+      final files = testFiles();
+      expect(
+        files.length,
+        greaterThan(100),
+        reason: 'test/ を舐められていない。走査が空なら下の検査は常に緑になる',
+      );
+      // ⚠ **既知の対象が母数に入っていること。**ここが外れると「該当 0 件」で
+      // 素通りする。
+      expect(
+        files
+            .map((f) => f.path)
+            .where((p) => p.contains('secure_storage_timeout')),
+        isNotEmpty,
+      );
+    });
+
+    test('判定そのものが当たる（合成ソース）', () {
+      expect(
+        needsProbeStub('fakeAsync((async) { AccountStorage(s); });'),
+        isTrue,
+      );
+      // 片方だけなら要らない。
+      expect(needsProbeStub('fakeAsync((async) {});'), isFalse);
+      expect(needsProbeStub('AccountStorage(s).getSecrets(k);'), isFalse);
+      expect(
+        hasProbeStub('SecretServiceProbe.debugProbeOverride = f;'),
+        isTrue,
+      );
+      expect(hasProbeStub('SecretServiceProbe.resetForTest();'), isFalse);
+    });
+
+    test('⚠ 差し替えていないテストが無い', () {
+      final offenders = <String>[];
+      for (final file in testFiles()) {
+        final code = maskComments(file.readAsStringSync());
+        if (needsProbeStub(code) && !hasProbeStub(code)) {
+          offenders.add(file.path);
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'fakeAsync の中で AccountStorage を触るのに probe を差し替えていない。'
+            '⚠ **手元（macOS / Windows）では緑・Linux の CI で赤になる。**'
+            'setUp で debugSecretServiceOverride と '
+            'SecretServiceProbe.debugProbeOverride を立てること\n'
+            '${offenders.join('\n')}',
+      );
+    });
+  });
 }

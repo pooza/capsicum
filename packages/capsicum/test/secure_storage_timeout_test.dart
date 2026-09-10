@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:capsicum/src/constants.dart';
+import 'package:capsicum/src/platform/platform_info.dart';
 import 'package:capsicum/src/service/account_storage.dart';
+import 'package:capsicum/src/service/secret_service_probe.dart';
 import 'package:capsicum/src/service/secure_storage_health.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -18,8 +20,34 @@ import 'package:mocktail/mocktail.dart';
 class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
 
 void main() {
-  setUp(SecureStorageHealth.resetForTest);
-  tearDown(SecureStorageHealth.resetForTest);
+  /// ⚠⚠ **この 2 件は macOS で緑・Linux CI で赤になっていた**（2026-09-10）。
+  ///
+  /// `AccountStorage._read` は #1085 で [SecretServiceProbe] を先に通すように
+  /// なった。`usesSecretService` は **Linux でだけ true** なので、
+  ///
+  /// - **macOS の手元** — 素通りして従来どおり通る
+  /// - **Linux の CI** — 本物の D-Bus 疎通を試みる。⚠ **`fakeAsync` の中では
+  ///   実 I/O が進まない**ので `_probeTimeout`（800ms）の**タイマーだけ**が
+  ///   `async.elapse` で発火し、**読み取りの上限（5 秒）より先に**打ち切られる
+  ///
+  /// → **OS で結果が変わる形だった。**両方の口を塞いで、**どの OS でも Linux の
+  /// 経路を通す**。⚠ **「macOS では走らない」ままにしない** —— それだと
+  /// この 2 件が守っているはずの #1085 の本体（Linux）を、手元では一度も
+  /// 踏まないことになる。
+  setUp(() {
+    SecureStorageHealth.resetForTest();
+    SecretServiceProbe.resetForTest();
+    // Linux のふりをする（＝probe を必ず通す経路に乗せる）。
+    debugSecretServiceOverride = true;
+    // ⚠ **その probe は「応答する」と答える。**ここで止まると、この 2 件が
+    // 見たい「読み取り自体が返らない」ケースへ到達できない。
+    SecretServiceProbe.debugProbeOverride = () async => true;
+  });
+  tearDown(() {
+    SecureStorageHealth.resetForTest();
+    SecretServiceProbe.resetForTest();
+    debugSecretServiceOverride = null;
+  });
 
   test('応答が返らない読み取りは打ち切る', () {
     final storage = _MockSecureStorage();
