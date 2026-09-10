@@ -84,6 +84,40 @@ void main() {
     });
   });
 
+  test('⚠⚠ 読めなかった後に読めたら、案内を下ろす', () {
+    // #1085: 再試行で復帰できるようにしたので、旗を立てっぱなしにすると
+    // キーリングが直ったあとも「読み出せません」の案内が残る。
+    SecureStorageHealth.markRefused(Exception('Failed to unlock the keyring'));
+    expect(SecureStorageHealth.unavailable, isTrue);
+
+    final storage = _MockSecureStorage();
+    when(
+      () => storage.read(key: any(named: 'key')),
+    ).thenAnswer((_) async => '{"access_token":"t"}');
+
+    fakeAsync((async) {
+      AccountStorage(storage).getSecrets('mastodon://alice@mstdn.example');
+      async.elapse(const Duration(milliseconds: 1));
+      expect(SecureStorageHealth.unavailable, isFalse);
+    });
+  });
+
+  test('⚠ item が無い（null）読み取りでも案内を下ろす', () {
+    // 読めないのではなく、読んだ結果が空だった。キーリングは応答している。
+    SecureStorageHealth.markRefused(Exception('Failed to unlock the keyring'));
+
+    final storage = _MockSecureStorage();
+    when(
+      () => storage.read(key: any(named: 'key')),
+    ).thenAnswer((_) async => null);
+
+    fakeAsync((async) {
+      AccountStorage(storage).getSecrets('mastodon://alice@mstdn.example');
+      async.elapse(const Duration(milliseconds: 1));
+      expect(SecureStorageHealth.unavailable, isFalse);
+    });
+  });
+
   test('応答が返れば従来どおり読める', () {
     final storage = _MockSecureStorage();
     when(

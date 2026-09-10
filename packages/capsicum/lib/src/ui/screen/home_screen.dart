@@ -2068,9 +2068,28 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                 // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
                 if (!allNeedLogin) ...[
                   FilledButton.icon(
-                    onPressed: () => ref
-                        .read(accountManagerProvider.notifier)
-                        .retryOfflineRestores(),
+                    onPressed: () async {
+                      // ⚠ await の前に捕まえる（押した後に画面が差し替わりうる）。
+                      final messenger = ScaffoldMessenger.of(context);
+                      final ran = await ref
+                          .read(accountManagerProvider.notifier)
+                          .retryOfflineRestores();
+                      // ⚠⚠ **確かめ直してもまだ読めなければ、そう言う (#1085)。**
+                      // 画面の案内は押す前と同じ文面のままなので、黙ると「押しても
+                      // 何も起こらない」に見える（報告者の 181 の検証がその形）。
+                      // ⚠ `ran == false` は別の再試行が走っている最中で、そちらが
+                      // 同じ仕事をしているので何も言わない。
+                      if (ran && SecureStorageHealth.unavailable) {
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'キーリング / Secret Service から、'
+                              'まだログイン情報を読み出せません',
+                            ),
+                          ),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text('今すぐ再試行'),
                   ),

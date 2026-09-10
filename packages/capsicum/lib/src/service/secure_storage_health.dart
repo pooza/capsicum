@@ -28,11 +28,12 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 class SecureStorageHealth {
   SecureStorageHealth._();
 
-  /// 「secure storage が応答しなかった」ことがこのプロセスで一度でもあったか。
+  /// secure storage から**今**読み出せない状態か。
   ///
-  /// ⚠ **回復しても false へ戻さない。**戻せる根拠（次の読み取りが成功した）を
-  /// 得られるのは実際に読みに行ったときだけで、その頃には画面から案内が消えて
-  /// いてほしいとは限らない。プロセスを跨がないので、再起動すれば消える。
+  /// ⚠ **読み取りが成功したら下ろす**（[markRecovered]）。以前は「回復しても
+  /// 戻さない」だったが、#1085 で再試行から復帰できるようにしたので、戻さないと
+  /// **キーリングが直ったあとも「読み出せません」の案内が残る**（別の理由で
+  /// オフラインになったアカウントの画面に、嘘の原因が出る）。
   static final ValueNotifier<bool> notifier = ValueNotifier<bool>(false);
 
   static bool get unavailable => notifier.value;
@@ -78,6 +79,16 @@ class SecureStorageHealth {
   static void markRefused(Object cause) {
     debugPrint('capsicum: secure storage refused the read: $cause');
     notifier.value = true;
+  }
+
+  /// 読み取りが成功した（＝キーリングが応答し、解錠もできた）ことを記録する
+  /// (#1085)。
+  ///
+  /// ⚠ **Sentry の送信済みフラグは戻さない。**1 プロセス 1 回の母数を保つ。
+  static void markRecovered() {
+    if (!notifier.value) return;
+    debugPrint('capsicum: secure storage is readable again');
+    notifier.value = false;
   }
 
   @visibleForTesting

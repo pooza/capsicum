@@ -18,6 +18,7 @@ import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
+import '../service/secret_service_probe.dart';
 import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
@@ -1124,6 +1125,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final targets = [
       ...state.offlineAccounts.where((o) => o.recoverableByRetry),
     ];
+    // ⚠⚠ **Secret Service の「応答しない」をここで捨てる (#1085)。**捨てない
+    // と、キーリングが戻っても下の getSecrets が覚えた false で即座に諦め、
+    // **「今すぐ再試行」を押しても何も起こらない**（報告者の 181 の検証で
+    // 判明）。背景ループも同じ理由で再起動まで復帰しなかった。
+    // ⚠ **1 周で 1 回。**アカウントごとに捨てると、応答しない環境でアカウントの
+    // 数だけ Ping の上限を払う。
+    if (targets.isNotEmpty) SecretServiceProbe.forgetUnresponsive();
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();
       if (state.accounts.any((a) => a.key == offline.key)) {

@@ -117,6 +117,9 @@ class AccountStorage {
   Future<Map<String, String>?> getSecrets(String accountKey) async {
     try {
       final raw = await _readWithRegisterRetry('secret_$accountKey');
+      // 返ってきた＝キーリングは応答し、解錠もできた。⚠ **null（item が無い）
+      // でも下ろす** —— 読めないのではなく、読んだ結果が空だった。
+      SecureStorageHealth.markRecovered();
       if (raw == null) return null;
       return Map<String, String>.from(jsonDecode(raw) as Map);
     } on TimeoutException catch (e) {

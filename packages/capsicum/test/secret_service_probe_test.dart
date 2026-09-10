@@ -77,18 +77,58 @@ void main() {
       expect(calls, 1);
     });
 
-    test('⚠ false へ倒れたら true へ戻さない', () async {
+    // ⚠⚠ **ここには以前「false へ倒れたら true へ戻さない」というテストが
+    // あった。**バグの側を固定していた —— そのせいで、キーリングが戻っても
+    // 「今すぐ再試行」が効かず、再起動するまで復帰しなかった（#1085・報告者の
+    // 181 の検証）。根拠の「復旧を知るには触るしかない」は誤りで、probe は
+    // libsecret を通らないので聞き直しても固まらない。
+
+    test('forgetUnresponsive を呼ぶまでは false を持ち続ける（1 周の中では聞き直さない）', () async {
+      var calls = 0;
+      var result = false;
+      SecretServiceProbe.debugProbeOverride = () async {
+        calls++;
+        return result;
+      };
+      expect(await SecretServiceProbe.isResponsive(), isFalse);
+
+      result = true;
+      expect(await SecretServiceProbe.isResponsive(), isFalse);
+      expect(calls, 1, reason: 'アカウントごとに Ping の上限を払わない');
+    });
+
+    test('⚠⚠ forgetUnresponsive の後は確かめ直す（キーリングが戻れば true）', () async {
       var result = false;
       SecretServiceProbe.debugProbeOverride = () async => result;
       expect(await SecretServiceProbe.isResponsive(), isFalse);
 
-      // 復旧したかを知るには実際に触るしかなく、それが「触ると固まる」入口。
+      // kill -CONT でキーリングが戻った。
       result = true;
+      SecretServiceProbe.forgetUnresponsive();
       expect(
         await SecretServiceProbe.isResponsive(),
-        isFalse,
-        reason: 'プロセスを跨がないので、再起動すれば消える',
+        isTrue,
+        reason: '戻さないと「今すぐ再試行」が効かない (#1085)',
       );
+    });
+
+    test('forgetUnresponsive の後もまだ応答しなければ false', () async {
+      SecretServiceProbe.debugProbeOverride = () async => false;
+      expect(await SecretServiceProbe.isResponsive(), isFalse);
+      SecretServiceProbe.forgetUnresponsive();
+      expect(await SecretServiceProbe.isResponsive(), isFalse);
+    });
+
+    test('⚠ forgetUnresponsive は true を捨てない（聞き直さない）', () async {
+      var calls = 0;
+      SecretServiceProbe.debugProbeOverride = () async {
+        calls++;
+        return true;
+      };
+      await SecretServiceProbe.isResponsive();
+      SecretServiceProbe.forgetUnresponsive();
+      await SecretServiceProbe.isResponsive();
+      expect(calls, 1, reason: '応答している間は聞き直す理由が無い');
     });
   });
 
@@ -155,6 +195,117 @@ void main() {
             tail.indexOf('return _storage.read('),
         isTrue,
         reason: 'probe が false のときに投げていない。null を返すとアカウントが消える',
+      );
+    });
+  });
+
+  /// ⚠⚠ **「応答しない」を捨てるのは再試行の 1 周の頭 (#1085)。**
+  ///
+  /// 捨てないと、キーリングが戻っても getSecrets が覚えた false で即座に
+  /// 諦め、「今すぐ再試行」が効かない。⚠ **ループの中（アカウントごと）で
+  /// 捨てると、応答しない環境でアカウントの数だけ Ping の上限を払う。**
+  group('ソース検査: 再試行の 1 周の頭で「応答しない」を捨てる', () {
+    const path = 'lib/src/provider/account_manager_provider.dart';
+    const loop = 'for (final offline in targets)';
+
+    /// `_retryOfflineRestoresNow` の本体。クラス直下のメソッドなので、閉じ括弧は
+    /// 2 桁字下げの行になる。
+    String retryBody(String code) {
+      final start = code.indexOf('Future<void> _retryOfflineRestoresNow()');
+      if (start == -1) return '';
+      final end = code.indexOf('\n  }\n', start);
+      return code.substring(start, end == -1 ? code.length : end);
+    }
+
+    bool forgetsOncePerRound(String body) {
+      final forget = body.indexOf('SecretServiceProbe.forgetUnresponsive()');
+      final loopAt = body.indexOf(loop);
+      final read = body.indexOf('getSecrets(');
+      return forget != -1 && loopAt != -1 && read != -1 && forget < loopAt;
+    }
+
+    test('探索が空振りしていない', () {
+      final body = retryBody(maskComments(File(path).readAsStringSync()));
+      expect(body, isNotEmpty, reason: '_retryOfflineRestoresNow を拾えていない');
+      expect(body, contains(loop));
+      expect(body, contains('getSecrets('));
+    });
+
+    test('判定そのものが当たる（合成ソース）', () {
+      expect(
+        forgetsOncePerRound(
+          'SecretServiceProbe.forgetUnresponsive();\n'
+          '$loop { getSecrets(k); }',
+        ),
+        isTrue,
+      );
+      // ⚠ アカウントごとに捨てている（ループの中）。
+      expect(
+        forgetsOncePerRound(
+          '$loop { SecretServiceProbe.forgetUnresponsive(); getSecrets(k); }',
+        ),
+        isFalse,
+      );
+      // 捨てていない。
+      expect(forgetsOncePerRound('$loop { getSecrets(k); }'), isFalse);
+    });
+
+    test('⚠⚠ 再試行の 1 周の頭で捨てている', () {
+      final body = retryBody(maskComments(File(path).readAsStringSync()));
+      expect(
+        forgetsOncePerRound(body),
+        isTrue,
+        reason:
+            '再試行の前に SecretServiceProbe.forgetUnresponsive() が無い、または'
+            'ループの中にある (#1085)。無いとキーリングが戻っても「今すぐ再試行」'
+            'が効かない。ループの中だとアカウントの数だけ Ping の上限を払う',
+      );
+    });
+  });
+
+  /// ⚠ **確かめ直してもまだ読めなければ、そう言う (#1085)。**案内の文面は
+  /// 押す前と同じなので、黙ると「押しても何も起こらない」に見える。
+  group('ソース検査: 「今すぐ再試行」は失敗を黙らない', () {
+    const path = 'lib/src/ui/screen/home_screen.dart';
+
+    /// 「今すぐ再試行」ボタンの定義（`FilledButton.icon(` からラベルまで）。
+    String retryButton(String code) {
+      final label = code.indexOf("'今すぐ再試行'");
+      if (label == -1) return '';
+      final start = code.lastIndexOf('FilledButton.icon(', label);
+      if (start == -1) return '';
+      return code.substring(start, label);
+    }
+
+    bool speaksWhenStillUnreadable(String button) =>
+        button.contains('SecureStorageHealth.unavailable') &&
+        button.contains('showSnackBar(');
+
+    test('探索が空振りしていない', () {
+      final button = retryButton(maskComments(File(path).readAsStringSync()));
+      expect(button, isNotEmpty, reason: '「今すぐ再試行」ボタンを拾えていない');
+      expect(button, contains('retryOfflineRestores()'));
+    });
+
+    test('判定そのものが当たる（合成ソース）', () {
+      expect(
+        speaksWhenStillUnreadable(
+          'onPressed: () async { await r(); '
+          'if (SecureStorageHealth.unavailable) m.showSnackBar(s); }',
+        ),
+        isTrue,
+      );
+      expect(speaksWhenStillUnreadable('onPressed: () => r(),'), isFalse);
+    });
+
+    test('⚠ まだ読めないときに SnackBar で伝える', () {
+      final button = retryButton(maskComments(File(path).readAsStringSync()));
+      expect(
+        speaksWhenStillUnreadable(button),
+        isTrue,
+        reason:
+            '「今すぐ再試行」が、確かめ直してもまだ読めなかったことを伝えていない '
+            '(#1085)。黙ると押しても何も起こらないように見える',
       );
     });
   });
