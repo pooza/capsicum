@@ -121,7 +121,7 @@ class AccountStorage {
       // でも下ろす** —— 読めないのではなく、読んだ結果が空だった。
       SecureStorageHealth.markRecovered();
       if (raw == null) return null;
-      return Map<String, String>.from(jsonDecode(raw) as Map);
+      return _decodeSecrets(accountKey, raw);
     } on TimeoutException catch (e) {
       // secure storage が応答しない (#1085)。⚠ **secret は無傷**なので、
       // 「存在しない」＝ログアウトとして扱ってはいけない。#959 の
@@ -197,6 +197,31 @@ class AccountStorage {
       }
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
+      return null;
+    }
+  }
+
+  /// **読めた**値を secrets へ戻す。壊れていたら null（＝secret が無い扱い）。
+  ///
+  /// ⚠⚠ **読み取りの失敗と混ぜない**（v1.64 のリリース PR の Codex P2）。以前は
+  /// `jsonDecode` も [getSecrets] の汎用 catch に包まれていたので、中身が壊れて
+  /// いると Linux / Windows では「一時的に読めない」扱いになり、同じ壊れた値を
+  /// 読み直すだけの再試行を永久に繰り返してアカウントがオフラインのままだった。
+  /// Linux ではキーリングのせいにする案内（`markRefused`）まで出ていた。
+  ///
+  /// 壊れた中身は**決定的**（読み直しても同じ）なので、存在しないのと同じに扱い
+  /// 再ログインへ回す。再ログインが上書きするので、壊れた値そのものは消さない。
+  static Map<String, String>? _decodeSecrets(String accountKey, String raw) {
+    try {
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } catch (e, st) {
+      // ⚠ `FormatException` の本文には secret の断片が入る。報告は
+      // scrubException を通す [_reportOnce] / debugLogException だけ。
+      debugLogException(
+        'capsicum: corrupt secrets for ${sentrySafeAccountKey(accountKey)}',
+        e,
+      );
+      _reportOnce('secret:$accountKey:corrupt', e, st);
       return null;
     }
   }

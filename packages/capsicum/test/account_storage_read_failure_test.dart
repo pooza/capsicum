@@ -115,6 +115,28 @@ void main() {
 
       verifyNever(() => storage.delete(key: any(named: 'key')));
     });
+
+    /// ⚠⚠ **読めたが中身が壊れている、は読み取りの失敗ではない**（v1.64 の
+    /// リリース PR の Codex P2）。以前は `jsonDecode` の失敗も上の汎用 catch に
+    /// 落ち、「一時的に読めない」として同じ壊れた値を読み直すだけの再試行を
+    /// 永久に繰り返していた（Linux ではキーリングのせいにする案内まで出た）。
+    test('⚠⚠ 中身が壊れていたら transient にしない（secret が無い扱い）', () async {
+      final storage = _MockSecureStorage();
+      when(
+        () => storage.read(key: any(named: 'key')),
+      ).thenAnswer((_) async => '{"access_token": broken');
+
+      final secrets = await AccountStorage(
+        storage,
+      ).getSecrets('mastodon://erin@mstdn.example');
+      expect(secrets, isNull, reason: '再ログインへ回す（再ログインが上書きする）');
+      expect(
+        SecureStorageHealth.unavailable,
+        isFalse,
+        reason: '読めているのにキーリングのせいにしない',
+      );
+      verifyNever(() => storage.delete(key: any(named: 'key')));
+    });
   });
 
   group('permanent を判別できるプラットフォーム（Apple）', () {
