@@ -30,6 +30,7 @@ import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
+import '../../util/reply_target_gone.dart';
 import '../../util/text_length.dart';
 import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
@@ -400,8 +401,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
   /// で引き継いだ返信先が漏れる（それが #1113 の形）。⚠ **元投稿の取得を
   /// 待たない**ので、開いた瞬間から正しい。
-  bool get _isReply =>
-      resolveComposeInReplyToId(widget.replyTo, widget.redraft) != null;
+  bool get _isReply => _inReplyToId != null;
+
+  /// 送信する返信先。表示・送信・公開範囲の判定はすべてここを通す。
+  String? get _inReplyToId => resolveComposeInReplyToId(
+    widget.replyTo,
+    widget.redraft,
+    redraftReplyDropped: _redraftReplyDropped,
+  );
+
+  /// 引き継いだ返信先をユーザーがやめた (#1113)。
+  ///
+  /// 返信先が消えているとサーバーは送信を拒否する（Mastodon は 404・Misskey は
+  /// `NO_SUCH_REPLY_TARGET`）。やめる手段が無いと、本文をコピーして新規作成へ
+  /// 貼り直すしかなかった。⚠ **戻す操作は置いていない**（やめたら画面を開き直す）。
+  bool _redraftReplyDropped = false;
 
   /// 返信先の元投稿。表示にだけ使う。
   ///
@@ -3292,10 +3306,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           scope: _scope,
           // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
           // 単独投稿になり、連合先では文脈の無い投稿として流れる。
-          inReplyToId: resolveComposeInReplyToId(
-            widget.replyTo,
-            widget.redraft,
-          ),
+          inReplyToId: _inReplyToId,
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
@@ -3485,10 +3496,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           scope: _scope,
           // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
           // 単独投稿になり、連合先では文脈の無い投稿として流れる。
-          inReplyToId: resolveComposeInReplyToId(
-            widget.replyTo,
-            widget.redraft,
-          ),
+          inReplyToId: _inReplyToId,
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
@@ -3581,7 +3589,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ので、後ろに置くと一部の経路で張り直されない。
       _scheduleDraftSave();
       if (!mounted) return;
-      if (widget.redraft != null) {
+      if (widget.redraft != null &&
+          isReplyTargetGoneError(
+            e,
+            sentAsReply: _isReply,
+            sentWithQuote: _quotedPost != null,
+          )) {
+        // ⚠⚠ **返信先が消えている (#1113)。**汎用の文面（下）は「元の投稿は
+        // 既に削除されています」としか言わず、消えたのが再編集元なのか返信先
+        // なのか分からなかった。画面は残っているので、返信をやめれば送れる。
+        //
+        // ⚠ 取得できていたプレビューも外し、✕ の付いた注記へ切り替える
+        // （開いた後に消された場合）。Sentry へは送らない —— 不具合ではなく、
+        // サーバーの状態をそのまま伝えているだけ。
+        await Clipboard.setData(ClipboardData(text: _controller.text));
+        if (!mounted) return;
+        setState(() {
+          _redraftReplyTo = null;
+          _redraftReplyToUnavailable = true;
+        });
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('投稿に失敗しました'),
+            content: const Text(
+              '返信先の投稿が削除されています。「返信として投稿します」の ✕ で'
+              '返信をやめると、単独の投稿として送れます。'
+              '本文はクリップボードにもコピーしました。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) setState(() => _sending = false);
+      } else if (widget.redraft != null) {
         // 元投稿は既に削除されている。本文をクリップボードに保全し、
         // 再投稿手段をユーザーに提示する (#393)。
         await Clipboard.setData(ClipboardData(text: _controller.text));
@@ -3983,6 +4028,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                               '返信として投稿します（元の投稿は読み込めませんでした）',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                          ),
+                          // ⚠ **返信先が消えていると送れない (#1113)。**単独の
+                          // 投稿として送る道を残す。
+                          IconButton(
+                            onPressed: _sending
+                                ? null
+                                : () => setState(
+                                    () => _redraftReplyDropped = true,
+                                  ),
+                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: '返信をやめる',
+                            visualDensity: VisualDensity.compact,
                           ),
                         ],
                       ),

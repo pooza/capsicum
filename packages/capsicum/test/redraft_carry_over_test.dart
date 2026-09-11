@@ -124,6 +124,30 @@ void main() {
     test('どちらも無ければ null', () {
       expect(resolveComposeInReplyToId(null, null), isNull);
     });
+
+    test('⚠ 引き継いだ返信先をやめたら null（単独の投稿として送る）', () {
+      // 返信先が消えているとサーバーは送信を拒否する。やめる道を残す。
+      expect(
+        resolveComposeInReplyToId(
+          null,
+          post(inReplyToId: 'parent'),
+          redraftReplyDropped: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('⚠ やめても replyTo（今回の操作で開いた返信）は残る', () {
+      final replyTo = post();
+      expect(
+        resolveComposeInReplyToId(
+          replyTo,
+          post(inReplyToId: 'parent'),
+          redraftReplyDropped: true,
+        ),
+        replyTo.id,
+      );
+    });
   });
 
   group('投票の期限', () {
@@ -276,6 +300,48 @@ void main() {
         isFalse,
         reason: '送信が取得結果に依存している。引けなかったら返信が外れてしまう',
       );
+    });
+
+    /// ⚠⚠ **「返信をやめた」がすべての経路に効いていること (#1113)。**
+    ///
+    /// 表示（`_isReply`）だけに効いて送信に効かないと、✕ を押しても返信として
+    /// 送られ、同じ理由で拒否される。逆だと「返信として投稿します」が消えない。
+    test('⚠⚠ 返信先の解決は全部「返信をやめた」を通している', () {
+      final masked = maskStrings(code);
+      final calls = RegExp(r'resolveComposeInReplyToId\(').allMatches(masked);
+      expect(calls, isNotEmpty, reason: '探索が空振りしている');
+      final offenders = <String>[];
+      for (final m in calls) {
+        final args = balancedArgs(masked, m.end - 1);
+        if (!args.contains('redraftReplyDropped')) {
+          final line = masked.substring(0, m.start).split('\n').length;
+          offenders.add('$line 行目');
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'redraftReplyDropped を渡していない呼び出しがある。✕ で返信をやめても'
+            'その経路では返信のまま扱われる\n${offenders.join('\n')}',
+      );
+      // 送信 2 経路は `_inReplyToId` 経由（直に書かない）。
+      expect(
+        'inReplyToId: _inReplyToId'.allMatches(masked).length,
+        greaterThanOrEqualTo(2),
+        reason: '送信経路が _inReplyToId を通っていない',
+      );
+    });
+
+    test('引数の切り出し: 入れ子の括弧を越えて閉じ括弧まで取る', () {
+      const source = 'f(a, g(b), redraftReplyDropped: x) + h(c)';
+      expect(balancedArgs(source, 1), 'a, g(b), redraftReplyDropped: x');
+    });
+
+    test('⚠ 返信先が消えていたら専用の案内を出し、✕ で返信をやめられる', () {
+      final masked = maskStrings(code);
+      expect(masked, contains('isReplyTargetGoneError('));
+      expect(masked, contains('_redraftReplyDropped = true'));
     });
 
     test('⚠ carry と宣言した項目を compose が読んでいる', () {
@@ -448,6 +514,20 @@ extension X on MisskeyNote {
       expect(stale, isEmpty, reason: stale.join('\n'));
     });
   });
+}
+
+/// [open] の位置にある `(` から、対応する `)` までの中身。
+String balancedArgs(String code, int open) {
+  var depth = 0;
+  for (var i = open; i < code.length; i++) {
+    final c = code[i];
+    if (c == '(') depth++;
+    if (c == ')') {
+      depth--;
+      if (depth == 0) return code.substring(open + 1, i);
+    }
+  }
+  return code.substring(open + 1);
 }
 
 /// [anchor] より後ろにある最初の `Post(...)` の、**直下の名前付き引数**の名前。

@@ -107,5 +107,13 @@ int redraftPollExpiresIn({
 ///
 /// ⚠ **redraft は `Post` ではなく id しか持たない。**元投稿の `inReplyToId` は
 /// 「その投稿が誰への返信だったか」なので、そのまま次の投稿の返信先になる。
-String? resolveComposeInReplyToId(Post? replyTo, Post? redraft) =>
-    replyTo?.id ?? redraft?.inReplyToId;
+///
+/// [redraftReplyDropped] は、引き継いだ返信先をユーザーがやめたとき。返信先が
+/// 消えているとサーバーは送信を拒否するので（`isReplyTargetGoneError`）、
+/// 返信をやめて単独の投稿として送る道を残す。⚠ **`replyTo`（今回の操作で開いた
+/// 返信）には効かせない。**やめられるのは引き継いだぶんだけ。
+String? resolveComposeInReplyToId(
+  Post? replyTo,
+  Post? redraft, {
+  bool redraftReplyDropped = false,
+}) => replyTo?.id ?? (redraftReplyDropped ? null : redraft?.inReplyToId);
