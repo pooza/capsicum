@@ -391,11 +391,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// （[_unsendableScopeReason]）。⚠ **広げる方向の自動補正はしない。**
   PostScope _scope = PostScope.public;
 
-  /// 現在の公開範囲では送れない理由。送れるなら null (#1043)。
-  ///
-  /// ⚠ **「宛先を作れない指名」だけを止める。**返信なら宛先はサーバーが補完
-  /// するので送れる。redraft / 下書き復元 / サーバー既定で入った指名は、
-  /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
   /// ⚠ **この投稿が返信として送られるか (#1113)。**
   ///
   /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
@@ -435,6 +430,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     try {
       final post = await adapter.getPostById(id);
       if (!mounted) return;
+      // ⚠ **送信の失敗で「返信先が消えている」と分かった後なら上書きしない。**
+      // 取得が遅れて着くと、プレビューが復活して ✕ の付いた注記が隠れる
+      // （v1.64 のリリース前レビュー）。
+      if (_redraftReplyToUnavailable) return;
       setState(() => _redraftReplyTo = post);
     } catch (e) {
       // ⚠ **失敗しても送信は成立する。**プレビューが出ないだけなので、
@@ -445,6 +444,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     }
   }
 
+  /// 現在の公開範囲では送れない理由。送れるなら null (#1043)。
+  ///
+  /// ⚠ **「宛先を作れない指名」だけを止める。**返信なら宛先はサーバーが補完
+  /// するので送れる。redraft / 下書き復元 / サーバー既定で入った指名は、
+  /// 宛先が無いので**誰にも届かない** — だからといって広い範囲へ倒さず、
   /// ユーザーに選び直してもらう。
   String? get _unsendableScopeReason {
     if (_scope != PostScope.direct) return null;
@@ -605,6 +609,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     'pt': 'Português',
     'ru': 'Русский',
   };
+
+  /// 言語の選択肢。⚠ **現在値は必ず含める**（[_scopeItems] と同じ理由）。
+  ///
+  /// 削除して再編集で引き継いだ言語（#1113）や端末ロケールが 9 言語の外
+  /// （Mastodon は `it` / `zh-TW` なども保存する）だと、`DropdownButton` に
+  /// items に無い value を渡すことになり、debug は赤画面・release は空欄に
+  /// なっていた（v1.64 のリリース前レビュー）。⚠ **値は捨てない** —— 捨てると
+  /// 送られる言語が黙って変わる。知らない言語はコードをそのまま出す。
+  Map<String, String> get _languageEntries {
+    final current = _language;
+    if (current == null || _languageOptions.containsKey(current)) {
+      return _languageOptions;
+    }
+    return {..._languageOptions, current: current};
+  }
 
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
@@ -3227,14 +3246,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// ⚠ **前に戻さないこと。**「ID しか返さないので通さないと編集が黙って
   /// 捨てられる」(#1027-F1) は**どこかで通す必要がある**という意味であって、
   /// 前に置く理由ではない。
-  Future<void> _syncDriveDescriptions() async {
-    final adapter = ref.read(currentAdapterProvider);
+  ///
+  /// ## ⚠⚠ adapter / account は呼び出し側が await の前に取って渡す
+  ///
+  /// 投稿 / 保存の**後ろ**へ回した (#1035-A2) ことで、ここは必ず await の後に
+  /// 走る。中で `ref.read` すると、送信中に画面を離れたとき dispose 済みで
+  /// StateError になり、外側の catch が `if (!mounted) return;` に吸う ——
+  /// **投稿は成功しているのに `_clearDraft()` が飛び、下書きが残って次に開いた
+  /// ときに復元される**（二重投稿を誘う・v1.64 のリリース前レビュー）。
+  Future<void> _syncDriveDescriptions(
+    DecentralizedBackendAdapter adapter,
+    Account? account,
+  ) async {
     if (adapter is! DriveSupport) return;
-    // ⚠ **報告に使う値は await の前に確定させる (#1027-C2)。**下のループは
-    // await をまたぐので、catch の中で `ref.read` すると画面を離れたときに
-    // dispose 済みで StateError になり、**投稿そのものが無言で落ちる**
-    // （外側の catch が `if (!mounted) return;` に吸う）。
-    final account = ref.read(currentAccountProvider);
     // 判断は [pendingDriveDescriptionUpdates] が持つ（検査できるように分けて
     // ある）。ここは残った I/O だけ。
     final pending = pendingDriveDescriptionUpdates([
@@ -3277,6 +3301,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // DraftSupport は mixin で DecentralizedBackendAdapter の subtype ではない
     // ため is! では promote されない。ScheduleSupport と同様に明示 cast で使う。
     if (adapter == null || adapter is! DraftSupport) return;
+    // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
+    final account = ref.read(currentAccountProvider);
 
     // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
     // 理由は [_submitInternal] の同じ位置のコメント。
@@ -3319,7 +3345,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ⚠ **保存が通ってから ALT を書き戻す (#1035-A2)。**理由は
       // [_submitInternal] の同じ位置のコメント（失敗したのに過去の投稿の ALT
       // だけ書き換わるのを防ぐ）。
-      await _syncDriveDescriptions();
+      await _syncDriveDescriptions(adapter, account);
 
       // サーバーへ保存できたので、ローカルに自動保存された下書きは破棄する。
       // これをしないと、投稿成功経路（_clearDraft を呼ぶ）と非対称になり、
@@ -3460,6 +3486,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
+    // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
+    final account = ref.read(currentAccountProvider);
 
     // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
     // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
@@ -3530,7 +3558,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       //
       // ⚠ **「過去の投稿も変わる」こと自体は仕様として受け入れ済み**
       // （`drive_support.dart` の doc）。直したのは**失敗したのに残る**ほう。
-      await _syncDriveDescriptions();
+      await _syncDriveDescriptions(adapter, account);
       // Posting succeeded — drop any persisted draft so it doesn't reappear
       // the next time the user opens compose. Only applies to fresh-compose
       // sessions; reply/quote/redraft/share flows never autosaved and must
@@ -3613,7 +3641,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           builder: (dialogContext) => AlertDialog(
             title: const Text('投稿に失敗しました'),
             content: const Text(
-              '返信先の投稿が削除されています。「返信として投稿します」の ✕ で'
+              '返信先の投稿が削除されたか、見られなくなっています。'
+              '「返信として投稿します」の ✕ で'
               '返信をやめると、単独の投稿として送れます。'
               '本文はクリップボードにもコピーしました。',
             ),
@@ -3838,10 +3867,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         MenuSubmenuEntry(
           label: '言語',
           children: [
-            for (final entry in _languageOptions.entries)
+            for (final entry in _languageEntries.entries)
               MenuActionEntry(
                 label: entry.value,
                 checked: _language == entry.key,
+                // 選択肢の外の現在値は選び直す対象ではない（既に選ばれている）。
                 onSelected: busy ? null : _languageSetters[entry.key],
               ),
           ],
@@ -4572,7 +4602,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                                         setState(() => _language = v);
                                       }
                                     },
-                              items: _languageOptions.entries
+                              items: _languageEntries.entries
                                   .map(
                                     (e) => DropdownMenuItem(
                                       value: e.key,

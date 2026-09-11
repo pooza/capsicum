@@ -338,6 +338,29 @@ void main() {
       expect(balancedArgs(source, 1), 'a, g(b), redraftReplyDropped: x');
     });
 
+    test('⚠ 言語の選択肢は現在値を含む _languageEntries から作る', () {
+      // 引き継いだ言語が 9 言語の外だと、items に無い value で DropdownButton が
+      // 壊れた（debug は赤画面・v1.64 のリリース前レビュー）。
+      final masked = maskStrings(code);
+      expect(masked, contains('items: _languageEntries'));
+      expect(masked, isNot(contains('items: _languageOptions')));
+      expect(masked, isNot(contains('in _languageOptions.entries')));
+    });
+
+    test('⚠⚠ _syncDriveDescriptions の中で ref.read しない', () {
+      // 投稿 / 保存の後ろで走るので、送信中に画面を離れると dispose 済みの
+      // ref.read が StateError になり、投稿は成功したのに下書きが残った
+      // （v1.64 のリリース前レビュー）。adapter / account は呼び出し側が
+      // await の前に取って渡す。
+      final masked = maskStrings(code);
+      final start = masked.indexOf('Future<void> _syncDriveDescriptions(');
+      expect(start, isNot(-1), reason: '探索が空振りしている');
+      final open = masked.indexOf('{', masked.indexOf(')', start));
+      final body = balancedBraces(masked, open);
+      expect(body, contains('updateDriveFileDescription'));
+      expect(body, isNot(contains('ref.read(')));
+    });
+
     test('⚠ 返信先が消えていたら専用の案内を出し、✕ で返信をやめられる', () {
       final masked = maskStrings(code);
       expect(masked, contains('isReplyTargetGoneError('));
@@ -514,6 +537,20 @@ extension X on MisskeyNote {
       expect(stale, isEmpty, reason: stale.join('\n'));
     });
   });
+}
+
+/// [open] の位置にある `{` から、対応する `}` までの中身。
+String balancedBraces(String code, int open) {
+  var depth = 0;
+  for (var i = open; i < code.length; i++) {
+    final c = code[i];
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth == 0) return code.substring(open + 1, i);
+    }
+  }
+  return code.substring(open + 1);
 }
 
 /// [open] の位置にある `(` から、対応する `)` までの中身。

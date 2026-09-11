@@ -9,8 +9,12 @@ import 'misskey_api_error.dart';
 ///
 /// | サーバー | 返り方 |
 /// | --- | --- |
-/// | Misskey | 400 + `error.code == 'NO_SUCH_REPLY_TARGET'` |
-/// | Mastodon | 404（`statuses_controller.rb` の `set_thread`） |
+/// | Misskey | 400 + `error.code` が `NO_SUCH_REPLY_TARGET`（消えた）または `CANNOT_REPLY_TO_AN_INVISIBLE_NOTE`（見えない） |
+/// | Mastodon | 404（`statuses_controller.rb` の `set_thread`・消えた / 見えないを区別しない） |
+///
+/// ⚠ **「見えない」も同じに扱う**（v1.64 のリリース前レビュー）。Mastodon は
+/// 両方を同じ 404 にまとめるので対応できていたが、Misskey だけ抜けていた。
+/// どちらも「返信をやめれば送れる」は同じ。
 ///
 /// ⚠ **Mastodon の 404 は引用元の消失と区別できない。**`set_quoted_status` も
 /// 同じ 404 を返す（`set_thread` が先に走るので、返信先が消えていればそちらが
@@ -25,6 +29,9 @@ bool isReplyTargetGoneError(
   if (!sentAsReply) return false;
   if (error is! DioException) return false;
   final code = misskeyApiErrorCode(error);
-  if (code != null) return code == 'NO_SUCH_REPLY_TARGET';
+  if (code != null) {
+    return code == 'NO_SUCH_REPLY_TARGET' ||
+        code == 'CANNOT_REPLY_TO_AN_INVISIBLE_NOTE';
+  }
   return error.response?.statusCode == 404 && !sentWithQuote;
 }

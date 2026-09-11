@@ -43,6 +43,14 @@ void main() {
       );
     });
 
+    test('⚠ 返信先が見えない（CANNOT_REPLY_TO_AN_INVISIBLE_NOTE）も同じ', () {
+      // Mastodon は消えた / 見えないを同じ 404 にまとめる。Misskey だけ抜けていた。
+      expect(
+        gone(error(400, misskey('CANNOT_REPLY_TO_AN_INVISIBLE_NOTE'))),
+        isTrue,
+      );
+    });
+
     test('ほかのコード（引用元の消失など）は違う', () {
       expect(gone(error(400, misskey('NO_SUCH_RENOTE_TARGET'))), isFalse);
       expect(gone(error(400, misskey('RATE_LIMIT_EXCEEDED'))), isFalse);

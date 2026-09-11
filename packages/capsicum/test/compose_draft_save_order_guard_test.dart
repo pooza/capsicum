@@ -77,12 +77,17 @@ void main() {
           .toList(growable: false);
     }
 
+    /// 呼び出し（`await _syncDriveDescriptions(…)`）の行か。⚠ v1.64 で
+    /// adapter / account を引数で渡すようにしたので `()` 決め打ちで探さない。
+    /// 宣言行（`Future<void> _syncDriveDescriptions(`）は拾わない。
+    bool isSyncCall(String l) =>
+        l.contains('await _syncDriveDescriptions(') &&
+        !l.trimLeft().startsWith('//');
+
     void expectSyncAfter(String signature, String sendCall) {
       final body = bodyOf(signature);
       final send = body.indexWhere((l) => l.contains(sendCall));
-      final sync = body.indexWhere(
-        (l) => l.contains('_syncDriveDescriptions()'),
-      );
+      final sync = body.indexWhere(isSyncCall);
       expect(send, isNot(-1), reason: '$sendCall を拾えていない（検査のアンカーが外れた）');
       expect(sync, isNot(-1), reason: '_syncDriveDescriptions の呼び出しを拾えていない');
       expect(
@@ -116,12 +121,7 @@ void main() {
       final save = lines.indexWhere(
         (l) => l.contains('DraftSupport).saveDraft('),
       );
-      final sync = lines.indexWhere(
-        (l) =>
-            l.contains('_syncDriveDescriptions()') &&
-            !l.trimLeft().startsWith('//'),
-        save,
-      );
+      final sync = lines.indexWhere(isSyncCall, save);
       expect(save, isNot(-1));
       expect(
         sync,
