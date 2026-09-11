@@ -147,17 +147,35 @@ String loginLocation(LoginArgs args) => Uri(
 ).toString();
 
 /// [loginLocation] の逆。読めなければ null（呼び出し側が `/server` へ戻す）。
+///
+/// ⚠ **host はホスト名（必要なら `:port` 付き）の形だけ通す**（v1.64 の
+/// リリース前レビュー）。クエリで運ぶようにしたので、`@` `/` `?` を含む値が
+/// `'https://$host/…'` にそのまま入りうる。正規の導線（サーバー選択画面）が
+/// 渡すのは常にこの形。
 LoginArgs? resolveLoginArgs(Uri uri) {
   final query = uri.queryParameters;
   final host = query['host'];
   final backendType = BackendType.values.asNameMap()[query['backend']];
-  if (host == null || host.isEmpty || backendType == null) return null;
+  if (host == null ||
+      !_loginHostPattern.hasMatch(host) ||
+      backendType == null) {
+    return null;
+  }
   return LoginArgs(
     host: host,
     backendType: backendType,
     softwareVersion: query['softwareVersion'],
   );
 }
+
+/// `/login` に渡してよい host の形。**URL の構造を変える文字**（`/` `?` `#`
+/// `@` `\`・空白・ポート以外の `:`）を含まないこと + 任意の `:port`。
+///
+/// ⚠ **ホスト名の文字種までは絞らない。**サーバー選択画面は手入力を trim する
+/// だけで渡すので、日本語ドメイン（IDN）をそのまま入力して probe が通る環境を
+/// 締め出さない。守りたいのは「`https://$host/…` の組み立てで別のホストや
+/// パスへすり替わらないこと」だけ。
+final _loginHostPattern = RegExp(r'^[^\s/?#@\\:]+(?::[0-9]{1,5})?$');
 
 /// 行き先を決める（副作用なし）。
 ///
@@ -185,6 +203,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
+    // ⚠⚠ **OS から渡された初期ルートより `/splash` を優先する**（v1.64 の
+    // リリース前レビュー）。既定の false だと、コールドスタートの deep link
+    // （`capsicumauth://complete/login?host=…`）が `initialLocation` に勝ち、
+    // splash / EULA を飛ばして任意ホストのログイン画面が開いた（実機で再現）。
+    // Android / macOS はネイティブ側でも Flutter の deep link を切ってある。
+    overridePlatformDefaultLocation: true,
     refreshListenable: authNotifier,
     redirect: (context, state) => resolveRedirect(
       isLoggedIn: authNotifier.isLoggedIn,

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:capsicum/src/router.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:flutter/material.dart';
@@ -102,6 +104,66 @@ void main() {
         isNull,
       );
     });
+
+    /// ⚠⚠ **クエリで運ぶようにしたので、外から値を差し込める**（v1.64 の
+    /// リリース前レビュー）。host は `'https://$host/…'` にそのまま入る。
+    test('⚠ ホスト名の形でない host は通さない', () {
+      for (final bad in [
+        'evil.example@good.example',
+        'evil.example/path',
+        'evil.example?x=1',
+        'evil example',
+        r'evil.example\good.example',
+        'evil.example#frag',
+        'good.example:port',
+        'a:b:c',
+      ]) {
+        final uri = Uri(
+          path: '/login',
+          queryParameters: {'host': bad, 'backend': 'mastodon'},
+        );
+        expect(resolveLoginArgs(uri), isNull, reason: bad);
+      }
+    });
+
+    test('ホスト名・ポート付き・IP は通す', () {
+      for (final good in [
+        'mstdn.b-shock.org',
+        'st2.misskey.delmulin.com',
+        'localhost:3000',
+        '192.168.1.10',
+        'xn--eckwd4c7c.example.com',
+        // ⚠ 手入力の IDN をそのまま probe に通す環境を締め出さない。
+        'ドメイン.example',
+      ]) {
+        final uri = Uri(
+          path: '/login',
+          queryParameters: {'host': good, 'backend': 'mastodon'},
+        );
+        expect(resolveLoginArgs(uri)?.host, good, reason: good);
+      }
+    });
+  });
+
+  /// ⚠⚠ **OS から渡された初期ルートで splash / EULA を飛ばさない**（v1.64 の
+  /// リリース前レビュー・実機で再現）。`capsicumauth://complete/login?host=…`
+  /// でコールドスタートすると、任意ホストのログイン画面が直接開いた。
+  test('⚠⚠ GoRouter が初期ルートを OS より優先している', () {
+    final code = File('lib/src/router.dart').readAsStringSync();
+    expect(
+      RegExp(r'overridePlatformDefaultLocation:\s*true').hasMatch(code),
+      isTrue,
+    );
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    expect(
+      RegExp(
+        r'flutter_deeplinking_enabled"\s*android:value="false"',
+      ).hasMatch(manifest),
+      isTrue,
+      reason: 'Android の Flutter deep link を切ってある',
+    );
   });
 
   group('⚠⚠ go_router の挙動（この修正の前提）', () {
