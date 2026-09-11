@@ -62,6 +62,18 @@ typedef CursorPageEnricher<T> =
 ///    減らしたうえで next リンクを返すことがある
 /// 4. **引っ張って更新で `_loading` を立てない**。立てると三項の分岐が変わって
 ///    `RefreshIndicator` ごとアンマウントされ、**引っぱったスピナーが即座に消える**
+///
+/// ## ⚠ v1.64 のリリース前レビューで足した守り
+///
+/// 5. **追加読み込みは、使ったカーソルが今も最新のときだけ採用する。**世代だけ
+///    では足りなかった —— `load()` が世代を上げたあと 1 ページ目が返る前に
+///    スクロール通知が来ると、`_loadMore` は**新しい世代**と**古いカーソル**を
+///    組にして取りに行き、世代の一致をすり抜けて古いページを連結していた
+/// 6. **追加読み込みが失敗したら自動の先読みを止める。**失敗しても `_hasMore`
+///    は立ったままなので、末尾でスクロール通知が来るたびに再取得→即失敗→
+///    Sentry への報告を繰り返していた（#1083-D で報告を足したため、枠を食う）。
+///    画面にも何も出なかった。末尾に「再試行」を出し、押すか引っ張って更新で
+///    解除する
 class CursorPagedListView<T> extends ConsumerStatefulWidget {
   const CursorPagedListView({
     super.key,
@@ -121,6 +133,9 @@ class _CursorPagedListViewState<T>
   /// 初回取得の失敗。⚠ **「0 件」と描き分けるために要る**（クラス doc の 1）。
   Object? _error;
 
+  /// 追加読み込みの失敗。立っている間は自動の先読みをしない（クラス doc の 6）。
+  Object? _loadMoreError;
+
   /// 取得の世代（クラス doc の 2）。
   int _generation = 0;
 
@@ -161,6 +176,7 @@ class _CursorPagedListViewState<T>
       setState(() {
         // ⚠ in-flight の追加読み込みが無効になったことを UI に反映する。
         _loadingMore = false;
+        _loadMoreError = null;
         _items = items;
         _nextCursor = result.nextCursor;
         _loading = false;
@@ -181,15 +197,23 @@ class _CursorPagedListViewState<T>
   }
 
   Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore || _items.isEmpty) return;
+    // ⚠ 失敗が立っている間は自動では取りに行かない（クラス doc の 6）。
+    if (_loadingMore || !_hasMore || _items.isEmpty || _loadMoreError != null) {
+      return;
+    }
     // 着地時に load が走り直していたら、この結果は古いページなので捨てる。
     final generation = _generation;
+    // ⚠ **使ったカーソルも控える**（クラス doc の 5）。世代だけでは、load の
+    // 1 ページ目が返る前に始まった追加読み込みをすり抜けさせる。
+    final cursor = _nextCursor;
+    bool stale() =>
+        !mounted || generation != _generation || cursor != _nextCursor;
     setState(() => _loadingMore = true);
     try {
-      final result = await widget.fetcher(_nextCursor);
-      if (!mounted || generation != _generation) return;
+      final result = await widget.fetcher(cursor);
+      if (stale()) return;
       final items = await _enrich(result.items);
-      if (!mounted || generation != _generation) return;
+      if (stale()) return;
       setState(() {
         _items = [..._items, ...items];
         _nextCursor = result.nextCursor;
@@ -199,9 +223,18 @@ class _CursorPagedListViewState<T>
     } catch (e, st) {
       debugLogException('${widget.debugLabel} loadMore error', e);
       _report('load_more', e, st);
-      if (!mounted || generation != _generation) return;
-      setState(() => _loadingMore = false);
+      if (stale()) return;
+      setState(() {
+        _loadingMore = false;
+        _loadMoreError = e;
+      });
     }
+  }
+
+  /// 末尾の「再試行」から。
+  void _retryLoadMore() {
+    setState(() => _loadMoreError = null);
+    _loadMore();
   }
 
   /// 取得失敗を Sentry へ (#1083-D)。
@@ -245,9 +278,28 @@ class _CursorPagedListViewState<T>
       onRefresh: load,
       child: ListView.separated(
         controller: _scrollController,
-        itemCount: _items.length + (_loadingMore ? 1 : 0),
+        itemCount:
+            _items.length + (_loadingMore || _loadMoreError != null ? 1 : 0),
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
+          if (index >= _items.length && _loadMoreError != null) {
+            // ⚠ 失敗を黙らない（クラス doc の 6）。自動では取り直さない。
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    '続きを読み込めませんでした',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  TextButton(
+                    onPressed: _retryLoadMore,
+                    child: const Text('再試行'),
+                  ),
+                ],
+              ),
+            );
+          }
           if (index >= _items.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
