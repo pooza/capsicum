@@ -246,18 +246,16 @@ class IsCatEnricher {
   /// **結果はプロセス共有のキャッシュに載る**（次の取得で効く）。
   /// ⚠ **だから `fetchIsCat` 自体に timeout を掛けてはいけない** — timeline の
   /// 旧実装はそうしており、遅れて着いた結果を捨てていた（#1082 で解消）。
+  ///
+  /// ⚠⚠ **超過では障害として数えない**（v1.64 のリリース前レビュー）。以前は
+  /// ここで 1 回数え、同じリクエストが後で失敗すると [_fetchAndCache] の中で
+  /// もう 1 回数えていた —— 閾値 5 が実質 3 リクエストで発火し、遅いが成功する
+  /// リクエストも着くまでは失敗に数えていた。リクエストは `fetchIsCat` の
+  /// 上限（5 秒）で必ず決着するので、**結果の側で 1 回だけ数える**。
   Future<void> _fetchWithinBudget(List<String> accts) async {
     // ⚠ [_fetchAndCache] は throw しない（中で catch 済み）。ここで待つのを
     // やめても unhandled error にならない。
-    final pending = _fetchAndCache(accts);
-    var exceeded = false;
-    await pending.timeout(
-      kIsCatEnrichBudget,
-      onTimeout: () {
-        exceeded = true;
-      },
-    );
-    if (exceeded) _noteRequestFailure();
+    await _fetchAndCache(accts).timeout(kIsCatEnrichBudget, onTimeout: () {});
   }
 
   Future<void> _fetchAndCache(List<String> accts) async {
@@ -322,12 +320,14 @@ class IsCatEnricher {
   /// 報告・集計のキー。⚠ acct ではなく**モロヘイヤ単位**（[_failureKey] と同じ理由）。
   String get _outageKey => _mulukhiya?.baseUrl ?? '-';
 
+  /// ⚠ **報告時刻は消さない**（v1.64 のリリース前レビュー）。消すと、失敗と
+  /// 成功を繰り返すサーバーで 1 時間のレート制限が効かなくなる。
   void _noteRequestSuccess() {
     _globalIsCatOutageStreak.remove(_outageKey);
-    _globalIsCatOutageReportedAt.remove(_outageKey);
   }
 
-  /// リクエスト**全体**が失敗した（`result == null` / 例外 / バジェット超過）。
+  /// リクエスト**全体**が失敗した（`result == null` / 例外）。⚠ 呼び出し元の
+  /// 待ち上限の超過は数えない（[_fetchWithinBudget] の doc）。
   ///
   /// ⚠⚠ **個別 acct の解決失敗はここに来ない。**リモートを引けないアカウントは
   /// 日常的にあり、猫耳が付かないだけの装飾。数えると母数がそれで埋まって、

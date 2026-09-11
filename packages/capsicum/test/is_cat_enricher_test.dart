@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:capsicum/src/provider/is_cat_provider.dart';
 import 'package:capsicum_backends/capsicum_backends.dart';
 import 'package:capsicum_core/capsicum_core.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/dart_source.dart';
@@ -298,7 +299,60 @@ void main() {
 
       expect(reports, isEmpty, reason: 'どちらも閾値に届いていない');
     });
+
+    /// ⚠⚠ **遅れて失敗したリクエストを 2 回数えない**（v1.64 のリリース前
+    /// レビュー）。以前は待ち上限（2 秒）の超過で 1 回、同じリクエストの失敗で
+    /// もう 1 回数え、閾値 5 が実質 3 リクエストで発火していた。
+    test('⚠⚠ 待ち上限を超えてから失敗したリクエストは 1 回だけ数える', () {
+      fakeAsync((async) {
+        final enricher = enricherFor(
+          _SlowMulukhiya(delay: kIsCatEnrichBudget * 2, response: null),
+        );
+        for (var i = 0; i < 3; i++) {
+          enricher.enrichUsers([_user('slow$i', 'remote.example')]);
+          async.elapse(kIsCatEnrichBudget * 3);
+        }
+        expect(reports, isEmpty, reason: '3 リクエストしか失敗していない（閾値は 5）');
+      });
+    });
+
+    test('⚠ 成功を挟んでも 1 時間のレート制限は解除しない', () async {
+      // 失敗と成功を繰り返すサーバーで、成功のたびに報告時刻を消すと
+      // 1 時間の抑止が効かず、障害のたびに送っていた。
+      final mulukhiya = _ScriptedMulukhiya(
+        responses: [
+          for (var i = 0; i < 5; i++) null,
+          <String, bool?>{},
+          for (var i = 0; i < 5; i++) null,
+        ],
+      );
+      await failTimes(enricherFor(mulukhiya), 11);
+      expect(reports.length, 1, reason: '2 回目の連続失敗は 1 時間以内なので送らない');
+    });
   });
+}
+
+/// [delay] だけ待ってから [response] を返す（待ち上限の超過を作る）。
+class _SlowMulukhiya implements MulukhiyaService {
+  _SlowMulukhiya({required this.delay, required this.response});
+
+  final Duration delay;
+  final Map<String, bool?>? response;
+
+  @override
+  final String baseUrl = 'https://mulukhiya.example.test/api';
+
+  @override
+  Future<Map<String, bool?>?> fetchIsCat({
+    required String accessToken,
+    required List<String> accts,
+  }) async {
+    await Future<void>.delayed(delay);
+    return response;
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _ThrowingMulukhiya implements MulukhiyaService {
