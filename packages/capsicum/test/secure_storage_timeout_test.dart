@@ -139,4 +139,68 @@ void main() {
       );
     });
   });
+
+  /// ⚠⚠ **上限は Secret Service（Linux）のときだけ**（v1.64 のリリース前
+  /// レビュー）。Android の EncryptedSharedPreferences はローエンド機の初回
+  /// 初期化で数秒かかることがあり、全 OS に上限を掛けると遅いだけの端末で
+  /// アカウントがオフラインに落ち、「キーリング / Secret Service」の案内まで
+  /// 出ていた。
+  test('⚠⚠ Secret Service でない OS では、遅い読み取りを打ち切らない', () {
+    debugSecretServiceOverride = false;
+    final storage = _MockSecureStorage();
+
+    fakeAsync((async) {
+      // ⚠ Completer は fakeAsync の中で作る。外で作ると完了の通知が
+      // fakeAsync の microtask に乗らず、`elapse` しても届かない。
+      final slow = Completer<String?>();
+      when(
+        () => storage.read(key: any(named: 'key')),
+      ).thenAnswer((_) => slow.future);
+      Object? thrown;
+      Map<String, String>? secrets;
+      AccountStorage(storage)
+          .getSecrets('mastodon://alice@mstdn.example')
+          .then((v) => secrets = v)
+          .catchError((Object e) {
+            thrown = e;
+            return null;
+          });
+
+      async.elapse(kSecureStorageReadTimeout * 2);
+      expect(thrown, isNull, reason: '上限を過ぎても諦めない（v1.63 と同じ）');
+      expect(SecureStorageHealth.unavailable, isFalse);
+
+      slow.complete('{"access_token":"t"}');
+      async.elapse(const Duration(milliseconds: 1));
+      expect(secrets, {'access_token': 't'});
+    });
+  });
+
+  group('疎通確認で諦めたか、読み取りが上限を超えたかを分ける', () {
+    test('probe で諦めたときは message で分かる', () {
+      SecretServiceProbe.debugProbeOverride = () async => false;
+      final storage = _MockSecureStorage();
+
+      fakeAsync((async) {
+        Object? thrown;
+        AccountStorage(
+          storage,
+        ).getSecrets('mastodon://alice@mstdn.example').catchError((Object e) {
+          thrown = e;
+          return null;
+        });
+        async.elapse(const Duration(milliseconds: 1));
+        expect(thrown, isA<TransientSecretUnavailableException>());
+        // ⚠ storage には触っていない。
+        verifyNever(() => storage.read(key: any(named: 'key')));
+      });
+    });
+
+    test('probe の message は定数と一致する（分類の目印）', () {
+      expect(
+        TimeoutException(SecureStorageHealth.probeSkipMessage).message,
+        SecureStorageHealth.probeSkipMessage,
+      );
+    });
+  });
 }

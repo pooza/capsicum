@@ -284,8 +284,13 @@ void main() {
   ///
   /// ⚠ **「末尾が e」で拾わない。**`$value` / `$name` / `$type` が全部当たる。
   /// 複合語は**大文字境界**（`clearErr` の `E`）を要求する。
-  const exactErrorNames = {'e', 'err', 'error', 'ex', 'exception'};
-  final errorSuffix = RegExp(r'[a-z0-9](?:Err|Error|Ex|Exception)$');
+  ///
+  /// ⚠ **`cause` も例外の名前 (v1.64 のリリース前レビュー)。**
+  /// `SecureStorageHealth.markRefused(Object cause)` が
+  /// `debugPrint('… $cause')` と書いていて、ここを素通りした。`cause` には
+  /// secret の JSON を含む `FormatException` が入りうる。
+  const exactErrorNames = {'e', 'err', 'error', 'ex', 'exception', 'cause'};
+  final errorSuffix = RegExp(r'[a-z0-9](?:Err|Error|Ex|Exception|Cause)$');
   bool isErrorIdentifier(String name) =>
       exactErrorNames.contains(name) || errorSuffix.hasMatch(name);
 
@@ -1052,6 +1057,16 @@ void main() {
       // ⚠ この 2 つが #1035-C2 の実例。列挙のままだと緑だった。
       expect(flags(r"'boom: $clearErr'"), isTrue);
       expect(flags(r"'boom: ${deleteErr.message}'"), isTrue);
+    });
+
+    test('⚠ cause / 〜Cause も拾う（markRefused がすり抜けた形）', () {
+      expect(flags(r"'refused the read: $cause'"), isTrue);
+      expect(flags(r"'boom: ${rootCause.message}'"), isTrue);
+    });
+
+    test('cause を含むだけの別の名前は拾わない', () {
+      expect(flags(r"'x: $because'"), isFalse);
+      expect(flags(r"'x: $causes'"), isFalse);
     });
 
     test('末尾が e というだけの変数は拾わない', () {

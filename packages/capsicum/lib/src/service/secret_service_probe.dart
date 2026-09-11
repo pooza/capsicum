@@ -81,7 +81,7 @@ class SecretServiceProbe {
   @visibleForTesting
   static Future<bool> Function()? debugProbeOverride;
 
-  /// テスト用。1 プロセス 1 回のキャッシュを空にする。
+  /// テスト用。キャッシュ（true / false とも）と差し替え口を空にする。
   @visibleForTesting
   static void resetForTest() {
     _cached = null;
@@ -118,8 +118,12 @@ class SecretServiceProbe {
   }
 
   static Future<bool> _ping() async {
-    final client = DBusClient.session();
+    DBusClient? opened;
     try {
+      // ⚠ **生成も try の中。**セッションバスのアドレスが決められないと同期的
+      // に投げうるので、外に置くと下の「素通りさせる」に届かず、
+      // `getSecrets` の汎用 catch（読めなかった扱い）へ落ちる。
+      final client = opened = DBusClient.session();
       // 1. dbus-daemon への問い合わせ。⚠ **相手が固まっていても速く返る。**
       final hasOwner = await client
           .nameHasOwner(_busName)
@@ -162,7 +166,8 @@ class SecretServiceProbe {
     } finally {
       // ⚠ close 自体は待たない。⚠ **応答しないバス相手に await すると、
       // ここで新しい待ちを作ってしまう**（塞ぎたかったものと同じ形）。
-      unawaited(client.close().catchError((_) {}));
+      final client = opened;
+      if (client != null) unawaited(client.close().catchError((_) {}));
     }
   }
 }

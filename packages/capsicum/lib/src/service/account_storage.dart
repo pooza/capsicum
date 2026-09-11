@@ -225,20 +225,7 @@ class AccountStorage {
     if (usesSecretServiceKeyring) SecureStorageHealth.markRefused(e);
   }
 
-  /// flutter_secure_storage の MethodChannel が plugin register より先に
-  /// 叩かれた場合、Linux では `MissingPluginException` で帰る。これは
-  /// `gtk_widget_realize` が Flutter engine を起動した直後に
-  /// `_SplashScreenState.initState` から `restoreSessions` が走ると、
-  /// runner 側 `fl_register_plugins` の完了とレースするため (#488)。
-  ///
-  /// runner の register 自体は同期で短時間に完了するので、短いインターバル
-  /// で数回リトライすれば十分塞げる。Mastodon / Misskey 共通経路で
-  /// アカウント復元の信頼性を底上げするため、storage 層に閉じ込めて配置。
-  ///
-  /// `MissingPluginException` は `PlatformException` を継承していないため、
-  /// retry 後も解消しない場合はそのまま re-throw して呼び出し側
-  /// (`getSecrets`) の専用 catch で処理する。
-  /// ⚠⚠ **読み取りには必ず上限を掛ける (#1085)。**Linux の
+  /// ⚠⚠ **Secret Service の読み取りには必ず上限を掛ける (#1085)。**Linux の
   /// flutter_secure_storage は libsecret → D-Bus `org.freedesktop.secrets` に
   /// 落ちるので、**Secret Service が死んでいると応答が返らない**。呼び出し側は
   /// 全部 `try`/`catch` で囲んであるが、**ハングは例外ではないので catch され
@@ -261,18 +248,38 @@ class AccountStorage {
   ///
   /// だから **触る前に [SecretServiceProbe] で聞く**。あちらは純 Dart の D-Bus
   /// なのでプラットフォームスレッドを使わない。⚠ **順序が逆だと意味が無い。**
+  ///
+  /// ⚠⚠ **上限は Secret Service のときだけ掛ける。**Apple の Keychain /
+  /// Android の Keystore / Windows の DPAPI は D-Bus を経由しないので固まる
+  /// 形にならず、代わりに**ローエンド機の初回初期化で数秒かかる**ことがある
+  /// （Android の EncryptedSharedPreferences）。全 OS に掛けると、遅いだけの
+  /// 端末でアカウントがオフラインに落ち、「キーリング / Secret Service」を
+  /// 名指しする案内まで出ていた（v1.64 のリリース前レビュー）。
   Future<String?> _read(String key) async {
     if (!await SecretServiceProbe.isResponsive()) {
       // ⚠ **触らずに諦める。**触れば固まるので、上限を掛けても手遅れになる。
       // 呼び出し側（[getSecrets]）が transient として扱い、アカウントは残る。
-      throw TimeoutException(
-        'secret service did not answer before the read',
-        kSecureStorageReadTimeout,
-      );
+      // ⚠ message で「触っていない」ことを伝える（Sentry で実タイムアウトと
+      // 区別するため・[SecureStorageHealth.probeSkipMessage]）。
+      throw TimeoutException(SecureStorageHealth.probeSkipMessage);
     }
-    return _storage.read(key: key).timeout(kSecureStorageReadTimeout);
+    final read = _storage.read(key: key);
+    return usesSecretService ? read.timeout(kSecureStorageReadTimeout) : read;
   }
 
+  /// flutter_secure_storage の MethodChannel が plugin register より先に
+  /// 叩かれた場合、Linux では `MissingPluginException` で帰る。これは
+  /// `gtk_widget_realize` が Flutter engine を起動した直後に
+  /// `_SplashScreenState.initState` から `restoreSessions` が走ると、
+  /// runner 側 `fl_register_plugins` の完了とレースするため (#488)。
+  ///
+  /// runner の register 自体は同期で短時間に完了するので、短いインターバル
+  /// で数回リトライすれば十分塞げる。Mastodon / Misskey 共通経路で
+  /// アカウント復元の信頼性を底上げするため、storage 層に閉じ込めて配置。
+  ///
+  /// `MissingPluginException` は `PlatformException` を継承していないため、
+  /// retry 後も解消しない場合はそのまま re-throw して呼び出し側
+  /// (`getSecrets`) の専用 catch で処理する。
   Future<String?> _readWithRegisterRetry(String key) async {
     // 50 + 100 + 200 + 250 = 600ms。低スペック端末 / cold start で plugin
     // register が遅れる場合に備え、合計を約 600ms に延長 (#497)。
@@ -324,9 +331,17 @@ class AccountStorage {
     // する。parse 失敗は legacy データ自体が壊れているので削除してよい。
     List<String> list;
     try {
-      final raw = await _storage.read(key: _legacyAccountListKey);
+      // ⚠ **[_read] を通す (#1085)。**新規インストールでは prefs に索引が無い
+      // ので、**初回起動は必ずここを通る**。直に `_storage.read` を叩くと、
+      // キーリングが固まっている Linux では初回起動が真っ黒なまま返らない
+      // （報告もされにくい面・v1.64 のリリース前レビュー）。
+      final raw = await _read(_legacyAccountListKey);
       if (raw == null) return [];
       list = List<String>.from(jsonDecode(raw) as List);
+    } on TimeoutException {
+      // 応答しない。⚠ **legacy は残す**（壊れているのではなく、今読めない
+      // だけ）。索引も書かないので、次回起動で読み直される。
+      return [];
     } on PlatformException catch (e, st) {
       // secure_storage 読み込み失敗。legacy は残して次回リトライ。
       _reportOnce('index', e, st);
@@ -660,7 +675,9 @@ class AccountStorage {
     String expectedRedirectUri,
   ) async {
     try {
-      final raw = await _storage.read(key: 'client_creds_$host');
+      // ⚠ **[_read] を通す (#1085)。**ログインのたびに通る経路で、キーリングが
+      // 固まっている Linux では直に読むとログイン画面ごと止まる。
+      final raw = await _read('client_creds_$host');
       if (raw == null) return null;
       final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       if (map['redirect_uri'] != expectedRedirectUri) return null;
@@ -668,6 +685,10 @@ class AccountStorage {
       final clientSecret = map['client_secret'];
       if (clientId is! String || clientSecret is! String) return null;
       return ClientSecretData(clientId: clientId, clientSecret: clientSecret);
+    } on TimeoutException {
+      // 応答しない。キャッシュが無いのと同じに扱い、新規登録させる。⚠ 不具合
+      // ではなく環境の状態なので Sentry へは送らない（[getSecrets] 側で送る）。
+      return null;
     } catch (e, st) {
       // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
       // (BadPaddingException) が host_credentials 側で発火しても観測できる

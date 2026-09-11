@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../util/exception_scrub.dart';
+
 /// secure storage が応答したかどうかを 1 箇所で持つ (#1085)。
 ///
 /// ## なぜ要るか
@@ -20,8 +22,12 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 ///
 /// ## 使い方
 ///
-/// 読み取りが [kSecureStorageReadTimeout] を超えたら [markUnavailable] を
-/// 呼ぶ。UI は [notifier] を `ValueListenableBuilder` で見て、案内を足す。
+/// - 読み取りが [kSecureStorageReadTimeout] を超えた / 触る前の疎通確認で
+///   諦めた → [markUnavailable]
+/// - 応答は返ったが読めなかった（解錠できない等・#1104）→ [markRefused]
+/// - 読めた → [markRecovered]
+///
+/// UI は [notifier] を `ValueListenableBuilder` で見て、案内を足す。
 ///
 /// ⚠ **riverpod ではなく `ValueNotifier`。**印を付けるのは `ref` を持たない
 /// storage 層で、そこから provider を触れるようにすると依存が逆流する。
@@ -42,11 +48,24 @@ class SecureStorageHealth {
   /// 送っても母数が水増しされるだけ。
   static bool _reported = false;
 
+  /// 触る前の疎通確認（`SecretServiceProbe`）で諦めたときの
+  /// `TimeoutException.message`。
+  ///
+  /// ⚠⚠ **実際に読み取りが上限を超えた場合と区別するために使う。**前者は
+  /// storage に**触っていない**（画面は動く）、後者は**触って固まった**
+  /// （プラットフォームスレッドが止まり、画面は黒いまま）。混ぜると、疎通確認を
+  /// 足した効果が Sentry で測れない（どちらも `timeout_ms=5000` に見えていた）。
+  static const probeSkipMessage =
+      'secret service did not answer before the read';
+
   /// 応答が無かったことを記録する。
   static void markUnavailable(TimeoutException cause) {
+    final stage = cause.message == probeSkipMessage ? 'probe' : 'read';
     debugPrint(
-      'capsicum: secure storage did not respond within '
-      '${cause.duration?.inMilliseconds}ms',
+      stage == 'probe'
+          ? 'capsicum: secret service did not answer; secure storage skipped'
+          : 'capsicum: secure storage did not respond within '
+                '${cause.duration?.inMilliseconds}ms',
     );
     notifier.value = true;
     if (_reported) return;
@@ -57,10 +76,12 @@ class SecureStorageHealth {
         level: SentryLevel.warning,
         withScope: (scope) {
           scope.setTag('phase', 'startup_secret');
+          scope.setTag('secure_storage_stage', stage);
           // ⚠ 鍵の名前もアカウントも載せない。知りたいのは「応答しない環境が
           // 実在するか」だけで、どの item かは関係ない。
           scope.setContexts('secure_storage', {
-            'timeout_ms': cause.duration?.inMilliseconds,
+            'stage': stage,
+            if (stage == 'read') 'timeout_ms': cause.duration?.inMilliseconds,
           });
         },
       ),
@@ -77,7 +98,12 @@ class SecureStorageHealth {
   /// ⚠ **ここでは Sentry へ送らない。**呼び出し側が例外そのものを送っているので、
   /// 同じ事実を 2 回上げると母数が二重に見える。
   static void markRefused(Object cause) {
-    debugPrint('capsicum: secure storage refused the read: $cause');
+    // ⚠⚠ **`debugPrint('… $cause')` と書かないこと。**`cause` には
+    // `getSecrets` の汎用 catch に来たものがそのまま入り、secret の JSON が
+    // 壊れていれば `FormatException` の本文（＝アクセストークンを含む）が
+    // 載る。release の `debugPrint` は breadcrumb になり、message は
+    // `_scrubBreadcrumb` で push token しか伏せられない。
+    debugLogException('capsicum: secure storage refused the read', cause);
     notifier.value = true;
   }
 

@@ -161,10 +161,32 @@ void main() {
       );
     });
 
+    /// ⚠ **ファイル全体の最初の一致同士を比べない**（v1.64 のリリース前
+    /// レビュー）。それだと `_read` より前に別の関数で probe を呼んでいれば、
+    /// `_read` から probe が消えても通る。**`_read` の本体に絞って見る。**
+    const readSignature = 'Future<String?> _read(String key) async';
+
+    String masked() => maskStrings(maskComments(File(path).readAsStringSync()));
+
+    test('_read の本体を切り出せている', () {
+      final body = functionBody(masked(), readSignature);
+      expect(body, isNotEmpty, reason: '_read のシグネチャが変わった。検査も直す');
+      expect(body, contains('_storage.read('));
+    });
+
+    test('本体の切り出し: 入れ子のブロックを越えて閉じ括弧まで取る', () {
+      const source =
+          'Future<String?> _read(String key) async { if (x) { throw y; } '
+          'return z; } void other() { _storage.read(); }';
+      final body = functionBody(source, readSignature);
+      expect(body, contains('return z;'));
+      expect(body, isNot(contains('other')));
+    });
+
     test('_read は probe を通ってから _storage.read を呼ぶ', () {
-      final code = maskComments(File(path).readAsStringSync());
-      final probe = code.indexOf('SecretServiceProbe.isResponsive()');
-      final read = code.indexOf('_storage.read(');
+      final body = functionBody(masked(), readSignature);
+      final probe = body.indexOf('SecretServiceProbe.isResponsive()');
+      final read = body.indexOf('_storage.read(');
 
       expect(
         probe,
@@ -187,14 +209,27 @@ void main() {
     test('⚠ 応答しないときは null ではなく TimeoutException を投げる', () {
       // ⚠ **null に潰すと「secret が存在しない」と区別がつかずログアウト扱い。**
       // #1085 のコメントで明示された制約で、probe 経路でも同じ。
-      final code = maskComments(File(path).readAsStringSync());
-      final probe = code.indexOf('SecretServiceProbe.isResponsive()');
-      final tail = code.substring(probe);
+      final body = functionBody(masked(), readSignature);
+      final thrown = body.indexOf('throw TimeoutException');
+      expect(thrown, isNot(-1), reason: 'probe が false のときに投げていない');
       expect(
-        tail.indexOf('throw TimeoutException') <
-            tail.indexOf('return _storage.read('),
-        isTrue,
+        thrown,
+        lessThan(body.indexOf('_storage.read(')),
         reason: 'probe が false のときに投げていない。null を返すとアカウントが消える',
+      );
+    });
+
+    test('⚠⚠ _storage.read を _read の外で直に呼んでいない', () {
+      // 新規インストールの初回起動は、prefs に索引が無いので legacy の読み取り
+      // を必ず通る。そこが直に `_storage.read` を叩いていて、キーリングが
+      // 固まっていると初回起動が真っ黒になっていた（v1.64 のリリース前レビュー）。
+      final code = masked();
+      final body = functionBody(code, readSignature);
+      final outside = code.replaceFirst(body, '');
+      expect(
+        '_storage.read('.allMatches(outside).length,
+        0,
+        reason: '_read（probe と上限）を通らない読み取りがある (#1085)',
       );
     });
   });
@@ -392,4 +427,23 @@ void main() {
       );
     });
   });
+}
+
+/// [signature] の直後の `{` から、対応する `}` までを返す。見つからなければ空。
+///
+/// ⚠ 呼び出し側でコメントと文字列を潰してから渡すこと（中の括弧を数えない）。
+String functionBody(String code, String signature) {
+  final start = code.indexOf(signature);
+  if (start < 0) return '';
+  final open = code.indexOf('{', start);
+  if (open < 0) return '';
+  var depth = 0;
+  for (var i = open; i < code.length; i++) {
+    if (code[i] == '{') depth++;
+    if (code[i] == '}') {
+      depth--;
+      if (depth == 0) return code.substring(open, i + 1);
+    }
+  }
+  return '';
 }
