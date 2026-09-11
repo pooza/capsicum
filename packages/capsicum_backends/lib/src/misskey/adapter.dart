@@ -961,13 +961,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    final users = items.map((item) {
-      final userData = item['follower'] as Map<String, dynamic>;
-      return MisskeyUser.fromJson(
-        userData,
-      ).toCapsicum(client.host, adminRoleIds: _adminRoleIds);
-    }).toList();
-    return (users: users, nextCursor: users.lastOrNull?.id);
+    // ⚠ カーソルは関係レコード（following）の id（[_relationList] の doc）。
+    return _relationList(items, 'follower');
   }
 
   // FollowRequestSupport (#1040)
@@ -1016,12 +1011,18 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
     return _relationList(items, 'mutee');
   }
 
-  /// Blocking / Muting のような「関係レコード + 相手の User」形式の一覧を
-  /// [User] のリストへ均す (#1039)。
+  /// Blocking / Muting / Following のような「関係レコード + 相手の User」形式の
+  /// 一覧を [User] のリストへ均す (#1039)。
   ///
   /// ⚠⚠ **カーソルは関係レコードの `id`。**`users.last.id`（相手の User id）を
-  /// 渡すとページが飛ぶ。`getFollowers` / `getFollowing` は User id を返して
-  /// いるが、あちらに合わせない。
+  /// 渡すとページが飛ぶ。サーバーは関係レコードの id でページングしている
+  /// （`users/followers.ts` などの `makePaginationQuery(followingsRepository…)`）。
+  ///
+  /// ⚠ **`getFollowers` / `getFollowing` も以前は User id を返していた**
+  /// （2026-03 から・v1.64 のリリース前レビューで発見）。User id はアカウント
+  /// 作成時刻、関係レコードの id はフォローした時刻なので、2 ページ目が「最後に
+  /// 表示した人のアカウント作成時刻より前のフォロー」から始まり、その間が
+  /// 抜けていた。ここへ寄せた。
   ({List<User> users, String? nextCursor}) _relationList(
     List<Map<String, dynamic>> items,
     String userKey,
@@ -1046,13 +1047,8 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
       untilId: query?.maxId,
       limit: query?.limit,
     );
-    final users = items.map((item) {
-      final userData = item['followee'] as Map<String, dynamic>;
-      return MisskeyUser.fromJson(
-        userData,
-      ).toCapsicum(client.host, adminRoleIds: _adminRoleIds);
-    }).toList();
-    return (users: users, nextCursor: users.lastOrNull?.id);
+    // ⚠ カーソルは関係レコード（following）の id（[_relationList] の doc）。
+    return _relationList(items, 'followee');
   }
 
   /// [type] を渡すと特定の絵文字でリアクションしたユーザーのみを取得する。
