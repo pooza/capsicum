@@ -120,8 +120,17 @@ class FcmService {
     var lastError = initialError;
     for (var attempt = 0; attempt < _transientRetryDelays.length; attempt++) {
       final delay = _transientRetryDelays[attempt];
+      // ⚠ **`message` を載せない (#1035-C2)。**release / profile の
+      // `debugPrint` は sentry_flutter の DebugPrintIntegration が breadcrumb 化
+      // するが、`_scrubBreadcrumb` が message に当てるのは relay の push token
+      // マスクだけ（範囲の正本はそちらの doc・#1035-D2）なので、
+      // `FirebaseException.message`（上流が入れる任意の文言）がそのまま Sentry に
+      // 出る。`code` は素性だけなので安全。
+      //
+      // ⚠ **情報は落ちていない。**全リトライを消化したときは下で `lastError` を
+      // throw し、`initialize()` の catch から scrub 経由で Sentry へ送っている。
       debugPrint(
-        'capsicum: push.fcm: ${lastError.message ?? lastError.code}; '
+        'capsicum: push.fcm: ${lastError.code}; '
         'retry ${attempt + 1}/${_transientRetryDelays.length} in ${delay.inSeconds}s',
       );
       await Future<void>.delayed(delay);

@@ -73,7 +73,7 @@ class _ChatRoomInviteScreenState extends ConsumerState<ChatRoomInviteScreen> {
         'invite_to_room',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

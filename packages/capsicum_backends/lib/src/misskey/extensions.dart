@@ -115,6 +115,11 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       sensitive: (files ?? []).any((f) => f.isSensitive),
       reblogCount: renoteCount,
       replyCount: repliesCount,
+      // ⚠⚠ **落とすと「削除して再編集」で返信が外れる (#1113)。**再編集は元投稿
+      // の `inReplyToId` を次の返信先にするので、ここが null だと単独の投稿として
+      // 送られ、指名への返信は #1043 の「指名は止める」に掛かって送れなくなる。
+      // タイムラインの「返信」の印（`post_tile`）もこれを見ている。
+      inReplyToId: replyId,
       reactions: reactions ?? const {},
       myReaction: myReaction,
       reactionEmojis: reactionEmojis ?? const {},
@@ -133,8 +138,9 @@ extension CapsicumMisskeyNoteExtension on MisskeyNote {
       channelName: channel?['name'] as String?,
       localOnly: localOnly ?? false,
       url: 'https://$localHost/notes/$id',
-      reactionAcceptance:
-          misskeyReactionAcceptanceRosetta[reactionAcceptance ?? ''],
+      // ⚠ `?? ''` は不要 (#1083-F)。`Map<String, _>[null]` は null を返すので、
+      // 空文字へ落としても結果は同じ「表に無い＝制限なし」。
+      reactionAcceptance: misskeyReactionAcceptanceRosetta[reactionAcceptance],
     );
   }
 }

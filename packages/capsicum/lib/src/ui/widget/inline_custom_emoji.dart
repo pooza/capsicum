@@ -53,11 +53,20 @@ class EmojiAspectRatioCache {
   ///
   /// 0 / 負 / NaN / Infinity は捨てる。これらを通すと `size * ratio` が
   /// レイアウトを壊す（`BoxConstraints` の assert で落ちる）。
+  ///
+  /// ⚠ **既知の URL でも、比が違えば上書きする** (#1038)。初版は「同じ絵文字
+  /// なら比は変わらない」として既知の URL を素通りしていたが、**サーバー管理者は
+  /// 同じショートコードのまま画像を差し替える**（`/emoji/<shortcode>.webp` の
+  /// ような安定 URL を使う経路が実在する）。素通りさせると、`ImageCache` が
+  /// 画素を追い出して読み直したあとも古い比で幅を渡し続け、**再起動するまで
+  /// レターボックス / 潰れた幅のまま**になる。
+  ///
+  /// 上書きしても **FIFO の位置は動かない**。`LinkedHashMap` は既存キーへの
+  /// 代入で挿入順を変えないため、[_maxSize] の追い出し順は「最初に覚えた順」の
+  /// ままになる（参照でも再記録でも位置を動かさない = [_ratios] の doc）。
   void record(String url, double ratio) {
     if (!ratio.isFinite || ratio <= 0) return;
-    // 既知の URL は上書きしない。同じ絵文字なら比は変わらないはずで、
-    // 書き直すと FIFO の位置だけが動く。
-    if (_ratios.containsKey(url)) return;
+    if (_ratios[url] == ratio) return;
     _ratios[url] = ratio;
     while (_ratios.length > _maxSize) {
       _ratios.remove(_ratios.keys.first);
@@ -87,6 +96,7 @@ class InlineCustomEmoji extends StatefulWidget {
     this.maxWidthFactor,
     this.fallback,
     this.cache,
+    this.imageProvider,
   });
 
   /// 絵文字画像の URL。
@@ -118,6 +128,13 @@ class InlineCustomEmoji extends StatefulWidget {
   /// [EmojiAspectRatioCache.instance]。
   final EmojiAspectRatioCache? cache;
 
+  /// テスト用の差し替え口。既定は `NetworkImage(url)`。
+  ///
+  /// 実画像のデコードを伴う挙動（比の測り直し = #1038）を widget テストから
+  /// 駆動するために開けてある。本番経路では渡さない。
+  @visibleForTesting
+  final ImageProvider? imageProvider;
+
   @override
   State<InlineCustomEmoji> createState() => _InlineCustomEmojiState();
 }
@@ -128,13 +145,20 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
   ImageStreamListener? _listener;
   double? _ratio;
 
+  /// この URL について、この mount でもう実寸を測ったか (#1038)。
+  ///
+  /// 測るのは **1 mount につき 1 回**。取れたら [_unsubscribe] して手放すので、
+  /// これが無いと `didChangeDependencies` が呼ばれるたび（テーマ変更・
+  /// `MediaQuery` の更新等）に resolve をやり直すことになる。
+  bool _measured = false;
+
   EmojiAspectRatioCache get _cache =>
       widget.cache ?? EmojiAspectRatioCache.instance;
 
   @override
   void initState() {
     super.initState();
-    _provider = NetworkImage(widget.url);
+    _provider = widget.imageProvider ?? NetworkImage(widget.url);
     _ratio = _cache[widget.url];
   }
 
@@ -148,8 +172,9 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
   void didUpdateWidget(InlineCustomEmoji oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url == widget.url) return;
-    _provider = NetworkImage(widget.url);
+    _provider = widget.imageProvider ?? NetworkImage(widget.url);
     _ratio = _cache[widget.url];
+    _measured = false;
     _unsubscribe();
     _subscribeIfNeeded();
   }
@@ -160,14 +185,24 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
     super.dispose();
   }
 
-  /// アスペクト比が未知のときだけ画像ストリームを覗く。
+  /// 実寸を 1 回測るために画像ストリームを覗く。
   ///
-  /// ⚠ **既知なら購読しない。**listener が付いているあいだ `ImageCache` は
-  /// その画像を live 扱いにして追い出さないので、全絵文字を購読し続けると
+  /// ⚠ **取れたら即座に手放す。**listener が付いているあいだ `ImageCache` は
+  /// その画像を live 扱いにして追い出さないので、購読しっぱなしにすると
   /// キャッシュの回転を止めてしまう。欲しいのは寸法 1 回だけなので、
-  /// 取れたら [_handleImage] の中で即座に手放す。
+  /// [_handleImage] の中で [_unsubscribe] する。
+  ///
+  /// ⚠ **比が既知でも測る** (#1038)。初版は既知なら購読しなかったが、それだと
+  /// **新しい寸法を観測する経路自体が閉じる**ため、同じ URL で画像が差し替わって
+  /// も古い比を使い続けた。mount のたびに 1 回だけ測り直す形にして、
+  /// 「スクロールで捨てられ、戻って作り直される」たびに追随できるようにする。
+  ///
+  /// ⚠ **これは購読を増やしていない。**画面に出ている `Image` widget 自身が
+  /// mount のあいだ同じ completer を購読しているので、`ImageCache` の live 判定は
+  /// こちらの有無で変わらない。逆に言えば、**表示中の絵文字はそもそも読み直され
+  /// ない**（差し替えに気付けるのは捨てられて作り直された後）。
   void _subscribeIfNeeded() {
-    if (_ratio != null || !mounted) return;
+    if (_measured || !mounted) return;
     final stream = _provider.resolve(createLocalImageConfiguration(context));
     if (stream.key == _stream?.key) return;
     _unsubscribe();
@@ -200,6 +235,7 @@ class _InlineCustomEmojiState extends State<InlineCustomEmoji> {
     final ratio = width / height;
     _cache.record(widget.url, ratio);
     // 寸法が取れた時点で用は済んだ。listener を残すと ImageCache を pin する。
+    _measured = true;
     _unsubscribe();
     if (!mounted || _ratio == ratio) return;
     setState(() => _ratio = ratio);

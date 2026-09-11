@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 
 /// Web Push 用の ECDH P-256 鍵ペアと auth シークレットの生成・保管。
@@ -78,6 +79,16 @@ class PushKeyStore {
   static Future<void> migrateAccessibilityIfNeeded() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_migrationFlagKey) ?? false) return;
+    // ⚠ **accessibility / accessGroup は Apple の Keychain の概念 (#1085)。**
+    // 他プラットフォームでは焼き直すものが無い。以前は「フラグを立てるため」に
+    // 全プラットフォームで走らせていたが、**それは起動経路で secure storage を
+    // 叩く理由になっていない**。Linux では Secret Service が死んでいると
+    // `readAll` が返らず、`runApp()` の手前で止まって**真っ黒なウインドウ**に
+    // なる。フラグだけ立てて素通りする。
+    if (!usesKeychainAccessibility) {
+      await prefs.setBool(_migrationFlagKey, true);
+      return;
+    }
     try {
       // 旧鍵 (groupId 無し + unlocked) を明示 options で列挙する。
       final all = await _storage.readAll(

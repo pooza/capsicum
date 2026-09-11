@@ -25,6 +25,7 @@ import '../../provider/tab_selection_provider.dart';
 import '../../provider/timeline_provider.dart';
 import '../../provider/unread_badge_provider.dart';
 import '../../provider/update_check_provider.dart';
+import '../../service/secure_storage_health.dart';
 import '../../service/update_checker.dart';
 import '../../url_helper.dart';
 import '../../util/startup_trace.dart';
@@ -108,10 +109,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 登録済みが自分自身のときだけ解除する（別 HomeScreen が既に上書きして
     // いたら触らない）。⚠ notifier は [_refreshNotifier] から取る。ここで
     // `ref.read` すると必ず投げて、以降の解除に到達しない。
+    //
+    // ⚠⚠ **書き換えはフレームの外へ出す。**Riverpod は `dispose` を含む
+    // ライフサイクル中の provider 書き換えを禁じており、ここで直接書くと
+    // `Tried to modify a provider while the widget tree was building` を投げる。
+    // ⚠ **投げると unmount がその場で打ち切られる**ので、以降は Duplicate
+    // GlobalKey / `_lifecycleState == inactive` の assert 失敗が連鎖して赤画面に
+    // なる（＝ここは「解除が漏れる」では済まず、画面ごと壊れる）。
+    //
+    // ⚠ **同一性の判定も遅延先で行う。**新しい HomeScreen は initState の
+    // post-frame で登録するので、この解除より先に走る。判定を遅延先に置けば、
+    // そのとき不一致になって触らない（先に判定すると新しい登録を消す）。
     final refreshNotifier = _refreshNotifier;
-    if (refreshNotifier != null &&
-        refreshNotifier.state == _refreshCurrentTimeline) {
-      refreshNotifier.state = null;
+    final ownRefresh = _refreshCurrentTimeline;
+    if (refreshNotifier != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // ProviderScope ごと畳まれていれば触らない（アプリ終了時）。
+        if (!refreshNotifier.mounted) return;
+        if (refreshNotifier.state == ownRefresh) {
+          refreshNotifier.state = null;
+        }
+      });
     }
     WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_onPositionsChanged);
@@ -1998,6 +2016,12 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                             '続けるので、接続が回復すればタイムラインへ戻ります。',
                   textAlign: TextAlign.center,
                 ),
+                // ⚠⚠ **キーリングが死んでいると、ここまでの文言は全部嘘になる**
+                // (#1085)。secure storage が応答しないとログイン情報を読めず、
+                // 到達不能と区別がつかないまま「サーバーが停止中かも」「自動で
+                // 再試行します」と言うことになる。**待っても直らない**ので、
+                // 原因と次の一手を名指しする。
+                const _SecretServiceNotice(),
                 const SizedBox(height: 24),
                 for (final o in offline)
                   Card(
@@ -2044,9 +2068,28 @@ class _OfflineHomeScaffold extends ConsumerWidget {
                 // 接続し直す導線は各カードのタップ（`/server?host=...`）が担う。
                 if (!allNeedLogin) ...[
                   FilledButton.icon(
-                    onPressed: () => ref
-                        .read(accountManagerProvider.notifier)
-                        .retryOfflineRestores(),
+                    onPressed: () async {
+                      // ⚠ await の前に捕まえる（押した後に画面が差し替わりうる）。
+                      final messenger = ScaffoldMessenger.of(context);
+                      final ran = await ref
+                          .read(accountManagerProvider.notifier)
+                          .retryOfflineRestores();
+                      // ⚠⚠ **確かめ直してもまだ読めなければ、そう言う (#1085)。**
+                      // 画面の案内は押す前と同じ文面のままなので、黙ると「押しても
+                      // 何も起こらない」に見える（報告者の 181 の検証がその形）。
+                      // ⚠ `ran == false` は別の再試行が走っている最中で、そちらが
+                      // 同じ仕事をしているので何も言わない。
+                      if (ran && SecureStorageHealth.unavailable) {
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'キーリング / Secret Service から、'
+                              'まだログイン情報を読み出せません',
+                            ),
+                          ),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text('今すぐ再試行'),
                   ),
@@ -2098,5 +2141,81 @@ Future<void> confirmRemoveOfflineAccount(
     await ref
         .read(accountManagerProvider.notifier)
         .removeOfflineAccount(offline.key);
+  }
+}
+
+/// secure storage からログイン情報を読み出せないときに出す案内 (#1085 / #1104)。
+///
+/// 応答しなかった（#1085）ときに加え、応答はあったが解錠できなかった（#1104・
+/// `SecureStorageHealth.markRefused`）ときも出る。どちらも Secret Service
+/// （Linux）のときだけ旗が立つ。
+///
+/// ⚠⚠ **「真っ黒なウインドウで無反応」よりマシにするのが要件。**Linux で
+/// gnome-keyring（Secret Service）が死んでいると、capsicum はログイン情報を
+/// 読めない。上に並んでいる「サーバーが停止 / 再構築中かも」「自動で再試行を
+/// 続けます」は**その場合すべて嘘**になり、待っても直らない。
+///
+/// ⚠ **原因（キーリング）と次の一手が伝わればよい。**報告者は「アプリの更新で
+/// 壊れた」と受け取り、v1.58 まで遡って試して初めて原因に辿り着いた。
+///
+/// [SecureStorageHealth] は `ref` を持たない storage 層から立てる旗なので、
+/// riverpod ではなく `ValueListenableBuilder` で見る。
+class _SecretServiceNotice extends StatelessWidget {
+  const _SecretServiceNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: SecureStorageHealth.notifier,
+      builder: (context, unavailable, _) {
+        if (!unavailable) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Card(
+            color: scheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.key_off_outlined,
+                        color: scheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'ログイン情報を読み出せません',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(color: scheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    // ⚠ OS の呼び名を出す。「セキュアストレージ」だけでは何を
+                    // 調べればいいか分からない。
+                    // ⚠ **「応答しませんでした」と言い切らない (#1104)。**旗は
+                    // 応答が返らない場合（#1085）だけでなく、**応答は返ったが
+                    // 解錠できなかった**場合にも立つ。後者で「応答しなかった」
+                    // と書くと、キーリングが動いていることを知っている
+                    // ユーザーには嘘に見える。
+                    'この端末のパスワード保管庫（キーリング / Secret Service）'
+                    'を読み出せませんでした。アカウント情報は消えていません。'
+                    'ほかのアプリでもパスワードの保存・読み出しに失敗している'
+                    '場合は、端末を再起動すると直ることがあります。',
+                    style: TextStyle(color: scheme.onErrorContainer),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

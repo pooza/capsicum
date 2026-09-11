@@ -8,6 +8,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channel = "net.shrieker.capsicum/share"
 
+    /** #1108: OAuth の認可待ちのあいだ凍結されないようにする keep-alive の口。 */
+    private val oauthKeepAliveChannel = "net.shrieker.capsicum/oauth_keepalive"
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)
@@ -18,6 +21,25 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            oauthKeepAliveChannel,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                // ⚠ start は **フォアグラウンドにいるあいだ**に呼ばれる前提
+                // （foreground service はバックグラウンドから起動できない）。
+                // Dart 側はブラウザを開く前に呼んでいる。
+                "start" -> {
+                    OAuthKeepAliveService.start(this)
+                    result.success(OAuthKeepAliveService.shouldKeepAlive())
+                }
+                "stop" -> {
+                    OAuthKeepAliveService.stop(this)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

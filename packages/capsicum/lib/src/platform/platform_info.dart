@@ -1,6 +1,6 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 /// デスクトップ 3 OS（macOS / Linux / Windows）かどうか。
 ///
@@ -88,3 +88,115 @@ bool get oauthCallbackNeedsAppReturn => !kIsWeb && Platform.isAndroid;
 /// loopback がハングするため、Android では再利用しない（host 保存 or fresh 登録
 /// に委ねる）。他プラットフォームは従来どおり再利用してよい。
 bool get canReuseAccountScopedOAuthClient => kIsWeb || !Platform.isAndroid;
+
+/// Keychain の accessibility / accessGroup という概念を持つプラットフォームか
+/// (#1085)。Apple 系（iOS / macOS）だけ true。
+///
+/// ⚠⚠ **起動経路で secure storage を叩く理由になるのはここだけ。**
+/// accessibility の焼き直し migration（#392 / #643）は「フラグを立てるため」に
+/// 全プラットフォームで走っていたが、Android (EncryptedSharedPreferences) /
+/// Linux (libsecret) / Windows (DPAPI) には焼き直すものが無い。**Linux では
+/// Secret Service が死んでいると `readAll` が返らず、`runApp()` の手前で
+/// 止まって真っ黒なウインドウになる**（#1085 の症状）。
+///
+/// UI 層に `Platform.isX` を直書きしない設計指針 (#650) と同じ理由で、
+/// storage 層にも直書きせず機能名で公開する。
+bool get usesKeychainAccessibility =>
+    debugKeychainAccessibilityOverride ??
+    (!kIsWeb && (Platform.isIOS || Platform.isMacOS));
+
+/// テスト用の差し替え口 (#1085)。
+///
+/// ⚠ **これが無いと、Apple 系でしか動かない migration の検査が CI（Linux）で
+/// 素通りする。**実際にこの seam を入れる前は、手元（macOS）で緑・CI で赤に
+/// なった。**プラットフォーム分岐を入れたら、分岐の両側をテストから踏めるように
+/// すること。**
+@visibleForTesting
+bool? debugKeychainAccessibilityOverride;
+
+/// secure storage が **D-Bus の Secret Service** に載っているか (#1085)。
+///
+/// ⚠⚠ **これが true の OS だけ、「触ると固まる」ことがある。**
+/// `flutter_secure_storage_linux` はメソッドチャネルのハンドラの中で
+/// `secret_password_lookupv_sync` を直に呼ぶため、Secret Service が応答しないと
+/// **プラットフォームスレッド（＝フレームを提示するスレッド）が止まる**。
+/// Apple の Keychain / Android の Keystore / Windows の DPAPI は D-Bus を
+/// 経由しないので、この形にはならない。
+///
+/// ⚠ **`usesKeychainAccessibility` の裏返しではない。**あちらは「焼き直す
+/// accessibility があるか」で Apple 系だけ、こちらは「D-Bus 越しか」で Linux
+/// だけ。**両方 false の OS（Android / Windows）がある。**
+bool get usesSecretService =>
+    debugSecretServiceOverride ?? (!kIsWeb && Platform.isLinux);
+
+/// テスト用の差し替え口 (#1085)。
+///
+/// ⚠ **Linux でしか走らない分岐は、他 OS の CI / 手元で素通りする。**
+/// `usesKeychainAccessibility` で実際に踏んだ形（手元 macOS で緑・CI Linux で
+/// 赤）と同じなので、最初から seam を置く。
+@visibleForTesting
+bool? debugSecretServiceOverride;
+
+/// secure storage の**読み取り失敗**から「permanent（もう二度と読めない）」を
+/// 判別できるプラットフォームか (#1104)。Apple 系（iOS / macOS）だけ true。
+///
+/// ⚠⚠ **false のプラットフォームで secret を delete してはいけない。**delete は
+/// 再ログインを強制する破壊的操作なので、**transient を permanent と誤判定した
+/// 瞬間にユーザーのアカウントが消える**。permanent を消し損ねても、再ログインが
+/// secret を上書きするので無害 —— **誤りのコストが対称でない。**
+///
+/// - **Apple (Keychain)**: `errSecInteractionNotAllowed` (-25308) のような
+///   **文書化された transient コード**が返るので、それ以外を permanent
+///   （再インストールで item が壊れた等）と見なせる
+/// - **Android (EncryptedSharedPreferences / Keystore)**: 起動時のロック中・
+///   Keystore 準備前・register race（transient）と、再インストールでの鍵再生成
+///   （permanent）が**同じ形で返る** (#730 / #731)
+/// - **Linux (libsecret)**: `PlatformException(Libsecret error, …)` という
+///   **粒度の粗い 1 種類**しか返らない。⚠ 実際に観測された
+///   `Failed to unlock the keyring` は**解錠に失敗しただけ＝定義上 transient**
+///   （解錠ダイアログのキャンセル / login keyring のパスワード不一致）なのに、
+///   従来はこれで secret を消していた（Sentry `CAPSICUM-53` / #1104）
+/// - **Windows (DPAPI)**: 同様に transient を名指しできない
+///
+/// storage 層に `Platform.isX` を直書きしない設計指針 (#650) に従い機能名で
+/// 公開する。
+bool get mayDeleteSecretOnReadFailure =>
+    debugMayDeleteSecretOnReadFailureOverride ??
+    (!kIsWeb && (Platform.isIOS || Platform.isMacOS));
+
+/// テスト用の差し替え口 (#1104)。
+///
+/// ⚠⚠ **分岐の両側をテストから踏めるようにするため必須。**#1085 で
+/// `Platform.isIOS || Platform.isMacOS` を直書きしたら、手元（macOS）で緑・
+/// CI（Linux）で赤になった。**ローカルの全数テストはプラットフォーム分岐の
+/// 検査にならない。**
+@visibleForTesting
+bool? debugMayDeleteSecretOnReadFailureOverride;
+
+/// secure storage の backend が D-Bus の Secret Service（libsecret →
+/// gnome-keyring / kwalletd）かどうか (#1085 / #1104)。Linux のみ true。
+///
+/// ⚠ **案内の文面が「キーリング / Secret Service」と OS の呼び名を名指しする**
+/// ので、その文面が真になるプラットフォームでだけ旗を立てる。Android の
+/// Keystore 失敗で「キーリングが応答しませんでした」と出しても、ユーザーは
+/// 存在しないものを探すことになる。
+bool get usesSecretServiceKeyring =>
+    debugUsesSecretServiceKeyringOverride ?? (!kIsWeb && Platform.isLinux);
+
+/// テスト用の差し替え口 (#1104)。
+@visibleForTesting
+bool? debugUsesSecretServiceKeyringOverride;
+
+/// secure storage の backend 名。Sentry の fingerprint 接尾辞に使う (#1104)。
+///
+/// ⚠ **プラットフォーム名ではなく backend 名。**同じ「読めなかった」でも、
+/// 調べに行く先が Keystore なのか libsecret なのか DPAPI なのかで切り分けが
+/// 変わる。⚠ **`android_keystore` は #730 / #731 から使っている既存の値なので
+/// 変えない**（変えると Sentry の既存 issue と分断される）。
+String get secretStoreTag {
+  if (kIsWeb) return 'unknown';
+  if (Platform.isAndroid) return 'android_keystore';
+  if (Platform.isLinux) return 'libsecret';
+  if (Platform.isWindows) return 'dpapi';
+  return 'keychain';
+}

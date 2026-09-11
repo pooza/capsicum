@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../../model/account.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/server_config_provider.dart';
+import '../../util/action_labels.dart';
 import '../../util/exception_scrub.dart';
 import '../util/post_action_error.dart';
 import 'emoji_text.dart';
@@ -105,9 +106,10 @@ Future<void> showCrossAccountBoostPicker({
 }
 
 /// アカウント [account] の文脈でのブースト / リノートの呼称。
-String _boostLabel(Account account) =>
-    account.mulukhiya?.reblogLabel ??
-    (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
+///
+/// ⚠ **現在アカウントの `reblogLabelProvider` は使えない**（ここで扱うのは
+/// 別アカウント）。決め方の正本は [reblogLabelFor] (#1035-E1)。
+String _boostLabel(Account account) => reblogLabelFor(account);
 
 Future<void> _boostWithAccount(
   ScaffoldMessengerState messenger,

@@ -906,10 +906,18 @@ class MisskeyClient {
 
   /// POST /api/notes/search (#1041)
   ///
-  /// 本文検索。⚠ **サーバーで無効化されうる。**Misskey は全文検索バックエンド
-  /// （Meilisearch / pgroonga 等）を別立てで持つ構成で、未設定のサーバーは
-  /// `UNAVAILABLE`（"Search of notes unavailable."）を返す。実際プリセットの
-  /// ダイスキー・きゅあすきーとも未設定（2026-09-04 実測）。
+  /// 本文検索。⚠ **サーバーで無効化されうる。**`UNAVAILABLE`
+  /// （"Search of notes unavailable."）が返る。実際プリセットのダイスキー・
+  /// きゅあすきーとも返る（2026-09-04 実測）。
+  ///
+  /// ⚠ **原因は「全文検索バックエンド未設定」ではない (#1083-F)。**
+  /// `notes/search` は本文を引きに行く前に
+  /// **`RoleService.getUserPolicies(...).canSearchNotes`** を見て、false なら
+  /// その場で `unavailable` を投げる（フォークのソースで確認。既定のロール
+  /// ポリシーが `canSearchNotes: false`）。**ロールポリシーの話であって、
+  /// Meilisearch / pgroonga の有無とは別の層。**観測される挙動も client の
+  /// 実装も変わらないが、**因果を書き違えると「サーバーに検索基盤を入れれば
+  /// 直る」と誤読する**。
   ///
   /// ⚠⚠ **どんな失敗でも `null` を返し、例外を投げない。**同時に投げている
   /// ユーザー検索・タグ検索は `Future.wait` で束ねられているので、**1 本でも

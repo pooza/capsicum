@@ -107,25 +107,117 @@ final _authNotifierProvider = Provider<_AuthNotifier>((ref) {
   return notifier;
 });
 
+/// 認証ゲート（ログイン前に入れる画面）。
+const _authLocations = {'/login', '/server', '/splash', '/eula'};
+
+/// `/login` が必要とする引数。
+class LoginArgs {
+  const LoginArgs({
+    required this.host,
+    required this.backendType,
+    this.softwareVersion,
+  });
+
+  final String host;
+  final BackendType backendType;
+  final String? softwareVersion;
+}
+
+/// `/login` の遷移先（クエリ付き）を組み立てる。
+///
+/// ⚠⚠ **`extra` で渡さないこと (#1057 / Sentry CAPSICUM-16)。**go_router は
+/// `refreshListenable` が鳴るたびに現在の RouteMatchList を**シリアライズ経由で
+/// 組み直す**。`extraCodec` を渡していないので `json.encoder.convert(extra)` に
+/// 掛かり、[BackendType]（enum）のような JSON にできない値が 1 つでも入って
+/// いると **extra が丸ごと null に落ちる**（go_router 14.8 の
+/// `RouteMatchListCodec._toPrimitives`）。すると `/login` のフォールバックが
+/// 走って `/server` へ飛び、**OAuth の完走を待っている `LoginScreen` がその場で
+/// dispose される**。これが「認可は成功しているのにサーバー選択画面に戻る」の
+/// 正体だった。クエリ文字列は location そのものなので、この経路を通らない。
+///
+/// ⚠ **組み立てと読み取りを 1 箇所に置いてあるのは、検査が写しを見ないため。**
+/// 呼び出し側で `'/login'` を組み立て直すと、この往復のテストが実物を見なくなる。
+String loginLocation(LoginArgs args) => Uri(
+  path: '/login',
+  queryParameters: {
+    'host': args.host,
+    'backend': args.backendType.name,
+    if (args.softwareVersion != null) 'softwareVersion': args.softwareVersion!,
+  },
+).toString();
+
+/// [loginLocation] の逆。読めなければ null（呼び出し側が `/server` へ戻す）。
+///
+/// ⚠ **host はホスト名（必要なら `:port` 付き）の形だけ通す**（v1.64 の
+/// リリース前レビュー）。クエリで運ぶようにしたので、`@` `/` `?` を含む値が
+/// `'https://$host/…'` にそのまま入りうる。正規の導線（サーバー選択画面）が
+/// 渡すのは常にこの形。
+LoginArgs? resolveLoginArgs(Uri uri) {
+  final query = uri.queryParameters;
+  final host = query['host'];
+  final backendType = BackendType.values.asNameMap()[query['backend']];
+  if (host == null ||
+      !_loginHostPattern.hasMatch(host) ||
+      backendType == null) {
+    return null;
+  }
+  return LoginArgs(
+    host: host,
+    backendType: backendType,
+    softwareVersion: query['softwareVersion'],
+  );
+}
+
+/// `/login` に渡してよい host の形。**URL の構造を変える文字**（`/` `?` `#`
+/// `@` `\`・空白・ポート以外の `:`）を含まないこと + 任意の `:port`。角括弧で
+/// 囲んだ IPv6 表記（`[2001:db8::1]` / `[::1]:3000`）も通す（リリース PR の
+/// Codex P2。`probeInstance` は通るのに、ここで弾いて `/server` へ戻していた）。
+///
+/// ⚠ **ホスト名の文字種までは絞らない。**サーバー選択画面は手入力を trim する
+/// だけで渡すので、日本語ドメイン（IDN）をそのまま入力して probe が通る環境を
+/// 締め出さない。守りたいのは「`https://$host/…` の組み立てで別のホストや
+/// パスへすり替わらないこと」だけ。
+final _loginHostPattern = RegExp(
+  r'^(?:[^\s/?#@\\:\[\]]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$',
+);
+
+/// 行き先を決める（副作用なし）。
+///
+/// ⚠ **判定を純関数にしてあるのは、ログイン導線を壊さずに検査するため
+/// (#1057)。**「ログイン済みなら auth 画面から追い出す」と書くと、設定から
+/// 2 つ目のアカウントを足す導線（`/server` を開く）が壊れる。壊れていないことを
+/// テストで固定できるよう、`redirect` の中身をここへ出してある。
+///
+/// ⚠⚠ **ここでログイン直後の引き上げをやらないこと (#1057)。**[location] は
+/// `matchList.uri.path` で、**`push` で積んだぶんは反映されない**（go_router
+/// 14.8 の `RouteMatchList.push` は `copyWith(matches:)` だけで `uri` を
+/// 更新しない）。ホームから「アカウントを追加」→ `/server` → `/login` と
+/// 積んでも、ここに来る [location] は `/home` のままになる。実機で 1 度
+/// これを踏んで「旗は消費されたのに引き上げが起きない」状態を作った。
+/// ログイン直後の遷移は [routerProvider] の listener が持つ。
+@visibleForTesting
+String? resolveRedirect({required bool isLoggedIn, required String location}) {
+  if (!isLoggedIn && !_authLocations.contains(location)) return '/server';
+  return null;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = ref.read(_authNotifierProvider);
 
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
+    // ⚠⚠ **OS から渡された初期ルートより `/splash` を優先する**（v1.64 の
+    // リリース前レビュー）。既定の false だと、コールドスタートの deep link
+    // （`capsicumauth://complete/login?host=…`）が `initialLocation` に勝ち、
+    // splash / EULA を飛ばして任意ホストのログイン画面が開いた（実機で再現）。
+    // Android / macOS はネイティブ側でも Flutter の deep link を切ってある。
+    overridePlatformDefaultLocation: true,
     refreshListenable: authNotifier,
-    redirect: (context, state) {
-      final isLoggedIn = authNotifier.isLoggedIn;
-      final location = state.matchedLocation;
-      final isOnAuth =
-          location == '/login' ||
-          location == '/server' ||
-          location == '/splash' ||
-          location == '/eula';
-
-      if (!isLoggedIn && !isOnAuth) return '/server';
-      return null;
-    },
+    redirect: (context, state) => resolveRedirect(
+      isLoggedIn: authNotifier.isLoggedIn,
+      location: state.matchedLocation,
+    ),
     routes: [
       GoRoute(
         path: '/splash',
@@ -142,20 +234,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/login',
+        // 引数は `extra` ではなくクエリで運ぶ (#1057)。理由は
+        // [loginLocation] のコメント。
         builder: (context, state) {
-          // rebuild 中に extra が失われるケース（Sentry CAPSICUM-16）に備え、
-          // 強制 unwrap せず null の場合はサーバー選択へ戻す。
-          final extra = state.extra as Map<String, dynamic>?;
-          if (extra == null) {
+          final args = resolveLoginArgs(state.uri);
+          if (args == null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (context.mounted) context.go('/server');
             });
             return const SizedBox.shrink();
           }
           return LoginScreen(
-            host: extra['host'] as String,
-            backendType: extra['backendType'] as BackendType,
-            softwareVersion: extra['softwareVersion'] as String?,
+            host: args.host,
+            backendType: args.backendType,
+            softwareVersion: args.softwareVersion,
           );
         },
       ),
@@ -361,10 +453,19 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/profile/edit',
             builder: (context, state) => const ProfileEditScreen(),
           ),
+          // ⚠⚠ **`extra` はプロセスをまたいで残らない (#1083-F)。**この 2 本は
+          // 「タイトルと fetcher（クロージャ）」を `extra` で渡す汎用画面なので、
+          // **Android のプロセス復帰で route だけが復元される**と null になる。
+          // `state.extra!` のままだと、その瞬間に投げて**アプリが落ちる**。
+          // クロージャは復元しようがないのでホームへ戻す（`/login` が
+          // CAPSICUM-16 で同じ形にしてある。そちらへ揃えた）。
           GoRoute(
             path: '/users',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return UserListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as UserListFetcher,
@@ -375,7 +476,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/posts',
             builder: (context, state) {
-              final extra = state.extra! as Map<String, dynamic>;
+              final extra = state.extra;
+              if (extra is! Map<String, dynamic>) {
+                return _goHomeAfterBuild(context);
+              }
               return PostListScreen(
                 title: extra['title'] as String,
                 fetcher: extra['fetcher'] as PostListFetcher,
@@ -602,4 +706,40 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // ⚠⚠ **ログイン直後は必ずホームへ出す (#1057)。**`LoginScreen` 自身も
+  // `context.go('/home')` を呼ぶが、Android の OAuth は loopback callback
+  // （#276 / #654）でアプリが背面に回るため、**解凍されてトークン交換が
+  // 完走したときに画面が生きているとは限らない**。生きていないと
+  // `if (!mounted) return;` で黙って抜け、**アカウントだけ増えて画面は
+  // サーバー選択のまま**になる（保存は完走しているので再起動すると回復する）。
+  //
+  // ⚠ **`redirect` ではなくここでやる。**`redirect` に来る location は
+  // `push` で積んだぶんを含まないので、「今どの画面に居るか」で判断できない
+  // （[resolveRedirect] のコメント）。旗が立った＝ログインが完走したという
+  // 事実だけで動かす。
+  //
+  // ⚠ 旗が立つのは [AccountManager.addAccount] だけで、呼び出し元は
+  // `LoginScreen` の 1 箇所。セッション復元は通らないので、起動のたびに
+  // ホームへ引き戻すことはない。
+  ref.listen(accountManagerProvider, (prev, next) {
+    if (!ref.read(accountManagerProvider.notifier).consumePendingPostLogin()) {
+      return;
+    }
+    debugPrint('capsicum: router: post-login -> /home');
+    router.go('/home');
+  });
+
+  return router;
 });
+
+/// `state.extra` を失った状態で復帰したときの受け皿 (#1083-F)。
+///
+/// build 中に遷移はできないので、次のフレームでホームへ送る。⚠ **`context` の
+/// 生死を確かめてから遷移する**（`/login` の CAPSICUM-16 対応と同じ形）。
+Widget _goHomeAfterBuild(BuildContext context) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (context.mounted) context.go('/home');
+  });
+  return const SizedBox.shrink();
+}

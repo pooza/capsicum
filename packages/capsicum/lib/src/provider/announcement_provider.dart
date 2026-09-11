@@ -185,7 +185,7 @@ class AnnouncementNotifier extends AutoDisposeAsyncNotifier<AnnouncementState> {
         operation: add ? 'add_reaction' : 'remove_reaction',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       rethrow;
     }

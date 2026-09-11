@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/dart_source.dart';
+
 /// #975: 例外を Sentry へ流す経路を機械で守る。
 ///
 /// `exception_scrub.dart` の doc は「生の例外を直接埋める形をリポジトリから
@@ -92,62 +94,11 @@ void main() {
   ///
   /// 潰しておくと**コメントアウトされたコードを違反として数えない**副次効果もある
   /// （`// debugPrint('$e')` は実行されないので、直せと言われても困る）。
-  String maskComments(String source) {
-    final out = StringBuffer();
-    String? quote;
-    for (var i = 0; i < source.length; i++) {
-      final c = source[i];
-      if (quote != null) {
-        out.write(c);
-        if (c == r'\' && i + 1 < source.length) {
-          out.write(source[i + 1]);
-          i++;
-        } else if (c == quote) {
-          quote = null;
-        }
-        continue;
-      }
-      if (c == "'" || c == '"') {
-        quote = c;
-        out.write(c);
-        continue;
-      }
-      if (c == '/' && i + 1 < source.length && source[i + 1] == '/') {
-        while (i < source.length && source[i] != '\n') {
-          out.write(' ');
-          i++;
-        }
-        if (i < source.length) out.write('\n');
-        continue;
-      }
-      if (c == '/' && i + 1 < source.length && source[i + 1] == '*') {
-        // ⚠ **Dart のブロックコメントは入れ子にできる。**最初の `*/` で止めると
-        // 外側の残りがコードとして読まれ、そこに `}` があれば本体が切れる。
-        var depth = 0;
-        while (i < source.length) {
-          final open =
-              source[i] == '/' && i + 1 < source.length && source[i + 1] == '*';
-          final close =
-              source[i] == '*' && i + 1 < source.length && source[i + 1] == '/';
-          if (open) depth++;
-          if (close) depth--;
-          if (open || close) {
-            out.write('  ');
-            i += 2;
-            if (close && depth == 0) break;
-            continue;
-          }
-          out.write(source[i] == '\n' ? '\n' : ' ');
-          i++;
-        }
-        // 外側の for が i++ するので 1 戻す。
-        i--;
-        continue;
-      }
-      out.write(c);
-    }
-    return out.toString();
-  }
+  ///
+  /// ⚠ **実体は `test/support/dart_source.dart` へ移した (#1035-C5)。**素朴な
+  /// 行コメント落としが 3 本のガードへ写されていて、そのうち 1 本に実害
+  /// （URL リテラルを含む行が丸ごと消える）が出たため、リテラルを見るこの版へ
+  /// 統一した。
 
   /// 引数リストを top-level のカンマで割る。
   List<String> splitArgs(String args) {
@@ -322,8 +273,31 @@ void main() {
   ///
   /// StackTrace は対象外。コード位置しか持たず、[debugLogException] 自身も
   /// 素通しする前提で作ってある。
+  /// 例外を受けている変数名か (#1035-C2)。
+  ///
+  /// ⚠⚠ **列挙ではなく接尾辞で見る。**`(e|err|error|ex|exception)` の列挙だと
+  /// `catch (clearErr)`（`login_screen.dart`）と `catch (deleteErr)`
+  /// （`fcm_service.dart`）が外れる。どれも現状は `runtimeType.toString()` か
+  /// [debugLogException] への転送で安全だが、**この 3 箇所に
+  /// `debugPrint('boom: $clearErr')` を書き足しても緑**だった。
+  /// 525120a2 で storage key の列挙を接尾辞判定へ直したのと同じ形に揃える。
+  ///
+  /// ⚠ **「末尾が e」で拾わない。**`$value` / `$name` / `$type` が全部当たる。
+  /// 複合語は**大文字境界**（`clearErr` の `E`）を要求する。
+  ///
+  /// ⚠ **`cause` も例外の名前 (v1.64 のリリース前レビュー)。**
+  /// `SecureStorageHealth.markRefused(Object cause)` が
+  /// `debugPrint('… $cause')` と書いていて、ここを素通りした。`cause` には
+  /// secret の JSON を含む `FormatException` が入りうる。
+  const exactErrorNames = {'e', 'err', 'error', 'ex', 'exception', 'cause'};
+  final errorSuffix = RegExp(r'[a-z0-9](?:Err|Error|Ex|Exception|Cause)$');
+  bool isErrorIdentifier(String name) =>
+      exactErrorNames.contains(name) || errorSuffix.hasMatch(name);
+
+  /// ⚠ **識別子は総取りして [isErrorIdentifier] で絞る。**正規表現に名前を
+  /// 焼き込むと、増えた名前が黙って通る（#1035-C2 がまさにそれ）。
   final interpolationStart = RegExp(
-    r'\$\{?(e|err|error|ex|exception)(?![A-Za-z0-9_])',
+    r'\$\{?([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])',
   );
 
   /// ⚠ **`response` / `details` / `osError` を落とさない (#1027-A4)。**
@@ -351,8 +325,11 @@ void main() {
   /// 丸ごとの `e` は**採らない**。`debugLogException(context, e)` のように
   /// scrub を行う側へ渡す正しい形と区別できないため。危ないと言い切れるのは
   /// [unsafeMembers] を引くメンバーアクセスだけ。
+  ///
+  /// ⚠ **ここも [isErrorIdentifier] で絞る (#1035-C2)。**列挙のままだと
+  /// `clearErr.message` のような形が外れる。
   final bareMemberAccess = RegExp(
-    r'(?<![A-Za-z0-9_.$])(e|err|error|ex|exception)\.',
+    r'(?<![A-Za-z0-9_.$])([A-Za-z_][A-Za-z0-9_]*)\.',
   );
 
   /// メンバーアクセスの連なりが危ないか。
@@ -383,7 +360,13 @@ void main() {
     final found = <String>[];
     final chainAfter = RegExp(r'^[A-Za-z0-9_.?\[\]]*');
     for (final m in interpolationStart.allMatches(args)) {
+      if (!isErrorIdentifier(m.group(1)!)) continue;
       final after = args.substring(m.end);
+      // ⚠ **呼び出しは変数ではない (#1035-C2)。**接尾辞判定にしたことで
+      // `scrubException(...)` / `summarizeOpError(...)` のような**関数名**まで
+      // 当たるようになった。`${scrubException(e)}` は scrub を通す**正しい**形
+      // なので、直後が `(` なら変数ではないと見て飛ばす。
+      if (after.startsWith('(')) continue;
       if (!after.startsWith('.') && !after.startsWith('?.')) {
         // `$e` / `${e}` — オブジェクトを丸ごと埋めている。
         found.add(m.group(0)!);
@@ -396,6 +379,7 @@ void main() {
       }
     }
     for (final m in bareMemberAccess.allMatches(args)) {
+      if (!isErrorIdentifier(m.group(1)!)) continue;
       final chain = chainAfter.firstMatch(args.substring(m.end))!.group(0)!;
       if (unsafeChain(chain)) found.add('${m.group(0)}$chain');
     }
@@ -717,8 +701,20 @@ void main() {
   /// `onParseError` が `jsonDecode` の FormatException を `message:` に素で
   /// 載せており（＝チャット本文が Sentry へ）、検査は緑のままだった。
   /// breadcrumb を作る本人を根に入れる。
+  ///
+  /// ⚠⚠ **`developer.log` も根に入れる (#1035-B3)。**Sentry breadcrumb には
+  /// ならないが、**Linux の `~/.local/share/capsicum/logs/` / logcat /
+  /// Console.app には残る**。根から漏れていたあいだ、アダプタ側の
+  /// `skipping malformed notification: $err` と `skipping malformed draft: $e`
+  /// （どちらも FormatException の source ＝投稿本文 / 下書き本文を含む）が
+  /// **緑のまま出荷されていた**。同じファイルの数行上では `_safeConvert` が
+  /// `describeConversionFailure` を通しており、**同じ形の片方だけが直っていた**。
+  ///
+  /// ⚠ 名前は `log` で拾う（`developer.log` / `logger.log` の両方に当たる）。
+  /// 呼び出し検出は識別子の境界を見るので、`AlertDialog(` のような「末尾が
+  /// log」は当たらない。
   Set<String> breadcrumbSinks(Iterable<String> sources) {
-    final sinks = {'debugPrint', 'Breadcrumb'};
+    final sinks = {'debugPrint', 'Breadcrumb', 'log'};
     final pending = candidatesIn(sources.map(maskComments));
     var added = true;
     // 転送が数珠つなぎになることがある（`_logDevException` → `_logDev` →
@@ -952,6 +948,139 @@ void main() {
     });
   });
 
+  /// `captureMessage` の**第 1 引数（message 本体）**の違反を数え上げる。
+  ///
+  /// ⚠⚠ **`params` だけを見ていた (#1035-C1)。**`logentry.message` は `params` と
+  /// 同じく**必ず送られる**のに対象外で、`Sentry.captureMessage('failed: $e')` は
+  /// 緑のまま通っていた。`params` を allowlist で守った動機がそのまま message にも
+  /// 当たる。
+  ///
+  /// ⚠ **message には allowlist を当てない。**あちらは「ID とリテラルだけ」で
+  /// 済む構造化データだが、message は説明文なので素性の補間（`${e.code}` /
+  /// `${e.port}`）が正当に入る。**危ない形だけを弾く**（例外の中身 /
+  /// アカウント識別子）——本体の掃き出しと同じ判定を当てる。
+  List<String> captureMessageOffendersIn(Map<String, String> sources) {
+    final offenders = <String>[];
+    for (final MapEntry(key: path, value: original) in sources.entries) {
+      if (allowedFiles.contains(path)) continue;
+      final source = maskComments(original);
+      for (final (args, start) in callsOf(source, 'captureMessage')) {
+        if (isMarked(original, start)) continue;
+        final parts = splitArgs(args);
+        if (parts.isEmpty) continue;
+        final message = parts.first;
+        // 第 1 引数が名前付きなら位置引数の message は無い。
+        if (RegExp(r'^[A-Za-z_][A-Za-z0-9_]*\s*:').hasMatch(message)) continue;
+        final bad = [
+          ...unsafeInterpolations(message),
+          ...accountLeaks(message),
+        ];
+        if (bad.isEmpty) continue;
+        offenders.add('$path: captureMessage(… ${bad.join(' / ')} …)');
+      }
+    }
+    return offenders;
+  }
+
+  test('captureMessage の message に生の例外・識別子を埋めない (#1035-C1)', () {
+    final offenders = captureMessageOffendersIn({
+      for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
+    });
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'logentry.message は params と同じく必ず送信される。'
+          '例外の中身やアカウント識別子は載せず、素性へ丸めること'
+          '\n${offenders.join('\n')}',
+    );
+  });
+
+  /// ⚠ **リポジトリが綺麗だと常に緑になる検査なので、歯を別途固定する。**
+  group('message の判定 (#1035-C1)', () {
+    test('素性だけの補間は通す', () {
+      expect(
+        captureMessageOffendersIn({
+          'a.dart': r"Sentry.captureMessage('conversion skipped: ${e.code}');",
+        }),
+        isEmpty,
+      );
+    });
+
+    test('例外を丸ごと埋めると挙がる', () {
+      expect(
+        captureMessageOffendersIn({
+          'a.dart': r"Sentry.captureMessage('conversion failed: $e');",
+        }),
+        isNotEmpty,
+      );
+    });
+
+    test('上流の生データを引く鎖は挙がる', () {
+      expect(
+        captureMessageOffendersIn({
+          'a.dart': r"Sentry.captureMessage('failed: ${e.message}');",
+        }),
+        isNotEmpty,
+      );
+    });
+
+    test('アカウント識別子は挙がる', () {
+      expect(
+        captureMessageOffendersIn({
+          'a.dart': r"Sentry.captureMessage('failed for $accountKey');",
+        }),
+        isNotEmpty,
+      );
+    });
+
+    test('名前付き引数しか無い呼び出しは message を見ない', () {
+      expect(
+        captureMessageOffendersIn({
+          'a.dart': r"Sentry.captureMessage(template: t, params: [id]);",
+        }),
+        isEmpty,
+      );
+    });
+  });
+
+  /// ⚠ **列挙をやめた判定に歯があること (#1035-C2)。**
+  group('捕捉変数名の判定 (#1035-C2)', () {
+    bool flags(String args) => unsafeInterpolations(args).isNotEmpty;
+
+    test('列挙に入っていた名前は従来どおり拾う', () {
+      expect(flags(r"'boom: $e'"), isTrue);
+      expect(flags(r"'boom: ${error.message}'"), isTrue);
+    });
+
+    test('実在した clearErr / deleteErr を拾う', () {
+      // ⚠ この 2 つが #1035-C2 の実例。列挙のままだと緑だった。
+      expect(flags(r"'boom: $clearErr'"), isTrue);
+      expect(flags(r"'boom: ${deleteErr.message}'"), isTrue);
+    });
+
+    test('⚠ cause / 〜Cause も拾う（markRefused がすり抜けた形）', () {
+      expect(flags(r"'refused the read: $cause'"), isTrue);
+      expect(flags(r"'boom: ${rootCause.message}'"), isTrue);
+    });
+
+    test('cause を含むだけの別の名前は拾わない', () {
+      expect(flags(r"'x: $because'"), isFalse);
+      expect(flags(r"'x: $causes'"), isFalse);
+    });
+
+    test('末尾が e というだけの変数は拾わない', () {
+      expect(flags(r"'value: $value'"), isFalse);
+      expect(flags(r"'name: $name'"), isFalse);
+      expect(flags(r"'type: ${type.name}'"), isFalse);
+    });
+
+    test('関数呼び出しは変数扱いしない', () {
+      // `${scrubException(e)}` は scrub を通す正しい形。
+      expect(flags(r"'boom: ${scrubException(e)}'"), isFalse);
+    });
+  });
+
   test('captureException へ届く経路に生の例外を埋めない (#1027-A1)', () {
     final offenders = offendersInExceptionSinks({
       for (final f in dartFiles()) relativePath(f): f.readAsStringSync(),
@@ -996,8 +1125,8 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          'breadcrumb の message は _scrubBreadcrumb（data しか見ない）を'
-          '通らないので、書いた文字列がそのまま Sentry に出る。'
+          '_scrubBreadcrumb が message に当てるのは relay の push token マスク'
+          'だけ (#1035-D2) なので、書いた文字列がそのまま Sentry に出る。'
           'sentrySafeAccount / sentrySafeAccountKey を通すこと'
           '（host は残る・username だけ潰れる）\n${offenders.join('\n')}',
     );
@@ -1140,10 +1269,86 @@ void main() {
       isEmpty,
       reason:
           'sentry_flutter の DebugPrintIntegration は release と profile で'
-          'debugPrint を差し替える。breadcrumb の message は _scrubBreadcrumb'
-          '（data しか見ない）を通らないので、debugLogException / '
-          '_logDevException を使うこと\n${offenders.join('\n')}',
+          'debugPrint を差し替える。_scrubBreadcrumb が message に当てるのは '
+          'relay の push token マスクだけ (#1035-D2) なので、'
+          'debugLogException / _logDevException を使うこと'
+          '\n${offenders.join('\n')}',
     );
+  });
+
+  /// ⚠⚠ **`developer.log` が根に入っていること (#1035-B3)。**
+  ///
+  /// ここが無いと、上の検査は「リポジトリが綺麗だから緑」なのか「`log` を
+  /// 見ていないから緑」なのかを区別できない。**実際に後者で 2 件を出荷した。**
+  group('developer.log を sink として見ている (#1035-B3)', () {
+    test('走査が空振りしていない — 実リポジトリに developer.log の呼び出しがある', () {
+      final calls = <String>[
+        for (final f in dartFiles())
+          for (final (args, _) in callsOf(
+            maskComments(f.readAsStringSync()),
+            'log',
+          ))
+            '${relativePath(f)}: $args',
+      ];
+      expect(
+        calls,
+        isNotEmpty,
+        reason:
+            '1 件も見つからないなら、名前の拾い方（`developer.log` の `.` の扱い）が'
+            '壊れている。呼び出しが 0 件のリポジトリで緑になっても意味が無い',
+      );
+    });
+
+    test('生の例外を埋めた developer.log は挙がる', () {
+      // ⚠ **これは合成ではなく、#1035-B3 で実際に直した形そのもの。**
+      // 「自分が想定した書き方しか並べない」を避けるため、修正前のソースを写す。
+      expect(
+        offendersIn({
+          'a.dart':
+              "developer.log('skipping malformed draft: \$e', "
+              "name: 'capsicum');",
+        }),
+        isNotEmpty,
+      );
+      expect(
+        offendersIn({
+          'b.dart':
+              "developer.log(\n  'skipping malformed notification: \$err',\n"
+              "  name: 'capsicum',\n);",
+        }),
+        isNotEmpty,
+        reason: '引数が複数行に分かれていても拾う',
+      );
+    });
+
+    test('scrub を通した developer.log は挙がらない', () {
+      expect(
+        offendersIn({
+          'a.dart':
+              "developer.log('skipping: \${describeConversionFailure(e)}', "
+              "name: 'capsicum');",
+        }),
+        isEmpty,
+      );
+    });
+
+    test('コメントの中の developer.log は挙がらない', () {
+      expect(
+        offendersIn({'a.dart': "// developer.log('boom: \$e');"}),
+        isEmpty,
+        reason: '実行されない行を直せと言われても困る',
+      );
+    });
+
+    test('末尾が log の識別子を巻き込まない', () {
+      expect(
+        offendersIn({
+          'a.dart': "showDialog(context: c, builder: (_) => X(\$e));",
+        }),
+        isEmpty,
+        reason: '`Dialog(` の log は識別子の途中。境界を見ずに拾うと全画面が違反になる',
+      );
+    });
   });
 
   /// ラッパー検出が実際に効くこと。**ここが緩いと、上の検査は debugPrint の

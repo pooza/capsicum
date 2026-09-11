@@ -41,6 +41,7 @@ import 'src/service/share_intent_service.dart';
 import 'src/service/timeline_cache.dart';
 import 'src/service/window_state_service.dart';
 import 'src/service/wns_service.dart';
+import 'src/util/action_labels.dart';
 import 'src/util/exception_scrub.dart';
 import 'src/util/sentry_observability.dart';
 import 'src/util/sentry_tag_hash.dart';
@@ -98,8 +99,9 @@ void _logDev(String message) {
 /// `_logDev` は release では no-op だが **profile では debugPrint に流れる**。
 /// sentry_flutter の `DebugPrintIntegration` が `debugPrint` を差し替えるのは
 /// **release と profile**（debug では早期 return する）なので、profile ビルドの
-/// この経路がそのまま breadcrumb になる。breadcrumb の `message` は
-/// [_scrubBreadcrumb]（`data` しか見ない）を通らないため、生の例外を埋めると
+/// この経路がそのまま breadcrumb になる。breadcrumb の `message` に
+/// [_scrubBreadcrumb] が当てるのは **relay の push token マスクだけ**
+/// （範囲の正本はそちらの doc・#1035-D2）なので、生の例外を埋めると
 /// DioException の URL がそのまま Sentry に載る。
 void _logDevException(String context, Object error, [StackTrace? stackTrace]) {
   final scrubbed = scrubException(error);
@@ -313,6 +315,22 @@ FutureOr<SentryTransaction?> _scrubTransaction(
   return transaction;
 }
 
+/// breadcrumb から機微な値を落とす。**この doc がスクラブ範囲の正本**
+/// (#1035-D2)。
+///
+/// | 見る場所 | 落とすもの |
+/// | --- | --- |
+/// | `data` | 機微なフィールド名の値・body / JSON・URL 系フィールドの `/push/<token>` |
+/// | `message` | **relay の `/push/<token>` だけ** |
+///
+/// ⚠⚠ **「`data` しか見ない」は不正確 (#1035-D2)。**`message` にも
+/// [_scrubRelayPushUrl] を当てている。ただし**結論は変わらない** — message に
+/// 効くのは push token のマスクだけなので、**アカウント識別子も例外文字列も
+/// 素通しする**。生の例外・`username@host` を message へ埋めてはいけない、
+/// という規約はそのまま。
+///
+/// ⚠ 呼び出し側の doc でこの範囲を言い換えると、また実装とずれる。**範囲を
+/// 説明したくなったらここを指すこと。**
 Breadcrumb _scrubBreadcrumb(Breadcrumb b) {
   final data = b.data;
   var changed = false;
@@ -1022,18 +1040,15 @@ Account? _findAccountByString(List<Account> accounts, String accountString) {
 /// プッシュ通知の宛先アカウントに対応する「ブースト/リノート」ラベルを
 /// 解決する。モロヘイヤの `reblog_label` (例: キュアスタ！の "リキュア！")
 /// がある場合それを優先し、なければ adapter 種別で分岐する。
-String _resolveReblogLabelForAccount(String accountString) {
-  final account = _lookupAccount(accountString);
-  final mulukhiya = account?.mulukhiya;
-  if (mulukhiya?.reblogLabel != null) return mulukhiya!.reblogLabel!;
-  return account?.adapter is ReactionSupport ? 'リノート' : 'ブースト';
-}
+///
+/// ⚠ 決め方の正本は [reblogLabelFor] (#1035-E1)。ここが持つのは「payload の
+/// アカウント文字列から [Account] を引く」ぶんだけ。
+String _resolveReblogLabelForAccount(String accountString) =>
+    reblogLabelFor(_lookupAccount(accountString));
 
 /// プッシュ通知の宛先アカウントに対応する「投稿」ラベルを解決する。
-String _resolvePostLabelForAccount(String accountString) {
-  final account = _lookupAccount(accountString);
-  return account?.mulukhiya?.postLabel ?? '投稿';
-}
+String _resolvePostLabelForAccount(String accountString) =>
+    postLabelFor(_lookupAccount(accountString));
 
 /// Riverpod コンテナから accountManagerProvider を読んで該当アカウントを返す。
 /// コンテナが未確立（ごく初期）の場合は null。

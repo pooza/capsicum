@@ -10,6 +10,7 @@ import '../../constants.dart';
 import '../../model/account_key.dart';
 import '../../platform/platform_info.dart';
 import '../../preset_servers.dart';
+import '../../router.dart';
 import '../../service/sentry_op_failure.dart';
 import '../../service/settings_backup.dart';
 import '../../url_helper.dart';
@@ -176,13 +177,16 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
         return;
       }
 
+      // ⚠ **遷移先は [loginLocation] で組む (#1057)。**`extra` に enum を
+      // 積むと refresh のたびに丸ごと落ちて `/server` へ跳ね返される。
       context.push(
-        '/login',
-        extra: {
-          'host': host,
-          'backendType': probe.type,
-          'softwareVersion': probe.softwareVersion,
-        },
+        loginLocation(
+          LoginArgs(
+            host: host,
+            backendType: probe.type,
+            softwareVersion: probe.softwareVersion,
+          ),
+        ),
       );
     } catch (e) {
       debugLogException('Server probe error', e);

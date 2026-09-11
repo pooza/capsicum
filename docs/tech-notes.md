@@ -197,6 +197,24 @@ macOS / iOS 実装は `baseQuery` に **必ず `kSecAttrAccessible` を含める
 
 派生注意: 移行で旧 item が「読めるようになる」と、そこに残っていた **stale な値が再利用される**副作用がある。capsicum では古い `client_creds`（`capsicum://oauth` era 登録）が localhost redirect_uri で `invalid_redirect_uri` を招いた。client_creds に redirect_uri を併記し一致時のみ再利用する形で解消。
 
+### Linux の secure storage は読み取り失敗を分類できない — 失敗で secret を消してはいけない（#1104）
+
+`flutter_secure_storage_linux` は **read / write / readAll / delete / deleteAll / containsKey の全失敗を `PlatformException(code: "Libsecret error")` 1 種類に潰す**（`linux/flutter_secure_storage_linux_plugin.cc` の `catch (const gchar *e)`）。⚠ **Apple の `errSecInteractionNotAllowed` (-25308) のような「transient を名指しするコード」が存在しない**ので、`_isKeychainTransient` 相当の分岐を Linux 向けに書き足す道は最初から無い。
+
+さらに `linux/include/Secret.hpp` の `readFromKeyring()` は、**読み取りのたびに `warmupKeyring()` を呼ぶ**。中身は `FlutterSecureStorage Control` という**別 item への dummy 書き込み**で（crbug.com/660005 の回避策）、失敗するとリテラル `throw "Failed to unlock the keyring"` になる。
+
+⚠⚠ **ここから「secret は無傷」が構造的に保証される。**warmup はユーザーの item を読みも消しもしていないので、この例外が飛んだ時点で**保存済みの値は損なわれていない**。プラグイン自身のコメントも「**ユーザーが解錠プロンプトをキャンセルしたのか区別できない**」と明記しており、**解錠のキャンセル 1 回**でも同じ例外になる。
+
+したがって **Linux では読み取り失敗を理由に `delete` してはいけない**。誤りのコストが対称でないのが決め手で、permanent を消し損ねても**再ログインが secret を上書きするので無害**だが、transient を permanent と誤判定すると**その場でアカウントが消える**（`restoreSessions` は保存済みアカウントを順に回すので**全件が対象**）。同じ理由で Android（Keystore）も以前から除外されていた（#730 / #731）ので、判断の軸を「プラットフォーム」ではなく **読み取り失敗から permanent を判別できるか**（`mayDeleteSecretOnReadFailure`・Apple のみ true）に置いた。Windows（DPAPI）も同じ穴なので一緒に塞がる。
+
+⚠ **delete は 2 箇所ある**（`getSecrets` の `on PlatformException` 側と `catch` 側）。`BadPaddingException` のように `PlatformException` でラップされずに来る経路があるため、**片方だけでは塞がらない**。
+
+⚠ **「応答が返らない」（#1085）と「例外で断る」（#1104）は別の壊れ方。**前者は `kill -STOP` で作れてタイムアウトで受け、後者はサービスに到達できない / 解錠が成立しないときに出る。**どちらか一方の対処では塞がらない。**
+
+#### 隔離して実機検証する型（本物のキーリングに触れない）
+
+⚠ **LXC は不要。**隔離が要る軸は 2 つだけで、`dbus-run-session`（私設セッションバス＝`org.freedesktop.secrets` の接続先）と `XDG_DATA_HOME` の差し替え（キーリングの実体ファイル）で足りる。⚠ **`XDG_RUNTIME_DIR` も差し替える** — さもないと `discover_other_daemon` が `/run/user/<uid>/keyring` の**本物を見つけて起動を譲る**。⚠ **D-Bus activation の前に `gnome-keyring-daemon --unlock --components=secrets` でキーリングを作っておく**（無いと解錠プロンプト待ちで固まる）。⚠ **`kill -STOP` の対象 PID には安全弁を付ける**（本物の PID / `control-directory=/run/user/<uid>` を弾く。実際に PID 取得に失敗して `/sbin/init` を指した）。
+
 ## ネイティブプッシュ（APNs / WNS）
 
 ### macOS ネイティブ APNs 配線の 3 つの罠（#468）
@@ -256,7 +274,7 @@ if printf "%s" "$msgs" | grep -qiE "chore\(deps\)"; then echo OLD:matched; else 
 if grep -qiE "chore\(deps\)" <<< "$msgs"; then echo NEW:matched; else echo "NEW:NOT matched"; fi'
 ```
 
-**対処**: **grep にファイルを直接読ませる**のが一番強い。パイプを挟まない限りこの罠は構造的に踏めない。パイプが避けられない場所では herestring (`<<<`) を使う（一時ファイル経由になるので、読み手が早期終了しても書き手が落ちない）。同じことが `grep -m1` / `head -n` を**パイプの下流に置いた**場合にも起きる（下流が先に終了して上流を殺す）ので、件数の絞り込みは `grep -m1 <file>` のようにパイプを挟まない形へ寄せる。
+**対処**: **grep にファイルを直接読ませる**のが一番強い。パイプを挟まない限りこの罠は構造的に踏めない。パイプが避けられない場所では herestring (`<<<`) を使う（**書き手が bash 自身になるので、読み手が早期終了しても「シェルが SIGPIPE で落ちる」形にならない**）。⚠ **「herestring は常に一時ファイル経由」という理解は bash 5.1 以降では正しくない** — 中身がパイプバッファに収まるならパイプを使い、収まらないときだけ一時ファイルに落ちる。どちらの経路でも上のコマンド置換 + パイプのような「上流のプロセスが SIGPIPE で殺されて `pipefail` が非ゼロを返す」形にはならないので、**結論は変わらないが根拠を版に依存させない**。同じことが `grep -m1` / `head -n` を**パイプの下流に置いた**場合にも起きる（下流が先に終了して上流を殺す）ので、件数の絞り込みは `grep -m1 <file>` のようにパイプを挟まない形へ寄せる。
 
 ### 大きな入力を環境変数・引数で渡すと Linux でだけ落ちる
 
@@ -379,6 +397,23 @@ client 実装は v1.60 で出荷済みだが、導線は `GET /mulukhiya/api/abo
 `GET /api/v1/accounts/verify_credentials` のトップレベル `note` は HTML 化済み。編集画面の初期値に使うと編集時に HTML タグが丸見えになる。`source.note` / `source.fields` を参照すること（プレーンテキストで返る）。
 
 ## Misskey API
+
+### ⚠⚠ サーバーの挙動を推測で語らない — フォークのソースを引く
+
+**`~/repos/mastodon` / `~/repos/misskey` は運用中のサーバーソフトそのもの。**「送っていないから効かないはず」「送れば通るはず」の類は、**必ず該当の service / controller を開いて確かめる**。
+
+v1.63 で実際に踏んだ（#1043）:
+
+- **誤った前提**: 「Misskey の指名投稿は `visibleUserIds` を送らないと誰にも届かない」→ 公開範囲を `followersOnly` へ丸める実装を入れた
+- **実際**: `NoteCreateService` は**返信のときだけ返信先の作者を `visibleUsers` へ自動補完する**ので、`visibleUserIds` を送らなくても**返信は正しく届いていた**
+- **被害 1**: `reply.visibility === 'specified' && data.visibility !== 'specified'` は **400 で拒否**される。丸めた結果、**動いていた返信を確実に壊した**
+- **被害 2**: redraft には返信関係が無いのでサーバーが弾かず、**DM がフォロワー全員へ出る**形になった（「見せたくないものが見えている」型）
+
+⚠ **コードの見た目からは自然な推測でも、サーバーを読めば 5 分で否定できた。**ソースが手元にあるのに引かなかったのが原因。
+
+同じ回で `notes/search` の `UNAVAILABLE` を「全文検索バックエンド未設定だから」と書いたのも誤り。実際は `RoleService` の **`canSearchNotes` が既定 false というロールポリシー**由来。⚠ **観測される挙動が同じでも、因果を推測で書かない。**
+
+⚠ 逆に、**カーソルの正体（関係レコードの内部 id か、投稿 / User の id か）はソースを引いて全件確認したぶんは 1 件も外していない**。引けば当たる。
 
 ### MiAuth パーミッション
 

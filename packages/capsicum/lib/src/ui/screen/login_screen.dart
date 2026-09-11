@@ -14,9 +14,9 @@ import '../../constants.dart';
 import '../../model/account.dart';
 import '../../model/account_key.dart';
 import '../../platform/loopback_oauth_bind.dart';
+import '../../platform/oauth_keep_alive.dart';
 import '../../platform/platform_info.dart';
 import '../../provider/account_manager_provider.dart';
-import '../../provider/preferences_provider.dart';
 import '../../service/account_storage.dart';
 import '../../url_helper.dart';
 import '../../util/exception_scrub.dart';
@@ -150,6 +150,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   /// 閉じてポートを解放する。
   HttpServer? _oauthServer;
 
+  /// この画面が上げた認可待ちの keep-alive (#1108)。⚠ `dispose` で自分の世代
+  /// だけを下ろすために持つ（他の試行のものを止めないため）。
+  OAuthKeepAliveSession? _keepAlive;
+
   // Server info
   String? _serverName;
   String? _serverDescription;
@@ -195,6 +199,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // 解放する（掴みっぱなしだと次のログイン試行が「ポート占有」で塞がれる・#276）。
     unawaited(_oauthServer?.close(force: true));
     _oauthServer = null;
+    // ⚠ **サーバと同じ理由でここでも下ろす (#1108)。**画面を離れても認可待ちの
+    // future は 5 分の timeout まで生き残るので、`finally` に任せると通知が
+    // 出しっぱなしになる。⚠ 二重停止は無害（`stopService` は冪等）。
+    // ⚠⚠ **世代を渡す** —— 渡さないと、この画面の後片づけが**次のログイン画面**の
+    // keep-alive を止める。
+    unawaited(OAuthKeepAlive.stop(_keepAlive));
     super.dispose();
   }
 
@@ -406,6 +416,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
     _oauthServer = server;
     _logLoginStep('oauth_server.listening');
+    // ⚠⚠ **ブラウザを開く前に上げる (#1108)。**foreground service はバック
+    // グラウンドからは起動できないので、ブラウザを開いた後では遅い。これが
+    // 無いと、認可を待つあいだに凍結されて **callback ページを返せず**、
+    // ブラウザが固まったまま戻ってこない（裏に回って 70 秒で凍結される）。
+    final keepAlive = await OAuthKeepAlive.start();
+    _keepAlive = keepAlive;
+    _logLoginStep('oauth_keepalive.start', data: {'kept': keepAlive.active});
     try {
       final launched = await launchUrlSafely(
         authorizationUrl,
@@ -481,6 +498,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await subscription.cancel();
       }
     } finally {
+      // ⚠ 認可完了・中断・タイムアウトのどれでもここを通る (#1108)。サーバを
+      // 閉じるのと同じ寿命で下ろす。⚠⚠ **自分の世代だけを下ろす** ——
+      // すぐ下の `identical(_oauthServer, server)` と同じ理由で、2 本目の試行が
+      // 始まっていたらここは何もしてはいけない。
+      await OAuthKeepAlive.stop(keepAlive);
       await server.close(force: true);
       if (identical(_oauthServer, server)) _oauthServer = null;
     }
@@ -1207,13 +1229,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     await _accountManager.addAccount(account);
     // 以降は UI 操作なので mounted でガードする。
+    //
+    // ⚠ **ここで抜けても遷移は落ちない (#1057)。**Android は OAuth のあいだ
+    // freezer に凍結されるので、解凍されてトークン交換が完走したときには
+    // この画面が消えていることがある。以前はそこで黙って抜け、**アカウント
+    // だけ増えて画面はサーバー選択のまま**になっていた。今は `addAccount` が
+    // 立てた旗を `routerProvider` の listener が拾って `/home` へ送る（⚠ redirect
+    // ではない。`resolveRedirect` の doc のとおり、push で積んだ location は
+    // redirect に見えない）。
+    // タブの既定（`timeline:home`）も `addAccount` 側へ移してある。
+    //
+    // ⚠ **画面が生き残ったかを残す (#1057)。**この 1 行が無いと、実機の確認で
+    // 「凍結を再現できたのか（＝フォールバックを踏んだのか）」が分からない。
+    debugPrint('capsicum: login: addAccount done (screen alive=$mounted)');
     if (!mounted) return;
-
-    // ログイン直後はホームタイムラインを表示する。
-    // 前回のタブ復元が走ると、存在しないリスト/ハッシュタグを参照してエラーになりうる。
-    ref
-        .read(lastTabProvider(account.key.toStorageKey()).notifier)
-        .save('timeline:home');
 
     context.go('/home');
   }
@@ -1297,6 +1326,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       label: const Text('ブラウザでログイン'),
                     ),
             ),
+            // ⚠ **3 分の制限を隠さずに書く (#1108)。**認可を待つあいだ
+            // capsicum を凍結させないための foreground service は
+            // `shortService` 型で、**OS が約 3 分で打ち切る**。超えると凍結され
+            // 得るので、承認しても自動で戻らない（＝ #1108 以前の挙動）。
+            // ⚠ この文はブラウザへ移った瞬間に見えなくなるので、**これだけに
+            // 頼らない**。打ち切りの瞬間に通知でも案内する
+            // （`OAuthKeepAliveService.postReturnHint`）。
+            if (OAuthKeepAlive.isSupported && !_isLoggingIn) ...[
+              const SizedBox(height: 16),
+              Text(
+                'ブラウザでの承認は 3 分以内に済ませてください。'
+                '時間がかかると、承認しても自動で戻れないことがあります。',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),

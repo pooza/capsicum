@@ -137,10 +137,34 @@ extension CapsicumMastodonStatusExtension on MastodonStatus {
       filterTitle: filterResult?.title,
       pinned: pinned,
       quotable: _isQuotable(quoteApproval),
+      quoteApprovalPolicy: parseMastodonQuoteApprovalPolicy(quoteApproval),
       language: language,
       url: url,
     );
   }
+}
+
+/// 投稿者が設定した引用許可を、投稿時の `quote_approval_policy` の値へ戻す
+/// (#1113)。削除して再編集で元の設定を引き継ぐのに使う。
+///
+/// `quote_approval.automatic` はフラグ名の配列（`InteractionPolicy::POLICY_FLAGS`）
+/// で、Mastodon の API から付けられるのは `public` / `followers` / 空（＝`nobody`）
+/// の 3 通り。Mastodon WebUI の REDRAFT も `automatic[0] || 'nobody'` で読む。
+///
+/// ⚠ **知らないフラグだけのときは `nobody` へ倒す。**再編集で許可を**広げない**
+/// ほうが安全（広がっても画面からは気づけない）。WebUI の `automatic[0]` は
+/// 先頭が `unsupported_policy` だとそれを返すので、ここは真似ない。
+///
+/// `quote_approval` 自体が無いサーバー（4.5 未満）は null ＝何も送らない。
+String? parseMastodonQuoteApprovalPolicy(Map<String, dynamic>? quoteApproval) {
+  if (quoteApproval == null) return null;
+  final raw = quoteApproval['automatic'];
+  final automatic = raw is List
+      ? raw.map((e) => e.toString()).toSet()
+      : const <String>{};
+  if (automatic.contains('public')) return 'public';
+  if (automatic.contains('followers')) return 'followers';
+  return 'nobody';
 }
 
 bool _isQuotable(Map<String, dynamic>? quoteApproval) {

@@ -368,7 +368,11 @@ class _TagEditorSheetState extends State<_TagEditorSheet> {
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        // ⚠ ナビゲーションバーぶんも足す (#1062)。
+        bottom:
+            MediaQuery.viewInsetsOf(context).bottom +
+            MediaQuery.paddingOf(context).bottom +
+            16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

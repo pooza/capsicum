@@ -28,8 +28,9 @@ String hashForSentryTag(String input) {
 ///
 /// ⚠⚠ **`accountKey.toStorageKey()` や `username@host` を素で載せないこと。**
 /// release ビルドでは sentry_flutter が `debugPrint` を丸ごと breadcrumb 化し、
-/// breadcrumb の `message` は `main.dart` の `_scrubBreadcrumb`（`data` しか
-/// 見ない）を通らない。**書いた文字列がそのまま Sentry に出る。**
+/// `main.dart` の `_scrubBreadcrumb` が breadcrumb の `message` に当てるのは
+/// **relay の push token マスクだけ**（範囲の正本はそちらの doc・#1035-D2）で、
+/// **アカウント識別子は素通しする**。書いた文字列がそのまま Sentry に出る。
 ///
 /// **host はそのまま出す。**プリセットサーバーかどうかで対応の優先度を切る
 /// 運用があり、素性が分からないとトリアージできない。潰すのは username だけ。
@@ -39,7 +40,22 @@ String hashForSentryTag(String input) {
 String sentrySafeAccount(AccountKey key) =>
     '${hashForSentryTag(key.username)}@${key.host}';
 
-/// storage key（`mastodon://user@host`）から [sentrySafeAccount] を作る。
+/// アカウントを指す文字列から [sentrySafeAccount] を作る。
+///
+/// 受けるのは 2 つの形。**どちらで渡しても同じ `hash@host` になる**:
+///
+/// - storage key: `mastodon://user@host`（`AccountKey.toStorageKey()` の形）
+/// - **relay payload の `account`: `user@host`**（scheme 無し）
+///
+/// ⚠⚠ **scheme 無しを受けるのは、渡し間違いが黙って host まで消すため**
+/// (#1035-B1)。`Uri.parse('alice@example.test')` は scheme も userInfo も空に
+/// なるので `BackendType` の探索が `StateError` になり、**丸ごと
+/// `(unparsable-account-key)` に落ちていた**。プッシュ不達の切り分けでいちばん
+/// 読む breadcrumb がそれで、[sentrySafeAccount] が「host はそのまま出す」と
+/// 決めている当の情報が、**この経路でだけ**消えていた。
+///
+/// **「呼び分けの規約」ではなく「どちらでも正しい関数」にしてある。**呼び分けを
+/// 規約で守ると、次に payload 側から呼んだ人がまた同じ穴を踏む。
 ///
 /// ⚠ **parse 失敗を握り潰して素のキーへ落とさないこと。**legacy / 破損キーは
 /// 「読めなかった」と分かる形にして、**元の文字列は出さない**（そこが機微な
@@ -48,6 +64,13 @@ String sentrySafeAccountKey(String storageKey) {
   try {
     return sentrySafeAccount(AccountKey.fromStorageKey(storageKey));
   } catch (_) {
+    // scheme 無しの `user@host`。username だけ潰して host は残す。
+    final at = storageKey.lastIndexOf('@');
+    if (at > 0 && at < storageKey.length - 1 && !storageKey.contains('://')) {
+      final username = storageKey.substring(0, at);
+      final host = storageKey.substring(at + 1);
+      return '${hashForSentryTag(username)}@$host';
+    }
     return '(unparsable-account-key)';
   }
 }

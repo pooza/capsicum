@@ -26,9 +26,15 @@
 #   PUBSPEC_LINES_FILE  pubspec.yaml 群の変更行 (git diff -U0 から +++/--- を除いたもの)
 #   WF_LINES_FILE       .github/workflows 配下の変更行 (同上)
 #
-#   未設定・存在しないパスは「空」として扱う。
+#   ⚠ **FILES_FILE だけは必須 (#1063)。**残り 3 本は未設定・存在しないパスを
+#   「空」として扱ってよいが、FILES_FILE は空＝「変更ファイルなし」＝通過なので、
+#   配線の失敗と「本当に何も変わっていない」を区別できない。下の必須チェックを
+#   参照。
 #
-# 出力: 判定理由を stdout へ。exit 0 = 通過 / exit 1 = 違反。
+# 出力: 判定理由を stdout へ。
+#   exit 0 = 通過 / exit 1 = 違反 / ⚠ exit 2 = 入力の配線ミス (#1063)。
+#   違反と配線ミスを別コードにしてあるのは、セルフテストが「落ちた理由」まで
+#   固定できるようにするため。ワークフローから見ればどちらも非ゼロで赤。
 #
 # ⚠⚠ **`... | grep -q` の形を書かないこと (#1036)。**`grep -q` はマッチした
 #   時点で終了するので、パイプの書き手が SIGPIPE で落ち、pipefail がパイプライン
@@ -37,7 +43,9 @@
 #   限りこの罠は構造的に踏めない。
 set -euo pipefail
 
-# 未設定 / 不在は /dev/null（空）に倒す。
+# 随伴判定の 3 本は、未設定 / 不在を /dev/null（空）に倒してよい。
+# 「その入力が無い」＝「随伴の証拠が無い」で意味が通り、判定は**厳しい側**
+# （落とす側）へ倒れるため。
 input() {
   if [ -n "${1:-}" ] && [ -f "${1:-}" ]; then
     printf '%s' "$1"
@@ -46,7 +54,25 @@ input() {
   fi
 }
 
-files_file="$(input "${FILES_FILE:-}")"
+# ⚠⚠ **FILES_FILE は空に倒してはいけない (#1063)。**これだけは意味が逆で、
+# 空＝「変更ファイルなし」＝ `pubspec.lock unchanged; ok` で **exit 0**。
+# つまり**変数名を打ち間違えただけでガードが丸ごと素通りし、CI ログ上は正常な
+# 緑と区別が付かない**。実測（`FILES_FILE` を `FILE_FILES` と書いた想定）:
+#
+#   $ FILE_FILES=/tmp/lgf MSGS_FILE=/tmp/lgm bash .github/scripts/lock_guard.sh
+#   pubspec.lock unchanged; ok
+#   exit=0
+#
+# ⚠ **これは #1036 が問題視した「ガードが壊れていても次のリリースまで分からない」
+# 形そのもの。**呼び出し側が 1 箇所しかなくても、fail-open は許さない
+# ——「壊れていても緑」を潰すのがこのガード群の存在理由なので、
+# ガード自身が同じ形で壊れていては意味がない。
+if [ -z "${FILES_FILE:-}" ] || [ ! -f "${FILES_FILE}" ]; then
+  echo "::error::lock_guard.sh: FILES_FILE が未設定か、指すパスが存在しません（値: '${FILES_FILE:-}'）。変更ファイル一覧を渡せていないので判定できません（空として扱うと素通りするため、あえて落としています・#1063）。" >&2
+  exit 2
+fi
+
+files_file="$FILES_FILE"
 msgs_file="$(input "${MSGS_FILE:-}")"
 pubspec_lines_file="$(input "${PUBSPEC_LINES_FILE:-}")"
 wf_lines_file="$(input "${WF_LINES_FILE:-}")"

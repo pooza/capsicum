@@ -33,31 +33,35 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
   final _handled = <String, _Handled>{};
   final _inFlight = <String>{};
 
-  FollowRequestSupport? get _support {
-    final adapter = ref.read(currentAdapterProvider);
-    return adapter is FollowRequestSupport
-        ? adapter as FollowRequestSupport
-        : null;
-  }
+  /// [_handled] / [_inFlight] がどのアカウントのものか。
+  ///
+  /// ⚠ **アカウントを切り替えたら捨てる**（v1.64 のリリース PR の Codex P2）。
+  /// key で作り直すのは一覧だけで、この State は残る。user id はサーバーごとの
+  /// 値なので、切替先で同じ id が「承認しました」「処理中」のまま操作できなく
+  /// なる。⚠ 切替の前に始めた操作の完了も、切替後の表示に書き込ませない。
+  String? _recordedFor;
 
+  /// ⚠ **[support] は build 時に解決したものを受け取る (#1083-F)。**
+  /// 以前は `ref.read` の getter を取得・処理・build から個別に呼んでいたので、
+  /// (a) アカウント切替で `build()` が追随せず、(b) **サーバー A で取った id を
+  /// 切替後のサーバー B へ承認・拒否で投げうる**形だった。
   Future<({List<User> users, String? nextCursor})> _fetch(
+    FollowRequestSupport support,
     String? cursor,
-  ) async {
-    final support = _support;
-    if (support == null) return (users: <User>[], nextCursor: null);
-    return support.getFollowRequests(
-      query: TimelineQuery(maxId: cursor, limit: 20),
-    );
-  }
+  ) =>
+      support.getFollowRequests(query: TimelineQuery(maxId: cursor, limit: 20));
 
-  Future<void> _handle(User user, _Handled action) async {
-    final support = _support;
-    if (support == null) return;
+  Future<void> _handle(
+    FollowRequestSupport support,
+    User user,
+    _Handled action,
+  ) async {
     if (_inFlight.contains(user.id) || _handled.containsKey(user.id)) return;
 
     // ⚠ **await をまたぐ前に捕まえる**（#1064 と同型）。
     final messenger = ScaffoldMessenger.of(context);
     final account = ref.read(currentAccountProvider);
+    final startedFor = _recordedFor;
 
     setState(() => _inFlight.add(user.id));
     try {
@@ -66,7 +70,7 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
       } else {
         await support.rejectFollowRequest(user.id);
       }
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() {
         _inFlight.remove(user.id);
         _handled[user.id] = action;
@@ -77,13 +81,15 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
       );
     } catch (e, st) {
       reportOpFailure(
-        tagKey: 'follow_request',
+        // ⚠ **ドット付きの `<領域>.op` に揃える (#1083-E)。**既存 16 箇所で
+        // ここだけドットが無かった。
+        tagKey: 'follow_request.op',
         operation: action == _Handled.authorized ? 'authorize' : 'reject',
         error: e,
         stackTrace: st,
         account: account,
       );
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() => _inFlight.remove(user.id));
       messenger.showSnackBar(const SnackBar(content: Text('リクエストの処理に失敗しました')));
     }
@@ -91,19 +97,35 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠ **`ref.watch` で build に追随させる (#1083-F)。**同型の
+    // [ModerationListScreen] は watch なのに、ここだけ `ref.read` の getter を
+    // build から呼んでいて、**画面を開いたままのアカウント切替で再構築され
+    // なかった**。切替後に前のサーバーの一覧が残らないよう `key` も置く。
+    final adapter = ref.watch(currentAdapterProvider);
+    final support = adapter is FollowRequestSupport
+        ? adapter as FollowRequestSupport
+        : null;
+    final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+    if (_recordedFor != accountKey) {
+      _recordedFor = accountKey;
+      _handled.clear();
+      _inFlight.clear();
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('フォローリクエスト')),
-      body: _support == null
+      body: support == null
           ? const Center(child: Text('このサーバーでは利用できません'))
           : UserListView(
-              fetcher: _fetch,
+              key: ValueKey(accountKey),
+              fetcher: (cursor) => _fetch(support, cursor),
               emptyMessage: '未処理のフォローリクエストはありません',
-              trailingBuilder: _trailing,
+              trailingBuilder: (user) => _trailing(support, user),
             ),
     );
   }
 
-  Widget _trailing(User user) {
+  Widget _trailing(FollowRequestSupport support, User user) {
     final handled = _handled[user.id];
     if (handled != null) {
       return Text(handled == _Handled.authorized ? '承認しました' : '拒否しました');
@@ -119,11 +141,11 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         TextButton(
-          onPressed: () => _handle(user, _Handled.rejected),
+          onPressed: () => _handle(support, user, _Handled.rejected),
           child: const Text('拒否'),
         ),
         FilledButton(
-          onPressed: () => _handle(user, _Handled.authorized),
+          onPressed: () => _handle(support, user, _Handled.authorized),
           child: const Text('承認'),
         ),
       ],

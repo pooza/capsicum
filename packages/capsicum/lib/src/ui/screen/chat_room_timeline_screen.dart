@@ -13,7 +13,6 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
-import '../widget/bottom_safe_area.dart';
 import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
@@ -144,7 +143,7 @@ class _ChatRoomTimelineScreenState
         'toggle_room_mute',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -194,12 +193,7 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure(
-        'leave_room',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('leave_room', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('退出に失敗しました (${summarizeOpError(e)})')),
@@ -235,12 +229,7 @@ class _ChatRoomTimelineScreenState
       if (!mounted) return;
       context.go('/chat');
     } catch (e, st) {
-      reportChatOpFailure(
-        'delete_room',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('delete_room', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('削除に失敗しました (${summarizeOpError(e)})')),
@@ -276,7 +265,7 @@ class _ChatRoomTimelineScreenState
         'delete_room_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -310,7 +299,7 @@ class _ChatRoomTimelineScreenState
         'react_room_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -468,22 +457,9 @@ class _ChatRoomTimelineScreenState
               onRemoveAttachment: () => setState(() => _attachedFile = null),
             )
           else
-            // ⚠ 下端の inset はここで吸う (#1037)。ChatComposeRow は自前で
-            // SafeArea を持っているが、この else 側には何も無いため、注記が
-            // ナビゲーションバーのボタンに潜り込む。body ごと包まないのは、
-            // バーが出ているときは今までどおり画面下端まで伸ばしたいため。
-            BottomSafeArea(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                alignment: Alignment.center,
-                child: Text(
-                  'このアカウントではメッセージを送信できません',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                ),
-              ),
-            ),
+            // readonly ロールの注記。下端 inset の扱いも含めて
+            // ChatReadonlyNotice が持つ (#1065)。
+            const ChatReadonlyNotice(),
         ],
       ),
     );

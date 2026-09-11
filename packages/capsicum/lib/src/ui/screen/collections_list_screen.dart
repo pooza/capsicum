@@ -91,7 +91,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         operation: widget.inCollections ? 'load_in_list' : 'load_list',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) setState(() => _loading = false);
     }
@@ -121,7 +121,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         operation: widget.inCollections ? 'load_in_more' : 'load_more',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       // 継続エラー時の自動再試行ストームを避けるため next offset を止める
       // （回復は pull-to-refresh で _load が再取得）。
@@ -249,7 +249,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         operation: 'create',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(
         SnackBar(content: Text(_createErrorMessage(e.response?.statusCode))),
@@ -260,7 +260,7 @@ class _CollectionsListScreenState extends ConsumerState<CollectionsListScreen> {
         operation: 'create',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('作成に失敗しました')));
     }

@@ -14,6 +14,19 @@ const kPushRelayReceiveTimeout = Duration(seconds: 10);
 /// APNs / FCM のデバイストークン到着待ち（初回 subscribe 直後）。
 const kDeviceTokenWait = Duration(seconds: 10);
 
+/// secure storage（Keychain / libsecret / EncryptedSharedPreferences）1 回ぶんの
+/// 読み取りに待つ上限 (#1085)。
+///
+/// ⚠⚠ **上限が無いと「返ってこない」を検出できない。**Linux の
+/// flutter_secure_storage は libsecret → D-Bus `org.freedesktop.secrets` に
+/// 落ちるので、**gnome-keyring が死んでいると応答が返らない**。呼び出し側は
+/// どこも `try`/`catch` で囲んであるが、**ハングは例外ではないので catch され
+/// ない**。実際に「真っ黒なウインドウのまま無反応」というユーザー報告になった。
+///
+/// 5 秒は「正常なら数ミリ秒で返る」ことに対して桁で余裕を取った値。長くすると
+/// 起動が単に遅くなるだけで、得られるものが無い。
+const kSecureStorageReadTimeout = Duration(seconds: 5);
+
 /// サーバーメタデータの鮮度 TTL。バージョン表示 (#774) とモロヘイヤ機能フラグ
 /// (#775) は起動時に一度きり probe した値を保持するため、この期間を超えたら
 /// 取り直す。ServerMetadataCache の成功キャッシュと AccountManagerNotifier の

@@ -54,16 +54,34 @@ void main() {
   });
 
   test('返信は止めない（サーバーが宛先を補完するため）', () {
-    // `widget.replyTo != null` で早期 return していること。
+    // 返信のときは早期 return していること。
+    //
+    // ⚠⚠ **判定の綴りは 2026-09-10 に変わった (#1113)。**以前は
+    // `widget.replyTo != null` を直に見ていたが、それだと**「削除して再編集」で
+    // 引き継いだ返信が漏れる**（返信として送られるのに、この getter からは
+    // 返信に見えない）。`_isReply` は送信側と同じ
+    // `resolveComposeInReplyToId(widget.replyTo, widget.redraft)` で判定する。
+    //
+    // ⚠ **緩めたのではなく広げた。**従来の「返信は止めない」は完全に含む。
     final getterIndex = source.indexOf('String? get _unsendableScopeReason');
     expect(getterIndex, isNonNegative);
     final getter = source.substring(getterIndex, getterIndex + 700);
     expect(
-      getter.contains('widget.replyTo != null'),
+      getter.contains('_isReply'),
       isTrue,
       reason:
           '指名への返信まで止めている (#1043)。'
           'Misskey は返信先の作者を visibleUsers へ自動補完するので送れる',
+    );
+
+    // ⚠ **`_isReply` が redraft を見ていること。**ここが `widget.replyTo` だけを
+    // 見る実装に戻ると、綴りだけ変わって穴は開いたままになる。
+    final isReplyIndex = source.indexOf('bool get _isReply');
+    expect(isReplyIndex, isNonNegative, reason: '_isReply が見つからない');
+    expect(
+      source.substring(isReplyIndex, isReplyIndex + 200),
+      contains('resolveComposeInReplyToId('),
+      reason: '_isReply が redraft の返信先を見ていない (#1113)',
     );
   });
 

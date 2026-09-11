@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:capsicum_core/capsicum_core.dart';
 import 'package:flutter/foundation.dart';
@@ -8,9 +8,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants.dart';
 import '../model/account_key.dart';
+import '../platform/platform_info.dart';
 import '../util/exception_scrub.dart';
 import '../util/sentry_tag_hash.dart';
+import 'secret_service_probe.dart';
+import 'secure_storage_health.dart';
 
 /// [AccountStorage.getSecrets] が「secret は存在するが今は読めない」ときに投げる
 /// (#959)。
@@ -113,8 +117,18 @@ class AccountStorage {
   Future<Map<String, String>?> getSecrets(String accountKey) async {
     try {
       final raw = await _readWithRegisterRetry('secret_$accountKey');
+      // 返ってきた＝キーリングは応答し、解錠もできた。⚠ **null（item が無い）
+      // でも下ろす** —— 読めないのではなく、読んだ結果が空だった。
+      SecureStorageHealth.markRecovered();
       if (raw == null) return null;
-      return Map<String, String>.from(jsonDecode(raw) as Map);
+      return _decodeSecrets(accountKey, raw);
+    } on TimeoutException catch (e) {
+      // secure storage が応答しない (#1085)。⚠ **secret は無傷**なので、
+      // 「存在しない」＝ログアウトとして扱ってはいけない。#959 の
+      // plugin register race と同じ「今は読めない」に合流させ、オフライン
+      // 保持へ落とす（resume / 手動再試行で読み直される）。
+      SecureStorageHealth.markUnavailable(e);
+      throw TransientSecretUnavailableException(e);
     } on MissingPluginException catch (e, st) {
       // plugin register race が retry 後も解消しないケース。同じ race で
       // delete も失敗するため、ここでは観測のみ行い secret は残す。
@@ -143,21 +157,16 @@ class AccountStorage {
         // secret は残っている。解錠後の再試行で読めるので transient (#959)。
         throw TransientSecretUnavailableException(e);
       }
-      // Android の Keystore 復号エラーは、transient（起動時にロック中 / Keystore
-      // 準備前 / register race）と permanent（再インストールで鍵再生成）が
-      // 判別しづらい。delete は再ログインを強制する破壊的操作で、一過性のときに
-      // 「複数アカウントが一斉ログアウト」を招く (#730 / #731)。Android では
-      // delete せず secret を残して次回起動で再試行する（permanent でも再ログイン
-      // が secret を上書きするので無害）。-25308 のような明示 transient コードが
-      // 無い Android では _isKeychainTransient が拾えないため、ここで分岐する。
-      if (Platform.isAndroid) {
-        debugLogException(
-          'capsicum: android keystore read error for '
-          '${sentrySafeAccountKey(accountKey)}, '
-          'keeping secret (code=${e.code})',
-          e,
-        );
-        _reportOnce('secret:$accountKey:android_keystore', e, st, code: e.code);
+      // -25308 のような**文書化された transient コード**が無いプラットフォーム
+      // （Android の Keystore / Linux の libsecret / Windows の DPAPI）では、
+      // transient（起動時にロック中 / 準備前 / register race / キーリング未解錠）
+      // と permanent（再インストールで鍵再生成）が**同じ形で返る**ため
+      // _isKeychainTransient が拾えない。delete は再ログインを強制する破壊的
+      // 操作で、一過性のときに「複数アカウントが一斉ログアウト」を招く
+      // (#730 / #731 / #1104)。secret を残して次回起動で再試行する（permanent
+      // でも再ログインが secret を上書きするので無害）。
+      if (!mayDeleteSecretOnReadFailure) {
+        _keepSecretOnReadFailure(accountKey, e, st, code: e.code);
         // secret を消していないので transient 扱い（次回起動で再試行）(#959)。
         throw TransientSecretUnavailableException(e);
       }
@@ -178,16 +187,109 @@ class AccountStorage {
         '${sentrySafeAccountKey(accountKey)}',
         e,
       );
-      if (Platform.isAndroid) {
-        _reportOnce('secret:$accountKey:android_keystore', e, st);
-        // Android は secret を消さない（一過性の Keystore 失敗と区別しづらい）ので
-        // transient 扱い (#959 / #730 / #731)。
+      if (!mayDeleteSecretOnReadFailure) {
+        // 一過性の失敗と区別できないプラットフォームでは secret を消さない
+        // (#959 / #730 / #731 / #1104)。⚠ **上の PlatformException 側と同じ
+        // 判断をここにも置く。**片方だけ直しても塞がらない（`BadPaddingException`
+        // のように PlatformException でラップされずに来る経路がある）。
+        _keepSecretOnReadFailure(accountKey, e, st);
         throw TransientSecretUnavailableException(e);
       }
       _reportOnce('secret:$accountKey', e, st);
       await _storage.delete(key: 'secret_$accountKey');
       return null;
     }
+  }
+
+  /// **読めた**値を secrets へ戻す。壊れていたら null（＝secret が無い扱い）。
+  ///
+  /// ⚠⚠ **読み取りの失敗と混ぜない**（v1.64 のリリース PR の Codex P2）。以前は
+  /// `jsonDecode` も [getSecrets] の汎用 catch に包まれていたので、中身が壊れて
+  /// いると Linux / Windows では「一時的に読めない」扱いになり、同じ壊れた値を
+  /// 読み直すだけの再試行を永久に繰り返してアカウントがオフラインのままだった。
+  /// Linux ではキーリングのせいにする案内（`markRefused`）まで出ていた。
+  ///
+  /// 壊れた中身は**決定的**（読み直しても同じ）なので、存在しないのと同じに扱い
+  /// 再ログインへ回す。再ログインが上書きするので、壊れた値そのものは消さない。
+  static Map<String, String>? _decodeSecrets(String accountKey, String raw) {
+    try {
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } catch (e, st) {
+      // ⚠ `FormatException` の本文には secret の断片が入る。報告は
+      // scrubException を通す [_reportOnce] / debugLogException だけ。
+      debugLogException(
+        'capsicum: corrupt secrets for ${sentrySafeAccountKey(accountKey)}',
+        e,
+      );
+      _reportOnce('secret:$accountKey:corrupt', e, st);
+      return null;
+    }
+  }
+
+  /// 読み取りに失敗したが **secret は消さなかった**ことを記録する (#1104)。
+  ///
+  /// ⚠ **旗を立てるのは Secret Service backend のときだけ。**案内の文面が
+  /// 「キーリング / Secret Service」と OS の呼び名を名指しするので、Android の
+  /// Keystore 失敗で出すとユーザーは存在しないものを探すことになる。
+  ///
+  /// ⚠ Sentry へはここでは送らない。[_reportOnce] が例外そのものを送るので、
+  /// 同じ事実を 2 回上げない。
+  static void _keepSecretOnReadFailure(
+    String accountKey,
+    Object e,
+    StackTrace st, {
+    String? code,
+  }) {
+    debugLogException(
+      'capsicum: $secretStoreTag read error for '
+      '${sentrySafeAccountKey(accountKey)}, keeping secret'
+      '${code != null ? ' (code=$code)' : ''}',
+      e,
+    );
+    _reportOnce('secret:$accountKey:$secretStoreTag', e, st, code: code);
+    if (usesSecretServiceKeyring) SecureStorageHealth.markRefused(e);
+  }
+
+  /// ⚠⚠ **Secret Service の読み取りには必ず上限を掛ける (#1085)。**Linux の
+  /// flutter_secure_storage は libsecret → D-Bus `org.freedesktop.secrets` に
+  /// 落ちるので、**Secret Service が死んでいると応答が返らない**。呼び出し側は
+  /// 全部 `try`/`catch` で囲んであるが、**ハングは例外ではないので catch され
+  /// ない**。上限が無い限り「読めなかった」として扱う経路に入れない。
+  ///
+  /// ⚠ **`TimeoutException` はここで潰さない。**[getSecrets] が
+  /// [TransientSecretUnavailableException] へ翻訳する（＝**アカウントを消さず
+  /// オフライン保持**）。ここで null を返すと「secret が存在しない」と区別が
+  /// つかず、**ログアウト扱いになる**。
+  ///
+  /// ## ⚠⚠ 上限だけでは黒いウインドウは直らなかった (2026-09-09 の実測)
+  ///
+  /// `flutter_secure_storage_linux` は**メソッドチャネルのハンドラの中で
+  /// `secret_password_lookupv_sync` を直に呼ぶ**（3.0.2 でも同じ）。ハンドラが
+  /// 走るのは**プラットフォームスレッド**＝ GTK のメインループ＝**フレームを
+  /// 提示するスレッド**なので、Secret Service が応答しないとそこが止まる。
+  ///
+  /// → **下の `timeout` は発火する（Sentry に届く）のに、旗を立てても描く
+  /// スレッドが居ないので画面は真っ黒のまま。**報告者の環境で実際にそうなった。
+  ///
+  /// だから **触る前に [SecretServiceProbe] で聞く**。あちらは純 Dart の D-Bus
+  /// なのでプラットフォームスレッドを使わない。⚠ **順序が逆だと意味が無い。**
+  ///
+  /// ⚠⚠ **上限は Secret Service のときだけ掛ける。**Apple の Keychain /
+  /// Android の Keystore / Windows の DPAPI は D-Bus を経由しないので固まる
+  /// 形にならず、代わりに**ローエンド機の初回初期化で数秒かかる**ことがある
+  /// （Android の EncryptedSharedPreferences）。全 OS に掛けると、遅いだけの
+  /// 端末でアカウントがオフラインに落ち、「キーリング / Secret Service」を
+  /// 名指しする案内まで出ていた（v1.64 のリリース前レビュー）。
+  Future<String?> _read(String key) async {
+    if (!await SecretServiceProbe.isResponsive()) {
+      // ⚠ **触らずに諦める。**触れば固まるので、上限を掛けても手遅れになる。
+      // 呼び出し側（[getSecrets]）が transient として扱い、アカウントは残る。
+      // ⚠ message で「触っていない」ことを伝える（Sentry で実タイムアウトと
+      // 区別するため・[SecureStorageHealth.probeSkipMessage]）。
+      throw TimeoutException(SecureStorageHealth.probeSkipMessage);
+    }
+    final read = _storage.read(key: key);
+    return usesSecretService ? read.timeout(kSecureStorageReadTimeout) : read;
   }
 
   /// flutter_secure_storage の MethodChannel が plugin register より先に
@@ -210,7 +312,7 @@ class AccountStorage {
     MissingPluginException? lastMissing;
     for (final delayMs in delaysMs) {
       try {
-        return await _storage.read(key: key);
+        return await _read(key);
       } on MissingPluginException catch (e) {
         lastMissing = e;
         await Future<void>.delayed(Duration(milliseconds: delayMs));
@@ -218,7 +320,7 @@ class AccountStorage {
     }
     // 最後にもう 1 回試す (delay 累計後)。
     try {
-      return await _storage.read(key: key);
+      return await _read(key);
     } on MissingPluginException catch (e) {
       lastMissing = e;
     }
@@ -254,9 +356,17 @@ class AccountStorage {
     // する。parse 失敗は legacy データ自体が壊れているので削除してよい。
     List<String> list;
     try {
-      final raw = await _storage.read(key: _legacyAccountListKey);
+      // ⚠ **[_read] を通す (#1085)。**新規インストールでは prefs に索引が無い
+      // ので、**初回起動は必ずここを通る**。直に `_storage.read` を叩くと、
+      // キーリングが固まっている Linux では初回起動が真っ黒なまま返らない
+      // （報告もされにくい面・v1.64 のリリース前レビュー）。
+      final raw = await _read(_legacyAccountListKey);
       if (raw == null) return [];
       list = List<String>.from(jsonDecode(raw) as List);
+    } on TimeoutException {
+      // 応答しない。⚠ **legacy は残す**（壊れているのではなく、今読めない
+      // だけ）。索引も書かないので、次回起動で読み直される。
+      return [];
     } on PlatformException catch (e, st) {
       // secure_storage 読み込み失敗。legacy は残して次回リトライ。
       _reportOnce('index', e, st);
@@ -291,6 +401,17 @@ class AccountStorage {
   Future<void> migrateAccessibilityIfNeeded() async {
     final prefs = await _prefs();
     if (prefs.getBool(_accessibilityMigrationFlagKey) ?? false) return;
+    // ⚠ **accessibility は Apple の Keychain の概念 (#1085)。**Android
+    // (EncryptedSharedPreferences) / Linux (libsecret) / Windows
+    // (DPAPI) には存在しない。以前は「フラグを立てるため」に全プラット
+    // フォームで走らせていたが、**それは起動経路で secure storage を叩く
+    // 理由になっていない**。Linux では Secret Service が死んでいると
+    // `readAll` が返らず、`runApp()` の手前で止まって**真っ黒なウインドウ**に
+    // なる（それがこの Issue の症状）。フラグだけ立てて素通りする。
+    if (!usesKeychainAccessibility) {
+      await prefs.setBool(_accessibilityMigrationFlagKey, true);
+      return;
+    }
     try {
       // 旧 item は default accessibility (unlocked) で書かれており、現行
       // first_unlock の readAll はクエリに kSecAttrAccessible を含むため
@@ -579,7 +700,9 @@ class AccountStorage {
     String expectedRedirectUri,
   ) async {
     try {
-      final raw = await _storage.read(key: 'client_creds_$host');
+      // ⚠ **[_read] を通す (#1085)。**ログインのたびに通る経路で、キーリングが
+      // 固まっている Linux では直に読むとログイン画面ごと止まる。
+      final raw = await _read('client_creds_$host');
       if (raw == null) return null;
       final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       if (map['redirect_uri'] != expectedRedirectUri) return null;
@@ -587,6 +710,10 @@ class AccountStorage {
       final clientSecret = map['client_secret'];
       if (clientId is! String || clientSecret is! String) return null;
       return ClientSecretData(clientId: clientId, clientSecret: clientSecret);
+    } on TimeoutException {
+      // 応答しない。キャッシュが無いのと同じに扱い、新規登録させる。⚠ 不具合
+      // ではなく環境の状態なので Sentry へは送らない（[getSecrets] 側で送る）。
+      return null;
     } catch (e, st) {
       // getSecrets と同じ Linux Keystore race (#488) や OS 鍵ローテーション
       // (BadPaddingException) が host_credentials 側で発火しても観測できる

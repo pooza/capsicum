@@ -450,7 +450,7 @@ class ChatRoomTimelineNotifier
           operation: 'failed',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: ref.accountForReport,
         );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(
@@ -694,7 +694,7 @@ class ChatThreadNotifier
           operation: 'failed',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: ref.accountForReport,
         );
         state = AsyncData(
           (state.valueOrNull ?? current).copyWith(

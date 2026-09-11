@@ -7,9 +7,9 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../main.dart' show appLaunchStopwatch;
 import '../model/account_key.dart';
 import '../service/timeline_cache.dart';
+import '../util/conversion_skip_report.dart';
 import '../util/exception_scrub.dart';
 import '../util/startup_trace.dart';
-import '../util/user_acct.dart';
 import 'account_manager_provider.dart';
 import 'is_cat_provider.dart';
 import 'preferences_provider.dart';
@@ -532,7 +532,6 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   static bool _homeFirstPaintReported = false;
   StreamSubscription<Post>? _streamSubscription;
   final List<Post> _pendingPosts = [];
-  final Map<String, bool> _isCatCache = {};
   bool _isNearTop = true;
 
   /// provider が破棄済みか (#890)。キャッシュ先出しの裏で走る初回取得が、
@@ -1104,8 +1103,9 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
   }) async {
     final enrichSw = Stopwatch()..start();
     try {
-      // キャッシュ温め目的。返り値は使わず、最新 state へ _applyIsCat で再適用する。
-      await _enrichIsCat(initialPosts);
+      // キャッシュ温め目的。返り値は使わず、最新 state へ
+      // applyCachedToPosts で再適用する。
+      await _isCatEnricher.enrichPosts(initialPosts);
     } catch (_) {
       // enrich は装飾。失敗しても初回描画は成立しているので握り潰す。
     }
@@ -1114,7 +1114,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     try {
       final latest = state.valueOrNull;
       if (latest != null && latest.contextKey == contextKey) {
-        final reapplied = latest.posts.map(_applyIsCat).toList();
+        final reapplied = _isCatEnricher.applyCachedToPosts(latest.posts);
         if (_hasIsCatChange(reapplied, latest.posts)) {
           state = AsyncData(latest.copyWith(posts: reapplied));
         }
@@ -1796,7 +1796,7 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
           );
         }
 
-        final enrichedMore = await _enrichIsCat(allVisible);
+        final enrichedMore = await _isCatEnricher.enrichPosts(allVisible);
         // Re-read state to preserve posts added by streaming during await.
         final latest = state.valueOrNull ?? current;
         // 既にリストにある投稿は落とす (#909)。ページ境界の max_id が両端を含む
@@ -1846,26 +1846,12 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
 
   /// Report posts that failed conversion to Sentry for debugging.
   /// Only sends post IDs and error messages — never post content.
+  ///
+  /// ⚠ **抑止と件数の載せ方は通知側と共有する** (#1035-B2)。ここだけ 1 件 1 通の
+  /// ままだと、系統的な変換失敗でタイムラインを引くたびに 1 ページぶんが積まれる。
+  /// message は分けたままなので、Sentry の群は投稿 / 通知で分かれる。
   void _reportSkippedPosts(List<SkippedPost> skipped, String? maxId) {
-    try {
-      for (final post in skipped) {
-        // params は logentry.params として実際に送られる（hint は送られない）ので、
-        // ここが変換失敗の唯一の観測経路 (#1027-A5)。
-        // scrub-guard: allow: post.error は describeConversionFailure 済み（本文なし）
-        Sentry.captureMessage(
-          'Post conversion failed',
-          level: SentryLevel.warning,
-          params: [post.id, post.error],
-          hint: Hint.withMap({
-            'skippedPostId': post.id,
-            'conversionError': post.error,
-            'maxId': maxId ?? 'null',
-          }),
-        );
-      }
-    } catch (_) {
-      // Sentry failure must not affect timeline loading.
-    }
+    reportSkippedPosts(skipped, source: 'timeline', maxId: maxId);
   }
 
   /// Reset isLoadingMore to false, preserving the latest state.
@@ -1875,68 +1861,17 @@ class TimelineNotifier extends AutoDisposeAsyncNotifier<TimelineState> {
     state = AsyncData(latest.copyWith(isLoadingMore: false));
   }
 
-  /// モロヘイヤの `POST /account/is_cat` を使い、投稿者の isCat フラグを補完する。
-  /// Misskey adapter から取得した投稿は既に isCat が設定されているため、
-  /// ここでは Mastodon adapter 経由の投稿のみを対象とする。
-  Future<List<Post>> _enrichIsCat(List<Post> posts) async {
-    final mulukhiya = ref.read(currentMulukhiyaProvider);
-    final account = ref.read(currentAccountProvider);
-    if (mulukhiya == null || account == null) return posts;
-
-    // isCat が未設定（false）かつキャッシュにない acct を収集
-    final accts = <String>{};
-    for (final p in posts) {
-      for (final user in [p.author, if (p.reblog != null) p.reblog!.author]) {
-        if (!user.isCat && user.host != null) {
-          final acct = userAcct(user);
-          if (!_isCatCache.containsKey(acct)) accts.add(acct);
-        }
-      }
-    }
-    if (accts.isEmpty) return posts;
-
-    // ⚠ **猫耳のためにタイムラインの描画を止めない (#1080)。**理由は
-    // `is_cat_provider.dart` の [kIsCatEnrichBudget] の doc が正本。超えたら
-    // エンリッチ前の値で先に描画する（解決は続き、結果はキャッシュに載る）。
-    final result = await mulukhiya
-        .fetchIsCat(
-          accessToken: account.userSecret.accessToken,
-          accts: accts.toList(),
-        )
-        .timeout(kIsCatEnrichBudget, onTimeout: () => null);
-
-    // 通信エラー時はキャッシュせず、次回再問い合わせ
-    // ⚠ **ここは [IsCatEnricher] のネガティブキャッシュの恩恵を受けない。**
-    // timeline は独自の `_isCatCache` を持っており（`_applyIsCat` が読む）、
-    // 2 系統が並存している。統合は #1082。
-    if (result == null) return posts;
-
-    // 確定した結果のみキャッシュ（null = 取得失敗はキャッシュしない）
-    for (final entry in result.entries) {
-      if (entry.value != null) {
-        _isCatCache[entry.key] = entry.value!;
-      }
-    }
-
-    // isCat == true のユーザーがいなければ再構築不要
-    if (!_isCatCache.values.any((v) => v)) return posts;
-
-    return posts.map((p) => _applyIsCat(p)).toList();
-  }
-
-  Post _applyIsCat(Post p) {
-    final author = _maybeCatUser(p.author);
-    final reblog = p.reblog != null ? _applyIsCat(p.reblog!) : null;
-    if (identical(author, p.author) && identical(reblog, p.reblog)) return p;
-    return p.copyWith(author: author, reblog: reblog);
-  }
-
-  User _maybeCatUser(User user) {
-    if (user.isCat || user.host == null) return user;
-    final acct = userAcct(user);
-    final isCat = _isCatCache[acct] ?? false;
-    return isCat ? user.copyWithIsCat(true) : user;
-  }
+  /// isCat の解決とキャッシュ (#1082)。
+  ///
+  /// ⚠⚠ **かつてはここに `_enrichIsCat` / `_applyIsCat` / `_isCatCache` の
+  /// 独自実装があった。**そのため **#1080 で入れたネガティブキャッシュが
+  /// timeline に効かず**、到達不能なサーバーの acct を毎回引きに行っていた。
+  /// キャッシュも通知側と共有されていなかった。[IsCatEnricher] へ寄せた。
+  ///
+  /// ⚠ **待ち上限（[kIsCatEnrichBudget]）は enricher の中で掛かる。**ここで
+  /// `.timeout` を書き足さないこと — 旧実装は `fetchIsCat` 自体に掛けていて、
+  /// **遅れて着いた結果を捨てていた**（キャッシュが温まらない）。
+  IsCatEnricher get _isCatEnricher => ref.read(isCatEnricherProvider);
 }
 
 final timelineProvider =

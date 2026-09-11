@@ -915,9 +915,15 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   Future<({List<User> users, String? nextCursor})> getMutedUsers({
     TimelineQuery? query,
   }) async {
-    // ⚠ **「通知だけミュート」（`notifications: false`）は一覧には出ない。**
-    // `GET /api/v1/mutes` が返すのは Account なので、ミュートの種別を区別する
-    // 情報がレスポンスに乗らない。一覧では表現せず、解除の導線としてだけ使う。
+    // ⚠ **「一覧に出ない」ではなく「種別を出し分けられない」 (#1083-F)。**
+    // `MutesController#paginated_mutes` は `hide_notifications` で絞っていない
+    // （フォークのソースで確認）ので、**通知だけミュートした相手もここに出る**。
+    // 出ないのは種別の情報のほうで、`MutedAccountSerializer` は
+    // `mute_expires_at` しか足さない。
+    //
+    // ⚠ その `mute_expires_at` も capsicum は読んでいないので、**期限付き
+    // ミュートが無期限と同じ見た目になる**。対応するなら Misskey の
+    // `expiresAt` と対称に両方いっぺんに。
     final result = await client.getMutes(
       maxId: query?.maxId,
       limit: query?.limit,
@@ -1626,8 +1632,14 @@ class MastodonAdapter extends DecentralizedBackendAdapter
     // 将来 endpoint を使いたくなった際に「実は無視していた」ことを失念しない
     // よう、非 null が来たら開発ビルドで気付けるよう debugPrint で警告する。
     if (endpoint != null) {
+      // ⚠ **endpoint の値そのものを出さない (#1035-B3)。**relay の push URL は
+      // `…/push/<push_token>` で、**token が丸ごとログに残る**（`main.dart` の
+      // `_scrubRelayPushUrl` が Sentry 経路で潰しているのと同じ値）。
+      // `developer.log` はその scrub を通らず、Linux の
+      // `~/.local/share/capsicum/logs/` や logcat / Console.app に落ちる。
+      // ここで知りたいのは「非 null が来たのに無視した」という事実だけ。
       developer.log(
-        'MastodonAdapter.unsubscribePush ignores endpoint: $endpoint',
+        'MastodonAdapter.unsubscribePush ignores a non-null endpoint',
         name: 'capsicum',
       );
     }

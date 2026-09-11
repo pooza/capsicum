@@ -361,7 +361,7 @@ class _ImageBlock extends ConsumerWidget {
                       attachmentType: file.type,
                       error: error,
                       stackTrace: stack ?? StackTrace.current,
-                      account: ref.read(currentAccountProvider),
+                      account: ref.accountForReport,
                     );
                     return Container(
                       padding: const EdgeInsets.all(16),

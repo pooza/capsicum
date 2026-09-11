@@ -18,12 +18,16 @@ import '../service/background_notification_service.dart';
 import '../service/compose_draft_store.dart';
 import '../service/notification_label_cache.dart';
 import '../service/push_registration_service.dart';
+import '../service/secret_service_probe.dart';
+import '../service/sentry_op_failure.dart';
 import '../service/server_metadata_cache.dart';
 import '../service/timeline_cache.dart';
 import '../service/wns_service.dart';
+import '../util/action_labels.dart';
 import '../util/exception_scrub.dart';
 import '../util/login_error.dart';
 import '../util/sentry_tag_hash.dart';
+import 'preferences_provider.dart';
 
 /// State: list of accounts + currently selected account.
 class AccountManagerState {
@@ -131,6 +135,37 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   final _mulukhiyaAutoRefreshedAt = <String, DateTime>{};
   static const _mulukhiyaAutoRefreshTtl = kServerMetadataFreshnessTtl;
 
+  /// 明示ログイン（[addAccount]）が完了したが、まだホームへ遷移していない
+  /// (#1057)。
+  ///
+  /// ⚠⚠ **ログイン後の遷移を `LoginScreen` の生死に依存させないための旗。**
+  /// Android の OAuth は loopback callback（#276 / #654）なので、認可のあいだ
+  /// アプリはバックグラウンドに回り**キャッシュアプリ freezer に凍結される**。
+  /// 手動で戻すと解凍されてトークン交換が完走するが、その時点で `LoginScreen`
+  /// が生きているとは限らない。生きていないと `if (!mounted) return;` で
+  /// 黙って抜け、**アカウントだけ増えて画面はサーバー選択のまま**になる。
+  ///
+  /// ⚠ **「ログイン済みなら auth 画面から追い出す」では直せない。**設定から
+  /// 2 つ目のアカウントを足すときも `/server` を開くので、ログイン状態だけを
+  /// 見て飛ばすと**その導線を壊す**。見るのは「今この瞬間に addAccount が
+  /// 完了したか」だけにする。
+  ///
+  /// ⚠ [addAccount] の呼び出し元は `LoginScreen` の 1 箇所だけで、セッション
+  /// 復元（[restoreSessions]）はここを通らない。だから起動時の復元でこの旗は
+  /// 立たない。
+  bool _pendingPostLogin = false;
+
+  /// 旗を読み取り、同時に落とす。`routerProvider` の listener から呼ぶ
+  /// (#1057)。
+  ///
+  /// ⚠ **必ず消費すること。**残すと、次にこの listener が走ったとき（＝別の
+  /// 理由でアカウント一覧が動いたとき）にホームへ引き戻される。
+  bool consumePendingPostLogin() {
+    final pending = _pendingPostLogin;
+    _pendingPostLogin = false;
+    return pending;
+  }
+
   Future<void> addAccount(Account account) async {
     final storage = ref.read(accountStorageProvider);
     final secrets = <String, String>{
@@ -192,6 +227,19 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final offline = state.offlineAccounts
         .where((o) => o.key != enriched.key)
         .toList();
+    // ログイン直後はホームタイムラインを表示する。前回のタブ復元が走ると、
+    // 存在しないリスト / ハッシュタグを参照してエラーになりうる。
+    //
+    // ⚠ **ここでやる (#1057)。**以前は `LoginScreen` の `mounted` ガードより
+    // 後ろにあったので、**画面が消えていると保存だけ完走してタブは前回のまま**
+    // という非対称になっていた。遷移と同じ理由でここへ移す。
+    ref
+        .read(lastTabProvider(enriched.key.toStorageKey()).notifier)
+        .save('timeline:home');
+
+    // ⚠ **state を差し替える前に立てる (#1057)。**listener は state の変化で
+    // 走るので、後に立てると「旗が立つ前の通知」を見ることになる。
+    _pendingPostLogin = true;
     state = state.copyWith(
       accounts: newAccounts,
       current: enriched,
@@ -437,14 +485,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
   /// の既定（notification_type_label.cpp）と文言を揃えること。
   static ({String reblog, String post}) _resolveNotificationLabels(
     Account account,
-  ) {
-    final mulukhiya = account.mulukhiya;
-    final reblog =
-        mulukhiya?.reblogLabel ??
-        (account.adapter is ReactionSupport ? 'リノート' : 'ブースト');
-    final post = mulukhiya?.postLabel ?? '投稿';
-    return (reblog: reblog, post: post);
-  }
+  ) => (reblog: reblogLabelFor(account), post: postLabelFor(account));
 
   /// Windows: 完全終了中の bg task / 起動中の in-process 受信が読む
   /// push_labels.json を、現在ログイン中の全アカウントのラベルで更新する (#770)。
@@ -1084,6 +1125,13 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     final targets = [
       ...state.offlineAccounts.where((o) => o.recoverableByRetry),
     ];
+    // ⚠⚠ **Secret Service の「応答しない」をここで捨てる (#1085)。**捨てない
+    // と、キーリングが戻っても下の getSecrets が覚えた false で即座に諦め、
+    // **「今すぐ再試行」を押しても何も起こらない**（報告者の 181 の検証で
+    // 判明）。背景ループも同じ理由で再起動まで復帰しなかった。
+    // ⚠ **1 周で 1 回。**アカウントごとに捨てると、応答しない環境でアカウントの
+    // 数だけ Ping の上限を払う。
+    if (targets.isNotEmpty) SecretServiceProbe.forgetUnresponsive();
     for (final offline in targets) {
       final keyStr = offline.key.toStorageKey();
       if (state.accounts.any((a) => a.key == offline.key)) {
@@ -1136,10 +1184,39 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
     // 未接続アカウントは adapter もアクセストークンも持たないので、SNS 側へ
     // unsubscribe を投げようがない。[logout] との差はここだけで、端末側の
     // 掃除は同じものを共有している。
-    await PushRegistrationService.forgetAccountLocally(key);
-    // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ `@user@host` へ
-    // 入り直したときに古いラベルを引きうる。
-    await NotificationLabelCache.remove(_notificationLabelKey(key));
+    //
+    // ⚠⚠ **待たない (#1035-A4)。**`forgetAccountLocally` は中で
+    // `AnnouncementSubscriptionService.disable` が **relay へ DELETE を投げる**
+    // （connect / receive 各 10 秒）。`confirmRemoveOfflineAccount` は spinner も
+    // busy フラグも持たないので、**圏外だと最大 10 秒以上ボタンが効いていない
+    // ように見える**。
+    //
+    // ⚠ **待ち方が [logout] と非対称だった。**あちらは
+    // `PushRegistrationService.unregisterAccount(account);` を投げっぱなしに
+    // している。#1024 は掃除の**対称性**だけを機械化したので、**待ち方の差は
+    // 残っていた**。
+    //
+    // ⚠⚠ **順序の問題でもあった。**`await` していたせいで、中の
+    // `SharedPreferences.getInstance()` 等が投げると **下の
+    // `storage.removeAccount` に到達せず、アカウントが消えないまま無言で終わる**。
+    // 投げっぱなしにすることで、掃除の失敗が削除そのものを巻き込まなくなる。
+    unawaited(() async {
+      try {
+        await PushRegistrationService.forgetAccountLocally(key);
+        // 通知ラベルの表示名キャッシュ (#770 / #1024)。残すと同じ
+        // `@user@host` へ入り直したときに古いラベルを引きうる。
+        await NotificationLabelCache.remove(_notificationLabelKey(key));
+      } catch (e, st) {
+        // ⚠ **握りつぶさず観測は残す。**削除自体は成立しているので UI は
+        // 止めないが、端末に痕跡が残ったことは分かるようにする。
+        reportOpFailure(
+          tagKey: 'account.op',
+          operation: 'forget_offline_artifacts',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }());
 
     final storage = ref.read(accountStorageProvider);
     await storage.removeAccount(key.toStorageKey());
@@ -1331,3 +1408,54 @@ final currentAdapterProvider = Provider<DecentralizedBackendAdapter?>((ref) {
 final currentMulukhiyaProvider = Provider<MulukhiyaService?>((ref) {
   return ref.watch(currentAccountProvider)?.mulukhiya;
 });
+
+/// `catch` の中から `account` を読むための、**投げない**読み取り (#1064)。
+///
+/// ## なぜ要るか
+///
+/// `reportOpFailure(account: ref.read(currentAccountProvider))` は、
+/// **catch 節の中で `await` の後に `ref.read` する**形になっている。画面が
+/// 既に dispose されていると:
+///
+/// - `flutter_riverpod` の `_assertNotDisposed()` は **`assert` ではなく素の
+///   `throw StateError`** なので、⚠ **release ビルドでも投げる**
+/// - 投げるのは `reportOpFailure` へ入る**前**なので、⚠⚠ **StateError が元の
+///   例外を潰して Sentry に何も上がらない**
+///
+/// → **「エラーが出ないのでうまくいっている」に見える観測性ギャップ。**
+/// しかも消えるのは**失敗を最も観測したい場面**（重い操作の最中に画面を離れた）
+/// に限られるので、母数からは異常に見えない。
+///
+/// ## ⚠ host タグは落ちうる
+///
+/// dispose 済みなら `null` を返すので、[reportOpFailure] は `host` / `backend`
+/// を `-` で詰める。**プリセット host で優先度を切る運用**から見ると劣化だが、
+/// **報告そのものが消えるよりは桁違いにまし**という判断。
+///
+/// ⚠ **host を落としたくない経路は、`await` の前に `account` を捕まえて
+/// 直接渡すこと**（#990 / #1009 の「開く前に捕まえる」と同じ形。
+/// `profile_edit_screen` の `_save` がその例）。これは**捕まえ忘れても報告だけは
+/// 残す最後の砦**であって、捕まえる代わりではない。
+extension AccountForReport on WidgetRef {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// provider（`Ref`）側の同じ形 (#1064)。
+///
+/// ⚠ **autoDispose の provider は破棄後の `ref.read` で同じ StateError を投げる。**
+/// `chat_provider` / `announcement_provider` の失敗報告がこれに当たる。
+extension AccountForReportOnRef on Ref {
+  Account? get accountForReport {
+    try {
+      return read(currentAccountProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+}

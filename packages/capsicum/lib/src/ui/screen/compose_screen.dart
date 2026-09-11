@@ -30,6 +30,7 @@ import '../../util/exception_scrub.dart';
 import '../../util/misskey_api_error.dart';
 import '../../util/now_playing_formatter.dart';
 import '../../util/reentrancy_guard.dart';
+import '../../util/reply_target_gone.dart';
 import '../../util/text_length.dart';
 import '../../util/upstream_error_message.dart';
 import '../../util/user_acct.dart';
@@ -40,8 +41,10 @@ import '../util/drive_description_sync.dart';
 import '../util/livecure_snackbar.dart';
 import '../util/post_scope_display.dart';
 import '../util/program_schedule_display.dart';
+import '../util/redraft_carry_over.dart';
 import '../util/relative_time.dart';
 import '../util/shortcode_warning_controller.dart';
+import '../util/text_length_counter.dart';
 import '../util/visible_timeline.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
@@ -388,6 +391,59 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   /// （[_unsendableScopeReason]）。⚠ **広げる方向の自動補正はしない。**
   PostScope _scope = PostScope.public;
 
+  /// ⚠ **この投稿が返信として送られるか (#1113)。**
+  ///
+  /// 送信側と同じ判定を使う。⚠ **`widget.replyTo != null` で見ない** — redraft
+  /// で引き継いだ返信先が漏れる（それが #1113 の形）。⚠ **元投稿の取得を
+  /// 待たない**ので、開いた瞬間から正しい。
+  bool get _isReply => _inReplyToId != null;
+
+  /// 送信する返信先。表示・送信・公開範囲の判定はすべてここを通す。
+  String? get _inReplyToId => resolveComposeInReplyToId(
+    widget.replyTo,
+    widget.redraft,
+    redraftReplyDropped: _redraftReplyDropped,
+  );
+
+  /// 引き継いだ返信先をユーザーがやめた (#1113)。
+  ///
+  /// 返信先が消えているとサーバーは送信を拒否する（Mastodon は 404・Misskey は
+  /// `NO_SUCH_REPLY_TARGET`）。やめる手段が無いと、本文をコピーして新規作成へ
+  /// 貼り直すしかなかった。⚠ **戻す操作は置いていない**（やめたら画面を開き直す）。
+  bool _redraftReplyDropped = false;
+
+  /// 返信先の元投稿。表示にだけ使う。
+  ///
+  /// ⚠ **null でも返信として送られる**ことがある（redraft で取得に失敗した
+  /// とき）。**送信の可否をこれで判断しない。**
+  Post? get _replyToPost => widget.replyTo ?? _redraftReplyTo;
+
+  /// redraft で引き継いだ返信先を取りに行った結果 (#1113)。
+  Post? _redraftReplyTo;
+
+  /// 取得に失敗した / まだ返ってきていない。
+  bool _redraftReplyToUnavailable = false;
+
+  Future<void> _loadRedraftReplyTo(String id) async {
+    final adapter = ref.read(currentAdapterProvider);
+    if (adapter == null) return;
+    try {
+      final post = await adapter.getPostById(id);
+      if (!mounted) return;
+      // ⚠ **送信の失敗で「返信先が消えている」と分かった後なら上書きしない。**
+      // 取得が遅れて着くと、プレビューが復活して ✕ の付いた注記が隠れる
+      // （v1.64 のリリース前レビュー）。
+      if (_redraftReplyToUnavailable) return;
+      setState(() => _redraftReplyTo = post);
+    } catch (e) {
+      // ⚠ **失敗しても送信は成立する。**プレビューが出ないだけなので、
+      // ユーザーの操作は止めない。1 行の注記へ落とす。
+      debugLogException('capsicum: redraft reply-to fetch failed', e);
+      if (!mounted) return;
+      setState(() => _redraftReplyToUnavailable = true);
+    }
+  }
+
   /// 現在の公開範囲では送れない理由。送れるなら null (#1043)。
   ///
   /// ⚠ **「宛先を作れない指名」だけを止める。**返信なら宛先はサーバーが補完
@@ -398,7 +454,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     if (_scope != PostScope.direct) return null;
     final adapter = ref.read(currentAdapterProvider);
     if (selectableScopes(adapter).contains(PostScope.direct)) return null;
-    if (widget.replyTo != null) return null;
+    // ⚠ redraft で引き継いだ返信も「宛先がある」側 (#1113)。
+    if (_isReply) return null;
     final label = postScopeLabel(PostScope.direct, adapter);
     return '「$label」は宛先を指定する必要がありますが、capsicum には指定する画面が'
         'ありません。このままでは誰にも届きません。公開範囲を選び直すか、'
@@ -407,9 +464,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
   bool _cwEnabled = false;
   bool _sensitiveEnabled = false;
-  // 元投稿にアンケートが付いていた redraft で、引き継げない旨の注釈を
-  // post-frame で 1 度出すためのフラグ (#703)。
-  bool _redraftPollDropped = false;
   bool _sending = false;
   // ナウプレ取得の in-flight ガード (#466)。取得（D-Bus 走査 / SMTC メソッド
   // チャンネル）には体感できる時間がかかりうるため、連打で複数取得が並行して
@@ -556,6 +610,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     'ru': 'Русский',
   };
 
+  /// 言語の選択肢。⚠ **現在値は必ず含める**（[_scopeItems] と同じ理由）。
+  ///
+  /// 削除して再編集で引き継いだ言語（#1113）や端末ロケールが 9 言語の外
+  /// （Mastodon は `it` / `zh-TW` なども保存する）だと、`DropdownButton` に
+  /// items に無い value を渡すことになり、debug は赤画面・release は空欄に
+  /// なっていた（v1.64 のリリース前レビュー）。⚠ **値は捨てない** —— 捨てると
+  /// 送られる言語が黙って変わる。知らない言語はコードをそのまま出す。
+  Map<String, String> get _languageEntries {
+    final current = _language;
+    if (current == null || _languageOptions.containsKey(current)) {
+      return _languageOptions;
+    }
+    return {..._languageOptions, current: current};
+  }
+
   List<DropdownMenuItem<PostScope>> _scopeItems(WidgetRef ref) {
     final adapter = ref.read(currentAdapterProvider);
     // 送る手段のある範囲だけを出す (#1043)。⚠ **ただし現在値は必ず含める。**
@@ -640,10 +709,64 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       if (redraft.attachments.isNotEmpty) {
         _attachments.addAll(redraft.attachments.map(_MediaEntry.drive));
       }
-      // アンケートは引き継がない（投票結果がリセットされるため）。元投稿に
-      // アンケートが付いていた場合は post-frame で注釈を出す。
-      if (redraft.poll != null) {
-        _redraftPollDropped = true;
+      // ⚠⚠ **見えない状態は引き継がないと「無言で変わる」(#1113)。**
+      // `scope` は引き継ぐのに `localOnly` を落としていたので、「ローカルの
+      // み」で投稿したものを再編集すると**旗だけ外れて連合へ流れて**いた。
+      // 画面上は何も変わったように見えないので、気づく手掛かりが無い。
+      _localOnly = redraft.localOnly;
+      // 言語も同じく見えない状態。⚠ 端末ロケールで上書きされないよう、
+      // 既定値を入れる `_language` の初期化より**後**でここが走る前提。
+      if (redraft.language != null) _language = redraft.language;
+      // 引用許可も見えない状態。⚠ 引き継がないと未選択のまま送られ、サーバーは
+      // **アカウント既定**を使う ——「許可しない」にしていた投稿が再編集で
+      // 「誰でも」へ広がり、ドロップダウンは案内表示のままなので気づけない。
+      // 知らない値は入れない（items に無い値を value に渡すと落ちる）。
+      final quotePolicy = redraft.quoteApprovalPolicy;
+      if (_quoteApprovalLabels.containsKey(quotePolicy)) {
+        _quoteApprovalPolicy = quotePolicy;
+      }
+      // ⚠ **投票は引き継ぐ (#1113)。**旧実装は「投票結果がリセットされるため」
+      // として落としていたが、**削除して再編集は元投稿ごと消える操作**なので、
+      // 引き継ごうが引き継ぐまいと結果はリセットされる。理由が成立していない。
+      //
+      // ⚠ **引き継ぐ理由は「便利」であって整合の保証ではない。**質問文（本文）を
+      // 書き換えれば選択肢と食い違いうるが、**選択肢はフォームに出ていて編集も
+      // 削除もできる**ので、ユーザーが直せる。`localOnly` のような「見えない
+      // まま変わる」性質とは別物（`redraft_carry_over.dart` の doc）。
+      final poll = redraft.poll;
+      if (poll != null && poll.options.isNotEmpty) {
+        _pollEnabled = true;
+        for (final c in _pollControllers) {
+          c.dispose();
+        }
+        _pollControllers
+          ..clear()
+          ..addAll(
+            poll.options.map((o) => TextEditingController(text: o.title)),
+          );
+        _pollMultiple = poll.multiple;
+        // ⚠ `expiresAt`（絶対時刻）は `PostDraft` の `pollExpiresIn`（残り秒数）
+        // へそのまま渡せない。期限切れなら既定へ落とす（2026-09-10 pooza 判断）。
+        _pollExpiresIn = redraftPollExpiresIn(
+          expiresAt: poll.expiresAt,
+          now: DateTime.now(),
+          allowed: _pollDurationOptions.keys,
+          fallback: _pollExpiresIn,
+        );
+      }
+      // ⚠⚠ **返信として送るなら、そう見えていること (#1113)。**送信側は
+      // `inReplyToId` だけで足りるが、それだけだと**返信として投稿されるのに
+      // 画面のどこにもその旨が出ない**——`localOnly` の不具合と同じ
+      // 「見えないまま効いている」型になる。
+      //
+      // ⚠ **両 WebUI はオブジェクトを持ち回っている**（Mastodon は store から
+      // 引ける・Misskey は `reply: appearNote.reply` を渡す）ので表示できる。
+      // capsicum は id しか持たないので、**取りに行く**。
+      //
+      // ⚠ **取得に失敗しても送信は成立する**（送信は id だけを使う）。
+      // 失敗時は 1 行の注記に落とす。
+      if (redraft.inReplyToId != null) {
+        unawaited(_loadRedraftReplyTo(redraft.inReplyToId!));
       }
     } else if (replyTo != null) {
       _scope = replyTo.scope;
@@ -693,7 +816,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final adapter = ref.read(currentAdapterProvider);
-      if (adapter is MastodonAdapter) {
+      // ⚠⚠ **既に決まっているなら上書きしない (#1113)。**ここは post-frame なので
+      // `initState` の redraft 引き継ぎ**より後**に走る。無条件に代入していた
+      // ため、**元投稿の言語を引き継いでも端末ロケールで潰されていた**
+      // （引き継ぎを足すときに実際に踏みかけた）。
+      if (adapter is MastodonAdapter && _language == null) {
         setState(
           () => _language = Localizations.localeOf(context).languageCode,
         );
@@ -703,12 +830,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // 以降は in-memory で絞り込む。Fire-and-forget で UI を待たせない。
       if (adapter is CustomEmojiSupport) {
         _loadAllEmojis(adapter as CustomEmojiSupport);
-      }
-      // redraft 元にアンケートが付いていた場合の引き継ぎ不可注釈 (#703)。
-      if (_redraftPollDropped) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('アンケートは引き継げません。再投稿時に再設定してください。')),
-        );
       }
     });
   }
@@ -3110,14 +3231,34 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
   ///
   /// 失敗しても投稿は止めない。ALT が更新できないことより、投稿できないことの
   /// ほうが重い。観測だけ残す。
-  Future<void> _syncDriveDescriptions() async {
-    final adapter = ref.read(currentAdapterProvider);
+  ///
+  /// ## ⚠⚠ 呼ぶのは「投稿 / 保存が通ったあと」(#1035-A2)
+  ///
+  /// 以前は `postStatus` / `saveDraft` の**前**にあった。ドライブファイルは
+  /// 実体が 1 つなので、**投稿が失敗しても、そのファイルを使っている過去の
+  /// 投稿の ALT は新しい文字列のまま残る**。ユーザーには「投稿に失敗しました」
+  /// しか出ず、諦めて画面を閉じても戻らない。
+  ///
+  /// ⚠ **後ろへ回せるのは Misskey の仕様による。**ノートの ALT はドライブ
+  /// ファイルの `comment` を**参照**するので、投稿後に書いても反映される
+  /// （送っているのは `mediaIds` ＝ ID だけ）。
+  ///
+  /// ⚠ **前に戻さないこと。**「ID しか返さないので通さないと編集が黙って
+  /// 捨てられる」(#1027-F1) は**どこかで通す必要がある**という意味であって、
+  /// 前に置く理由ではない。
+  ///
+  /// ## ⚠⚠ adapter / account は呼び出し側が await の前に取って渡す
+  ///
+  /// 投稿 / 保存の**後ろ**へ回した (#1035-A2) ことで、ここは必ず await の後に
+  /// 走る。中で `ref.read` すると、送信中に画面を離れたとき dispose 済みで
+  /// StateError になり、外側の catch が `if (!mounted) return;` に吸う ——
+  /// **投稿は成功しているのに `_clearDraft()` が飛び、下書きが残って次に開いた
+  /// ときに復元される**（二重投稿を誘う・v1.64 のリリース前レビュー）。
+  Future<void> _syncDriveDescriptions(
+    DecentralizedBackendAdapter adapter,
+    Account? account,
+  ) async {
     if (adapter is! DriveSupport) return;
-    // ⚠ **報告に使う値は await の前に確定させる (#1027-C2)。**下のループは
-    // await をまたぐので、catch の中で `ref.read` すると画面を離れたときに
-    // dispose 済みで StateError になり、**投稿そのものが無言で落ちる**
-    // （外側の catch が `if (!mounted) return;` に吸う）。
-    final account = ref.read(currentAccountProvider);
     // 判断は [pendingDriveDescriptionUpdates] が持つ（検査できるように分けて
     // ある）。ここは残った I/O だけ。
     final pending = pendingDriveDescriptionUpdates([
@@ -3160,15 +3301,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     // DraftSupport は mixin で DecentralizedBackendAdapter の subtype ではない
     // ため is! では promote されない。ScheduleSupport と同様に明示 cast で使う。
     if (adapter == null || adapter is! DraftSupport) return;
+    // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
+    final account = ref.read(currentAccountProvider);
 
     // ⚠ **アダプタ不在で引き返す経路より後で取り消す (Codex P2 / PR #1017)。**
     // 理由は [_submitInternal] の同じ位置のコメント。
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
-      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
-      // 返さないので、通さないと編集が黙って捨てられる。
-      await _syncDriveDescriptions();
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
           if (entry.isDrive) return entry.driveFile!.id;
@@ -3190,7 +3330,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
-          inReplyToId: widget.replyTo?.id,
+          // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
+          // 単独投稿になり、連合先では文脈の無い投稿として流れる。
+          inReplyToId: _inReplyToId,
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
@@ -3199,6 +3341,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           channelId: _effectiveChannelId,
         ),
       );
+
+      // ⚠ **保存が通ってから ALT を書き戻す (#1035-A2)。**理由は
+      // [_submitInternal] の同じ位置のコメント（失敗したのに過去の投稿の ALT
+      // だけ書き換わるのを防ぐ）。
+      await _syncDriveDescriptions(adapter, account);
 
       // サーバーへ保存できたので、ローカルに自動保存された下書きは破棄する。
       // これをしないと、投稿成功経路（_clearDraft を呼ぶ）と非対称になり、
@@ -3257,7 +3404,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         operation: 'save_server_draft',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
         // scrubException が DioException を `status=400 path=...` に丸めるため、
         // Sentry 上では上限超過も他の 400 も同じ 1 件に見えていた（CAPSICUM-3X）。
         // 透過されるようになった code をタグに載せて内訳を分けられるようにする
@@ -3339,6 +3486,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
 
     final adapter = ref.read(currentAdapterProvider);
     if (adapter == null) return;
+    // ⚠ await の前に確定させる（[_syncDriveDescriptions] の doc）。
+    final account = ref.read(currentAccountProvider);
 
     // ⚠ **ここまで来て初めて取り消す (Codex P2 / PR #1017)。**入口で取り消すと、
     // 確認ダイアログのキャンセル・アンケートの選択肢不足・アダプタ不在で
@@ -3349,9 +3498,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
     _cancelPendingDraftSave();
     setState(() => _sending = true);
     try {
-      // ドライブ添付の ALT はここで書き戻す (#1027-F1)。下の分岐は ID しか
-      // 返さないので、通さないと編集が黙って捨てられる。
-      await _syncDriveDescriptions();
       // Upload local attachments / reuse drive file IDs.
       final mediaIds = await Future.wait(
         _attachments.map((entry) async {
@@ -3376,7 +3522,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         PostDraft(
           content: text.isNotEmpty ? text : null,
           scope: _scope,
-          inReplyToId: widget.replyTo?.id,
+          // ⚠ redraft でも返信先を引き継ぐ (#1113)。落とすとツリーから外れて
+          // 単独投稿になり、連合先では文脈の無い投稿として流れる。
+          inReplyToId: _inReplyToId,
           quoteId: _quotedPost?.id,
           mediaIds: mediaIds,
           spoilerText: spoilerText?.isNotEmpty == true ? spoilerText : null,
@@ -3396,6 +3544,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           quoteApprovalPolicy: _quoteApprovalPolicy,
         ),
       );
+      // ⚠⚠ **ドライブ添付の ALT は投稿が通ってから書き戻す (#1035-A2)。**
+      // 以前は `postStatus` の**前**にあった。ドライブファイルは実体が 1 つ
+      // なので、投稿が失敗しても**そのファイルを使っている過去の投稿の ALT は
+      // 新しい文字列のまま残る**。ユーザーには「投稿に失敗しました」しか出ず、
+      // 諦めて画面を閉じても戻らない。
+      //
+      // ⚠ **後ろへ回せるのは Misskey の仕様による。**ノートの ALT はドライブ
+      // ファイルの `comment` を**参照**するので、投稿後に書いても反映される
+      // （下の `mediaIds` は ID しか渡していない）。#1027-F1 が「通さないと
+      // 編集が黙って捨てられる」と書いたのは前に置いた理由ではなく、
+      // **どこかで通す必要がある**という意味。
+      //
+      // ⚠ **「過去の投稿も変わる」こと自体は仕様として受け入れ済み**
+      // （`drive_support.dart` の doc）。直したのは**失敗したのに残る**ほう。
+      await _syncDriveDescriptions(adapter, account);
       // Posting succeeded — drop any persisted draft so it doesn't reappear
       // the next time the user opens compose. Only applies to fresh-compose
       // sessions; reply/quote/redraft/share flows never autosaved and must
@@ -3454,7 +3617,45 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
       // ので、後ろに置くと一部の経路で張り直されない。
       _scheduleDraftSave();
       if (!mounted) return;
-      if (widget.redraft != null) {
+      if (widget.redraft != null &&
+          isReplyTargetGoneError(
+            e,
+            sentAsReply: _isReply,
+            sentWithQuote: _quotedPost != null,
+          )) {
+        // ⚠⚠ **返信先が消えている (#1113)。**汎用の文面（下）は「元の投稿は
+        // 既に削除されています」としか言わず、消えたのが再編集元なのか返信先
+        // なのか分からなかった。画面は残っているので、返信をやめれば送れる。
+        //
+        // ⚠ 取得できていたプレビューも外し、✕ の付いた注記へ切り替える
+        // （開いた後に消された場合）。Sentry へは送らない —— 不具合ではなく、
+        // サーバーの状態をそのまま伝えているだけ。
+        await Clipboard.setData(ClipboardData(text: _controller.text));
+        if (!mounted) return;
+        setState(() {
+          _redraftReplyTo = null;
+          _redraftReplyToUnavailable = true;
+        });
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('投稿に失敗しました'),
+            content: const Text(
+              '返信先の投稿が削除されたか、見られなくなっています。'
+              '「返信として投稿します」の ✕ で'
+              '返信をやめると、単独の投稿として送れます。'
+              '本文はクリップボードにもコピーしました。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) setState(() => _sending = false);
+      } else if (widget.redraft != null) {
         // 元投稿は既に削除されている。本文をクリップボードに保全し、
         // 再投稿手段をユーザーに提示する (#393)。
         await Clipboard.setData(ClipboardData(text: _controller.text));
@@ -3666,10 +3867,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
         MenuSubmenuEntry(
           label: '言語',
           children: [
-            for (final entry in _languageOptions.entries)
+            for (final entry in _languageEntries.entries)
               MenuActionEntry(
                 label: entry.value,
                 checked: _language == entry.key,
+                // 選択肢の外の現在値は選び直す対象ではない（既に選ばれている）。
                 onSelected: busy ? null : _languageSetters[entry.key],
               ),
           ],
@@ -3742,7 +3944,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           },
         ),
         title: Text(
-          widget.replyTo != null
+          // ⚠ 元投稿の取得を待たずに「リプライ」と出す (#1113)。取得が返る前でも
+          // 返信として送られることは確定している。
+          _isReply
               ? (_effectiveChannelName != null
                     ? 'リプライ：$_effectiveChannelName'
                     : 'リプライ')
@@ -3838,10 +4042,37 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.replyTo != null)
-                    _CollapsiblePreview(
-                      post: widget.replyTo!,
-                      icon: Icons.reply,
+                  if (_replyToPost != null)
+                    _CollapsiblePreview(post: _replyToPost!, icon: Icons.reply)
+                  // ⚠ **元投稿が引けなくても、返信として送ることは伝える
+                  // (#1113)。**黙っていると「見えないまま効いている」形になる。
+                  else if (_isReply && _redraftReplyToUnavailable)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.reply, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '返信として投稿します（元の投稿は読み込めませんでした）',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                          // ⚠ **返信先が消えていると送れない (#1113)。**単独の
+                          // 投稿として送る道を残す。
+                          IconButton(
+                            onPressed: _sending
+                                ? null
+                                : () => setState(
+                                    () => _redraftReplyDropped = true,
+                                  ),
+                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: '返信をやめる',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
                     ),
                   if (_quotedPost != null)
                     _CollapsiblePreview(
@@ -4371,7 +4602,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
                                         setState(() => _language = v);
                                       }
                                     },
-                              items: _languageOptions.entries
+                              items: _languageEntries.entries
                                   .map(
                                     (e) => DropdownMenuItem(
                                       value: e.key,

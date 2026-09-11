@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../provider/account_manager_provider.dart';
 import '../../provider/is_cat_provider.dart';
 import '../../service/sentry_op_failure.dart';
+import '../../util/user_acct.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/emoji_text.dart';
 import '../widget/section_header.dart';
@@ -79,7 +80,7 @@ class _CollectionDetailScreenState
         operation: 'load_detail',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (mounted) {
         setState(() {
@@ -257,7 +258,8 @@ class _CollectionDetailScreenState
         ],
       ),
       subtitle: Text(
-        '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+        // ⚠ 自前の三項は host == '' を落とす (#1035-C4)。
+        '@${userAcct(user)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -317,7 +319,7 @@ class _CollectionDetailScreenState
         operation: 'revoke',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('操作に失敗しました')));
     }
@@ -344,7 +346,7 @@ class _CollectionDetailScreenState
         operation: 'remove_member',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('メンバーの削除に失敗しました')));
     }
@@ -385,7 +387,7 @@ class _CollectionDetailScreenState
         operation: 'delete',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       messenger.showSnackBar(const SnackBar(content: Text('削除に失敗しました')));
     }
@@ -482,7 +484,7 @@ class _CollectionDetailScreenState
           operation: 'update',
           error: e,
           stackTrace: st,
-          account: ref.read(currentAccountProvider),
+          account: ref.accountForReport,
         );
         messenger.showSnackBar(const SnackBar(content: Text('保存に失敗しました')));
       }
@@ -520,8 +522,11 @@ class _CollectionDetailScreenState
           }
           return StatefulBuilder(
             builder: (context, setSheetState) => Padding(
+              // ⚠ キーボードとナビゲーションバーの両方を足す (#1062)。
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom:
+                    MediaQuery.viewInsetsOf(context).bottom +
+                    MediaQuery.paddingOf(context).bottom,
               ),
               child: SizedBox(
                 height: MediaQuery.of(context).size.height * 0.6,
@@ -572,7 +577,7 @@ class _CollectionDetailScreenState
                                 operation: 'search_member',
                                 error: e,
                                 stackTrace: st,
-                                account: ref.read(currentAccountProvider),
+                                account: ref.accountForReport,
                               );
                               if (!context.mounted) return;
                               setSheetState(() {
@@ -648,7 +653,8 @@ class _CollectionDetailScreenState
                               overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              '@${user.username}${user.host != null ? '@${user.host}' : ''}',
+                              // ⚠ 自前の三項は host == '' を落とす (#1035-C4)。
+                              '@${userAcct(user)}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -720,7 +726,7 @@ class _CollectionDetailScreenState
         operation: 'add_member',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       return (ok: false, message: 'メンバーの追加に失敗しました。');
     }

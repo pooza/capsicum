@@ -2037,13 +2037,11 @@ class _PostTileState extends ConsumerState<PostTile> {
     );
   }
 
-  String _handleText(User author) {
-    final handle = '@${author.username}';
-    if (author.host != null) {
-      return '$handle@${author.host}';
-    }
-    return handle;
-  }
+  /// ⚠ **`userAcct` へ寄せた (#1035-C4)。**自前の三項は `host != null` しか
+  /// 見ておらず、**空文字列の host をローカル扱いしない**。`userAcct` が潰した
+  /// 分岐がここだけ落ちていた（変数名が `user` ではなかったので、再実装を
+  /// 検出するガードにも見えていなかった）。
+  String _handleText(User author) => '@${userAcct(author)}';
 
   String _formatTime(DateTime postedAt) {
     if (ref.watch(absoluteTimeProvider)) {
@@ -3841,11 +3839,27 @@ class _RetagSheetState extends State<_RetagSheet> {
       expand: false,
       builder: (context, scrollController) => SingleChildScrollView(
         controller: scrollController,
+        // ⚠⚠ **キーボードとナビゲーションバーの両方を足す (#1062)。**
+        // 以前は `viewInsets`（キーボード）だけを見ており、**キーボードを閉じた
+        // 状態だと末尾の「削除してタグづけ」ボタンが下端 16dp に来て、3 ボタン
+        // ナビの帯とほぼ完全に重なっていた**。⚠ **破壊的操作の主 CTA** なので
+        // タップ不能に近づく。
+        //
+        // ⚠ **二重には入らない。**`MediaQuery.padding` は `viewPadding` から
+        // `viewInsets` を引いた残りなので、キーボードがナビゲーションバーを
+        // 覆っている間は `padding.bottom` が 0 になる（`BottomSafeArea` の doc
+        // と同じ理由）。だから素直に足してよい。
+        //
+        // ⚠ **`viewPadding` を使わないこと。**あちらはキーボード表示中も
+        // 減らないので、キーボードの上に inset ぶんの死んだ余白が残る。
         padding: EdgeInsets.only(
           left: 16,
           right: 16,
           top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          bottom:
+              MediaQuery.viewInsetsOf(context).bottom +
+              MediaQuery.paddingOf(context).bottom +
+              16,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

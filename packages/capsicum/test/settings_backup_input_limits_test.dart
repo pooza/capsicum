@@ -194,6 +194,130 @@ void main() {
           isFalse,
         );
       });
+
+      group('⚠⚠ 引用符 1 個でガードが無効化される (#1035-A1)', () {
+        // ⚠ **上のテスト群は素直なペイロードしか見ていなかった。**引用符は
+        // 「スカラー全体を囲む」形しか試しておらず、**平文スカラーの途中に
+        // 引用符が 1 個だけ現れる形**が抜けていた。
+        //
+        // 実測（yaml 3.1.3）: `bait: x"` + 250,000 段のネストで、ガードは
+        // **false（素通り）**、`loadYaml` が **100,690ms 同期的にメイン isolate
+        // を占有**したのち StackOverflowError。#1025 が挙げた ANR /
+        // ウォッチドッグの状況がそのまま再現する。
+
+        test('平文スカラーの途中の " は引用開始ではない（以降も数える）', () {
+          // ⚠ `bait: x"` は**正当な YAML**。ここで引用が始まったと誤読すると、
+          // 閉じが無いのでファイル末尾まで飛び、以降の `[` を 1 つも数えない。
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(
+            exceedsSettingsBackupNestingDepth('bait: x"\na: $deep\n'),
+            isTrue,
+            reason: '起票時の再現ペイロードそのもの',
+          );
+        });
+
+        test("平文スカラーの途中の ' も同じ（a: don't）", () {
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(
+            exceedsSettingsBackupNestingDepth("a: don't\nb: $deep\n"),
+            isTrue,
+          );
+        });
+
+        test('平文スカラーの途中の # はコメント開始ではない', () {
+          // YAML のコメントは行頭か空白の後ろだけ。`tag#1` の `#` は本文。
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(exceedsSettingsBackupNestingDepth('a: tag#1 $deep\n'), isTrue);
+        });
+
+        test('閉じない引用符は弾く側へ倒す', () {
+          // ⚠ 閉じない引用符を持つファイルは `loadYaml` でもどうせ失敗する。
+          // **数十秒かけて失敗するより先に弾く**ほうがよい。
+          expect(
+            exceedsSettingsBackupNestingDepth('a: "abc\n'),
+            isTrue,
+            reason: '閉じ引用符が無いまま EOF。素通りさせると後段が刺さる',
+          );
+          expect(exceedsSettingsBackupNestingDepth("a: 'abc\n"), isTrue);
+        });
+
+        // ⚠⚠ **v1.64 のリリース前レビューで、上の塞ぎ方がまだ 3 通りで抜けると
+        // 分かった**（どれも正当な YAML・40 段で素通りを実測）。
+        group('まだ抜けられた 3 形 (v1.64 のリリース前レビュー)', () {
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          final closing = ']' * (maxSettingsBackupNestingDepth + 10);
+
+          test("フローの中で - の直後の ' は引用開始ではない", () {
+            expect(
+              exceedsSettingsBackupNestingDepth("c: [a-', $deep$closing, b-']"),
+              isTrue,
+            );
+          });
+
+          test("平文スカラーの途中の空白の後ろの ' は引用開始ではない（行をまたぐ）", () {
+            expect(
+              exceedsSettingsBackupNestingDepth(
+                "a: x '\nc: $deep$closing\nd: y '\n",
+              ),
+              isTrue,
+            );
+          });
+
+          test('- の直後の # はコメントではない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth('c: [a-#, $deep$closing]'),
+              isTrue,
+            );
+          });
+
+          test('フローの中で平文スカラーの空白の後ろの引用符も同じ', () {
+            expect(
+              exceedsSettingsBackupNestingDepth("c: [a ', $deep$closing, b ']"),
+              isTrue,
+            );
+          });
+
+          test('⚠ ブロックスカラーの中身の引用符で行をまたがせない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth(
+                "a: |\n  '\nb: $deep$closing\nc: |\n  '\n",
+              ),
+              isTrue,
+            );
+          });
+
+          test(r'⚠ \ + 改行で二重引用を行またぎさせない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth('a: "x\\\n$deep$closing"\n'),
+              isTrue,
+            );
+          });
+        });
+
+        test('⚠ 書き出し側の形（1 行の二重引用・フローの要素）は通す', () {
+          final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(
+            exceedsSettingsBackupNestingDepth(
+              'version: 1\nsettings:\n  a: "$inside"\n  b: ["$inside", '
+              "'$inside']\n  c: {k: \"$inside\"}\n- '$inside'\n",
+            ),
+            isFalse,
+          );
+        });
+
+        test('⚠ 正しく閉じた引用符は従来どおり通す（過剰に弾かない）', () {
+          // 弾く側へ倒したことで、**正しいファイルまで弾いていないか**を押さえる。
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(
+            exceedsSettingsBackupNestingDepth('a: "$deep"\nb: 1\n'),
+            isFalse,
+          );
+          expect(
+            exceedsSettingsBackupNestingDepth('a: "x\\"y"\nb: 1\n'),
+            isFalse,
+          );
+        });
+      });
     });
   });
 

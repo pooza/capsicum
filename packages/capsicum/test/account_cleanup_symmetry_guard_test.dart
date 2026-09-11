@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/dart_source.dart';
+
 /// #1024: `logout` と `removeOfflineAccount` の後始末が食い違わないようにする。
 ///
 /// この 2 つは**ユーザーから見て同じ操作**（アカウントを消す）。片方は接続中の
@@ -115,13 +117,11 @@ void main() {
   }
 
   /// 行コメントを落とす。doc やコメントでの言及を呼び出しと取り違えない。
-  String stripLineComments(String s) => s
-      .split('\n')
-      .map((line) {
-        final i = line.indexOf('//');
-        return i == -1 ? line : line.substring(0, i);
-      })
-      .join('\n');
+  ///
+  /// ⚠ **文字列リテラルを見る版へ寄せた (#1035-C5)。**素朴な `indexOf('//')` は
+  /// 同一行に URL リテラルがあると**そこから行末までを丸ごと消す**。同じ実装が
+  /// 3 本のガードへ写されていたので、[maskComments] に統一した。
+  String stripLineComments(String s) => maskComments(s);
 
   late String logoutBody;
   late String offlineBody;

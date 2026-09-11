@@ -115,7 +115,7 @@ class DraftsScreen extends ConsumerWidget {
         operation: 'delete_server_draft',
         error: e,
         stackTrace: st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
     }
   }

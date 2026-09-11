@@ -330,6 +330,29 @@ flutter pub upgrade --major-versions
 > 再ビルド対応した。`export` 文と `flutter build` 文は **必ず別文**
 > （独立した行）で書き、`\` で繋いで 1 行に圧縮しないこと。
 
+#### ⚠ ビルド前に古い DerivedData を落とす（v1.63 で 22 分かかった）
+
+**`~/Library/Developer/Xcode/DerivedData` は内蔵ディスクに固定で置かれ、リポジトリの場所と無関係に育つ。**⚠⚠ **Xcode は作業ディレクトリのパスごとに別エントリを作り、古いものを自動で消さない。**v1.63 のリリース時、6〜8 月分を含む `Runner-*` が 13 個・計 14G 残っており、内蔵の空きが 8.7GB まで落ちていた。その結果 `flutter clean` の `xcodebuild clean` が **502 秒**（通常の 5 倍）かかり、1 回のビルドが 22 分になった。
+
+⚠ **2026-09-04 に DerivedData / Archives / CompilationCache を外部ボリュームへ移した**（Xcode → Settings → Locations）。置き場所は `defaults read com.apple.dt.Xcode | grep IDECustom` で確認できる。
+
+```sh
+ls -1 "$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation)" | grep -c '^Runner-'
+rm -rf "$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation)"/*
+```
+
+⚠ **見るのはサイズではなくエントリ数。**`clean` の所要時間は `Runner-*` の数に効く。外部は容量が潤沢なので、**逼迫による激遅化はもう起きない**。
+
+⚠ **毎リリース掃除する必要は無い。**目安は「`clean` が体感で長くなったら」。3 か月で 13 個・14G が溜まって 502 秒になった実績があるので、**数か月に一度**で足りる。
+
+⚠ **ビルド生成物だけなので消して安全**（次回の初回ビルドだけ長くなる）。⚠ **Xcode が動いていると `Index.noindex` が残るが実害はない。**
+
+## ⚠⚠ 「外部ボリュームだから遅い」は誤り（実測で否定済み）
+
+小ファイル 5000 件の作成・削除を両方で実測したところ、**内蔵 6.29s / 外部(USB SSD) 6.49s、削除は外部のほうが速い**（2026-09-04）。さらに**移設後のフルビルドは 22 分 → 10 分 34 秒**、`Cleaning Xcode workspace` は **502.8s → 137.9s**、`Xcode archive` も **245s → 189s** と全項目で改善した。
+
+**遅さの原因は容量逼迫であって配置ではない。**⚠ **推測で配置を疑わないこと。**
+
 ```bash
 cd packages/capsicum
 
@@ -401,7 +424,15 @@ cd ..
 > §4.4 の ASC API に切り替える**（`upload_to_testflight` に
 > `skip_waiting_for_build_processing` を渡す手もある）。
 
-> ⚠️ **`flutter build ipa` は `ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。**出荷したバイナリと一致させるため、この差分はリリースブランチにコミットすること**（v1.61 で pin フォーマットが 2→3 に上がった実績あり）。放置すると次のリリースで「誰も触っていない差分」として現れる。
+> ⚠️ **`flutter build ipa` は `packages/capsicum/ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved` を解決し直す。** SwiftPM の transitive 依存（GoogleDataTransport / GoogleUtilities 等）がパッチ更新されると、ビルドの副作用として lock が書き換わる。
+>
+> **コミットするのは pin が動いたときだけ**（`"version" : "10.1.0"` のような依存の版）。出荷したバイナリと一致させるのが目的なので、pin が動いていれば取り込む（v1.61 で GoogleDataTransport 10.1.0→10.1.1 / GoogleUtilities 8.1.2→8.1.3 を取り込んだのがこれ）。
+>
+> ⚠⚠ **形式だけの差分（トップレベルの `"version" : 2` ⇄ `3` と `originHash` の増減）は取り込まない。**`git checkout -- <path>` で捨てる。**この形式は Xcode の版が決めており、`flutter-version` は 3.44.6 に pin してあるが Xcode は pin していない**ので、端末を替えるたびに 2 ⇄ 3 を往復する。取り込むと「誰も触っていない差分」を毎リリース作り続けることになり、**手順書が避けようとしている状態を手順書どおりにやると作ってしまう**（v1.61 で 2→3 を取り込み、v1.62 では別の Mac が pin を 1 つも動かさずに 3→2 へ戻した。#1067）。
+>
+> **端末間で Xcode を揃える運用は取らない。**揃えるコストに対して、形式差が出荷バイナリに与える影響がゼロ（pin が同一なら解決結果も同一）だから。`.gitattributes` でも吸えない — 形式差は空白でもマージでもなく**ファイルの正当な中身**で、`git` 側に「無視するが追跡は続ける」表現が無い（`skip-worktree` は端末ローカルの旗で、コミットして共有できない）。**ビルド後に人が捨てる**のが唯一の受け口なので、ここに書いてある。
+>
+> ⚠ **紛らわしい同名ファイルが 4 つある。**`ios` / `macos` × `Runner.xcworkspace/…` / `Runner.xcodeproj/project.xcworkspace/…` の 4 本が追跡されているが、**ビルドが書き戻すのは workspace 側だけ**（`flutter build` は `Runner.xcworkspace` を開く）。`Runner.xcodeproj/project.xcworkspace` 配下の 3 本は CocoaPods → SwiftPM 移行（#836）以降 1 度も更新されておらず、iOS のものは pin が古いまま止まっている。**参照されないので実害は無いが、差分を見るときにこちらを見ない。**
 
 > **macOS の `.pkg` 生成が iOS と異なる理由:**
 > iOS は `flutter build ipa --release` 一発で App Store 提出可能な ipa が出来るが、macOS の `flutter build macos --release` は Apple Development 証明書 + Mac App Development profile を埋め込んだ `.app` を出力するだけで、Mac App Store には提出できない。`xcodebuild archive` + `-exportArchive` を経由することで Apple Distribution + Mac App Store profile + 3rd Party Mac Developer Installer による `.pkg` 署名が automatic に行われる。`flutter build macos` を先に走らせるのは Generated.xcconfig の `DART_DEFINES` を更新するため（archive 単独では `--dart-define` を渡せない）。

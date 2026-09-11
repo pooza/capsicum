@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- #1108: OAuth の認可を待つあいだ、プロセスを凍結させないための
+         foreground service。⚠ shortService 型は型固有の権限を要求しないので、
+         権限はこれ 1 つで足りる。⚠⚠ ただし Play Console への用途申告（機能の説明と
+         動作を示す動画）は要る —— 申告は宣言したすべての型が対象。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- メディアビューアのギャラリー保存 (#646、gal)。API 29+ は MediaStore
          経由で権限不要のため、28 以下に限定して宣言する。 -->
     <uses-permission
@@ -27,6 +32,15 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- capsicum は URL でルートを開かない。Flutter の deep link 処理
+                 （3.27 以降は既定で有効）が capsicumauth:// の data を初期ルート
+                 として go_router に渡すと、コールドスタートで splash / EULA を
+                 飛ばして任意ホストのログイン画面を開けてしまう（v1.64 のリリース前
+                 レビュー）。起動中の側は onNewIntent で中和している。 -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -47,6 +61,14 @@
                 <data android:scheme="capsicumauth" android:host="complete"/>
             </intent-filter>
         </activity>
+        <!-- #1108: OAuth の loopback callback を待つあいだだけ上げる keep-alive。
+             ⚠ **凍結されると callback ページを返せない**ので、承認してもブラウザが
+             戻ってこない。詳細は OAuthKeepAliveService の doc。
+             ⚠ exported="false": 外から起動される必要は無い。 -->
+        <service
+            android:name=".OAuthKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="shortService"/>
         <activity
             android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
             android:exported="true">

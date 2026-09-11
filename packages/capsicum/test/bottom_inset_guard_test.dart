@@ -16,19 +16,42 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// ## 何を見ているか
 ///
-/// 「`Scaffold` を持ち、スクロールするウィジェットを含む」画面が、
-/// [_absorbers] のどれかを持っていること。ウィジェットツリーを組み立てずソースの
-/// 文字列で見るのは、これらの画面がアダプタ・アカウント・プロバイダを揃えないと
+/// 「`Scaffold` を持ち、スクロールするウィジェットを含む」画面が、下端 inset を
+/// 吸う形を持っていること（[_absorbsBottomInset]）。ウィジェットツリーを組み立てず
+/// ソースで見るのは、これらの画面がアダプタ・アカウント・プロバイダを揃えないと
 /// pump できず、40 画面ぶんの足場を用意するコストに見合わないため
 /// （`alt_edit_gate_source_test.dart` と同じ流儀）。
 ///
 /// ⚠ **粗い検査であることは承知の上。**「BottomSafeArea があるが body ではなく
 /// ボトムシートに掛かっている」ような取り違えは検出できない。それでも
 /// **「何も無い」だけは確実に落ちる**ので、無言で穴が開くことはなくなる。
+///
+/// ## ⚠⚠ 2026-09-06: ガード自身の穴を 4 つ塞いだ (#1061)
+///
+/// v1.62 のリリース前レビューで、5 本中 4 本のエージェントがこの検査を指摘した。
+/// #1037 → #1058 → #1059 → #1060 と穴が **4 回続けて別の切り口から見つかり、
+/// そのたびにガードは緑だった**。塞いだのは以下:
+///
+/// 1. **サブディレクトリを見ていなかった** — `listSync()` が非再帰で、
+///    `screen/settings/` の 8 画面が 1 つも検査されていなかった。再帰にするため
+///    には「`padding:` を渡していない `ListView` / `GridView` の暗黙吸収」を
+///    absorber に足す必要がある（下の [_absorbsBottomInset] を参照）
+/// 2. **absorber の判定が緩かった** — 素の `'SafeArea'` を文字列で見ていたので、
+///    **下端を吸わない `SafeArea(bottom: false)` でも合格**していた
+/// 3. **`scrollables` に `PageView` / `NestedScrollView` / `TabBarView` が無かった**
+/// 4. **共有 View を手書きの表で持っていた** — ホームのタブ経路（`Scaffold` を
+///    経由しないホスト）を持つ View が増えても自動では拾えなかった。
+///    `home_screen` の参照から**自動で列挙**するように変えた
+///
+/// ## ⚠ ソースは「構造だけ」にしてから見る
+///
+/// 文字列で見る検査は、**自分の説明文で誤判定する**。日本語コメントに「SafeArea」と
+/// 書いただけで absorber があることになるし、文字列リテラル中の `(` で括弧の対応が
+/// 崩れて引数の切り出しが壊れる。構造を見る判定はすべて [_structural] を通す。
 void main() {
   final screenDir = Directory('lib/src/ui/screen');
 
-  /// 下端の inset を吸っていると認めるもの。
+  /// 文字列の存在だけで「下端 inset を吸っている」と認めてよいもの。
   ///
   /// `SimplePostBar` は自前で `MediaQuery.padding.bottom` を足し、
   /// `ChatComposeRow` は自前で `SafeArea` を持つ。どちらもバーが inset を吸うので、
@@ -39,9 +62,16 @@ void main() {
   /// 条件が false の側に何も無ければ穴が開く。実際 #1037 の掃き出しで
   /// channel_timeline / chat_thread / chat_room_timeline の 3 画面がこの形だった。
   /// ここは検出できないので、条件付きバーを足すときは else 側を自分で確認する。
-  const absorbers = [
+  ///
+  /// ⚠⚠ **素の `'SafeArea'` はここに置かない (#1061)。**下端を吸わない
+  /// `SafeArea(bottom: false)` まで合格してしまう。実在例が `home_screen.dart` の
+  /// ドロワーヘッダで、**新規画面が `SafeArea(top: true, bottom: false)` を 1 つ
+  /// 持つだけで穴が開く**形だった。`SafeArea` は引数まで見て判定する
+  /// （[_absorbsBottomInset]）。
+  const literalAbsorbers = [
+    // 中身は SafeArea(top: false, left: false, right: false) 固定なので、
+    // 引数を見るまでもなく下端を吸う。
     'BottomSafeArea',
-    'SafeArea',
     'bottomNavigationBar:',
     'persistentFooterButtons:',
     // 下端に置くバー。これ自体が inset を吸う（上のコメント参照）。
@@ -49,6 +79,11 @@ void main() {
     'ChatComposeRow(',
   ];
 
+  /// スクロールする（＝最後の要素が下端に届きうる）ウィジェット。
+  ///
+  /// ⚠ **`PageView` / `NestedScrollView` / `TabBarView` は #1061 で追加。**
+  /// それまで無かったので、これらだけを持つ画面は「スクロールしない画面」と
+  /// 見なされて検査を素通りしていた。
   const scrollables = [
     'ListView',
     'CustomScrollView',
@@ -56,13 +91,16 @@ void main() {
     'GridView',
     'SingleChildScrollView',
     'ReorderableListView',
+    'PageView',
+    'NestedScrollView',
+    'TabBarView',
   ];
 
   /// 下端 inset を **別ファイルの共有 View 側で吸っている**画面 (#1039)。
   ///
   /// ⚠ **exempt とは意味が違う。**あちらは「敷き詰めるのが正しい」画面。
   /// こちらは**吸っているが、吸っている場所がこのファイルに無い**画面で、
-  /// 検査が文字列でしか見ていないために落ちるもの。
+  /// 検査がソースでしか見ていないために落ちるもの。
   ///
   /// ⚠ **足すときは「どのファイルの何が吸っているか」まで書くこと。**
   /// 委譲先を書いておかないと、その View から `BottomSafeArea` が消えたときに
@@ -85,6 +123,35 @@ void main() {
     'splash_screen.dart': 'スクロールしない',
   };
 
+  /// `screen/` 配下の全 `.dart`（⚠ **サブディレクトリを含む** — #1061）。
+  List<File> screenFiles() =>
+      screenDir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+  /// 画面ファイルの識別子。サブディレクトリを含むので、ファイル名だけだと
+  /// `settings/` 配下と衝突しうる。`screen/` からの相対パスで持つ。
+  String keyOf(File file) =>
+      file.path.substring(screenDir.path.length + 1).replaceAll(r'\', '/');
+
+  test('サブディレクトリの画面も検査対象に入っている (#1061)', () {
+    // ⚠ **この検査自身が空振りしていないことを確かめる。**`listSync()` が
+    // 非再帰に戻ると、`settings/` の 8 画面が黙って検査対象から消える。
+    // 「offenders が空 = 緑」なので、対象が 0 件でも緑になってしまう。
+    final keys = screenFiles().map(keyOf).toList();
+    expect(
+      keys.where((k) => k.startsWith('settings/')),
+      isNotEmpty,
+      reason:
+          'settings/ 配下の画面が 1 つも列挙されていない。'
+          'listSync が非再帰に戻っていないか確認すること (#1061)',
+    );
+    expect(keys, contains('home_screen.dart'));
+  });
+
   test('委譲先を書いた画面が実在し、その委譲先が inset を吸っている', () {
     // [delegated] が嘘になっていないことを確かめる (#1039)。委譲先から
     // BottomSafeArea が消えても、委譲元は検査を素通りしてしまうため。
@@ -102,21 +169,32 @@ void main() {
     );
   });
 
+  test('exempt に書いた画面が実在する', () {
+    for (final name in exempt.keys) {
+      expect(
+        File('${screenDir.path}/$name').existsSync(),
+        isTrue,
+        reason:
+            '$name が存在しない。画面を消した / 名前を変えたなら exempt からも外す'
+            '（残しておくと「ここは免除済み」という嘘の記述になる）',
+      );
+    }
+  });
+
   test('Scaffold + スクロールする画面は、下端の inset を誰かが吸っている', () {
     final offenders = <String>[];
 
-    for (final entity in screenDir.listSync()) {
-      if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final name = entity.uri.pathSegments.last;
-      if (exempt.containsKey(name)) continue;
-      if (delegated.containsKey(name)) continue;
+    for (final entity in screenFiles()) {
+      final key = keyOf(entity);
+      if (exempt.containsKey(key)) continue;
+      if (delegated.containsKey(key)) continue;
 
-      final source = entity.readAsStringSync();
-      if (!source.contains('Scaffold(')) continue;
-      if (!scrollables.any(source.contains)) continue;
-      if (absorbers.any(source.contains)) continue;
+      final code = _structural(entity.readAsStringSync());
+      if (!code.contains('Scaffold(')) continue;
+      if (!scrollables.any((s) => _usesIdentifier(code, s))) continue;
+      if (_absorbsBottomInset(code, literalAbsorbers)) continue;
 
-      offenders.add(name);
+      offenders.add(key);
     }
 
     expect(
@@ -154,10 +232,9 @@ void main() {
     // ⚠ **コメントを落としてから見る。**doc コメントは「viewPadding ではなく
     // padding を見る」「SimplePostBar が MediaQuery.padding.bottom を足して
     // いる」と経緯を説明しているので、素の文字列検索だと自分の説明文で落ちる。
-    final source = File('lib/src/ui/widget/bottom_safe_area.dart')
-        .readAsLinesSync()
-        .where((line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    final source = _structural(
+      File('lib/src/ui/widget/bottom_safe_area.dart').readAsStringSync(),
+    );
 
     expect(
       source,
@@ -174,7 +251,7 @@ void main() {
     // いた。最下部までスクロールしても逃がせず、3 ボタンナビはバーが
     // 不透明なので版番号が完全に隠れる。
     //
-    // ⚠ **`BottomSafeArea` で包む形ではないので、absorbers では表せない。**
+    // ⚠ **`BottomSafeArea` で包む形ではないので、absorber では表せない。**
     // ドロワーは上端のヘッダーが背景を全面に伸ばしたまま内側で
     // `SafeArea(bottom: false)` を持つ作りなので、下端も「包む」ではなく
     // 「`padding` で足す」に揃えてある。だからここは専用の検査にしている。
@@ -218,10 +295,10 @@ void main() {
 
   test('ホームのタブにも出る共有 View は、View 側で下端 inset を吸っている', () {
     // ⚠ **上の掃き出しはこの穴を検出しない。**あれはファイル単位で
-    // 「`Scaffold(` があり absorber の文字列がどこかにあるか」しか見ない。
+    // 「`Scaffold(` があり absorber がどこかにあるか」しか見ない。
     // `notification_screen.dart` は単独画面 `NotificationScreen` の
     // `Scaffold.body` を包んでいたので**合格していたが、同じ View を
-    // ホームのタブとして出す経路には穴が空いていた**。
+    // ホームのタブとして出す経路には穴が空いていた**（#1060）。
     //
     // `home_screen.dart` の `_buildTabContent` は
     // `withBackground(const NotificationView())` を早期 return するので、
@@ -229,32 +306,67 @@ void main() {
     // に到達しない。つまり **`Scaffold` を経由しないホストがある**。
     //
     // ⚠ **`ListView` の暗黙吸収を当てにしない。**`BoxScrollView` は `padding`
-    // 未指定なら `MediaQuery` の縦 padding を自動で足すが（実測: 未指定の
-    // `ListView` は `maxScrollExtent` が inset ぶん大きい）、
-    // `ScrollablePositionedList` は `widget.padding` しか見ない。隣の
-    // `AnnouncementView` が同じ構造で無事なのは前者に乗っているからで、
-    // 誰かが `padding:` を足した瞬間に無言で穴が開く。
+    // 未指定なら `MediaQuery` の縦 padding を自動で足すが、
+    // `ScrollablePositionedList` は `widget.padding` しか見ない。誰かが
+    // `padding:` を足した瞬間に無言で穴が開く。2 ホストある View は
+    // 「画面側で包む」ではなく「View 側で吸う」に揃える。
     //
-    // 2 ホストある View は「画面側で包む」ではなく「View 側で吸う」に
-    // 揃える。`ChannelTimelineView` が先行例。
-    const views = <String, String>{
-      'notification_screen.dart': '_NotificationViewState',
-      'channel_timeline_screen.dart': '_ChannelTimelineViewState',
-    };
+    // ⚠⚠ **対象は手書きの表ではなく `home_screen` の参照から自動で拾う
+    // (#1061)。**手書きだと、同じ形の View が増えたときに黙って対象外になる
+    // ——「ガードが壊れていても緑」の形そのもの。実際 `AnnouncementView` は
+    // 表に入っておらず、`ListView` の暗黙吸収に乗っているだけだった。
+    final homeCode = _structural(
+      File('lib/src/ui/screen/home_screen.dart').readAsStringSync(),
+    );
+
+    // `screen/` 配下で定義されている `*View` クラス（Flutter の `ListView` 等は
+    // ここに載らないので自然に除外される）。
+    final defined = <String, File>{};
+    for (final file in screenFiles()) {
+      final code = _structural(file.readAsStringSync());
+      for (final m in RegExp(
+        r'(?<![A-Za-z0-9_])class\s+([A-Z][A-Za-z0-9_]*View)(?![A-Za-z0-9_])',
+      ).allMatches(code)) {
+        defined[m.group(1)!] = file;
+      }
+    }
+
+    final shared =
+        RegExp(r'(?<![A-Za-z0-9_])([A-Z][A-Za-z0-9_]*View)\s*\(')
+            .allMatches(homeCode)
+            .map((m) => m.group(1)!)
+            .where(defined.containsKey)
+            .toSet()
+            .toList()
+          ..sort();
+
+    // ⚠ **自動列挙が空振りしていないことを先に固定する。**正規表現が壊れると
+    // 対象 0 件でも「offenders は空」で緑になる。既知の 3 件は必ず入る。
+    expect(
+      shared,
+      containsAll(<String>[
+        'AnnouncementView',
+        'ChannelTimelineView',
+        'NotificationView',
+      ]),
+      reason:
+          'home_screen が組み立てる共有 View の自動列挙が壊れている (#1061)。'
+          'ここが空振りすると、下の掃き出しは何も検査していないのに緑になる',
+    );
 
     final offenders = <String>[];
-    views.forEach((file, className) {
-      final source = File('lib/src/ui/screen/$file').readAsStringSync();
-      final start = source.indexOf('class $className');
-      expect(
-        start,
-        isNonNegative,
-        reason: '$file に $className が見つからない。名前が変わったならこの検査のアンカーも直す',
-      );
-      if (!source.substring(start).contains('BottomSafeArea')) {
-        offenders.add('$file / $className');
-      }
-    });
+    for (final name in shared) {
+      final file = defined[name]!;
+      final code = _structural(file.readAsStringSync());
+      // ウィジェットクラス本体と、その State クラス本体のどちらかで吸っていればよい
+      // （`ConsumerStatefulWidget` は build が State 側にある）。
+      final bodies = [
+        _topLevelClassBody(code, name),
+        _topLevelClassBody(code, '_${name}State'),
+      ].whereType<String>();
+      if (bodies.any((b) => b.contains('BottomSafeArea'))) continue;
+      offenders.add('${keyOf(file)} / $name');
+    }
 
     expect(
       offenders,
@@ -264,6 +376,113 @@ void main() {
           '共有 View は Scaffold を経由しないホストを持つので、'
           '画面側ではなく **View の build で** BottomSafeArea を掛けること',
     );
+  });
+
+  test('キーボードぶんを足す箇所は、ナビゲーションバーぶんも足している (#1062)', () {
+    // ⚠⚠ **ボトムシートは `Scaffold` の外に出るので、どのガードにも掛からない。**
+    // `Scaffold` のスロット単位で穴が見つかってきた流れ（body #1037 /
+    // drawer #1058 / floatingActionButton #1059 / 共有 View #1060）の続きで、
+    // **シートだけが最後まで残っていた**。
+    //
+    // 見るのは「`viewInsets.bottom`（キーボード）を足しているのに
+    // `padding.bottom`（ナビゲーションバー）を足していない」形。⚠ **キーボードを
+    // 閉じた状態だと `viewInsets` が 0 になるので、下端に置いた要素が
+    // 3 ボタンナビの帯とほぼ完全に重なる。**`post_tile` の `_RetagSheet` は
+    // **破壊的操作の主 CTA**（「削除してタグづけ」）がこの形だった。
+    //
+    // ⚠ **二重には入らない。**`MediaQuery.padding` は `viewPadding` から
+    // `viewInsets` を引いた残りなので、キーボードがナビゲーションバーを覆って
+    // いる間は 0 になる。だから素直に足してよい。
+    //
+    // ⚠ **`View.of(context).viewInsets.bottom > 0` は対象外。**あれは
+    // 「キーボードが出ているか」の真偽判定で、余白を作っていない
+    // （`compose_screen` / `simple_post_bar`）。
+    const exempt = <String, String>{
+      // AlertDialog は画面中央に出るので下端に届かない。viewInsets は
+      // 「キーボードを除いた利用可能高さ」の計算に使っているだけ。
+      'lib/src/ui/screen/templates_manage_screen.dart': 'AlertDialog（下端に届かない）',
+    };
+
+    final offenders = <String>[];
+    for (final file
+        in Directory('lib')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.dart'))) {
+      if (exempt.containsKey(file.path)) continue;
+      final code = _structural(file.readAsStringSync());
+      // 余白として使っている形だけを見る（真偽判定は `> 0` が続く）。
+      if (!_paddingUseOfViewInsets.hasMatch(code)) continue;
+      if (_bottomPaddingRead.hasMatch(code)) continue;
+      offenders.add(file.path);
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'キーボードぶん（viewInsets）を足しているのに、ナビゲーションバーぶん'
+          '（padding）を足していない (#1062)。キーボードを閉じると下端の要素が'
+          'ナビゲーションバーと重なる。⚠ viewPadding ではなく padding を足すこと'
+          '（viewPadding はキーボード表示中も減らないので、キーボードの上に'
+          '死んだ余白が残る）\n${offenders.join('\n')}',
+    );
+  });
+
+  group('#1062 の判定ロジック', () {
+    // ⚠ 上は「offenders が空なら緑」なので、判定が壊れても気づけない。
+    bool flags(String source) {
+      final code = _structural(source);
+      if (!_paddingUseOfViewInsets.hasMatch(code)) return false;
+      return !_bottomPaddingRead.hasMatch(code);
+    }
+
+    test('キーボードだけ足している形を拾う', () {
+      expect(
+        flags(
+          'padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom + 16)',
+        ),
+        isTrue,
+      );
+      expect(
+        flags(
+          'padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(c).bottom)',
+        ),
+        isTrue,
+      );
+    });
+
+    test('⚠ 変数に代入してから使う形も拾う', () {
+      // ⚠⚠ **`resizable_picker_sheet` の実物がこの形だった。**「`+` / `,` / `)`
+      // が続く形」で絞った初版はここを取りこぼしており、**修正前のファイルを
+      // 食わせても緑だった**。この Issue でいちばん直したかった箇所なので、
+      // 見落とすと「緑だから直っている」と読み違える。
+      expect(
+        flags(
+          'final keyboardInset = MediaQuery.of(context).viewInsets.bottom;\n'
+          'return Padding(padding: EdgeInsets.only(bottom: keyboardInset));',
+        ),
+        isTrue,
+      );
+    });
+
+    test('両方足していれば通す', () {
+      expect(
+        flags(
+          'bottom: MediaQuery.viewInsetsOf(context).bottom + '
+          'MediaQuery.paddingOf(context).bottom + 16',
+        ),
+        isFalse,
+      );
+    });
+
+    test('真偽判定（> 0）は拾わない', () {
+      expect(flags('if (View.of(context).viewInsets.bottom > 0)'), isFalse);
+    });
+
+    test('コメント中の言及は拾わない', () {
+      expect(flags('// viewInsets.bottom + 16 と書いていた'), isFalse);
+    });
   });
 
   test('スレッド画面がジャンプ FAB のぶんを本文側で確保している (#1059)', () {
@@ -307,4 +526,318 @@ void main() {
           'FAB が無いときに足すと下端に無駄な余白が残る',
     );
   });
+
+  // ---------------------------------------------------------------------
+  // ⚠ 判定ロジック自身の検査 (#1061)。
+  //
+  // 上の掃き出しは「offenders が空なら緑」なので、**判定が常に true を返す
+  // ように壊れても緑になる**。#1061 が塞いだ穴（緩い SafeArea・暗黙吸収）は
+  // どちらも判定側の話なので、判定にサンプルを食わせて歯があることを固定する。
+  // ---------------------------------------------------------------------
+  group('判定ロジック自身 (#1061)', () {
+    const absorbers = [
+      'BottomSafeArea',
+      'bottomNavigationBar:',
+      'persistentFooterButtons:',
+      'SimplePostBar(',
+      'ChatComposeRow(',
+    ];
+
+    bool absorbs(String source) =>
+        _absorbsBottomInset(_structural(source), absorbers);
+
+    test('SafeArea(bottom: false) は吸ったことにならない', () {
+      expect(absorbs('SafeArea(top: true, bottom: false, child: x)'), isFalse);
+      expect(absorbs('SafeArea(bottom: false, child: x)'), isFalse);
+    });
+
+    test('素の SafeArea / bottom: true は吸う', () {
+      expect(absorbs('SafeArea(child: x)'), isTrue);
+      expect(absorbs('SafeArea(top: false, bottom: true, child: x)'), isTrue);
+    });
+
+    test('padding 未指定の ListView / GridView は暗黙に吸う', () {
+      // BoxScrollView は padding 未指定なら MediaQuery の縦 padding を自動で
+      // 足す。settings/ 配下の 8 画面はこれに乗っている。
+      expect(absorbs('ListView(children: [a, b])'), isTrue);
+      expect(absorbs('GridView.count(crossAxisCount: 2)'), isTrue);
+    });
+
+    test('padding を渡した ListView は暗黙吸収に乗らない', () {
+      expect(
+        absorbs('ListView(padding: EdgeInsets.zero, children: [a])'),
+        isFalse,
+      );
+      expect(
+        absorbs('ListView.builder(padding: p, itemBuilder: (c, i) => x)'),
+        isFalse,
+      );
+    });
+
+    test('子ウィジェットの padding を ListView のものと取り違えない', () {
+      // ⚠ 引数列は **depth 0 のカンマ**で切る。素朴に「引数列に padding: が
+      // あるか」で見ると、children の中の Padding を拾って
+      // 「暗黙吸収に乗っていない」と誤判定する。
+      expect(
+        absorbs('ListView(children: [Padding(padding: p, child: x)])'),
+        isTrue,
+      );
+    });
+
+    test('コメントや文字列の中の SafeArea を数えない', () {
+      expect(absorbs('// SafeArea で包む\nListView(padding: p)'), isFalse);
+      expect(absorbs("Text('SafeArea')\nListView(padding: p)"), isFalse);
+    });
+
+    test('BottomSafeArea は SafeArea の判定に巻き込まれず、単体で吸う', () {
+      expect(absorbs('BottomSafeArea(child: x)'), isTrue);
+    });
+
+    test('何も無ければ吸わない', () {
+      expect(absorbs('Scaffold(body: ListView(padding: p))'), isFalse);
+    });
+  });
+
+  group('ソースの構造化 (#1061)', () {
+    test('補間の中の文字列でリテラルが途切れない', () {
+      // announcement_screen に実在する形。素朴なスキャナだと
+      // `'${acct.startsWith('` で文字列が終わったことになり、残りの
+      // `@') ...` がコードとして残って括弧の対応が崩れる。
+      const source =
+          "final s = '\$name (\${acct.startsWith('@') ? acct : '@\$acct'})';\n"
+          'ListView(children: [a])';
+      expect(_absorbsBottomInset(_structural(source), const []), isTrue);
+    });
+
+    test('ブロックコメントと raw 文字列を落とす', () {
+      expect(_structural('/* SafeArea */ a'), isNot(contains('SafeArea')));
+      expect(_structural(r"a = r'SafeArea\'; b"), isNot(contains('SafeArea')));
+    });
+  });
+}
+
+// -------------------------------------------------------------------------
+// 判定の実装 (#1061)
+// -------------------------------------------------------------------------
+
+final _safeAreaCall = RegExp(r'(?<![A-Za-z0-9_])SafeArea\s*\(');
+
+/// キーボードぶんを**余白として**使っている形 (#1062)。
+///
+/// ⚠ **真偽判定だけを除外する。**`View.of(context).viewInsets.bottom > 0` は
+/// 「キーボードが出ているか」を見ているだけで余白を作っていない
+/// （`compose_screen` / `simple_post_bar`）。**比較演算子が続く形だけ**を外し、
+/// 残りは全部「余白の計算」とみなす。
+///
+/// ⚠⚠ **「`+` / `,` / `)` が続く形」で絞ってはいけない。**最初そう書いたら、
+/// **`final keyboardInset = MediaQuery.of(context).viewInsets.bottom;` を
+/// 拾えなかった**（`;` が続くので当たらない）。⚠ **これは
+/// `resizable_picker_sheet` の実物の形**で、この Issue でいちばん直したかった
+/// 箇所そのもの。修正前のファイルを食わせる歯の確認をしていなければ、
+/// **「緑だから直っている」と読み違えていた。**
+///
+/// ⚠ **`MediaQuery.of(c)` と `MediaQuery.viewInsetsOf(c)` の両方を拾う。**
+/// 変数名を `context` に決め打つと片方が外れる。
+final _paddingUseOfViewInsets = RegExp(
+  r'viewInsets(?:Of\([^)]*\))?\.bottom(?!\s*[<>=!])',
+);
+
+/// ナビゲーションバーぶんを読んでいる形 (#1062)。
+///
+/// ⚠ **`viewPadding` は認めない。**あちらはキーボード表示中も減らないので、
+/// 足すと**キーボードの上に inset ぶんの死んだ余白**が残る。
+final _bottomPaddingRead = RegExp(r'(?:paddingOf\([^)]*\)|\.padding)\.bottom');
+
+/// `BoxScrollView` のサブクラス。**`padding` 未指定なら `MediaQuery` の縦
+/// padding を自動で足す**（`BoxScrollView.buildSlivers`）。
+///
+/// 実測 (#1061): `padding` 未指定の `ListView` は `maxScrollExtent` が 1463、
+/// `padding: EdgeInsets.zero` だと 1400。差の 63 は与えた inset そのもの。
+///
+/// ⚠ **`ScrollablePositionedList` はこれに乗らない**（`widget.padding` しか
+/// 見ない）ので、ここには入れない。
+final _boxScrollViewCall = RegExp(
+  r'(?<![A-Za-z0-9_])(?:ListView|GridView)(?:\.[A-Za-z0-9_]+)?\s*\(',
+);
+
+/// [code]（[_structural] を通したソース）が下端 inset を吸っているか。
+bool _absorbsBottomInset(String code, List<String> literalAbsorbers) {
+  if (literalAbsorbers.any(code.contains)) return true;
+
+  // `SafeArea` は引数まで見る。`bottom: false` は下端を吸わない (#1061)。
+  for (final args in _callArguments(code, _safeAreaCall)) {
+    if (_namedArgument(args, 'bottom')?.trim() != 'false') return true;
+  }
+
+  // `padding` を渡していない `ListView` / `GridView` の暗黙吸収 (#1061)。
+  for (final args in _callArguments(code, _boxScrollViewCall)) {
+    if (_namedArgument(args, 'padding') == null) return true;
+  }
+
+  return false;
+}
+
+/// [name] という識別子が [code] に現れるか。
+///
+/// ⚠ **部分一致にしない。**`PageView` は `PageViewScreen` に、`ListView` は
+/// `ReorderableListView` に含まれる。素の `contains` だと別物を拾う。
+bool _usesIdentifier(String code, String name) => RegExp(
+  '(?<![A-Za-z0-9_])${RegExp.escape(name)}(?![A-Za-z0-9_])',
+).hasMatch(code);
+
+/// [head] が当たった呼び出しごとに、括弧の対応を取って引数列を返す。
+List<String> _callArguments(String code, RegExp head) {
+  final result = <String>[];
+  for (final m in head.allMatches(code)) {
+    final open = code.indexOf('(', m.start);
+    if (open < 0) continue;
+    var depth = 0;
+    var i = open;
+    for (; i < code.length; i++) {
+      final c = code[i];
+      if (c == '(' || c == '[' || c == '{') {
+        depth++;
+      } else if (c == ')' || c == ']' || c == '}') {
+        depth--;
+        if (depth == 0) break;
+      }
+    }
+    if (i >= code.length) continue; // 対応が取れない（構造化に失敗している）
+    result.add(code.substring(open + 1, i));
+  }
+  return result;
+}
+
+/// 引数列 [args] のうち **depth 0 の** `name:` の値。無ければ null。
+///
+/// ⚠ **depth 0 で切るのが肝。**素朴に `args.contains('padding:')` で見ると、
+/// `ListView(children: [Padding(padding: ...)])` の子を拾って誤判定する。
+String? _namedArgument(String args, String name) {
+  var depth = 0;
+  var start = 0;
+  final segments = <String>[];
+  for (var i = 0; i < args.length; i++) {
+    final c = args[i];
+    if (c == '(' || c == '[' || c == '{') {
+      depth++;
+    } else if (c == ')' || c == ']' || c == '}') {
+      depth--;
+    } else if (c == ',' && depth == 0) {
+      segments.add(args.substring(start, i));
+      start = i + 1;
+    }
+  }
+  segments.add(args.substring(start));
+
+  final prefix = '$name:';
+  for (final segment in segments) {
+    final trimmed = segment.trimLeft();
+    if (trimmed.startsWith(prefix)) {
+      return trimmed.substring(prefix.length);
+    }
+  }
+  return null;
+}
+
+/// [className] のトップレベル宣言から、次のトップレベル `class` までを返す。
+String? _topLevelClassBody(String code, String className) {
+  final start = RegExp(
+    '(?<![A-Za-z0-9_])class\\s+${RegExp.escape(className)}(?![A-Za-z0-9_])',
+  ).firstMatch(code)?.start;
+  if (start == null) return null;
+  final next = RegExp(
+    r'\nclass\s',
+  ).firstMatch(code.substring(start + 1))?.start;
+  return next == null
+      ? code.substring(start)
+      : code.substring(start, start + 1 + next);
+}
+
+/// コメントと文字列リテラルを落とした「構造だけ」のソース。
+///
+/// ⚠ **文字列で見る検査は自分の説明文で誤判定する。**日本語コメントに
+/// 「SafeArea」と書いただけで absorber があることになり、文字列中の `(` で
+/// 括弧の対応が崩れる。
+///
+/// ⚠ **補間 `${...}` の中は Dart のコードなので、波括弧の対応を取って飛ばす。**
+/// ここを素朴に「次の同じ引用符まで」で切ると、`'${a.b('c')}'` のような実在の
+/// 形で文字列が途中で終わったことになり、残りがコードとして混ざる。
+String _structural(String source) {
+  final out = StringBuffer();
+  var i = 0;
+  while (i < source.length) {
+    if (source.startsWith('//', i)) {
+      while (i < source.length && source[i] != '\n') {
+        i++;
+      }
+      continue;
+    }
+    if (source.startsWith('/*', i)) {
+      final end = source.indexOf('*/', i + 2);
+      i = end < 0 ? source.length : end + 2;
+      continue;
+    }
+    final delimiter = _stringDelimiterAt(source, i);
+    if (delimiter != null) {
+      i = _skipString(source, i, delimiter);
+      continue;
+    }
+    out.write(source[i]);
+    i++;
+  }
+  return out.toString();
+}
+
+/// [i] から文字列リテラルが始まるなら、その開始デリミタ。
+String? _stringDelimiterAt(String source, int i) {
+  var j = i;
+  if (source[j] == 'r' && j + 1 < source.length) j++; // raw 文字列
+  if (source.startsWith("'''", j)) return "'''";
+  if (source.startsWith('"""', j)) return '"""';
+  if (j < source.length && (source[j] == "'" || source[j] == '"')) {
+    return source[j];
+  }
+  return null;
+}
+
+/// [i] から始まる文字列リテラルの直後の位置を返す。
+int _skipString(String source, int i, String delimiter) {
+  var j = i;
+  final raw = source[j] == 'r';
+  if (raw) j++;
+  j += delimiter.length;
+
+  while (j < source.length) {
+    if (!raw && source[j] == r'\') {
+      j += 2;
+      continue;
+    }
+    if (!raw && source.startsWith(r'${', j)) {
+      j++; // '$' を消費し、'{' から対応を取る
+      var depth = 0;
+      while (j < source.length) {
+        final c = source[j];
+        if (c == '{') {
+          depth++;
+        } else if (c == '}') {
+          depth--;
+          if (depth == 0) {
+            j++;
+            break;
+          }
+        } else {
+          final nested = _stringDelimiterAt(source, j);
+          if (nested != null) {
+            j = _skipString(source, j, nested);
+            continue;
+          }
+        }
+        j++;
+      }
+      continue;
+    }
+    if (source.startsWith(delimiter, j)) return j + delimiter.length;
+    j++;
+  }
+  return source.length;
 }

@@ -12,7 +12,6 @@ import '../util/fediverse_link.dart';
 import '../util/hashtag_actions.dart';
 import '../util/op_error.dart';
 import '../util/relative_time.dart';
-import '../widget/bottom_safe_area.dart';
 import '../widget/chat_compose_row.dart';
 import '../widget/chat_reaction_bar.dart';
 import '../widget/content_parser.dart';
@@ -71,12 +70,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       _textController.clear();
       if (mounted) setState(() => _attachedFile = null);
     } catch (e, st) {
-      reportChatOpFailure(
-        'send_message',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('send_message', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('送信に失敗しました (${summarizeOpError(e)})')),
@@ -92,12 +86,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       final file = await showChatAttachmentPicker(context, ref);
       if (file != null && mounted) setState(() => _attachedFile = file);
     } catch (e, st) {
-      reportChatOpFailure(
-        'attach_file',
-        e,
-        st,
-        account: ref.read(currentAccountProvider),
-      );
+      reportChatOpFailure('attach_file', e, st, account: ref.accountForReport);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('ファイルの添付に失敗しました (${summarizeOpError(e)})')),
@@ -135,7 +124,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
         'delete_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -169,7 +158,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
         'react_message',
         e,
         st,
-        account: ref.read(currentAccountProvider),
+        account: ref.accountForReport,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -237,23 +226,8 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
             )
           else
             // readonly ロールの注記。compose row 非表示の理由をユーザーに伝える。
-            //
-            // ⚠ 下端の inset はここで吸う (#1037)。ChatComposeRow は自前で
-            // SafeArea を持っているが、この else 側には何も無いため、注記が
-            // ナビゲーションバーのボタンに潜り込む。body ごと包まないのは、
-            // バーが出ているときは今までどおり画面下端まで伸ばしたいため。
-            BottomSafeArea(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                alignment: Alignment.center,
-                child: Text(
-                  'このアカウントではメッセージを送信できません',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                ),
-              ),
-            ),
+            // 下端 inset の扱いも含めて ChatReadonlyNotice が持つ (#1065)。
+            const ChatReadonlyNotice(),
         ],
       ),
     );
