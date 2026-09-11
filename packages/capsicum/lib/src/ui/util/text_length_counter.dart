@@ -13,9 +13,9 @@ import '../../util/text_length.dart';
 ///
 /// ⚠ **`ui/util/` に置く (#1035-E4)。**数える純関数（[serverTextLength]）は
 /// `util/` に置いたまま、Flutter に依存するこちらだけをこちらへ分けた。
-/// `lib/src/util/` 15 ファイルのうち **material を import していたのはここだけ**
-/// で、#1027 が `user_acct` を「ui の下にあったことが provider 側の再実装の
-/// 理由」として `util/` へ移したのと**向きが逆**だった。
+/// 移した時点（#1035-E4）で `lib/src/util/` のうち **material を import して
+/// いたのはここだけ**で、#1027 が `user_acct` を「ui の下にあったことが
+/// provider 側の再実装の理由」として `util/` へ移したのと**向きが逆**だった。
 InputCounterWidgetBuilder serverLengthCounter(
   TextEditingController controller,
 ) =>

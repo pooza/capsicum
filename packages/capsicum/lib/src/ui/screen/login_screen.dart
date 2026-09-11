@@ -1234,7 +1234,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // freezer に凍結されるので、解凍されてトークン交換が完走したときには
     // この画面が消えていることがある。以前はそこで黙って抜け、**アカウント
     // だけ増えて画面はサーバー選択のまま**になっていた。今は `addAccount` が
-    // 立てた旗をルーターの `redirect` が拾って `/home` へ送る。
+    // 立てた旗を `routerProvider` の listener が拾って `/home` へ送る（⚠ redirect
+    // ではない。`resolveRedirect` の doc のとおり、push で積んだ location は
+    // redirect に見えない）。
     // タブの既定（`timeline:home`）も `addAccount` 側へ移してある。
     //
     // ⚠ **画面が生き残ったかを残す (#1057)。**この 1 行が無いと、実機の確認で

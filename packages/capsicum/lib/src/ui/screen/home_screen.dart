@@ -2144,7 +2144,11 @@ Future<void> confirmRemoveOfflineAccount(
   }
 }
 
-/// secure storage が応答しなかったときだけ出す案内 (#1085)。
+/// secure storage からログイン情報を読み出せないときに出す案内 (#1085 / #1104)。
+///
+/// 応答しなかった（#1085）ときに加え、応答はあったが解錠できなかった（#1104・
+/// `SecureStorageHealth.markRefused`）ときも出る。どちらも Secret Service
+/// （Linux）のときだけ旗が立つ。
 ///
 /// ⚠⚠ **「真っ黒なウインドウで無反応」よりマシにするのが要件。**Linux で
 /// gnome-keyring（Secret Service）が死んでいると、capsicum はログイン情報を

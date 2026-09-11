@@ -36,7 +36,8 @@
 /// ここに書いてあるのは適用範囲の事実であって、当てるなという規約ではない。
 int serverTextLength(String text) => text.runes.length;
 
-/// ⚠ **カウンタ widget はここに置かない (#1035-E4)。**`InputCounterWidgetBuilder`
-/// を返す `serverLengthCounter` は Flutter に依存するので
-/// `ui/util/text_length_counter.dart` にある。ここは `lib/src/util/` の他 14
-/// ファイルと同じく、Flutter を import しない純関数だけを持つ。
+// ⚠ **カウンタ widget はここに置かない (#1035-E4)。**`InputCounterWidgetBuilder`
+// を返す `serverLengthCounter` は Flutter に依存するので
+// `ui/util/text_length_counter.dart` にある。ここは Flutter を import しない
+// 純関数だけを持つ（⚠ `lib/src/util/` の全ファイルがそうではない —— ファイル数を
+// 書くと陳腐化するので書かない）。
