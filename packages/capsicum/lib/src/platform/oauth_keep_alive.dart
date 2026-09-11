@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// OAuth の認可を待つあいだ、Android にプロセスを凍結させないための口 (#1108)。
 ///
@@ -68,7 +69,35 @@ class OAuthKeepAlive {
       // なく、上げられなくても #1108 以前と同じ挙動に落ちるだけ。上げ損ねた
       // ことでログインそのものを失敗させるほうが害が大きい。
       debugPrint('capsicum: oauth_keepalive: start failed: ${e.code}');
+      _reportStartFailureOnce(e.code);
       return OAuthKeepAliveSession._(token: token, active: false);
+    }
+  }
+
+  static bool _startFailureReported = false;
+
+  /// 起動の失敗を Sentry へ 1 プロセス 1 回だけ送る（v1.64 のリリース前
+  /// レビュー）。
+  ///
+  /// ⚠ **breadcrumb だけでは届かない。**Android 14 以降の foreground service の
+  /// 起動失敗（型の不一致・バックグラウンドからの起動）は Play の用途申告とも
+  /// 絡み、いちばん観測したい失敗なのに、別のイベントが送られない限り Sentry に
+  /// 出なかった。⚠ 載せるのはエラーコードだけ（message は OS の文言）。
+  static void _reportStartFailureOnce(String code) {
+    if (_startFailureReported) return;
+    _startFailureReported = true;
+    try {
+      // scrub-guard: allow: code は PlatformException のエラーコード（固定の識別子）
+      Sentry.captureMessage(
+        'oauth_keepalive.start_failed',
+        level: SentryLevel.warning,
+        withScope: (scope) {
+          scope.setTag('phase', 'oauth_keepalive');
+          scope.setTag('oauth_keepalive_code', code);
+        },
+      );
+    } catch (_) {
+      // Sentry の失敗でログインを止めない。
     }
   }
 
