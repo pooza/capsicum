@@ -292,4 +292,197 @@ void main() {
       );
     });
   });
+
+  /// ⚠⚠ **引き継ぐ元の値を、アダプターが実際に入れていること (#1113)。**
+  ///
+  /// 上の検査は「宣言」と「compose が読むこと」しか見ていない。2026-09-12 の
+  /// 実機確認で、**Misskey の変換が `replyId` を `inReplyToId` へ入れていなかった**
+  /// ことが分かった。compose は正しく読んでいたが、読む値が最初から null だった
+  /// ので、Misskey の返信は再編集で単独の投稿になっていた。**検査は全部緑だった。**
+  group('ソース検査: carry と宣言した項目をアダプターが Post へ入れている', () {
+    /// `PostDraft` の項目名 → 変換（`toCapsicum`）で埋める `Post` の引数名。
+    const postArgs = <String, String>{
+      'content': 'content',
+      'scope': 'scope',
+      'inReplyToId': 'inReplyToId',
+      'quoteId': 'quote',
+      'mediaIds': 'attachments',
+      'spoilerText': 'spoilerText',
+      'sensitive': 'sensitive',
+      'localOnly': 'localOnly',
+      'channelId': 'channelId',
+      'language': 'language',
+      'pollOptions': 'poll',
+      'pollExpiresIn': 'poll',
+      'pollMultiple': 'poll',
+      'quoteApprovalPolicy': 'quoteApprovalPolicy',
+    };
+
+    /// 変換元のファイルと、その中の変換を見つける目印。
+    const sources = <String, (String, String)>{
+      'mastodon': (
+        '../capsicum_backends/lib/src/mastodon/extensions.dart',
+        'on MastodonStatus',
+      ),
+      'misskey': (
+        '../capsicum_backends/lib/src/misskey/extensions.dart',
+        'on MisskeyNote',
+      ),
+    };
+
+    /// そのサーバーに**概念が無い**ので入れようがない項目。⚠ **理由を書くこと。**
+    /// 「まだ入れていない」をここへ書くと、今回の穴がそのまま戻る。
+    const notApplicable = <String, Map<String, String>>{
+      'mastodon': {
+        'localOnly': '本家 Mastodon に「ローカルのみ」が無い',
+        'channelId': 'Mastodon にチャンネルが無い',
+      },
+      'misskey': {
+        'language': 'Misskey の投稿に言語の項目が無い',
+        'quoteApprovalPolicy': 'Misskey に引用許可の概念が無い',
+      },
+    };
+
+    Set<String> carried() => redraftCarryOverPolicy.entries
+        .where((e) => e.value == RedraftCarryOver.carry)
+        .map((e) => e.key)
+        .toSet();
+
+    Set<String> argsOf(String backend) {
+      final (path, anchor) = sources[backend]!;
+      return postConstructorArgs(File(path).readAsStringSync(), anchor);
+    }
+
+    test('探索が空振りしていない', () {
+      for (final backend in sources.keys) {
+        final args = argsOf(backend);
+        expect(
+          args.length,
+          greaterThan(10),
+          reason: '$backend の Post(...) の引数を読めていない',
+        );
+        expect(
+          args,
+          containsAll(['id', 'content', 'scope', 'poll']),
+          reason: '$backend: 既知の引数が拾えていない',
+        );
+      }
+    });
+
+    test('引数の読み取り: コメント・文字列・入れ子の名前付き引数を拾わない', () {
+      const source = '''
+extension X on MisskeyNote {
+  Post toCapsicum() {
+    final a = Other(scope: 1);
+    return Post(
+      id: id,
+      // inReplyToId: replyId,
+      content: 'label: text',
+      poll: parse(expiresAt: e, items: [a, b], map: {'k': v}),
+      spoilerText: cw, sensitive: s,
+    );
+  }
+}
+''';
+      expect(postConstructorArgs(source, 'on MisskeyNote'), {
+        'id',
+        'content',
+        'poll',
+        'spoilerText',
+        'sensitive',
+      });
+    });
+
+    test('postArgs が policy の carry を網羅している', () {
+      // ⚠ この表が古びると、下の検査が「見ていない項目」を通してしまう。
+      expect(postArgs.keys.toSet(), carried());
+    });
+
+    test('notApplicable は carry の項目だけで、理由が書いてある', () {
+      notApplicable.forEach((backend, fields) {
+        expect(
+          carried(),
+          containsAll(fields.keys),
+          reason: '$backend: carry でない項目が notApplicable にある',
+        );
+        for (final entry in fields.entries) {
+          expect(
+            entry.value.trim(),
+            isNotEmpty,
+            reason: '$backend.${entry.key} の理由が空',
+          );
+        }
+      });
+    });
+
+    test('⚠⚠ carry の項目を両アダプターが Post へ入れている', () {
+      final missing = <String>[];
+      for (final backend in sources.keys) {
+        final args = argsOf(backend);
+        for (final field in carried()) {
+          if (notApplicable[backend]!.containsKey(field)) continue;
+          if (!args.contains(postArgs[field])) {
+            missing.add('$backend: $field（Post.${postArgs[field]}）');
+          }
+        }
+      }
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'carry と宣言した項目を、変換が Post へ入れていない (#1113)。'
+            '再編集で引き継ぐ元の値が最初から null になる'
+            '\n${missing.join('\n')}',
+      );
+    });
+
+    test('⚠ notApplicable が古びていない（実は入れている項目が残っていない）', () {
+      // 概念が無いと書いた項目を変換が入れ始めたら、宣言が嘘になっている。
+      final stale = <String>[];
+      notApplicable.forEach((backend, fields) {
+        final args = argsOf(backend);
+        for (final field in fields.keys) {
+          if (args.contains(postArgs[field])) stale.add('$backend: $field');
+        }
+      });
+      expect(stale, isEmpty, reason: stale.join('\n'));
+    });
+  });
+}
+
+/// [anchor] より後ろにある最初の `Post(...)` の、**直下の名前付き引数**の名前。
+///
+/// コメントと文字列を潰してから、括弧の深さ 1 の `,` で区切って `名前:` を拾う。
+/// ⚠ 入れ子の呼び出し（`parse(expiresAt: e)`）やコレクションの中は数えない。
+Set<String> postConstructorArgs(String source, String anchor) {
+  final code = maskStrings(maskComments(source));
+  final from = code.indexOf(anchor);
+  if (from < 0) return {};
+  final start = RegExp(r'\bPost\(').firstMatch(code.substring(from));
+  if (start == null) return {};
+  final open = from + start.end - 1;
+
+  final segments = <String>[];
+  var depth = 0;
+  var segmentStart = open + 1;
+  for (var i = open; i < code.length; i++) {
+    final c = code[i];
+    if (c == '(' || c == '[' || c == '{') {
+      depth++;
+    } else if (c == ')' || c == ']' || c == '}') {
+      depth--;
+      if (depth == 0) {
+        segments.add(code.substring(segmentStart, i));
+        break;
+      }
+    } else if (c == ',' && depth == 1) {
+      segments.add(code.substring(segmentStart, i));
+      segmentStart = i + 1;
+    }
+  }
+  final name = RegExp(r'^\s*(\w+)\s*:');
+  return {
+    for (final s in segments)
+      if (name.firstMatch(s) case final m?) m.group(1)!,
+  };
 }
