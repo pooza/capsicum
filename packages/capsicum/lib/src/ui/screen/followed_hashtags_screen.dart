@@ -67,11 +67,14 @@ class _FollowedHashtagsScreenState
     // ⚠ **await をまたぐ前に捕まえる**（#1064 と同型）。
     final messenger = ScaffoldMessenger.of(context);
     final account = ref.read(currentAccountProvider);
+    // ⚠ 切替の前に始めた解除の完了を、切替後の表示に書き込ませない
+    // （v1.64 のリリース PR の Codex P2）。
+    final startedFor = _recordedFor;
 
     setState(() => _inFlight.add(tag));
     try {
       await support.unfollowHashtag(tag);
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() {
         _inFlight.remove(tag);
         _released.add(tag);
@@ -88,7 +91,7 @@ class _FollowedHashtagsScreenState
         stackTrace: st,
         account: account,
       );
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() => _inFlight.remove(tag));
       messenger.showSnackBar(const SnackBar(content: Text('フォローの解除に失敗しました')));
     }

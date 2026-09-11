@@ -117,6 +117,9 @@ void main() {
         'evil.example#frag',
         'good.example:port',
         'a:b:c',
+        // 角括弧の中に URL の構造を変える文字を入れても通さない。
+        '[2001:db8::1]@evil.example',
+        '[evil.example/path]',
       ]) {
         final uri = Uri(
           path: '/login',
@@ -135,6 +138,9 @@ void main() {
         'xn--eckwd4c7c.example.com',
         // ⚠ 手入力の IDN をそのまま probe に通す環境を締め出さない。
         'ドメイン.example',
+        // 角括弧の IPv6 表記（リリース PR の Codex P2）。
+        '[2001:db8::1]',
+        '[::1]:3000',
       ]) {
         final uri = Uri(
           path: '/login',

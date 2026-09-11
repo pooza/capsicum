@@ -110,6 +110,14 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
   /// 解除の実行中。二度押しで同じ相手へ 2 回投げないようにする。
   final _inFlight = <String>{};
 
+  /// [_released] / [_inFlight] がどのアカウントのものか。
+  ///
+  /// ⚠ **アカウントを切り替えたら捨てる**（v1.64 のリリース PR の Codex P2）。
+  /// key で作り直すのは一覧だけで、この State は残る。user id はサーバーごとの
+  /// 値なので、切替先で同じ id が「解除しました」「処理中」のまま操作できなく
+  /// なる。⚠ 切替の前に始めた解除の完了も、切替後の表示に書き込ませない。
+  String? _recordedFor;
+
   /// ⚠ **[follow] は build 時に解決したものを受け取る (#1083-F)。**
   /// 取得と解除がそれぞれ独立に `ref.read(currentAdapterProvider)` を評価して
   /// いたので、**サーバー A から取った id を、切替後のサーバー B へ unblock で
@@ -133,6 +141,7 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
     // 失敗の見た目になったり例外で消えたりする。
     final messenger = ScaffoldMessenger.of(context);
     final account = ref.read(currentAccountProvider);
+    final startedFor = _recordedFor;
 
     setState(() => _inFlight.add(user.id));
     try {
@@ -141,7 +150,7 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
       } else {
         await follow.unmuteUser(user.id);
       }
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() {
         _inFlight.remove(user.id);
         _released.add(user.id);
@@ -159,7 +168,7 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
         stackTrace: st,
         account: account,
       );
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() => _inFlight.remove(user.id));
       messenger.showSnackBar(
         SnackBar(content: Text('${widget.kind.label}の解除に失敗しました')),
@@ -179,6 +188,11 @@ class _ModerationTabState extends ConsumerState<_ModerationTab> {
     }
     final follow = adapter as FollowSupport;
     final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+    if (_recordedFor != accountKey) {
+      _recordedFor = accountKey;
+      _released.clear();
+      _inFlight.clear();
+    }
 
     return UserListView(
       key: ValueKey('${widget.kind.name}:$accountKey'),

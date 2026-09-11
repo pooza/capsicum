@@ -33,6 +33,14 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
   final _handled = <String, _Handled>{};
   final _inFlight = <String>{};
 
+  /// [_handled] / [_inFlight] がどのアカウントのものか。
+  ///
+  /// ⚠ **アカウントを切り替えたら捨てる**（v1.64 のリリース PR の Codex P2）。
+  /// key で作り直すのは一覧だけで、この State は残る。user id はサーバーごとの
+  /// 値なので、切替先で同じ id が「承認しました」「処理中」のまま操作できなく
+  /// なる。⚠ 切替の前に始めた操作の完了も、切替後の表示に書き込ませない。
+  String? _recordedFor;
+
   /// ⚠ **[support] は build 時に解決したものを受け取る (#1083-F)。**
   /// 以前は `ref.read` の getter を取得・処理・build から個別に呼んでいたので、
   /// (a) アカウント切替で `build()` が追随せず、(b) **サーバー A で取った id を
@@ -53,6 +61,7 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
     // ⚠ **await をまたぐ前に捕まえる**（#1064 と同型）。
     final messenger = ScaffoldMessenger.of(context);
     final account = ref.read(currentAccountProvider);
+    final startedFor = _recordedFor;
 
     setState(() => _inFlight.add(user.id));
     try {
@@ -61,7 +70,7 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
       } else {
         await support.rejectFollowRequest(user.id);
       }
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() {
         _inFlight.remove(user.id);
         _handled[user.id] = action;
@@ -80,7 +89,7 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
         stackTrace: st,
         account: account,
       );
-      if (!mounted) return;
+      if (!mounted || startedFor != _recordedFor) return;
       setState(() => _inFlight.remove(user.id));
       messenger.showSnackBar(const SnackBar(content: Text('リクエストの処理に失敗しました')));
     }
@@ -97,6 +106,11 @@ class _FollowRequestsScreenState extends ConsumerState<FollowRequestsScreen> {
         ? adapter as FollowRequestSupport
         : null;
     final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+    if (_recordedFor != accountKey) {
+      _recordedFor = accountKey;
+      _handled.clear();
+      _inFlight.clear();
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('フォローリクエスト')),

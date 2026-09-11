@@ -199,6 +199,19 @@ void main() {
           isNot(contains('ref.read(currentAdapterProvider)')),
           reason: 'ref.read で adapter を取っている。切替に追随しない',
         );
+        // ⚠ key で作り直すのは一覧だけで、画面の State（処理済み / 処理中の
+        // 記録）は残る。切替で捨て、切替前に始めた操作の完了も捨てること
+        // （v1.64 のリリース PR の Codex P2）。
+        expect(
+          code,
+          contains('_recordedFor = accountKey'),
+          reason: 'アカウントが変わっても処理済み / 処理中の記録を捨てていない',
+        );
+        expect(
+          code,
+          contains('startedFor != _recordedFor'),
+          reason: '切替の前に始めた操作の完了が、切替後の表示に書き込まれる',
+        );
       });
     }
   });
