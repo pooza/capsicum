@@ -350,30 +350,47 @@ String buildSettingsBackupYaml(
 /// 同じ深さでも `bait: x"` を除くと正しく弾かれるので、**テストが見ていたのは
 /// 素直なペイロードだけ**だった。
 ///
-/// 塞ぎ方は 2 つ重ねてある:
+/// 塞ぎ方は 3 つ重ねてある:
 ///
-/// 1. **引用符は「トークンの先頭」でだけ引用開始とみなす**（[_atTokenStart]）。
+/// 1. **引用符は「スカラーの先頭」でだけ引用開始とみなす**（[_atScalarStart]）。
 ///    平文スカラーの途中の `"` は引用ではない
-/// 2. **閉じが見つからなければ弾く側へ倒す**（[_skipQuoted] が `-1`）。
-///    閉じない引用符を持つファイルは `loadYaml` でもどうせ失敗するので、
-///    **数十秒かけて失敗するより先に弾く**ほうがよい
+/// 2. **引用は同じ行の中で閉じるものだけ**（[_skipQuoted]）。閉じが見つから
+///    なければ弾く側へ倒す（`-1`）。閉じない引用符を持つファイルは
+///    `loadYaml` でもどうせ失敗するので、**数十秒かけて失敗するより先に弾く**
+///    ほうがよい
+/// 3. **コメントは行頭か空白の後ろだけ**（[_atCommentStart]）
+///
+/// ## ⚠⚠ 1 だけでは、まだ 3 通りで抜けられた (v1.64 のリリース前レビュー)
+///
+/// 初版の [_atScalarStart] 相当は `-` `:` の**直後**と**すべての空白の後ろ**を
+/// 「トークンの先頭」とみなしていた。どれも正当な YAML で、40 段のネストが
+/// 素通りした（実測）:
+///
+/// - `c: [a-', [[[…]]], b-']` —— `-` の直後の `'` は平文スカラーの一部
+/// - `a: x '` ↵ `c: [[[…]]]` ↵ `d: y '` —— 平文スカラーの途中の空白の後ろ。
+///   単一引用は行をまたげるので、次の行の `'` まで読み飛ばしていた
+/// - `c: [a-#, [[[…]]]]` —— `-` の直後の `#` はコメントではない
+///
+/// ⚠ **同じ行に限ったのは、ブロックスカラーの中身を引用と誤読させる迂回
+/// （`a: |` ↵ `  '` ↵ `b: [[[…]]]` ↵ `c: |` ↵ `  '`）も塞ぐため。**書き出し側
+/// （[_yamlString]）は改行を `\n` にエスケープした 1 行の二重引用しか書かない
+/// ので、正しいファイルは同じ行で閉じる。
 bool exceedsSettingsBackupNestingDepth(String yamlText) {
   var depth = 0;
   var i = 0;
   while (i < yamlText.length) {
     final c = yamlText[i];
 
-    // ⚠ **YAML のコメントは「行頭」か「空白の後ろ」だけ。**`tag#1` の `#` は
-    // 平文スカラーの一部で、コメントではない。引用符と同じ型の取りこぼしなので
-    // 揃えてある（こちらは行末までしか飛ばないので実害は小さい）。
-    if (c == '#' && _atTokenStart(yamlText, i)) {
+    // ⚠ **YAML のコメントは「行頭」か「空白の後ろ」だけ。**`tag#1` / `a-#` の
+    // `#` は平文スカラーの一部で、コメントではない。
+    if (c == '#' && _atCommentStart(yamlText, i)) {
       while (i < yamlText.length && yamlText[i] != '\n') {
         i++;
       }
       continue;
     }
 
-    if ((c == "'" || c == '"') && _atTokenStart(yamlText, i)) {
+    if ((c == "'" || c == '"') && _atScalarStart(yamlText, i)) {
       final end = _skipQuoted(yamlText, i);
       if (end < 0) return true; // 閉じない引用符。弾く側へ倒す
       i = end;
@@ -391,32 +408,47 @@ bool exceedsSettingsBackupNestingDepth(String yamlText) {
   return false;
 }
 
-/// [i] が「トークンの先頭」か (#1035-A1)。
+/// [i] の引用符が「スカラーの先頭」か (#1035-A1 / v1.64 のリリース前レビュー)。
 ///
-/// 引用スカラーが始まれるのは**行頭・空白の後ろ・`[` `{` `,` `:` `-` の後ろ**
-/// だけ。それ以外の位置の `'` / `"` は**平文スカラーの一部**であって、引用の
-/// 開始ではない。
-bool _atTokenStart(String text, int i) {
+/// 引用スカラーが始まれるのは次の位置だけ。空白（スペース・タブ）は
+/// 読み飛ばして手前の文字を見る:
+///
+/// - **行頭**（手前が空白だけ）
+/// - **`[` `{` `,` の後ろ**（フローの要素の先頭）
+/// - **`:` `-` の後ろに空白を挟んだ位置**（`a: 'x'` / `- 'x'`）。⚠ **直後は
+///   違う** —— `a-'` / `a:'` の引用符は平文スカラーの一部
+///
+/// ⚠ **それ以外の空白の後ろは違う。**`a: x '` の `'` は平文スカラーの途中。
+bool _atScalarStart(String text, int i) {
+  var j = i - 1;
+  while (j >= 0 && (text[j] == ' ' || text[j] == '\t')) {
+    j--;
+  }
+  if (j < 0 || text[j] == '\n' || text[j] == '\r') return true;
+  final prev = text[j];
+  if (prev == '[' || prev == '{' || prev == ',') return true;
+  if (prev == ':' || prev == '-') return j < i - 1; // 空白を挟んでいること
+  return false;
+}
+
+/// [i] の `#` がコメントの開始か。YAML のコメントは**行頭か空白の後ろ**だけ。
+bool _atCommentStart(String text, int i) {
   if (i == 0) return true;
   final prev = text[i - 1];
-  return prev == ' ' ||
-      prev == '\n' ||
-      prev == '\r' ||
-      prev == '\t' ||
-      prev == '[' ||
-      prev == '{' ||
-      prev == ',' ||
-      prev == ':' ||
-      prev == '-';
+  return prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r';
 }
 
 /// [start] から始まる引用スカラーの直後の位置。**閉じが無ければ `-1`。**
+///
+/// ⚠ **同じ行の中で閉じるものだけを引用とみなす**（[exceedsSettingsBackupNestingDepth]
+/// の doc）。改行に当たったら閉じが無いのと同じに扱う。
 int _skipQuoted(String text, int start) {
   final quote = text[start];
   var i = start + 1;
   if (quote == "'") {
     // 単一引用スカラー。`''` が閉じない形のエスケープ。
     while (i < text.length) {
+      if (text[i] == '\n' || text[i] == '\r') return -1;
       if (text[i] != "'") {
         i++;
         continue;
@@ -431,7 +463,13 @@ int _skipQuoted(String text, int start) {
   }
   // 二重引用スカラー。`\` でエスケープ。
   while (i < text.length) {
+    if (text[i] == '\n' || text[i] == '\r') return -1;
     if (text[i] == r'\') {
+      // ⚠ `\` + 改行（行をまたぐ継続）も同じ行で閉じない扱い。2 文字飛ばしで
+      // 改行を越えさせない。
+      if (i + 1 < text.length && (text[i + 1] == '\n' || text[i + 1] == '\r')) {
+        return -1;
+      }
       i += 2;
       continue;
     }

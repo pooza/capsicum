@@ -241,6 +241,70 @@ void main() {
           expect(exceedsSettingsBackupNestingDepth("a: 'abc\n"), isTrue);
         });
 
+        // ⚠⚠ **v1.64 のリリース前レビューで、上の塞ぎ方がまだ 3 通りで抜けると
+        // 分かった**（どれも正当な YAML・40 段で素通りを実測）。
+        group('まだ抜けられた 3 形 (v1.64 のリリース前レビュー)', () {
+          final deep = '[' * (maxSettingsBackupNestingDepth + 10);
+          final closing = ']' * (maxSettingsBackupNestingDepth + 10);
+
+          test("フローの中で - の直後の ' は引用開始ではない", () {
+            expect(
+              exceedsSettingsBackupNestingDepth("c: [a-', $deep$closing, b-']"),
+              isTrue,
+            );
+          });
+
+          test("平文スカラーの途中の空白の後ろの ' は引用開始ではない（行をまたぐ）", () {
+            expect(
+              exceedsSettingsBackupNestingDepth(
+                "a: x '\nc: $deep$closing\nd: y '\n",
+              ),
+              isTrue,
+            );
+          });
+
+          test('- の直後の # はコメントではない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth('c: [a-#, $deep$closing]'),
+              isTrue,
+            );
+          });
+
+          test('フローの中で平文スカラーの空白の後ろの引用符も同じ', () {
+            expect(
+              exceedsSettingsBackupNestingDepth("c: [a ', $deep$closing, b ']"),
+              isTrue,
+            );
+          });
+
+          test('⚠ ブロックスカラーの中身の引用符で行をまたがせない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth(
+                "a: |\n  '\nb: $deep$closing\nc: |\n  '\n",
+              ),
+              isTrue,
+            );
+          });
+
+          test(r'⚠ \ + 改行で二重引用を行またぎさせない', () {
+            expect(
+              exceedsSettingsBackupNestingDepth('a: "x\\\n$deep$closing"\n'),
+              isTrue,
+            );
+          });
+        });
+
+        test('⚠ 書き出し側の形（1 行の二重引用・フローの要素）は通す', () {
+          final inside = '[' * (maxSettingsBackupNestingDepth + 10);
+          expect(
+            exceedsSettingsBackupNestingDepth(
+              'version: 1\nsettings:\n  a: "$inside"\n  b: ["$inside", '
+              "'$inside']\n  c: {k: \"$inside\"}\n- '$inside'\n",
+            ),
+            isFalse,
+          );
+        });
+
         test('⚠ 正しく閉じた引用符は従来どおり通す（過剰に弾かない）', () {
           // 弾く側へ倒したことで、**正しいファイルまで弾いていないか**を押さえる。
           final deep = '[' * (maxSettingsBackupNestingDepth + 10);
