@@ -40,17 +40,19 @@ class _FollowedHashtagsScreenState
   final _released = <String>{};
   final _inFlight = <String>{};
 
-  HashtagSupport? get _support {
-    final adapter = ref.read(currentAdapterProvider);
-    return adapter is HashtagSupport ? adapter as HashtagSupport : null;
-  }
+  /// 解除済み / 処理中の記録がどのアカウントのものか。
+  ///
+  /// ⚠ アカウントを切り替えたら捨てる。同じ名前のタグが切替先にもあると、
+  /// 前のアカウントでの「解除しました」が出てしまう。
+  String? _recordedFor;
 
   Future<({List<String> items, String? nextCursor})> _fetch(
+    HashtagSupport? support,
     String? cursor,
   ) async {
-    final support = _support;
-    // ⚠ Misskey は HashtagSupport を持たない。空で返して
-    // 「フォロー中のハッシュタグはありません」に落とす（失敗ではない）。
+    // ⚠ support が null になるのは HashtagSupport を持たないアダプターのとき。
+    // 空で返して「フォロー中のハッシュタグはありません」に落とす（失敗では
+    // ない）。Misskey は持っているが、アダプター側が空を返す（クラス doc）。
     if (support == null) return (items: <String>[], nextCursor: null);
     final result = await support.getFollowedHashtags(
       query: TimelineQuery(maxId: cursor, limit: _pageSize),
@@ -58,8 +60,7 @@ class _FollowedHashtagsScreenState
     return (items: result.tags, nextCursor: result.nextCursor);
   }
 
-  Future<void> _unfollow(String tag) async {
-    final support = _support;
+  Future<void> _unfollow(HashtagSupport? support, String tag) async {
     if (support == null) return;
     if (_inFlight.contains(tag) || _released.contains(tag)) return;
 
@@ -95,28 +96,47 @@ class _FollowedHashtagsScreenState
 
   @override
   Widget build(BuildContext context) {
+    // ⚠ **`ref.watch` で build に追随させる (#1083-F の取りこぼし・v1.64 の
+    // リリース前レビュー)。**兄弟の [FollowRequestsScreen] /
+    // [ModerationListScreen] は #1083-F で直したのに、ここだけ `ref.read` の
+    // getter のままだった。画面を開いたままアカウントを切り替えると、表示は
+    // 前のアカウントの一覧のまま、追加読み込みと**解除は切替後のアカウントへ
+    // 飛んでいた**（別アカウントのタグを解除しうる）。
+    final adapter = ref.watch(currentAdapterProvider);
+    final support = adapter is HashtagSupport
+        ? adapter as HashtagSupport
+        : null;
+    final accountKey = ref.watch(currentAccountProvider)?.key.toStorageKey();
+    if (_recordedFor != accountKey) {
+      _recordedFor = accountKey;
+      _released.clear();
+      _inFlight.clear();
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('フォロー中のハッシュタグ')),
       body: BottomSafeArea(
         child: CursorPagedListView<String>(
+          // 切替後に前のサーバーの一覧が残らないよう、アカウントで作り直す。
+          key: ValueKey(accountKey),
           debugLabel: 'FollowedHashtagsScreen',
           // 一覧の取得失敗を観測する (#1083-D)。解除操作は上の 'hashtag.op'。
           tagKey: 'hashtag.list',
-          fetcher: _fetch,
+          fetcher: (cursor) => _fetch(support, cursor),
           emptyMessage: 'フォロー中のハッシュタグはありません',
           itemBuilder: (context, tag) => ListTile(
             leading: const Icon(Icons.tag),
             title: Text('#$tag'),
             // 一覧からタグのタイムラインへ飛べる（完了条件のひとつ）。
             onTap: () => context.push('/hashtag/$tag'),
-            trailing: _trailing(tag),
+            trailing: _trailing(support, tag),
           ),
         ),
       ),
     );
   }
 
-  Widget _trailing(String tag) {
+  Widget _trailing(HashtagSupport? support, String tag) {
     if (_released.contains(tag)) return const Text('解除しました');
     if (_inFlight.contains(tag)) {
       return const SizedBox(
@@ -126,7 +146,7 @@ class _FollowedHashtagsScreenState
       );
     }
     return TextButton(
-      onPressed: () => _unfollow(tag),
+      onPressed: () => _unfollow(support, tag),
       child: const Text('フォロー解除'),
     );
   }

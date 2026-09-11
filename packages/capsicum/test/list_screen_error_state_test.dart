@@ -166,4 +166,40 @@ void main() {
       });
     }
   });
+
+  /// ⚠⚠ **アカウント切替に追随すること (#1083-F)。**`ref.read` の getter で
+  /// adapter を取ると、画面を開いたままの切替で再構築されず、表示は前の
+  /// アカウント・操作は切替後のアカウント、という食い違いになる。#1083-F で
+  /// 2 画面を直したとき、3 画面目（フォロー中のハッシュタグ）が漏れていた
+  /// （v1.64 のリリース前レビュー）。**画面を列挙して全部見る。**
+  group('アカウント切替に追随する (#1083-F)', () {
+    const followers = [
+      'follow_requests_screen.dart',
+      'moderation_list_screen.dart',
+      'followed_hashtags_screen.dart',
+    ];
+
+    for (final file in followers) {
+      test(file, () {
+        final code = maskStrings(
+          maskComments(File('lib/src/ui/screen/$file').readAsStringSync()),
+        );
+        expect(
+          code,
+          contains('ref.watch(currentAdapterProvider)'),
+          reason: 'build で adapter を watch していない',
+        );
+        expect(
+          code,
+          contains('ref.watch(currentAccountProvider)'),
+          reason: 'アカウントの key を watch していない（一覧を作り直せない）',
+        );
+        expect(
+          code,
+          isNot(contains('ref.read(currentAdapterProvider)')),
+          reason: 'ref.read で adapter を取っている。切替に追随しない',
+        );
+      });
+    }
+  });
 }
