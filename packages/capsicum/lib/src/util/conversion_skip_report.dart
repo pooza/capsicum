@@ -64,9 +64,19 @@ void reportSkippedConversions(
           idHintKey: item.id,
           'conversionError': item.error,
           'maxId': maxId ?? 'null',
-          // このバッチで落ちた件数。1 なのか全滅なのかはここでしか分からない。
-          'skippedInBatch': skipped.length,
         }),
+        // ⚠⚠ **件数と発生元は scope に載せる**（v1.64 のリリース前レビュー）。
+        // 以前は hint に入れていたが、**hint はプロセス内だけのデータで送信
+        // されない**（上のコメントのとおり）。dedup を入れた結果、「1 件だけ
+        // 変」と「全滅」を見分ける唯一の手がかりが、実際には観測できていなかった。
+        withScope: (scope) {
+          scope.setTag('conversion_source', source);
+          scope.setContexts('conversion_skip', {
+            // このバッチで落ちた件数。1 なのか全滅なのかはここでしか分からない。
+            'skipped_in_batch': skipped.length,
+            'max_id': maxId ?? 'null',
+          });
+        },
       );
     }
   } catch (_) {
