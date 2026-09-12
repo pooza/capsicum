@@ -3,6 +3,7 @@
 [#720](https://github.com/pooza/capsicum/issues/720)（アカウントに依存せず複数カラムを並べて表示する）を「着手可否を判断できる状態」へ動かすための **feasibility spike**。
 
 - 作成日: **2026-09-06**（同日中に未決事項 1 / 7 / 8 まで決着。⚠ **フェーズ 1 の Issue 分解を止める未知は残っていない**）
+- **2026-09-12 追記**: 未決事項 **2（カラムの購読モデル）を決着**（[#1086](https://github.com/pooza/capsicum/issues/1086)）。⚠ **決定の要は「接続方式を今決めない」**——`StreamSupport` をキー付きにすると、1 ソケット多重化かカラムごとソケットかは実装の内部事情に落ちる
 - ⚠ **これは詳細 UI 仕様ではない。**Issue の[方針コメント（2026-07-16）](https://github.com/pooza/capsicum/issues/720)が定めたとおり、狙いは 3 点（現アーキの前提棚卸し / デッキが壊す境界 / 段階性と規模の見立て）に絞る。中身が流動的な段階で画面仕様を書くと陳腐化する
 - 位置づけの正本は [roadmap.md](roadmap.md)「未決事項 1」、型の正本は [CLAUDE.md「大玉の進め方」](CLAUDE.md#大玉の進め方棚卸し--分類--設計書--起票)
 - 実測はすべて `develop` の `565cce06`（1.64.0+180）時点
@@ -351,12 +352,54 @@ DrawerLayout                     ← ⚠ ドロワーは常駐せずオーバー
 
 </details>
 
-### 2. カラムの購読モデル（コストの上限）
+### 2. ~~カラムの購読モデル（コストの上限）~~ → **2026-09-12 に決着（[#1086](https://github.com/pooza/capsicum/issues/1086)）**
 
-- **全カラムを常時 live にするか、可視カラムだけか。**N アカウント × M カラムぶんの WebSocket をモバイルで常時張るのは現実的でない
-- ⚠ 現状でも `timeline.stream.disconnected` / `reconnect_exhausted` は Sentry の常連（CAPSICUM-37 / 36 / 3D / 25）。**ソケットを N 倍にすると再接続の嵐も N 倍になる**
-- 1 アカウント 1 ソケットで多重化する（Misskey はプロトコルが対応）か、カラムごとにソケットを分けるかで、この見積もりが変わる
-- **モバイルのバックグラウンド・省電力との兼ね合いは未検討**
+⚠⚠ **いちばん効いた発見: 「1 ソケット多重化か・カラムごとにソケットか」は、今決める必要が無い。**
+
+`StreamSupport` を**カラムキー付き**にすれば、接続方式は実装の内部事情に落ちる。決めるのは**購読の範囲**（下の 2-B）だけでよい。
+
+#### 2-A. 購読の抽象をキー付きにする（決定）
+
+現行の [`stream_support.dart:25-35`](../packages/capsicum_core/lib/src/social/interfaces/stream_support.dart) は **単数前提**:
+
+```dart
+Stream<Post> streamTimeline(TimelineType type, {...});
+void disposeStream();                                  // 引数なし＝「唯一の接続」を閉じる
+```
+
+→ **カラムキーを通す形へ変える**（`streamTimeline(key, type, …)` / `disposeStream(key)`）。キーは `(AccountKey, TabType)` で、どちらも可逆シリアライズを既に持っている（`AccountKey.toStorageKey()` / `tab_type.dart:20-22`）。
+
+⚠ **これで [#1090](https://github.com/pooza/capsicum/issues/1090) が抱えていた二択（ソケット分割 vs `subscribe` 方式）は設計判断でなくなる。**上位から見えるのは「キー → Stream」だけなので、**あとから内部だけ差し替えられる**。
+
+#### 2-B. 購読は可視カラムのみ live（決定・2026-09-12 pooza）
+
+**画面に映っているカラムだけ接続し、画面外は猶予を置いて切る。**カラムの**状態は保持**し、戻ってきたら既存の `_catchUpSinceTop()`（`timeline_provider.dart:1320-1324`・#781）で埋める。
+
+- ⚠ **接続数の上限が画面幅で決まる**のが要点。カラム数はユーザーが決める（3〜10）が、同時接続は**画面に入る本数**（狭幅 1・広幅 3〜4）で頭打ちになる
+- ⚠ **切るのは「画面外に出た瞬間」ではない。**横スクロールのたびに張り直すと**再接続の嵐を自分で作る**ので、猶予を置いて LRU で保持する（保持上限は「画面に入る最大カラム数 + 1〜2」）
+- ⚠⚠ **代償: 画面外の列に「新着あり」を出せない。**デッキの売り（隣の列の動きが見える）は**可視カラムで成立している**ので損なわれないが、狭幅のスワイプ切替では「裏の列に新着」が出せない。**これを出したくなったら 2-B を見直す**（購読方式ではなく購読範囲の変更になる）
+- **モバイルのバックグラウンドは全切断**。⚠ **現状すでに維持する仕組みが無い**（`didChangeAppLifecycleState` は streaming に触っていない・`main.dart:1246-1251` / `home_screen.dart:141-163`）。バックグラウンドの通知は Push（APNs / FCM）、デスクトップは常駐 + WebSocket という既存の役割分担をそのまま引き継ぐ
+
+#### 2-C. 初期実装は「カラムごとに 1 ソケット」（決定・技術判断）
+
+2-A により**後から変えられる**ので、安いほうから入る。
+
+| | カラムごとにソケット（**採用**） | 1 アカウント 1 ソケットで多重化 |
+| --- | --- | --- |
+| Misskey | `_chatRoomStreamings`（`misskey/adapter.dart:136, 2487-2519`）が**キー付きレジストリの先例**。そのまま拡張できる | `connect` に `id` は既に送っているが、`_onMessage` が `body['id']` を見ていない（`misskey/streaming.dart:145` と `:173-181`）。ルーティングの新規実装 |
+| Mastodon | ⚠ **無改修。**現行の `?stream=<name>` 方式（`mastodon/streaming.dart:101-107`）のまま複数張るだけ | ⚠⚠ **全面書き換え。**`subscribe` / `unsubscribe` フレームは**コードに 1 箇所も無い** |
+| 障害の粒度 | **カラムごとに独立。**1 本落ちても他は生きる。UI のインジケータ（`TimelineState.streamConnectionState`）は family 化でそのまま合う | ⚠ **1 本落ちると全カラムが同時に落ちる。**状態の粒度を作り直す必要がある |
+| 接続数 | 可視カラム数（2-B で上限が付く） | 1 |
+
+⚠ **Mastodon 公式は「1 本の WS に `subscribe` で複数 stream」を想定している**ので、接続数が実測で問題になったら 2-A の抽象の下で `subscribe` 方式へ差し替える。**そのときも上位（provider / UI）は無改修。**
+
+⚠⚠ **テストの防壁が無い状態で入る。**`MisskeyStreaming` / `MastodonStreaming` の接続・`connect` フレームを固定するテストは**存在しない**（あるのは `streaming_backoff_test`（計算のみ）と `*_notification_streaming_test`（パースのみ））。#1089 / #1090 の完了条件にある「**2 本購読して 1 本目にイベントが来続ける**」は、**この空白を埋める最初のテストになる**。
+
+#### ⚠ 残る観測点
+
+- 再接続イベント（`timeline.stream.disconnected` / `reconnect_exhausted`・CAPSICUM-37 / 36 / 3D / 25）は**可視カラム数ぶんに増える**。`_catchUpSinceTop()` の REST 呼び出しも同じ倍率で増える
+- ユーザー向けの逃げ道は現状 `streamingEnabledProvider` の**全 ON / 全 OFF だけ**（`preferences_provider.dart:1095-1102`）。カラム単位の live トグルは無い。**要るかは出してから測る**
+- 先例として、**全ルーム常時購読を接続数とバッテリーを理由に諦めた判断が既にある**（`chat_thread_list_screen.dart:38-43`。「復帰時に再 fetch」の妥協ラインを採った）。2-B はこれと同じ形
 
 ### 3. #887 の保証をデッキでどう定義するか（B-3）
 
