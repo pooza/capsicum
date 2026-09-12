@@ -254,6 +254,96 @@ for (final account in supported) {
 
 ---
 
+### 4. カラムキーの形（2026-09-12 決定・[#1087](https://github.com/pooza/capsicum/issues/1087) / [#1088](https://github.com/pooza/capsicum/issues/1088) / [#1091](https://github.com/pooza/capsicum/issues/1091) の共通前提）
+
+1-3 で「カラムの同一性は `(AccountKey, TabType)` で表せる」と書いたが、**実装に落とすと 1 つ罠がある。**
+
+#### 4-1. ⚠⚠ `TabType.toKey()` は永続化キーに使えない（`==` と一致しない）
+
+```dart
+// tab_type.dart
+class ListTab extends TabType {
+  @override
+  String toKey() => name != null ? 'list:$id:$name' : 'list:$id';   // ⚠ 表示名が入る
+
+  @override
+  bool operator ==(Object other) => other is ListTab && id == other.id;  // ⚠ id だけ
+  @override
+  int get hashCode => id.hashCode;
+}
+```
+
+**`toKey()` は表示名を含むのに、`==` / `hashCode` は id しか見ていない。**`ChannelTab` も同型。
+
+→ ⚠⚠ **サーバー側でリスト名を変えると、同じカラムなのにキーだけ別物になる。**カラム ID・キャッシュのスロット名・永続化キーに `toKey()` の文字列をそのまま使うと、**リネームした瞬間にカラムの並び順・設定・キャッシュが「別のカラムのもの」になって消える。**
+
+⚠ **今これが表面化していないのは、既存の永続化が必ず `TabType.fromKey()` で値に戻してから `==` で比較しているから**（`preferences_provider.dart:484-493` のタブ表示設定）。**文字列そのものを同一性として使っている箇所が現状 1 つも無い。**デッキはそれを始める最初の機能になる。
+
+#### 4-2. 決定
+
+| 用途 | 何を使うか |
+| --- | --- |
+| **provider の family キー** | **値のまま**（`(AccountKey, TabType)` の record）。⚠ `TabType.==` は id ベースなので**これが正しい** |
+| **永続化・キャッシュのスロット名・カラム ID** | ⚠ **正規化した文字列**（`list:<id>` / `channel:<id>` — **表示名を落とす**）。`TabType` に `toIdentityKey()` を足し、**`toKey()` は既存の用途のまま触らない**（後方互換） |
+| **カラムのラベル** | 実行時に解決する。⚠ **キーに混ぜない** |
+
+#### 4-3. ⚠ 既に同じ形の文字列がある — `timelineContextKey`
+
+```dart
+// timeline_provider.dart:50
+String? timelineContextKey(AccountKey? accountKey, String kind) =>
+    accountKey == null ? null : '${accountKey.toStorageKey()}|$kind';
+```
+
+**`<アカウント>|<種別>` は、まさにカラムキーの形をしている**（#758 で TL の文脈照合のために入ったもの）。⚠ **`kind` の語彙だけが `TabType.toKey()` と揃っていない**（`tl:home` 対 `timeline:home`、`tag:` 対 `hashtag:`）。**カラムキーはこの関数の `kind` に `toIdentityKey()` を渡す形に寄せる**と、family キー・キャッシュのスロット・#1086 の streaming キーが 1 本の式に揃う。
+
+⚠ **寄せると起動キャッシュのキーが 1 回変わる**（`tl:home` → `timeline:home`）。**実害は「初回だけ先出しが効かない」**だけ（#890 のキャッシュは load 時にキー不一致なら捨てる）。
+
+---
+
+### 5. カラムの生死と購読の生死を分ける（2026-09-12 決定・[#1087](https://github.com/pooza/capsicum/issues/1087)）
+
+未決事項 2-B（**可視カラムのみ live・ただし状態は保持**）を実装に落とすと、**「provider を生かしたまま、購読だけ切る」**が要る。現状はこの 2 つが分かれていない。
+
+#### 5-1. ⚠ 購読の開始は build() の副作用になっている
+
+```dart
+// timeline_provider.dart:816-818（build の末尾）
+if (adapter is StreamSupport && ref.read(streamingEnabledProvider)) {
+  _startStreaming(adapter as StreamSupport, type);
+}
+```
+
+外から止められるのは `streamingEnabledProvider`（**全 ON / 全 OFF の 1 個だけ**）。⚠ **カラム単位の live / not-live という概念が無い。**
+
+#### 5-2. ⚠⚠ 可視性を `ref.watch` で見てはいけない（#904 の再発）
+
+同じ罠を 1 度踏んでおり、**理由がコードのコメントに残っている**:
+
+> 初期判定は read で行う。watch すると、トグル切替が build() 全体（REST 再フェッチ・スクロール位置リセット・`_pendingPosts.clear` 等）を誘発し、可視のスクロールジャンプを起こす (#904)。切替の張り/解除は build() 側の listen。
+> — `timeline_provider.dart:811-815`
+
+→ ⚠⚠ **カラムの可視性を `build()` で watch すると、横スクロールのたびに全カラムが REST から取り直され、スクロール位置が飛ぶ。**
+
+**決定: 可視性は `streamingEnabledProvider` と同じ経路に乗せる**（`timeline_provider.dart:674-689` の `ref.listen`）。**張り / 解除だけを listen で行い、build は 1 度も再実行しない。**
+
+```dart
+// build() 側（既存の listen の隣に置く）
+ref.listen(columnLiveProvider(key), (_, live) {
+  live ? _startStreaming(streamAdapter, type) : _stopStreaming(streamAdapter);
+});
+```
+
+⚠ **猶予（2-B の「画面外に出た瞬間に切らない」）も `columnLiveProvider` の側に置く。**notifier に猶予を持たせると、**同じ遅延が 2 か所（可視判定とカラム）に散る**。
+
+#### 5-3. `autoDispose` は変えない（#1087 の注意書きどおり）
+
+**カラムを生かす責務はデッキコンテナ側に置く** — 列に存在するカラムのウィジェットが watch を保つ限り、`autoDispose` は発火しない。⚠ **横スクロールのコンテナは既定で画面外の子を捨てる**ので、**カラムは明示的に生かす**（#1092 の要件）。
+
+→ **「列から削除する = provider も破棄される」**が自然な対応になり、破棄の条件を別に発明しなくて済む。
+
+---
+
 ## 参考実装: SubwayTooter（2026-09-06 にソースを実読）
 
 ⚠ **推測で語らないための実読。**[tateisu/SubwayTooter](https://github.com/tateisu/SubwayTooter)（Kotlin / Apache-2.0 / 最終 push 2025-11-30）は #720 が名指しした参考元。**狭幅の扱いに直接の答えを持っていた。**
