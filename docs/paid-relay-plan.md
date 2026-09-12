@@ -327,11 +327,30 @@ end
 | **relay#63** | **サブスク状態の遷移。**⚠ **sandbox は時間が圧縮される**ので、更新・失効・猶予・返金を現実的な時間で踏める |
 | **relay#55** | 非同期化の並行挙動 |
 
+#### ⚠⚠ 配線は既に済んでいる（#948）
+
+**「あまり活用されていない」が、使う前提の配線は v1.57 の時点で通してある。**
+
+| | |
+| --- | --- |
+| **向け先** | ⚠ **debug ビルドは既定で staging**（`push_relay_client.dart:23-28`）。release は prod。**ビルド種別と 1 対 1 なので人手のフラグが無い** |
+| **上書き口** | `--dart-define=RELAY_BASE_URL=...`（TestFlight を staging へ向ける等の変則用） |
+| **共有シークレット** | ⚠ **prod / staging で同一**（#948 決定 A）。**切り替えは URL 1 本で済む** |
+| **APNs** | ⚠⚠ **staging は `apns.sandbox: true`** で構成され、`Apnotic::Connection.development` を使う（relay `apns_client.rb:177`）。**debug 端末トークンは sandbox 宛なので噛み合う** |
+
 #### ⚠ 注意 3 点
 
-1. ⚠⚠ **資格情報が本番と同じ。**APNs の `.p8` と firebase のサービスアカウントは **flauros からの複製**なので、**ステージング relay から本物の端末へ通知が飛ぶ**。⚠ **検証で push_token を登録するときに事故りやすい**
+1. ⚠ **資格情報は flauros からの複製だが、「本物の端末へ飛ぶ」わけではない。**iOS は **sandbox APNs 宛**なので製品版アプリには届かず、Android / iOS の debug は **`.debug` の別アプリ**なので FCM も debug アプリにしか届かない。⚠ **ただし本番の `push_token` を手で staging に登録すれば飛ぶ**ので、そこだけ注意
 2. ⚠ **ステージングでテストは走らない**（`BUNDLE_WITHOUT: development` で minitest / rake が入らない）。自動テストは CI / ローカルで
 3. ⚠ **Sentry DSN は入れない既定。**観測は journald と structured log
+
+#### ⚠⚠ ただし「使った実績がない」ことは前提に織り込む
+
+> あまり活用されたことがないので、補足しました（2026-09-12 pooza）
+
+**配線はあるが、この経路で実際に検証を回した実績が無い。**⚠ **設計の前提に置く以上、フェーズ 1 の最初に「疎通するか」だけ先に確かめる**（ゲートやレシート検証を作り込んでから「そもそも踏めない」と分かるのが最悪）。
+
+**確かめること**: debug ビルドから st.relay へ登録できるか / ステージング fedi（dev24-27）から Web Push が st.relay に届くか / その購読を 410 で消せるか。
 
 #### ⚠ 未確認（relay#61 / #62 で確かめる）
 
