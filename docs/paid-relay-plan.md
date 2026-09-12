@@ -312,6 +312,10 @@ end
 
 ⚠ **2026-09-06 時点で capsicum-relay の open マイルストーンは 0 件。**着手を決めた時点で作る。
 
+→ **2026-09-12 に [capsicum-relay v2.0](https://github.com/pooza/capsicum-relay/milestone/12) を作成し、8 件を起票した**（relay#57〜#63 + 既存の relay#55）。capsicum 側は 4 件（#1121 / #1122 / #1123 / #1124）。**合計 12 件。**索引は [#597 のコメント](https://github.com/pooza/capsicum/issues/597)。
+
+⚠ **着手順の先頭は [relay#57](https://github.com/pooza/capsicum-relay/issues/57)（`entitlement_token` の発行単位の決着）。**未決事項 2 がこれにあたる。
+
 ### 6. ⚠⚠ 収益の目標は「relay を持ち出しにしないこと」（2026-09-06 pooza 決定）
 
 > 収益的には、せめてこの、リレーサーバーだけは持ち出しにならないようにしたいですね。
