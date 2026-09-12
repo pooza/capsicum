@@ -454,11 +454,56 @@ end
 
 ⚠ **判断を先回りしない。**[roadmap.md](roadmap.md) は #597 を「収益の柱・逃がさない」と決めており、**本書はそれを覆す提案をしない**。⚠ **初稿は「動機として弱い」と書いた時点で、事実上それを覆しにかかっていた。**同じ形（技術的な整理から製品判断を再導出する）を繰り返さない。上は判断の材料。
 
-### 2. 認証の具体（フェーズ 1 の設計）
+### 2. ~~認証の具体（フェーズ 1 の設計）~~ → **2026-09-12 に決着（[relay#57](https://github.com/pooza/capsicum-relay/issues/57)）**
 
-- `entitlement_token` の発行単位は「購入」か「端末」か。⚠ **購入は複数端末で復元される**（サブスクはストアの購入復元対象）ので、**端末ごとに発行して購入へ束ねる**形が素直に見えるが未確定
-- 既存の登録（`subscriptions` テーブル）との関係。⚠ **移行時に既存ユーザーの通知を止めない**こと
-- ⚠ **共有シークレットは残す**（1-1）。二重にする
+#### 2-1. 発行単位: **端末ごとに発行し、購入へ束ねる**
+
+**entitlement の主体は「購入」**（ストアアカウントに属する）。**`entitlement_token` はその下に端末ごとにぶら下がる。**
+
+- ⚠ **購入は複数端末で復元される**（サブスクはストアの購入復元の対象）ので、1 購入に N token
+- **端末単位で無効化できる**（token が漏れたときに購入ごと止めずに済む）
+- ⚠ **1 購入あたりの端末数に上限を設けない。**対象者 0 人から始まるので、先回りで制限しない（件数は記録して、異常が出てから考える）
+
+#### 2-2. ⚠⚠ 端末の識別子は**既にある**。新しく作らない
+
+```sql
+-- lib/relay/database.rb
+CREATE TABLE subscriptions (
+  …, device_id TEXT, …   -- ⚠ nullable（#15 / capsicum#932）
+)
+```
+
+`/register` は**既に `device_id` を任意で受け取っている**（`routes/register.rb:16-23`）。capsicum 側も `device_install_id.dart` で発行・保管済み。→ **entitlement_token はこの `device_id` に紐づける。**
+
+#### 2-3. ⚠⚠ `subscriptions` に列を足さない
+
+**別テーブル 2 本**（`entitlements` = 購入単位 / `entitlement_tokens` = 端末単位）にして、**join で引く**。
+
+⚠ **理由は SQLite の組み替えコスト。**`subscriptions` は CHECK / UNIQUE を変えるたびに `rebuild_subscriptions_table!`（rename → 作り直し → コピー → drop）が要る。⚠⚠ **この組み替えは過去に子テーブルの FK を壊している** — `announcement_subscriptions` の FK が `subscriptions_old` を指したまま残り、**自己修復コード（`repair_announcement_subscriptions_fk!`）が今もコードに居座っている**（capsicum#468）。
+
+→ **課金の都合で push の中核テーブルを組み替えない。**
+
+#### 2-4. 判定の経路
+
+```text
+/push/{push_token}
+  → subscriptions（push_token UNIQUE で 1 行）
+  → subscriptions.device_id
+  → entitlement_tokens（device_id）
+  → entitlements.status
+```
+
+⚠ **`device_id` が NULL の行（旧クライアント）は entitlement を引けない。**ゲートは「非プリセット かつ entitlement 無し」で閉じるので、**非プリセットの旧クライアントは止まる**。→ ⚠ **実測で該当は 0 人**（プリセットを 1 つも持たない利用者は 0 人・1-2）。**ただしフェーズ 3 でゲートを実際に閉じる前に測り直すこと。**
+
+#### 2-5. `supporters` テーブルは流用しない
+
+`supporters` は **`UNIQUE(account, server)` ＝ fedi アカウント単位**で、**クライアントの自己申告を記録するだけ**（#596）。⚠ **課金はストアアカウントに紐づく**ので主体が違う。**投げ銭の記録として残し、entitlement とは別物として扱う。**
+
+#### 2-6. 移行
+
+⚠ **フェーズ 1〜2 では誰も拒まない**ので、既存ユーザーへの影響はゼロ。⚠ **唯一の危険点はフェーズ 3 でゲートを実際に閉じる瞬間**で、そこは 2-4 の実測をやり直してから踏む。
+
+⚠ **共有シークレットは残す**（1-1）。認証は二重になる。**置き換えではない。**
 
 ### 3. ~~⚠⚠ 「プリセット 1 アカウントで全部無償」の穴をどうするか~~ → **2026-09-12 に決着。a（穴を残す）**
 
