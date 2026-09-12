@@ -306,6 +306,38 @@ end
 
 ⚠ **iOS / Android の優先を分ける材料は「数」ではなく経理**: [supporter-subscription-plan.md](supporter-subscription-plan.md) の JCT 調査のとおり、**iOS は Apple がマーケットプレイスとして日本売上の消費税を処理するのに対し、Google Play は日本在住の販売者が自己判定・徴収・納付の責任を負う**。⚠ **継続課金だとこの非対称が毎月効く**（投げ銭の単発とは重みが違う）。
 
+### 4-2. ⚠⚠ 検証はステージング（triton）で踏む（2026-09-12 追記）
+
+**本書は初稿でステージングに触れていなかった**（出てくるのは 1-2 の「登録が 8 件ある」という母数の話だけ）。⚠ **#597 の検証は「本番でやりたくないもの」ばかり**なので、経路として明記する。
+
+**素性**（正本は chubo2 `docs/infra-servers.md`「capsicum-relay ステージング (triton)」）:
+
+| | |
+| --- | --- |
+| ホスト | `triton`（192.168.100.55・Ubuntu 26.04 LXC・2 vCPU / 1GB） |
+| **公開 URL** | ⚠⚠ **`https://st.relay.capsicum.shrieker.net/` — 有効な TLS つきで外部から到達できる**（2026-09-12 実測: `/health` が 200） |
+| 規模 | 2026-09-12 実測で subscriptions 16 / announcement_subscriptions 15 / supporters 0（本番は 156 / 48 / 46） |
+
+#### どこで効くか
+
+| Issue | ステージングで踏むこと |
+| --- | --- |
+| **relay#60** | ⚠⚠ **`410 Gone` で fedi サーバー側の購読が実際に消えるか。**本書は「410 が正しい」と書いたが**実測していない**。⚠ **本番で試すと本物の購読が消える**。ステージング fedi（dev24-27）と組で踏める |
+| **relay#61 / #62** | **ストアの sandbox 通知の受け口。**公開 URL + TLS が要る条件を満たしている |
+| **relay#63** | **サブスク状態の遷移。**⚠ **sandbox は時間が圧縮される**ので、更新・失効・猶予・返金を現実的な時間で踏める |
+| **relay#55** | 非同期化の並行挙動 |
+
+#### ⚠ 注意 3 点
+
+1. ⚠⚠ **資格情報が本番と同じ。**APNs の `.p8` と firebase のサービスアカウントは **flauros からの複製**なので、**ステージング relay から本物の端末へ通知が飛ぶ**。⚠ **検証で push_token を登録するときに事故りやすい**
+2. ⚠ **ステージングでテストは走らない**（`BUNDLE_WITHOUT: development` で minitest / rake が入らない）。自動テストは CI / ローカルで
+3. ⚠ **Sentry DSN は入れない既定。**観測は journald と structured log
+
+#### ⚠ 未確認（relay#61 / #62 で確かめる）
+
+- **Apple: Sandbox 用の通知 URL を本番と別に設定できるか**（できれば「sandbox は st.relay / 本番は flauros」に分離できる）
+- **Google: RTDN のトピックを分離できるか**（Play Console の設定が 1 本しか持てないなら分離できない）
+
 ### 5. ⚠ relay 側に同名マイルストーンを作る必要がある
 
 [roadmap.md](roadmap.md)「未決事項 2」が「設計書を書く回に capsicum-relay 側の同名枠が要る」と予告していたとおり。**本件は relay 側の作業量のほうが多い**（フェーズ 1〜3 はすべて relay）。
