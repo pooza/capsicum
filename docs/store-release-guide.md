@@ -726,6 +726,18 @@ draft で生成するのは「リリース作業の委託範囲」(自動公開�
 >
 > 回避: **Release を先に作らず CI に作らせ、生成された draft へ後からリリースノートを書く**。どうしても先出しした場合は、CI 完走後に draft へ戻し直したかを必ず確認する。自動公開しない委託範囲ルールが、事故で破れる経路はここ。
 
+#### ナイトリー（報告者に検証してもらう AppImage を、リリースを待たずに出す）
+
+`linux-release.yml` には **`workflow_dispatch` が最初からある**。develop で回すと `capsicum-appimage` という **workflow artifact**（約 156MB・retention 14 日）が出る。
+
+```sh
+gh workflow run linux-release.yml --repo pooza/capsicum --ref develop
+```
+
+⚠ **Release への添付は `if: startsWith(github.ref, 'refs/tags/')` で tag 限定**なので、develop で回しても**公開物は一切生まれない**。⚠ **artifact のダウンロードには GitHub ログインが要る**。⚠ **ビルド番号を先に上げてから回す** — 報告者が「どちらを試したか」を版で言えなくなる。
+
+⚠ **「手元に Linux のビルド環境が無いから検証が回せない」は誤り**（[#1085](https://github.com/pooza/capsicum/issues/1085) / [#1104](https://github.com/pooza/capsicum/issues/1104) の確認がこれで 2 日止まった）。
+
 #### ローカル動作確認
 
 ```sh
