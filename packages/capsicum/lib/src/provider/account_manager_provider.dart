@@ -115,6 +115,22 @@ Duration offlineRetryDelay(int attempt) => attempt < kOfflineRetryRampUp.length
 /// 回線が無い）だったときのコストが、そのまま起動の遅延になる。
 const kInitialProbeRetryDelay = Duration(milliseconds: 300);
 
+/// [newcomer] を先頭に置いた一覧を返す。⚠ **同じキーの既存 entry は落とす** (#1110)。
+///
+/// ログイン済みのアカウントを「アカウントを追加」から足し直すと、落とさない限り
+/// 一覧に同じアカウントが 2 件並ぶ。⚠ **索引側（[AccountStorage.addAccount]）は
+/// `contains` で弾いている**ので、起動し直すと 1 件に戻る——**再起動で消える＝
+/// 気づきにくい**不具合だった。
+///
+/// ⚠ **先頭へ置く意味は「現在のアカウント」ではなく並び順**。足し直しでも並びは
+/// 新しい方に寄せる（`current` は呼び出し側が別に差し替える）。
+///
+/// オフライン保持 entry の重複排除 (#792) と同じ形。**片方だけ直さないこと。**
+List<Account> withAccountAtFront(List<Account> accounts, Account newcomer) => [
+  newcomer,
+  ...accounts.where((a) => a.key != newcomer.key),
+];
+
 class AccountManagerNotifier extends Notifier<AccountManagerState> {
   @override
   AccountManagerState build() {
@@ -221,7 +237,7 @@ class AccountManagerNotifier extends Notifier<AccountManagerState> {
           )
         : account;
 
-    final newAccounts = [enriched, ...state.accounts];
+    final newAccounts = withAccountAtFront(state.accounts, enriched);
     // 手動ログインで復帰したサーバーがオフライン保持中なら、その entry を落と
     // して二重表示を防ぐ (#792)。
     final offline = state.offlineAccounts
