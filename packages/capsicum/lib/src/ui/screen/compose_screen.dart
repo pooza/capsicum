@@ -3956,12 +3956,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen>
           },
         ),
         title: Text(
-          // ⚠ 元投稿の取得を待たずに「リプライ」と出す (#1113)。取得が返る前でも
+          // ⚠ 元投稿の取得を待たずに「返信」と出す (#1113)。取得が返る前でも
           // 返信として送られることは確定している。
           _isReply
               ? (_effectiveChannelName != null
-                    ? 'リプライ：$_effectiveChannelName'
-                    : 'リプライ')
+                    ? '返信：$_effectiveChannelName'
+                    : '返信')
               : _effectiveChannelName != null
               ? '${ref.watch(postLabelProvider)}：$_effectiveChannelName'
               : ref.watch(postLabelProvider),

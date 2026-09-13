@@ -1,4 +1,5 @@
 import 'package:capsicum/src/platform/oauth_keep_alive.dart';
+import 'package:capsicum/src/platform/platform_info.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// ⚠⚠ **`Platform.isAndroid` で分岐する機能なので、「Android のふり」をしないと
 /// テストが分岐を一度も踏まない**（v1.64 の #1113 で踏んだ教訓）。ここは
-/// `debugIsSupportedOverride` で開ける。
+/// `debugNeedsOAuthKeepAliveOverride`（platform_info）で開ける。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -17,7 +18,7 @@ void main() {
   setUp(() {
     calls.clear();
     handler = (call) => call.method == 'start' ? true : null;
-    OAuthKeepAlive.debugIsSupportedOverride = true;
+    debugNeedsOAuthKeepAliveOverride = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           calls.add(call.method);
@@ -26,7 +27,7 @@ void main() {
   });
 
   tearDown(() {
-    OAuthKeepAlive.debugIsSupportedOverride = null;
+    debugNeedsOAuthKeepAliveOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
@@ -109,7 +110,7 @@ void main() {
   });
 
   test('対象外のプラットフォームでは channel を叩かない', () async {
-    OAuthKeepAlive.debugIsSupportedOverride = false;
+    debugNeedsOAuthKeepAliveOverride = false;
 
     final session = await OAuthKeepAlive.start();
     await OAuthKeepAlive.stop(session);

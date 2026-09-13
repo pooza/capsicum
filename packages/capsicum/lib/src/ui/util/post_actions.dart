@@ -342,7 +342,7 @@ List<MenuEntry> buildPostActionMenuEntries({
 
   return [
     MenuActionEntry(
-      label: 'リプライ',
+      label: '返信',
       icon: Icons.reply,
       onSelected: enabledIf(availability?.canReply ?? false, onReply),
     ),

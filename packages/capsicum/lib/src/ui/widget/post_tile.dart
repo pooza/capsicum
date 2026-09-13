@@ -1294,7 +1294,7 @@ class _PostTileState extends ConsumerState<PostTile> {
               children: [
                 item(
                   leading: const Icon(Icons.reply),
-                  title: const Text('リプライ'),
+                  title: const Text('返信'),
                   onSelected: () =>
                       context.push('/compose', extra: {'replyTo': targetPost}),
                 ),

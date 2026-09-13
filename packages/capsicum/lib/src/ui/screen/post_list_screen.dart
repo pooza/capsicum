@@ -40,7 +40,11 @@ class PostListScreen extends ConsumerWidget {
         child: CursorPagedListView<Post>(
           debugLabel: 'PostListScreen',
           // 一覧の取得失敗を観測する (#1083-D)。お気に入り / 引用の一覧。
-          tagKey: 'post_list.op',
+          // ⚠ **一覧の取得は経路型 (`<領域>.list`)** に揃える (#1117-E)。同じ
+          // 「一覧を引く」経路なのに `post_list.op` / `user_list.op` /
+          // `hashtag.list` と 2 型あり、Sentry で「一覧の取得失敗を全部見る」が
+          // 1 クエリで書けなかった。
+          tagKey: 'post_list.list',
           // ⚠ **ページサイズはこの画面が決めない。**`fetcher` を渡す側が
           // `limit` ごと閉じ込めている。継続の判定も件数ではなく
           // `nextCursor` の有無だけで行う（サーバーはフィルタで件数を

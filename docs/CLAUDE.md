@@ -77,6 +77,7 @@ capsicum は「最新版を対象にする」方針で開発しており、UI �
 | インスタンス | サーバー | 廃止語 | Mastodon / Misskey 共通で廃止 |
 | ノート | 投稿 | 統一 | Misskey では現役用語。capsicum では「投稿」に統一 |
 | チャット | メッセージ | 統一 | Misskey の `/api/chat/*` 由来。capsicum では UI 表記を「メッセージ」に統一（コード識別子は `Chat*` のまま API 命名に追従） |
+| リプライ | 返信 | 統一 | 両上流とも**操作名は「返信」**（Mastodon `status.reply` / Misskey `_actions.reply`）。⚠ **Misskey が「リプライ」を使うのは通知の種別ラベル**（`_notification._types.reply`）だけで、capsicum はその種別を `mention` に畳んでいるので出番が無い。アクションメニュー・投稿フォームの AppBar・タッチ操作の設定はすべて「返信」（#1117-E） |
 | Flash | Play | 統一 | Misskey は **UI 表記が「Play」**（`navbar.ts` / `_play:` ロケール）で、**エンティティ・API 名が `Flash`**（`/api/flash/*`）という食い違いがある。capsicum も同じ使い分けをする（UI は「Play」・コード識別子は `Flash*`） |
 
 「廃止語」は最新版で廃止された用語であり、capsicum でも一切使わない。「統一」は他方の SNS では現役だが、capsicum では UI 一貫性のためにどちらか片方に寄せている用語を指す。

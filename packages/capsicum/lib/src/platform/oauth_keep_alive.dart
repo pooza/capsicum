@@ -1,10 +1,8 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../util/exception_scrub.dart';
+import 'platform_info.dart';
 
 /// OAuth の認可を待つあいだ、Android にプロセスを凍結させないための口 (#1108)。
 ///
@@ -47,18 +45,12 @@ class OAuthKeepAlive {
 
   /// この経路が要るプラットフォームか。
   ///
-  /// ⚠ UI 層に `Platform.isX` を直書きしない指針 (#650) に従い、判定はここに
-  /// 閉じ込めて機能名で公開する。
-  static bool get isSupported =>
-      debugIsSupportedOverride ?? (!kIsWeb && Platform.isAndroid);
-
-  /// テストで「Android のふり」をするための上書き (#1117-A)。
-  ///
-  /// ⚠⚠ **`Platform.isXxx` で分岐する機能は、これが無いとテストが分岐を一度も
-  /// 踏まない**（v1.64 の #1113 で踏んだ教訓）。世代判定・例外の握り方は
-  /// Android でしか通らない側にあるので、ここを開けておく。
-  @visibleForTesting
-  static bool? debugIsSupportedOverride;
+  /// ⚠ UI 層に `Platform.isX` を直書きしない指針 (#650) に従い、判定は
+  /// `platform_info` に集めて機能名で公開する。⚠⚠ **ここで
+  /// `Platform.isAndroid` を書き直さない (#1117-E)** —— 以前はそうしていたため、
+  /// `oauthCallbackNeedsAppReturn` と**同じ述語が 2 箇所**にあり、差し替え口も
+  /// 別々だった（テストが本番では作れない組み合わせを作れる）。
+  static bool get isSupported => needsOAuthKeepAlive;
 
   /// 認可待ちを開始する。
   ///

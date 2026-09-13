@@ -27,6 +27,12 @@ import '../util/exception_scrub.dart';
 /// 対象を名前にしていた。**何をしたか**は [operation] が持つので、
 /// `hashtag.op` × `unfollow` / `moderation.op` × `unblock` と書く。
 ///
+/// ⚠ **一覧の取得は経路型（`<領域>.list`）に揃える (#1117-E)。**同じ「一覧を引く」
+/// 経路なのに `post_list.op` / `user_list.op` / `hashtag.list` と 2 型あり、Sentry で
+/// **「一覧の取得失敗を全部見る」が 1 クエリで書けなかった**（`tagKey:*.list` で
+/// 引けるようにする）。⚠ 一覧の上で行う**操作**（解除・承認等）は従来どおり
+/// `<領域>.op` 側（例: `hashtag.list` で引き、`hashtag.op` で解除する）。
+///
 /// ⚠ **群の細かさは変わらない。**fingerprint が `[tagKey, operation, 例外型]`
 /// なので、キーを畳んでも issue の数は同じ。変わるのは Sentry のファセットで
 /// 「モデレーション操作の失敗を全部見る」が **1 クエリで書けるかどうか**。

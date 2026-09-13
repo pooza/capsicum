@@ -82,6 +82,26 @@ bool get usesSelfHostedOAuthLoopbackServer =>
 /// システムブラウザからアプリへ自動復帰しないため専用の callback HTML を返す。
 bool get oauthCallbackNeedsAppReturn => !kIsWeb && Platform.isAndroid;
 
+/// 認可を待つあいだ、プロセスを凍結させない仕掛け（foreground service）が必要な
+/// プラットフォームか (#1108)。
+///
+/// ⚠ **[oauthCallbackNeedsAppReturn] と同じ値になるが、別の事実**。あちらは
+/// 「ブラウザからアプリへ自動で戻らない」、こちらは「待っているあいだ凍結され
+/// る」。⚠⚠ **同じ述語を 2 箇所に書かない (#1117-E)** —— 以前は
+/// `OAuthKeepAlive.isSupported` が `Platform.isAndroid` を独自に書いており、
+/// **差し替え口も別々**だった（E-1 で統合した `usesSecretServiceKeyring` と同じ形）。
+/// 機能名はここに集め、`OAuthKeepAlive` 側はこれを参照する。
+bool get needsOAuthKeepAlive =>
+    debugNeedsOAuthKeepAliveOverride ?? (!kIsWeb && Platform.isAndroid);
+
+/// テスト用の差し替え口 (#1117-A)。
+///
+/// ⚠⚠ **`Platform.isXxx` で分岐する機能は、これが無いとテストが分岐を一度も
+/// 踏まない**（v1.64 の #1113 で踏んだ教訓）。keep-alive の世代判定・例外の
+/// 握り方は Android 側にしか無い。
+@visibleForTesting
+bool? debugNeedsOAuthKeepAliveOverride;
+
 /// 既存アカウントの account-scoped cached client を OAuth に再利用してよいか
 /// (#276)。Android の account-scoped client は登録時の redirect_uri を保持せず、
 /// custom scheme → localhost 移行後に再利用すると invalid_redirect_uri で
