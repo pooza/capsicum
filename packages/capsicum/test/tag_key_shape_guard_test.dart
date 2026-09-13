@@ -14,29 +14,83 @@ import 'support/dart_source.dart';
 /// 普通に動いているように見える**。効くのはファセットで横断クエリを書くとき
 /// だけなので、規約から外れても誰も気づかない。だから機械で見る。
 ///
-/// 実際に 3 つ外れていた:
+/// ## ⚠⚠ リテラルだけ見ていたので、実際に踏んだ 2 件を捕まえていなかった (#1117-D)
 ///
-/// | 現状（修正前） | 何が違うか |
-/// | --- | --- |
-/// | `follow_request` | リポジトリ唯一のドット無し |
-/// | `moderation.blocks` / `moderation.mutes` | **対象**をキーにしていた（op の系統ではない） |
-/// | `hashtag.followed` | 同上 |
+/// 旧実装は `tagKey:\s*'…'` しか拾わなかった。ところが `moderation.blocks` /
+/// `moderation.mutes` は**別の名前の引数へリテラルを渡し**（`tag: 'moderation.blocks'`）、
+/// それを `tagKey: widget.kind.tag` と**転送**していた。⚠ **doc は「3 件を塞ぐ」と
+/// 書いていたが、実際に当たるのは 2 件だけ**だった（修正前のソースを食わせて確認）。
+///
+/// そこで **`tagKey:` に渡している非リテラルは、同一ファイル内で辿る**ようにした。
+/// 辿れなければ違反（＝形を確かめられない値を tagKey に渡させない）。
 void main() {
-  /// `tagKey:` に渡している文字列リテラルを、パスつきで数え上げる。
+  /// 非リテラルの `tagKey:` 引数のうち、**転送として許すもの**の名前。
   ///
-  /// ⚠ **コメントを潰してから見る**（`test/support/dart_source.dart`）。
-  /// 例示のためコメントに書いた `tagKey: 'foo'` を違反として数えない。
-  List<(String path, String key)> tagKeys() {
-    final out = <(String, String)>[];
-    final pattern = RegExp(r"""tagKey:\s*'([^']*)'""");
+  /// ⚠ `tagKey: widget.tagKey` は「呼び出し側から来た値をそのまま渡す」形で、
+  /// 呼び出し側は別ファイルの `tagKey: '…'` として**この走査に入っている**。
+  /// ここで違反にすると、集約ウィジェット（`CursorPagedListView`）が書けない。
+  const forwardNames = {'tagKey'};
+
+  /// 1 ファイルから `tagKey` に渡っている文字列を集める。
+  ///
+  /// ⚠ **コメントを潰してから見る**（`test/support/dart_source.dart`）。例示の
+  /// ためコメントに書いた `tagKey: 'foo'` を違反として数えない。
+  ///
+  /// 戻り値の `key` が null なのは「非リテラルで、同一ファイル内で辿れなかった」
+  /// もの。呼び出し側はそれ自体を違反として扱う。
+  List<(String key, bool resolved)> tagKeysIn(String source) {
+    final code = maskComments(source);
+    final out = <(String, bool)>[];
+
+    // 1. 素のリテラル。
+    for (final m in RegExp(r"""tagKey:\s*'([^']*)'""").allMatches(code)) {
+      out.add((m.group(1)!, true));
+    }
+
+    // 2. 非リテラル（識別子 / メンバ参照）。
+    final nonLiteral = RegExp(r'tagKey:\s*([A-Za-z_][A-Za-z0-9_.]*)');
+    for (final m in nonLiteral.allMatches(code)) {
+      final expr = m.group(1)!;
+      // ⚠ **最後の名前だけを見る。**`widget.kind.tag` が指す値は、同一ファイルで
+      // `tag:` へ渡されているリテラル（＝enum 相当の定義）に辿れる。
+      final name = expr.split('.').last;
+      if (forwardNames.contains(name)) continue;
+
+      // 同一ファイル内の定義を辿る。
+      final escaped = RegExp.escape(name);
+      final literals = [
+        // `const _moderationTagKey = 'moderation.op';`
+        for (final d in RegExp(
+          "(?:const|final|var)\\s+$escaped\\s*=\\s*'([^']*)'",
+        ).allMatches(code))
+          d.group(1)!,
+        // `tag: 'moderation.blocks',`（別名の引数へ渡してから転送する形）
+        for (final d in RegExp(
+          "(?<![A-Za-z0-9_])$escaped:\\s*'([^']*)'",
+        ).allMatches(code))
+          d.group(1)!,
+      ];
+      if (literals.isEmpty) {
+        out.add((expr, false));
+        continue;
+      }
+      for (final literal in literals) {
+        out.add((literal, true));
+      }
+    }
+    return out;
+  }
+
+  /// `lib` 全体。パスつきで返す。
+  List<(String path, String key, bool resolved)> tagKeys() {
+    final out = <(String, String, bool)>[];
     for (final file
         in Directory('lib')
             .listSync(recursive: true)
             .whereType<File>()
             .where((f) => f.path.endsWith('.dart'))) {
-      final code = maskComments(file.readAsStringSync());
-      for (final m in pattern.allMatches(code)) {
-        out.add((file.path, m.group(1)!));
+      for (final (key, resolved) in tagKeysIn(file.readAsStringSync())) {
+        out.add((file.path, key, resolved));
       }
     }
     return out;
@@ -68,6 +122,13 @@ void main() {
     );
     // 既知の代表例が拾えていること。ここが落ちたら数え方が変わっている。
     expect(keys.map((e) => e.$2), containsAll(['chat.op', 'drive.op']));
+    // ⚠ **非リテラルの転送も拾えていること (#1117-D)。**`const _moderationTagKey`
+    // を辿れなくなったら、この形の違反が見えなくなる。
+    expect(
+      keys.map((e) => e.$2),
+      contains('moderation.op'),
+      reason: '同一ファイルの const を辿れていない',
+    );
   });
 
   test('判定に歯がある（合成した形で確かめる）', () {
@@ -99,10 +160,97 @@ void main() {
     }
   });
 
+  group('走査に歯がある（合成したソースで確かめる）', () {
+    test('リテラルを拾う', () {
+      expect(tagKeysIn("reportOpFailure(tagKey: 'moderation.blocks');"), [
+        ('moderation.blocks', true),
+      ]);
+    });
+
+    // ⚠⚠ これが #1117-D の本題。旧実装はこの形を 1 件も拾わなかった。
+    test('⚠⚠ 別名の引数へ渡してから転送する形を拾う', () {
+      const source = '''
+class _Kind {
+  const _Kind({required this.tag});
+  final String tag;
+}
+const _blocks = _Kind(tag: 'moderation.blocks');
+Widget build() => CursorPagedListView(tagKey: widget.kind.tag);
+''';
+
+      expect(tagKeysIn(source).map((e) => e.$1), contains('moderation.blocks'));
+    });
+
+    test('同一ファイルの const を辿る', () {
+      const source = '''
+const _moderationTagKey = 'moderation.blocks';
+Widget build() => CursorPagedListView(tagKey: _moderationTagKey);
+''';
+
+      expect(tagKeysIn(source), contains(('moderation.blocks', true)));
+    });
+
+    // ⚠ 集約ウィジェットの転送は許す（呼び出し側が走査に入っている）。
+    test('widget.tagKey の転送は辿れなくても違反にしない', () {
+      expect(tagKeysIn('reportOpFailure(tagKey: widget.tagKey);'), isEmpty);
+    });
+
+    test('⚠ 辿れない値は違反として出す', () {
+      final found = tagKeysIn('reportOpFailure(tagKey: someUnknown.value);');
+
+      expect(found.length, 1);
+      expect(found.single.$2, isFalse, reason: '辿れないので形を確かめられない');
+    });
+
+    test('コメントの中の例示は拾わない', () {
+      expect(
+        tagKeysIn("// reportOpFailure(tagKey: 'moderation.blocks');"),
+        isEmpty,
+      );
+    });
+  });
+
+  // ⚠⚠ **修正前のソースを実際に食わせる (#1117-D)。**合成ソースは「想定した
+  // 書き方」しか並べられないので、**実物で当たることを確かめる**。これが無いと
+  // 「doc は 3 件を塞ぐと書いてあるのに実際は 2 件」という食い違いに気づけない。
+  test('⚠⚠ 修正前の moderation_list_screen を食わせると当たる', () {
+    // tagKey を直した commit の親。
+    const preFix = '11d19821^';
+    const path =
+        'packages/capsicum/lib/src/ui/screen/moderation_list_screen.dart';
+    final shown = Process.runSync('git', [
+      '-C',
+      '../..',
+      'show',
+      '$preFix:$path',
+    ]);
+    // ⚠ shallow clone 等で履歴が無い環境では skip する（検査の本体は上の合成
+    // ソース側にある）。
+    if (shown.exitCode != 0) {
+      markTestSkipped('git show が使えない: ${shown.stderr}');
+      return;
+    }
+
+    final found = tagKeysIn(shown.stdout as String);
+    final offenders = [
+      for (final (key, resolved) in found)
+        if (!resolved || violates(key)) key,
+    ];
+
+    expect(
+      offenders,
+      containsAll(['moderation.blocks', 'moderation.mutes']),
+      reason: '修正前の形を捕まえられない走査は、同じ間違いを次も通す',
+    );
+  });
+
   test('tagKey は <領域>.op か <領域>.<経路> の形をしている', () {
     final offenders = [
-      for (final (path, key) in tagKeys())
-        if (violates(key)) '$path: $key',
+      for (final (path, key, resolved) in tagKeys())
+        if (!resolved)
+          '$path: $key（同一ファイル内で辿れない。リテラルか同一ファイルの const にすること）'
+        else if (violates(key))
+          '$path: $key',
     ];
     expect(
       offenders,

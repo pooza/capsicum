@@ -26,6 +26,21 @@ import 'support/dart_source.dart';
 /// 上限に使いながら、**既定の書記素カウンタ + 既定の enforcement（切り詰め）**
 /// のままだった。Misskey (3000) で絵文字混じりのテンプレ本文が黙って切られ、
 /// compose 画面と数字も食い違っていた。
+/// 数えているのに切り詰めを止めていない (#1117-D)。
+///
+/// ⚠ **判定を関数へ出す。**リポジトリの走査と「修正前のソースを食わせる」検査で
+/// **同じ判定**を通すため。別々に書くと、合成ソースでは当たるのに実物では
+/// 当たらない（＝空振りする検査）になる。
+bool lacksEnforcement(String code) =>
+    code.contains('serverLengthCounter') &&
+    !code.contains('InputCounterWidgetBuilder serverLengthCounter(') &&
+    !code.contains('MaxLengthEnforcement.none');
+
+/// サーバー上限を当てているのに数え方を揃えていない (#1035-A3)。
+bool lacksCounter(String code) =>
+    code.contains('maxPostLengthProvider') &&
+    !code.contains('serverLengthCounter');
+
 void main() {
   List<File> uiFiles() => Directory('lib/src/ui')
       .listSync(recursive: true)
@@ -70,9 +85,9 @@ void main() {
     // 書記素で切ると、カウンタの数字と実際の挙動が食い違う。
     final offenders = <String>[];
     for (final file in counterAdopters()) {
-      final code = maskComments(file.readAsStringSync());
-      if (code.contains('MaxLengthEnforcement.none')) continue;
-      offenders.add(file.path);
+      if (lacksEnforcement(maskComments(file.readAsStringSync()))) {
+        offenders.add(file.path);
+      }
     }
     expect(
       offenders,
@@ -89,10 +104,9 @@ void main() {
     // `maxPostLengthProvider` を上限にしながら、片方が書記素で数えていた。
     final offenders = <String>[];
     for (final file in uiFiles()) {
-      final code = maskComments(file.readAsStringSync());
-      if (!code.contains('maxPostLengthProvider')) continue;
-      if (code.contains('serverLengthCounter')) continue;
-      offenders.add(file.path);
+      if (lacksCounter(maskComments(file.readAsStringSync()))) {
+        offenders.add(file.path);
+      }
     }
     expect(
       offenders,
@@ -102,5 +116,59 @@ void main() {
           '（書記素）のまま。compose と数字が食い違い、超過分が黙って切られる'
           '\n${offenders.join('\n')}',
     );
+  });
+
+  group('走査に歯がある', () {
+    test('合成したソースで両方の判定が当たる', () {
+      const missingCounter = '''
+TextField(maxLength: ref.watch(maxPostLengthProvider));
+''';
+      expect(lacksCounter(missingCounter), isTrue);
+      expect(
+        lacksCounter('TextField(buildCounter: serverLengthCounter(ref));'),
+        isFalse,
+        reason: 'maxPostLengthProvider が無ければ対象外',
+      );
+
+      const countsButTrims = '''
+TextField(buildCounter: serverLengthCounter(ref));
+''';
+      expect(lacksEnforcement(countsButTrims), isTrue);
+      expect(
+        lacksEnforcement('''
+TextField(
+  buildCounter: serverLengthCounter(ref),
+  maxLengthEnforcement: MaxLengthEnforcement.none,
+);
+'''),
+        isFalse,
+      );
+    });
+
+    // ⚠⚠ **修正前のソースを実際に食わせる (#1117-D)。**合成ソースは「想定した
+    // 書き方」しか並べられない。**実物で当たることを確かめる**のが 3 点セットの 3。
+    test('⚠⚠ 修正前の templates_manage_screen を食わせると当たる', () {
+      // #1035-A を直した commit の親。
+      const preFix = '111583ea^';
+      const path =
+          'packages/capsicum/lib/src/ui/screen/templates_manage_screen.dart';
+      final shown = Process.runSync('git', [
+        '-C',
+        '../..',
+        'show',
+        '$preFix:$path',
+      ]);
+      if (shown.exitCode != 0) {
+        markTestSkipped('git show が使えない: ${shown.stderr}');
+        return;
+      }
+      final code = maskComments(shown.stdout as String);
+
+      expect(
+        lacksCounter(code),
+        isTrue,
+        reason: '修正前は maxPostLengthProvider を当てながら既定の書記素カウンタだった',
+      );
+    });
   });
 }
