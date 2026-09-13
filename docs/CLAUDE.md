@@ -208,7 +208,7 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 これで **1 PR あたり最大 2 回**に収まる。青天井にしないのは、#1021 が 6 巡かかった一方で**実コードの違反は初回で出尽くしており**、以降は検査そのものの網の細かさを上げる作業だったため（費用対効果が落ちる）。
 
-各コメントは**返信 + 👍 の両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。判定手順は [sync-procedure.md](sync-procedure.md) の Codex セクションを参照。
+各コメントは**返信 + 👍 の両方が揃って「完了」**（片方だけでは同期時に未完了と判定される）。判定手順は [sync-procedure スキル](../.claude/skills/sync-procedure/SKILL.md) の Codex セクションを参照。
 
 ### PR マージ後の確認事項
 
@@ -218,6 +218,11 @@ probing の結果、基本的な機能が欠けているサーバーに対して
 
 ```text
 capsicum/
+  .claude/                # Claude Code の設定（settings.local.json だけ gitignore）
+    skills/               # 名前付き手順の正本（#1114。⚠ docs 側はポインタ）
+      sync-procedure/     # セッション開始時の同期
+      resume-work/        # 作業中断からの復帰
+    hooks/                # 守らせたいものの機械化（deny-shell-loops.sh）
   docs/                   # 開発ドキュメント
     CLAUDE.md             # 本ファイル
     architecture.md       # アーキテクチャ設計
@@ -231,7 +236,7 @@ capsicum/
     server-settings-gap-inventory.md  # 棚卸し: サーバー側に保存された設定の反映漏れ（#992 の成果物・誤爆 0 件の実測記録。⚠ 送らない = サーバー既定が効く、の設計を壊さないための正本）
     mastodon-capsicum-api-watch.md  # Mastodon 新バージョンの API 変更を client 影響でトリアージ（フォーク diff 手順つき・4.6 / 4.7 追従済み）
     misskey-capsicum-api-watch.md  # Misskey 新バージョンの API 変更を client 影響でトリアージ（マイナー毎・daisskey SHA アンカー）
-    sync-procedure.md     # セッション開始時の同期手順
+    sync-procedure.md     # ⚠ ポインタのみ（本文は .claude/skills/sync-procedure / resume-work へ移した・#1114）
     roadmap.md            # 枠の数・各枠の主題・1.x と 2.x の境界（2026-09-04 策定・含有 Issue は Milestones が正本）
     deck-ui-plan.md       # #720 デッキ表示の設計スパイク（2026-09-06・現アーキの前提棚卸し / 壊れる境界 / 段階性。⚠ 詳細 UI 仕様ではない）
     paid-relay-plan.md    # #597 有償プッシュリレーの設計書（2026-09-06。⚠ #596 は記録層で判定層ではない・認可を新規に作る話）
@@ -475,9 +480,12 @@ v1.24 リリース直前の Linux 実機検証で判明・対応した、他プ�
 
 ## セッション開始時の同期手順
 
-会話の最初に「進捗を同期してください」等の指示があった場合、[sync-procedure.md](sync-procedure.md) の手順に従う。
+⚠⚠ **手順は Claude Code のスキルにある（#1114）。**docs の側は持たない。
 
-作業中にセッションが切れて「続きをやって」と指示された場合は、同期手順は回さず [sync-procedure.md](sync-procedure.md) の「作業中断からの復帰」に従う。
+- 会話の最初に「進捗を同期してください」等の指示があった場合 → **`/sync-procedure`**（[.claude/skills/sync-procedure/SKILL.md](../.claude/skills/sync-procedure/SKILL.md)）
+- 作業中にセッションが切れて「続きをやって」と指示された場合 → **`/resume-work`**（[.claude/skills/resume-work/SKILL.md](../.claude/skills/resume-work/SKILL.md)）。⚠ **同期手順は回さない**
+
+⚠ **スキルは「確実に呼ぶ」ための仕組みで、「守らせる」仕組みではない。**守らせたいものは従来どおり `.claude/hooks/` でフック化する。
 
 ## ドキュメント表記規約
 
