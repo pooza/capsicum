@@ -143,6 +143,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loginCompleted = false;
   String? _error;
 
+  /// この試行で `force_login` を付けるか (#1109)。⚠ **往復の前に決めて持っておく**。
+  ///
+  /// OOB 手貼りのダイアログ（往復の**後**）でも同じ値を使うが、あちらで
+  /// `ref` を読むのは #955 の不変条件（この画面で往復後に ref を使わない）に
+  /// 反するため、`_login` の入口で 1 回決めてここへ置く。
+  ///
+  /// ⚠ **既定は true。**画面が作り直されて `_login` を通っていない状態で OOB へ
+  /// 落ちたときは、安全側（＝アカウントを取り違えない側）に倒す。
+  bool _forceLogin = true;
+
   /// ループバック OAuth (#276) の最中に bind した localhost HTTP サーバ。
   /// 認可完了 / タイムアウトで finally が閉じるが、ユーザーが完了前に画面を
   /// 離れる（pop で dispose）と完了 future が 5 分 timeout まで生き残り、
@@ -574,8 +584,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         website: AppConstants.websiteUrl,
       );
 
-      _logLoginStep('startLogin.begin');
-      final startResult = await loginSupport.startLogin(application);
+      // ⚠ **`force_login` は「このサーバーに既にアカウントを持っているとき」だけ
+      // 付ける (#1109)。**認可待ちの keep-alive は約 3 分で打ち切られる（#1108）
+      // のに、`force_login=true` は ID / パスワード入力・パスワードマネージャや
+      // 2FA との往復を**毎回**強制するので、その 3 分を確実に削る。
+      //
+      // ⚠ **外せないのは同じサーバーの 2 人目以降。**ブラウザのセッションで 1 人目
+      // が黙って選ばれると、「別のアカウントを足したつもりが同じアカウント」に
+      // なる（#1110 で一覧の重複は消えたが、**意図した相手が入らない**のは残る）。
+      // 「接続し直す」も同じ理由でこちら側＝強制のままにする。
+      //
+      // ⚠ **初回ログインだけ外す形は採らない。**新規ユーザーはそのサーバーの
+      // ブラウザセッションを持っていないことが多く、`force_login` の有無で挙動が
+      // 変わらない＝効かないところで外すことになる（#1109 本文の検討 3）。
+      _forceLogin = ref
+          .read(accountManagerProvider)
+          .accounts
+          .any((a) => a.key.host == widget.host);
+      _logLoginStep('startLogin.begin', data: {'forceLogin': _forceLogin});
+      final startResult = await loginSupport.startLogin(
+        application,
+        forceLogin: _forceLogin,
+      );
       _logLoginStep(
         'startLogin.end',
         data: {'result': startResult.runtimeType.toString()},
@@ -1078,14 +1108,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 await ensureOobRegistration();
                                 if (!dialogContext.mounted) return;
                                 setDialogState(() => isLoading = false);
-                                final oobUrl =
-                                    Uri.https(widget.host, '/oauth/authorize', {
-                                      'response_type': 'code',
-                                      'client_id': clientId,
-                                      'redirect_uri': oobRedirect,
-                                      'scope': extra['scopes']!,
-                                      'force_login': 'true',
-                                    });
+                                final oobUrl = Uri.https(
+                                  widget.host,
+                                  '/oauth/authorize',
+                                  {
+                                    'response_type': 'code',
+                                    'client_id': clientId,
+                                    'redirect_uri': oobRedirect,
+                                    'scope': extra['scopes']!,
+                                    // 本経路と同じ判定を使う (#1109)。⚠ ここで
+                                    // ref を読まないのは #955（往復後に ref を
+                                    // 使わない）のため。
+                                    if (_forceLogin) 'force_login': 'true',
+                                  },
+                                );
                                 // 失敗時の SnackBar は共通ヘルパーへ寄せた
                                 // (#976)。
                                 await launchUrlOrToast(

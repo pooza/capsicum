@@ -718,7 +718,13 @@ class MisskeyAdapter extends DecentralizedBackendAdapter
   // LoginSupport
 
   @override
-  Future<LoginResult> startLogin(ApplicationInfo application) async {
+  Future<LoginResult> startLogin(
+    ApplicationInfo application, {
+    // ⚠ **MiAuth に `force_login` 相当は無いので無視する** (#1109)。承認画面は
+    // セッションがあってもアカウントの確認を挟むので、Mastodon の
+    // 「黙って既存アカウントで承認される」形にならない。
+    bool forceLogin = true,
+  }) async {
     try {
       final session = const Uuid().v4();
       final authUrl = Uri.https(host, '/miauth/$session', {

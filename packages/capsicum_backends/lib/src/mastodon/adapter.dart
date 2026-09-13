@@ -589,7 +589,10 @@ class MastodonAdapter extends DecentralizedBackendAdapter
   // LoginSupport
 
   @override
-  Future<LoginResult> startLogin(ApplicationInfo application) async {
+  Future<LoginResult> startLogin(
+    ApplicationInfo application, {
+    bool forceLogin = true,
+  }) async {
     try {
       String clientId;
       String clientSecret;
@@ -625,7 +628,11 @@ class MastodonAdapter extends DecentralizedBackendAdapter
         'client_id': clientId,
         'redirect_uri': application.redirectUri.toString(),
         'scope': _scopes.join(' '),
-        'force_login': 'true',
+        // ⚠ **付けるとブラウザのセッションを無視してログインを強制する** (#1109)。
+        // 認可待ちの keep-alive は約 3 分で打ち切られる（#1108）ので、パスワード
+        // マネージャや 2FA の往復をそのぶん強制することになる。呼び出し側が
+        // 「このサーバーに既にアカウントを持っているか」で切り替える。
+        if (forceLogin) 'force_login': 'true',
         'state': pkce.state,
         'code_challenge': pkce.codeChallenge,
         'code_challenge_method': OAuthPkceParams.codeChallengeMethod,
