@@ -24,6 +24,7 @@ import '../../util/login_error.dart';
 import '../util/launch_url_toast.dart';
 import '../widget/bottom_safe_area.dart';
 import '../widget/content_parser.dart';
+import 'login_attempts.dart';
 
 /// OAuth コールバック受信後にシステムブラウザへ表示する完了ページ (#654)。
 const _oauthCallbackHtml =
@@ -529,6 +530,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
+    // ⚠ **プロセス全体の試行登録簿 (#1112)。**`isRetry` は同一フローの続行なので
+    // 番号を取らない（#620 silent recovery が 1 操作を 2 試行に数えないため）。
+    final sequence = isRetry ? null : LoginAttempts.nextSequence();
+    if (sequence != null) {
+      final previous = await LoginAttempts.takeOver(sequence, () async {
+        // ⚠ **setState を呼ばない。**この後片づけは、次の試行から（＝別の
+        // State から）呼ばれることがある。
+        final server = _oauthServer;
+        _oauthServer = null;
+        await server?.close(force: true);
+        await OAuthKeepAlive.stop(_keepAlive);
+      });
+      if (previous != null) {
+        // ⚠⚠ **これが #1112 の観測点。**「1 回の操作で 2 回走った」現象は
+        // 1 度しか観測できておらず、logcat も残っていない。次の再発を
+        // logcat 無しで診断できるよう、重なり自体を 1 件上げる。
+        _logLoginStep(
+          'login.attempt_overlap',
+          data: {
+            'sequence': sequence,
+            'previous': previous,
+            'isLoggingIn': _isLoggingIn,
+            'mounted': mounted,
+          },
+        );
+        try {
+          Sentry.captureMessage(
+            'login.attempt_overlap',
+            level: SentryLevel.warning,
+            withScope: (scope) {
+              scope.setTag('service', 'login');
+              scope.setTag('login.host', widget.host);
+              scope.setTag('login.backend', widget.backendType.name);
+              scope.setTag('login.sequence', sequence.toString());
+              scope.setTag('login.previous_sequence', previous.toString());
+              // 画面が作り直されたのか（＝State が別物なのか）を切り分ける。
+              scope.setTag('login.was_logging_in', _isLoggingIn.toString());
+              scope.fingerprint = ['login.attempt_overlap'];
+            },
+          );
+        } catch (_) {
+          // 計装の失敗でログインを止めない（#822 / #828 と同じ方針）。
+        }
+      }
+    }
+
     DecentralizedBackendAdapter? adapter;
     Map<String, String> oauthExtra = {};
     var reachedAuthenticate = false;
@@ -536,7 +583,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     var fallbackAttempted = false;
     var usedCachedCreds = false;
 
-    _logLoginStep('login.start', data: {'isRetry': isRetry});
+    // ⚠ **試行の通し番号を必ず載せる (#1112)。**「1 回の操作で 2 回走った」は
+    // breadcrumb を並べても判別できなかった（同じ形の行が 2 組並ぶだけ）。
+    // 番号があれば、次の再発時に logcat 無しで同定できる。
+    _logLoginStep(
+      'login.start',
+      data: {'isRetry': isRetry, 'sequence': ?sequence},
+    );
 
     try {
       adapter = await widget.backendType.createAdapter(widget.host);
@@ -986,6 +1039,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
+      // ⚠ **mounted に関わらず降りる (#1112)。**画面が消えていても登録簿は
+      // プロセスに残るので、降りないと次の試行が毎回「重なった」と記録され、
+      // 死んだ State の後片づけを呼びに行くことになる。
+      if (sequence != null) LoginAttempts.release(sequence);
     }
   }
 
